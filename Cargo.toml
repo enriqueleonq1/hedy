@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/hedy-cli","crates/hedy-core","prototypes/phase0"]
+members = ["crates/hedy-core", "crates/hedy-cli", "app/src-tauri", "prototypes/phase0"]
 
 [workspace.package]
 edition = "2024"

@@ -1,0 +1,140 @@
+// Design tokens (spec §5). Single source of truth: applied as CSS variables by
+// `applyTheme` and checked for WCAG AA contrast in `tokens.test.ts`.
+
+export type ThemeName = "dark" | "light";
+
+/** Raw palette of the dark theme (Tokyo Night). */
+const tokyoNight = {
+  blue: "#7AA2F7",
+  cyan: "#7DCFFF",
+  magenta: "#BB9AF7",
+  green: "#9ECE6A",
+  orange: "#FF9E64",
+  yellow: "#E0AF68",
+  red: "#F7768E",
+  teal: "#73DACA",
+};
+
+export const themes: Record<ThemeName, Record<string, string>> = {
+  dark: {
+    ...tokyoNight,
+    bg: "#1A1B26",
+    panel: "#16161E",
+    panel2: "#1F2335",
+    ink: "#C0CAF5",
+    muted: "#9AA5CE",
+    line: "#2F334D",
+    selection: "#283457",
+    diffAddBg: "#20303B",
+    diffAddInk: "#9ECE6A",
+    diffDelBg: "#37222C",
+    diffDelInk: "#F7768E",
+    warnBg: "#2E2A1F",
+    warnInk: "#E0AF68",
+    warnLine: "#5C4A2B",
+    // Semantic roles shared by both themes.
+    action: tokyoNight.blue,
+    actionInk: "#1A1B26",
+    actionText: tokyoNight.blue,
+    accent: tokyoNight.magenta,
+    accentSoft: "#2D2640",
+    modeBg: tokyoNight.magenta,
+    modeInk: "#1A1B26",
+    tipBg: "#2A2440",
+    success: tokyoNight.green,
+    activity: tokyoNight.cyan,
+    warning: tokyoNight.yellow,
+    danger: tokyoNight.red,
+    focus: tokyoNight.cyan,
+    cheek: "#F7768E",
+    tongue: "#FF7AB6",
+    star: tokyoNight.yellow,
+  },
+  light: {
+    // "Burbuja": warm cream, violet and pink.
+    bg: "#FFF8F1",
+    panel: "#FFFFFF",
+    panel2: "#FFFCF8",
+    ink: "#2B2340",
+    muted: "#625A76",
+    line: "#EFE3D6",
+    selection: "#EDE7FF",
+    primary: "#7C5CFF",
+    primarySoft: "#EDE7FF",
+    primaryInk: "#4B32C8",
+    accentPink: "#FF8FB1",
+    accentPinkSoft: "#FFE3EC",
+    accentPinkInk: "#A3214F",
+    diffAddBg: "#E8FAF1",
+    diffAddInk: "#116A43",
+    diffDelBg: "#FFE9EE",
+    diffDelInk: "#A1213F",
+    warnBg: "#FFF4D6",
+    warnInk: "#7A5300",
+    warnLine: "#F2D58A",
+    // A slightly deeper violet than `primary` so white text on buttons passes AA.
+    action: "#6847F5",
+    actionInk: "#FFFFFF",
+    actionText: "#4B32C8",
+    accent: "#4B32C8",
+    accentSoft: "#EDE7FF",
+    modeBg: "#6847F5",
+    modeInk: "#FFFFFF",
+    tipBg: "#FFE3EC",
+    success: "#116A43",
+    activity: "#0B6A80",
+    warning: "#7A5300",
+    danger: "#A1213F",
+    focus: "#7C5CFF",
+    cheek: "#F7768E",
+    tongue: "#FF7AB6",
+    star: "#E0AF68",
+  },
+};
+
+/** `panel2` → `--panel-2`, `diffAddBg` → `--diff-add-bg`. */
+export function cssVar(token: string): string {
+  return `--${token.replace(/([A-Z0-9])/g, (c) => `-${c.toLowerCase()}`)}`;
+}
+
+export function applyTheme(name: ThemeName, root: HTMLElement = document.documentElement): void {
+  root.dataset.theme = name;
+  root.style.colorScheme = name;
+  for (const [token, value] of Object.entries(themes[name])) {
+    root.style.setProperty(cssVar(token), value);
+  }
+}
+
+/** Account colors offered to the user (spec §5), with Spanish names. */
+export const accountPalette: { name: string; hex: string }[] = [
+  { name: "Azul", hex: "#7AA2F7" },
+  { name: "Morado", hex: "#BB9AF7" },
+  { name: "Verde", hex: "#9ECE6A" },
+  { name: "Naranja", hex: "#FF9E64" },
+  { name: "Cian", hex: "#7DCFFF" },
+  { name: "Rosa", hex: "#FF7AB6" },
+  { name: "Amarillo", hex: "#E0AF68" },
+  { name: "Turquesa", hex: "#73DACA" },
+];
+
+/** xterm.js colors for each theme. */
+export function terminalTheme(name: ThemeName) {
+  const t = themes[name];
+  const dark = name === "dark";
+  return {
+    background: t.panel,
+    foreground: t.ink,
+    cursor: dark ? tokyoNight.cyan : "#7C5CFF",
+    selectionBackground: t.selection,
+    black: dark ? "#15161E" : "#2B2340",
+    red: dark ? tokyoNight.red : "#A1213F",
+    green: dark ? tokyoNight.green : "#116A43",
+    yellow: dark ? tokyoNight.yellow : "#7A5300",
+    blue: dark ? tokyoNight.blue : "#3D5BD9",
+    magenta: dark ? tokyoNight.magenta : "#7C3AED",
+    cyan: dark ? tokyoNight.cyan : "#0B6A80",
+    white: dark ? "#A9B1D6" : "#625A76",
+    brightBlack: dark ? "#414868" : "#625A76",
+    brightWhite: dark ? "#C0CAF5" : "#2B2340",
+  };
+}
