@@ -10,6 +10,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Tests: `cargo test`
 - Lint (no warnings): `cargo clippy --all-targets -- -D warnings`
 - Format: `cargo fmt`
+- Install the CLI: `cargo install --path crates/hedy-cli` (binary `hedy`)
+- Isolated manual testing: `HEDY_DATA_DIR=/tmp/hedy-test hedy status`
 - Phase 0 prototypes: `cargo run -p hedy-phase0 -- --help`
 
 ## Layout
@@ -22,12 +24,13 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 
 ## Architecture (hexagonal)
 
-- `domain/`: pure types and rules. No I/O, no async runtime, no external crates beyond
-  `serde`/`thiserror`.
+- `domain/`: pure types and rules. No I/O, no async runtime; only `thiserror` and
+  `serde_json` (parsing).
 - `application/`: use cases, depending only on traits declared in `application/ports`.
 - `adapters/`: implementations of the ports (filesystem, CLI processes, keyring, git).
 - Driving adapters (CLI, Tauri) call use cases; they never call adapters directly.
-- Unit tests use in-memory fakes of the ports.
+- Unit tests use in-memory fakes of the ports (`application/testing.rs`); adapters get
+  their own tests; `crates/hedy-cli/tests` runs the binary against a fake `claude`.
 
 ## Non-negotiable rules (enforced in code, not only in text)
 
