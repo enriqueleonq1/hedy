@@ -1,0 +1,100 @@
+use std::path::Path;
+
+use super::{AppResult, Hedy};
+use crate::domain::{Account, AccountId, LoginState, Project, policy};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountStatus {
+    pub account: Account,
+    pub login: LoginState,
+    /// Projects assigned to this account.
+    pub projects: Vec<Project>,
+    /// Whether it may be used from the current directory (protection rules).
+    pub available: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Status {
+    pub current_project: Option<Project>,
+    pub default_account: Option<AccountId>,
+    pub accounts: Vec<AccountStatus>,
+}
+
+impl Hedy {
+    /// Accounts with their login state, as seen from `dir`. Login checks run in
+    /// parallel because each one starts a CLI process.
+    pub fn status(&self, dir: &Path) -> AppResult<Status> {
+        let accounts = self.accounts()?;
+        let projects = self.projects()?;
+        let current_project = self.project_for(dir)?;
+
+        let logins: Vec<AppResult<LoginState>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = accounts
+                .iter()
+                .map(|a| scope.spawn(move || self.login_state(a)))
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().expect("login check panicked"))
+                .collect()
+        });
+
+        let accounts = accounts
+            .into_iter()
+            .zip(logins)
+            .map(|(account, login)| {
+                let available =
+                    policy::check_launch(current_project.as_ref(), &account.id, &projects).is_ok();
+                Ok(AccountStatus {
+                    projects: projects
+                        .iter()
+                        .filter(|p| p.account.as_ref() == Some(&account.id))
+                        .cloned()
+                        .collect(),
+                    login: login?,
+                    available,
+                    account,
+                })
+            })
+            .collect::<AppResult<_>>()?;
+
+        Ok(Status {
+            current_project,
+            default_account: self.default_account_id()?,
+            accounts,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::application::testing::Fixture;
+    use crate::domain::LoginState;
+
+    #[test]
+    fn reports_accounts_projects_and_reservations() {
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        f.add_claude("Trabajo");
+        f.hedy
+            .use_account(&f.dir("/code/homming"), "trabajo", Some(true))
+            .unwrap();
+        f.runner.reply(r#"{"loggedIn":false}"#, 1);
+
+        let outside = f.hedy.status(&f.dir("/code/hobby")).unwrap();
+        assert_eq!(outside.current_project, None);
+        let trabajo = &outside.accounts[1];
+        assert_eq!(trabajo.projects.len(), 1);
+        assert!(!trabajo.available);
+        assert_eq!(trabajo.login, LoginState::LoggedOut);
+        assert!(outside.accounts[0].available);
+
+        let inside = f.hedy.status(&f.dir("/code/homming/src")).unwrap();
+        assert_eq!(inside.current_project.unwrap().name, "homming");
+        assert!(inside.accounts[1].available);
+        assert!(
+            !inside.accounts[0].available,
+            "protected project only uses its account"
+        );
+    }
+}
