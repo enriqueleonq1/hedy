@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::io::ErrorKind;
 use std::process::{Command, Stdio};
 
@@ -8,16 +9,17 @@ use crate::domain::env::is_blocked;
 /// Starts official CLIs as child processes of the user's session.
 pub struct SystemProcessRunner;
 
+/// The inherited environment minus every blocked variable.
+pub(crate) fn allowed_env() -> impl Iterator<Item = (OsString, OsString)> {
+    std::env::vars_os().filter(|(name, _)| !name.to_str().is_some_and(is_blocked))
+}
+
 /// Builds the command with the inherited environment minus every blocked
 /// variable, then the account's folder variable on top.
 pub(crate) fn command(spec: &LaunchSpec) -> Command {
     let mut cmd = Command::new(&spec.program);
     cmd.args(&spec.args);
-    for (name, _) in std::env::vars_os() {
-        if name.to_str().is_some_and(is_blocked) {
-            cmd.env_remove(&name);
-        }
-    }
+    cmd.env_clear().envs(allowed_env());
     for (name, value) in &spec.env {
         cmd.env(name, value);
     }
@@ -27,7 +29,7 @@ pub(crate) fn command(spec: &LaunchSpec) -> Command {
     cmd
 }
 
-fn launch_error(spec: &LaunchSpec, err: std::io::Error) -> PortError {
+pub(crate) fn launch_error(spec: &LaunchSpec, err: std::io::Error) -> PortError {
     if err.kind() == ErrorKind::NotFound {
         PortError::new(format!(
             "no se encontró «{}». Instálalo o indica su ruta con `hedy config set binary.<proveedor> <ruta>`",
@@ -54,6 +56,18 @@ impl ProcessRunner for SystemProcessRunner {
             exit_code: output.status.code(),
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         })
+    }
+
+    fn spawn_detached(&self, spec: &LaunchSpec) -> PortResult<()> {
+        let mut child = command(spec)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| launch_error(spec, e))?;
+        // Reap it so it does not linger as a zombie in a long-running app.
+        std::thread::spawn(move || child.wait());
+        Ok(())
     }
 
     #[cfg(unix)]
@@ -85,11 +99,13 @@ mod tests {
         };
         let cmd = command(&spec);
         let envs: Vec<_> = cmd.get_envs().collect();
-        // Every blocked variable present in this process is explicitly removed.
-        for (name, _) in std::env::vars_os() {
-            if name.to_str().is_some_and(is_blocked) && name != "CLAUDE_CONFIG_DIR" {
-                assert!(envs.contains(&(name.as_os_str(), None)), "{name:?}");
-            }
+        // No blocked variable is passed, except the folder Hedy sets itself.
+        for (name, value) in &envs {
+            let name = name.to_str().unwrap();
+            assert!(
+                value.is_none() || !is_blocked(name) || name == "CLAUDE_CONFIG_DIR",
+                "{name}"
+            );
         }
         assert!(envs.contains(&("CLAUDE_CONFIG_DIR".as_ref(), Some("/acc".as_ref()))));
     }

@@ -4,6 +4,7 @@ mod fs;
 mod keyring;
 mod paths;
 mod process;
+mod pty;
 mod sqlite;
 
 use std::sync::Arc;
@@ -12,6 +13,7 @@ pub use fs::LocalFileSystem;
 pub use keyring::KeyringSecretStore;
 pub use paths::HedyPaths;
 pub use process::SystemProcessRunner;
+pub use pty::{PtyOutput, PtySession};
 pub use sqlite::SqliteStore;
 
 use crate::application::Hedy;

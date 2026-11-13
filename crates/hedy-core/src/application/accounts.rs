@@ -71,16 +71,30 @@ impl Hedy {
         Ok(account)
     }
 
-    /// Runs the CLI's official login flow attached to the terminal.
-    pub fn login(&self, id: &str) -> AppResult<Option<i32>> {
+    /// The CLI's official login flow, for a driving adapter that runs it in its
+    /// own terminal (the app's PTY).
+    pub fn login_spec(&self, id: &str) -> AppResult<LaunchSpec> {
         let account = self.account(id)?;
         if !account.is_subscription() {
             return Err(AppError::NotASubscription(account.id));
         }
         let program = self.binary_for(account.provider)?;
-        let spec = LaunchSpec::for_account(&account, LaunchPurpose::Login, program.as_deref())?
-            .expect("subscription providers always have a login command");
-        Ok(self.runner.run_interactive(&spec)?)
+        Ok(
+            LaunchSpec::for_account(&account, LaunchPurpose::Login, program.as_deref())?
+                .expect("subscription providers always have a login command"),
+        )
+    }
+
+    /// Runs the CLI's official login flow attached to the current terminal.
+    pub fn login(&self, id: &str) -> AppResult<Option<i32>> {
+        Ok(self.runner.run_interactive(&self.login_spec(id)?)?)
+    }
+
+    pub fn set_account_color(&self, id: &str, color: Color) -> AppResult<Account> {
+        let mut account = self.account(id)?;
+        account.color = color;
+        self.store.save_account(&account)?;
+        Ok(account)
     }
 
     /// Asks the CLI (or the keyring) whether the account is ready to use.
@@ -238,6 +252,15 @@ mod tests {
             spec.env,
             vec![("CLAUDE_CONFIG_DIR".into(), "/data/accounts/personal".into())]
         );
+    }
+
+    #[test]
+    fn account_color_can_change() {
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        let pink: Color = "rosa".parse().unwrap();
+        f.hedy.set_account_color("personal", pink).unwrap();
+        assert_eq!(f.hedy.account("personal").unwrap().color, pink);
     }
 
     #[test]

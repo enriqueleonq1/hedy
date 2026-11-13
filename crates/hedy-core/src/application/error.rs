@@ -46,6 +46,12 @@ pub enum AppError {
     )]
     DefaultCannotBeProtected(AccountId),
 
+    #[error("valor no válido para «{key}»: «{value}»")]
+    InvalidSettingValue { key: String, value: String },
+
+    #[error("no existe el proyecto {}", .0.display())]
+    ProjectNotFound(PathBuf),
+
     #[error("ajuste desconocido: «{0}»")]
     UnknownSetting(String),
 }

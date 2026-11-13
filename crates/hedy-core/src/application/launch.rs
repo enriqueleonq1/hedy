@@ -43,6 +43,22 @@ impl Hedy {
         })
     }
 
+    /// The user's shell in `dir`, exporting the project account's folder variable.
+    pub fn shell_spec(&self, dir: &Path, shell: &str) -> AppResult<LaunchSpec> {
+        let account = match self.project_for(dir)?.and_then(|p| p.account) {
+            Some(id) => Some(self.account(id.as_str())?),
+            None => None,
+        };
+        Ok(LaunchSpec::shell(shell, account.as_ref()).in_dir(self.fs.canonicalize(dir)?))
+    }
+
+    /// Opens `path` in VS Code (`code <path>`).
+    pub fn open_in_editor(&self, path: &Path) -> AppResult<()> {
+        let path = self.fs.canonicalize(path)?;
+        let spec = LaunchSpec::program("code", vec![path.to_string_lossy().into_owned()]);
+        Ok(self.runner.spawn_detached(&spec)?)
+    }
+
     /// Replaces the current process with the resolved CLI. Only returns on error.
     pub fn exec(&self, resolved: &Resolved) -> PortError {
         self.runner.exec(&resolved.spec)
@@ -137,6 +153,33 @@ mod tests {
             f.hedy.set_setting(Setting::DefaultAccount, Some("trabajo")),
             Err(AppError::Domain(DomainError::AccountReserved { .. }))
         ));
+    }
+
+    #[test]
+    fn shell_and_editor() {
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        f.hedy
+            .use_account(&f.dir("/code/hedy"), "personal", None)
+            .unwrap();
+        let shell = f.hedy.shell_spec(&f.dir("/code/hedy/src"), "fish").unwrap();
+        assert_eq!(shell.program, "fish");
+        assert_eq!(shell.cwd, Some(f.dir("/code/hedy/src")));
+        assert_eq!(shell.env[0].0, "CLAUDE_CONFIG_DIR");
+        assert!(
+            f.hedy
+                .shell_spec(&f.dir("/tmp"), "fish")
+                .unwrap()
+                .env
+                .is_empty()
+        );
+
+        f.hedy.open_in_editor(&f.dir("/code/hedy")).unwrap();
+        let spec = f.runner.detached().pop().unwrap();
+        assert_eq!(
+            (spec.program.as_str(), spec.args),
+            ("code", vec!["/code/hedy".to_owned()])
+        );
     }
 
     #[test]

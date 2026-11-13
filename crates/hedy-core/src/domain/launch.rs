@@ -71,6 +71,30 @@ impl LaunchSpec {
         }))
     }
 
+    /// Any program, without account variables (e.g. the code editor).
+    pub fn program(program: impl Into<String>, args: Vec<String>) -> Self {
+        Self {
+            program: program.into(),
+            args,
+            env: vec![],
+            cwd: None,
+        }
+    }
+
+    /// The user's shell. With a subscription account in a Hedy-managed folder it
+    /// exports the folder variable, so `claude`/`codex`/`gemini` typed in that
+    /// shell use the account.
+    pub fn shell(program: impl Into<String>, account: Option<&Account>) -> Self {
+        let mut spec = Self::program(program, vec![]);
+        if let Some(account) = account
+            && let Credentials::Subscription(ConfigFolder::Managed(path)) = &account.credentials
+            && let Some(var) = account.provider.folder_env_var()
+        {
+            spec.env.push((var.to_owned(), path.clone()));
+        }
+        spec
+    }
+
     pub fn in_dir(mut self, cwd: PathBuf) -> Self {
         self.cwd = Some(cwd);
         self
@@ -152,6 +176,21 @@ mod tests {
                 args.map(|a| a.iter().map(|s| s.to_string()).collect())
             );
         }
+    }
+
+    #[test]
+    fn shell_exports_the_managed_folder_only() {
+        let managed_acc = account(Provider::Codex, managed("/acc/codex"));
+        let spec = LaunchSpec::shell("fish", Some(&managed_acc));
+        assert_eq!(spec.program, "fish");
+        assert_eq!(spec.env, vec![("CODEX_HOME".into(), "/acc/codex".into())]);
+
+        let default_acc = account(
+            Provider::Claude,
+            Credentials::Subscription(ConfigFolder::Default),
+        );
+        assert!(LaunchSpec::shell("fish", Some(&default_acc)).env.is_empty());
+        assert!(LaunchSpec::shell("fish", None).env.is_empty());
     }
 
     #[test]

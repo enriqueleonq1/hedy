@@ -31,6 +31,7 @@ pub trait AccountRepository: Send + Sync {
 pub trait ProjectRepository: Send + Sync {
     fn list_projects(&self) -> PortResult<Vec<Project>>;
     fn save_project(&self, project: &Project) -> PortResult<()>;
+    fn delete_project(&self, path: &Path) -> PortResult<()>;
 }
 
 pub trait SettingsRepository: Send + Sync {
@@ -62,6 +63,8 @@ pub trait ProcessRunner: Send + Sync {
     fn run_interactive(&self, spec: &LaunchSpec) -> PortResult<Option<i32>>;
     /// Runs without a terminal and captures stdout.
     fn run_captured(&self, spec: &LaunchSpec) -> PortResult<CapturedOutput>;
+    /// Starts without waiting and without a terminal (e.g. opening the editor).
+    fn spawn_detached(&self, spec: &LaunchSpec) -> PortResult<()>;
     /// Replaces the current process when the platform allows it. Only returns on error.
     fn exec(&self, spec: &LaunchSpec) -> PortError;
 }

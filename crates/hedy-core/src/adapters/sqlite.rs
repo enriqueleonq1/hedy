@@ -213,6 +213,21 @@ impl ProjectRepository for SqliteStore {
             .map(drop)
         })
     }
+    fn delete_project(&self, path: &Path) -> PortResult<()> {
+        self.delete_project_row(path)
+    }
+}
+
+impl SqliteStore {
+    fn delete_project_row(&self, path: &Path) -> PortResult<()> {
+        self.with(|c| {
+            c.execute(
+                "DELETE FROM projects WHERE path = ?1",
+                [path.to_string_lossy()],
+            )
+            .map(drop)
+        })
+    }
 }
 
 impl SettingsRepository for SqliteStore {
@@ -307,7 +322,7 @@ mod tests {
         };
         store.save_project(&project).unwrap();
         store.save_project(&project).unwrap();
-        assert_eq!(store.list_projects().unwrap(), vec![project]);
+        assert_eq!(store.list_projects().unwrap(), vec![project.clone()]);
 
         // An account in use cannot be deleted behind the application's back.
         assert!(store.delete_account(&acc.id).is_err());
@@ -321,6 +336,10 @@ mod tests {
         );
         store.set_setting("default_account", None).unwrap();
         assert_eq!(store.get_setting("default_account").unwrap(), None);
+
+        store.delete_project(&project.path).unwrap();
+        assert!(store.list_projects().unwrap().is_empty());
+        store.delete_account(&acc.id).unwrap();
     }
 
     #[test]

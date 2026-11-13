@@ -46,6 +46,10 @@ impl ProjectRepository for MemoryStore {
         }
         Ok(())
     }
+    fn delete_project(&self, path: &Path) -> PortResult<()> {
+        self.projects.lock().unwrap().retain(|p| p.path != path);
+        Ok(())
+    }
 }
 
 impl SettingsRepository for MemoryStore {
@@ -92,6 +96,7 @@ impl SecretStore for MemorySecrets {
 #[derive(Default)]
 pub struct FakeRunner {
     interactive: Mutex<Vec<LaunchSpec>>,
+    detached: Mutex<Vec<LaunchSpec>>,
     reply: Mutex<Option<CapturedOutput>>,
 }
 
@@ -104,6 +109,9 @@ impl FakeRunner {
     }
     pub fn interactive(&self) -> Vec<LaunchSpec> {
         self.interactive.lock().unwrap().clone()
+    }
+    pub fn detached(&self) -> Vec<LaunchSpec> {
+        self.detached.lock().unwrap().clone()
     }
 }
 
@@ -118,6 +126,10 @@ impl ProcessRunner for FakeRunner {
             .unwrap()
             .clone()
             .ok_or_else(|| PortError::new("no reply configured"))
+    }
+    fn spawn_detached(&self, spec: &LaunchSpec) -> PortResult<()> {
+        self.detached.lock().unwrap().push(spec.clone());
+        Ok(())
     }
     fn exec(&self, _spec: &LaunchSpec) -> PortError {
         PortError::new("exec is not available in tests")

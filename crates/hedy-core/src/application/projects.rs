@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::{AppError, AppResult, Hedy};
-use crate::domain::{AccountId, Project, policy, project};
+use crate::domain::{AccountId, Color, Project, policy, project};
 
 impl Hedy {
     pub fn projects(&self) -> AppResult<Vec<Project>> {
@@ -12,6 +12,40 @@ impl Hedy {
     pub fn project_for(&self, dir: &Path) -> AppResult<Option<Project>> {
         let dir = self.fs.canonicalize(dir)?;
         Ok(project::find_for_dir(&self.projects()?, &dir).cloned())
+    }
+
+    /// The project registered exactly at `path`.
+    pub fn project_at(&self, path: &Path) -> AppResult<Project> {
+        let path = self.fs.canonicalize(path)?;
+        self.projects()?
+            .into_iter()
+            .find(|p| p.path == path)
+            .ok_or(AppError::ProjectNotFound(path))
+    }
+
+    /// Accounts that may be offered in the project containing `dir` (or outside
+    /// any project), following the protection rules.
+    pub fn offerable_accounts(&self, dir: &Path) -> AppResult<Vec<AccountId>> {
+        let project = self.project_for(dir)?;
+        let (accounts, projects) = (self.accounts()?, self.projects()?);
+        Ok(policy::offerable(project.as_ref(), &accounts, &projects)
+            .into_iter()
+            .map(|a| a.id.clone())
+            .collect())
+    }
+
+    pub fn set_project_color(&self, path: &Path, color: Option<Color>) -> AppResult<Project> {
+        let mut project = self.project_at(path)?;
+        project.color = color;
+        self.store.save_project(&project)?;
+        Ok(project)
+    }
+
+    /// Unregisters the project. Nothing in its folder is touched.
+    pub fn remove_project(&self, path: &Path) -> AppResult<Project> {
+        let project = self.project_at(path)?;
+        self.store.delete_project(&project.path)?;
+        Ok(project)
     }
 
     /// Assigns `account` to the project containing `dir`. Registers the project
@@ -92,6 +126,41 @@ mod tests {
             .unwrap();
         assert_eq!(p.account.unwrap().as_str(), "trabajo");
         assert_eq!(f.hedy.projects().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn color_offer_and_removal() {
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        f.add_claude("Trabajo");
+        f.hedy
+            .use_account(&f.dir("/code/homming"), "trabajo", Some(true))
+            .unwrap();
+        let ids = |dir: &str| -> Vec<String> {
+            f.hedy
+                .offerable_accounts(&f.dir(dir))
+                .unwrap()
+                .iter()
+                .map(ToString::to_string)
+                .collect()
+        };
+        assert_eq!(ids("/code/homming"), vec!["trabajo"]);
+        assert_eq!(ids("/elsewhere"), vec!["personal"]);
+
+        let color = crate::domain::Color::nth_in_palette(4);
+        let p = f
+            .hedy
+            .set_project_color(&f.dir("/code/homming"), Some(color))
+            .unwrap();
+        assert_eq!(p.color, Some(color));
+        assert!(matches!(
+            f.hedy.set_project_color(&f.dir("/code/nope"), None),
+            Err(AppError::ProjectNotFound(_))
+        ));
+
+        f.hedy.remove_project(&f.dir("/code/homming")).unwrap();
+        assert!(f.hedy.projects().unwrap().is_empty());
+        assert_eq!(ids("/elsewhere"), vec!["personal", "trabajo"]);
     }
 
     #[test]

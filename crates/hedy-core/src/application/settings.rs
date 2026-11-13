@@ -10,13 +10,21 @@ pub enum Setting {
     DefaultAccount,
     /// Path to an official CLI binary when it is not on `PATH`.
     Binary(Provider),
+    /// App theme: `system`, `light` or `dark`.
+    Theme,
+    /// Name used to greet the user in the app.
+    UserName,
 }
+
+pub const THEMES: [&str; 3] = ["system", "light", "dark"];
 
 impl Setting {
     pub fn key(self) -> String {
         match self {
             Self::DefaultAccount => "default_account".into(),
             Self::Binary(p) => format!("binary.{}", p.as_str()),
+            Self::Theme => "ui.theme".into(),
+            Self::UserName => "ui.name".into(),
         }
     }
 
@@ -27,6 +35,7 @@ impl Setting {
             .map(Self::Binary);
         std::iter::once(Self::DefaultAccount)
             .chain(binaries)
+            .chain([Self::Theme, Self::UserName])
             .collect()
     }
 }
@@ -49,10 +58,19 @@ impl Hedy {
 
     /// `None` clears the setting.
     pub fn set_setting(&self, setting: Setting, value: Option<&str>) -> AppResult<()> {
-        if let (Setting::DefaultAccount, Some(id)) = (setting, value) {
-            let account = self.account(id)?;
-            // A reserved account cannot be offered everywhere.
-            policy::check_launch(None, &account.id, &self.projects()?)?;
+        match (setting, value) {
+            (Setting::DefaultAccount, Some(id)) => {
+                let account = self.account(id)?;
+                // A reserved account cannot be offered everywhere.
+                policy::check_launch(None, &account.id, &self.projects()?)?;
+            }
+            (Setting::Theme, Some(theme)) if !THEMES.contains(&theme) => {
+                return Err(AppError::InvalidSettingValue {
+                    key: setting.key(),
+                    value: theme.to_owned(),
+                });
+            }
+            _ => {}
         }
         Ok(self.store.set_setting(&setting.key(), value)?)
     }
@@ -79,6 +97,20 @@ mod tests {
             assert_eq!(s.key().parse::<Setting>().unwrap(), s);
         }
         assert!("binary.kimi".parse::<Setting>().is_err());
+    }
+
+    #[test]
+    fn theme_is_validated() {
+        let f = Fixture::new();
+        f.hedy.set_setting(Setting::Theme, Some("light")).unwrap();
+        assert!(matches!(
+            f.hedy.set_setting(Setting::Theme, Some("pink")),
+            Err(AppError::InvalidSettingValue { .. })
+        ));
+        assert_eq!(
+            f.hedy.setting(Setting::Theme).unwrap().as_deref(),
+            Some("light")
+        );
     }
 
     #[test]

@@ -15,7 +15,7 @@ use std::sync::Arc;
 pub use accounts::NewAccount;
 pub use error::{AppError, AppResult};
 pub use launch::Resolved;
-pub use settings::Setting;
+pub use settings::{Setting, THEMES};
 pub use status::{AccountStatus, Status};
 
 use ports::{FileSystem, ProcessRunner, SecretStore, Store};
