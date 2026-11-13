@@ -1,45 +1,56 @@
 # Hedy
 
-App de escritorio (Tauri v2 + Svelte 5) y comando `hedy` para trabajar con varias
-IAs de programación (Claude Code, Codex, Gemini, Kimi) y varias cuentas por proveedor.
-Decisiones verificadas en `docs/decisiones.md`; léelo antes de tocar adaptadores.
+Desktop app (Tauri v2 + Svelte 5) and `hedy` command to work with several coding AIs
+(Claude Code, Codex, Gemini, Kimi) and several accounts per provider.
+Verified facts live in `docs/decisions.md`; read it before touching adapters.
 
-## Comandos
+## Commands
 
-- Compilar: `cargo build`
+- Build: `cargo build`
 - Tests: `cargo test`
-- Lint (sin advertencias): `cargo clippy --all-targets -- -D warnings`
-- Formato: `cargo fmt`
-- Prototipos de la fase 0: `cargo run -p hedy-fase0 -- --help`
+- Lint (no warnings): `cargo clippy --all-targets -- -D warnings`
+- Format: `cargo fmt`
+- Phase 0 prototypes: `cargo run -p hedy-phase0 -- --help`
 
-## Estructura
+## Layout
 
-- `crates/hedy-core`: cuentas, proyectos, git, uso, eventos, adaptadores (fase 1+)
-- `crates/hedy-cli`: binario `hedy` (fase 1+)
-- `crates/hedy-memory`: servidor MCP de memoria (fase 5)
-- `app/`: Tauri + Svelte (fase 2+)
-- `prototipos/fase0`: prototipos de validación; no es código de producción
+- `crates/hedy-core`: domain + application (ports) + adapters
+- `crates/hedy-cli`: `hedy` binary (driving adapter)
+- `crates/hedy-memory`: memory MCP server (phase 5)
+- `app/`: Tauri + Svelte (phase 2+)
+- `prototypes/phase0`: throwaway validation prototypes
 
-## Reglas que no se negocian (se aplican con código, no solo con texto)
+## Architecture (hexagonal)
 
-1. Hedy nunca lee, copia ni guarda tokens de sesión. Cada cuenta de suscripción vive en
-   su carpeta oficial (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`) y el login
-   se hace con el flujo oficial de cada CLI. Hedy solo elige la carpeta al lanzar.
-2. Se usan los binarios oficiales sin modificar.
-3. Nunca cambiar solo de una cuenta de suscripción a otra al llegar al límite: avisar y
-   ofrecer esperar, pasar a otro proveedor o usar una API key de pago.
-4. Proyectos protegidos: solo su cuenta asignada; esa cuenta no se ofrece en otros.
-5. API keys en el llavero del sistema (crate `keyring`), nunca en archivos.
-6. Las notas de memoria nuevas las aprueba el usuario.
-7. Archivos locales que Hedy escriba en un repo van a `.git/info/exclude`.
-8. Todo local: sin servidor ni telemetría.
+- `domain/`: pure types and rules. No I/O, no async runtime, no external crates beyond
+  `serde`/`thiserror`.
+- `application/`: use cases, depending only on traits declared in `application/ports`.
+- `adapters/`: implementations of the ports (filesystem, CLI processes, keyring, git).
+- Driving adapters (CLI, Tauri) call use cases; they never call adapters directly.
+- Unit tests use in-memory fakes of the ports.
 
-Al lanzar una CLI, limpiar del entorno las variables que cambian la cuenta o la
-facturación (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`,
-`CODEX_API_KEY`, `GEMINI_API_KEY`, etc.). Ver `docs/decisiones.md`.
+## Non-negotiable rules (enforced in code, not only in text)
 
-## Convenciones
+1. Hedy never reads, copies or stores session tokens. Each subscription account lives in
+   its official folder (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`); login is
+   always the CLI's official flow. Hedy only picks the folder at launch.
+2. Official binaries, unmodified.
+3. Never switch automatically from one subscription account to another on hitting a
+   limit: warn and offer to wait, move to another provider, or use a paid API key.
+4. Protected projects are opt-in (off by default): a protected project only uses its
+   assigned account, and that account is not offered elsewhere. No account is blocked
+   by default.
+5. API keys in the OS keyring (`keyring` crate), never in files.
+6. New memory notes are approved by the user.
+7. Local files Hedy writes in a repo go to `.git/info/exclude`.
+8. Everything local: no server, no telemetry.
 
-- Código, comentarios, commits y UI en español.
-- Commits pequeños y descriptivos.
-- Si la documentación oficial contradice el plan, avisar y proponer alternativa.
+When launching a CLI, strip variables that change the account or billing
+(`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, `CODEX_API_KEY`,
+`GEMINI_API_KEY`, ...). See `docs/decisions.md`.
+
+## Conventions
+
+- Code, identifiers, comments, docs and commits in English. User-facing text in Spanish.
+- Small, descriptive commits.
+- If official docs contradict the plan, say so and propose an alternative.
