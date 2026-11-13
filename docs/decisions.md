@@ -333,7 +333,22 @@ documented for `exec` or the app server; everything points to the same one.
 7. **Language:** code, identifiers, folders, docs and commits in English. User-facing text
    stays in Spanish.
 
-## 9. Decisions
+## 9. Phase 2 decisions
+
+- **UI framework: React 19** instead of Svelte 5 (user decision, Nov 13, 2026): wider
+  ecosystem; the performance difference is not noticeable here, where WebKitGTK and
+  xterm.js dominate. Server state with TanStack Query.
+- **Visual reference:** `identidad visual/` is the source of truth for layout, sizes and
+  the mascot. Where it differs from the written spec, the images win: the top droplet
+  floats above the halo, and there is a resting pose (`idle`, "En espera") besides the
+  four states.
+- **Terminal:** PTY sessions in `hedy-core::adapters::PtySession`, with the same
+  environment rules as every other launch. Login from the app runs the official flow in
+  the integrated terminal.
+- **CLI ↔ app:** both use the same SQLite file, so they already see the same state. The
+  Unix socket from the spec is only needed for live events and arrives with phase 3.
+
+## 10. Decisions
 
 - **Claude accounts:** `~/.claude` (Team) is registered as the default-folder account and
   launched without `CLAUDE_CONFIG_DIR`. New accounts live in Hedy folders.

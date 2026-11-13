@@ -1,6 +1,6 @@
 # Hedy
 
-Desktop app (Tauri v2 + Svelte 5) and `hedy` command to work with several coding AIs
+Desktop app (Tauri v2 + React 19) and `hedy` command to work with several coding AIs
 (Claude Code, Codex, Gemini, Kimi) and several accounts per provider.
 Verified facts live in `docs/decisions.md`; read it before touching adapters.
 
@@ -12,6 +12,9 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Format: `cargo fmt`
 - Install the CLI: `cargo install --path crates/hedy-cli` (binary `hedy`)
 - Isolated manual testing: `HEDY_DATA_DIR=/tmp/hedy-test hedy status`
+- App (from `app/`): `npm install`, then `npm run tauri dev`; UI only with sample data:
+  `npm run dev` (`?theme=light|dark`, `#accounts`, `#settings`)
+- App checks (from `app/`): `npm run typecheck`, `npm run lint`, `npm test`
 - Phase 0 prototypes: `cargo run -p hedy-phase0 -- --help`
 
 ## Layout
@@ -19,7 +22,10 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - `crates/hedy-core`: domain + application (ports) + adapters
 - `crates/hedy-cli`: `hedy` binary (driving adapter)
 - `crates/hedy-memory`: memory MCP server (phase 5)
-- `app/`: Tauri + Svelte (phase 2+)
+- `app/src-tauri`: Tauri commands (driving adapter; DTOs live here, not in the domain)
+- `app/src`: React UI. Talks to the backend only through `api/HedyApi.ts`
+  (`tauriApi` in the app, `MockApi` in tests and the browser)
+- `identidad visual/`: official visual reference (screens, mascot, palette). Match it.
 - `prototypes/phase0`: throwaway validation prototypes
 
 ## Architecture (hexagonal)
@@ -55,5 +61,7 @@ When launching a CLI, strip variables that change the account or billing
 ## Conventions
 
 - Code, identifiers, comments, docs and commits in English. User-facing text in Spanish.
+- Colors only from `app/src/theme/tokens.ts` (contrast-tested); account colors are never
+  used as text. Animations: transform/opacity/fill only, off with reduced motion.
 - Small, descriptive commits.
 - If official docs contradict the plan, say so and propose an alternative.

@@ -29,4 +29,10 @@ hedy status                                   # accounts, logins and current pro
 
 Spanish aliases: `hedy estado`, `hedy usar`, `hedy cuenta agregar`.
 
+## Desktop app
+
+```fish
+cd app; npm install; npm run tauri dev
+```
+
 See `docs/decisions.md` for what was verified about each CLI.
