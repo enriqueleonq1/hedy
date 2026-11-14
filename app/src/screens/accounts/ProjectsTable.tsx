@@ -7,37 +7,39 @@ import { shortAccountLabel } from "../../components/accounts";
 import { projectColor, shortPath, useProjectActions } from "../../components/projects";
 import { Button, ConfirmButton } from "../../components/ui/Button";
 import { Switch } from "../../components/ui/controls";
+import { useT } from "../../i18n";
 import { accountPalette } from "../../theme/tokens";
 import { AddProjectDialog, useAddProject } from "./AddProjectDialog";
 import { PhasesDialog } from "./PhasesDialog";
 
 export function ProjectsTable({ overview }: { overview: Overview }) {
+  const t = useT();
   const adding = useAddProject();
 
   return (
     <section className="card table-card" aria-labelledby="projects-table-title">
       <div className="section-head">
-        <h2 id="projects-table-title">Proyectos y cuentas</h2>
+        <h2 id="projects-table-title">{t("common.projectsAndAccounts")}</h2>
         <Button small onClick={adding.start} disabled={overview.accounts.length === 0}>
-          + Agregar proyecto
+          {t("common.addProjectButton")}
         </Button>
       </div>
       {overview.projects.length === 0 ? (
-        <p className="empty">Todavía no hay proyectos.</p>
+        <p className="empty">{t("accounts.table.empty")}</p>
       ) : (
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
-                <th>Proyecto</th>
-                <th>Carpeta</th>
-                <th>Cliente</th>
-                <th>Cuenta</th>
-                <th>Modelos</th>
-                <th>Protegido</th>
-                <th>Color</th>
+                <th>{t("accounts.table.project")}</th>
+                <th>{t("accounts.project.folder")}</th>
+                <th>{t("common.client")}</th>
+                <th>{t("common.account")}</th>
+                <th>{t("common.models")}</th>
+                <th>{t("common.protected")}</th>
+                <th>{t("common.color")}</th>
                 <th>
-                  <span className="sr-only">Acciones</span>
+                  <span className="sr-only">{t("accounts.table.actions")}</span>
                 </th>
               </tr>
             </thead>
@@ -55,6 +57,7 @@ export function ProjectsTable({ overview }: { overview: Overview }) {
 }
 
 function ProjectRow({ project, overview }: { project: Project; overview: Overview }) {
+  const t = useT();
   const actions = useProjectActions();
   const assign = useAction(
     (api, vars: { account: string; protect?: boolean }) => api.useAccount(project.path, vars.account, vars.protect),
@@ -78,8 +81,8 @@ function ProjectRow({ project, overview }: { project: Project; overview: Overvie
       <td>
         <input
           className="table__input"
-          aria-label={`Cliente de ${project.name}`}
-          placeholder="Sin cliente"
+          aria-label={t("accounts.table.clientOf", { name: project.name })}
+          placeholder={t("common.noClient")}
           key={project.client ?? ""}
           defaultValue={project.client ?? ""}
           onBlur={(e) => e.target.value.trim() !== (project.client ?? "") && setClient.mutate(e.target.value)}
@@ -88,13 +91,13 @@ function ProjectRow({ project, overview }: { project: Project; overview: Overvie
       <td>
         <select
           className="pill-select pill-select--account"
-          aria-label={`Cuenta de ${project.name}`}
+          aria-label={t("accounts.table.accountOf", { name: project.name })}
           value={project.account ?? ""}
           disabled={project.protected}
-          title={project.protected ? "Quita la protección para cambiar la cuenta" : undefined}
+          title={project.protected ? t("accounts.table.unprotectToChange") : undefined}
           onChange={(e) => assign.mutate({ account: e.target.value })}
         >
-          {!project.account && <option value="">Sin cuenta</option>}
+          {!project.account && <option value="">{t("common.noAccount")}</option>}
           {offered.map((a) => (
             <option key={a.id} value={a.id}>
               {shortAccountLabel(a)}
@@ -103,9 +106,9 @@ function ProjectRow({ project, overview }: { project: Project; overview: Overvie
         </select>
       </td>
       <td>
-        <button className="link-button" aria-label={`Modelos por fase de ${project.name}`} onClick={() => setEditingPhases(true)}>
-          {phaseSummary(project, overview.accounts)}
-          {project.protected && " · protegido"}
+        <button className="link-button" aria-label={t("accounts.table.phasesOf", { name: project.name })} onClick={() => setEditingPhases(true)}>
+          {phaseSummary(project, overview.accounts, t)}
+          {project.protected && t("accounts.table.protectedSuffix")}
         </button>
         {editingPhases && <PhasesDialog project={project} overview={overview} onClose={() => setEditingPhases(false)} />}
       </td>
@@ -113,21 +116,21 @@ function ProjectRow({ project, overview }: { project: Project; overview: Overvie
         <Switch
           checked={project.protected}
           disabled={!project.account}
-          label={`Proteger ${project.name}`}
+          label={t("accounts.table.protectNamed", { name: project.name })}
           onChange={(protect) => project.account && assign.mutate({ account: project.account, protect })}
         />
       </td>
       <td>
         <select
           className="pill-select"
-          aria-label={`Color de ${project.name}`}
+          aria-label={t("common.colorOf", { name: project.name })}
           value={project.color ?? ""}
           onChange={(e) => setColor.mutate(e.target.value || null)}
         >
-          <option value="">De la cuenta</option>
+          <option value="">{t("accounts.table.fromAccount")}</option>
           {accountPalette.map((c) => (
             <option key={c.hex} value={c.hex}>
-              {c.name}
+              {t(c.label)}
             </option>
           ))}
         </select>
@@ -136,8 +139,8 @@ function ProjectRow({ project, overview }: { project: Project; overview: Overvie
         <Button small variant="ghost" onClick={() => actions.openEditor(project)}>
           VS Code
         </Button>
-        <ConfirmButton small confirmLabel="¿Quitar de Hedy?" onConfirm={() => remove.mutate(undefined)}>
-          Quitar
+        <ConfirmButton small confirmLabel={t("accounts.table.removeConfirm")} onConfirm={() => remove.mutate(undefined)}>
+          {t("common.remove")}
         </ConfirmButton>
       </td>
     </tr>

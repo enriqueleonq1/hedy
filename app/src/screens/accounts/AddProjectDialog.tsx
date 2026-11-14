@@ -8,11 +8,13 @@ import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { Field, Switch } from "../../components/ui/controls";
 import { useToast } from "../../components/ui/Toast";
+import { useT } from "../../i18n";
 
 /** Picks a folder first; the dialog opens only once there is one. */
 export function useAddProject() {
   const api = useApi();
   const toast = useToast();
+  const t = useT();
   const [path, setPath] = useState<string | null>(null);
 
   const start = async () => {
@@ -20,7 +22,7 @@ export function useAddProject() {
       const folder = await api.pickFolder();
       if (folder) setPath(folder);
     } catch (e) {
-      toast.error(errorMessage(e));
+      toast.error(errorMessage(e, t));
     }
   };
   return { path, start, close: () => setPath(null) };
@@ -40,6 +42,7 @@ export function AddProjectDialog({
   onAdded?: (path: string) => void;
 }) {
   const api = useApi();
+  const t = useT();
   const [chosen, setChosen] = useState("");
   const [protect, setProtect] = useState(false);
   const offered = useQuery({
@@ -61,27 +64,27 @@ export function AddProjectDialog({
 
   return (
     <Dialog
-      title="Agregar proyecto"
+      title={t("common.addProject")}
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>Cancelar</Button>
+          <Button onClick={onClose}>{t("common.cancel")}</Button>
           <Button
             variant="primary"
             disabled={!account || save.isPending}
             onClick={() => save.mutate({ account, protect })}
           >
-            Agregar
+            {t("common.add")}
           </Button>
         </>
       }
     >
       <div className="field">
-        <span className="field__label">Carpeta</span>
+        <span className="field__label">{t("accounts.project.folder")}</span>
         <span className="mono">{shortPath(path)}</span>
-        <p className="hint">Si está dentro de un repositorio git, se usa la raíz del repositorio.</p>
+        <p className="hint">{t("accounts.project.folderHint")}</p>
       </div>
-      <Field label="Cuenta">
+      <Field label={t("common.account")}>
         {(id) => (
           <select id={id} value={account} onChange={(e) => setChosen(e.target.value)} disabled={offered.isPending}>
             {accounts.map((a) => (
@@ -93,14 +96,14 @@ export function AddProjectDialog({
         )}
       </Field>
       {offered.isSuccess && accounts.length === 0 && (
-        <p className="warning">No hay cuentas disponibles aquí: todas están reservadas por proyectos protegidos.</p>
+        <p className="warning">{t("accounts.project.noAccounts")}</p>
       )}
       <div className="row row--between">
         <div>
-          <span className="field__label">Proteger</span>
-          <p className="hint">Solo esta cuenta en este proyecto, y no se ofrece en los demás.</p>
+          <span className="field__label">{t("accounts.project.protect")}</span>
+          <p className="hint">{t("accounts.project.protectHint")}</p>
         </div>
-        <Switch checked={protect} onChange={setProtect} label="Proteger proyecto" />
+        <Switch checked={protect} onChange={setProtect} label={t("accounts.project.protectLabel")} />
       </div>
     </Dialog>
   );

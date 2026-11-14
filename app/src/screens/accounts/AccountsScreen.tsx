@@ -7,12 +7,14 @@ import { accountSubtitle, LoginBadge, UsageBars } from "../../components/account
 import { Mascot } from "../../components/Mascot/Mascot";
 import { useTerminals } from "../../components/Terminal/TerminalProvider";
 import { Button, ConfirmButton } from "../../components/ui/Button";
+import { useT } from "../../i18n";
 import { AddAccountDialog } from "./AddAccountDialog";
 import { ApiKeyDialog } from "./ApiKeyDialog";
 import { ProjectsTable } from "./ProjectsTable";
 import { SpendByClient } from "./SpendByClient";
 
 export function AccountsScreen({ overview }: { overview: Overview }) {
+  const t = useT();
   const [adding, setAdding] = useState(false);
   const [keyFor, setKeyFor] = useState<Account | null>(null);
   const projectName = (path: string) => overview.projects.find((p) => p.path === path)?.name ?? path;
@@ -21,19 +23,16 @@ export function AccountsScreen({ overview }: { overview: Overview }) {
     <div className="screen">
       <header className="page-head">
         <div>
-          <h1>Tus cuentas y modelos</h1>
-          <p className="muted">Claude, ChatGPT, Kimi y los que agregues. Cada proyecto decide con qué cuenta trabaja.</p>
+          <h1>{t("accounts.title")}</h1>
+          <p className="muted">{t("accounts.subtitle")}</p>
         </div>
         <Button variant="primary" onClick={() => setAdding(true)}>
-          + Agregar cuenta
+          {t("common.addAccountButton")}
         </Button>
       </header>
 
       {overview.accounts.length === 0 ? (
-        <p className="empty">
-          Agrega tu primera cuenta. Las de suscripción (Claude, Codex) inician sesión con el login oficial de su CLI;
-          Hedy nunca ve tus credenciales.
-        </p>
+        <p className="empty">{t("accounts.empty")}</p>
       ) : (
         <div className="account-grid">
           {overview.accounts.map((a) => (
@@ -70,38 +69,41 @@ function AccountCard({
   isDefault: boolean;
   onApiKey: () => void;
 }) {
+  const t = useT();
   const terminals = useTerminals();
   const makeDefault = useAction((api) => api.setDefaultAccount(account.id));
   const remove = useAction((api) => api.removeAccount(account.id));
   const loggedIn = account.login.state === "loggedIn";
   const classes = ["card", "account-card", isDefault && "account-card--current", account.kind === "apiKey" && "account-card--wide"];
+  const loginHint = LOGIN_HINT[account.provider];
 
   return (
     <article className={classes.filter(Boolean).join(" ")} aria-label={account.name}>
       <header className="account-card__head">
-        <Mascot color={account.color} state={loggedIn ? "idle" : "sleeping"} size={44} label={`Mascota de ${account.name}`} />
+        <Mascot
+          color={account.color}
+          state={loggedIn ? "idle" : "sleeping"}
+          size={44}
+          label={t("accounts.card.mascot", { name: account.name })}
+        />
         <div className="account-card__title">
           <h3>{account.name}</h3>
           <p className="muted">
-            {accountSubtitle(account)}
-            {isDefault && <span className="pill pill--current">por defecto</span>}
+            {accountSubtitle(account, t)}
+            {isDefault && <span className="pill pill--current">{t("accounts.card.default")}</span>}
           </p>
         </div>
       </header>
 
       <UsageBars account={account} />
       <p className="muted small">
-        {account.kind === "apiKey"
-          ? "Gasto según las estimaciones de cada respuesta, contado por Hedy."
-          : "El % aparece solo si la CLI lo informa; los tokens los cuenta Hedy."}
-        {account.defaultFolder && " Usa la sesión de la carpeta por defecto de la CLI."}
+        {account.kind === "apiKey" ? t("accounts.card.apiNote") : t("accounts.card.subscriptionNote")}
+        {account.defaultFolder && t("accounts.card.defaultFolderNote")}
       </p>
-      {account.kind === "subscription" && !loggedIn && LOGIN_HINT[account.provider] && (
-        <p className="small muted">{LOGIN_HINT[account.provider]}</p>
-      )}
+      {account.kind === "subscription" && !loggedIn && loginHint && <p className="small muted">{t(loginHint)}</p>}
 
       {projects.length > 0 && (
-        <ul className="pills" aria-label="Proyectos">
+        <ul className="pills" aria-label={t("common.projects")}>
           {projects.map((p) => (
             <li key={p.path} className="pill">
               {p.name}
@@ -118,20 +120,20 @@ function AccountCard({
             variant={loggedIn ? "ghost" : "primary"}
             onClick={() => terminals.open({ kind: "login", account: account.id }, `Login · ${account.name}`)}
           >
-            {loggedIn ? "Reconectar" : "Iniciar sesión"}
+            {loggedIn ? t("accounts.card.reconnect") : t("accounts.card.signIn")}
           </Button>
         ) : (
           <Button small variant={loggedIn ? "ghost" : "primary"} onClick={onApiKey}>
-            {loggedIn ? "Cambiar API key" : "Guardar API key"}
+            {loggedIn ? t("accounts.card.changeKey") : t("accounts.card.saveKey")}
           </Button>
         )}
         {!isDefault && (
           <Button small variant="ghost" onClick={() => makeDefault.mutate(undefined)}>
-            Por defecto
+            {t("accounts.card.makeDefault")}
           </Button>
         )}
-        <ConfirmButton small confirmLabel="¿Quitar? Confirmar" onConfirm={() => remove.mutate(undefined)}>
-          Quitar
+        <ConfirmButton small confirmLabel={t("accounts.card.removeConfirm")} onConfirm={() => remove.mutate(undefined)}>
+          {t("common.remove")}
         </ConfirmButton>
       </footer>
     </article>

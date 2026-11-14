@@ -1,4 +1,5 @@
 import type { ProviderId } from "../api/types";
+import type { MessageKey } from "../i18n";
 
 /**
  * How each provider is named in the UI: the subscription people know
@@ -14,10 +15,10 @@ export const PROVIDER_NAMES: Record<ProviderId, { plan: string; agent: string; v
 
 /**
  * What to do inside the official login, for CLIs that do not say it plainly.
- * Shown next to "Iniciar sesión".
+ * Shown next to the sign-in button.
  */
-export const LOGIN_HINT: Partial<Record<ProviderId, string>> = {
-  kimi: "En la terminal escribe /login, elige «Kimi Code (OAuth)» y sal con /exit.",
-  gemini: "En la terminal elige «Log in with Google» y sal con /quit.",
-  antigravity: "Inicia sesión con Google y pega el código que te muestra la terminal.",
+export const LOGIN_HINT: Partial<Record<ProviderId, MessageKey>> = {
+  kimi: "accounts.loginHint.kimi",
+  gemini: "accounts.loginHint.gemini",
+  antigravity: "accounts.loginHint.antigravity",
 };
