@@ -9,11 +9,12 @@ use std::path::{Path, PathBuf};
 use hedy_core::adapters::{CODE_MAP_PROGRAM, find_program};
 use hedy_core::application::{
     AccountStatus, AccountUsage, AppResult, CheckLevel, DoctorReport, Hedy, MemoryView,
-    ProjectStatus, Proposal, Setting, TaskActivity, TestRun, UsageSummary,
+    ProjectStatus, Proposal, Setting, SkillChange, SkillDraft, SkillFiles, SkillsView,
+    TaskActivity, TestRun, UsageSummary,
 };
 use hedy_core::domain::{
     Account, ConfigFolder, Credentials, LoginState, Note, Phase, PhasePlan, Project, Provider,
-    Task, TaskMode, TaskState, UsageSample,
+    Skill, Task, TaskMode, TaskState, UsageSample,
 };
 use serde::{Deserialize, Serialize};
 
@@ -111,6 +112,98 @@ impl From<MemoryView> for MemoryDto {
                 })
                 .collect(),
             protected: view.protected,
+        }
+    }
+}
+
+/// The skills screen: approved skills and proposals (with the approved
+/// skill an update would replace).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillsDto {
+    pub approved: Vec<Skill>,
+    pub proposed: Vec<SkillProposalDto>,
+    pub protected: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillProposalDto {
+    pub skill: Skill,
+    pub replaces: Option<Skill>,
+}
+
+impl From<SkillsView> for SkillsDto {
+    fn from(view: SkillsView) -> Self {
+        Self {
+            approved: view.approved,
+            proposed: view
+                .proposed
+                .into_iter()
+                .map(|p| SkillProposalDto {
+                    skill: p.skill,
+                    replaces: p.replaces,
+                })
+                .collect(),
+            protected: view.protected,
+        }
+    }
+}
+
+/// What happened to the CLIs' skill files, as paths to show.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillFilesDto {
+    pub written: Vec<String>,
+    pub removed: Vec<String>,
+    /// The user's own files with that name, left alone.
+    pub skipped: Vec<String>,
+}
+
+impl From<SkillFiles> for SkillFilesDto {
+    fn from(files: SkillFiles) -> Self {
+        let show =
+            |paths: Vec<PathBuf>| paths.into_iter().map(|p| p.display().to_string()).collect();
+        Self {
+            written: show(files.written),
+            removed: show(files.removed),
+            skipped: show(files.skipped),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillChangeDto {
+    pub skill: Skill,
+    pub files: SkillFilesDto,
+}
+
+impl From<SkillChange> for SkillChangeDto {
+    fn from(change: SkillChange) -> Self {
+        Self {
+            skill: change.skill,
+            files: change.files.into(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillDraftInput {
+    pub name: String,
+    pub description: String,
+    pub body: String,
+    pub global: bool,
+}
+
+impl From<SkillDraftInput> for SkillDraft {
+    fn from(input: SkillDraftInput) -> Self {
+        Self {
+            name: input.name,
+            description: input.description,
+            body: input.body,
+            global: input.global,
         }
     }
 }
