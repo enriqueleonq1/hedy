@@ -12,12 +12,14 @@ import { Button } from "./components/ui/Button";
 import { ToastProvider } from "./components/ui/Toast";
 import { AccountsScreen } from "./screens/accounts/AccountsScreen";
 import { MemoryScreen } from "./screens/memory/MemoryScreen";
+import { Onboarding } from "./screens/onboarding/Onboarding";
 import { Settings } from "./screens/Settings";
 import { StatusScreen } from "./screens/status/StatusScreen";
 import { Welcome } from "./screens/Welcome";
 import { Workspace } from "./screens/workspace/Workspace";
 import { TaskEventsBridge } from "./tasks/hooks";
 import { ThemeProvider } from "./theme/ThemeProvider";
+import { I18nProvider } from "./i18n";
 import { DEFAULT_ACCOUNT_COLOR, ERROR_MASCOT_COLOR } from "./theme/tokens";
 
 export function App({ api, queryClient }: { api: HedyApi; queryClient?: QueryClient }) {
@@ -102,56 +104,73 @@ function Root() {
   const project = viewProject(view);
   const current: View = project && !data.projects.some((p) => p.path === project) ? { screen: "welcome" } : view;
 
+  if (!data.onboarded) {
+    return (
+      <ThemeProvider setting={data.theme}>
+        <I18nProvider setting={data.language}>
+          <TerminalProvider>
+            <Onboarding
+              overview={data}
+              onFinish={(added) => navigate(added ? { screen: "workspace", project: added } : { screen: "welcome" })}
+            />
+          </TerminalProvider>
+        </I18nProvider>
+      </ThemeProvider>
+    );
+  }
+
   return (
     <ThemeProvider setting={data.theme}>
-      <TerminalProvider>
-        <Shell
-          topbar={
-            <Topbar
-              overview={data}
-              view={current}
-              openProjects={openProjects}
-              mode={mode}
-              onNavigate={navigate}
-              onCloseProject={closeProject}
-              onMode={setMode}
-            />
-          }
-          sidebar={<Sidebar overview={data} view={current} onNavigate={navigate} />}
-          terminal={<TerminalPanel />}
-        >
-          {current.screen === "welcome" && <Welcome overview={data} onNavigate={navigate} />}
-          {current.screen === "accounts" && <AccountsScreen overview={data} />}
-          {current.screen === "settings" && <Settings overview={data} />}
-          {current.screen === "workspace" && (
-            <Workspace
-              key={current.project}
-              overview={data}
-              project={current.project}
-              mode={mode}
-              onOpenMemory={() => navigate({ screen: "memory", project: current.project })}
-              onOpenStatus={() => navigate({ screen: "status", project: current.project })}
-            />
-          )}
-          {current.screen === "status" && (
-            <StatusScreen
-              key={current.project}
-              overview={data}
-              project={current.project}
-              onOpenChat={() => navigate({ screen: "workspace", project: current.project })}
-              onOpenMemory={() => navigate({ screen: "memory", project: current.project })}
-            />
-          )}
-          {current.screen === "memory" && (
-            <MemoryScreen
-              key={current.project}
-              overview={data}
-              project={current.project}
-              onBack={() => navigate({ screen: "workspace", project: current.project })}
-            />
-          )}
-        </Shell>
-      </TerminalProvider>
+      <I18nProvider setting={data.language}>
+        <TerminalProvider>
+          <Shell
+            topbar={
+              <Topbar
+                overview={data}
+                view={current}
+                openProjects={openProjects}
+                mode={mode}
+                onNavigate={navigate}
+                onCloseProject={closeProject}
+                onMode={setMode}
+              />
+            }
+            sidebar={<Sidebar overview={data} view={current} onNavigate={navigate} />}
+            terminal={<TerminalPanel />}
+          >
+            {current.screen === "welcome" && <Welcome overview={data} onNavigate={navigate} />}
+            {current.screen === "accounts" && <AccountsScreen overview={data} />}
+            {current.screen === "settings" && <Settings overview={data} />}
+            {current.screen === "workspace" && (
+              <Workspace
+                key={current.project}
+                overview={data}
+                project={current.project}
+                mode={mode}
+                onOpenMemory={() => navigate({ screen: "memory", project: current.project })}
+                onOpenStatus={() => navigate({ screen: "status", project: current.project })}
+              />
+            )}
+            {current.screen === "status" && (
+              <StatusScreen
+                key={current.project}
+                overview={data}
+                project={current.project}
+                onOpenChat={() => navigate({ screen: "workspace", project: current.project })}
+                onOpenMemory={() => navigate({ screen: "memory", project: current.project })}
+              />
+            )}
+            {current.screen === "memory" && (
+              <MemoryScreen
+                key={current.project}
+                overview={data}
+                project={current.project}
+                onBack={() => navigate({ screen: "workspace", project: current.project })}
+              />
+            )}
+          </Shell>
+        </TerminalProvider>
+      </I18nProvider>
     </ThemeProvider>
   );
 }

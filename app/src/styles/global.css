@@ -1202,3 +1202,95 @@ select:disabled { opacity: 0.65; }
   color: var(--ink);
   font: inherit;
 }
+
+/* ------------------------------------------------------------- onboarding */
+
+.onboarding { height: 100vh; display: grid; grid-template-rows: minmax(0, 1fr) auto; background: var(--bg); }
+.onboarding__page { min-height: 0; overflow: auto; }
+.onboarding h1 { font: 800 clamp(30px, 4vw, 44px) / 1.08 var(--font-title); letter-spacing: -0.02em; }
+.onboarding h1:focus { outline: none; }
+.onboarding__welcome { min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column; padding: 28px 40px; }
+.onboarding__brand { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.onboarding__wordmark { display: inline-flex; align-items: center; gap: 10px; font: 800 22px var(--font-title); }
+.onboarding__spacer { width: 64px; }
+.onboarding__center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; text-align: center; padding: 24px 0; }
+.onboarding__intro { display: grid; gap: 12px; justify-items: center; }
+.onboarding__intro p { font-size: 19px; line-height: 1.5; color: var(--muted); max-width: 560px; }
+.onboarding__language { display: grid; gap: 10px; justify-items: center; }
+.onboarding__eyebrow-muted { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.onboarding__cta { min-height: 52px; padding: 0 26px; font-size: 17px; display: inline-flex; align-items: center; gap: 10px; }
+.onboarding__privacy { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.onboarding__ready-actions { justify-content: center; }
+
+/* The welcome mascot arrives with a small bounce. */
+.onboarding__enter { animation: onboarding-enter 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) both; transform-origin: 50% 100%; }
+@keyframes onboarding-enter {
+  0% { opacity: 0; transform: translateY(24px) scale(0.6, 0.4); }
+  55% { opacity: 1; transform: translateY(-10px) scale(0.94, 1.08); }
+  78% { transform: translateY(0) scale(1.06, 0.94); }
+  100% { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .onboarding__enter { animation: none; } }
+
+.onboarding__tour { min-height: 100%; display: grid; grid-template-columns: minmax(0, 46fr) minmax(0, 54fr); }
+@media (max-width: 900px) { .onboarding__tour { grid-template-columns: minmax(0, 1fr); } .onboarding__art { display: none; } }
+.onboarding__art { background: var(--panel-2); border-right: 1px solid var(--line); display: flex; align-items: center; justify-content: center; padding: 48px; }
+.onboarding__text { display: flex; flex-direction: column; padding: 28px 48px 32px 56px; min-width: 0; }
+.onboarding__skip { display: flex; justify-content: flex-end; }
+.onboarding__body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 24px; padding: 16px 0; }
+.onboarding__nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.onboarding__title { display: grid; gap: 12px; }
+.onboarding__eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--activity); }
+.onboarding__lead { font-size: 17px; line-height: 1.6; color: var(--muted); }
+
+.onboarding__dots { display: flex; gap: 8px; }
+.onboarding__dot { width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--line); transition: width 0.25s ease, background 0.25s ease; }
+.onboarding__dot--current { width: 24px; background: var(--action); }
+
+.onboarding__stack { width: 100%; max-width: 440px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.onboarding__stack--notes { align-items: stretch; gap: 12px; }
+.onboarding__card { width: 100%; box-sizing: border-box; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 18px 20px; display: grid; gap: 12px; }
+.onboarding__card--row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.onboarding__project { display: grid; gap: 4px; }
+.onboarding__project strong { font: 700 20px var(--font-title); }
+.onboarding__label { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.onboarding__chip--selected { background: var(--selection); border-color: transparent; }
+.onboarding__arrow { color: var(--muted); display: flex; }
+.onboarding__pipeline { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.onboarding__pipeline span { text-align: center; padding: 8px 4px; border-radius: var(--radius-control); background: var(--selection); font-size: 13px; font-weight: 600; }
+.onboarding__pipeline .onboarding__pipeline-last { background: var(--action); color: var(--action-ink); font-weight: 700; }
+
+.onboarding__steps, .onboarding__clis, .onboarding__promises { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
+.onboarding__steps li, .onboarding__promises li { display: flex; gap: 16px; align-items: flex-start; font-size: 16px; line-height: 1.55; }
+.onboarding__steps p { color: var(--muted); font-size: 15px; line-height: 1.55; margin-top: 4px; }
+.onboarding__number { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--selection); display: flex; align-items: center; justify-content: center; font-weight: 700; }
+.onboarding__promise-icon { flex: none; color: var(--activity); display: flex; margin-top: 2px; }
+
+.onboarding__window { width: 100%; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--panel); overflow: hidden; }
+.onboarding__window-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.onboarding__window-bar > span:not(.small) { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+.onboarding__window-bar .small { margin-left: 8px; }
+.onboarding__signin { padding: 26px 24px; display: grid; justify-items: center; gap: 14px; text-align: center; }
+.onboarding__signin-logo { width: 44px; height: 44px; border-radius: 50%; }
+.onboarding__signin-field { width: 100%; box-sizing: border-box; padding: 10px; border-radius: var(--radius-control); border: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+.onboarding__ok { color: var(--success); font-weight: 600; font-size: 14px; }
+.onboarding__note { display: flex; gap: 14px; align-items: flex-start; }
+.onboarding__note p { color: var(--muted); font-size: 15px; line-height: 1.6; }
+.onboarding__icon { flex: none; width: 44px; height: 44px; border-radius: 12px; background: var(--selection); color: var(--activity); display: flex; align-items: center; justify-content: center; }
+
+.onboarding__clis { gap: 10px; }
+.onboarding__clis li { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: var(--radius-card); background: var(--panel-2); border: 1px solid var(--line); }
+.onboarding__cli-dot { width: 12px; height: 12px; }
+.onboarding__cli-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+
+.onboarding__permission { width: 100%; box-sizing: border-box; }
+.onboarding__diff { width: 100%; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--panel); overflow: hidden; font-family: var(--font-mono); font-size: 13px; line-height: 1.8; }
+.onboarding__diff .diff__line { display: block; padding: 0 14px; white-space: pre-wrap; color: var(--muted); }
+.onboarding__diff .diff__line--removed { color: var(--diff-del-ink); }
+.onboarding__diff .diff__line--added { color: var(--diff-add-ink); }
+.onboarding__diff-head { display: flex; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--line); font-family: var(--font-ui); font-size: 13px; }
+
+.onboarding__readers { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; padding-top: 6px; }
+.onboarding__reader { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.onboarding__tip { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; border-radius: var(--radius-card); background: var(--accent-soft); color: var(--ink); font-size: 15px; line-height: 1.55; }
+.onboarding__tip svg { flex: none; color: var(--accent); margin-top: 2px; }

@@ -2,6 +2,7 @@ import type {
   AgentEvent,
   Commit,
   Decision,
+  DetectedCli,
   FileDiff,
   MemoryView,
   Note,
@@ -49,6 +50,10 @@ export interface HedyApi {
 
   setSetting(key: SettingKey, value: string | null): Promise<void>;
   openInEditor(path: string): Promise<void>;
+  /** Opens an https page in the browser. */
+  openLink(url: string): Promise<void>;
+  /** The official CLIs installed here and their default logins. */
+  detectClis(): Promise<DetectedCli[]>;
   pickFolder(): Promise<string | null>;
 
   terminalOpen(

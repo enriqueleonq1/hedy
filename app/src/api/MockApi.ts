@@ -4,6 +4,7 @@ import type {
   AgentEvent,
   Commit,
   Decision,
+  DetectedCli,
   FileDiff,
   MemoryView,
   NewAccountInput,
@@ -49,6 +50,8 @@ export class MockApi implements HedyApi {
     this.state = {
       userName: "Enrique",
       theme: "system",
+      language: "es",
+      onboarded: true,
       dataDir: "/home/demo/.local/share/hedy",
       defaultAccount: null,
       binaries: { claude: null, codex: null, gemini: null, kimi: null, antigravity: null },
@@ -400,6 +403,8 @@ export class MockApi implements HedyApi {
   async setSetting(key: string, value: string | null): Promise<void> {
     if (key === "ui.theme") this.state.theme = (value ?? "system") as Overview["theme"];
     if (key === "ui.name") this.state.userName = value ?? "Enrique";
+    if (key === "ui.language") this.state.language = (value ?? "system") as Overview["language"];
+    if (key === "ui.onboarded") this.state.onboarded = value === "true";
     if (key.startsWith("api_price.")) {
       this.state.apiPrices[key.slice(10) as keyof Overview["apiPrices"]] = value;
     }
@@ -412,6 +417,25 @@ export class MockApi implements HedyApi {
   }
 
   async openInEditor(): Promise<void> {}
+
+  async openLink(): Promise<void> {}
+
+  /** Claude logged in, Codex and Kimi Code installed, Antigravity missing. */
+  detected: DetectedCli[] = [
+    { provider: "claude", installed: true, login: { state: "loggedIn", plan: "max" }, account: null },
+    { provider: "codex", installed: true, login: { state: "loggedOut", plan: null }, account: null },
+    { provider: "gemini", installed: false, login: { state: "unknown", plan: null }, account: null },
+    { provider: "kimi", installed: true, login: { state: "unknown", plan: null }, account: null },
+    { provider: "antigravity", installed: false, login: { state: "unknown", plan: null }, account: null },
+  ];
+
+  async detectClis(): Promise<DetectedCli[]> {
+    return this.detected.map((d) => ({
+      ...d,
+      account:
+        this.state.accounts.find((a) => a.provider === d.provider && a.defaultFolder)?.id ?? d.account,
+    }));
+  }
 
   async pickFolder(): Promise<string | null> {
     return "/code/nuevo-proyecto";

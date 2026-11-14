@@ -1,3 +1,5 @@
+import type { LanguageSetting } from "../i18n";
+
 // Mirrors the DTOs in `src-tauri/src/dto.rs`.
 
 export type ProviderId = "claude" | "codex" | "gemini" | "kimi" | "antigravity";
@@ -79,6 +81,9 @@ export type ThemeSetting = "system" | "light" | "dark";
 export interface Overview {
   userName: string;
   theme: ThemeSetting;
+  language: LanguageSetting;
+  /** The first-run guide was finished or skipped. */
+  onboarded: boolean;
   dataDir: string;
   defaultAccount: string | null;
   binaries: Record<CliProviderId, string | null>;
@@ -136,6 +141,8 @@ export interface NewAccountInput {
 export type SettingKey =
   | "ui.theme"
   | "ui.name"
+  | "ui.language"
+  | "ui.onboarded"
   | "binary.claude"
   | "binary.codex"
   | "binary.gemini"
@@ -261,4 +268,14 @@ export interface FileDiff {
 export interface Commit {
   hash: string;
   subject: string;
+}
+
+/** An official CLI on this computer, for the onboarding. */
+export interface DetectedCli {
+  provider: ProviderId;
+  installed: boolean;
+  /** The login of its default folder (`unknown` when the CLI cannot tell). */
+  login: Login;
+  /** The Hedy account already using its default folder. */
+  account: string | null;
 }

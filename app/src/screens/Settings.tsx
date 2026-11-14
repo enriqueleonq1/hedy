@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { useT, type LanguageSetting } from "../i18n";
+
 import { OVERVIEW_KEY, useAction } from "../api/context";
 import { useTerminals } from "../components/Terminal/TerminalProvider";
 import { Button } from "../components/ui/Button";
@@ -20,6 +22,7 @@ export function Settings({ overview }: { overview: Overview }) {
   const setSetting = useAction((api, vars: { key: SettingKey; value: string | null }) =>
     api.setSetting(vars.key, vars.value),
   );
+  const t = useT();
   const setColor = useAction((api, vars: { id: string; color: string }) => api.setAccountColor(vars.id, vars.color));
   const [preview, setPreview] = useState(overview.accounts[0]?.color ?? DEFAULT_ACCOUNT_COLOR);
 
@@ -39,6 +42,19 @@ export function Settings({ overview }: { overview: Overview }) {
               { value: "system", label: "Según el sistema" },
               { value: "light", label: "Claro" },
               { value: "dark", label: "Oscuro" },
+            ]}
+          />
+        </div>
+        <div className="field">
+          <span className="field__label">{t("common.language")}</span>
+          <Segmented<LanguageSetting>
+            label={t("common.language")}
+            value={overview.language}
+            onChange={(value) => setSetting.mutate({ key: "ui.language", value })}
+            options={[
+              { value: "system", label: t("common.languageSystem") },
+              { value: "es", label: t("language.es") },
+              { value: "en", label: t("language.en") },
             ]}
           />
         </div>
@@ -168,6 +184,11 @@ export function Settings({ overview }: { overview: Overview }) {
           Para usar otra carpeta, abre Hedy con la variable <span className="mono">HEDY_DATA_DIR</span>. Los logins de
           suscripción viven en la carpeta oficial de cada cuenta; las API keys, en el llavero del sistema.
         </p>
+        <div>
+          <Button onClick={() => setSetting.mutate({ key: "ui.onboarded", value: null })}>
+            {t("onboarding.showAgain")}
+          </Button>
+        </div>
       </section>
     </div>
   );

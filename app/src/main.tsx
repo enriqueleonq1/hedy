@@ -19,6 +19,10 @@ function browserApi(): MockApi {
   const api = MockApi.withSampleData();
   const theme = new URLSearchParams(window.location.search).get("theme");
   if (theme === "light" || theme === "dark") void api.setSetting("ui.theme", theme);
+  // `?onboarding=1` shows the first-run guide; `?lang=es|en` picks the language.
+  if (new URLSearchParams(window.location.search).has("onboarding")) void api.setSetting("ui.onboarded", null);
+  const lang = new URLSearchParams(window.location.search).get("lang");
+  if (lang === "es" || lang === "en") void api.setSetting("ui.language", lang);
   // `?demo=1`: a task halfway through, waiting on a permission card.
   if (new URLSearchParams(window.location.search).has("demo")) {
     void api.startTask({

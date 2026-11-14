@@ -31,10 +31,13 @@ export function AddProjectDialog({
   overview,
   path,
   onClose,
+  onAdded,
 }: {
   overview: Overview;
   path: string;
   onClose: () => void;
+  /** After the project was registered (not on cancel). */
+  onAdded?: (path: string) => void;
 }) {
   const api = useApi();
   const [chosen, setChosen] = useState("");
@@ -45,7 +48,12 @@ export function AddProjectDialog({
   });
   const save = useAction(
     (a, vars: { account: string; protect: boolean }) => a.useAccount(path, vars.account, vars.protect),
-    { onSuccess: onClose },
+    {
+      onSuccess: () => {
+        onAdded?.(path);
+        onClose();
+      },
+    },
   );
 
   const accounts = overview.accounts.filter((a) => offered.data?.includes(a.id));
