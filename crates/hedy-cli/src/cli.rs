@@ -14,7 +14,7 @@ use hedy_core::i18n::{self, Language};
 use hedy_core::tr;
 
 #[derive(Debug, Parser)]
-#[command(name = "hedy", version)]
+#[command(name = "hedy", version, styles = crate::style::help_styles())]
 pub struct Cli {
     #[arg(long, short = 'C', global = true)]
     pub dir: Option<PathBuf>,
@@ -50,6 +50,25 @@ impl Cli {
                         config.mut_subcommand(name, |sub| sub.after_help(&keys))
                     })
             });
+        // The blob greets on top of `hedy --help`, only in a terminal.
+        let style = crate::style::Style::for_stdout();
+        let command = if style.enabled() {
+            let text = [
+                format!(
+                    "{} {}",
+                    style.bold("Hedy"),
+                    style.muted(env!("CARGO_PKG_VERSION"))
+                ),
+                style.muted(tr!(
+                    "Tus IAs y tus cuentas, en un solo lugar.",
+                    "Your AIs and your accounts, in one place."
+                )),
+            ];
+            let banner = crate::mascot::beside(&style, crate::mascot::Mood::Hi, &text);
+            command.before_help(banner.join("\n"))
+        } else {
+            command
+        };
         match i18n::language() {
             Language::Spanish => spanish_builtins(command),
             Language::English => command,

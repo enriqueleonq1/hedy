@@ -2,6 +2,8 @@
 
 mod cli;
 mod commands;
+mod mascot;
+mod spinner;
 mod style;
 
 use std::process::ExitCode;
@@ -20,7 +22,7 @@ fn main() -> ExitCode {
     match run(Cli::parse_args()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("{} {err}", Style::for_stderr().error("error:"));
+            eprintln!("{} {err}", Style::for_stderr().error("✗ error:"));
             ExitCode::FAILURE
         }
     }
