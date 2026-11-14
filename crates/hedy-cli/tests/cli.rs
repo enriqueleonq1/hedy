@@ -633,6 +633,104 @@ fn skills_speak_english() {
 }
 
 #[test]
+fn templates_are_added_listed_and_removed_per_scope() {
+    let env = Env::new();
+    let repo = env.repo("code/moira");
+    env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy_in(&repo, &["use", "claude"]).assert().success();
+
+    env.hedy(&["plantilla"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Para todos los proyectos"))
+        .stdout(predicate::str::contains(
+            "Escribir pruebas  ejemplo · {archivo}",
+        ))
+        .stdout(predicate::str::contains("escribe / al empezar"));
+    env.hedy_in(
+        &repo,
+        &[
+            "plantilla",
+            "agregar",
+            "Migración",
+            "--proyecto",
+            "--texto",
+            "Escribe la migración de {tabla}",
+        ],
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("guardada para moira"))
+    .stdout(predicate::str::contains("te pedirá: {tabla}"));
+    env.hedy(&[
+        "template",
+        "add",
+        "Desplegar",
+        "--text",
+        "Despliega a {entorno}",
+    ])
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("para todos los proyectos"));
+    env.hedy(&["template", "add", "desplegar", "--text", "otra"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("ya hay una plantilla"));
+
+    env.hedy_in(&repo, &["template", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Del proyecto moira"))
+        .stdout(predicate::str::contains("Migración  {tabla}"))
+        .stdout(predicate::str::contains("Desplegar"));
+    // Outside the project only the global ones show.
+    env.hedy(&["template", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Migración").not());
+
+    // Without --project, remove looks for a global template.
+    env.hedy_in(&repo, &["template", "remove", "Migración"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no existe la plantilla"));
+    env.hedy_in(&repo, &["plantilla", "quitar", "migración", "--project"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("borrada"));
+}
+
+#[test]
+fn templates_speak_english() {
+    let env = Env::new();
+    env.hedy_lang(
+        "en",
+        &["template", "add", "Deploy", "--text", "Deploy to {target}"],
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("saved for every project"))
+    .stdout(predicate::str::contains("ask you for: {target}"));
+    env.hedy_lang("en", &["template", "remove", "Write tests"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Template Write tests deleted."));
+    env.hedy_lang("en", &["template"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("For every project"))
+        .stdout(predicate::str::contains("Explain code  example · {file}"))
+        .stdout(predicate::str::contains("Write tests").not())
+        .stdout(predicate::str::contains("Para todos").not());
+    env.hedy_lang("en", &["template", "add", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Only for the current project"));
+}
+
+#[test]
 fn doctor_checks_clis_accounts_and_the_environment() {
     let env = Env::new();
     env.hedy(&[

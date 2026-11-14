@@ -1,4 +1,6 @@
 import type { HedyApi, Unsubscribe } from "./HedyApi";
+import { resolveLanguage } from "../i18n";
+import { placeholders } from "../templates/placeholders";
 import type {
   Account,
   ActivityItem,
@@ -15,6 +17,7 @@ import type {
   Note,
   NoteCategory,
   NewTaskInput,
+  NewTemplateInput,
   OpenTaskRequest,
   Overview,
   PhasePlan,
@@ -25,6 +28,9 @@ import type {
   SkillDraft,
   SkillFiles,
   SkillsView,
+  PromptTemplate,
+  QueuedMessage,
+  HoldReason,
   UsagePoint,
   UsageSummary,
   Task,
@@ -33,6 +39,35 @@ import type {
 } from "./types";
 
 const NO_USAGE: Usage = { weekTokens: 0, weekCostUsd: null, limit: null };
+
+/** The built-in examples, as the backend has them (`domain/template.rs`). */
+const BUILTIN_TEMPLATES: Record<"es" | "en", [string, string, string][]> = {
+  es: [
+    ["explain", "Explicar código", "Explica qué hace {archivo}, cómo encaja en el resto del proyecto y qué partes conviene tocar con cuidado."],
+    ["tests", "Escribir pruebas", "Escribe pruebas para {archivo}. Cubre los casos normales y los bordes, y ejecútalas al terminar."],
+    ["review", "Revisar el cambio", "Revisa los cambios de esta tarea como lo haría un compañero: errores, casos sin cubrir y nombres poco claros. Propón arreglos concretos."],
+    ["fix", "Corregir un error", "Aparece este error: {error}. Encuentra la causa, corrígela y explica qué pasaba."],
+    ["summary", "Resumir lo hecho", "Resume lo que hiciste: qué cambiaste, por qué y qué queda pendiente."],
+  ],
+  en: [
+    ["explain", "Explain code", "Explain what {file} does, how it fits in the rest of the project and which parts need care."],
+    ["tests", "Write tests", "Write tests for {file}. Cover the usual cases and the edge cases, and run them when you finish."],
+    ["review", "Review the change", "Review the changes in this task as a teammate would: bugs, uncovered cases and unclear names. Suggest concrete fixes."],
+    ["fix", "Fix an error", "This error shows up: {error}. Find the cause, fix it and explain what was going on."],
+    ["summary", "Summarize the work", "Summarize what you did: what you changed, why, and what is left to do."],
+  ],
+};
+
+/** A stored template row, like the backend's: the user's, or an edited/deleted built-in. */
+interface TemplateRow {
+  id: number;
+  project: string | null;
+  name: string;
+  text: string;
+  builtin: string | null;
+  deleted: boolean;
+}
+
 
 const PALETTE: [string, ...string[]] = ["#7AA2F7", "#BB9AF7", "#9ECE6A", "#FF9E64", "#7DCFFF", "#FF7AB6", "#E0AF68", "#73DACA"];
 
@@ -791,6 +826,219 @@ export class MockApi implements HedyApi {
   async terminalResize(): Promise<void> {}
   async terminalClose(): Promise<void> {}
 
+  // ---------------------------------------------------------------- templates
+
+  private templateRows: TemplateRow[] = [];
+  private nextTemplate = 0;
+
+  private toTemplate(row: TemplateRow): PromptTemplate {
+    return {
+      id: String(row.id),
+      project: row.project,
+      name: row.name,
+      text: row.text,
+      builtin: row.builtin,
+      placeholders: placeholders(row.text),
+    };
+  }
+
+  private visibleTemplates(project: string | null | "all"): PromptTemplate[] {
+    const wanted = (p: string | null) => project === "all" || p === null || p === project;
+    const own = this.templateRows
+      .filter((r) => r.builtin === null && !r.deleted && wanted(r.project))
+      .sort((a, b) => Number(a.project === null) - Number(b.project === null))
+      .map((r) => this.toTemplate(r));
+    const language = resolveLanguage(this.state.language);
+    for (const [key, name, text] of BUILTIN_TEMPLATES[language]) {
+      const row = this.templateRows.find((r) => r.builtin === key);
+      if (row?.deleted) continue;
+      own.push(
+        row
+          ? this.toTemplate(row)
+          : { id: `builtin:${key}`, project: null, name, text, builtin: key, placeholders: placeholders(text) },
+      );
+    }
+    return own;
+  }
+
+  private checkTemplate(project: string | null, name: string, text: string, except?: string): void {
+    if (!name.trim() || name.length > 60 || name.includes("\n")) throw `nombre de plantilla no válido: «${name}»`;
+    if (!text.trim()) throw "la plantilla está vacía";
+    const taken = this.visibleTemplates("all").some(
+      (t) => t.project === project && t.name.toLowerCase() === name.trim().toLowerCase() && t.id !== except,
+    );
+    if (taken) throw `ya hay una plantilla llamada «${name.trim()}» en ese alcance`;
+  }
+
+  async templates(project: string | null): Promise<PromptTemplate[]> {
+    return this.visibleTemplates(project);
+  }
+
+  async allTemplates(): Promise<PromptTemplate[]> {
+    return this.visibleTemplates("all");
+  }
+
+  async addTemplate(input: NewTemplateInput): Promise<PromptTemplate> {
+    this.checkTemplate(input.project, input.name, input.text);
+    const row: TemplateRow = {
+      id: ++this.nextTemplate,
+      project: input.project,
+      name: input.name.trim(),
+      text: input.text.trim(),
+      builtin: null,
+      deleted: false,
+    };
+    this.templateRows.push(row);
+    return this.toTemplate(row);
+  }
+
+  async updateTemplate(id: string, name: string, text: string): Promise<PromptTemplate> {
+    const current = this.visibleTemplates("all").find((t) => t.id === id);
+    if (!current) throw `no existe la plantilla «${id}»`;
+    this.checkTemplate(current.project, name, text, id);
+    let row = this.templateRows.find((r) => String(r.id) === id);
+    if (!row) {
+      row = { id: ++this.nextTemplate, project: null, name, text, builtin: current.builtin, deleted: false };
+      this.templateRows.push(row);
+    }
+    row.name = name.trim();
+    row.text = text.trim();
+    return this.toTemplate(row);
+  }
+
+  async removeTemplate(id: string): Promise<void> {
+    const current = this.visibleTemplates("all").find((t) => t.id === id);
+    if (!current) throw `no existe la plantilla «${id}»`;
+    const row = this.templateRows.find((r) => String(r.id) === id);
+    if (current.builtin === null) {
+      this.templateRows = this.templateRows.filter((r) => r !== row);
+    } else if (row) {
+      row.deleted = true;
+    } else {
+      this.templateRows.push({
+        id: ++this.nextTemplate,
+        project: null,
+        name: current.name,
+        text: current.text,
+        builtin: current.builtin,
+        deleted: true,
+      });
+    }
+  }
+
+  async restoreBuiltinTemplates(): Promise<void> {
+    this.templateRows = this.templateRows.filter((r) => r.builtin === null);
+  }
+
+  /** A couple of the user's own templates, besides the built-in examples. */
+  withSampleTemplates(): this {
+    void this.addTemplate({
+      project: "/code/hedy",
+      name: "Revisar accesibilidad",
+      text: "Revisa la accesibilidad de {pantalla}: contraste, foco con teclado y lectores de pantalla.",
+    });
+    void this.addTemplate({
+      project: null,
+      name: "Preparar entrega",
+      text: "Prepara la entrega: actualiza el changelog, revisa que los tests pasen y resume los cambios para {cliente}.",
+    });
+    return this;
+  }
+
+  // ---------------------------------------------------------------- queue
+  // Like the backend: messages written during a turn wait and go together
+  // when it ends; after a failure, a stop or a limit they wait on hold.
+
+  private queues = new Map<string, QueuedMessage[]>();
+  private nextQueued = 0;
+  private queueListeners = new Set<(taskId: string, queue: QueuedMessage[]) => void>();
+
+  private emitQueue(id: string): QueuedMessage[] {
+    const queue = (this.queues.get(id) ?? []).map((m) => ({ ...m }));
+    for (const listener of this.queueListeners) listener(id, queue);
+    return queue;
+  }
+
+  private busy(task: Task): boolean {
+    return task.live && (task.status === "running" || task.status === "waitingApproval");
+  }
+
+  private holdQueue(id: string, reason: HoldReason): void {
+    const queue = this.queues.get(id) ?? [];
+    if (!queue.some((m) => m.held === null)) return;
+    for (const m of queue) m.held ??= reason;
+    this.emitQueue(id);
+  }
+
+  /** At the end of a turn: what was written meanwhile goes as the next turn. */
+  private deliverQueue(id: string): void {
+    const queue = this.queues.get(id) ?? [];
+    const ready = queue.filter((m) => m.held === null);
+    if (ready.length === 0) return;
+    this.queues.set(
+      id,
+      queue.filter((m) => m.held !== null),
+    );
+    this.emitQueue(id);
+    void this.sendMessage(id, ready.map((m) => m.text.trim()).join("\n\n"));
+  }
+
+  private queuedMessage(message: number): QueuedMessage {
+    for (const queue of this.queues.values()) {
+      const found = queue.find((m) => m.id === message);
+      if (found) return found;
+    }
+    throw "ese mensaje ya no está en cola: puede que ya se haya enviado";
+  }
+
+  async queued(id: string): Promise<QueuedMessage[]> {
+    return (this.queues.get(id) ?? []).map((m) => ({ ...m }));
+  }
+
+  async queueMessage(id: string, text: string): Promise<QueuedMessage[]> {
+    const task = this.tasksById.get(id);
+    if (!task || task.status === "accepted" || task.status === "discarded") throw "la tarea ya está cerrada";
+    if (!text.trim()) throw "escribe qué quieres que haga";
+    if (!this.busy(task)) {
+      await this.sendMessage(id, text.trim());
+      return this.queued(id);
+    }
+    const queue = this.queues.get(id) ?? [];
+    queue.push({ id: ++this.nextQueued, task: id, text: text.trim(), createdAt: Math.floor(Date.now() / 1000), held: null });
+    this.queues.set(id, queue);
+    return this.emitQueue(id);
+  }
+
+  async editQueued(message: number, text: string): Promise<QueuedMessage[]> {
+    if (!text.trim()) throw "escribe qué quieres que haga";
+    const found = this.queuedMessage(message);
+    found.text = text.trim();
+    return this.emitQueue(found.task);
+  }
+
+  async removeQueued(message: number): Promise<QueuedMessage[]> {
+    const found = this.queuedMessage(message);
+    this.queues.set(
+      found.task,
+      (this.queues.get(found.task) ?? []).filter((m) => m.id !== message),
+    );
+    return this.emitQueue(found.task);
+  }
+
+  async sendQueuedNow(id: string): Promise<QueuedMessage[]> {
+    const task = this.tasksById.get(id);
+    if (!task) throw `no existe la tarea ${id}`;
+    for (const m of this.queues.get(id) ?? []) m.held = null;
+    if (this.busy(task)) return this.emitQueue(id);
+    this.deliverQueue(id);
+    return this.queued(id);
+  }
+
+  onTaskQueue(listener: (taskId: string, queue: QueuedMessage[]) => void): Unsubscribe {
+    this.queueListeners.add(listener);
+    return () => this.queueListeners.delete(listener);
+  }
+
   // ---------------------------------------------------------------- tasks
   // A scripted Claude: plan → approval → edits → a test command → done.
 
@@ -920,6 +1168,11 @@ export class MockApi implements HedyApi {
       }
     }
     for (const listener of this.eventListeners) listener(id, event);
+    if (event.kind === "finished") {
+      if (event.ok) this.deliverQueue(id);
+      else this.holdQueue(id, "failed");
+    }
+    if (event.kind === "limitWarning" && event.level === "reached") this.holdQueue(id, "limit");
   }
 
   private notifyTask(task: Task): void {
@@ -952,6 +1205,7 @@ export class MockApi implements HedyApi {
           started?.kind === "phaseStarted" ? started.agent : (account?.providerName.split(" ")[0] ?? task.account),
         projectName: project?.name ?? task.project.split("/").pop() ?? task.project,
         updatedAt: this.updatedAt.get(task.id) ?? task.createdAt,
+        queued: this.queues.get(task.id)?.length ?? 0,
       };
     });
     let finished = 0;
@@ -1047,6 +1301,16 @@ export class MockApi implements HedyApi {
       { created: 3 * min, updated: 0 },
       [opus("Claude trabajo"), { kind: "toolUsed", tool: "Grep", summary: "carrito" }],
     );
+    // Written while the agents work: two wait for the end of the turn, one
+    // is on hold because the account reached its limit.
+    const queued = (task: string, text: string, held: HoldReason | null, ago: number) =>
+      this.queues.set(task, [
+        ...(this.queues.get(task) ?? []),
+        { id: ++this.nextQueued, task, text, createdAt: now - ago, held },
+      ]);
+    queued("s4", "Cuando termines, corre también los tests del checkout.", null, 60);
+    queued("s4", "Y deja un resumen corto de lo que cambiaste.", null, 30);
+    queued("s3", "Revisa también el asunto del correo.", "limit", 4 * min);
     add(
       "s5",
       "/code/hedy",
@@ -1120,6 +1384,7 @@ export class MockApi implements HedyApi {
     const task = this.tasksById.get(id);
     if (!task) return;
     task.live = false;
+    this.holdQueue(id, "stopped");
     // Like the backend: `task-updated` only when the status changes.
     if (task.status === "running" || task.status === "waitingApproval") {
       task.status = "review";
@@ -1145,6 +1410,10 @@ export class MockApi implements HedyApi {
     task.live = false;
     task.status = status;
     this.diffs.set(id, []);
+    if (this.queues.get(id)?.length) {
+      this.queues.delete(id);
+      this.emitQueue(id);
+    }
     this.notifyTask(task);
   }
 
@@ -1174,7 +1443,7 @@ export class MockApi implements HedyApi {
   async recentCommits(): Promise<Commit[]> {
     return [
       { hash: "a3f9c1e", subject: "Arreglo del envío" },
-      { hash: "7bd20aa", subject: "Plantillas" },
+      { hash: "7bd20aa", subject: "Plantillas de correo" },
     ];
   }
 

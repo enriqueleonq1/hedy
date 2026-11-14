@@ -176,7 +176,36 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX skills_by_project ON skills (project, name);
 "#,
+    r#"
+    -- Messages written while an agent works, sent when its turn ends.
+    CREATE TABLE queued_messages (
+        id          INTEGER PRIMARY KEY,
+        task_id     TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        text        TEXT NOT NULL,
+        created_at  INTEGER NOT NULL,
+        -- NULL, or why it waits for the user.
+        held        TEXT CHECK (held IN ('failed', 'stopped', 'limit'))
+    );
+    CREATE INDEX queued_by_task ON queued_messages (task_id, id);
+"#,
+    r#"
+    -- Prompt templates of the user, and changes to the built-in examples
+    -- (untouched built-ins have no row).
+    CREATE TABLE prompt_templates (
+        id       INTEGER PRIMARY KEY,
+        -- NULL: every project.
+        project  TEXT,
+        name     TEXT NOT NULL,
+        text     TEXT NOT NULL,
+        -- The built-in example this row edits (or deletes).
+        builtin  TEXT,
+        deleted  INTEGER NOT NULL DEFAULT 0
+    );
+"#,
 ];
+
+mod queue;
+mod templates;
 
 pub struct SqliteStore {
     conn: Mutex<Connection>,

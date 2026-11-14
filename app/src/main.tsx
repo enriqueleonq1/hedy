@@ -17,7 +17,7 @@ applyTheme("dark");
 // few running and recent tasks on the board (`#activity`; `?activity=none`
 // leaves it empty); `?theme=light|dark` forces a theme there.
 function browserApi(): MockApi {
-  const api = MockApi.withSampleData();
+  const api = MockApi.withSampleData().withSampleTemplates();
   if (new URLSearchParams(window.location.search).get("activity") !== "none") api.withSampleActivity();
   const theme = new URLSearchParams(window.location.search).get("theme");
   if (theme === "light" || theme === "dark") void api.setSetting("ui.theme", theme);

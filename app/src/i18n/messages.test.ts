@@ -3,16 +3,32 @@ import activity from "./messages/activity";
 import common from "./messages/common";
 import memory from "./messages/memory";
 import onboarding from "./messages/onboarding";
+import queue from "./messages/queue";
 import settings from "./messages/settings";
 import shell from "./messages/shell";
 import skills from "./messages/skills";
 import status from "./messages/status";
+import templates from "./messages/templates";
 import welcome from "./messages/welcome";
 import workspace from "./messages/workspace";
 import { messages } from "./messages";
 import { translator } from ".";
 
-const AREAS = { accounts, activity, common, memory, onboarding, settings, shell, skills, status, welcome, workspace };
+const AREAS = {
+  accounts,
+  activity,
+  common,
+  memory,
+  onboarding,
+  queue,
+  settings,
+  shell,
+  skills,
+  status,
+  templates,
+  welcome,
+  workspace,
+};
 
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
 

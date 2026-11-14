@@ -4,18 +4,21 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use hedy_core::application::{AppResult, Hedy, NewAccount, NewTask, Setting};
+use hedy_core::application::{
+    AppResult, Hedy, NewAccount, NewTask, NewTemplate, Setting, TemplateScope,
+};
 use hedy_core::domain::{
-    AgentEvent, Category, Color, Commit, Decision, FileDiff, Note, PhasePlan, TaskId,
+    AgentEvent, Category, Color, Commit, Decision, FileDiff, Note, PhasePlan, QueuedMessage,
+    TaskId, TemplateId,
 };
 use tauri::State;
 use tauri::ipc::Channel;
 
 use crate::AppState;
 use crate::dto::{
-    self, ActivityDto, MemoryDto, NewAccountInput, NewTaskInput, OverviewDto, ProjectStatusDto,
-    SkillChangeDto, SkillDraftInput, SkillFilesDto, SkillsDto, TaskDto, UsagePointDto,
-    UsageSummaryDto,
+    self, ActivityDto, MemoryDto, NewAccountInput, NewTaskInput, NewTemplateInput, OverviewDto,
+    ProjectStatusDto, SkillChangeDto, SkillDraftInput, SkillFilesDto, SkillsDto, TaskDto,
+    TemplateDto, UsagePointDto, UsageSummaryDto,
 };
 use crate::terminal::{TerminalEvent, TerminalRequest, Terminals};
 
@@ -307,6 +310,48 @@ pub async fn send_message(
     blocking(&state, move |h| h.send_message(&task_id(id), &text)).await
 }
 
+/// The messages waiting for the end of the agent's turn, oldest first.
+#[tauri::command]
+pub async fn queued(state: State<'_, AppState>, id: String) -> CommandResult<Vec<QueuedMessage>> {
+    blocking(&state, move |h| h.queued(&task_id(id))).await
+}
+
+/// Queues a message while the agent works, or sends it now when it is idle.
+#[tauri::command]
+pub async fn queue_message(
+    state: State<'_, AppState>,
+    id: String,
+    text: String,
+) -> CommandResult<Vec<QueuedMessage>> {
+    blocking(&state, move |h| h.queue_message(&task_id(id), &text)).await
+}
+
+#[tauri::command]
+pub async fn edit_queued(
+    state: State<'_, AppState>,
+    message: i64,
+    text: String,
+) -> CommandResult<Vec<QueuedMessage>> {
+    blocking(&state, move |h| h.edit_queued(message, &text)).await
+}
+
+#[tauri::command]
+pub async fn remove_queued(
+    state: State<'_, AppState>,
+    message: i64,
+) -> CommandResult<Vec<QueuedMessage>> {
+    blocking(&state, move |h| h.remove_queued(message)).await
+}
+
+/// Releases a queue on hold and sends it unless the agent is mid-turn.
+#[tauri::command]
+pub async fn send_queued_now(
+    state: State<'_, AppState>,
+    id: String,
+) -> CommandResult<Vec<QueuedMessage>> {
+    blocking(&state, move |h| h.send_queued_now(&task_id(id))).await
+}
+
 #[tauri::command]
 pub async fn stop_task(state: State<'_, AppState>, id: String) -> CommandResult<()> {
     blocking(&state, move |h| h.stop_task(&task_id(id))).await
@@ -573,4 +618,75 @@ pub async fn doctor(state: State<'_, AppState>) -> CommandResult<dto::DoctorRepo
 #[tauri::command]
 pub async fn open_link(state: State<'_, AppState>, url: String) -> CommandResult<()> {
     blocking(&state, move |h| h.open_link(&url)).await
+}
+
+// ---------------------------------------------------------------- templates
+
+fn template_id(id: &str) -> CommandResult<TemplateId> {
+    id.parse()
+        .map_err(|e: hedy_core::domain::DomainError| e.to_string())
+}
+
+/// What the composer of `project` offers: its templates and the global ones.
+#[tauri::command]
+pub async fn templates(
+    state: State<'_, AppState>,
+    project: Option<PathBuf>,
+) -> CommandResult<Vec<TemplateDto>> {
+    blocking(&state, move |h| {
+        let list = h.templates(TemplateScope::For(project.as_deref()))?;
+        Ok(list.into_iter().map(TemplateDto::from).collect())
+    })
+    .await
+}
+
+/// Every template, of every project (the management screen).
+#[tauri::command]
+pub async fn all_templates(state: State<'_, AppState>) -> CommandResult<Vec<TemplateDto>> {
+    blocking(&state, |h| {
+        let list = h.templates(TemplateScope::All)?;
+        Ok(list.into_iter().map(TemplateDto::from).collect())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn add_template(
+    state: State<'_, AppState>,
+    input: NewTemplateInput,
+) -> CommandResult<TemplateDto> {
+    blocking(&state, move |h| {
+        h.add_template(NewTemplate {
+            project: input.project,
+            name: input.name,
+            text: input.text,
+        })
+        .map(TemplateDto::from)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn update_template(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+    text: String,
+) -> CommandResult<TemplateDto> {
+    let id = template_id(&id)?;
+    blocking(&state, move |h| {
+        h.update_template(&id, &name, &text).map(TemplateDto::from)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn remove_template(state: State<'_, AppState>, id: String) -> CommandResult<()> {
+    let id = template_id(&id)?;
+    blocking(&state, move |h| h.remove_template(&id)).await
+}
+
+#[tauri::command]
+pub async fn restore_builtin_templates(state: State<'_, AppState>) -> CommandResult<()> {
+    blocking(&state, |h| h.restore_builtin_templates()).await
 }

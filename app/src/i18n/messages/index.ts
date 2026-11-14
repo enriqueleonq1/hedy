@@ -7,10 +7,12 @@ import activity from "./activity";
 import common from "./common";
 import memory from "./memory";
 import onboarding from "./onboarding";
+import queue from "./queue";
 import settings from "./settings";
 import shell from "./shell";
 import skills from "./skills";
 import status from "./status";
+import templates from "./templates";
 import welcome from "./welcome";
 import workspace from "./workspace";
 
@@ -28,6 +30,8 @@ const es = {
   ...status.es,
   ...workspace.es,
   ...activity.es,
+  ...queue.es,
+  ...templates.es,
 };
 const en: Record<keyof typeof es, string> = {
   ...common.en,
@@ -41,6 +45,8 @@ const en: Record<keyof typeof es, string> = {
   ...status.en,
   ...workspace.en,
   ...activity.en,
+  ...queue.en,
+  ...templates.en,
 };
 
 export type MessageKey = keyof typeof es;

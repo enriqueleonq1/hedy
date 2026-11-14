@@ -15,6 +15,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Isolated manual testing: `HEDY_DATA_DIR=/tmp/hedy-test hedy status`
 - Learned skills from the terminal: `hedy skills` (`list`, `show <name>`, `approve <id>`,
   `reject <id>`, `remove <name>`); in the UI, `#k=<path>` opens a project's skills tab
+- Prompt templates from the CLI: `hedy template list|add <name> [--project] --text …|remove <name>`
+  (alias `plantilla`)
 - Health check (CLIs and their versions, accounts, Hedy, environment): `hedy doctor`
 - Running and recent tasks across projects: `hedy tasks` (alias `tareas`)
 - App (from `app/`): `npm install`, then `npm run tauri dev`; UI only with sample data:

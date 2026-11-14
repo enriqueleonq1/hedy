@@ -22,6 +22,8 @@ pub struct TaskActivity {
     pub project_name: String,
     /// When the task last did something (seconds).
     pub updated_at: i64,
+    /// Messages waiting for the end of the agent's turn.
+    pub queued: usize,
 }
 
 impl Hedy {
@@ -40,6 +42,7 @@ impl Hedy {
                 agent: self.agent_of(&task, &events),
                 project_name: self.project_name(&task.project),
                 updated_at,
+                queued: self.store.queued(&task.id)?.len(),
                 task,
             });
         }

@@ -8,14 +8,15 @@ use std::sync::{Arc, Mutex};
 use super::ports::{
     AccountRepository, AgentLauncher, AgentRequest, AgentSession, CapturedOutput, Clock, EventSink,
     FileSystem, Git, MemoryRepository, MergeOutcome, NewNote, NewSkill, NoteRevision, PortError,
-    PortResult, ProcessRunner, ProjectRepository, RateLimit, SecretStore, SettingsRepository,
-    SkillRepository, SkillRevision, StoreHealth, TaskEvents, TaskRepository, UsageRecord,
-    UsageRepository,
+    PortResult, ProcessRunner, ProjectRepository, QueueRepository, RateLimit, SecretStore,
+    SettingsRepository, SkillRepository, SkillRevision, StoreHealth, TaskEvents, TaskRepository,
+    TemplateRecord, TemplateRepository, UsageRecord, UsageRepository,
 };
 use super::{Hedy, NewAccount, Ports};
 use crate::domain::{
-    Account, AccountId, AgentEvent, Category, Commit, FileDiff, LaunchSpec, Note, NoteStatus,
-    Notice, Project, Provider, Skill, SkillStatus, Task, TaskId, TaskStatus, UsageSample,
+    Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, LaunchSpec, Note,
+    NoteStatus, Notice, Project, Provider, QueuedMessage, Skill, SkillStatus, Task, TaskId,
+    TaskStatus, UsageSample,
 };
 
 #[derive(Default)]
@@ -32,6 +33,8 @@ pub struct MemoryStore {
     dismissed: Mutex<Vec<(i64, i64)>>,
     skills: Mutex<Vec<Skill>>,
     integrity: Mutex<Vec<String>>,
+    queue: Mutex<Vec<QueuedMessage>>,
+    templates: Mutex<Vec<TemplateRecord>>,
 }
 
 impl MemoryStore {
@@ -844,9 +847,14 @@ impl FileSystem for FakeFs {
 
 /// Records the notices the use cases send to the driving adapter.
 #[derive(Default)]
-pub struct RecordedNotices(Mutex<Vec<(TaskId, Notice)>>);
+pub struct RecordedNotices(Mutex<Vec<(TaskId, Notice)>>, Mutex<Vec<usize>>);
 
 impl RecordedNotices {
+    /// The length of the queue after each change the UI heard about.
+    pub fn queue_lengths(&self) -> Vec<usize> {
+        self.1.lock().unwrap().clone()
+    }
+
     pub fn titles(&self) -> Vec<String> {
         self.0
             .lock()
@@ -865,6 +873,9 @@ impl TaskEvents for RecordedNotices {
             .lock()
             .unwrap()
             .push((task.id.clone(), notice.clone()));
+    }
+    fn queue_changed(&self, _: &TaskId, queue: &[QueuedMessage]) {
+        self.1.lock().unwrap().push(queue.len());
     }
 }
 
@@ -936,5 +947,91 @@ impl Fixture {
                 color: None,
             })
             .unwrap()
+    }
+}
+
+impl QueueRepository for MemoryStore {
+    fn add_queued(&self, task: &TaskId, text: &str, at: i64) -> PortResult<QueuedMessage> {
+        let mut queue = self.queue.lock().unwrap();
+        let message = QueuedMessage {
+            id: queue.iter().map(|m| m.id).max().unwrap_or(0) + 1,
+            task: task.clone(),
+            text: text.into(),
+            created_at: at,
+            held: None,
+        };
+        queue.push(message.clone());
+        Ok(message)
+    }
+    fn queued(&self, task: &TaskId) -> PortResult<Vec<QueuedMessage>> {
+        Ok(self
+            .queue
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|m| &m.task == task)
+            .cloned()
+            .collect())
+    }
+    fn queued_message(&self, id: i64) -> PortResult<Option<QueuedMessage>> {
+        Ok(self
+            .queue
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|m| m.id == id)
+            .cloned())
+    }
+    fn update_queued(&self, id: i64, text: &str) -> PortResult<()> {
+        if let Some(m) = self.queue.lock().unwrap().iter_mut().find(|m| m.id == id) {
+            m.text = text.into();
+        }
+        Ok(())
+    }
+    fn delete_queued(&self, ids: &[i64]) -> PortResult<()> {
+        self.queue.lock().unwrap().retain(|m| !ids.contains(&m.id));
+        Ok(())
+    }
+    fn hold_queue(&self, task: &TaskId, reason: Option<HoldReason>) -> PortResult<()> {
+        for m in self
+            .queue
+            .lock()
+            .unwrap()
+            .iter_mut()
+            .filter(|m| &m.task == task)
+        {
+            m.held = reason.and(m.held.or(reason));
+        }
+        Ok(())
+    }
+}
+
+impl TemplateRepository for MemoryStore {
+    fn template_records(&self) -> PortResult<Vec<TemplateRecord>> {
+        Ok(self.templates.lock().unwrap().clone())
+    }
+    fn save_template(&self, record: &TemplateRecord) -> PortResult<i64> {
+        let mut templates = self.templates.lock().unwrap();
+        if let Some(t) = templates.iter_mut().find(|t| t.id == record.id) {
+            *t = record.clone();
+            return Ok(record.id);
+        }
+        let id = templates.iter().map(|t| t.id).max().unwrap_or(0) + 1;
+        templates.push(TemplateRecord {
+            id,
+            ..record.clone()
+        });
+        Ok(id)
+    }
+    fn delete_template(&self, id: i64) -> PortResult<()> {
+        self.templates.lock().unwrap().retain(|t| t.id != id);
+        Ok(())
+    }
+    fn reset_builtin_templates(&self) -> PortResult<()> {
+        self.templates
+            .lock()
+            .unwrap()
+            .retain(|t| t.builtin.is_none());
+        Ok(())
     }
 }

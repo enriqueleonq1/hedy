@@ -2,11 +2,15 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 
 import { OVERVIEW_KEY, useApi } from "../api/context";
-import type { AgentEvent, BoardState } from "../api/types";
+import type { AgentEvent, BoardState, QueuedMessage, Task } from "../api/types";
 
 export const tasksKey = (project: string) => ["tasks", project] as const;
 const eventsKey = (taskId: string) => ["taskEvents", taskId] as const;
 const diffKey = (taskId: string) => ["diff", taskId] as const;
+const queueKey = (taskId: string) => ["queue", taskId] as const;
+
+/** Every template list (the composer's per project, and the management one). */
+export const TEMPLATES_KEY = ["templates"] as const;
 
 /** The task board of every project ("Actividad"). */
 export const ACTIVITY_KEY = ["activity"] as const;
@@ -40,6 +44,42 @@ export function useTaskEvents(taskId: string | null) {
     enabled: !!taskId,
     staleTime: Infinity,
   });
+}
+
+/** Messages waiting for the end of the agent's turn ("En cola"), kept live by the bridge. */
+export function useQueue(taskId: string | null) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queueKey(taskId ?? ""),
+    queryFn: () => api.queued(taskId ?? ""),
+    enabled: !!taskId,
+  });
+}
+
+/** The agent is in the middle of a turn, or a card waits: a new message is queued. */
+export function isBusy(task: Task | null | undefined): boolean {
+  return !!task && task.live && (task.status === "running" || task.status === "waitingApproval");
+}
+
+/** Puts a queue the backend returned in the cache (the event does too; this is faster). */
+export function useSetQueue() {
+  const client = useQueryClient();
+  return (taskId: string, queue: QueuedMessage[]) => {
+    client.setQueryData(queueKey(taskId), queue);
+    void client.invalidateQueries({ queryKey: ACTIVITY_KEY });
+  };
+}
+
+/** What the composer of `project` offers. */
+export function useTemplates(project: string | null) {
+  const api = useApi();
+  return useQuery({ queryKey: [...TEMPLATES_KEY, project ?? ""], queryFn: () => api.templates(project) });
+}
+
+/** Every template of every project, for Settings. */
+export function useAllTemplates() {
+  const api = useApi();
+  return useQuery({ queryKey: [...TEMPLATES_KEY, "*all"], queryFn: () => api.allTemplates() });
 }
 
 export function useTaskDiff(taskId: string | null, enabled: boolean) {
@@ -104,9 +144,14 @@ export function TaskEventsBridge() {
       void client.invalidateQueries({ queryKey: diffKey(task.id) });
       void client.invalidateQueries({ queryKey: ACTIVITY_KEY });
     });
+    const offQueue = api.onTaskQueue((taskId, queue) => {
+      client.setQueryData(queueKey(taskId), queue);
+      void client.invalidateQueries({ queryKey: ACTIVITY_KEY });
+    });
     return () => {
       offEvent();
       offTask();
+      offQueue();
     };
   }, [api, client]);
 

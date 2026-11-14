@@ -10,10 +10,12 @@ mod memory;
 mod metrics;
 pub mod ports;
 mod projects;
+mod queue;
 mod settings;
 mod skills;
 mod status;
 mod tasks;
+mod templates;
 #[cfg(test)]
 mod testing;
 
@@ -37,6 +39,7 @@ pub use skills::{
 };
 pub use status::{AccountStatus, AccountUsage, Status};
 pub use tasks::NewTask;
+pub use templates::{NewTemplate, TemplateScope};
 
 use crate::domain::TaskId;
 use ports::{
@@ -70,6 +73,8 @@ pub struct Hedy {
     live: Arc<Mutex<HashMap<TaskId, tasks::LiveTask>>>,
     /// Numbers sessions, so late events from a replaced session are ignored.
     sessions: Arc<AtomicU64>,
+    /// Serializes changes to message queues with their delivery.
+    queue_lock: Arc<Mutex<()>>,
     /// How to start the memory MCP server for CLI agents.
     memory_server: Option<MemoryServerCommand>,
 }
@@ -87,6 +92,7 @@ impl Hedy {
             events: Arc::new(NoTaskEvents),
             live: Arc::default(),
             sessions: Arc::default(),
+            queue_lock: Arc::default(),
             memory_server: None,
         }
     }

@@ -304,6 +304,45 @@ export interface ActivityItem {
   projectName: string;
   /** Unix seconds of its latest event. */
   updatedAt: number;
+  /** Messages waiting for the end of the agent's turn. */
+  queued: number;
+}
+
+/** Why queued messages wait for the user instead of going by themselves. */
+export type HoldReason = "failed" | "stopped" | "limit";
+
+/**
+ * A message written while the agent works. It goes, with the rest of the
+ * queue, as the next user turn when the agent's turn ends.
+ */
+export interface QueuedMessage {
+  id: number;
+  task: string;
+  text: string;
+  /** Unix seconds. */
+  createdAt: number;
+  held: HoldReason | null;
+}
+
+/**
+ * A reusable request. `{name}` in the text is a placeholder the user fills
+ * before sending. `id` is `builtin:<key>` for an untouched built-in example.
+ */
+export interface PromptTemplate {
+  id: string;
+  /** `null`: every project. */
+  project: string | null;
+  name: string;
+  text: string;
+  /** The built-in example this is (edited or not). */
+  builtin: string | null;
+  placeholders: string[];
+}
+
+export interface NewTemplateInput {
+  project: string | null;
+  name: string;
+  text: string;
 }
 
 /** A click on a desktop notification: open this task. */
