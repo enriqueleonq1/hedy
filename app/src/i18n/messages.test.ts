@@ -1,6 +1,7 @@
 import accounts from "./messages/accounts";
 import activity from "./messages/activity";
 import common from "./messages/common";
+import mascot from "./messages/mascot";
 import memory from "./messages/memory";
 import onboarding from "./messages/onboarding";
 import queue from "./messages/queue";
@@ -18,6 +19,7 @@ const AREAS = {
   accounts,
   activity,
   common,
+  mascot,
   memory,
   onboarding,
   queue,
