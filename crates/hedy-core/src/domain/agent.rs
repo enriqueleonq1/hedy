@@ -57,6 +57,13 @@ pub enum AgentEvent {
         command: String,
         passed: bool,
     },
+    /// A tool starts running: its name as the agent calls it, and the command
+    /// or the file it works on. Live only (the mascot's activity): never
+    /// stored, the history keeps the finished tool.
+    ToolStarted {
+        tool: String,
+        detail: String,
+    },
     /// Any other tool (read, search, web...), for the activity lines.
     ToolUsed {
         tool: String,

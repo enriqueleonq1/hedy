@@ -407,6 +407,8 @@ export type AgentEvent =
   | { kind: "commandRun"; command: string; tests: boolean }
   | { kind: "testsRun"; command: string; passed: boolean }
   | { kind: "toolUsed"; tool: string; summary: string }
+  /** Live only, never in the stored history: what the mascot shows while a tool runs. */
+  | { kind: "toolStarted"; tool: string; detail: string }
   | {
       kind: "usage";
       inputTokens: number;

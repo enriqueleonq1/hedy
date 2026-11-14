@@ -78,6 +78,14 @@ describe("useMascot", () => {
     expect(result.current.activity).toBe("edit");
   });
 
+  it("shows a running tool at once and never calls a long build a wait", () => {
+    const started: AgentEvent = { kind: "toolStarted", tool: "Bash", detail: "cargo test" };
+    const { result } = setup({ task: task(), events: [ask, started] });
+    expect(result.current.activity).toBe("test");
+    advance(ACTIVITY_TIMING.waitingAfterMs * 3);
+    expect(result.current.activity).toBe("test");
+  });
+
   it("sweats on a long turn while running commands, not while reading", () => {
     const { result, rerender } = setup({ task: task(), events: [ask, read] });
     // Events keep coming, so it never waits.

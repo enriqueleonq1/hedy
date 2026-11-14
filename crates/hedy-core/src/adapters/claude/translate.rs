@@ -115,6 +115,14 @@ impl Translator {
                             steps: steps(&input),
                         });
                     } else if tool != "ExitPlanMode" {
+                        let detail = match input["command"].as_str() {
+                            Some(command) if tool == "Bash" => command.to_owned(),
+                            _ => self.relative(&summarize(&tool, &input)),
+                        };
+                        events.push(AgentEvent::ToolStarted {
+                            tool: tool.clone(),
+                            detail,
+                        });
                         let id = block["id"].as_str().unwrap_or("").to_owned();
                         self.tool_uses.insert(id, (tool, input));
                     }
@@ -306,7 +314,18 @@ mod tests {
             {"type":"tool_use","id":"g1","name":"Grep","input":{"pattern":"crear_cita"}},
             {"type":"tool_use","id":"r1","name":"Read","input":{"file_path":"/wt/.env"}}
         ]}});
-        assert!(t.translate(&assistant, &HashSet::new()).is_empty());
+        // Only live "started" events for the mascot; the activity lines wait for results.
+        let started: Vec<(String, String)> = t
+            .translate(&assistant, &HashSet::new())
+            .into_iter()
+            .map(|e| match e {
+                AgentEvent::ToolStarted { tool, detail } => (tool, detail),
+                other => panic!("unexpected {other:?}"),
+            })
+            .collect();
+        assert_eq!(started.len(), 6);
+        assert_eq!(started[0], ("Edit".into(), "citas/servicio.py".into()));
+        assert_eq!(started[3], ("Bash".into(), "pytest tests".into()));
         let results = json!({"type":"user","message":{"content":[
             {"type":"tool_result","tool_use_id":"e1","content":"ok"},
             {"type":"tool_result","tool_use_id":"e2","content":"denied","is_error":true},

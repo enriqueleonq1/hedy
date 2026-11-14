@@ -68,6 +68,11 @@ export function useMascot(task: Task | null | undefined, events: AgentEvent[]): 
 
   const silent = useElapsed(`${id}:${events.length}`, working ? ACTIVITY_TIMING.waitingAfterMs : null);
   const longTurn = useElapsed(`${id}:${turn}`, useTurnDelay(task, turn, working));
-  const activity = useHeld(withClock(activityOfEvents(events), { silent, longTurn }), ACTIVITY_TIMING.minHoldMs);
+  // A tool that started and has not finished is busy, not silent: a long build stays "command".
+  const toolRunning = events.at(-1)?.kind === "toolStarted";
+  const activity = useHeld(
+    withClock(activityOfEvents(events), { silent: silent && !toolRunning, longTurn }),
+    ACTIVITY_TIMING.minHoldMs,
+  );
   return { state, activity: working ? activity : undefined };
 }

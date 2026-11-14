@@ -202,6 +202,8 @@ export function activityOfEvent(event: AgentEvent): WorkingActivity | null {
       return "test";
     case "toolUsed":
       return activityOfTool(event.tool, event.summary);
+    case "toolStarted":
+      return activityOfTool(event.tool, event.detail);
     case "permissionRequest":
       return activityOfTool(event.tool, commandOf(event.input));
     case "phaseStarted":

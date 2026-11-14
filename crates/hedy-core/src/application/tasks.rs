@@ -372,7 +372,9 @@ impl Hedy {
     }
 
     fn record(&self, id: &TaskId, event: AgentEvent) -> AppResult<()> {
-        self.store.append_event(id, self.now_secs(), &event)?;
+        if !matches!(event, AgentEvent::ToolStarted { .. }) {
+            self.store.append_event(id, self.now_secs(), &event)?;
+        }
         self.events.event(id, &event);
         Ok(())
     }

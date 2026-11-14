@@ -380,7 +380,17 @@ fn server_request(shared: &Shared, method: &str, id: Value, params: &Value) -> P
 fn notification(shared: &Shared, method: &str, p: &Value) -> PortResult<()> {
     let cwd = shared.state.lock().unwrap().cwd.clone();
     match method {
+        "item/started" if p["item"]["type"] == "commandExecution" => {
+            shared.emit(AgentEvent::ToolStarted {
+                tool: "commandExecution".into(),
+                detail: p["item"]["command"].as_str().unwrap_or("").to_owned(),
+            });
+        }
         "item/started" if p["item"]["type"] == "fileChange" => {
+            shared.emit(AgentEvent::ToolStarted {
+                tool: "fileChange".into(),
+                detail: String::new(),
+            });
             let paths = p["item"]["changes"]
                 .as_array()
                 .into_iter()

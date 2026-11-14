@@ -46,6 +46,7 @@ struct ToolCall {
     title: String,
     paths: Vec<String>,
     raw_input: Value,
+    started: bool,
     reported: bool,
 }
 
@@ -522,8 +523,22 @@ fn command_of(tool: &ToolCall) -> String {
     }
 }
 
-/// Activity lines for a finished tool call, once.
+/// That a tool call started (once), then its activity lines when it finishes (once).
 fn report_tool(shared: &Shared, id: &str, tool: &ToolCall, status: &str) {
+    if !tool.started && !tool.reported && !tool.kind.is_empty() {
+        if let Some(t) = shared.state.lock().unwrap().tools.get_mut(id) {
+            t.started = true;
+        }
+        let detail = if tool.kind == "execute" {
+            command_of(tool)
+        } else {
+            tool.title.clone()
+        };
+        shared.emit(AgentEvent::ToolStarted {
+            tool: tool.kind.clone(),
+            detail,
+        });
+    }
     if tool.reported || !matches!(status, "completed" | "failed") {
         return;
     }
