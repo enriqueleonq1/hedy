@@ -6,7 +6,7 @@ import { useTerminals } from "../../components/Terminal/TerminalProvider";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { ColorPicker, Field } from "../../components/ui/controls";
-import { accountPalette } from "../../theme/tokens";
+import { accountPalette, DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 
 interface Kind {
   id: string;
@@ -64,7 +64,7 @@ export function AddAccountDialog({
   const [name, setName] = useState("");
   const [useDefault, setUseDefault] = useState(false);
   const [color, setColor] = useState(
-    accountPalette[overview.accounts.length % accountPalette.length]?.hex ?? "#7AA2F7",
+    accountPalette[overview.accounts.length % accountPalette.length]?.hex ?? DEFAULT_ACCOUNT_COLOR,
   );
 
   const defaultTaken = overview.accounts.some((a) => a.provider === kind.provider && a.defaultFolder);
@@ -79,7 +79,6 @@ export function AddAccountDialog({
         provider: input.provider,
         providerName: kind.title,
         kind: input.apiKey ? "apiKey" : "subscription",
-        folder: null,
         defaultFolder: input.defaultFolder,
         color: input.color ?? color,
         login: { state: "loggedOut", plan: null },

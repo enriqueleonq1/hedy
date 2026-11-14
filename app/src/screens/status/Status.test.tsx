@@ -28,6 +28,8 @@ const task = (extra: Partial<Task>): Task => ({
   sessionId: null,
   status: "running",
   createdAt: 0,
+  stages: [],
+  stage: 0,
   live: true,
   ...extra,
 });

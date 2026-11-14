@@ -1,5 +1,5 @@
 import type { AgentEvent, Task } from "../api/types";
-import { agentName, buildTimeline, formatTokens, mascotState, modelLabel } from "./timeline";
+import { agentName, buildTimeline, mascotState, modelLabel } from "./timeline";
 
 const task = (extra: Partial<Task>): Task => ({
   id: "t1",
@@ -13,6 +13,8 @@ const task = (extra: Partial<Task>): Task => ({
   sessionId: null,
   status: "running",
   createdAt: 0,
+  stages: [],
+  stage: 0,
   live: true,
   ...extra,
 });
@@ -97,10 +99,4 @@ describe("mascotState", () => {
     expect(mascotState(task({ status: "accepted" }), [])).toBe("done");
     expect(mascotState(task({ status: "failed" }), [])).toBe("sleeping");
   });
-});
-
-it("formats token counts", () => {
-  expect(formatTokens(950)).toBe("950");
-  expect(formatTokens(182_000)).toBe("182k");
-  expect(formatTokens(2_400_000)).toBe("2.4M");
 });

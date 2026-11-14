@@ -69,7 +69,6 @@ export class MockApi implements HedyApi {
       provider: "claude",
       providerName: "Claude Code",
       kind: "subscription",
-      folder: `/home/demo/.local/share/hedy/accounts/${id}`,
       defaultFolder: false,
       color: PALETTE[0],
       login: { state: "loggedIn", plan: "max" },
@@ -84,7 +83,6 @@ export class MockApi implements HedyApi {
         usage: { weekTokens: 182_000, weekCostUsd: 3.1, limit: { status: "allowed", percent: 34, resetsAt: null } },
       }),
       account("claude-trabajo", "Claude trabajo", {
-        folder: null,
         defaultFolder: true,
         login: { state: "loggedIn", plan: "team" },
         projects: ["/code/homming"],
@@ -99,7 +97,6 @@ export class MockApi implements HedyApi {
         provider: "kimi",
         providerName: "Kimi",
         kind: "apiKey",
-        folder: null,
         color: "#FF9E64",
         login: { state: "loggedOut", plan: null },
       }),
@@ -207,7 +204,7 @@ export class MockApi implements HedyApi {
     const byClient = [...clients.values()].sort(
       (a, b) => Number(a.client === null) - Number(b.client === null) || b.tokens - a.tokens,
     );
-    return { since, projects: list, clients: byClient };
+    return { projects: list, clients: byClient };
   }
 
   // --------------------------------------------------------------- memory
@@ -324,7 +321,6 @@ export class MockApi implements HedyApi {
       provider: input.provider,
       providerName: { claude: "Claude Code", codex: "Codex", gemini: "Gemini", kimi: "Kimi" }[input.provider],
       kind: input.apiKey ? "apiKey" : "subscription",
-      folder: input.apiKey || input.defaultFolder ? null : `${this.state.dataDir}/accounts/${id}`,
       defaultFolder: input.defaultFolder,
       color: input.color ?? PALETTE[this.state.accounts.length % PALETTE.length] ?? PALETTE[0],
       login: { state: "loggedOut", plan: null },
@@ -445,6 +441,8 @@ export class MockApi implements HedyApi {
     if (!input.prompt.trim()) throw "escribe qué quieres que haga";
     const id = `t${++this.nextTask}`;
     const title = (input.prompt.split("\n")[0] ?? "").slice(0, 60);
+    const planFirst = input.planFirst && input.mode === "project";
+    const stage = (phase: "plan" | "implement") => ({ phase, account: project.account ?? "", model: input.model });
     const task: Task = {
       id,
       project: project.path,
@@ -465,6 +463,8 @@ export class MockApi implements HedyApi {
       sessionId: null,
       status: "running",
       createdAt: Math.floor(Date.now() / 1000) + this.nextTask,
+      stages: planFirst ? [stage("plan"), stage("implement")] : [stage("implement")],
+      stage: 0,
       live: true,
     };
     this.tasksById.set(id, task);
@@ -472,7 +472,7 @@ export class MockApi implements HedyApi {
     this.diffs.set(id, []);
     this.push(id, { kind: "userMessage", text: input.prompt });
     this.script(id, [
-      { kind: "phaseStarted", phase: input.planFirst && input.mode === "project" ? "plan" : "implement", agent: "Claude Opus", account: "Claude personal" },
+      { kind: "phaseStarted", phase: planFirst ? "plan" : "implement", agent: "Claude Opus", account: "Claude personal" },
       { kind: "sessionStarted", sessionId: `s-${id}`, model: "claude-opus-5-5" },
       { kind: "message", text: "Voy a revisar dónde se crean las citas." },
       { kind: "toolUsed", tool: "Grep", summary: "crear_cita" },
@@ -483,19 +483,18 @@ export class MockApi implements HedyApi {
           ]
         : input.planFirst
           ? [{ kind: "plan", text: "1. Buscar dónde se crean las citas\n2. Programar el recordatorio\n3. Correr los tests", requestId: "plan-1" } as AgentEvent]
-          : this.implementation(id)),
+          : this.implementation()),
     ]);
     return { ...task };
   }
 
-  private implementation(id: string): AgentEvent[] {
+  private implementation(): AgentEvent[] {
     const steps = (done: number): AgentEvent => ({
       kind: "steps",
       steps: ["Buscar dónde se crean las citas", "Tarea programada y plantilla del mensaje", "Correr los tests"].map(
         (text, i) => ({ text, status: i < done ? "done" : i === done ? "inProgress" : "pending" }),
       ),
     });
-    void id;
     return [
       steps(1),
       { kind: "fileEdited", path: "citas/servicio.py" },
@@ -540,6 +539,9 @@ export class MockApi implements HedyApi {
       if (event.kind === "fileEdited") {
         this.diffs.get(id)?.push(sampleDiff(event.path));
       }
+      if (event.kind === "phaseStarted") {
+        task.stage = Math.max(0, task.stages.findIndex((s) => s.phase === event.phase));
+      }
       if (status !== task.status) {
         task.status = status;
         this.notifyTask(task);
@@ -573,7 +575,7 @@ export class MockApi implements HedyApi {
     this.script(
       id,
       approve
-        ? [{ kind: "phaseStarted", phase: "implement", agent: "Claude Opus", account: "Claude personal" }, ...this.implementation(id)]
+        ? [{ kind: "phaseStarted", phase: "implement", agent: "Claude Opus", account: "Claude personal" }, ...this.implementation()]
         : [{ kind: "plan", text: `1. Buscar\n2. Cambiar (${feedback ?? "revisado"})\n3. Tests`, requestId: `${requestId}-b` }],
     );
   }
@@ -590,8 +592,11 @@ export class MockApi implements HedyApi {
     const task = this.tasksById.get(id);
     if (!task) return;
     task.live = false;
-    task.status = "review";
-    this.notifyTask(task);
+    // Like the backend: `task-updated` only when the status changes.
+    if (task.status === "running" || task.status === "waitingApproval") {
+      task.status = "review";
+      this.notifyTask(task);
+    }
   }
 
   async taskDiff(id: string): Promise<FileDiff[]> {
