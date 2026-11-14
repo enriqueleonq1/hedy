@@ -1,12 +1,6 @@
-import type { Account, Login, ProviderId } from "../api/types";
-import { formatTokens } from "../tasks/timeline";
-
-const VENDOR: Record<ProviderId, string> = {
-  claude: "Anthropic",
-  codex: "OpenAI",
-  gemini: "Google",
-  kimi: "Moonshot",
-};
+import type { Account, Login } from "../api/types";
+import { formatTokens, formatUsd } from "../format";
+import { PROVIDER_NAMES } from "./providers";
 
 const BRANDS = ["claude", "chatgpt", "codex", "gemini", "kimi"];
 
@@ -24,7 +18,7 @@ export function accountSubtitle(account: Account): string {
       : account.login.plan
         ? account.login.plan.charAt(0).toUpperCase() + account.login.plan.slice(1)
         : "Suscripción";
-  const parts = [VENDOR[account.provider], plan];
+  const parts = [PROVIDER_NAMES[account.provider].vendor, plan];
   if (account.provider === "codex") parts.push("Codex");
   if (account.provider === "gemini" && account.kind === "subscription") parts.push("Gemini CLI");
   return parts.join(" · ");
@@ -39,7 +33,7 @@ export function AccountChip({ account, muted }: { account: Pick<Account, "name" 
   );
 }
 
-export function loginText(login: Login, kind: Account["kind"]): string {
+function loginText(login: Login, kind: Account["kind"]): string {
   switch (login.state) {
     case "loggedIn":
       if (kind === "apiKey") return "Key guardada";
@@ -83,7 +77,7 @@ export function UsageBars({ account }: { account: Account }) {
   const limit = usage.limit;
   const percent = limit?.percent ?? null;
   const tokens = usage.weekTokens > 0 ? `${formatTokens(usage.weekTokens)} tokens` : "sin uso";
-  const cost = usage.weekCostUsd != null ? `US$${usage.weekCostUsd.toFixed(2)}` : null;
+  const cost = usage.weekCostUsd != null ? formatUsd(usage.weekCostUsd) : null;
 
   return (
     <div className="usage">

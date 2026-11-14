@@ -17,7 +17,6 @@ const tokyoNight = {
 
 export const themes: Record<ThemeName, Record<string, string>> = {
   dark: {
-    ...tokyoNight,
     bg: "#1A1B26",
     panel: "#16161E",
     panel2: "#1F2335",
@@ -59,12 +58,6 @@ export const themes: Record<ThemeName, Record<string, string>> = {
     muted: "#625A76",
     line: "#EFE3D6",
     selection: "#EDE7FF",
-    primary: "#7C5CFF",
-    primarySoft: "#EDE7FF",
-    primaryInk: "#4B32C8",
-    accentPink: "#FF8FB1",
-    accentPinkSoft: "#FFE3EC",
-    accentPinkInk: "#A3214F",
     diffAddBg: "#E8FAF1",
     diffAddInk: "#116A43",
     diffDelBg: "#FFE9EE",
@@ -72,7 +65,7 @@ export const themes: Record<ThemeName, Record<string, string>> = {
     warnBg: "#FFF4D6",
     warnInk: "#7A5300",
     warnLine: "#F2D58A",
-    // A slightly deeper violet than `primary` so white text on buttons passes AA.
+    // A slightly deeper violet than the brand's #7C5CFF so white text on buttons passes AA.
     action: "#6847F5",
     actionInk: "#FFFFFF",
     actionText: "#4B32C8",
@@ -97,25 +90,39 @@ export function cssVar(token: string): string {
   return `--${token.replace(/([A-Z0-9])/g, (c) => `-${c.toLowerCase()}`)}`;
 }
 
+/** Sets the theme's tokens on `root`, which owns its inline custom properties: others are removed. */
 export function applyTheme(name: ThemeName, root: HTMLElement = document.documentElement): void {
   root.dataset.theme = name;
   root.style.colorScheme = name;
-  for (const [token, value] of Object.entries(themes[name])) {
-    root.style.setProperty(cssVar(token), value);
-  }
+  const tokens = new Map(Object.entries(themes[name]).map(([token, value]) => [cssVar(token), value]));
+  const stale = Array.from({ length: root.style.length }, (_, i) => root.style.item(i)).filter(
+    (property) => property.startsWith("--") && !tokens.has(property),
+  );
+  for (const property of stale) root.style.removeProperty(property);
+  for (const [property, value] of tokens) root.style.setProperty(property, value);
 }
 
 /** Account colors offered to the user (spec §5), with Spanish names. */
 export const accountPalette: { name: string; hex: string }[] = [
-  { name: "Azul", hex: "#7AA2F7" },
-  { name: "Morado", hex: "#BB9AF7" },
-  { name: "Verde", hex: "#9ECE6A" },
-  { name: "Naranja", hex: "#FF9E64" },
-  { name: "Cian", hex: "#7DCFFF" },
+  { name: "Azul", hex: tokyoNight.blue },
+  { name: "Morado", hex: tokyoNight.magenta },
+  { name: "Verde", hex: tokyoNight.green },
+  { name: "Naranja", hex: tokyoNight.orange },
+  { name: "Cian", hex: tokyoNight.cyan },
   { name: "Rosa", hex: "#FF7AB6" },
-  { name: "Amarillo", hex: "#E0AF68" },
-  { name: "Turquesa", hex: "#73DACA" },
+  { name: "Amarillo", hex: tokyoNight.yellow },
+  { name: "Turquesa", hex: tokyoNight.teal },
 ];
+
+// Mascot colors (fills, never text) where there is no account to take one from.
+/** The first color of the palette; also the color of a new account. */
+export const DEFAULT_ACCOUNT_COLOR = tokyoNight.blue;
+/** Hedy's tip in the sidebar. */
+export const TIP_MASCOT_COLOR = tokyoNight.magenta;
+/** A limit warning about an unknown account. */
+export const WARNING_MASCOT_COLOR = tokyoNight.yellow;
+/** The app could not start. */
+export const ERROR_MASCOT_COLOR = tokyoNight.red;
 
 /** xterm.js colors for each theme. */
 export function terminalTheme(name: ThemeName) {

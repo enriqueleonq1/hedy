@@ -6,7 +6,7 @@ import type { HighlighterCore, ThemedToken } from "shiki/core";
 import type { ThemeName } from "../../theme/tokens";
 
 /** Tokyo Night as the spec asks; a warm light theme for "Burbuja". */
-export const CODE_THEME: Record<ThemeName, string> = {
+const CODE_THEME: Record<ThemeName, string> = {
   dark: "tokyo-night",
   light: "catppuccin-latte",
 };
@@ -48,7 +48,7 @@ const LANG_BY_EXT: Record<string, string> = {
   dockerfile: "docker",
 };
 
-export function languageFor(path: string): string | null {
+function languageFor(path: string): string | null {
   const name = path.split("/").pop()?.toLowerCase() ?? "";
   if (name === "dockerfile") return "docker";
   const ext = name.includes(".") ? name.split(".").pop() : undefined;

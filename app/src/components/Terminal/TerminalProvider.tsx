@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 
 import type { TerminalRequest } from "../../api/types";
 
-export interface TerminalSession {
+interface TerminalSession {
   key: number;
   title: string;
   request: TerminalRequest;

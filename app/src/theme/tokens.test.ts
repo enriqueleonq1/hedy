@@ -46,6 +46,13 @@ describe.each(Object.keys(themes) as ThemeName[])("%s theme", (name) => {
     expect(root.style.getPropertyValue("--panel-2")).toBe(t.panel2);
     expect(root.style.getPropertyValue("--diff-add-bg")).toBe(t.diffAddBg);
   });
+
+  it("removes variables the theme does not have", () => {
+    const root = document.createElement("div");
+    root.style.setProperty("--old-token", "#000000");
+    applyTheme(name, root);
+    expect(root.style.getPropertyValue("--old-token")).toBe("");
+  });
 });
 
 it("account colors stand out on the dark background (3:1, non-text)", () => {
