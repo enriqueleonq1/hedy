@@ -1,6 +1,7 @@
 //! Use cases. They depend only on [`ports`], never on concrete adapters.
 
 mod accounts;
+mod detect;
 mod error;
 mod launch;
 mod memory;
@@ -18,6 +19,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 pub use accounts::NewAccount;
+pub use detect::DetectedCli;
 pub use error::{AppError, AppResult};
 pub use launch::Resolved;
 pub use memory::{MemoryServerCommand, MemoryView, format_notes};

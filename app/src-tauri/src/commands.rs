@@ -484,3 +484,17 @@ pub async fn set_project_client(
     })
     .await
 }
+
+/// The official CLIs on this computer and their default logins (onboarding).
+#[tauri::command]
+pub async fn detect_clis(state: State<'_, AppState>) -> CommandResult<Vec<dto::DetectedCliDto>> {
+    blocking(&state, |h| {
+        Ok(h.detect_clis()?.iter().map(Into::into).collect())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn open_link(state: State<'_, AppState>, url: String) -> CommandResult<()> {
+    blocking(&state, move |h| h.open_link(&url)).await
+}

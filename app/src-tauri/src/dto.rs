@@ -22,6 +22,10 @@ use serde::{Deserialize, Serialize};
 pub struct OverviewDto {
     pub user_name: String,
     pub theme: String,
+    /// `system`, `es` or `en`.
+    pub language: String,
+    /// The onboarding was finished or skipped.
+    pub onboarded: bool,
     pub data_dir: String,
     pub default_account: Option<String>,
     /// Custom binary path per CLI provider (`None` = found on `PATH`).
@@ -317,6 +321,28 @@ pub struct NewAccountInput {
     pub color: Option<String>,
 }
 
+/// An official CLI found (or not) on this computer, for the onboarding.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectedCliDto {
+    pub provider: &'static str,
+    pub installed: bool,
+    pub login: LoginDto,
+    /// The Hedy account already using its default folder.
+    pub account: Option<String>,
+}
+
+impl From<&hedy_core::application::DetectedCli> for DetectedCliDto {
+    fn from(d: &hedy_core::application::DetectedCli) -> Self {
+        Self {
+            provider: d.provider.as_str(),
+            installed: d.installed,
+            login: (&d.login).into(),
+            account: d.account.as_ref().map(ToString::to_string),
+        }
+    }
+}
+
 impl From<&LoginState> for LoginDto {
     fn from(login: &LoginState) -> Self {
         match login {
@@ -434,6 +460,10 @@ pub fn overview(hedy: &Hedy, data_dir: &Path) -> AppResult<OverviewDto> {
         theme: hedy
             .setting(Setting::Theme)?
             .unwrap_or_else(|| "system".into()),
+        language: hedy
+            .setting(Setting::Language)?
+            .unwrap_or_else(|| "system".into()),
+        onboarded: hedy.setting(Setting::Onboarded)?.as_deref() == Some("true"),
         data_dir: path_string(data_dir),
         default_account: status.default_account.as_ref().map(ToString::to_string),
         binaries,

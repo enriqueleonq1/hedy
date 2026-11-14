@@ -512,9 +512,14 @@ pub struct FakeRunner {
     interactive: Mutex<Vec<LaunchSpec>>,
     detached: Mutex<Vec<LaunchSpec>>,
     reply: Mutex<Option<CapturedOutput>>,
+    installed: Mutex<HashSet<String>>,
 }
 
 impl FakeRunner {
+    pub fn install(&self, program: &str) {
+        self.installed.lock().unwrap().insert(program.to_owned());
+    }
+
     pub fn reply(&self, stdout: &str, exit_code: i32) {
         *self.reply.lock().unwrap() = Some(CapturedOutput {
             exit_code: Some(exit_code),
@@ -544,6 +549,9 @@ impl ProcessRunner for FakeRunner {
     fn spawn_detached(&self, spec: &LaunchSpec) -> PortResult<()> {
         self.detached.lock().unwrap().push(spec.clone());
         Ok(())
+    }
+    fn is_installed(&self, program: &str) -> bool {
+        self.installed.lock().unwrap().contains(program)
     }
     fn exec(&self, _spec: &LaunchSpec) -> PortError {
         PortError::new("exec is not available in tests")

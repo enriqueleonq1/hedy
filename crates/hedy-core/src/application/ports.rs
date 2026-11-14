@@ -167,6 +167,8 @@ pub trait ProcessRunner: Send + Sync {
     fn run_captured(&self, spec: &LaunchSpec) -> PortResult<CapturedOutput>;
     /// Starts without waiting and without a terminal (e.g. opening the editor).
     fn spawn_detached(&self, spec: &LaunchSpec) -> PortResult<()>;
+    /// Whether `program` (a name on `PATH` or a path) is installed.
+    fn is_installed(&self, program: &str) -> bool;
     /// Replaces the current process when the platform allows it. Only returns on error.
     fn exec(&self, spec: &LaunchSpec) -> PortError;
 }

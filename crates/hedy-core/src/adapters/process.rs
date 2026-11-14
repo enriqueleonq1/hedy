@@ -60,6 +60,13 @@ impl ProcessRunner for SystemProcessRunner {
         })
     }
 
+    fn is_installed(&self, program: &str) -> bool {
+        if program.contains('/') {
+            return std::path::Path::new(program).is_file();
+        }
+        find_program(program).is_some()
+    }
+
     fn spawn_detached(&self, spec: &LaunchSpec) -> PortResult<()> {
         let mut child = command(spec)
             .stdin(Stdio::null())

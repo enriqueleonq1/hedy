@@ -23,6 +23,8 @@ pub enum Setting {
     UserName,
     /// Interface language: `system`, `es` or `en`.
     Language,
+    /// `true` once the user has gone through (or skipped) the onboarding.
+    Onboarded,
     /// Code-map MCP server (codebase-memory-mcp) to register in every run.
     /// Unset: no code map.
     CodeMap,
@@ -41,6 +43,7 @@ impl Setting {
             Self::Theme => "ui.theme".into(),
             Self::UserName => "ui.name".into(),
             Self::Language => "ui.language".into(),
+            Self::Onboarded => "ui.onboarded".into(),
             Self::CodeMap => "code_map.binary".into(),
         }
     }
@@ -57,7 +60,13 @@ impl Setting {
         std::iter::once(Self::DefaultAccount)
             .chain(binaries)
             .chain(api_urls)
-            .chain([Self::Theme, Self::UserName, Self::Language, Self::CodeMap])
+            .chain([
+                Self::Theme,
+                Self::UserName,
+                Self::Language,
+                Self::Onboarded,
+                Self::CodeMap,
+            ])
             .collect()
     }
 }

@@ -59,6 +59,23 @@ impl Hedy {
         Ok(self.runner.spawn_detached(&spec)?)
     }
 
+    /// Opens a web page in the user's browser. Only `https` links.
+    pub fn open_link(&self, url: &str) -> AppResult<()> {
+        if !url.starts_with("https://") {
+            return Err(AppError::InvalidSettingValue {
+                key: "url".into(),
+                value: url.to_owned(),
+            });
+        }
+        let opener = if cfg!(target_os = "macos") {
+            "open"
+        } else {
+            "xdg-open"
+        };
+        let spec = LaunchSpec::program(opener, vec![url.to_owned()]);
+        Ok(self.runner.spawn_detached(&spec)?)
+    }
+
     /// Replaces the current process with the resolved CLI. Only returns on error.
     pub fn exec(&self, resolved: &Resolved) -> PortError {
         self.runner.exec(&resolved.spec)

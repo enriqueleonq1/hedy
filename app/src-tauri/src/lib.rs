@@ -80,6 +80,8 @@ pub fn run() {
             commands::project_usage,
             commands::usage_summary,
             commands::set_project_client,
+            commands::detect_clis,
+            commands::open_link,
         ])
         .run(tauri::generate_context!())
         .expect("error al ejecutar Hedy");
