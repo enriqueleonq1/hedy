@@ -161,6 +161,8 @@ is remembered by Hedy per session.
   Option for PTY sessions: Hedy registers its own `statusLine` command (via `--settings`)
   that only records those percentages.
 - No rate-limit metrics via OpenTelemetry.
+- **Plan usage through `/usage` (verified Nov 14, 2026, Claude Code 2.1.306, Team plan).**
+  Details and the other providers in §20.
 
 ### Does programmatic use draw from a different pool? (phase 0 question)
 
@@ -208,7 +210,8 @@ Docs moved from `developers.openai.com/codex` to `learn.chatgpt.com/docs`.
   1:1 to **Allow / Allow for this chat / Deny**.
 - **Limits:** `account/rateLimits/read` returns `primary` and `secondary`, each with
   `usedPercent`, `windowDurationMins` and `resetsAt`. Hedy reads `windowDurationMins`
-  instead of assuming which window is 5 h and which is weekly.
+  instead of assuming which window is 5 h and which is weekly. The account cards read it
+  (§20).
 - `codex app-server generate-json-schema --out <dir>` generates the exact schema for that
   version. Hedy will pin the supported version and generate Rust types from it.
 - Tested: `initialize` and `account/read` work without login (`requiresOpenaiAuth: true`);
@@ -383,7 +386,9 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
 - **Usage:** each `result` gives tokens and a cost *estimate*; `rate_limit_event` gave
   `status` and `resetsAt` but `utilization: null` on the Team plan. Account cards show the
   reported status ("dentro del límite / cerca / alcanzado") and renewal time, the % only
-  when reported, and Hedy's own token count labelled as such.
+  when reported, and Hedy's own token count labelled as such. Since §20 the cards show
+  the plan's windows read from `/usage` instead, which also counts what the user runs
+  outside Hedy (Claude Code, the VS Code extension).
 
 ## 11. Phase 4: several providers
 
@@ -762,7 +767,117 @@ Verified against the official docs in November 2026 (Agent SDK "Streaming Input"
 - **Not verified** with a real CLI: delivery at the turn boundary is tested with the
   in-memory agent double and in the UI with `MockApi`; the adapters were not changed.
 
-## 20. Decisions
+## 20. Plan usage per account (Nov 14, 2026)
+
+Account cards, the sidebar, the header chips and `hedy status` show how much of each
+plan's limits is used, like `/usage` does, including what the user ran outside Hedy.
+Each provider has its own source behind one model (`domain/plan_usage.rs`,
+`PlanUsage`): windows of kind session (5 h), week, day or other (with their length),
+optionally limited to one model, each with a percentage, the reset as the source wrote
+it, and the reset as a Unix time when it can be worked out.
+
+### Claude Code: `claude -p /usage` (verified)
+
+```
+claude -p /usage --output-format json --no-session-persistence --safe-mode
+```
+
+- Official docs (code.claude.com/docs/en/commands): `/usage` "Show session cost, plan
+  usage limits, and activity stats", with a breakdown on Pro, Max, Ultra, Team and
+  Enterprise. Unlike the `statusLine` `rate_limits` field (Pro/Max/Ultra only), it works
+  on the Team plan.
+- In print mode the built-in command runs **locally**: the JSON `result` came with
+  `num_turns: 0`, `total_cost_usd: 0`, every token count 0, `duration_api_ms: 0` and
+  `local_command: "usage"`. It takes 6–8 s (it starts Claude Code).
+- `--safe-mode` (hooks, MCP servers, plugins and custom commands off; auth works
+  normally) and `--no-session-persistence` (nothing added to `/resume`) were checked to
+  give the same answer. Launch as every other: the account's `CLAUDE_CONFIG_DIR` (none
+  for the default folder), `binary.claude` respected, credential variables stripped.
+- **Zero-cost guard.** If an answer ever shows `num_turns > 0`, a cost above 0 or any
+  token, Hedy stores that CLI version in `plan_usage.spends_tokens.claude` and stops
+  asking it (`--version` is checked before each attempt; another version is tried
+  again). The UI then says so; `hedy doctor` warns.
+- **The limits are only text** (no documented JSON for them), in English even with
+  `LANG=es_ES.UTF-8`:
+
+  ```
+  Current session: 34% used · resets Nov 14, 7pm (America/Caracas)
+  Current week (all models): 29% used · resets Nov 20, 12am (America/Caracas)
+  Current week (Fable): 0% used · resets Nov 20, 12am (America/Caracas)
+  ```
+
+  Parser rules (fragile by nature, so tolerant): a line counts when the text before its
+  first `N%` (decimals with `.` or `,`) names a window (`session`/`5-hour`, `week`/`7-day`,
+  `day`); a parenthesis names the model, `all models` (or none) means every model; the
+  first window of each kind and model wins; the reset is whatever follows `resets`:
+  `Nov 14, 7pm (Zone)`, `Dec 1 at 9:30am`, `7pm`, `19:00 (UTC)` or `in 3 hr` / `in 2h 30m`.
+  Anything else keeps the text and no time; a reply without any window is "no data", never
+  an error. The IANA zone is resolved with the system time-zone database (`jiff`, behind
+  the `Clock` port), the year being the next occurrence. The "What's contributing"
+  section is ignored. Verified format: Claude Code 2.1.306.
+- `rate_limit_event` reports from Hedy's own tasks are merged when newer than the
+  reading and carrying a percentage: they update the window that renews at the same time
+  (± 1 h), or become a single window when there is no reading. On Team they carry no
+  percentage, so they change nothing.
+
+### Codex: `account/rateLimits/read` (official, not verified live)
+
+- learn.chatgpt.com/docs/app-server and the protocol types in openai/codex
+  (`codex-rs/app-server-protocol/src/protocol/v2/account.rs`): one `initialize`
+  (`clientInfo.name`/`version` required) then `initialized` per connection ("Requests
+  sent before initialization receive a `Not initialized` error"), then
+  `account/rateLimits/read` without params. Not experimental; no message reaches a model.
+- Result: `rateLimits` (the `codex` limit) and `rateLimitsByLimitId` (one snapshot per
+  metered limit, e.g. `codex_other`), each with `primary` / `secondary` windows of
+  `usedPercent` (0–100), `windowDurationMins` and `resetsAt` (Unix **seconds**). Hedy
+  reads the map when present, the window kind from its length, and names non-`codex`
+  limits by `limitName` / `normalModelSlug`. Without a ChatGPT login it errors
+  ("chatgpt authentication required to read rate limits"): shown as "no se pudo leer".
+- Run as `codex app-server --listen stdio://` with the account's `CODEX_HOME`, 20 s
+  timeout, killed afterwards. Tested against a fake app-server that enforces the
+  handshake; Codex is not installed here, so a real check is **pending**.
+
+### Kimi API keys: Moonshot balance (official, not verified live)
+
+- platform.kimi.ai/docs/api/balance: `GET https://api.moonshot.ai/v1/users/me/balance`
+  with the key as bearer → `data.available_balance` (USD on `.ai`, CNY on
+  `api.moonshot.cn`; no currency field). Shown as "Saldo". Only for those two hosts: a
+  Kimi Code or custom URL has no documented balance. The key comes from the keyring and
+  only goes in the header.
+
+### Not supported yet (the card says "<provider> aún no informa el límite a Hedy")
+
+- **Antigravity:** the official changelog (antigravity.google/docs/changelog, CLI v1.1.11
+  and v1.2.15) says `agy -p "/usage"` answers without an agent turn, as TSV lines or a
+  payload with `--output-format json` (UTC times). The payload is not documented and
+  `agy` is not installed here: pending until its output can be seen.
+- **Kimi Code:** `/usage` exists only in the TUI; over ACP it reports session tokens, not
+  the plan. The plan quota is only in the beta local server (`kimi web`,
+  `GET /api/v1/oauth/usage`, `usedRatio` 0–1, RFC 3339 resets), which needs a bearer
+  token from `~/.kimi-code/server.token`; reading that file is too close to rule 1, so
+  it is left out.
+- **Gemini CLI:** only the interactive `/stats model`; Google ended Gemini CLI for AI
+  Pro/Ultra on June 18, 2026 (developers.googleblog.com, May 19, 2026). No plan % for it.
+- **Gemini API keys:** no documented quota or balance endpoint.
+
+### Cache and refresh
+
+- One row per account in `plan_usage` (last reading as JSON, last attempt, why it
+  failed). Screens read the cache only; a failed attempt keeps the last reading and the
+  UI shows a muted note ("no se pudo actualizar").
+- A new reading is asked at most every 3 min per account
+  (`PLAN_USAGE_MIN_INTERVAL_SECS`); the attempt is recorded before asking, so the app's
+  screens and the CLI do not run the same command twice.
+- The app asks (never blocking the UI) when the shell appears or the screen changes,
+  every 5 min while the window is focused, on focus, and when a task stops running.
+  `hedy status` refreshes in parallel with the login checks (spinner); `hedy doctor`
+  only reports from the cache.
+- Compact labels (header chips, sidebar) use the shared window closest to its limit
+  (usually the session, the week when it is the one about to stop the work). Colors:
+  ≥ 80 % warning, ≥ 95 % danger (bar fill and the percentage), never the account color
+  as text.
+
+## 21. Decisions
 
 - **Claude accounts:** `~/.claude` (Team) is registered as the default-folder account and
   launched without `CLAUDE_CONFIG_DIR`. New accounts live in Hedy folders.

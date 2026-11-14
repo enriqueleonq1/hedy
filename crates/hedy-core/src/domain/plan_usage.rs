@@ -452,7 +452,7 @@ fn parse_relative(text: &str) -> Option<i64> {
 }
 
 /// Reads the `result` of Codex's `account/rateLimits/read` (app-server,
-/// docs/decisions.md §4): `rateLimitsByLimitId` (one snapshot per metered
+/// docs/decisions.md §20): `rateLimitsByLimitId` (one snapshot per metered
 /// limit) when present, else `rateLimits`. Each snapshot has `primary` and
 /// `secondary` windows with `usedPercent` (0–100), `windowDurationMins` and
 /// `resetsAt` (Unix seconds). The `codex` limit is shared by every model;

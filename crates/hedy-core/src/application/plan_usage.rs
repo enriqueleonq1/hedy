@@ -1,5 +1,5 @@
 //! How much of each subscription plan is used, from each provider's own
-//! source (docs/decisions.md §3 "Usage and limits"). Readings are cached per
+//! source (docs/decisions.md §20). Readings are cached per
 //! account so screens show the last one at once; a new one is asked at most
 //! every [`PLAN_USAGE_MIN_INTERVAL_SECS`].
 

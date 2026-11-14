@@ -62,7 +62,7 @@ impl LaunchSpec {
                 vec!["acp".into(), "--login".into()]
             }
             // The built-in `/usage` runs locally in print mode (turns and cost
-            // 0, docs/decisions.md §3). Safe mode skips hooks, MCP servers and
+            // 0, docs/decisions.md §20). Safe mode skips hooks, MCP servers and
             // custom commands; nothing is saved as a session.
             (super::Provider::Claude, LaunchPurpose::PlanUsage) => [
                 "-p",
