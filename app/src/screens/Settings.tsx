@@ -1,11 +1,12 @@
 import { useState } from "react";
 
-import { useAction } from "../api/context";
+import { OVERVIEW_KEY, useAction } from "../api/context";
 import { useTerminals } from "../components/Terminal/TerminalProvider";
 import { Button } from "../components/ui/Button";
 import type { CliProviderId, Overview, SettingKey, ThemeSetting } from "../api/types";
 import { Mascot, MASCOT_STATE_LABEL, type MascotState } from "../components/Mascot/Mascot";
 import { ColorPicker, Field, Segmented, Switch } from "../components/ui/controls";
+import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 
 const CLIS: { id: CliProviderId; name: string }[] = [
   { id: "claude", name: "Claude Code" },
@@ -18,7 +19,7 @@ export function Settings({ overview }: { overview: Overview }) {
     api.setSetting(vars.key, vars.value),
   );
   const setColor = useAction((api, vars: { id: string; color: string }) => api.setAccountColor(vars.id, vars.color));
-  const [preview, setPreview] = useState(overview.accounts[0]?.color ?? "#7AA2F7");
+  const [preview, setPreview] = useState(overview.accounts[0]?.color ?? DEFAULT_ACCOUNT_COLOR);
 
   return (
     <div className="screen settings">
@@ -177,7 +178,10 @@ export function Settings({ overview }: { overview: Overview }) {
  */
 function CodeMap({ overview }: { overview: Overview }) {
   const terminals = useTerminals();
-  const setSetting = useAction((api, value: string | null) => api.setSetting("code_map.binary", value));
+  // Every project status says whether the code map is on.
+  const setSetting = useAction((api, value: string | null) => api.setSetting("code_map.binary", value), {
+    invalidate: [OVERVIEW_KEY, ["status"]],
+  });
   const { enabled, found } = overview.codeMap;
   return (
     <section className="card settings__section">

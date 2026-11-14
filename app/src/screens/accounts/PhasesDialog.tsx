@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { useAction } from "../../api/context";
+import { OVERVIEW_KEY, useAction } from "../../api/context";
 import type { Assignment, Overview, Phase, PhasePlan, Project } from "../../api/types";
 import { MODEL_SUGGESTIONS, PHASES } from "../../components/models";
 import { Button } from "../../components/ui/Button";
@@ -9,28 +9,35 @@ import { Dialog } from "../../components/ui/Dialog";
 /** Who plans, implements, writes tests and reviews in a project. */
 export function PhasesDialog({ project, overview, onClose }: { project: Project; overview: Overview; onClose: () => void }) {
   const [draft, setDraft] = useState<PhasePlan>(project.phases);
-  const save = useAction((api, phases: PhasePlan) => api.setProjectPhases(project.path, phases), { onSuccess: onClose });
+  const save = useAction((api, phases: PhasePlan) => api.setProjectPhases(project.path, phases), {
+    invalidate: [OVERVIEW_KEY, ["status", project.path]],
+    onSuccess: onClose,
+  });
   const main = overview.accounts.find((a) => a.id === project.account);
   const offered = overview.accounts.filter((a) => project.offerableAccounts.includes(a.id));
 
-  const update = (phase: Phase, change: Partial<Assignment>) => {
+  const update = (phase: Phase, optional: boolean, change: Partial<Assignment>) => {
     setDraft((old) => {
       const current = old[phase] ?? { account: "", model: null };
       const next = { ...current, ...change };
-      // No account and no model: back to the default for that phase.
-      if (!next.account && !next.model) {
+      // Back to the default for that phase: off for an optional one without an
+      // account (its model goes too), the project's account for the others.
+      if (!next.account && (optional || !next.model)) {
         return Object.fromEntries(Object.entries(old).filter(([p]) => p !== phase));
       }
       return { ...old, [phase]: next };
     });
   };
 
-  const cleaned = (): PhasePlan =>
-    Object.fromEntries(
-      Object.entries(draft)
-        .map(([phase, a]) => [phase, { account: a.account || project.account || "", model: a.model?.trim() || null }])
-        .filter(([, a]) => typeof a === "object" && a.account),
-    );
+  const cleaned = (): PhasePlan => {
+    const plan: PhasePlan = {};
+    for (const { phase, optional } of PHASES) {
+      const assigned = draft[phase];
+      const account = assigned?.account || (optional ? null : project.account);
+      if (assigned && account) plan[phase] = { account, model: assigned.model?.trim() || null };
+    }
+    return plan;
+  };
 
   return (
     <Dialog
@@ -61,7 +68,7 @@ export function PhasesDialog({ project, overview, onClose }: { project: Project;
               <select
                 aria-label={`Cuenta para ${label}`}
                 value={assigned?.account ?? ""}
-                onChange={(e) => update(phase, { account: e.target.value })}
+                onChange={(e) => update(phase, optional, { account: e.target.value })}
               >
                 <option value="">{optional ? "No usar esta fase" : `Cuenta del proyecto${main ? ` (${main.name})` : ""}`}</option>
                 {offered.map((a) => (
@@ -76,7 +83,7 @@ export function PhasesDialog({ project, overview, onClose }: { project: Project;
                 placeholder="automático"
                 disabled={optional && !assigned?.account}
                 value={assigned?.model ?? ""}
-                onChange={(e) => update(phase, { model: e.target.value || null })}
+                onChange={(e) => update(phase, optional, { model: e.target.value || null })}
               />
               <datalist id={listId}>
                 {suggestions.map((m) => (

@@ -39,7 +39,7 @@ export function AccountsScreen({ overview }: { overview: Overview }) {
             <AccountCard
               key={a.id}
               account={a}
-              projects={a.projects.map(projectName)}
+              projects={a.projects.map((path) => ({ path, name: projectName(path) }))}
               isDefault={overview.defaultAccount === a.id}
               onApiKey={() => setKeyFor(a)}
             />
@@ -65,7 +65,7 @@ function AccountCard({
   onApiKey,
 }: {
   account: Account;
-  projects: string[];
+  projects: { path: string; name: string }[];
   isDefault: boolean;
   onApiKey: () => void;
 }) {
@@ -98,9 +98,9 @@ function AccountCard({
 
       {projects.length > 0 && (
         <ul className="pills" aria-label="Proyectos">
-          {projects.map((name) => (
-            <li key={name} className="pill">
-              {name}
+          {projects.map((p) => (
+            <li key={p.path} className="pill">
+              {p.name}
             </li>
           ))}
         </ul>
