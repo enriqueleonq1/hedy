@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::domain::agent::looks_like_tests;
 use crate::domain::permissions::summarize;
-use crate::domain::{AgentEvent, PlanStep, StepStatus, UsageSample};
+use crate::domain::{AgentEvent, Decision, PlanStep, StepStatus, UsageSample};
 
 const EDIT_TOOLS: &[&str] = &["Edit", "Write", "MultiEdit", "NotebookEdit"];
 
@@ -137,6 +137,17 @@ impl Translator {
                 continue;
             }
             let failed = block["is_error"].as_bool().unwrap_or(false);
+            // Blocked by Hedy's PreToolUse hook: report the block, not a run.
+            let text = result_text(&block["content"]);
+            if failed && text.contains(HOOK_MARK) {
+                events.push(AgentEvent::PermissionResolved {
+                    request_id: format!("hook-{id}"),
+                    decision: Decision::Deny,
+                    automatic: true,
+                    reason: Some(text),
+                });
+                continue;
+            }
             let event = match tool.as_str() {
                 t if EDIT_TOOLS.contains(&t) => {
                     let path = summarize(t, &input);
@@ -175,6 +186,22 @@ impl Translator {
             events.push(event);
         }
         events
+    }
+}
+
+/// Every reason Hedy gives starts with this (see `domain::permissions`).
+const HOOK_MARK: &str = "Hedy no permite";
+
+/// A tool result's content: a string or a list of text blocks.
+fn result_text(content: &Value) -> String {
+    match content {
+        Value::String(s) => s.clone(),
+        Value::Array(blocks) => blocks
+            .iter()
+            .filter_map(|b| b["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
     }
 }
 
@@ -301,6 +328,27 @@ mod tests {
                     summary: "crear_cita".into()
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn hook_blocks_are_reported_as_blocks() {
+        let mut t = translator();
+        t.translate(
+            &json!({"type":"assistant","message":{"content":[
+            {"type":"tool_use","id":"b9","name":"Bash","input":{"command":"cat .env"}}]}}),
+            &HashSet::new(),
+        );
+        let result = json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"b9","is_error":true,
+            "content":[{"type":"text","text":"Hedy no permite comandos sobre «.env» (archivo protegido)."}]}]}});
+        assert_eq!(
+            t.translate(&result, &HashSet::new()),
+            vec![AgentEvent::PermissionResolved {
+                request_id: "hook-b9".into(),
+                decision: Decision::Deny,
+                automatic: true,
+                reason: Some("Hedy no permite comandos sobre «.env» (archivo protegido).".into()),
+            }]
         );
     }
 

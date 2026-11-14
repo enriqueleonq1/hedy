@@ -20,7 +20,10 @@ pub struct AppState {
 
 pub fn run() {
     let paths = HedyPaths::detect().expect("no se encontró la carpeta de datos de Hedy");
-    let hedy = adapters::system(&paths).expect("no se pudo abrir la base de datos de Hedy");
+    // This binary also serves Claude Code's PreToolUse hook (see main.rs).
+    let program = std::env::current_exe().expect("no se encontró el ejecutable de Hedy");
+    let hedy = adapters::system_with_hook(&paths, &program)
+        .expect("no se pudo abrir la base de datos de Hedy");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

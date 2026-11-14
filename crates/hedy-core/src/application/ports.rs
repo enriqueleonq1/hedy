@@ -143,6 +143,8 @@ pub trait Git: Send + Sync {
     /// Adds `pattern` to `.git/info/exclude` (never to the team's `.gitignore`).
     fn ensure_excluded(&self, repo: &Path, pattern: &str) -> PortResult<()>;
     fn add_worktree(&self, repo: &Path, path: &Path, branch: &str, base: &str) -> PortResult<()>;
+    /// Whether git ignores `path` (relative to `repo`).
+    fn is_ignored(&self, repo: &Path, path: &str) -> bool;
     /// Every change in the worktree (committed or not) since `base`.
     fn diff(&self, worktree: &Path, base: &str) -> PortResult<Vec<FileDiff>>;
     /// Commits everything; `false` when there was nothing to commit.
@@ -199,6 +201,9 @@ pub trait FileSystem: Send + Sync {
     /// Folder for a new Hedy-managed account.
     fn account_folder(&self, id: &AccountId) -> PathBuf;
     fn create_dir_all(&self, path: &Path) -> PortResult<()>;
+    fn exists(&self, path: &Path) -> bool;
+    /// `link` → `target`.
+    fn symlink_dir(&self, target: &Path, link: &Path) -> PortResult<()>;
     /// Writes `contents` unless the file already exists.
     fn write_if_missing(&self, path: &Path, contents: &str) -> PortResult<()>;
     /// Canonical form of `dir`.

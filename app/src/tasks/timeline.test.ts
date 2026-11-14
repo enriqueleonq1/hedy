@@ -53,6 +53,13 @@ describe("buildTimeline", () => {
     expect(permission?.type === "permission" && permission.resolution).toBeNull();
   });
 
+  it("shows hook blocks that had no card", () => {
+    const items = buildTimeline([
+      { kind: "permissionResolved", requestId: "hook-1", decision: "deny", automatic: true, reason: "Hedy no permite «.env»" },
+    ]);
+    expect(items).toEqual([{ type: "activity", key: "0", tone: "failed", text: "Bloqueado por Hedy · Hedy no permite «.env»" }]);
+  });
+
   it("labels models", () => {
     expect(modelLabel("claude-sonnet-5-5")).toBe("Claude Sonnet");
     expect(modelLabel(null)).toBe("Claude");

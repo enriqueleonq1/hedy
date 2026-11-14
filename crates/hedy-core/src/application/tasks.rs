@@ -9,7 +9,7 @@ use serde_json::Value;
 use super::ports::{AgentRequest, AgentSession, MergeOutcome, RateLimit, UsageRecord};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::permissions::{self, AllowRule, Verdict};
-use crate::domain::task::{branch_name, title_from_prompt};
+use crate::domain::task::{SHARED_DEPENDENCY_DIRS, branch_name, title_from_prompt};
 use crate::domain::{
     AgentEvent, Commit, Decision, FileDiff, LaunchPurpose, LaunchSpec, Provider, Task, TaskId,
     TaskMode, TaskStatus, Workspace, policy,
@@ -94,6 +94,7 @@ impl Hedy {
             self.git.ensure_excluded(repo, "/.hedy/")?;
             self.git
                 .add_worktree(repo, &worktree, &branch, &base_commit)?;
+            self.share_dependencies(repo, &worktree)?;
             Some(Workspace {
                 worktree,
                 branch,
@@ -127,6 +128,19 @@ impl Hedy {
         self.spawn(&task, request.prompt, request.plan_first, None)?;
         self.events.task_updated(&task);
         Ok(task)
+    }
+
+    /// Links ignored dependency folders (node_modules, .venv...) into the worktree.
+    fn share_dependencies(&self, repo: &Path, worktree: &Path) -> AppResult<()> {
+        for name in SHARED_DEPENDENCY_DIRS {
+            if self.fs.exists(&repo.join(name)) && self.git.is_ignored(repo, name) {
+                // A symlink is not a directory to git: exclude it explicitly.
+                self.git.ensure_excluded(repo, &format!("/{name}"))?;
+                self.fs
+                    .symlink_dir(&repo.join(name), &worktree.join(name))?;
+            }
+        }
+        Ok(())
     }
 
     fn spawn(
@@ -555,6 +569,21 @@ mod tests {
                 text: task.prompt.clone()
             }
         );
+    }
+
+    #[test]
+    fn ignored_dependency_folders_are_shared_with_the_worktree() {
+        let f = Fixture::new();
+        f.fs.add_existing("/code/moira/node_modules");
+        f.fs.add_existing("/code/moira/vendor");
+        f.git.ignore("node_modules");
+        let task = new_task(&f, "Hola", false);
+        let wt = task.workspace.unwrap().worktree;
+        assert_eq!(
+            f.fs.symlinks(),
+            vec![(f.dir("/code/moira/node_modules"), wt.join("node_modules"))]
+        );
+        assert_eq!(f.git.excluded(), vec!["/.hedy/", "/node_modules"]);
     }
 
     #[test]

@@ -89,10 +89,9 @@ function AccountCard({
       <UsageBars account={account} />
       <p className="muted small">
         {account.kind === "apiKey"
-          ? "Aún sin gasto registrado. Hedy lo contará desde el chat."
-          : account.defaultFolder
-            ? "Usa la sesión que ya existía en la carpeta por defecto de la CLI."
-            : "Los límites se mostrarán con lo que reporte la CLI."}
+          ? "Gasto según las estimaciones de cada respuesta, contado por Hedy."
+          : "El % aparece solo si la CLI lo informa; los tokens los cuenta Hedy."}
+        {account.defaultFolder && " Usa la sesión de la carpeta por defecto de la CLI."}
       </p>
 
       {projects.length > 0 && (

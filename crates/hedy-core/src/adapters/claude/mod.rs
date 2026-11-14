@@ -1,6 +1,7 @@
 //! Claude Code in headless mode: `claude -p` with stream-json both ways and
 //! permission requests over stdio (docs/decisions.md §3).
 
+pub mod hook;
 mod translate;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -19,23 +20,44 @@ use crate::domain::permissions::DEFAULT_BLOCKED;
 use crate::domain::{AgentEvent, TaskMode};
 pub use translate::Translator;
 
-pub struct ClaudeCodeLauncher;
+/// `hook`: shell command for the `PreToolUse` hook (see [`hook`]); without it
+/// only Claude Code's own deny rules protect files it reads without asking.
+#[derive(Default)]
+pub struct ClaudeCodeLauncher {
+    hook: Option<String>,
+}
+
+impl ClaudeCodeLauncher {
+    /// `program` must run [`hook::run`] when started with [`hook::HOOK_ARGS`].
+    pub fn with_hook(program: &std::path::Path) -> Self {
+        Self {
+            hook: Some(hook::command(program)),
+        }
+    }
+}
 
 const READ_ONLY_TOOLS_DENIED: &str = "Edit,Write,MultiEdit,NotebookEdit";
 
 /// Protected files as Claude Code's own `deny` rules. Claude runs some tools
 /// without asking (Read, read-only shell commands, plan files), so Hedy's
 /// permission rules alone would not see them; these the CLI enforces itself.
-pub fn deny_settings() -> String {
+pub fn settings(hook: Option<&str>) -> String {
     let rules: Vec<String> = DEFAULT_BLOCKED
         .iter()
         .flat_map(|pattern| [format!("Read(**/{pattern})"), format!("Edit(**/{pattern})")])
         .collect();
-    json!({"permissions": {"deny": rules}}).to_string()
+    let mut settings = json!({"permissions": {"deny": rules}});
+    if let Some(command) = hook {
+        settings["hooks"] = json!({"PreToolUse": [{
+            "matcher": hook::HOOK_MATCHER,
+            "hooks": [{"type": "command", "command": command}],
+        }]});
+    }
+    settings.to_string()
 }
 
 /// Command-line arguments for a request (after the program and its own args).
-pub fn args(request: &AgentRequest) -> Vec<String> {
+pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     let mut args: Vec<String> = [
         "-p",
         "--input-format",
@@ -54,7 +76,7 @@ pub fn args(request: &AgentRequest) -> Vec<String> {
     ]
     .map(String::from)
     .to_vec();
-    args.extend(["--settings".into(), deny_settings()]);
+    args.extend(["--settings".into(), settings(hook)]);
     match request.mode {
         TaskMode::Project => {}
         TaskMode::Ask => args.extend([
@@ -122,7 +144,7 @@ pub struct ClaudeSession {
 impl AgentLauncher for ClaudeCodeLauncher {
     fn start(&self, request: AgentRequest, events: EventSink) -> PortResult<Box<dyn AgentSession>> {
         let mut spec = request.launch.clone();
-        spec.args.extend(args(&request));
+        spec.args.extend(args(&request, self.hook.as_deref()));
         let mut child = command(&spec)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -287,7 +309,7 @@ mod tests {
 
     #[test]
     fn arguments_per_mode() {
-        let project = args(&request(TaskMode::Project, true)).join(" ");
+        let project = args(&request(TaskMode::Project, true), None).join(" ");
         assert!(project.contains("--permission-prompt-tool stdio"));
         assert!(project.contains(r#""Read(**/.env)""#), "{project}");
         assert!(project.contains(r#""Edit(**/*.pem)""#));
@@ -295,11 +317,27 @@ mod tests {
         assert!(project.ends_with("--model opus --resume s-1"));
         assert!(!project.contains("disallowedTools"));
 
-        let ask = args(&request(TaskMode::Ask, false)).join(" ");
+        let ask = args(&request(TaskMode::Ask, false), None).join(" ");
         assert!(ask.contains("--permission-mode default"));
         assert!(ask.contains("--disallowedTools Edit,Write,MultiEdit,NotebookEdit"));
-        let research = args(&request(TaskMode::Research, false)).join(" ");
+        let research = args(&request(TaskMode::Research, false), None).join(" ");
         assert!(research.contains("--allowedTools WebSearch,WebFetch"));
+        assert!(!research.contains("PreToolUse"));
+
+        let hooked = args(
+            &request(TaskMode::Project, false),
+            Some("'/bin/hedy' hook pre-tool-use"),
+        );
+        let settings: Value = serde_json::from_str(
+            &hooked[hooked.iter().position(|a| a == "--settings").unwrap() + 1],
+        )
+        .unwrap();
+        let entry = &settings["hooks"]["PreToolUse"][0];
+        assert_eq!(entry["matcher"], hook::HOOK_MATCHER);
+        assert_eq!(
+            entry["hooks"][0]["command"],
+            "'/bin/hedy' hook pre-tool-use"
+        );
     }
 
     /// Plays Claude's side of the protocol: asks to edit a file, writes it only
@@ -344,7 +382,7 @@ for line in sys.stdin:
             vec!["-I".into(), script.to_string_lossy().into_owned()],
         )
         .in_dir(dir.to_owned());
-        let session = ClaudeCodeLauncher
+        let session = ClaudeCodeLauncher::default()
             .start(
                 AgentRequest {
                     launch,

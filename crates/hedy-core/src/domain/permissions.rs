@@ -106,20 +106,41 @@ pub fn evaluate(
     blocked: &[String],
     remembered: &[AllowRule],
 ) -> Verdict {
+    if let Some(reason) = protected_file_reason(tool, input, work_dir, blocked) {
+        return Verdict::Deny(reason);
+    }
+    if WRITE_TOOLS.contains(&tool)
+        && let Some(path) = file_path(input)
+        && !normalize(work_dir, Path::new(path)).starts_with(work_dir)
+    {
+        return Verdict::Deny(format!(
+            "Hedy solo permite cambios dentro de la carpeta de la tarea ({}).",
+            work_dir.display()
+        ));
+    }
+    if remembered.contains(&rule_for(tool, input)) {
+        return Verdict::Allow;
+    }
+    Verdict::Ask
+}
+
+/// Why `tool` may not run because it touches a protected file, if it does.
+/// Also used by the `PreToolUse` hook, which sees the tools Claude Code runs
+/// without asking (reads, read-only shell commands).
+pub fn protected_file_reason(
+    tool: &str,
+    input: &Value,
+    work_dir: &Path,
+    blocked: &[String],
+) -> Option<String> {
     if FILE_TOOLS.contains(&tool)
         && let Some(path) = file_path(input)
     {
         let path = normalize(work_dir, Path::new(path));
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if is_blocked_name(name, blocked) {
-            return Verdict::Deny(format!(
+            return Some(format!(
                 "Hedy no permite tocar «{name}» (archivo protegido)."
-            ));
-        }
-        if WRITE_TOOLS.contains(&tool) && !path.starts_with(work_dir) {
-            return Verdict::Deny(format!(
-                "Hedy solo permite cambios dentro de la carpeta de la tarea ({}).",
-                work_dir.display()
             ));
         }
     }
@@ -127,19 +148,20 @@ pub fn evaluate(
         && let Some(command) = input["command"].as_str()
         && let Some(name) = command
             .split(|c: char| {
-                c.is_whitespace() || matches!(c, '<' | '>' | '|' | ';' | '&' | '\'' | '"')
+                c.is_whitespace()
+                    || matches!(
+                        c,
+                        '<' | '>' | '|' | ';' | '&' | '\'' | '"' | '=' | '(' | ')'
+                    )
             })
             .filter_map(|word| Path::new(word).file_name()?.to_str())
             .find(|name| is_blocked_name(name, blocked))
     {
-        return Verdict::Deny(format!(
+        return Some(format!(
             "Hedy no permite comandos sobre «{name}» (archivo protegido)."
         ));
     }
-    if remembered.contains(&rule_for(tool, input)) {
-        return Verdict::Allow;
-    }
-    Verdict::Ask
+    None
 }
 
 /// One-line description of a request for the permission card.

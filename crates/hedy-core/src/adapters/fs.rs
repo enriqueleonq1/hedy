@@ -36,6 +36,18 @@ impl FileSystem for LocalFileSystem {
         Ok(())
     }
 
+    fn exists(&self, path: &Path) -> bool {
+        path.exists()
+    }
+
+    fn symlink_dir(&self, target: &Path, link: &Path) -> PortResult<()> {
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(target, link);
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_dir(target, link);
+        linked.map_err(|e| io_error("enlazar", link, e))
+    }
+
     fn write_if_missing(&self, path: &Path, contents: &str) -> PortResult<()> {
         match fs::OpenOptions::new()
             .write(true)

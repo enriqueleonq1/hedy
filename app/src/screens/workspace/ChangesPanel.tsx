@@ -45,13 +45,62 @@ export function ChangesPanel({ project, task }: { project: string; task: Task | 
             <TerminalView key={dir} request={{ kind: "shell", path: dir }} active onExit={() => {}} />
           </div>
         )}
-        {tab === "preview" && (
-          <p className="empty">
-            La vista previa del proyecto (servidor de desarrollo y navegador integrado) llega en una próxima fase.
-          </p>
-        )}
+        {tab === "preview" && <Preview project={project} />}
       </div>
     </aside>
+  );
+}
+
+const LOCAL_URL = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/.*)?$/;
+
+/** The project's dev server inside Hedy. Local addresses only. */
+function Preview({ project }: { project: string }) {
+  const storageKey = `hedy.preview.${project}`;
+  const [url, setUrl] = useState(() => {
+    try {
+      return localStorage.getItem(storageKey) ?? "http://localhost:3000";
+    } catch {
+      return "http://localhost:3000";
+    }
+  });
+  const [shown, setShown] = useState<string | null>(null);
+  const [reloads, setReloads] = useState(0);
+  const valid = LOCAL_URL.test(url.trim());
+
+  return (
+    <div className="preview">
+      <form
+        className="row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!valid) return;
+          setShown(url.trim());
+          setReloads((n) => n + 1);
+          try {
+            localStorage.setItem(storageKey, url.trim());
+          } catch {
+            // Remembering the address is only a convenience.
+          }
+        }}
+      >
+        <input aria-label="Dirección del servidor local" className="mono preview__url" value={url} onChange={(e) => setUrl(e.target.value)} />
+        <Button type="submit" variant="primary" small disabled={!valid}>
+          {shown ? "Recargar" : "Abrir"}
+        </Button>
+      </form>
+      {!valid && <p className="error-text">Solo direcciones locales (localhost o 127.0.0.1).</p>}
+      {shown ? (
+        <iframe
+          key={reloads}
+          className="preview__frame"
+          src={shown}
+          title="Vista previa"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        />
+      ) : (
+        <p className="empty">Arranca el servidor de desarrollo en la pestaña Terminal (por ejemplo, npm run dev) y ábrelo aquí.</p>
+      )}
+    </div>
   );
 }
 

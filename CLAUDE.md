@@ -16,7 +16,7 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
   `npm run dev` (`?theme=light|dark`, `#accounts`, `#settings`)
 - App checks (from `app/`): `npm run typecheck`, `npm run lint`, `npm test`
 - Real end-to-end check (spends a few tokens of the `~/.claude` account):
-  `cargo run -p hedy-core --example smoke_task -- haiku` (add `env` to check `.env` stays unread)
+  `cargo run -p hedy-core --example smoke_task -- haiku` (`env` / `bash` check `.env` stays unread)
 - Phase 0 prototypes: `cargo run -p hedy-phase0 -- --help`
 
 ## Layout

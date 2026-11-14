@@ -11,7 +11,7 @@ mod sqlite;
 
 use std::sync::Arc;
 
-pub use claude::ClaudeCodeLauncher;
+pub use claude::{ClaudeCodeLauncher, hook};
 pub use fs::LocalFileSystem;
 pub use git::GitCli;
 pub use keyring::KeyringSecretStore;
@@ -33,8 +33,19 @@ impl Clock for SystemClock {
     }
 }
 
-/// Wires the real adapters together.
+/// Wires the real adapters together. Agents run without the `PreToolUse`
+/// hook; use [`system_with_hook`] in binaries that can serve it.
 pub fn system(paths: &HedyPaths) -> PortResult<Hedy> {
+    build(paths, ClaudeCodeLauncher::default())
+}
+
+/// Like [`system`], with `program` (which runs [`hook::run`] when started with
+/// [`hook::HOOK_ARGS`]) as Claude Code's `PreToolUse` hook.
+pub fn system_with_hook(paths: &HedyPaths, program: &std::path::Path) -> PortResult<Hedy> {
+    build(paths, ClaudeCodeLauncher::with_hook(program))
+}
+
+fn build(paths: &HedyPaths, claude: ClaudeCodeLauncher) -> PortResult<Hedy> {
     let store = SqliteStore::open(&paths.database())?;
     Ok(Hedy::new(Ports {
         store: Arc::new(store),
@@ -42,7 +53,7 @@ pub fn system(paths: &HedyPaths) -> PortResult<Hedy> {
         runner: Arc::new(SystemProcessRunner),
         fs: Arc::new(LocalFileSystem::new(paths.accounts_dir())),
         git: Arc::new(GitCli),
-        agents: Arc::new(ClaudeCodeLauncher),
+        agents: Arc::new(claude),
         clock: Arc::new(SystemClock),
     }))
 }

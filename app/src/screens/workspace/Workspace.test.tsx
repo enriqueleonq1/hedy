@@ -84,6 +84,21 @@ describe("Workspace", () => {
     expect(await screen.findByText(/Terminó/)).toBeInTheDocument();
   });
 
+  it("previews only local addresses", async () => {
+    const { user } = setup();
+    await openProject(user, /^hedy/);
+    await user.click(await screen.findByRole("tab", { name: "Vista previa" }));
+    const address = screen.getByLabelText("Dirección del servidor local");
+    await user.clear(address);
+    await user.type(address, "https://example.com");
+    expect(screen.getByText(/Solo direcciones locales/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Abrir" })).toBeDisabled();
+    await user.clear(address);
+    await user.type(address, "http://localhost:5173");
+    await user.click(screen.getByRole("button", { name: "Abrir" }));
+    expect(screen.getByTitle("Vista previa")).toHaveAttribute("src", "http://localhost:5173");
+  });
+
   it("keeps project tabs open and closes them", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);

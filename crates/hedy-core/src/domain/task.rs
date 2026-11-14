@@ -113,6 +113,11 @@ impl FromStr for TaskStatus {
     }
 }
 
+/// Dependency folders shared with the worktree through a symlink when git
+/// ignores them, so builds and tests work without reinstalling. Secrets such
+/// as `.env` are deliberately not shared: the task never sees them.
+pub const SHARED_DEPENDENCY_DIRS: &[&str] = &["node_modules", ".venv", "venv", "vendor"];
+
 /// Where a `Project` task works: its branch, forked from `base_branch` at `base_commit`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

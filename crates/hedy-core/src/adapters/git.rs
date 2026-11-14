@@ -83,6 +83,10 @@ impl Git for GitCli {
         git(repo, &["worktree", "add", "-b", branch, &path, base]).map(drop)
     }
 
+    fn is_ignored(&self, repo: &Path, path: &str) -> bool {
+        run(repo, &["check-ignore", "-q", path]).is_ok_and(|out| out.status.success())
+    }
+
     fn diff(&self, worktree: &Path, base: &str) -> PortResult<Vec<FileDiff>> {
         // Staging inside the task's own worktree makes new files part of the diff.
         git(worktree, &["add", "--all"])?;
@@ -233,6 +237,37 @@ mod tests {
                 .unwrap()
                 .trim()
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn shared_dependency_symlinks_stay_out_of_the_diff() {
+        use crate::application::ports::FileSystem;
+        let (_tmp, repo) = repo();
+        let g = GitCli;
+        fs::write(repo.join(".gitignore"), "node_modules/\n").unwrap();
+        git(&repo, &["add", "."]).unwrap();
+        git(&repo, &["commit", "-qm", "ignore"]).unwrap();
+        fs::create_dir_all(repo.join("node_modules/pkg")).unwrap();
+        assert!(g.is_ignored(&repo, "node_modules"));
+        assert!(!g.is_ignored(&repo, "app.py"));
+
+        let base = g.head_commit(&repo).unwrap();
+        let wt = repo.join(".hedy/worktrees/t3");
+        g.add_worktree(&repo, &wt, "hedy/t3", &base).unwrap();
+        g.ensure_excluded(&repo, "/node_modules").unwrap();
+        crate::adapters::LocalFileSystem::new(repo.clone())
+            .symlink_dir(&repo.join("node_modules"), &wt.join("node_modules"))
+            .unwrap();
+        assert!(wt.join("node_modules/pkg").is_dir());
+        assert!(
+            g.diff(&wt, &base).unwrap().is_empty(),
+            "the symlink is not a change"
+        );
+        g.remove_worktree(&repo, &wt, "hedy/t3").unwrap();
+        assert!(
+            repo.join("node_modules/pkg").is_dir(),
+            "the shared folder survives"
         );
     }
 

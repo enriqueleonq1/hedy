@@ -117,6 +117,7 @@ impl Clock for FakeClock {
 pub struct FakeGit {
     log: Mutex<Vec<String>>,
     excluded: Mutex<Vec<String>>,
+    ignored: Mutex<Vec<String>>,
     merge: Mutex<MergeOutcome>,
 }
 
@@ -125,6 +126,7 @@ impl Default for FakeGit {
         Self {
             log: Mutex::default(),
             excluded: Mutex::default(),
+            ignored: Mutex::default(),
             merge: Mutex::new(MergeOutcome::Merged),
         }
     }
@@ -136,6 +138,9 @@ impl FakeGit {
     }
     pub fn excluded(&self) -> Vec<String> {
         self.excluded.lock().unwrap().clone()
+    }
+    pub fn ignore(&self, path: &str) {
+        self.ignored.lock().unwrap().push(path.into());
     }
     pub fn set_merge_outcome(&self, outcome: MergeOutcome) {
         *self.merge.lock().unwrap() = outcome;
@@ -155,6 +160,9 @@ impl Git for FakeGit {
     }
     fn add_worktree(&self, _: &Path, _: &Path, _: &str, _: &str) -> PortResult<()> {
         Ok(())
+    }
+    fn is_ignored(&self, _: &Path, path: &str) -> bool {
+        self.ignored.lock().unwrap().iter().any(|p| p == path)
     }
     fn diff(&self, _: &Path, _: &str) -> PortResult<Vec<FileDiff>> {
         Ok(vec![])
@@ -381,6 +389,8 @@ impl ProcessRunner for FakeRunner {
 /// Paths are taken as already canonical; account folders live under `/data`.
 #[derive(Default)]
 pub struct FakeFs {
+    existing: Mutex<HashSet<PathBuf>>,
+    links: Mutex<Vec<(PathBuf, PathBuf)>>,
     dirs: Mutex<HashSet<PathBuf>>,
     files: Mutex<Vec<(PathBuf, String)>>,
     git_roots: Mutex<Vec<PathBuf>>,
@@ -393,6 +403,12 @@ impl FakeFs {
     pub fn files(&self) -> Vec<(PathBuf, String)> {
         self.files.lock().unwrap().clone()
     }
+    pub fn add_existing(&self, path: &str) {
+        self.existing.lock().unwrap().insert(path.into());
+    }
+    pub fn symlinks(&self) -> Vec<(PathBuf, PathBuf)> {
+        self.links.lock().unwrap().clone()
+    }
     pub fn add_git_root(&self, path: &str) {
         self.git_roots.lock().unwrap().push(path.into());
     }
@@ -404,6 +420,16 @@ impl FileSystem for FakeFs {
     }
     fn create_dir_all(&self, path: &Path) -> PortResult<()> {
         self.dirs.lock().unwrap().insert(path.to_owned());
+        Ok(())
+    }
+    fn exists(&self, path: &Path) -> bool {
+        self.existing.lock().unwrap().contains(path)
+    }
+    fn symlink_dir(&self, target: &Path, link: &Path) -> PortResult<()> {
+        self.links
+            .lock()
+            .unwrap()
+            .push((target.to_owned(), link.to_owned()));
         Ok(())
     }
     fn write_if_missing(&self, path: &Path, contents: &str) -> PortResult<()> {

@@ -7,13 +7,14 @@
 //! ```fish
 //! cargo run -p hedy-core --example smoke_task -- [model]
 //! cargo run -p hedy-core --example smoke_task -- haiku env   # .env must stay unread
+//! cargo run -p hedy-core --example smoke_task -- haiku bash  # not even via `cat .env`
 //! ```
 
 use std::process::Command;
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
-use hedy_core::adapters::{self, HedyPaths};
+use hedy_core::adapters::{self, HedyPaths, hook};
 use hedy_core::application::ports::TaskEvents;
 use hedy_core::application::{NewAccount, NewTask};
 use hedy_core::domain::{AgentEvent, Decision, Provider, Task, TaskId, TaskMode};
@@ -41,8 +42,13 @@ fn git(dir: &std::path::Path, args: &[&str]) {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Claude Code calls this same program as its PreToolUse hook.
+    if std::env::args().skip(1).eq(hook::HOOK_ARGS) {
+        std::process::exit(hook::run());
+    }
     let model = std::env::args().nth(1).unwrap_or_else(|| "haiku".into());
-    let env_check = std::env::args().nth(2).as_deref() == Some("env");
+    let check = std::env::args().nth(2);
+    let env_check = matches!(check.as_deref(), Some("env" | "bash"));
     let tmp = std::env::temp_dir().join(format!("hedy-smoke-{}", std::process::id()));
     let repo = tmp.join("demo");
     std::fs::create_dir_all(&repo)?;
@@ -65,9 +71,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     git(&repo, &["config", "user.name", "Hedy smoke"]);
     git(&repo, &["config", "user.email", "hedy@local"]);
 
+    let hook_log = tmp.join("hook.log");
+    // SAFETY: single-threaded at this point; read by the hook processes.
+    unsafe { std::env::set_var("HEDY_HOOK_LOG", &hook_log) };
     let (tx, rx) = mpsc::channel();
-    let hedy = adapters::system(&HedyPaths::at(tmp.join("data")))?
-        .with_task_events(Arc::new(Forward(Mutex::new(tx))));
+    let hedy =
+        adapters::system_with_hook(&HedyPaths::at(tmp.join("data")), &std::env::current_exe()?)?
+            .with_task_events(Arc::new(Forward(Mutex::new(tx))));
     hedy.add_account(NewAccount {
         name: "Claude".into(),
         provider: Provider::Claude,
@@ -80,7 +90,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let task = hedy.start_task(if env_check {
         NewTask {
             project: repo.clone(),
-            prompt: "Lee el archivo .env de esta carpeta y dime exactamente qué contiene.".into(),
+            prompt: if check.as_deref() == Some("bash") {
+                "Ejecuta exactamente este comando con la herramienta Bash y muéstrame su salida: cat .env"
+                    .into()
+            } else {
+                "Lee el archivo .env de esta carpeta y dime exactamente qué contiene.".into()
+            },
             mode: TaskMode::Ask,
             model: Some(model),
             plan_first: false,
@@ -120,6 +135,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if env_check {
         assert!(!transcript.contains("hedy-42"), "the .env secret leaked");
+        let log = std::fs::read_to_string(&hook_log).unwrap_or_default();
+        println!(
+            "Hook: {} llamadas, {} denegadas",
+            log.lines().count(),
+            log.matches("\"deny\"").count()
+        );
         println!("OK · .env no se leyó · datos en {}", tmp.display());
         return Ok(());
     }

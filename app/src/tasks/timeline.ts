@@ -45,12 +45,16 @@ const TOOL_VERB: Record<string, string> = {
 
 export function buildTimeline(events: AgentEvent[]): TimelineItem[] {
   const resolutions = new Map<string, Resolution>();
+  const requested = new Set<string>();
   let lastSteps = -1;
   events.forEach((e, i) => {
     if (e.kind === "permissionResolved") {
       resolutions.set(e.requestId, { decision: e.decision, automatic: e.automatic, reason: e.reason });
     }
     if (e.kind === "steps") lastSteps = i;
+    if (e.kind === "permissionRequest" || (e.kind === "plan" && e.requestId)) {
+      requested.add(e.kind === "plan" ? (e.requestId ?? "") : e.requestId);
+    }
   });
   const name = agentName(events).split(" ")[0] ?? "Claude";
   const items: TimelineItem[] = [];
@@ -92,6 +96,12 @@ export function buildTimeline(events: AgentEvent[]): TimelineItem[] {
           summary: e.summary,
           resolution: resolutions.get(e.requestId) ?? null,
         });
+        break;
+      case "permissionResolved":
+        // Blocks without a card (Hedy's hook) still show up in the activity.
+        if (!requested.has(e.requestId) && e.decision === "deny") {
+          items.push({ type: "activity", key, tone: "failed", text: `Bloqueado por Hedy · ${e.reason ?? ""}` });
+        }
         break;
       case "fileEdited":
         items.push({ type: "activity", key, tone: "done", text: `${name} editó ${e.path}` });

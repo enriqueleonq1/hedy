@@ -43,6 +43,10 @@ describe("Accounts", () => {
     expect(within(card).getByText(/Conectada · team/)).toBeInTheDocument();
     expect(within(card).getByText(/carpeta por defecto de la CLI/)).toBeInTheDocument();
     expect(within(card).getByRole("listitem")).toHaveTextContent("homming");
+    const personal = screen.getByRole("article", { name: "Claude personal" });
+    expect(within(personal).getByRole("meter", { name: "Límite del plan: 34%" })).toBeInTheDocument();
+    expect(within(personal).getByText("182k tokens")).toBeInTheDocument();
+    expect(within(card).getByText("sin datos")).toBeInTheDocument();
     const codex = screen.getByRole("article", { name: "ChatGPT" });
     expect(within(codex).getByRole("button", { name: "Iniciar sesión" })).toBeInTheDocument();
   });

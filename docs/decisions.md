@@ -368,14 +368,22 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
   - Protected files are also passed as Claude Code's own `permissions.deny` rules
     (`--settings`, `Read(**/.env)`, `Edit(**/.env)`...), which the CLI enforces itself.
     Verified: the `.env` read was blocked by the CLI.
-  - **Known gap:** a shell command such as `cat .env` that Claude Code auto-allows is not
-    seen by Hedy. Claude declined to try it in the test, but that is not enforcement.
-    Planned fix: a `PreToolUse` hook (`hedy hook`) that applies the same rules.
+  - A **`PreToolUse` hook** (also in `--settings`) runs the same protected-file rules on
+    every Bash/Read/Edit/Write call, including the ones Claude Code runs without asking.
+    The app binary serves it (`hedy-app hook pre-tool-use`). Verified: `cat .env` through
+    Bash was blocked by the hook (`smoke_task -- haiku bash`).
+- **Dependencies in the worktree:** git-ignored `node_modules`, `.venv`, `venv` and
+  `vendor` are symlinked from the main checkout (and excluded locally, since git does not
+  treat a symlink as an ignored directory), so builds and tests work without reinstalling.
+  `.env` files are deliberately not shared: a task never has the secrets at hand.
+- **Preview:** the "Vista previa" tab embeds a local dev server (localhost / 127.0.0.1
+  only, enforced in the UI and in the CSP `frame-src`).
 - **Pregunta / Research:** no worktree; edit tools disabled with `--disallowedTools`;
   Research also allows `WebSearch,WebFetch`.
 - **Usage:** each `result` gives tokens and a cost *estimate*; `rate_limit_event` gave
-  `status` and `resetsAt` but `utilization: null` on the Team plan, so the app shows Hedy's
-  own token count unless a percentage is reported.
+  `status` and `resetsAt` but `utilization: null` on the Team plan. Account cards show the
+  reported status ("dentro del límite / cerca / alcanzado") and renewal time, the % only
+  when reported, and Hedy's own token count labelled as such.
 
 ## 11. Decisions
 

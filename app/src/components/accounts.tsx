@@ -1,4 +1,5 @@
 import type { Account, Login, ProviderId } from "../api/types";
+import { formatTokens } from "../tasks/timeline";
 
 const VENDOR: Record<ProviderId, string> = {
   claude: "Anthropic",
@@ -59,32 +60,63 @@ export function LoginBadge({ account }: { account: Account }) {
   );
 }
 
+const LIMIT_STATUS: Record<string, string> = {
+  allowed: "Dentro del límite",
+  allowed_warning: "Cerca del límite",
+  rejected: "Límite alcanzado",
+};
+
+function resetText(resetsAt: number | null): string | null {
+  if (!resetsAt) return null;
+  const when = new Intl.DateTimeFormat("es", { weekday: "long", hour: "2-digit", minute: "2-digit" }).format(
+    new Date(resetsAt * 1000),
+  );
+  return `Se renueva el ${when}`;
+}
+
 /**
- * Subscription windows (5 h and weekly) or API budget. Nothing is recorded
- * until the chat arrives (phase 3), and the UI says so instead of guessing.
+ * What is actually known: the limit status (and % only when the CLI reports
+ * it) and Hedy's own token count for the week. Nothing is guessed.
  */
 export function UsageBars({ account }: { account: Account }) {
-  const rows = account.kind === "apiKey" ? ["Presupuesto del mes", "Hoy"] : ["Ventana de 5 h", "Semanal"];
+  const { usage } = account;
+  const limit = usage.limit;
+  const percent = limit?.percent ?? null;
+  const tokens = usage.weekTokens > 0 ? `${formatTokens(usage.weekTokens)} tokens` : "sin uso";
+  const cost = usage.weekCostUsd != null ? `US$${usage.weekCostUsd.toFixed(2)}` : null;
+
   return (
     <div className="usage">
-      {rows.map((label) => (
-        <div className="usage__row" key={label}>
+      {account.kind === "subscription" && (
+        <div className="usage__row">
           <div className="row row--between">
-            <span>{label}</span>
-            <span className="usage__value">—</span>
+            <span>Límite del plan</span>
+            <span className="usage__value">
+              {percent != null ? `${Math.round(percent)}%` : limit ? (LIMIT_STATUS[limit.status] ?? limit.status) : "sin datos"}
+            </span>
           </div>
           <div
             className="bar"
             role="meter"
-            aria-label={`${label}: sin datos`}
+            aria-label={`Límite del plan: ${percent != null ? `${Math.round(percent)}%` : "sin porcentaje"}`}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuenow={0}
+            aria-valuenow={percent ?? 0}
           >
-            <div className="bar__fill" style={{ width: 0, background: account.color }} />
+            <div className="bar__fill" style={{ width: `${Math.min(percent ?? 0, 100)}%`, background: account.color }} />
           </div>
+          {resetText(limit?.resetsAt ?? null) && <span className="muted small">{resetText(limit?.resetsAt ?? null)}</span>}
         </div>
-      ))}
+      )}
+      <div className="usage__row">
+        <div className="row row--between">
+          <span>{account.kind === "apiKey" ? "Gasto de la semana" : "Esta semana"}</span>
+          <span className="usage__value">
+            {account.kind === "apiKey" ? (cost ?? "sin uso") : tokens}
+          </span>
+        </div>
+        {account.kind === "apiKey" && <span className="muted small">{tokens}</span>}
+      </div>
     </div>
   );
 }
