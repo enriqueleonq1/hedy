@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, LaunchSpec, Note,
-    NoteStatus, Notice, Phase, Project, QueuedMessage, Skill, SkillStatus, Task, TaskId, TaskMode,
-    UsageSample,
+    NoteStatus, Notice, Phase, PlanUsage, Project, QueuedMessage, Skill, SkillStatus, Task, TaskId,
+    TaskMode, UsageProblem, UsageSample, plan_usage::WallTime,
 };
 
 /// Failure in an adapter. The message is user-facing (Spanish).
@@ -77,6 +77,18 @@ pub struct RateLimit {
     pub at: i64,
 }
 
+/// The last reading of an account's plan usage, kept so screens show it at
+/// once, and when Hedy last tried (successful or not).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlanUsageRecord {
+    /// The last successful reading; kept when a later attempt fails.
+    pub usage: Option<PlanUsage>,
+    /// Unix seconds.
+    pub attempted_at: i64,
+    /// Why the last attempt gave nothing; `None` when it worked.
+    pub problem: Option<UsageProblem>,
+}
+
 pub trait UsageRepository: Send + Sync {
     fn record_usage(&self, record: &UsageRecord) -> PortResult<()>;
     /// Sum of everything recorded for `account` since `since` (seconds).
@@ -87,6 +99,8 @@ pub trait UsageRepository: Send + Sync {
     fn usage_points(&self, project: &Path, since: i64) -> PortResult<Vec<(i64, UsageSample)>>;
     fn set_rate_limit(&self, account: &AccountId, limit: &RateLimit) -> PortResult<()>;
     fn rate_limit(&self, account: &AccountId) -> PortResult<Option<RateLimit>>;
+    fn set_plan_usage(&self, account: &AccountId, record: &PlanUsageRecord) -> PortResult<()>;
+    fn plan_usage(&self, account: &AccountId) -> PortResult<Option<PlanUsageRecord>>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -248,6 +262,12 @@ impl<T> Store for T where
 pub trait Clock: Send + Sync {
     /// Milliseconds since the Unix epoch.
     fn now_ms(&self) -> i64;
+    /// Unix seconds of the first moment matching `wall` (a date and time in
+    /// a time zone, the year left out) from an hour before `after` (Unix
+    /// seconds). `None` when the zone is unknown or the date does not exist.
+    fn resolve_wall_time(&self, _wall: &WallTime, _after: i64) -> Option<i64> {
+        None
+    }
 }
 
 /// API keys in the OS keyring. Never used for subscription logins.
@@ -288,6 +308,28 @@ pub trait ProcessRunner: Send + Sync {
     fn is_installed(&self, program: &str) -> bool;
     /// Replaces the current process when the platform allows it. Only returns on error.
     fn exec(&self, spec: &LaunchSpec) -> PortError;
+}
+
+/// Reads plan usage from sources that need more than one captured command
+/// (a JSON-RPC conversation). Only official, read-only methods that never
+/// send a message to the model.
+pub trait UsageProbe: Send + Sync {
+    /// Starts `spec` (`codex app-server --listen stdio://` for the account),
+    /// does the `initialize` handshake, calls `account/rateLimits/read` and
+    /// returns its `result` as JSON text. Fails after `timeout`.
+    fn codex_rate_limits(
+        &self,
+        spec: &LaunchSpec,
+        timeout: std::time::Duration,
+    ) -> PortResult<String>;
+    /// `GET {base_url}/users/me/balance` with the API key (Moonshot). Returns
+    /// the body. The key is only sent in the header, never logged.
+    fn moonshot_balance(
+        &self,
+        base_url: &str,
+        api_key: &Secret,
+        timeout: std::time::Duration,
+    ) -> PortResult<String>;
 }
 
 /// Result of merging a task branch into its base branch.

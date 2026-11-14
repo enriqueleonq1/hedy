@@ -17,6 +17,11 @@ if [ "$1" = auth ] && [ "$2" = status ]; then
   echo '{"loggedIn":true,"subscriptionType":"max","email":"secret@example.com"}'
   exit 0
 fi
+if [ "$1" = -p ] && [ "$2" = /usage ] && [ "$3" = --output-format ] && [ "$4" = json ]; then
+  [ -n "$ANTHROPIC_API_KEY" ] && { echo '{"num_turns":1,"total_cost_usd":0.5}'; exit 0; }
+  echo '{"type":"result","subtype":"success","is_error":false,"num_turns":0,"total_cost_usd":0,"local_command":"usage","result":"You are currently using your subscription to power your Claude Code usage\n\nCurrent session: 34% used · resets Nov 14, 7pm (America/Caracas)\nCurrent week (all models): 29% used · resets Nov 20, 12am (America/Caracas)\nCurrent week (Fable): 0% used · resets Nov 20, 12am (America/Caracas)\n\nWhat is contributing to your limits usage?\n  98%  Give subagents a cheaper model\n"}'
+  exit 0
+fi
 echo "CONFIG=${CLAUDE_CONFIG_DIR:-unset}"
 echo "APIKEY=${ANTHROPIC_API_KEY:-none}"
 echo "OAUTH=${CLAUDE_CODE_OAUTH_TOKEN:-none}"
@@ -216,6 +221,57 @@ fn status_shows_login_without_identifying_data() {
         .stdout(predicate::str::contains("Proyecto homming"))
         .stdout(predicate::str::contains("conectada · max"))
         .stdout(predicate::str::contains("secret@example.com").not());
+}
+
+#[test]
+fn status_shows_plan_usage_from_claude_usage() {
+    let env = Env::new();
+    env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy(&["account", "add", "Kimi Code", "--kimi", "--no-login"])
+        .assert()
+        .success();
+    let line = |text: &str, needle: &str| {
+        text.lines()
+            .find(|l| l.contains(needle))
+            .unwrap_or_else(|| panic!("no line with {needle} in:\n{text}"))
+            .to_owned()
+    };
+    // The fake answers as if it spent tokens when an API key gets through.
+    let out = env
+        .hedy(&["status"])
+        .env("ANTHROPIC_API_KEY", "sk-should-be-stripped")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(out).unwrap();
+    assert!(line(&out, "Sesión (5 h)").contains("34%"), "{out}");
+    assert!(line(&out, "Esta semana").contains("29%"), "{out}");
+    assert!(line(&out, "Esta semana").contains("se renueva"), "{out}");
+    assert!(
+        out.contains("según /usage de Claude Code · hace un momento"),
+        "{out}"
+    );
+    // A per-model window at 0 % is not worth a line.
+    assert!(!out.contains("Fable"), "{out}");
+    assert!(
+        out.contains("Kimi aún no informa el límite del plan a Hedy"),
+        "{out}"
+    );
+
+    // The cached reading is shown again (no new ask within 3 minutes), in English too.
+    env.hedy_lang("en", &["status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Session (5 h)"))
+        .stdout(predicate::str::contains("This week"))
+        .stdout(predicate::str::contains("from Claude Code's /usage"))
+        .stdout(predicate::str::contains(
+            "Kimi does not report its plan limit to Hedy yet",
+        ));
 }
 
 #[test]

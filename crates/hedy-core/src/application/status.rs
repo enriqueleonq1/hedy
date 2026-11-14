@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::ports::RateLimit;
-use super::{AppResult, Hedy};
+use super::{AppResult, Hedy, PlanUsageState};
 use crate::domain::{Account, AccountId, LoginState, Project, UsageSample, policy};
 
 /// What Hedy recorded for an account. Subscription limits come only from what
@@ -11,6 +11,8 @@ pub struct AccountUsage {
     /// Last 7 days.
     pub week: UsageSample,
     pub rate_limit: Option<RateLimit>,
+    /// The plan's limit windows, from the cache (never starts a process).
+    pub plan: PlanUsageState,
 }
 
 const WEEK_SECS: i64 = 7 * 24 * 60 * 60;
@@ -38,6 +40,7 @@ impl Hedy {
         Ok(AccountUsage {
             week: self.store.usage_since(account, since)?,
             rate_limit: self.store.rate_limit(account)?,
+            plan: self.plan_usage(account.as_str())?,
         })
     }
 

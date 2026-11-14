@@ -29,6 +29,7 @@ export const tauriApi: HedyApi = {
   renameAccount: (id, name) => invoke("rename_account", { id, name }),
   setDefaultAccount: (id) => invoke("set_default_account", { id }),
   setAccountColor: (id, color) => invoke("set_account_color", { id, color }),
+  refreshPlanUsage: (id) => invoke("refresh_plan_usage", { id }),
 
   useAccount: (path, account, protect) =>
     invoke("use_account", { path, account, protect: protect ?? null }),

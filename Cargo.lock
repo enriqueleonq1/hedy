@@ -1839,6 +1839,7 @@ name = "hedy-core"
 version = "0.1.0"
 dependencies = [
  "directories",
+ "jiff",
  "keyring",
  "portable-pty",
  "rusqlite",

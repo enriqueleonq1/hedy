@@ -4,13 +4,13 @@ use std::sync::Mutex;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::application::ports::{
-    AccountRepository, MemoryRepository, NewNote, NewSkill, NoteRevision, PortError, PortResult,
-    ProjectRepository, RateLimit, SettingsRepository, SkillRepository, SkillRevision, StoreHealth,
-    TaskRepository, UsageRecord, UsageRepository,
+    AccountRepository, MemoryRepository, NewNote, NewSkill, NoteRevision, PlanUsageRecord,
+    PortError, PortResult, ProjectRepository, RateLimit, SettingsRepository, SkillRepository,
+    SkillRevision, StoreHealth, TaskRepository, UsageRecord, UsageRepository,
 };
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Color, ConfigFolder, Credentials, Note, NoteStatus,
-    Project, Skill, SkillStatus, Task, TaskId, UsageSample,
+    PlanUsage, Project, Skill, SkillStatus, Task, TaskId, UsageProblem, UsageSample,
 };
 use crate::tr;
 
@@ -200,6 +200,17 @@ const MIGRATIONS: &[&str] = &[
         -- The built-in example this row edits (or deletes).
         builtin  TEXT,
         deleted  INTEGER NOT NULL DEFAULT 0
+    );
+"#,
+    r#"
+    -- Last reading of each account's plan usage (JSON), kept to show it at once.
+    CREATE TABLE plan_usage (
+        account_id    TEXT PRIMARY KEY,
+        -- NULL until a reading works; kept when a later attempt fails.
+        usage         TEXT,
+        attempted_at  INTEGER NOT NULL,
+        -- Why the last attempt gave nothing ('unsupported', 'unavailable', 'spends_tokens').
+        problem       TEXT
     );
 "#,
 ];
@@ -623,6 +634,53 @@ impl UsageRepository for SqliteStore {
                         utilization: r.get(1)?,
                         resets_at: r.get(2)?,
                         at: r.get(3)?,
+                    })
+                },
+            )
+            .optional()
+        })
+    }
+
+    fn set_plan_usage(&self, account: &AccountId, record: &PlanUsageRecord) -> PortResult<()> {
+        let usage = record
+            .usage
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| PortError::new(e.to_string()))?;
+        self.with(|c| {
+            c.execute(
+                "INSERT INTO plan_usage (account_id, usage, attempted_at, problem)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT (account_id) DO UPDATE SET usage = excluded.usage,
+                    attempted_at = excluded.attempted_at, problem = excluded.problem",
+                params![
+                    account.as_str(),
+                    usage,
+                    record.attempted_at,
+                    record.problem.map(UsageProblem::as_str),
+                ],
+            )
+            .map(drop)
+        })
+    }
+
+    fn plan_usage(&self, account: &AccountId) -> PortResult<Option<PlanUsageRecord>> {
+        self.with(|c| {
+            c.query_row(
+                "SELECT usage, attempted_at, problem FROM plan_usage WHERE account_id = ?1",
+                [account.as_str()],
+                |r| {
+                    Ok(PlanUsageRecord {
+                        // A reading in an older shape is dropped, not an error.
+                        usage: r
+                            .get::<_, Option<String>>(0)?
+                            .and_then(|json| serde_json::from_str::<PlanUsage>(&json).ok()),
+                        attempted_at: r.get(1)?,
+                        problem: r
+                            .get::<_, Option<String>>(2)?
+                            .as_deref()
+                            .and_then(UsageProblem::parse),
                     })
                 },
             )
@@ -1218,6 +1276,27 @@ mod tests {
         };
         store.set_rate_limit(&account, &limit).unwrap();
         assert_eq!(store.rate_limit(&account).unwrap(), Some(limit));
+
+        assert_eq!(store.plan_usage(&account).unwrap(), None);
+        let usage = crate::domain::plan_usage::resolve_windows(
+            crate::domain::plan_usage::parse_usage_text(
+                "Current session: 34% used · resets in 1 hr",
+            ),
+            10,
+            crate::domain::UsageSource::ClaudeUsage,
+            |_| None,
+        );
+        let mut record = PlanUsageRecord {
+            usage: Some(usage),
+            attempted_at: 10,
+            problem: None,
+        };
+        store.set_plan_usage(&account, &record).unwrap();
+        assert_eq!(store.plan_usage(&account).unwrap(), Some(record.clone()));
+        record.attempted_at = 20;
+        record.problem = Some(UsageProblem::Unavailable);
+        store.set_plan_usage(&account, &record).unwrap();
+        assert_eq!(store.plan_usage(&account).unwrap(), Some(record));
     }
 
     #[test]

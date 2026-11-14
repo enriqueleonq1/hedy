@@ -46,11 +46,49 @@ describe("Accounts", () => {
     expect(within(card).getByText(/carpeta por defecto de la CLI/)).toBeInTheDocument();
     expect(within(card).getByRole("listitem")).toHaveTextContent("homming");
     const personal = screen.getByRole("article", { name: "Claude personal" });
-    expect(within(personal).getByRole("meter", { name: "Límite del plan: 34%" })).toBeInTheDocument();
     expect(within(personal).getByText("182k tokens")).toBeInTheDocument();
-    expect(within(card).getByText("sin datos")).toBeInTheDocument();
+    expect(within(personal).getByText("Tokens en Hedy esta semana")).toBeInTheDocument();
     const codex = screen.getByRole("article", { name: "ChatGPT" });
     expect(within(codex).getByRole("button", { name: "Iniciar sesión" })).toBeInTheDocument();
+  });
+
+  it("shows the plan's session and week from /usage, with thresholds and the source", async () => {
+    await openAccounts();
+    const work = screen.getByRole("article", { name: "Claude trabajo" });
+    expect(within(work).getByRole("meter", { name: "Sesión actual (5 h): 34%" })).toBeInTheDocument();
+    expect(within(work).getByRole("meter", { name: "Esta semana: 29%" })).toBeInTheDocument();
+    expect(within(work).getAllByText(/^Se renueva (hoy|mañana|el .+) a las .+$/)).toHaveLength(2);
+    expect(within(work).getByText("según /usage de Claude Code · hace 2 min")).toBeInTheDocument();
+    // A per-model window at 0 % is left out.
+    expect(within(work).queryByText(/Fable/)).not.toBeInTheDocument();
+
+    const personal = screen.getByRole("article", { name: "Claude personal" });
+    expect(within(personal).getByText("83%")).toHaveClass("usage__value--warning");
+    expect(within(personal).getByText("58%")).not.toHaveClass("usage__value--warning");
+    expect(within(personal).getByText("Por modelo: Opus 12%")).toBeInTheDocument();
+
+    // A source that failed keeps the last reading quiet: a muted note.
+    const codex = screen.getByRole("article", { name: "ChatGPT" });
+    expect(within(codex).getByText("no se pudo actualizar")).toBeInTheDocument();
+
+    // The sidebar and the header use the window closest to its limit.
+    const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
+    expect(within(sidebar).getByRole("meter", { name: "Claude personal: 83%" })).toBeInTheDocument();
+    expect(within(sidebar).getByText("83%")).toHaveClass("level--warning");
+    expect(within(sidebar).getByRole("meter", { name: "Claude trabajo: 34%" })).toBeInTheDocument();
+  });
+
+  it("asks for fresh readings while the sidebar is on screen and says which providers do not report", async () => {
+    const api = MockApi.withSampleData();
+    await api.addAccount({ name: "Gemini", provider: "gemini", apiKey: false, defaultFolder: false, color: null });
+    const refresh = vi.spyOn(api, "refreshPlanUsage");
+    const { user } = renderApp(api);
+    await waitFor(() => expect(refresh).toHaveBeenCalledWith("claude-trabajo"));
+    expect(refresh).toHaveBeenCalledWith("claude-personal");
+    expect(refresh).not.toHaveBeenCalledWith("gemini");
+    await user.click(await screen.findByRole("button", { name: "Cuentas y modelos" }));
+    const gemini = screen.getByRole("article", { name: "Gemini" });
+    expect(within(gemini).getByText("Gemini aún no informa el límite del plan a Hedy")).toBeInTheDocument();
   });
 
   it("adds an API key account and stores its key", async () => {

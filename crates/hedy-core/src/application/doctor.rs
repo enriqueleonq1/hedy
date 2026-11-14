@@ -9,7 +9,8 @@ use super::{AppResult, Hedy, Setting};
 use crate::domain::env;
 use crate::domain::version::parse_version;
 use crate::domain::{
-    Account, ConfigFolder, Credentials, LaunchPurpose, LaunchSpec, LoginState, Provider, policy,
+    Account, ConfigFolder, Credentials, LaunchPurpose, LaunchSpec, LoginState, Provider,
+    UsageProblem, policy,
 };
 use crate::tr;
 
@@ -353,7 +354,7 @@ impl Hedy {
             .ok()
             .flatten()
             .is_some();
-        Ok(vec![match self.login_state(account)? {
+        let mut checks = vec![match self.login_state(account)? {
             LoginState::LoggedIn { plan: Some(plan) } => check(
                 CheckLevel::Ok,
                 tr!("sesión iniciada · {plan}", "signed in · {plan}"),
@@ -378,7 +379,44 @@ impl Hedy {
                     "{cli} has no official command to check the login"
                 ),
             ),
-        }])
+        }];
+        checks.extend(
+            self.plan_usage_check(account)?
+                .map(|(level, message)| check(level, message)),
+        );
+        Ok(checks)
+    }
+
+    /// Whether the plan usage could be read the last time Hedy asked, from
+    /// the cache only: `doctor` starts no extra process for it.
+    fn plan_usage_check(&self, account: &Account) -> AppResult<Option<(CheckLevel, String)>> {
+        let state = self.plan_usage_of(account)?;
+        if !state.supported || state.attempted_at.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(match state.problem {
+            Some(UsageProblem::SpendsTokens) => (
+                CheckLevel::Warning,
+                tr!(
+                    "esta versión gastaría tokens para leer el límite del plan; Hedy no lo pregunta",
+                    "this version would spend tokens to read the plan limit; Hedy does not ask"
+                ),
+            ),
+            Some(_) => (
+                CheckLevel::Info,
+                tr!(
+                    "el límite del plan no se pudo leer la última vez",
+                    "the plan limit could not be read last time"
+                ),
+            ),
+            None => (
+                CheckLevel::Ok,
+                tr!(
+                    "el límite del plan se puede leer",
+                    "the plan limit can be read"
+                ),
+            ),
+        }))
     }
 
     /// No accounts yet, or a default account that is gone or reserved.
@@ -634,6 +672,44 @@ mod tests {
             .iter()
             .find(|c| c.subject == subject)
             .unwrap_or_else(|| panic!("no check for {subject}: {report:#?}"))
+    }
+
+    #[test]
+    fn reports_whether_plan_usage_was_readable_from_the_cache() {
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        f.fs.add_existing("/data/accounts/personal");
+        f.runner.install("claude");
+        f.runner
+            .reply(r#"{"loggedIn":true,"subscriptionType":"team"}"#, 0);
+        let subject = "Personal (personal)";
+        let messages = |f: &Fixture| -> Vec<(CheckLevel, String)> {
+            let report = f.hedy.doctor().unwrap();
+            report
+                .checks
+                .iter()
+                .filter(|c| c.subject == subject)
+                .map(|c| (c.level, c.message.clone()))
+                .collect()
+        };
+        // Never asked: nothing to say, and doctor does not ask.
+        assert_eq!(messages(&f).len(), 1);
+        assert!(
+            !f.runner
+                .captured()
+                .iter()
+                .any(|s| s.args.contains(&"/usage".to_owned()))
+        );
+
+        f.runner.reply_to(
+            "claude -p /usage --output-format json --no-session-persistence --safe-mode",
+            r#"{"num_turns":0,"total_cost_usd":0,"result":"Current session: 3% used"}"#,
+            0,
+        );
+        f.hedy.refresh_plan_usage("personal").unwrap();
+        let checks = messages(&f);
+        assert_eq!(checks.len(), 2);
+        assert_eq!(checks[1].0, CheckLevel::Ok);
     }
 
     #[test]

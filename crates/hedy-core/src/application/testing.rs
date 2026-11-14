@@ -7,10 +7,11 @@ use std::sync::{Arc, Mutex};
 
 use super::ports::{
     AccountRepository, AgentLauncher, AgentRequest, AgentSession, CapturedOutput, Clock, EventSink,
-    FileSystem, Git, MemoryRepository, MergeOutcome, NewNote, NewSkill, NoteRevision, PortError,
-    PortResult, ProcessRunner, ProjectRepository, QueueRepository, RateLimit, SecretStore,
-    SettingsRepository, SkillRepository, SkillRevision, StoreHealth, TaskEvents, TaskRepository,
-    TemplateRecord, TemplateRepository, UsageRecord, UsageRepository,
+    FileSystem, Git, MemoryRepository, MergeOutcome, NewNote, NewSkill, NoteRevision,
+    PlanUsageRecord, PortError, PortResult, ProcessRunner, ProjectRepository, QueueRepository,
+    RateLimit, SecretStore, SettingsRepository, SkillRepository, SkillRevision, StoreHealth,
+    TaskEvents, TaskRepository, TemplateRecord, TemplateRepository, UsageProbe, UsageRecord,
+    UsageRepository,
 };
 use super::{Hedy, NewAccount, Ports};
 use crate::domain::{
@@ -28,6 +29,7 @@ pub struct MemoryStore {
     events: Mutex<HashMap<TaskId, Vec<(i64, AgentEvent)>>>,
     usage: Mutex<Vec<UsageRecord>>,
     limits: Mutex<HashMap<AccountId, RateLimit>>,
+    plan_usage: Mutex<HashMap<AccountId, PlanUsageRecord>>,
     notes: Mutex<Vec<Note>>,
     uses: Mutex<Vec<(i64, Option<TaskId>)>>,
     dismissed: Mutex<Vec<(i64, i64)>>,
@@ -359,14 +361,94 @@ impl UsageRepository for MemoryStore {
     fn rate_limit(&self, account: &AccountId) -> PortResult<Option<RateLimit>> {
         Ok(self.limits.lock().unwrap().get(account).cloned())
     }
+    fn set_plan_usage(&self, account: &AccountId, record: &PlanUsageRecord) -> PortResult<()> {
+        self.plan_usage
+            .lock()
+            .unwrap()
+            .insert(account.clone(), record.clone());
+        Ok(())
+    }
+    fn plan_usage(&self, account: &AccountId) -> PortResult<Option<PlanUsageRecord>> {
+        Ok(self.plan_usage.lock().unwrap().get(account).cloned())
+    }
 }
 
 /// Every call ticks one second, so task ids are unique.
 pub struct FakeClock(AtomicI64);
 
+impl FakeClock {
+    pub fn advance(&self, secs: i64) {
+        self.0.fetch_add(secs * 1000, Ordering::Relaxed);
+    }
+}
+
 impl Clock for FakeClock {
     fn now_ms(&self) -> i64 {
         self.0.fetch_add(1000, Ordering::Relaxed)
+    }
+    /// No time-zone database: any zoned time is "an hour after `after`".
+    fn resolve_wall_time(
+        &self,
+        _wall: &crate::domain::plan_usage::WallTime,
+        after: i64,
+    ) -> Option<i64> {
+        Some(after + 3600)
+    }
+}
+
+/// Answers `account/rateLimits/read` with a canned result.
+#[derive(Default)]
+pub struct FakeUsageProbe {
+    reply: Mutex<Option<PortResult<String>>>,
+    calls: Mutex<Vec<LaunchSpec>>,
+    balance: Mutex<Option<PortResult<String>>>,
+    balance_calls: Mutex<Vec<(String, String)>>,
+}
+
+impl FakeUsageProbe {
+    pub fn reply(&self, result: PortResult<String>) {
+        *self.reply.lock().unwrap() = Some(result);
+    }
+    pub fn calls(&self) -> Vec<LaunchSpec> {
+        self.calls.lock().unwrap().clone()
+    }
+    pub fn reply_balance(&self, result: PortResult<String>) {
+        *self.balance.lock().unwrap() = Some(result);
+    }
+    /// (base URL, key) of each balance request.
+    pub fn balance_calls(&self) -> Vec<(String, String)> {
+        self.balance_calls.lock().unwrap().clone()
+    }
+}
+
+impl UsageProbe for FakeUsageProbe {
+    fn codex_rate_limits(
+        &self,
+        spec: &LaunchSpec,
+        _timeout: std::time::Duration,
+    ) -> PortResult<String> {
+        self.calls.lock().unwrap().push(spec.clone());
+        self.reply
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| Err(PortError::new("no reply configured")))
+    }
+    fn moonshot_balance(
+        &self,
+        base_url: &str,
+        api_key: &super::ports::Secret,
+        _timeout: std::time::Duration,
+    ) -> PortResult<String> {
+        self.balance_calls
+            .lock()
+            .unwrap()
+            .push((base_url.to_owned(), api_key.expose().to_owned()));
+        self.balance
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| Err(PortError::new("no reply configured")))
     }
 }
 
@@ -888,6 +970,8 @@ pub struct Fixture {
     pub fs: Arc<FakeFs>,
     pub git: Arc<FakeGit>,
     pub agents: Arc<FakeAgents>,
+    pub clock: Arc<FakeClock>,
+    pub probe: Arc<FakeUsageProbe>,
 }
 
 impl Fixture {
@@ -898,6 +982,8 @@ impl Fixture {
         let git = Arc::new(FakeGit::default());
         let agents = Arc::new(FakeAgents::default());
         let store = Arc::new(MemoryStore::default());
+        let clock = Arc::new(FakeClock(AtomicI64::new(1_700_000_000_000)));
+        let probe = Arc::new(FakeUsageProbe::default());
         let hedy = Hedy::new(Ports {
             store: store.clone(),
             secrets: secrets.clone(),
@@ -905,7 +991,8 @@ impl Fixture {
             fs: fs.clone(),
             git: git.clone(),
             agents: agents.clone(),
-            clock: Arc::new(FakeClock(AtomicI64::new(1_700_000_000_000))),
+            clock: clock.clone(),
+            usage: probe.clone(),
         });
         let notices = Arc::new(RecordedNotices::default());
         let hedy = hedy.with_task_events(notices.clone());
@@ -918,6 +1005,8 @@ impl Fixture {
             fs,
             git,
             agents,
+            clock,
+            probe,
         }
     }
 
@@ -937,7 +1026,7 @@ impl Fixture {
         self.add(name, Provider::Codex, false)
     }
 
-    fn add(&self, name: &str, provider: Provider, api_key: bool) -> Account {
+    pub fn add(&self, name: &str, provider: Provider, api_key: bool) -> Account {
         self.hedy
             .add_account(NewAccount {
                 name: name.into(),

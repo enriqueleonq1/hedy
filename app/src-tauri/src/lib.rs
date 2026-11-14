@@ -101,6 +101,7 @@ pub fn run() {
             commands::project_status,
             commands::project_usage,
             commands::usage_summary,
+            commands::refresh_plan_usage,
             commands::set_project_client,
             commands::detect_clis,
             commands::doctor,
