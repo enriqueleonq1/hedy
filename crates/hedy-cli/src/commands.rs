@@ -6,13 +6,13 @@ use std::path::Path;
 use anyhow::{Result, bail};
 use chrono::Timelike;
 use hedy_core::application::{
-    AccountStatus, CheckArea, CheckLevel, DoctorReport, Hedy, NewAccount, NewTemplate, Proposal,
-    RECENT_HOURS, Setting, SkillFiles, TaskActivity, TemplateScope,
+    AccountStatus, CheckArea, CheckLevel, DoctorReport, Hedy, NewAccount, NewTemplate,
+    PlanUsageState, Proposal, RECENT_HOURS, Setting, SkillFiles, TaskActivity, TemplateScope,
 };
 use hedy_core::domain::memory::USER_AUTHOR;
 use hedy_core::domain::{
     Account, Category, ConfigFolder, Credentials, LoginState, Note, Phase, Project, PromptTemplate,
-    Provider, Skill, SkillStatus, TaskState,
+    Provider, Skill, SkillStatus, TaskState, UsageProblem, UsageSource, UsageWindow, WindowKind,
 };
 use hedy_core::i18n::{self, Language};
 use hedy_core::tr;
@@ -152,10 +152,35 @@ fn print_tip(s: &Style) {
 
 pub fn status(hedy: &Hedy, dir: &Path) -> Result<()> {
     let s = Style::for_stdout();
-    let status = spinner::while_running(
+    let ids: Vec<String> = hedy
+        .accounts()?
+        .into_iter()
+        .map(|a| a.id.to_string())
+        .collect();
+    // Login checks and plan usage start processes: all of them in parallel.
+    let (status, plans) = spinner::while_running(
         &tr!("Revisando tus cuentas…", "Checking your accounts…"),
-        || hedy.status(dir),
-    )?;
+        || {
+            std::thread::scope(|scope| {
+                let refreshes: Vec<_> = ids
+                    .iter()
+                    .map(|id| scope.spawn(move || hedy.refresh_plan_usage(id).ok()))
+                    .collect();
+                let status = hedy.status(dir);
+                let plans: Vec<Option<PlanUsageState>> = refreshes
+                    .into_iter()
+                    .map(|h| h.join().ok().flatten())
+                    .collect();
+                (status, plans)
+            })
+        },
+    );
+    let status = status?;
+    let plan_of = |id: &hedy_core::domain::AccountId| {
+        ids.iter()
+            .position(|i| i == id.as_str())
+            .and_then(|i| plans[i].as_ref())
+    };
 
     if status.accounts.is_empty() {
         print_no_accounts(&s);
@@ -224,7 +249,13 @@ pub fn status(hedy: &Hedy, dir: &Path) -> Result<()> {
     let cards: Vec<Card> = status
         .accounts
         .iter()
-        .map(|a| status_card(&s, a, status.default_account.as_ref()))
+        .map(|a| {
+            let mut card = status_card(&s, a, status.default_account.as_ref());
+            if let Some(plan) = plan_of(&a.account.id) {
+                card.usage = plan_lines(&s, &a.account, plan);
+            }
+            card
+        })
         .collect();
     print_cards(&s, &cards);
     if s.enabled() {
@@ -615,8 +646,158 @@ struct Card {
     login: Option<String>,
     details: Vec<String>,
     projects: Option<String>,
+    /// Plan usage: one line per window, then where it came from.
+    usage: Vec<String>,
     /// A command that fixes something, shown with an arrow.
     fix: Option<String>,
+}
+
+/// "Sesión (5 h)", "Esta semana", "Hoy", "60 min".
+fn window_label(w: &UsageWindow) -> String {
+    match w.kind {
+        WindowKind::Session => tr!("Sesión (5 h)", "Session (5 h)"),
+        WindowKind::Week => tr!("Esta semana", "This week"),
+        WindowKind::Day => tr!("Hoy", "Today"),
+        WindowKind::Other => match w.minutes {
+            Some(m) if m >= 60 && m % 60 == 0 => format!("{} h", m / 60),
+            Some(m) => format!("{m} min"),
+            None => tr!("Otro límite", "Other limit"),
+        },
+    }
+}
+
+/// When a window renews, in local time: "hoy 19:00", "mañana 00:00",
+/// "20/11 00:00"; the source's own text when the time is unknown.
+fn reset_label(w: &UsageWindow) -> Option<String> {
+    use chrono::TimeZone;
+    let Some(at) = w
+        .resets_at
+        .and_then(|t| chrono::Local.timestamp_opt(t, 0).single())
+    else {
+        return w
+            .resets_text
+            .clone()
+            .map(|text| tr!("se renueva {text}", "renews {text}"));
+    };
+    let time = at.format("%H:%M");
+    let days = (at.date_naive() - chrono::Local::now().date_naive()).num_days();
+    let when = match days {
+        0 => tr!("hoy {time}", "today {time}"),
+        1 => tr!("mañana {time}", "tomorrow {time}"),
+        _ => at.format("%d/%m %H:%M").to_string(),
+    };
+    Some(tr!("se renueva {when}", "renews {when}"))
+}
+
+/// "hace 2 min", "just now".
+fn age_label(secs: i64) -> String {
+    match secs.max(0) {
+        s if s < 60 => tr!("hace un momento", "just now"),
+        s if s < 3600 => {
+            let m = s / 60;
+            tr!("hace {m} min", "{m} min ago")
+        }
+        s if s < 86_400 => {
+            let h = s / 3600;
+            tr!("hace {h} h", "{h} h ago")
+        }
+        s => {
+            let d = s / 86_400;
+            tr!("hace {d} d", "{d} d ago")
+        }
+    }
+}
+
+/// The plan's windows as bars, the per-model windows in one line, and a muted
+/// note with the source and its age. Thresholds as in the app: 80 % warns,
+/// 95 % is an error.
+fn plan_lines(s: &Style, account: &Account, plan: &PlanUsageState) -> Vec<String> {
+    let provider = account.provider.display_name();
+    if !plan.supported {
+        return if account.is_subscription() {
+            vec![s.muted(tr!(
+                "{provider} aún no informa el límite del plan a Hedy",
+                "{provider} does not report its plan limit to Hedy yet"
+            ))]
+        } else {
+            Vec::new()
+        };
+    }
+    let failed = match plan.problem {
+        Some(UsageProblem::SpendsTokens) => Some(tr!(
+            "esta versión gastaría tokens para leerlo; Hedy no lo pregunta",
+            "this version would spend tokens to read it; Hedy does not ask"
+        )),
+        Some(UsageProblem::Unavailable) => {
+            Some(tr!("no se pudo leer ahora", "could not be read now"))
+        }
+        _ => None,
+    };
+    let Some(usage) = &plan.usage else {
+        let reason = failed.unwrap_or_else(|| tr!("sin datos aún", "no data yet"));
+        return vec![s.muted(tr!("Límite del plan: {reason}", "Plan limit: {reason}"))];
+    };
+    let mut lines = Vec::new();
+    let shared: Vec<&UsageWindow> = usage.windows.iter().filter(|w| w.model.is_none()).collect();
+    let width = shared
+        .iter()
+        .map(|w| window_label(w).chars().count())
+        .max()
+        .unwrap_or(0);
+    for w in &shared {
+        let label = window_label(w);
+        let percent = format!("{:>3.0}%", w.percent);
+        let percent = if w.percent >= 95.0 {
+            s.error(percent)
+        } else if w.percent >= 80.0 {
+            s.warn(percent)
+        } else {
+            percent
+        };
+        let mut line = format!(
+            "{} {} {percent}",
+            pad(&label, label.chars().count(), width),
+            s.bar(w.percent / 100.0, 10),
+        );
+        if let Some(reset) = reset_label(w) {
+            line.push_str(&format!("  {}", s.muted(reset)));
+        }
+        lines.push(line);
+    }
+    let models: Vec<String> = usage
+        .model_windows()
+        .filter(|w| w.percent > 0.0)
+        .map(|w| {
+            format!(
+                "{} {:.0}%",
+                w.model.as_deref().unwrap_or_default(),
+                w.percent
+            )
+        })
+        .collect();
+    if !models.is_empty() {
+        let list = models.join(" · ");
+        lines.push(s.muted(tr!("por modelo: {list}", "per model: {list}")));
+    }
+    if let Some(balance) = &usage.balance {
+        let amount = format!("{:.2} {}", balance.available, balance.currency);
+        lines.push(tr!("Saldo {amount}", "Balance {amount}"));
+    }
+    let source = match usage.source {
+        UsageSource::ClaudeUsage => tr!("según /usage de Claude Code", "from Claude Code's /usage"),
+        UsageSource::CodexRateLimits => tr!("según Codex", "from Codex"),
+        UsageSource::TaskReport => tr!("según una tarea de Hedy", "from a Hedy task"),
+        UsageSource::MoonshotBalance => tr!("según Moonshot", "from Moonshot"),
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let mut note = format!("{source} · {}", age_label(now - usage.checked_at));
+    if let Some(failed) = failed {
+        note.push_str(&format!(" · {failed}"));
+    }
+    lines.push(s.muted(note));
+    lines
 }
 
 fn print_cards(s: &Style, cards: &[Card]) {
@@ -639,6 +820,9 @@ fn print_cards(s: &Style, cards: &[Card]) {
             None => println!("  {} {head}", s.chip(a.color)),
         }
         println!("    {}", s.muted(card.details.join(" · ")));
+        for line in &card.usage {
+            println!("    {line}");
+        }
         if let Some(projects) = &card.projects {
             println!("    {}", s.muted(projects));
         }
@@ -688,6 +872,7 @@ fn status_card(
         login: Some(login_label(s, a, &status.login)),
         details,
         projects,
+        usage: Vec::new(),
         fix,
     }
 }
@@ -721,6 +906,7 @@ pub fn list_accounts(hedy: &Hedy) -> Result<()> {
                 login: None,
                 details,
                 projects: None,
+                usage: Vec::new(),
                 fix: None,
             }
         })
