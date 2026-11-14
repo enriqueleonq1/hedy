@@ -75,7 +75,7 @@ const en: Record<keyof typeof es, string> = {
   "skills.loadError": "Could not read the skills: {error}",
   "skills.protected": "Protected project: its skills stay here and it does not use your skills for all projects.",
 
-  "skills.group.proposed": "Proposed by your AIs · to approve",
+  "skills.group.proposed": "Proposed by your AIs · awaiting approval",
   "skills.group.project": "In this project",
   "skills.group.global": "Yours · in every project",
   "skills.empty": "No skills yet.",
