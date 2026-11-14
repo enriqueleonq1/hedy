@@ -15,6 +15,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - App (from `app/`): `npm install`, then `npm run tauri dev`; UI only with sample data:
   `npm run dev` (`?theme=light|dark`, `#accounts`, `#settings`)
 - App checks (from `app/`): `npm run typecheck`, `npm run lint`, `npm test`
+- Real end-to-end check (spends a few tokens of the `~/.claude` account):
+  `cargo run -p hedy-core --example smoke_task -- haiku` (add `env` to check `.env` stays unread)
 - Phase 0 prototypes: `cargo run -p hedy-phase0 -- --help`
 
 ## Layout

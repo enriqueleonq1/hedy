@@ -93,7 +93,7 @@ impl Terminals {
                 .lock()
                 .unwrap()
                 .get_mut(&id)
-                .and_then(PtySession::exit_code);
+                .and_then(|s| s.wait_exit(std::time::Duration::from_millis(500)));
             let _ = events.send(TerminalEvent::Exit { code });
         });
         Ok(id)

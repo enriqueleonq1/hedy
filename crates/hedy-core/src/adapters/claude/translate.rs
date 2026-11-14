@@ -139,10 +139,14 @@ impl Translator {
             let failed = block["is_error"].as_bool().unwrap_or(false);
             let event = match tool.as_str() {
                 t if EDIT_TOOLS.contains(&t) => {
-                    if failed {
+                    let path = summarize(t, &input);
+                    // Plan mode saves its plan under ~/.claude/plans without asking;
+                    // the plan itself arrives through ExitPlanMode.
+                    let cli_file =
+                        !Path::new(&path).starts_with(&self.cwd) && path.contains("/.claude/");
+                    if failed || cli_file {
                         continue;
                     }
-                    let path = summarize(t, &input);
                     AgentEvent::FileEdited {
                         path: self.relative(&path),
                     }
@@ -161,6 +165,8 @@ impl Translator {
                         }
                     }
                 }
+                // A blocked or failed read did not happen; do not report it as done.
+                _ if failed => continue,
                 _ => AgentEvent::ToolUsed {
                     summary: self.relative(&summarize(&tool, &input)),
                     tool,
@@ -265,15 +271,19 @@ mod tests {
         let assistant = json!({"type":"assistant","message":{"content":[
             {"type":"tool_use","id":"e1","name":"Edit","input":{"file_path":"/wt/citas/servicio.py"}},
             {"type":"tool_use","id":"e2","name":"Write","input":{"file_path":"/wt/.env"}},
+            {"type":"tool_use","id":"p1","name":"Write","input":{"file_path":"/home/e/.claude/plans/plan.md"}},
             {"type":"tool_use","id":"b1","name":"Bash","input":{"command":"pytest tests"}},
-            {"type":"tool_use","id":"g1","name":"Grep","input":{"pattern":"crear_cita"}}
+            {"type":"tool_use","id":"g1","name":"Grep","input":{"pattern":"crear_cita"}},
+            {"type":"tool_use","id":"r1","name":"Read","input":{"file_path":"/wt/.env"}}
         ]}});
         assert!(t.translate(&assistant, &HashSet::new()).is_empty());
         let results = json!({"type":"user","message":{"content":[
             {"type":"tool_result","tool_use_id":"e1","content":"ok"},
             {"type":"tool_result","tool_use_id":"e2","content":"denied","is_error":true},
+            {"type":"tool_result","tool_use_id":"p1","content":"ok"},
             {"type":"tool_result","tool_use_id":"b1","content":"1 failed","is_error":true},
-            {"type":"tool_result","tool_use_id":"g1","content":"3 matches"}
+            {"type":"tool_result","tool_use_id":"g1","content":"3 matches"},
+            {"type":"tool_result","tool_use_id":"r1","content":"Permission denied","is_error":true}
         ]}});
         let denied = HashSet::from(["e2".to_owned()]);
         assert_eq!(

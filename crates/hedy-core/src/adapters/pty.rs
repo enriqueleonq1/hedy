@@ -103,6 +103,21 @@ impl PtySession {
             .map(|status| status.exit_code())
     }
 
+    /// Exit code, waiting up to `timeout`: output can end slightly before the
+    /// process does.
+    pub fn wait_exit(&mut self, timeout: std::time::Duration) -> Option<u32> {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if let Some(code) = self.exit_code() {
+                return Some(code);
+            }
+            if std::time::Instant::now() >= deadline {
+                return None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
     pub fn kill(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
@@ -136,7 +151,10 @@ mod tests {
         let mut text = String::new();
         let _ = output.read_to_string(&mut text);
         assert!(text.contains("/acc/codex|none|/tmp"), "{text:?}");
-        assert_eq!(session.exit_code(), Some(0));
+        assert_eq!(
+            session.wait_exit(std::time::Duration::from_secs(5)),
+            Some(0)
+        );
     }
 
     #[test]

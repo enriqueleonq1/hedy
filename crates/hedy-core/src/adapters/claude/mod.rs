@@ -15,12 +15,24 @@ use super::process::{command, launch_error};
 use crate::application::ports::{
     AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
+use crate::domain::permissions::DEFAULT_BLOCKED;
 use crate::domain::{AgentEvent, TaskMode};
 pub use translate::Translator;
 
 pub struct ClaudeCodeLauncher;
 
 const READ_ONLY_TOOLS_DENIED: &str = "Edit,Write,MultiEdit,NotebookEdit";
+
+/// Protected files as Claude Code's own `deny` rules. Claude runs some tools
+/// without asking (Read, read-only shell commands, plan files), so Hedy's
+/// permission rules alone would not see them; these the CLI enforces itself.
+pub fn deny_settings() -> String {
+    let rules: Vec<String> = DEFAULT_BLOCKED
+        .iter()
+        .flat_map(|pattern| [format!("Read(**/{pattern})"), format!("Edit(**/{pattern})")])
+        .collect();
+    json!({"permissions": {"deny": rules}}).to_string()
+}
 
 /// Command-line arguments for a request (after the program and its own args).
 pub fn args(request: &AgentRequest) -> Vec<String> {
@@ -42,6 +54,7 @@ pub fn args(request: &AgentRequest) -> Vec<String> {
     ]
     .map(String::from)
     .to_vec();
+    args.extend(["--settings".into(), deny_settings()]);
     match request.mode {
         TaskMode::Project => {}
         TaskMode::Ask => args.extend([
@@ -276,6 +289,8 @@ mod tests {
     fn arguments_per_mode() {
         let project = args(&request(TaskMode::Project, true)).join(" ");
         assert!(project.contains("--permission-prompt-tool stdio"));
+        assert!(project.contains(r#""Read(**/.env)""#), "{project}");
+        assert!(project.contains(r#""Edit(**/*.pem)""#));
         assert!(project.contains("--permission-mode plan"));
         assert!(project.ends_with("--model opus --resume s-1"));
         assert!(!project.contains("disallowedTools"));

@@ -348,7 +348,36 @@ documented for `exec` or the app server; everything points to the same one.
 - **CLI ↔ app:** both use the same SQLite file, so they already see the same state. The
   Unix socket from the spec is only needed for live events and arrives with phase 3.
 
-## 10. Decisions
+## 10. Phase 3: tasks (verified against Claude Code 2.1.306)
+
+`cargo run -p hedy-core --example smoke_task -- haiku` runs a real task end to end in a
+throwaway repo (plan → approval → permission → diff → accept + merge); `-- haiku env`
+checks that `.env` stays unread. Both passed on Nov 13, 2026.
+
+- **Flow:** a `Project` task gets a worktree in `.hedy/worktrees/<id>` (excluded through
+  `.git/info/exclude`) on branch `hedy/<slug>-<id>`, forked from the current commit.
+  Accept = commit in the worktree + `git merge` in the main checkout, only if it is on the
+  base branch and clean (otherwise the commit stays on the branch and Hedy says why).
+- **Plan first:** `--permission-mode plan`. The plan arrives as a `can_use_tool` request
+  for `ExitPlanMode` (`input.plan`); allowing it lets Claude leave plan mode and
+  implement in the same turn; denying it with the user's feedback makes it re-plan.
+- **Permission requests** arrive as `control_request` / `can_use_tool` and are answered
+  with `control_response` (`allow` + `updatedInput`, or `deny` + `message`). Confirmed.
+- **Claude does not ask for everything.** In real runs it read files, ran read-only shell
+  commands (`wc`, `cat`) and wrote its plan to `~/.claude/plans/` without a request. So:
+  - Protected files are also passed as Claude Code's own `permissions.deny` rules
+    (`--settings`, `Read(**/.env)`, `Edit(**/.env)`...), which the CLI enforces itself.
+    Verified: the `.env` read was blocked by the CLI.
+  - **Known gap:** a shell command such as `cat .env` that Claude Code auto-allows is not
+    seen by Hedy. Claude declined to try it in the test, but that is not enforcement.
+    Planned fix: a `PreToolUse` hook (`hedy hook`) that applies the same rules.
+- **Pregunta / Research:** no worktree; edit tools disabled with `--disallowedTools`;
+  Research also allows `WebSearch,WebFetch`.
+- **Usage:** each `result` gives tokens and a cost *estimate*; `rate_limit_event` gave
+  `status` and `resetsAt` but `utilization: null` on the Team plan, so the app shows Hedy's
+  own token count unless a percentage is reported.
+
+## 11. Decisions
 
 - **Claude accounts:** `~/.claude` (Team) is registered as the default-folder account and
   launched without `CLAUDE_CONFIG_DIR`. New accounts live in Hedy folders.
