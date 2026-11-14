@@ -64,6 +64,47 @@ impl Provider {
         }
     }
 
+    /// OpenAI-compatible endpoint for API-key accounts (overridable in settings).
+    pub fn api_base_url(self) -> Option<&'static str> {
+        match self {
+            Self::Kimi => Some("https://api.moonshot.ai/v1"),
+            Self::Gemini => Some("https://generativelanguage.googleapis.com/v1beta/openai"),
+            _ => None,
+        }
+    }
+
+    /// Model used through the API when none is chosen.
+    pub fn default_api_model(self) -> Option<&'static str> {
+        match self {
+            Self::Kimi => Some("kimi-k3.1-pro"),
+            Self::Gemini => Some("gemini-4-hydrogen"),
+            _ => None,
+        }
+    }
+
+    /// How the chat names who did a step: "Claude Opus", "Codex", "Kimi".
+    pub fn agent_label(self, model: Option<&str>) -> String {
+        if self == Self::Claude
+            && let Some(family) = model.and_then(|m| {
+                ["fable", "opus", "sonnet", "haiku"]
+                    .into_iter()
+                    .find(|f| m.to_lowercase().contains(f))
+            })
+        {
+            let mut chars = family.chars();
+            let first = chars
+                .next()
+                .map(|c| c.to_uppercase().to_string())
+                .unwrap_or_default();
+            return format!("Claude {first}{}", chars.as_str());
+        }
+        self.display_name()
+            .split_whitespace()
+            .next()
+            .unwrap_or("IA")
+            .to_owned()
+    }
+
     /// Files Hedy writes once into a fresh account folder so the CLI keeps its
     /// login inside that folder. Contains configuration only, never credentials.
     pub fn folder_bootstrap(self) -> &'static [(&'static str, &'static str)] {
@@ -115,6 +156,14 @@ mod tests {
             assert!(p.program().is_some(), "{p}");
             assert!(p.folder_env_var().is_some(), "{p}");
         }
+    }
+
+    #[test]
+    fn agent_labels() {
+        assert_eq!(Provider::Claude.agent_label(Some("opus")), "Claude Opus");
+        assert_eq!(Provider::Claude.agent_label(None), "Claude");
+        assert_eq!(Provider::Codex.agent_label(Some("gpt-x")), "Codex");
+        assert_eq!(Provider::Kimi.agent_label(None), "Kimi");
     }
 
     #[test]

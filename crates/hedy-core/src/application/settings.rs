@@ -10,6 +10,8 @@ pub enum Setting {
     DefaultAccount,
     /// Path to an official CLI binary when it is not on `PATH`.
     Binary(Provider),
+    /// API endpoint for an API-key provider (e.g. Kimi China or Kimi Code).
+    ApiUrl(Provider),
     /// App theme: `system`, `light` or `dark`.
     Theme,
     /// Name used to greet the user in the app.
@@ -23,6 +25,7 @@ impl Setting {
         match self {
             Self::DefaultAccount => "default_account".into(),
             Self::Binary(p) => format!("binary.{}", p.as_str()),
+            Self::ApiUrl(p) => format!("api_url.{}", p.as_str()),
             Self::Theme => "ui.theme".into(),
             Self::UserName => "ui.name".into(),
         }
@@ -33,8 +36,13 @@ impl Setting {
             .into_iter()
             .filter(|p| p.program().is_some())
             .map(Self::Binary);
+        let api_urls = Provider::ALL
+            .into_iter()
+            .filter(|p| p.supports_api_key())
+            .map(Self::ApiUrl);
         std::iter::once(Self::DefaultAccount)
             .chain(binaries)
+            .chain(api_urls)
             .chain([Self::Theme, Self::UserName])
             .collect()
     }

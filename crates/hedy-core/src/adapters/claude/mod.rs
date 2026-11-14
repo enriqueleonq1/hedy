@@ -17,7 +17,7 @@ use crate::application::ports::{
     AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
 use crate::domain::permissions::DEFAULT_BLOCKED;
-use crate::domain::{AgentEvent, TaskMode};
+use crate::domain::{AgentEvent, Phase, TaskMode};
 pub use translate::Translator;
 
 /// `hook`: shell command for the `PreToolUse` hook (see [`hook`]); without it
@@ -77,7 +77,13 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     .map(String::from)
     .to_vec();
     args.extend(["--settings".into(), settings(hook)]);
-    match request.mode {
+    // A reviewer reads and comments, like a question.
+    let mode = if request.phase == Phase::Review {
+        TaskMode::Ask
+    } else {
+        request.mode
+    };
+    match mode {
         TaskMode::Project => {}
         TaskMode::Ask => args.extend([
             "--disallowedTools".into(),
@@ -298,8 +304,14 @@ mod tests {
 
     fn request(mode: TaskMode, plan_first: bool) -> AgentRequest {
         AgentRequest {
+            backend: crate::application::ports::AgentBackend::ClaudeCode,
             launch: LaunchSpec::program("claude", vec![]),
             mode,
+            phase: if plan_first {
+                Phase::Plan
+            } else {
+                Phase::Implement
+            },
             plan_first,
             model: Some("opus".into()),
             prompt: "hola".into(),
@@ -320,6 +332,15 @@ mod tests {
         let ask = args(&request(TaskMode::Ask, false), None).join(" ");
         assert!(ask.contains("--permission-mode default"));
         assert!(ask.contains("--disallowedTools Edit,Write,MultiEdit,NotebookEdit"));
+        let review = args(
+            &AgentRequest {
+                phase: Phase::Review,
+                ..request(TaskMode::Project, false)
+            },
+            None,
+        )
+        .join(" ");
+        assert!(review.contains("--disallowedTools Edit,Write,MultiEdit,NotebookEdit"));
         let research = args(&request(TaskMode::Research, false), None).join(" ");
         assert!(research.contains("--allowedTools WebSearch,WebFetch"));
         assert!(!research.contains("PreToolUse"));

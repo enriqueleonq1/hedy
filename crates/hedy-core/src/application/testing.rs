@@ -201,7 +201,7 @@ pub enum AgentCall {
 #[derive(Default)]
 pub struct FakeAgents {
     requests: Mutex<Vec<AgentRequest>>,
-    sink: Mutex<Option<EventSink>>,
+    sinks: Mutex<Vec<EventSink>>,
     calls: Arc<Mutex<Vec<AgentCall>>>,
     messages: Arc<Mutex<Vec<Option<String>>>>,
 }
@@ -222,8 +222,23 @@ impl FakeAgents {
     pub fn answer_messages(&self) -> Vec<Option<String>> {
         self.messages.lock().unwrap().clone()
     }
+    pub fn requests(&self) -> Vec<AgentRequest> {
+        self.requests.lock().unwrap().clone()
+    }
+    /// Plays the most recently started agent.
     pub fn emit(&self, event: AgentEvent) {
-        let sink = self.sink.lock().unwrap().clone().expect("no agent started");
+        let sink = self
+            .sinks
+            .lock()
+            .unwrap()
+            .last()
+            .cloned()
+            .expect("no agent started");
+        sink(event);
+    }
+    /// Plays the `n`-th agent started (0-based), even after it was replaced.
+    pub fn emit_from(&self, n: usize, event: AgentEvent) {
+        let sink = self.sinks.lock().unwrap()[n].clone();
         sink(event);
     }
 }
@@ -260,7 +275,7 @@ impl AgentSession for FakeSession {
 impl AgentLauncher for FakeAgents {
     fn start(&self, request: AgentRequest, events: EventSink) -> PortResult<Box<dyn AgentSession>> {
         self.requests.lock().unwrap().push(request);
-        *self.sink.lock().unwrap() = Some(events);
+        self.sinks.lock().unwrap().push(events);
         Ok(Box::new(FakeSession {
             calls: Arc::clone(&self.calls),
             messages: Arc::clone(&self.messages),
@@ -332,6 +347,9 @@ impl SecretStore for MemorySecrets {
             .unwrap()
             .insert(account.to_string(), key.to_owned());
         Ok(())
+    }
+    fn api_key(&self, account: &AccountId) -> PortResult<Option<String>> {
+        Ok(self.0.lock().unwrap().get(account.as_str()).cloned())
     }
     fn has_api_key(&self, account: &AccountId) -> PortResult<bool> {
         Ok(self.0.lock().unwrap().contains_key(account.as_str()))
@@ -497,6 +515,10 @@ impl Fixture {
 
     pub fn add_kimi(&self, name: &str) -> Account {
         self.add(name, Provider::Kimi, true)
+    }
+
+    pub fn add_codex(&self, name: &str) -> Account {
+        self.add(name, Provider::Codex, false)
     }
 
     fn add(&self, name: &str, provider: Provider, api_key: bool) -> Account {

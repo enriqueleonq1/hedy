@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-use super::{AccountId, DomainError};
+use super::{AccountId, DomainError, Stage};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct TaskId(String);
@@ -144,6 +144,14 @@ pub struct Task {
     pub session_id: Option<String>,
     pub status: TaskStatus,
     pub created_at: i64,
+    /// The phases this task runs through, and the current one.
+    #[serde(default)]
+    pub stages: Vec<Stage>,
+    #[serde(default)]
+    pub stage: usize,
+    /// The latest proposed (and then approved) plan.
+    #[serde(default)]
+    pub plan: Option<String>,
 }
 
 impl Task {

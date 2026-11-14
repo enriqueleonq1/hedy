@@ -67,7 +67,10 @@ impl Translator {
                 let info = &msg["rate_limit_info"];
                 vec![AgentEvent::RateLimit {
                     status: info["status"].as_str().unwrap_or("unknown").to_owned(),
-                    utilization: info["utilization"].as_f64(),
+                    // Claude reports 0–1; Hedy uses percentages.
+                    utilization: info["utilization"]
+                        .as_f64()
+                        .map(|u| if u <= 1.0 { u * 100.0 } else { u }),
                     resets_at: info["resetsAt"].as_i64(),
                 }]
             }
@@ -381,7 +384,7 @@ mod tests {
             t.translate(&limit, &none),
             vec![AgentEvent::RateLimit {
                 status: "allowed_warning".into(),
-                utilization: Some(0.91),
+                utilization: Some(91.0),
                 resets_at: Some(1_800_000_000),
             }]
         );

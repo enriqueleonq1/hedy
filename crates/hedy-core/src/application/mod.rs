@@ -12,6 +12,7 @@ mod tasks;
 mod testing;
 
 use std::collections::HashMap;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 pub use accounts::NewAccount;
@@ -51,6 +52,8 @@ pub struct Hedy {
     events: Arc<dyn TaskEvents>,
     /// Running agent sessions, by task.
     live: Arc<Mutex<HashMap<TaskId, tasks::LiveTask>>>,
+    /// Numbers sessions, so late events from a replaced session are ignored.
+    sessions: Arc<AtomicU64>,
 }
 
 impl Hedy {
@@ -65,6 +68,7 @@ impl Hedy {
             clock: ports.clock,
             events: Arc::new(NoTaskEvents),
             live: Arc::default(),
+            sessions: Arc::default(),
         }
     }
 

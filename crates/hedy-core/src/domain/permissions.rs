@@ -82,6 +82,21 @@ fn file_path(input: &Value) -> Option<&str> {
         .or_else(|| input["notebook_path"].as_str())
 }
 
+/// Every file a request touches: `file_path`, plus `paths` for multi-file
+/// changes (a Codex patch).
+fn file_paths(input: &Value) -> Vec<&str> {
+    file_path(input)
+        .into_iter()
+        .chain(
+            input["paths"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str),
+        )
+        .collect()
+}
+
 /// The program of a shell command: `FOO=1 pytest -q` → `pytest`.
 pub fn command_program(command: &str) -> Option<&str> {
     command.split_whitespace().find(|word| !word.contains('='))
@@ -110,8 +125,9 @@ pub fn evaluate(
         return Verdict::Deny(reason);
     }
     if WRITE_TOOLS.contains(&tool)
-        && let Some(path) = file_path(input)
-        && !normalize(work_dir, Path::new(path)).starts_with(work_dir)
+        && file_paths(input)
+            .iter()
+            .any(|path| !normalize(work_dir, Path::new(path)).starts_with(work_dir))
     {
         return Verdict::Deny(format!(
             "Hedy solo permite cambios dentro de la carpeta de la tarea ({}).",
@@ -133,15 +149,15 @@ pub fn protected_file_reason(
     work_dir: &Path,
     blocked: &[String],
 ) -> Option<String> {
-    if FILE_TOOLS.contains(&tool)
-        && let Some(path) = file_path(input)
-    {
-        let path = normalize(work_dir, Path::new(path));
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if is_blocked_name(name, blocked) {
-            return Some(format!(
-                "Hedy no permite tocar «{name}» (archivo protegido)."
-            ));
+    if FILE_TOOLS.contains(&tool) {
+        for path in file_paths(input) {
+            let path = normalize(work_dir, Path::new(path));
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if is_blocked_name(name, blocked) {
+                return Some(format!(
+                    "Hedy no permite tocar «{name}» (archivo protegido)."
+                ));
+            }
         }
     }
     if tool == "Bash"
@@ -240,6 +256,14 @@ mod tests {
             verdict("Edit", json!({"file_path": format!("{WT}/src/a.rs")}), &[]),
             Verdict::Ask
         );
+    }
+
+    #[test]
+    fn multi_file_changes_are_checked_file_by_file() {
+        let patch = json!({"file_path": format!("{WT}/a.py"), "paths": [format!("{WT}/a.py"), format!("{WT}/.env")]});
+        assert!(matches!(verdict("Edit", patch, &[]), Verdict::Deny(_)));
+        let escape = json!({"file_path": format!("{WT}/a.py"), "paths": ["/etc/passwd"]});
+        assert!(matches!(verdict("Edit", escape, &[]), Verdict::Deny(_)));
     }
 
     #[test]

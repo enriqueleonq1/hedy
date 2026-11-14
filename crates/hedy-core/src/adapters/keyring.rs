@@ -33,6 +33,14 @@ impl SecretStore for KeyringSecretStore {
             .map_err(keyring_error)
     }
 
+    fn api_key(&self, account: &AccountId) -> PortResult<Option<String>> {
+        match self.entry(account)?.get_password() {
+            Ok(key) => Ok(Some(key)),
+            Err(KeyringError::NoEntry) => Ok(None),
+            Err(e) => Err(keyring_error(e)),
+        }
+    }
+
     fn has_api_key(&self, account: &AccountId) -> PortResult<bool> {
         match self.entry(account)?.get_password() {
             Ok(_) => Ok(true),

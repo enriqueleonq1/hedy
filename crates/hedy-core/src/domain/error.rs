@@ -17,6 +17,9 @@ pub enum DomainError {
     #[error("color no válido: «{0}» (usa un nombre de la paleta o #RRGGBB)")]
     InvalidColor(String),
 
+    #[error("fase desconocida: {0}")]
+    UnknownPhase(String),
+
     #[error("modo de tarea desconocido: {0}")]
     UnknownTaskMode(String),
 

@@ -91,6 +91,32 @@ pub fn offerable<'a>(
         .collect()
 }
 
+/// Accounts a task may be handed over to from `current` (spec rule 3): another
+/// provider, or a paid API key. Never another subscription account of the
+/// same provider, and always the user's choice, never automatic. A protected
+/// project (rule 4) has none: it only uses its own account.
+pub fn handoff_candidates<'a>(
+    current: &Account,
+    project: &Project,
+    accounts: &'a [Account],
+    projects: &[Project],
+) -> Vec<&'a Account> {
+    offerable(Some(project), accounts, projects)
+        .into_iter()
+        .filter(|a| a.id != current.id)
+        .filter(|a| a.provider != current.provider || !a.is_subscription())
+        .collect()
+}
+
+/// Can `phases` be used in `project`? Every assigned account must be allowed
+/// there (a protected project only uses its own account).
+pub fn check_phases(project: &Project, projects: &[Project]) -> Result<(), DomainError> {
+    project
+        .phases
+        .values()
+        .try_for_each(|a| check_launch(Some(project), &a.account, projects))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -170,6 +196,43 @@ mod tests {
             Err(DomainError::AccountShared { others, .. }) if others == vec![std::path::PathBuf::from("/side")]
         ));
         assert!(check_protect(&projects[0], &projects[..1]).is_ok());
+    }
+
+    #[test]
+    fn handoff_never_offers_another_subscription_of_the_same_provider() {
+        let mk = |slug: &str, provider: Provider, credentials: Credentials| {
+            Account::new(
+                id(slug),
+                slug,
+                provider,
+                credentials,
+                Color::nth_in_palette(0),
+            )
+            .unwrap()
+        };
+        let sub = || Credentials::Subscription(crate::domain::ConfigFolder::Default);
+        let accounts = vec![
+            mk("claude-personal", Provider::Claude, sub()),
+            mk("claude-trabajo", Provider::Claude, sub()),
+            mk("codex", Provider::Codex, sub()),
+            mk("kimi", Provider::Kimi, Credentials::ApiKey),
+            mk("reserved", Provider::Codex, sub()),
+        ];
+        let projects = vec![
+            project("/hobby", Some("claude-personal"), false),
+            project("/other", Some("reserved"), true),
+        ];
+        let ids: Vec<_> = handoff_candidates(&accounts[0], &projects[0], &accounts, &projects)
+            .iter()
+            .map(|a| a.id.to_string())
+            .collect();
+        assert_eq!(ids, vec!["codex", "kimi"]);
+
+        let work = project("/work", Some("claude-trabajo"), true);
+        assert!(
+            handoff_candidates(&accounts[1], &work, &accounts, std::slice::from_ref(&work))
+                .is_empty()
+        );
     }
 
     #[test]

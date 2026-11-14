@@ -64,6 +64,12 @@ pub enum AppError {
     #[error("la tarea {0} no cambia archivos (es una pregunta)")]
     TaskWithoutChanges(TaskId),
 
+    #[error("la cuenta «{0}» no tiene API key guardada")]
+    MissingApiKey(AccountId),
+
+    #[error("no se puede pasar la tarea a «{0}»: elige otro proveedor o una API key")]
+    NotAHandoffCandidate(AccountId),
+
     #[error("escribe qué quieres que haga")]
     EmptyPrompt,
 

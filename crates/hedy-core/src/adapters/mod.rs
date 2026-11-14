@@ -1,6 +1,8 @@
 //! Port implementations and the composition root.
 
+mod api_agent;
 mod claude;
+mod codex;
 mod fs;
 mod git;
 mod keyring;
@@ -11,7 +13,9 @@ mod sqlite;
 
 use std::sync::Arc;
 
+pub use api_agent::ApiAgentLauncher;
 pub use claude::{ClaudeCodeLauncher, hook};
+pub use codex::CodexLauncher;
 pub use fs::LocalFileSystem;
 pub use git::GitCli;
 pub use keyring::KeyringSecretStore;
@@ -20,8 +24,27 @@ pub use process::SystemProcessRunner;
 pub use pty::{PtyOutput, PtySession};
 pub use sqlite::SqliteStore;
 
-use crate::application::ports::{Clock, PortResult};
+use crate::application::ports::{
+    AgentBackend, AgentLauncher, AgentRequest, AgentSession, Clock, EventSink, PortResult,
+};
 use crate::application::{Hedy, Ports};
+
+/// Sends each request to the adapter of its backend.
+pub struct AgentRouter {
+    pub claude: ClaudeCodeLauncher,
+    pub codex: CodexLauncher,
+    pub api: ApiAgentLauncher,
+}
+
+impl AgentLauncher for AgentRouter {
+    fn start(&self, request: AgentRequest, events: EventSink) -> PortResult<Box<dyn AgentSession>> {
+        match request.backend {
+            AgentBackend::ClaudeCode => self.claude.start(request, events),
+            AgentBackend::Codex => self.codex.start(request, events),
+            AgentBackend::OpenAiCompatible { .. } => self.api.start(request, events),
+        }
+    }
+}
 
 pub struct SystemClock;
 
@@ -53,7 +76,11 @@ fn build(paths: &HedyPaths, claude: ClaudeCodeLauncher) -> PortResult<Hedy> {
         runner: Arc::new(SystemProcessRunner),
         fs: Arc::new(LocalFileSystem::new(paths.accounts_dir())),
         git: Arc::new(GitCli),
-        agents: Arc::new(claude),
+        agents: Arc::new(AgentRouter {
+            claude,
+            codex: CodexLauncher,
+            api: ApiAgentLauncher,
+        }),
         clock: Arc::new(SystemClock),
     }))
 }

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::{AppError, AppResult, Hedy};
-use crate::domain::{AccountId, Color, Project, policy, project};
+use crate::domain::{AccountId, Color, PhasePlan, Project, policy, project};
 
 impl Hedy {
     pub fn projects(&self) -> AppResult<Vec<Project>> {
@@ -37,6 +37,18 @@ impl Hedy {
     pub fn set_project_color(&self, path: &Path, color: Option<Color>) -> AppResult<Project> {
         let mut project = self.project_at(path)?;
         project.color = color;
+        self.store.save_project(&project)?;
+        Ok(project)
+    }
+
+    /// Who plans, implements, writes tests and reviews in this project.
+    pub fn set_project_phases(&self, path: &Path, phases: PhasePlan) -> AppResult<Project> {
+        let mut project = self.project_at(path)?;
+        for assignment in phases.values() {
+            self.account(assignment.account.as_str())?;
+        }
+        project.phases = phases;
+        policy::check_phases(&project, &self.projects()?)?;
         self.store.save_project(&project)?;
         Ok(project)
     }

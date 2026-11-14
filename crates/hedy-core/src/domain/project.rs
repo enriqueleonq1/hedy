@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use super::{AccountId, Color};
+use super::{AccountId, Color, PhasePlan};
 
 /// A folder (usually a git repository root) registered in Hedy.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,6 +13,8 @@ pub struct Project {
     /// is not offered to other projects.
     pub protected: bool,
     pub color: Option<Color>,
+    /// Who plans, implements, writes tests and reviews.
+    pub phases: PhasePlan,
 }
 
 impl Project {
@@ -27,6 +29,7 @@ impl Project {
             account: None,
             protected: false,
             color: None,
+            phases: PhasePlan::new(),
         }
     }
 

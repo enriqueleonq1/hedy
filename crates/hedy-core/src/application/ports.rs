@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::domain::{
-    Account, AccountId, AgentEvent, Commit, FileDiff, LaunchSpec, Project, Task, TaskId, TaskMode,
-    UsageSample,
+    Account, AccountId, AgentEvent, Commit, FileDiff, LaunchSpec, Phase, Project, Task, TaskId,
+    TaskMode, UsageSample,
 };
 
 /// Failure in an adapter. The message is user-facing (Spanish).
@@ -65,6 +65,7 @@ pub struct UsageRecord {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RateLimit {
     pub status: String,
+    /// Percentage used (0–100), when the CLI reports one.
     pub utilization: Option<f64>,
     pub resets_at: Option<i64>,
     pub at: i64,
@@ -100,6 +101,8 @@ pub trait Clock: Send + Sync {
 /// API keys in the OS keyring. Never used for subscription logins.
 pub trait SecretStore: Send + Sync {
     fn set_api_key(&self, account: &AccountId, key: &str) -> PortResult<()>;
+    /// Read only to call the provider's API; never logged or shown.
+    fn api_key(&self, account: &AccountId) -> PortResult<Option<String>>;
     fn has_api_key(&self, account: &AccountId) -> PortResult<bool>;
     fn delete_api_key(&self, account: &AccountId) -> PortResult<()>;
 }
@@ -158,11 +161,46 @@ pub trait Git: Send + Sync {
 /// Receives the agent's events, on the adapter's own thread.
 pub type EventSink = Arc<dyn Fn(AgentEvent) + Send + Sync>;
 
+/// A secret that never shows up in logs or debug output.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Secret(String);
+
+impl Secret {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Secret(***)")
+    }
+}
+
+/// Which adapter runs the agent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentBackend {
+    ClaudeCode,
+    Codex,
+    /// A chat-completions API (Kimi, Gemini); Hedy runs the tools itself.
+    OpenAiCompatible {
+        base_url: String,
+        api_key: Secret,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentRequest {
-    /// Program, account folder variable and working directory.
+    pub backend: AgentBackend,
+    /// Program, account folder variable and working directory (for APIs,
+    /// only the working directory is used).
     pub launch: LaunchSpec,
     pub mode: TaskMode,
+    pub phase: Phase,
     /// Start in plan mode: the agent proposes a plan before changing anything.
     pub plan_first: bool,
     pub model: Option<String>,

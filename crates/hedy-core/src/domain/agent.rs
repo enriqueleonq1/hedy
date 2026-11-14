@@ -62,9 +62,25 @@ pub enum AgentEvent {
         tool: String,
         summary: String,
     },
+    /// A phase (or a handoff) starts with an agent: "Codex implementa".
+    PhaseStarted {
+        phase: super::Phase,
+        /// "Claude Opus", "Codex", "Kimi".
+        agent: String,
+        account: String,
+    },
     Usage(UsageSample),
+    /// The account is close to (or at) its limit. Hedy never switches
+    /// accounts by itself: the user chooses to wait or to hand the task over.
+    LimitWarning {
+        account: String,
+        level: LimitLevel,
+        percent: Option<f64>,
+        resets_at: Option<i64>,
+    },
     RateLimit {
         status: String,
+        /// Percentage used (0–100), when reported.
         utilization: Option<f64>,
         resets_at: Option<i64>,
     },
@@ -77,6 +93,31 @@ pub enum AgentEvent {
     Error {
         message: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LimitLevel {
+    Warning,
+    Reached,
+}
+
+/// Percentage from which Hedy warns about a limit.
+pub const LIMIT_WARNING_PERCENT: f64 = 90.0;
+
+impl LimitLevel {
+    /// From a CLI's report: Claude's `status` ("allowed", "allowed_warning",
+    /// "rejected") and/or a 0–100 percentage (Codex).
+    pub fn from_report(status: &str, percent: Option<f64>) -> Option<Self> {
+        if status == "rejected" || percent.is_some_and(|p| p >= 100.0) {
+            Some(Self::Reached)
+        } else if status == "allowed_warning" || percent.is_some_and(|p| p >= LIMIT_WARNING_PERCENT)
+        {
+            Some(Self::Warning)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -170,6 +211,28 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(serde_json::to_value(&usage).unwrap()["inputTokens"], 3);
+    }
+
+    #[test]
+    fn limit_levels() {
+        assert_eq!(LimitLevel::from_report("allowed", None), None);
+        assert_eq!(
+            LimitLevel::from_report("allowed_warning", None),
+            Some(LimitLevel::Warning)
+        );
+        assert_eq!(
+            LimitLevel::from_report("rejected", None),
+            Some(LimitLevel::Reached)
+        );
+        assert_eq!(
+            LimitLevel::from_report("ok", Some(92.0)),
+            Some(LimitLevel::Warning)
+        );
+        assert_eq!(
+            LimitLevel::from_report("ok", Some(100.0)),
+            Some(LimitLevel::Reached)
+        );
+        assert_eq!(LimitLevel::from_report("ok", Some(40.0)), None);
     }
 
     #[test]

@@ -74,6 +74,10 @@ const MIGRATIONS: &[&str] = &[
         at           INTEGER NOT NULL
     );
 "#,
+    r#"
+    -- Who plans, implements, writes tests and reviews (JSON).
+    ALTER TABLE projects ADD COLUMN phases TEXT;
+"#,
 ];
 
 pub struct SqliteStore {
@@ -217,12 +221,19 @@ fn project_from_row(row: &Row) -> rusqlite::Result<Project> {
         .map(|c| c.parse::<Color>())
         .transpose()
         .map_err(invalid(4))?;
+    let phases = row
+        .get::<_, Option<String>>(5)?
+        .map(|p| serde_json::from_str(&p))
+        .transpose()
+        .map_err(invalid(5))?
+        .unwrap_or_default();
     Ok(Project {
         path: PathBuf::from(row.get::<_, String>(0)?),
         name: row.get(1)?,
         account,
         protected: row.get(3)?,
         color,
+        phases,
     })
 }
 
@@ -230,7 +241,7 @@ impl ProjectRepository for SqliteStore {
     fn list_projects(&self) -> PortResult<Vec<Project>> {
         self.with(|c| {
             c.prepare(
-                "SELECT path, name, account_id, protected, color FROM projects ORDER BY name",
+                "SELECT path, name, account_id, protected, color, phases FROM projects ORDER BY name",
             )?
             .query_map([], project_from_row)?
             .collect()
@@ -238,19 +249,25 @@ impl ProjectRepository for SqliteStore {
     }
 
     fn save_project(&self, project: &Project) -> PortResult<()> {
+        let phases = (!project.phases.is_empty())
+            .then(|| serde_json::to_string(&project.phases))
+            .transpose()
+            .map_err(json_error)?;
         self.with(|c| {
             c.execute(
-                "INSERT INTO projects (path, name, account_id, protected, color)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
+                "INSERT INTO projects (path, name, account_id, protected, color, phases)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT (path) DO UPDATE SET
                     name = excluded.name, account_id = excluded.account_id,
-                    protected = excluded.protected, color = excluded.color",
+                    protected = excluded.protected, color = excluded.color,
+                    phases = excluded.phases",
                 params![
                     project.path.to_string_lossy(),
                     project.name,
                     project.account.as_ref().map(AccountId::as_str),
                     project.protected,
                     project.color.map(|c| c.to_string()),
+                    phases,
                 ],
             )
             .map(drop)
@@ -508,6 +525,13 @@ mod tests {
             account: Some(acc.id.clone()),
             protected: true,
             color: Some(Color::nth_in_palette(3)),
+            phases: crate::domain::PhasePlan::from([(
+                crate::domain::Phase::Tests,
+                crate::domain::Assignment {
+                    account: acc.id.clone(),
+                    model: Some("kimi-k3".into()),
+                },
+            )]),
             ..Project::new("/code/homming".into())
         };
         store.save_project(&project).unwrap();
@@ -553,6 +577,9 @@ mod tests {
             session_id: None,
             status: TaskStatus::Running,
             created_at: at,
+            stages: vec![],
+            stage: 0,
+            plan: None,
         };
         let (old, new) = (task("t1", 10), task("t2", 20));
         store.save_task(&old).unwrap();
