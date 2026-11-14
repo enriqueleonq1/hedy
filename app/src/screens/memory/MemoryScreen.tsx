@@ -13,6 +13,10 @@ import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { NewNoteDialog } from "./NewNoteDialog";
 import { NoteCard } from "./NoteCard";
 import { authorLabel, keepLabel, memoryKey, useMemoryAction } from "./notes";
+import { skillsKey } from "./skills";
+import { NewSkillDialog, SkillsPanel } from "./SkillsPanel";
+
+type Tab = "notes" | "skills";
 
 const GROUPS: { category: NoteCategory; title: MessageKey }[] = [
   { category: "decision", title: "memory.group.decision" },
@@ -25,14 +29,23 @@ export function MemoryScreen({
   overview,
   project,
   onBack,
+  initialTab = "notes",
+  onTab,
 }: {
   overview: Overview;
   project: string;
   onBack: () => void;
+  initialTab?: Tab;
+  /** The tab changed (to remember it in the address). */
+  onTab?: (tab: Tab) => void;
 }) {
   const api = useApi();
   const t = useT();
+  const [tab, setTab] = useState<Tab>(initialTab);
   const memory = useQuery({ queryKey: memoryKey(project), queryFn: () => api.memory(project) });
+  const skills = useQuery({ queryKey: skillsKey(project), queryFn: () => api.skills(project) });
+  const pendingSkills = skills.data?.proposed.length ?? 0;
+  const pendingNotes = memory.data?.proposed.length ?? 0;
   const [query, setQuery] = useState("");
   const search = useQuery({
     queryKey: [...memoryKey(project), "search", query.trim()],
@@ -40,6 +53,7 @@ export function MemoryScreen({
     enabled: query.trim().length > 0,
   });
   const [adding, setAdding] = useState(false);
+  const [addingSkill, setAddingSkill] = useState(false);
   const info = overview.projects.find((p) => p.path === project);
   const name = info?.name ?? shortPath(project);
   const color = overview.accounts.find((a) => a.id === info?.account)?.color ?? DEFAULT_ACCOUNT_COLOR;
@@ -49,54 +63,98 @@ export function MemoryScreen({
       <header className="page-head">
         <div>
           <h1>{t("memory.title", { name })}</h1>
-          <p className="muted">{t("memory.subtitle")}</p>
+          <p className="muted">{t(tab === "notes" ? "memory.subtitle" : "skills.subtitle")}</p>
         </div>
         <div className="memory__tools">
-          <input
-            type="search"
-            className="memory__search"
-            aria-label={t("memory.search")}
-            placeholder={t("memory.searchPlaceholder")}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <Button variant="primary" onClick={() => setAdding(true)}>
-            {t("memory.newNoteButton")}
-          </Button>
+          {tab === "notes" ? (
+            <>
+              <input
+                type="search"
+                className="memory__search"
+                aria-label={t("memory.search")}
+                placeholder={t("memory.searchPlaceholder")}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <Button variant="primary" onClick={() => setAdding(true)}>
+                {t("memory.newNoteButton")}
+              </Button>
+            </>
+          ) : (
+            <Button variant="primary" onClick={() => setAddingSkill(true)}>
+              {t("skills.newButton")}
+            </Button>
+          )}
           <Button variant="ghost" onClick={onBack}>
             {t("memory.backToChat")}
           </Button>
         </div>
       </header>
 
-      {memory.isPending && <p className="muted">{t("memory.loading")}</p>}
-      {memory.isError && <p role="alert">{t("memory.loadError", { error: errorMessage(memory.error, t) })}</p>}
-      {memory.data && (
-        <>
-          {memory.data.protected && <p className="hint">{t("memory.protected")}</p>}
-          {memory.data.contradictions.map(([a, b]) => (
-            <Contradiction key={`${a.id}-${b.id}`} project={project} a={a} b={b} color={color} />
-          ))}
-          <div className="memory__layout">
-            <div className="memory__main">
-              {query.trim() ? (
-                <Results
-                  project={project}
-                  notes={search.data}
-                  pending={search.isPending}
-                  error={search.isError ? errorMessage(search.error, t) : null}
-                />
-              ) : (
-                <Groups project={project} view={memory.data} />
-              )}
-            </div>
-            <aside className="memory__side">
-              <UsedLastTask notes={memory.data.usedLastTask} />
-              <Stale project={project} notes={memory.data.stale} />
-              <Readers project={project} view={memory.data} accounts={overview.accounts} />
-            </aside>
-          </div>
-        </>
+      <div className="memory__tabs" role="tablist" aria-label={t("skills.tabs")}>
+        {(["notes", "skills"] as const).map((id) => {
+          const pending = id === "notes" ? pendingNotes : pendingSkills;
+          return (
+            <button
+              key={id}
+              role="tab"
+              id={`memory-tab-${id}`}
+              aria-selected={tab === id}
+              aria-controls={`memory-panel-${id}`}
+              className="side-tab"
+              onClick={() => {
+                setTab(id);
+                onTab?.(id);
+              }}
+            >
+              {t(id === "notes" ? "skills.tabNotes" : "skills.tabSkills")}
+              {pending > 0 && <span className="memory__badge">{t("skills.pendingBadge", { n: pending })}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === "skills" && (
+        <div role="tabpanel" id="memory-panel-skills" aria-labelledby="memory-tab-skills" className="memory__panel-body">
+          <SkillsPanel project={project} skills={skills} color={color} />
+        </div>
+      )}
+
+      {tab === "notes" && (
+        <div role="tabpanel" id="memory-panel-notes" aria-labelledby="memory-tab-notes" className="memory__panel-body">
+          {memory.isPending && <p className="muted">{t("memory.loading")}</p>}
+          {memory.isError && <p role="alert">{t("memory.loadError", { error: errorMessage(memory.error, t) })}</p>}
+          {memory.data && (
+            <>
+              {memory.data.protected && <p className="hint">{t("memory.protected")}</p>}
+              {memory.data.contradictions.map(([a, b]) => (
+                <Contradiction key={`${a.id}-${b.id}`} project={project} a={a} b={b} color={color} />
+              ))}
+              <div className="memory__layout">
+                <div className="memory__main">
+                  {query.trim() ? (
+                    <Results
+                      project={project}
+                      notes={search.data}
+                      pending={search.isPending}
+                      error={search.isError ? errorMessage(search.error, t) : null}
+                    />
+                  ) : (
+                    <Groups project={project} view={memory.data} />
+                  )}
+                </div>
+                <aside className="memory__side">
+                  <UsedLastTask notes={memory.data.usedLastTask} />
+                  <Stale project={project} notes={memory.data.stale} />
+                  <Readers project={project} view={memory.data} accounts={overview.accounts} />
+                </aside>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      {addingSkill && (
+        <NewSkillDialog project={project} canBeGlobal={!skills.data?.protected} onClose={() => setAddingSkill(false)} />
       )}
       {adding && (
         <NewNoteDialog

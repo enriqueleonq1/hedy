@@ -9,6 +9,7 @@ import memory from "./memory";
 import onboarding from "./onboarding";
 import settings from "./settings";
 import shell from "./shell";
+import skills from "./skills";
 import status from "./status";
 import welcome from "./welcome";
 import workspace from "./workspace";
@@ -23,6 +24,7 @@ const es = {
   ...accounts.es,
   ...settings.es,
   ...memory.es,
+  ...skills.es,
   ...status.es,
   ...workspace.es,
   ...activity.es,
@@ -35,6 +37,7 @@ const en: Record<keyof typeof es, string> = {
   ...accounts.en,
   ...settings.en,
   ...memory.en,
+  ...skills.en,
   ...status.en,
   ...workspace.en,
   ...activity.en,

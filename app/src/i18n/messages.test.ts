@@ -5,13 +5,14 @@ import memory from "./messages/memory";
 import onboarding from "./messages/onboarding";
 import settings from "./messages/settings";
 import shell from "./messages/shell";
+import skills from "./messages/skills";
 import status from "./messages/status";
 import welcome from "./messages/welcome";
 import workspace from "./messages/workspace";
 import { messages } from "./messages";
 import { translator } from ".";
 
-const AREAS = { accounts, activity, common, memory, onboarding, settings, shell, status, welcome, workspace };
+const AREAS = { accounts, activity, common, memory, onboarding, settings, shell, skills, status, welcome, workspace };
 
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
 
