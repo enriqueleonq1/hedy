@@ -18,6 +18,7 @@ import { Welcome } from "./screens/Welcome";
 import { Workspace } from "./screens/workspace/Workspace";
 import { TaskEventsBridge } from "./tasks/hooks";
 import { ThemeProvider } from "./theme/ThemeProvider";
+import { DEFAULT_ACCOUNT_COLOR, ERROR_MASCOT_COLOR } from "./theme/tokens";
 
 export function App({ api, queryClient }: { api: HedyApi; queryClient?: QueryClient }) {
   const [client] = useState(
@@ -82,14 +83,14 @@ function Root() {
   if (overview.isPending) {
     return (
       <div className="splash">
-        <Mascot color="#7AA2F7" state="thinking" size={140} label="Cargando" />
+        <Mascot color={DEFAULT_ACCOUNT_COLOR} state="thinking" size={140} label="Cargando" />
       </div>
     );
   }
   if (overview.isError) {
     return (
       <div className="splash">
-        <Mascot color="#F7768E" state="sleeping" size={140} />
+        <Mascot color={ERROR_MASCOT_COLOR} state="sleeping" size={140} />
         <p role="alert">{errorMessage(overview.error)}</p>
         <Button onClick={() => overview.refetch()}>Reintentar</Button>
       </div>
@@ -111,7 +112,6 @@ function Root() {
               view={current}
               openProjects={openProjects}
               mode={mode}
-              mascot="idle"
               onNavigate={navigate}
               onCloseProject={closeProject}
               onMode={setMode}

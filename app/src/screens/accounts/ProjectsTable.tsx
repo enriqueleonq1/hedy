@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { useAction } from "../../api/context";
+import { OVERVIEW_KEY, useAction } from "../../api/context";
 import { phaseSummary } from "../../components/models";
 import type { Overview, Project } from "../../api/types";
 import { shortAccountLabel } from "../../components/accounts";
@@ -56,11 +56,14 @@ export function ProjectsTable({ overview }: { overview: Overview }) {
 
 function ProjectRow({ project, overview }: { project: Project; overview: Overview }) {
   const actions = useProjectActions();
-  const assign = useAction((api, vars: { account: string; protect?: boolean }) =>
-    api.useAccount(project.path, vars.account, vars.protect),
+  const assign = useAction(
+    (api, vars: { account: string; protect?: boolean }) => api.useAccount(project.path, vars.account, vars.protect),
+    { invalidate: [OVERVIEW_KEY, ["status", project.path]] },
   );
   const setColor = useAction((api, color: string | null) => api.setProjectColor(project.path, color));
-  const setClient = useAction((api, client: string) => api.setProjectClient(project.path, client));
+  const setClient = useAction((api, client: string) => api.setProjectClient(project.path, client), {
+    invalidate: [OVERVIEW_KEY, ["usageSummary"]],
+  });
   const remove = useAction((api) => api.removeProject(project.path));
   const [editingPhases, setEditingPhases] = useState(false);
   const offered = overview.accounts.filter((a) => project.offerableAccounts.includes(a.id) || a.id === project.account);

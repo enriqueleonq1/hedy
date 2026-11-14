@@ -21,7 +21,8 @@ export function useProjectActions() {
   return {
     openCli: (p: Project) => terminals.open({ kind: "run", path: p.path }, p.name),
     openShell: (p: Project) => terminals.open({ kind: "shell", path: p.path }, `${p.name} · shell`),
-    openEditor: (p: Project) =>
+    /** A project or any folder of it, like a task's worktree. */
+    openEditor: (p: Pick<Project, "path">) =>
       api.openInEditor(p.path).catch((e: unknown) => toast.error(errorMessage(e))),
   };
 }

@@ -19,12 +19,14 @@ describe("Welcome", () => {
     const homming = screen.getByRole("heading", { name: "homming" }).closest("article")!;
     expect(within(homming).getByText("Claude trabajo")).toBeInTheDocument();
     expect(within(homming).getByText("Protegido")).toBeInTheDocument();
-    expect(screen.getByText(/Aún no hay datos/)).toBeInTheDocument();
+    // The week of sample usage: 166k tokens in hedy and 50k in homming.
+    expect(await screen.findByText(/^Llevamos 216k tokens \(unos \$4,1\d\); hedy fue el proyecto más activo\.$/)).toBeInTheDocument();
   });
 
   it("invites to add an account when there are none", async () => {
     renderApp(new MockApi());
     expect(await screen.findByRole("button", { name: "Agregar mi primera cuenta" })).toBeInTheDocument();
+    expect(await screen.findByText(/Aún no hay datos/)).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Hedy te saluda" })).toHaveAttribute("data-state", "sleeping");
   });
 });
@@ -107,6 +109,22 @@ describe("Models per phase", () => {
         "Claude planifica · Codex implementa · Kimi tests",
       ),
     );
+  });
+
+  it("turns an optional phase off even after a model was typed", async () => {
+    const { api, user } = renderApp();
+    await user.click(await screen.findByRole("button", { name: "Cuentas y modelos" }));
+    await user.click(screen.getByRole("button", { name: "Modelos por fase de hedy" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Modelos por fase · hedy" });
+    await user.selectOptions(within(dialog).getByLabelText("Cuenta para Revisar"), "kimi");
+    await user.type(within(dialog).getByLabelText("Modelo para Revisar"), "kimi-k3");
+    await user.selectOptions(within(dialog).getByLabelText("Cuenta para Revisar"), "");
+    expect(within(dialog).getByLabelText("Modelo para Revisar")).toHaveValue("");
+    await user.click(within(dialog).getByRole("button", { name: "Guardar" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect((await api.overview()).projects.find((p) => p.name === "hedy")?.phases).toEqual({});
   });
 });
 

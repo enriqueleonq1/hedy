@@ -55,7 +55,8 @@ describe("Workspace", () => {
     await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
     expect(await screen.findByText("Cambios unidos a main.")).toBeInTheDocument();
     expect(await screen.findByText(/ya se aceptó/)).toBeInTheDocument();
-  });
+    // Many steps: well over the default 5 s on a busy machine.
+  }, 20_000);
 
   it("sends the plan back with feedback", async () => {
     const { user } = setup();
@@ -82,6 +83,19 @@ describe("Workspace", () => {
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     expect(await screen.findByText(/no cambian archivos/)).toBeInTheDocument();
     expect(await screen.findByText(/Terminó/)).toBeInTheDocument();
+  });
+
+  it("refreshes a stopped task even when its status stays the same", async () => {
+    const { user } = setup();
+    await openProject(user, /^hedy/);
+    await user.click(await screen.findByRole("radio", { name: "Pregunta" }));
+    await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
+    await user.click(screen.getByRole("button", { name: "Enviar" }));
+    expect(await screen.findByText(/Terminó/)).toBeInTheDocument();
+
+    // Already in review: the backend sends no `task-updated` for this stop.
+    await user.click(await screen.findByRole("button", { name: "Detener" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Detener" })).toBeNull());
   });
 
   it("offers to wait or hand the task to another provider at a limit", async () => {

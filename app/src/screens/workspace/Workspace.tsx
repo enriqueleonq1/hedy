@@ -1,20 +1,17 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { useAction } from "../../api/context";
+import { errorMessage, useAction } from "../../api/context";
 import type { Overview, Task, TaskMode } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { shortPath } from "../../components/projects";
 import { Button } from "../../components/ui/Button";
 import { tasksKey, useTaskEvents, useTasks } from "../../tasks/hooks";
-import { agentName, buildTimeline, isOpen, mascotState, STATUS_LABEL } from "../../tasks/timeline";
+import { agentName, buildTimeline, isOpen, mascotState, MODE_LABEL, STATUS_LABEL } from "../../tasks/timeline";
 import { MODEL_SUGGESTIONS } from "../../components/models";
+import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { ChangesPanel } from "./ChangesPanel";
 import { Timeline } from "./Timeline";
-
-const MODE_LABEL: Record<TaskMode, string> = { project: "Proyecto", ask: "Pregunta", research: "Research" };
-
-
 
 export function Workspace({
   overview,
@@ -86,6 +83,11 @@ export function Workspace({
           </div>
         </header>
 
+        {tasks.isError && (
+          <p className="error-text" role="alert">
+            {errorMessage(tasks.error)}
+          </p>
+        )}
         {task ? (
           <Timeline
             task={task}
@@ -97,7 +99,7 @@ export function Workspace({
           />
         ) : (
           <div className="chat__empty">
-            <Mascot color={account?.color ?? "#7AA2F7"} state="idle" size={120} label="Hedy" />
+            <Mascot color={account?.color ?? DEFAULT_ACCOUNT_COLOR} state="idle" size={120} label="Hedy" />
             <p>
               {account
                 ? `¿Qué hacemos en ${name}? Trabajaré con ${account.name} en una rama aparte; nada toca tu carpeta hasta que aceptes.`
@@ -123,7 +125,7 @@ export function Workspace({
 }
 
 function StopButton({ task }: { task: Task }) {
-  const stop = useAction((api) => api.stopTask(task.id));
+  const stop = useAction((api) => api.stopTask(task.id), { invalidate: [tasksKey(task.project)] });
   return (
     <Button small variant="ghost" onClick={() => stop.mutate(undefined)} disabled={stop.isPending}>
       Detener
@@ -165,6 +167,7 @@ function Composer({
     },
   );
   const send = useAction((api, message: string) => api.sendMessage(task?.id ?? "", message), {
+    invalidate: [tasksKey(project)],
     onSuccess: () => setText(""),
   });
   const busy = start.isPending || send.isPending;

@@ -1,21 +1,17 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
-import { useAction, useApi } from "../../api/context";
-import type { HedyApi } from "../../api/HedyApi";
+import { errorMessage, useApi } from "../../api/context";
 import type { Account, MemoryView, Note, NoteCategory, Overview } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { shortPath } from "../../components/projects";
 import { Button, ConfirmButton } from "../../components/ui/Button";
-import { Segmented, Switch } from "../../components/ui/controls";
-import { Dialog } from "../../components/ui/Dialog";
-
-export const CATEGORY_LABEL: Record<NoteCategory, string> = {
-  decision: "Decisión",
-  convention: "Convención",
-  rule: "Regla",
-  preference: "Preferencia",
-};
+import { Switch } from "../../components/ui/controls";
+import { timeAgo } from "../../format";
+import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
+import { NewNoteDialog } from "./NewNoteDialog";
+import { NoteCard } from "./NoteCard";
+import { authorLabel, keepLabel, memoryKey, useMemoryAction } from "./notes";
 
 const GROUPS: { category: NoteCategory; title: string }[] = [
   { category: "decision", title: "Decisiones" },
@@ -23,59 +19,6 @@ const GROUPS: { category: NoteCategory; title: string }[] = [
   { category: "rule", title: "Reglas" },
   { category: "preference", title: "Preferencias" },
 ];
-
-const CATEGORY_OPTIONS = (Object.keys(CATEGORY_LABEL) as NoteCategory[]).map((value) => ({
-  value,
-  label: CATEGORY_LABEL[value],
-}));
-
-export const memoryKey = (project: string) => ["memory", project] as const;
-
-/** "hace 3 días" from Unix seconds. */
-export function timeAgo(seconds: number, now = Date.now() / 1000): string {
-  const minutes = Math.max(0, Math.round((now - seconds) / 60));
-  if (minutes < 1) return "ahora";
-  if (minutes < 60) return `hace ${minutes} min`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `hace ${hours} h`;
-  const days = Math.round(hours / 24);
-  if (days < 14) return days === 1 ? "ayer" : `hace ${days} días`;
-  if (days < 60) return `hace ${Math.round(days / 7)} semanas`;
-  const months = Math.round(days / 30);
-  return months < 24 ? `hace ${months} meses` : `hace ${Math.round(months / 12)} años`;
-}
-
-const words = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-
-/**
- * Button text to keep one of two contradicting notes: what makes it different
- * ("Quedarme con 24 h") when that is short, otherwise its position.
- */
-export function keepLabel(note: Note, other: Note, position: "primera" | "segunda"): string {
-  const others = new Set(words(other.text));
-  const own = words(note.text);
-  const start = own.findIndex((w) => !others.has(w));
-  if (start >= 0) {
-    // The differing word and, after a number, its unit ("24 h").
-    const next = own[start + 1];
-    const unit = /\d/.test(own[start] ?? "") && next && next.length <= 3 ? ` ${next}` : "";
-    const phrase = `${own[start]}${unit}`;
-    if (own.filter((w) => !others.has(w)).length <= 2 && phrase.length <= 14) return `Quedarme con ${phrase}`;
-  }
-  return `Quedarme con la ${position}`;
-}
-
-function authorLabel(note: Note): string {
-  return note.author === "user" ? "tú" : note.author;
-}
-
-/** Runs a memory action and refreshes the project's memory. */
-function useMemoryAction<TVars>(project: string, action: (api: HedyApi, vars: TVars) => Promise<unknown>) {
-  const client = useQueryClient();
-  return useAction(async (api, vars: TVars) => void (await action(api, vars)), {
-    onSuccess: () => client.invalidateQueries({ queryKey: ["memory", project] }),
-  });
-}
 
 export function MemoryScreen({
   overview,
@@ -90,14 +33,14 @@ export function MemoryScreen({
   const memory = useQuery({ queryKey: memoryKey(project), queryFn: () => api.memory(project) });
   const [query, setQuery] = useState("");
   const search = useQuery({
-    queryKey: ["memory", project, "search", query.trim()],
+    queryKey: [...memoryKey(project), "search", query.trim()],
     queryFn: () => api.searchMemory(project, query.trim()),
     enabled: query.trim().length > 0,
   });
   const [adding, setAdding] = useState(false);
   const info = overview.projects.find((p) => p.path === project);
   const name = info?.name ?? shortPath(project);
-  const color = overview.accounts.find((a) => a.id === info?.account)?.color ?? "#7AA2F7";
+  const color = overview.accounts.find((a) => a.id === info?.account)?.color ?? DEFAULT_ACCOUNT_COLOR;
 
   return (
     <div className="screen memory">
@@ -125,7 +68,7 @@ export function MemoryScreen({
       </header>
 
       {memory.isPending && <p className="muted">Cargando la memoria…</p>}
-      {memory.isError && <p role="alert">No se pudo leer la memoria.</p>}
+      {memory.isError && <p role="alert">No se pudo leer la memoria: {errorMessage(memory.error)}</p>}
       {memory.data && (
         <>
           {memory.data.protected && (
@@ -139,7 +82,12 @@ export function MemoryScreen({
           <div className="memory__layout">
             <div className="memory__main">
               {query.trim() ? (
-                <Results project={project} notes={search.data} pending={search.isPending} />
+                <Results
+                  project={project}
+                  notes={search.data}
+                  pending={search.isPending}
+                  error={search.isError ? errorMessage(search.error) : null}
+                />
               ) : (
                 <Groups project={project} view={memory.data} />
               )}
@@ -259,7 +207,18 @@ function Groups({ project, view }: { project: string; view: MemoryView }) {
   );
 }
 
-function Results({ project, notes, pending }: { project: string; notes: Note[] | undefined; pending: boolean }) {
+function Results({
+  project,
+  notes,
+  pending,
+  error,
+}: {
+  project: string;
+  notes: Note[] | undefined;
+  pending: boolean;
+  error: string | null;
+}) {
+  if (error) return <p className="error-text">{error}</p>;
   if (pending) return <p className="muted">Buscando…</p>;
   if (!notes?.length) return <p className="muted">Nada coincide con esa búsqueda.</p>;
   return (
@@ -270,80 +229,6 @@ function Results({ project, notes, pending }: { project: string; notes: Note[] |
         ))}
       </ul>
     </section>
-  );
-}
-
-function NoteCard({ project, note }: { project: string; note: Note }) {
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(note.text);
-  const [category, setCategory] = useState(note.category);
-  const save = useMemoryAction(project, (api) => api.editNote(note.id, text, category));
-  const forget = useMemoryAction(project, (api) => api.forgetNote(note.id));
-  const approve = useMemoryAction(project, (api) => api.approveNote(note.id));
-  const proposed = note.status === "proposed";
-
-  if (editing) {
-    return (
-      <li className="note note--editing">
-        <form
-          className="note__form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            save.mutate(undefined, { onSuccess: () => setEditing(false) });
-          }}
-        >
-          <textarea aria-label="Texto de la nota" value={text} rows={2} onChange={(e) => setText(e.target.value)} />
-          <Segmented<NoteCategory> label="Tipo" value={category} options={CATEGORY_OPTIONS} onChange={setCategory} />
-          <div className="actions">
-            <Button type="submit" variant="primary" small disabled={!text.trim() || save.isPending}>
-              Guardar
-            </Button>
-            <Button small variant="ghost" onClick={() => setEditing(false)}>
-              Cancelar
-            </Button>
-          </div>
-        </form>
-      </li>
-    );
-  }
-
-  return (
-    <li className={`note${proposed ? " note--proposed" : ""}`}>
-      <div className="note__head">
-        <p className="note__text">{note.text}</p>
-        <span className={`category category--${note.category}`}>{CATEGORY_LABEL[note.category]}</span>
-      </div>
-      <div className="note__foot">
-        <span className={`note__author${note.author === "user" ? "" : " note__author--ai"}`}>{authorLabel(note)}</span>
-        <span className="small muted">
-          {proposed ? "propuso" : ""} {timeAgo(note.createdAt)}
-          {!proposed && ` · usada ${note.uses === 1 ? "1 vez" : `${note.uses} veces`}`}
-        </span>
-        <span className="spacer" />
-        {proposed ? (
-          <>
-            <Button small variant="primary" disabled={approve.isPending} onClick={() => approve.mutate(undefined)}>
-              Aprobar
-            </Button>
-            <Button small onClick={() => setEditing(true)}>
-              Editar
-            </Button>
-            <Button small className="btn--danger" disabled={forget.isPending} onClick={() => forget.mutate(undefined)}>
-              Rechazar
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button small onClick={() => setEditing(true)}>
-              Editar
-            </Button>
-            <ConfirmButton small className="note__forget" confirmLabel="¿Olvidarla?" onConfirm={() => forget.mutate(undefined)}>
-              Olvidar
-            </ConfirmButton>
-          </>
-        )}
-      </div>
-    </li>
   );
 }
 
@@ -421,70 +306,5 @@ function Readers({ project, view, accounts }: { project: string; view: MemoryVie
         })}
       </ul>
     </section>
-  );
-}
-
-function NewNoteDialog({
-  project,
-  canBeGlobal,
-  onClose,
-}: {
-  project: string;
-  canBeGlobal: boolean;
-  onClose: () => void;
-}) {
-  const [text, setText] = useState("");
-  const [category, setCategory] = useState<NoteCategory>("decision");
-  const [scope, setScope] = useState<"project" | "global">("project");
-  const add = useMemoryAction(project, (api) =>
-    api.addNote(scope === "global" ? null : project, text, category),
-  );
-  return (
-    <Dialog
-      title="Nueva nota"
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button
-            variant="primary"
-            disabled={!text.trim() || add.isPending}
-            onClick={() => add.mutate(undefined, { onSuccess: onClose })}
-          >
-            Guardar nota
-          </Button>
-        </>
-      }
-    >
-      <label className="field">
-        <span className="field__label">Nota</span>
-        <textarea
-          value={text}
-          rows={3}
-          placeholder="Por ejemplo: los precios se guardan en USD."
-          onChange={(e) => setText(e.target.value)}
-        />
-      </label>
-      <div className="field">
-        <span className="field__label">Tipo</span>
-        <Segmented<NoteCategory> label="Tipo" value={category} options={CATEGORY_OPTIONS} onChange={setCategory} />
-      </div>
-      {canBeGlobal && (
-        <div className="field">
-          <span className="field__label">Dónde</span>
-          <Segmented<"project" | "global">
-            label="Dónde"
-            value={scope}
-            options={[
-              { value: "project", label: "Solo este proyecto" },
-              { value: "global", label: "Todos los proyectos" },
-            ]}
-            onChange={setScope}
-          />
-        </div>
-      )}
-    </Dialog>
   );
 }

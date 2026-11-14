@@ -14,8 +14,6 @@ export interface Account {
   provider: ProviderId;
   providerName: string;
   kind: "subscription" | "apiKey";
-  /** Hedy-managed folder; null for API keys and the CLI's default folder. */
-  folder: string | null;
   defaultFolder: boolean;
   color: string;
   login: Login;
@@ -50,7 +48,6 @@ export interface UsagePoint extends Spend {
 }
 
 export interface UsageSummary {
-  since: number;
   /** Busiest first. */
   projects: (Spend & { path: string; name: string; client: string | null })[];
   /** Busiest first; projects without a client last. */
@@ -169,7 +166,7 @@ export interface Usage {
 // ---------------------------------------------------------------- tasks
 
 export type TaskMode = "project" | "ask" | "research";
-export type TaskStatus = "running" | "waitingApproval" | "review" | "accepted" | "discarded" | "failed";
+type TaskStatus ="running" | "waitingApproval" | "review" | "accepted" | "discarded" | "failed";
 
 export interface Workspace {
   worktree: string;
@@ -190,9 +187,9 @@ export interface Task {
   sessionId: string | null;
   status: TaskStatus;
   createdAt: number;
-  /** The phases this task runs through (absent in old tasks), and the current one. */
-  stages?: { phase: Phase; account: string; model: string | null }[];
-  stage?: number;
+  /** The phases this task runs through, and the index of the current one. */
+  stages: { phase: Phase; account: string; model: string | null }[];
+  stage: number;
   /** Whether its agent process is running right now. */
   live: boolean;
 }

@@ -3,6 +3,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  type QueryKey,
   type UseMutationOptions,
 } from "@tanstack/react-query";
 
@@ -28,22 +29,29 @@ export function useOverview() {
   return useQuery({ queryKey: OVERVIEW_KEY, queryFn: () => api.overview() });
 }
 
+export interface ActionOptions<TVars, TResult> extends Omit<UseMutationOptions<TResult, unknown, TVars>, "mutationFn"> {
+  /** Queries (or key prefixes) refreshed on success; the overview by default. */
+  invalidate?: QueryKey[];
+}
+
 /**
- * A backend action that refreshes the overview when it succeeds and shows the
- * (Spanish) error message from the backend when it fails.
+ * A backend action that refreshes what it changed when it succeeds (the
+ * overview unless told otherwise) and shows the (Spanish) error message from
+ * the backend when it fails.
  */
 export function useAction<TVars, TResult = void>(
   action: (api: HedyApi, vars: TVars) => Promise<TResult>,
-  options?: Omit<UseMutationOptions<TResult, unknown, TVars>, "mutationFn">,
+  options?: ActionOptions<TVars, TResult>,
 ) {
   const api = useApi();
   const client = useQueryClient();
   const toast = useToast();
+  const { invalidate = [OVERVIEW_KEY], ...mutation } = options ?? {};
   return useMutation<TResult, unknown, TVars>({
     mutationFn: (vars) => action(api, vars),
-    ...options,
+    ...mutation,
     onSuccess: async (...args) => {
-      await client.invalidateQueries({ queryKey: OVERVIEW_KEY });
+      await Promise.all(invalidate.map((queryKey) => client.invalidateQueries({ queryKey })));
       await options?.onSuccess?.(...args);
     },
     onError: (error, ...rest) => {

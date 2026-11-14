@@ -5,7 +5,7 @@ function channel(value: number): number {
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 }
 
-export function luminance(hex: string): number {
+function luminance(hex: string): number {
   const n = Number.parseInt(hex.replace("#", ""), 16);
   const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
   return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);

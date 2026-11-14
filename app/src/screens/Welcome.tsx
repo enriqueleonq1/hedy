@@ -1,14 +1,37 @@
-import type { Overview, Project } from "../api/types";
+import { useQuery } from "@tanstack/react-query";
+
+import { errorMessage, useApi } from "../api/context";
+import type { Overview, Project, UsageSummary } from "../api/types";
 import { AccountChip } from "../components/accounts";
 import type { View } from "../components/Layout";
 import { Mascot } from "../components/Mascot/Mascot";
 import { projectColor, shortPath, useProjectActions } from "../components/projects";
 import { Button } from "../components/ui/Button";
+import { formatTokens, formatUsd } from "../format";
+import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 import { AddProjectDialog, useAddProject } from "./accounts/AddProjectDialog";
+
+/** Hedy's one-liner about the week: tokens, estimated cost and the busiest project. */
+function weekUsageText(summary: UsageSummary): string {
+  const tokens = summary.projects.reduce((sum, p) => sum + p.tokens, 0);
+  if (tokens === 0) return "Aún no hay datos. Empezaré a registrarlo cuando trabajemos desde el chat de Hedy.";
+  const costs = summary.projects.map((p) => p.costUsd).filter((c): c is number => c !== null);
+  const cost = costs.length > 0 ? ` (unos ${formatUsd(costs.reduce((sum, c) => sum + c, 0))})` : "";
+  const busiest = summary.projects[0];
+  const where = busiest && summary.projects.length > 1 ? `; ${busiest.name} fue el proyecto más activo` : "";
+  return `Llevamos ${formatTokens(tokens)} tokens${cost}${where}.`;
+}
+
+function WeekUsage() {
+  const api = useApi();
+  const summary = useQuery({ queryKey: ["usageSummary", 7], queryFn: () => api.usageSummary(7) });
+  if (summary.isError) return <p className="error-text">{errorMessage(summary.error)}</p>;
+  return <p>{summary.data ? weekUsageText(summary.data) : "Sumando lo de esta semana…"}</p>;
+}
 
 export function Welcome({ overview, onNavigate }: { overview: Overview; onNavigate: (v: View) => void }) {
   const adding = useAddProject();
-  const color = overview.accounts.find((a) => a.id === overview.defaultAccount)?.color ?? "#7AA2F7";
+  const color = overview.accounts.find((a) => a.id === overview.defaultAccount)?.color ?? DEFAULT_ACCOUNT_COLOR;
   const hasAccounts = overview.accounts.length > 0;
   const greeting = overview.userName ? `¡Hola, ${overview.userName}!` : "¡Hola!";
 
@@ -24,9 +47,7 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
           </h1>
           <div className="balloon">
             <strong>Consumo de esta semana</strong>
-            <p>
-              Aún no hay datos. Empezaré a registrarlo cuando trabajemos desde el chat de Hedy.
-            </p>
+            <WeekUsage />
           </div>
           {!hasAccounts && (
             <Button variant="primary" onClick={() => onNavigate({ screen: "accounts" })}>

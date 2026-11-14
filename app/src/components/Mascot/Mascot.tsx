@@ -14,7 +14,7 @@ export const MASCOT_STATE_LABEL: Record<MascotState, string> = {
 };
 
 /** Below this size droplets, halo, cheeks and props are dropped for legibility. */
-export const TINY_SIZE = 32;
+const TINY_SIZE = 32;
 
 const BODY = "M40 92c-4-26 14-48 40-48s46 18 42 44c-3 22-18 36-42 36S43 112 40 92z";
 
