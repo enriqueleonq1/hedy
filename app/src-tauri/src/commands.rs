@@ -13,8 +13,8 @@ use tauri::ipc::Channel;
 
 use crate::AppState;
 use crate::dto::{
-    self, MemoryDto, NewAccountInput, NewTaskInput, OverviewDto, ProjectStatusDto, TaskDto,
-    UsagePointDto, UsageSummaryDto,
+    self, ActivityDto, MemoryDto, NewAccountInput, NewTaskInput, OverviewDto, ProjectStatusDto,
+    TaskDto, UsagePointDto, UsageSummaryDto,
 };
 use crate::terminal::{TerminalEvent, TerminalRequest, Terminals};
 
@@ -248,6 +248,18 @@ pub async fn tasks(state: State<'_, AppState>, project: PathBuf) -> CommandResul
                 live: h.is_running(&task.id),
                 task,
             })
+            .collect())
+    })
+    .await
+}
+
+/// The task board: every project's running and recent tasks.
+#[tauri::command]
+pub async fn activity(state: State<'_, AppState>) -> CommandResult<Vec<ActivityDto>> {
+    blocking(&state, |h| {
+        Ok(h.activity()?
+            .into_iter()
+            .map(|item| ActivityDto::new(item, h))
             .collect())
     })
     .await

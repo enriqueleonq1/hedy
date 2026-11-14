@@ -617,7 +617,38 @@ schemas):
 - Levels: ok, info, warning, error. The CLI exits with 1 when there is an error. CLI
   and account checks run in parallel, like `detect_clis`.
 
-## 17. Decisions
+## 17. Task board and desktop notifications
+
+- **Task board ("Actividad" / "Activity", `hedy tasks` / `hedy tareas`).** `Hedy::activity()`
+  lists every project's running and waiting tasks plus those with activity in the last
+  24 h (at most 30 finished ones). The state is derived from the task and its history,
+  never stored (`domain::task_state`): a plan or a permission card waiting, a limit
+  reached (until the user writes or a handoff starts a phase), working, changes to
+  review, answered, accepted, failed, discarded. What needs the user comes first. The app
+  refreshes it from the task events it already receives; a row opens the task in its
+  project's workspace, and the navigation shows how many tasks need the user.
+- **Notices.** The core sends a `Notice` through the `TaskEvents` port when a task starts
+  waiting for a plan or a permission (once, not per card), finishes, fails or reaches
+  its limit, unless `ui.notifications` is `off` (`on` by default). The text names only
+  the agent and the project ("Claude necesita tu aprobación · tienda-online"): never the
+  prompt, commands, file contents or secrets. A reached limit is only reported; Hedy
+  never switches accounts.
+- **Plugin.** Official `tauri-plugin-notification` 2.8.1 (latest stable on crates.io and
+  npm in November 2026). The app shows notices only while its window is not focused.
+  Notifications are sent from Rust only, so the webview gets no `notification:*`
+  permission in `capabilities/` (least privilege; capabilities only gate calls from the
+  frontend). Linux and the BSDs use the Desktop Notifications D-Bus service; macOS
+  the Notification Center through `notify-rust`; all local.
+- **Click to open.** On desktop, 2.8 reports a click on a notification (`tap`) to
+  `Notification::on_action` handlers registered before it was shown. Hedy registers one
+  at start-up: it unminimizes, shows and focuses the window and emits `open-task` with
+  the task id and project, which the UI turns into its workspace. Linux needs a
+  notification server that advertises the `actions` capability (KDE Plasma 6 does,
+  checked with `GetCapabilities`); without it the notification is only shown. Windows
+  reports clicks only while the toast is on screen. Not tried by hand on macOS, where a
+  development build may not be allowed to notify until the app is bundled and signed.
+
+## 18. Decisions
 
 - **Claude accounts:** `~/.claude` (Team) is registered as the default-folder account and
   launched without `CLAUDE_CONFIG_DIR`. New accounts live in Hedy folders.

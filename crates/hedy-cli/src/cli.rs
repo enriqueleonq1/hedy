@@ -138,6 +138,14 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             tr!("Quita la reserva", "Remove the reservation"),
         ),
         (
+            "tasks",
+            "",
+            tr!(
+                "Tareas en curso y recientes de todos los proyectos; primero las que te necesitan",
+                "Show running and recent tasks across projects, those that need you first"
+            ),
+        ),
+        (
             "summary",
             "",
             tr!(
@@ -521,6 +529,9 @@ pub enum Command {
         #[arg(long)]
         unprotect: bool,
     },
+
+    #[command(visible_alias = "tareas")]
+    Tasks,
 
     #[command(visible_alias = "resumen")]
     Summary {

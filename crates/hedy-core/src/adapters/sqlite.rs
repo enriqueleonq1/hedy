@@ -437,6 +437,23 @@ impl TaskRepository for SqliteStore {
             .collect()
     }
 
+    fn recent_tasks(&self, since: i64) -> PortResult<Vec<Task>> {
+        let rows: Vec<String> = self.with(|c| {
+            c.prepare(
+                "SELECT t.data FROM tasks t
+                 WHERE json_extract(t.data, '$.status') IN ('running', 'waitingApproval')
+                    OR t.created_at >= ?1
+                    OR EXISTS (SELECT 1 FROM task_events e WHERE e.task_id = t.id AND e.at >= ?1)
+                 ORDER BY t.created_at DESC, t.id DESC",
+            )?
+            .query_map([since], |r| r.get(0))?
+            .collect()
+        })?;
+        rows.iter()
+            .map(|d| serde_json::from_str(d).map_err(json_error))
+            .collect()
+    }
+
     fn append_event(&self, id: &TaskId, at: i64, event: &AgentEvent) -> PortResult<()> {
         let data = serde_json::to_string(event).map_err(json_error)?;
         self.with(|c| {
@@ -911,6 +928,46 @@ mod tests {
         store.delete_project(&project.path).unwrap();
         assert!(store.list_projects().unwrap().is_empty());
         store.delete_account(&acc.id).unwrap();
+    }
+
+    #[test]
+    fn recent_tasks_across_projects() {
+        use crate::domain::{TaskMode, TaskStatus};
+        let store = SqliteStore::in_memory().unwrap();
+        let task = |id: &str, project: &str, at: i64, status: TaskStatus| Task {
+            id: TaskId::new(id),
+            project: project.into(),
+            mode: TaskMode::Project,
+            title: id.into(),
+            prompt: id.into(),
+            account: AccountId::new("personal").unwrap(),
+            model: None,
+            workspace: None,
+            session_id: None,
+            status,
+            created_at: at,
+            stages: vec![],
+            stage: 0,
+            plan: None,
+        };
+        // Old but still running; old with a recent event; recent; old and done.
+        let running = task("t1", "/code/a", 10, TaskStatus::Running);
+        let touched = task("t2", "/code/b", 20, TaskStatus::Review);
+        let recent = task("t3", "/code/b", 500, TaskStatus::Failed);
+        let done = task("t4", "/code/a", 30, TaskStatus::Accepted);
+        for t in [&running, &touched, &recent, &done] {
+            store.save_task(t).unwrap();
+        }
+        let event = AgentEvent::Message { text: "ok".into() };
+        store.append_event(&touched.id, 450, &event).unwrap();
+        store.append_event(&done.id, 40, &event).unwrap();
+        let ids: Vec<_> = store
+            .recent_tasks(400)
+            .unwrap()
+            .into_iter()
+            .map(|t| t.id.to_string())
+            .collect();
+        assert_eq!(ids, vec!["t3", "t2", "t1"]);
     }
 
     #[test]

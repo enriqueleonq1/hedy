@@ -1,7 +1,9 @@
 import type { HedyApi, Unsubscribe } from "./HedyApi";
 import type {
   Account,
+  ActivityItem,
   AgentEvent,
+  BoardState,
   Check,
   Commit,
   Decision,
@@ -13,6 +15,7 @@ import type {
   Note,
   NoteCategory,
   NewTaskInput,
+  OpenTaskRequest,
   Overview,
   PhasePlan,
   Project,
@@ -36,6 +39,51 @@ function slug(name: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 }
+
+/** Like the backend's `task_state`: what a task shows on the board. */
+function boardState(task: Task, events: AgentEvent[]): BoardState {
+  switch (task.status) {
+    case "waitingApproval": {
+      const open = new Set<string>();
+      for (const e of events) {
+        if (e.kind === "plan" && e.requestId) open.add(e.requestId);
+        if (e.kind === "permissionResolved") open.delete(e.requestId);
+      }
+      return open.size > 0 ? "plan" : "permission";
+    }
+    case "accepted":
+      return "accepted";
+    case "discarded":
+      return "cancelled";
+    case "review":
+      return task.mode === "project" ? "review" : "answered";
+    case "running":
+    case "failed": {
+      let limited = false;
+      for (const e of events) {
+        if (e.kind === "limitWarning" && e.level === "reached") limited = true;
+        if (e.kind === "userMessage" || e.kind === "phaseStarted") limited = false;
+        if (e.kind === "rateLimit" && e.status !== "rejected") limited = false;
+      }
+      if (limited) return "limited";
+      return task.status === "running" ? "working" : "failed";
+    }
+  }
+}
+
+/** Board order, like the backend: what needs the user first, closed tasks last. */
+const BOARD_RANK: Record<BoardState, number> = {
+  plan: 0,
+  permission: 0,
+  limited: 1,
+  working: 2,
+  review: 3,
+  failed: 4,
+  answered: 5,
+  accepted: 6,
+  cancelled: 7,
+};
+const ACTIVE: BoardState[] = ["working", "plan", "permission", "limited"];
 
 function encode(text: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(text)));
@@ -62,6 +110,7 @@ export class MockApi implements HedyApi {
       accounts: [],
       projects: [],
       codeMap: { enabled: null, found: null },
+      notifications: true,
       ...initial,
     };
   }
@@ -461,6 +510,7 @@ export class MockApi implements HedyApi {
     if (key === "ui.name") this.state.userName = value ?? "Enrique";
     if (key === "ui.language") this.state.language = (value ?? "system") as Overview["language"];
     if (key === "ui.onboarded") this.state.onboarded = value === "true";
+    if (key === "ui.notifications") this.state.notifications = value !== "off";
     if (key.startsWith("api_price.")) {
       this.state.apiPrices[key.slice(10) as keyof Overview["apiPrices"]] = value;
     }
@@ -578,6 +628,9 @@ export class MockApi implements HedyApi {
   private diffs = new Map<string, FileDiff[]>();
   private eventListeners = new Set<(taskId: string, event: AgentEvent) => void>();
   private taskListeners = new Set<(task: Omit<Task, "live">) => void>();
+  private openTaskListeners = new Set<(request: OpenTaskRequest) => void>();
+  /** Unix seconds of each task's latest event. */
+  private updatedAt = new Map<string, number>();
   private nextTask = 0;
 
   async startTask(input: NewTaskInput): Promise<Task> {
@@ -671,6 +724,7 @@ export class MockApi implements HedyApi {
 
   private push(id: string, event: AgentEvent): void {
     this.eventsById.get(id)?.push(event);
+    this.updatedAt.set(id, Math.floor(Date.now() / 1000));
     const task = this.tasksById.get(id);
     if (task) {
       const status =
@@ -708,6 +762,162 @@ export class MockApi implements HedyApi {
 
   async taskEvents(id: string): Promise<AgentEvent[]> {
     return [...(this.eventsById.get(id) ?? [])];
+  }
+
+  async activity(): Promise<ActivityItem[]> {
+    const since = Date.now() / 1000 - 24 * 3600;
+    const items = [...this.tasksById.values()].map((task): ActivityItem => {
+      const events = this.eventsById.get(task.id) ?? [];
+      const started = [...events].reverse().find((e) => e.kind === "phaseStarted");
+      const project = this.state.projects.find((p) => p.path === task.project);
+      const account = this.state.accounts.find((a) => a.id === task.account);
+      return {
+        task: { ...task },
+        state: boardState(task, events),
+        phase: task.stages[task.stage]?.phase ?? "implement",
+        agent:
+          started?.kind === "phaseStarted" ? started.agent : (account?.providerName.split(" ")[0] ?? task.account),
+        projectName: project?.name ?? task.project.split("/").pop() ?? task.project,
+        updatedAt: this.updatedAt.get(task.id) ?? task.createdAt,
+      };
+    });
+    let finished = 0;
+    return items
+      .filter((item) => ACTIVE.includes(item.state) || item.updatedAt >= since)
+      .sort((a, b) => BOARD_RANK[a.state] - BOARD_RANK[b.state] || b.updatedAt - a.updatedAt)
+      .filter((item) => ACTIVE.includes(item.state) || ++finished <= 30);
+  }
+
+  /**
+   * Sample tasks for the task board, in both projects: two waiting for an
+   * answer, one at its limit, one working and a few that already finished.
+   */
+  withSampleActivity(): this {
+    const now = Math.floor(Date.now() / 1000);
+    const min = 60;
+    const add = (
+      id: string,
+      project: string,
+      account: string,
+      title: string,
+      extra: Partial<Task>,
+      ago: { created: number; updated: number },
+      events: AgentEvent[],
+    ) => {
+      const phase = extra.stages?.[extra.stage ?? 0]?.phase ?? "implement";
+      this.tasksById.set(id, {
+        id,
+        project,
+        mode: "project",
+        title,
+        prompt: title,
+        account,
+        model: "opus",
+        workspace: null,
+        sessionId: `s-${id}`,
+        status: "running",
+        createdAt: now - ago.created,
+        stages: [{ phase, account, model: "opus" }],
+        stage: 0,
+        live: false,
+        ...extra,
+      });
+      this.eventsById.set(id, [{ kind: "userMessage", text: title }, ...events]);
+      this.diffs.set(id, []);
+      this.updatedAt.set(id, now - ago.updated);
+    };
+    const opus = (account: string, phase: "plan" | "implement" = "implement"): AgentEvent => ({
+      kind: "phaseStarted",
+      phase,
+      agent: "Claude Opus",
+      account,
+    });
+    add(
+      "s1",
+      "/code/hedy",
+      "claude-personal",
+      "Agrega recordatorios por WhatsApp antes de cada cita",
+      { status: "waitingApproval", live: true, stages: [{ phase: "plan", account: "claude-personal", model: "opus" }] },
+      { created: 6 * min, updated: 1 * min },
+      [opus("Claude personal", "plan"), { kind: "plan", text: "1. Buscar\n2. Programar\n3. Tests", requestId: "plan-s1" }],
+    );
+    add(
+      "s2",
+      "/code/homming",
+      "claude-trabajo",
+      "Migra el reporte de comisiones a la API nueva",
+      { status: "waitingApproval", live: true },
+      { created: 14 * min, updated: 2 * min },
+      [
+        opus("Claude trabajo"),
+        { kind: "permissionRequest", requestId: "req-s2", tool: "Bash", summary: "npm test", input: { command: "npm test" } },
+      ],
+    );
+    add(
+      "s3",
+      "/code/hedy",
+      "claude-personal",
+      "Traduce los correos de confirmación",
+      { live: true },
+      { created: 38 * min, updated: 5 * min },
+      [
+        opus("Claude personal"),
+        { kind: "limitWarning", account: "claude-personal", level: "reached", percent: 100, resetsAt: null },
+      ],
+    );
+    add(
+      "s4",
+      "/code/homming",
+      "claude-trabajo",
+      "Revisa los tests del carrito",
+      { live: true },
+      { created: 3 * min, updated: 0 },
+      [opus("Claude trabajo"), { kind: "toolUsed", tool: "Grep", summary: "carrito" }],
+    );
+    add(
+      "s5",
+      "/code/hedy",
+      "claude-personal",
+      "Arregla el cálculo de impuestos en las facturas",
+      { status: "review" },
+      { created: 70 * min, updated: 40 * min },
+      [opus("Claude personal"), { kind: "finished", ok: true, summary: "Listo", durationMs: 1_200_000 }],
+    );
+    add(
+      "s6",
+      "/code/hedy",
+      "claude-personal",
+      "¿Dónde se calculan las comisiones?",
+      { status: "review", mode: "ask", stages: [] },
+      { created: 130 * min, updated: 125 * min },
+      [{ kind: "finished", ok: true, summary: "", durationMs: 30_000 }],
+    );
+    add(
+      "s7",
+      "/code/homming",
+      "claude-trabajo",
+      "Actualiza las dependencias del panel",
+      { status: "failed" },
+      { created: 320 * min, updated: 300 * min },
+      [opus("Claude trabajo"), { kind: "error", message: "npm install falló" }],
+    );
+    add(
+      "s8",
+      "/code/hedy",
+      "claude-personal",
+      "Cambia el color del botón de reservar",
+      { status: "discarded" },
+      { created: 20 * 60 * min, updated: 19 * 60 * min },
+      [opus("Claude personal"), { kind: "finished", ok: true, summary: "Listo", durationMs: 60_000 }],
+    );
+    return this;
+  }
+
+  /** Test helper: the user clicks the desktop notification of a task. */
+  simulateNotificationClick(id: string): void {
+    const task = this.tasksById.get(id);
+    if (!task) return;
+    for (const listener of this.openTaskListeners) listener({ taskId: id, project: task.project });
   }
 
   async answerPermission(id: string, requestId: string, decision: Decision): Promise<void> {
@@ -803,6 +1013,11 @@ export class MockApi implements HedyApi {
   onTaskUpdated(listener: (task: Omit<Task, "live">) => void): Unsubscribe {
     this.taskListeners.add(listener);
     return () => this.taskListeners.delete(listener);
+  }
+
+  onOpenTask(listener: (request: OpenTaskRequest) => void): Unsubscribe {
+    this.openTaskListeners.add(listener);
+    return () => this.openTaskListeners.delete(listener);
   }
 
   private account(id: string): Account {

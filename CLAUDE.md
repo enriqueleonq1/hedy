@@ -14,8 +14,10 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Install the CLI: `cargo install --path crates/hedy-cli` (binary `hedy`)
 - Isolated manual testing: `HEDY_DATA_DIR=/tmp/hedy-test hedy status`
 - Health check (CLIs and their versions, accounts, Hedy, environment): `hedy doctor`
+- Running and recent tasks across projects: `hedy tasks` (alias `tareas`)
 - App (from `app/`): `npm install`, then `npm run tauri dev`; UI only with sample data:
-  `npm run dev` (`?theme=light|dark`, `?lang=es|en`, `?onboarding=1`, `#accounts`, `#settings`)
+  `npm run dev` (`?theme=light|dark`, `?lang=es|en`, `?onboarding=1`, `#accounts`, `#settings`,
+  `#activity` for the task board)
 - App checks (from `app/`): `npm run typecheck`, `npm run lint`, `npm test`
 - Icons: edit `app/src-tauri/icons/logo.svg`, render it to `logo.png` (1024 px), then
   `npx tauri icon src-tauri/icons/logo.png`. Dev window icon on Wayland:

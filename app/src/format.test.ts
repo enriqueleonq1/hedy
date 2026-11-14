@@ -1,4 +1,4 @@
-import { formatDuration, formatTokens, formatUsd, timeAgo } from "./format";
+import { formatDuration, formatElapsed, formatTokens, formatUsd, timeAgo } from "./format";
 import { translator } from "./i18n";
 
 it("formats token counts", () => {
@@ -25,4 +25,13 @@ it("formats costs and ages in English", () => {
   expect(timeAgo(0, t, 86_400)).toBe("yesterday");
   expect(timeAgo(0, t, 20)).toBe("just now");
   expect(timeAgo(0, t, 5 * 60)).toBe("5 min ago");
+});
+
+it("formats how long a task has been running", () => {
+  expect(formatElapsed(42)).toBe("42 s");
+  expect(formatElapsed(185)).toBe("3 min");
+  expect(formatElapsed(3600)).toBe("1 h");
+  expect(formatElapsed(7500)).toBe("2 h 5 min");
+  expect(formatElapsed(200_000)).toBe("2 d");
+  expect(formatElapsed(-5)).toBe("0 s");
 });

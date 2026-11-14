@@ -1,6 +1,7 @@
 //! Use cases. They depend only on [`ports`], never on concrete adapters.
 
 mod accounts;
+mod activity;
 mod detect;
 mod doctor;
 mod error;
@@ -20,6 +21,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 pub use accounts::NewAccount;
+pub use activity::{MAX_FINISHED, RECENT_HOURS, TaskActivity};
 pub use detect::DetectedCli;
 pub use doctor::{Check, CheckArea, CheckLevel, DoctorReport};
 pub use error::{AppError, AppResult};

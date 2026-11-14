@@ -1,6 +1,7 @@
 //! Pure domain: no I/O, no processes, no storage.
 
 pub mod account;
+pub mod activity;
 pub mod agent;
 pub mod color;
 pub mod diff;
@@ -20,6 +21,7 @@ pub mod task;
 pub mod version;
 
 pub use account::{Account, AccountId, ConfigFolder, Credentials};
+pub use activity::{Notice, NoticeKind, TaskState, task_state};
 pub use agent::{AgentEvent, Decision, LimitLevel, PlanStep, StepStatus, UsageSample};
 pub use color::Color;
 pub use diff::{Commit, FileDiff};

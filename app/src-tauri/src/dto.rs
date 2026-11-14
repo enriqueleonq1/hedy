@@ -9,11 +9,11 @@ use std::path::{Path, PathBuf};
 use hedy_core::adapters::{CODE_MAP_PROGRAM, find_program};
 use hedy_core::application::{
     AccountStatus, AccountUsage, AppResult, CheckLevel, DoctorReport, Hedy, MemoryView,
-    ProjectStatus, Proposal, Setting, TestRun, UsageSummary,
+    ProjectStatus, Proposal, Setting, TaskActivity, TestRun, UsageSummary,
 };
 use hedy_core::domain::{
-    Account, ConfigFolder, Credentials, LoginState, Note, PhasePlan, Project, Provider, Task,
-    TaskMode, UsageSample,
+    Account, ConfigFolder, Credentials, LoginState, Note, Phase, PhasePlan, Project, Provider,
+    Task, TaskMode, TaskState, UsageSample,
 };
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +26,8 @@ pub struct OverviewDto {
     pub language: String,
     /// The onboarding was finished or skipped.
     pub onboarded: bool,
+    /// Desktop notifications about tasks (`ui.notifications`, on by default).
+    pub notifications: bool,
     pub data_dir: String,
     pub default_account: Option<String>,
     /// Custom binary path per CLI provider (`None` = found on `PATH`).
@@ -171,6 +173,35 @@ pub struct TaskDto {
     #[serde(flatten)]
     pub task: Task,
     pub live: bool,
+}
+
+/// A row of the task board.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityDto {
+    pub task: TaskDto,
+    pub state: TaskState,
+    pub phase: Phase,
+    pub agent: String,
+    pub project_name: String,
+    /// Unix seconds of the task's latest event.
+    pub updated_at: i64,
+}
+
+impl ActivityDto {
+    pub fn new(item: TaskActivity, hedy: &Hedy) -> Self {
+        Self {
+            task: TaskDto {
+                live: hedy.is_running(&item.task.id),
+                task: item.task,
+            },
+            state: item.state,
+            phase: item.phase,
+            agent: item.agent,
+            project_name: item.project_name,
+            updated_at: item.updated_at,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -526,6 +557,7 @@ pub fn overview(hedy: &Hedy, data_dir: &Path) -> AppResult<OverviewDto> {
             .setting(Setting::Language)?
             .unwrap_or_else(|| "system".into()),
         onboarded: hedy.setting(Setting::Onboarded)?.as_deref() == Some("true"),
+        notifications: hedy.notifications_on()?,
         data_dir: path_string(data_dir),
         default_account: status.default_account.as_ref().map(ToString::to_string),
         binaries,

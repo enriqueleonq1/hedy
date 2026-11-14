@@ -17,6 +17,7 @@ hedy-memory = { version = "0.1.0", path = "../../crates/hedy-memory" }
 serde = { version = "1.0.229", features = ["derive"] }
 tauri = "2.12.5"
 tauri-plugin-dialog = "2.8.4"
+tauri-plugin-notification = "2.8.1"
 whoami = "2.1.3"
 
 [dev-dependencies]

@@ -2,11 +2,30 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 
 import { OVERVIEW_KEY, useApi } from "../api/context";
-import type { AgentEvent } from "../api/types";
+import type { AgentEvent, BoardState } from "../api/types";
 
 export const tasksKey = (project: string) => ["tasks", project] as const;
 const eventsKey = (taskId: string) => ["taskEvents", taskId] as const;
-const diffKey =(taskId: string) => ["diff", taskId] as const;
+const diffKey = (taskId: string) => ["diff", taskId] as const;
+
+/** The task board of every project ("Actividad"). */
+export const ACTIVITY_KEY = ["activity"] as const;
+
+export function useActivity() {
+  const api = useApi();
+  return useQuery({ queryKey: ACTIVITY_KEY, queryFn: () => api.activity() });
+}
+
+/** A plan or permission to answer, or a limit to decide on: the user's turn. */
+export function needsYou(state: BoardState): boolean {
+  return state === "plan" || state === "permission" || state === "limited";
+}
+
+/** How many tasks wait for the user, for the badge on the navigation. */
+export function useNeedsYouCount(): number {
+  const board = useActivity();
+  return (board.data ?? []).filter((item) => needsYou(item.state)).length;
+}
 
 export function useTasks(project: string) {
   const api = useApi();
@@ -37,6 +56,17 @@ const CHANGES_ACCOUNTS: AgentEvent["kind"][] = ["usage", "rateLimit"];
 /** The backend notifies `task-updated` only on a new status; these change the rest of the task. */
 const CHANGES_TASK: AgentEvent["kind"][] = ["phaseStarted", "sessionStarted", "finished"];
 const CHANGES_STATS: AgentEvent["kind"][] = ["usage", "testsRun"];
+/** What changes a task's row on the board besides its status. */
+const CHANGES_BOARD: AgentEvent["kind"][] = [
+  "phaseStarted",
+  "plan",
+  "permissionRequest",
+  "permissionResolved",
+  "limitWarning",
+  "rateLimit",
+  "userMessage",
+  "finished",
+];
 
 /** Every project's task list (task events do not say their project). */
 export const ALL_TASKS_KEY = ["tasks"] as const;
@@ -62,6 +92,7 @@ export function TaskEventsBridge() {
       if (CHANGES_FILES.includes(event.kind)) refresh(diffKey(taskId));
       if (CHANGES_ACCOUNTS.includes(event.kind)) refresh(OVERVIEW_KEY);
       if (CHANGES_TASK.includes(event.kind)) refresh(ALL_TASKS_KEY);
+      if (CHANGES_BOARD.includes(event.kind)) refresh(ACTIVITY_KEY);
       if (CHANGES_STATS.includes(event.kind)) {
         refresh(["status"]);
         refresh(["projectUsage"]);
@@ -71,6 +102,7 @@ export function TaskEventsBridge() {
     const offTask = api.onTaskUpdated((task) => {
       void client.invalidateQueries({ queryKey: tasksKey(task.project) });
       void client.invalidateQueries({ queryKey: diffKey(task.id) });
+      void client.invalidateQueries({ queryKey: ACTIVITY_KEY });
     });
     return () => {
       offEvent();

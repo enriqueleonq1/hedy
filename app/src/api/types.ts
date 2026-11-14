@@ -84,6 +84,8 @@ export interface Overview {
   language: LanguageSetting;
   /** The first-run guide was finished or skipped. */
   onboarded: boolean;
+  /** Desktop notifications about tasks (`ui.notifications`, on by default). */
+  notifications: boolean;
   dataDir: string;
   defaultAccount: string | null;
   binaries: Record<CliProviderId, string | null>;
@@ -156,6 +158,7 @@ export type SettingKey =
   | "ui.name"
   | "ui.language"
   | "ui.onboarded"
+  | "ui.notifications"
   | "binary.claude"
   | "binary.codex"
   | "binary.gemini"
@@ -223,6 +226,37 @@ export interface NewTaskInput {
   mode: TaskMode;
   model: string | null;
   planFirst: boolean;
+}
+
+/** What a task shows on the task board ("Actividad"); derived by the backend. */
+export type BoardState =
+  | "working"
+  | "plan"
+  | "permission"
+  | "limited"
+  | "review"
+  | "answered"
+  | "accepted"
+  | "failed"
+  | "cancelled";
+
+/** A row of the task board: running and recent tasks of every project. */
+export interface ActivityItem {
+  task: Task;
+  state: BoardState;
+  /** The phase the task is on (or ended on). */
+  phase: Phase;
+  /** Who works on it: "Claude Opus", "Codex". */
+  agent: string;
+  projectName: string;
+  /** Unix seconds of its latest event. */
+  updatedAt: number;
+}
+
+/** A click on a desktop notification: open this task. */
+export interface OpenTaskRequest {
+  taskId: string;
+  project: string;
 }
 
 export type Decision = "allow" | "allowForTask" | "deny";

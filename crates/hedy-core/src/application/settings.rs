@@ -25,6 +25,8 @@ pub enum Setting {
     Language,
     /// `true` once the user has gone through (or skipped) the onboarding.
     Onboarded,
+    /// Desktop notifications about tasks: `on` (default) or `off`.
+    Notifications,
     /// Code-map MCP server (codebase-memory-mcp) to register in every run.
     /// Unset: no code map.
     CodeMap,
@@ -32,6 +34,7 @@ pub enum Setting {
 
 pub const THEMES: [&str; 3] = ["system", "light", "dark"];
 pub const LANGUAGES: [&str; 3] = ["system", "es", "en"];
+pub const SWITCH: [&str; 2] = ["on", "off"];
 
 impl Setting {
     pub fn key(self) -> String {
@@ -44,6 +47,7 @@ impl Setting {
             Self::UserName => "ui.name".into(),
             Self::Language => "ui.language".into(),
             Self::Onboarded => "ui.onboarded".into(),
+            Self::Notifications => "ui.notifications".into(),
             Self::CodeMap => "code_map.binary".into(),
         }
     }
@@ -65,6 +69,7 @@ impl Setting {
                 Self::UserName,
                 Self::Language,
                 Self::Onboarded,
+                Self::Notifications,
                 Self::CodeMap,
             ])
             .collect()
@@ -110,6 +115,12 @@ impl Hedy {
                     value: language.to_owned(),
                 });
             }
+            (Setting::Notifications, Some(value)) if !SWITCH.contains(&value) => {
+                return Err(AppError::InvalidSettingValue {
+                    key: setting.key(),
+                    value: value.to_owned(),
+                });
+            }
             _ => {}
         }
         self.store.set_setting(&setting.key(), value)?;
@@ -123,6 +134,11 @@ impl Hedy {
     pub fn apply_language(&self) -> AppResult<()> {
         crate::i18n::init(self.setting(Setting::Language)?.as_deref());
         Ok(())
+    }
+
+    /// Whether desktop notifications are on (the default).
+    pub fn notifications_on(&self) -> AppResult<bool> {
+        Ok(self.setting(Setting::Notifications)?.as_deref() != Some("off"))
     }
 
     pub(crate) fn default_account_id(&self) -> AppResult<Option<AccountId>> {
@@ -187,6 +203,22 @@ mod tests {
             f.hedy.setting(Setting::Theme).unwrap().as_deref(),
             Some("light")
         );
+    }
+
+    #[test]
+    fn notifications_are_on_unless_turned_off() {
+        let f = Fixture::new();
+        assert!(f.hedy.notifications_on().unwrap());
+        f.hedy
+            .set_setting(Setting::Notifications, Some("off"))
+            .unwrap();
+        assert!(!f.hedy.notifications_on().unwrap());
+        assert!(matches!(
+            f.hedy.set_setting(Setting::Notifications, Some("maybe")),
+            Err(AppError::InvalidSettingValue { .. })
+        ));
+        f.hedy.set_setting(Setting::Notifications, None).unwrap();
+        assert!(f.hedy.notifications_on().unwrap());
     }
 
     #[test]

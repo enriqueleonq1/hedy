@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import type { HedyApi } from "./HedyApi";
-import type { AgentEvent, Task, TerminalEvent } from "./types";
+import type { AgentEvent, OpenTaskRequest, Task, TerminalEvent } from "./types";
 
 /** Tauri's `listen` is async; this returns a synchronous unsubscribe. */
 function subscribe<T>(event: string, handler: (payload: T) => void): () => void {
@@ -62,6 +62,7 @@ export const tauriApi: HedyApi = {
   startTask: (input) => invoke("start_task", { input }),
   tasks: (project) => invoke("tasks", { project }),
   taskEvents: (id) => invoke("task_events", { id }),
+  activity: () => invoke("activity"),
   answerPermission: (id, requestId, decision) => invoke("answer_permission", { id, requestId, decision }),
   answerPlan: (id, requestId, approve, feedback) => invoke("answer_plan", { id, requestId, approve, feedback }),
   memory: (path) => invoke("memory", { path }),
@@ -85,6 +86,7 @@ export const tauriApi: HedyApi = {
   onTaskEvent: (listener) =>
     subscribe<{ taskId: string; event: AgentEvent }>("task-event", ({ taskId, event }) => listener(taskId, event)),
   onTaskUpdated: (listener) => subscribe<Omit<Task, "live">>("task-updated", listener),
+  onOpenTask: (listener) => subscribe<OpenTaskRequest>("open-task", listener),
 };
 
 export function isTauri(): boolean {

@@ -170,6 +170,20 @@ export function Settings({ overview }: { overview: Overview }) {
         ))}
       </section>
 
+      <section className="card settings__section">
+        <h2>{t("settings.notifications")}</h2>
+        <div className="row row--between">
+          <span>{t("settings.notifications.toggle")}</span>
+          <Switch
+            label={t("settings.notifications.toggle")}
+            checked={overview.notifications}
+            disabled={setSetting.isPending}
+            onChange={(on) => setSetting.mutate({ key: "ui.notifications", value: on ? "on" : "off" })}
+          />
+        </div>
+        <p className="small muted">{t("settings.notifications.hint")}</p>
+      </section>
+
       <CodeMap overview={overview} />
 
       <section className="card settings__section">

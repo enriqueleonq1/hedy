@@ -67,6 +67,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             };
             commands::use_account(&hedy, &dir, &account, protection)
         }
+        Command::Tasks => commands::tasks(&hedy),
         Command::Summary { week: _, days } => commands::summary(&hedy, days.unwrap_or(7)),
         Command::Client { name, clear } => {
             commands::set_client(&hedy, &dir, if clear { None } else { name.as_deref() })
