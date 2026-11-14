@@ -80,6 +80,15 @@ pub async fn set_api_key(state: State<'_, AppState>, id: String, key: String) ->
 }
 
 #[tauri::command]
+pub async fn rename_account(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+) -> CommandResult<()> {
+    blocking(&state, move |h| h.rename_account(&id, &name).map(drop)).await
+}
+
+#[tauri::command]
 pub async fn remove_account(state: State<'_, AppState>, id: String) -> CommandResult<()> {
     blocking(&state, move |h| h.remove_account(&id).map(drop)).await
 }

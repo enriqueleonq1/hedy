@@ -18,6 +18,9 @@ const es = {
   "accounts.card.saveKey": "Guardar API key",
   "accounts.card.makeDefault": "Por defecto",
   "accounts.card.removeConfirm": "¿Quitar? Confirmar",
+  "accounts.card.rename": "Cambiar el nombre de {name}",
+  "accounts.card.renameHint": "Cambiar el nombre (la carpeta y el id no cambian)",
+  "accounts.card.nameLabel": "Nombre de la cuenta",
 
   "accounts.plan.subscription": "Suscripción",
   "accounts.login.keySaved": "Key guardada",
@@ -125,6 +128,9 @@ const en: Record<keyof typeof es, string> = {
   "accounts.card.saveKey": "Save API key",
   "accounts.card.makeDefault": "Make default",
   "accounts.card.removeConfirm": "Remove? Confirm",
+  "accounts.card.rename": "Rename {name}",
+  "accounts.card.renameHint": "Rename (the folder and id stay the same)",
+  "accounts.card.nameLabel": "Account name",
 
   "accounts.plan.subscription": "Subscription",
   "accounts.login.keySaved": "Key saved",

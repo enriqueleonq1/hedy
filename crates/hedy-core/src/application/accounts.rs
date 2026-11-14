@@ -1,8 +1,8 @@
 use super::ports::CapturedOutput;
 use super::{AppError, AppResult, Hedy, Setting};
 use crate::domain::{
-    Account, AccountId, Color, ConfigFolder, Credentials, LaunchPurpose, LaunchSpec, LoginState,
-    Provider,
+    Account, AccountId, Color, ConfigFolder, Credentials, DomainError, LaunchPurpose, LaunchSpec,
+    LoginState, Provider,
 };
 
 /// Request to register an account.
@@ -95,6 +95,19 @@ impl Hedy {
     pub fn set_account_color(&self, id: &str, color: Color) -> AppResult<Account> {
         let mut account = self.account(id)?;
         account.color = color;
+        self.store.save_account(&account)?;
+        Ok(account)
+    }
+
+    /// Changes only the display name: the id (and with it the account folder
+    /// and `hedy use <id>`) stays the same.
+    pub fn rename_account(&self, id: &str, name: &str) -> AppResult<Account> {
+        let mut account = self.account(id)?;
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(DomainError::EmptyAccountName.into());
+        }
+        account.name = name.to_owned();
         self.store.save_account(&account)?;
         Ok(account)
     }
@@ -277,6 +290,27 @@ mod tests {
         let pink: Color = "rosa".parse().unwrap();
         f.hedy.set_account_color("personal", pink).unwrap();
         assert_eq!(f.hedy.account("personal").unwrap().color, pink);
+    }
+
+    #[test]
+    fn renaming_keeps_the_id_and_folder() {
+        let f = Fixture::new();
+        let before = f.add_claude("Personal");
+        let after = f.hedy.rename_account("personal", "  Claude casa ").unwrap();
+        assert_eq!(after.name, "Claude casa");
+        assert_eq!(
+            (&after.id, &after.credentials),
+            (&before.id, &before.credentials)
+        );
+        assert_eq!(f.hedy.account("personal").unwrap().name, "Claude casa");
+        assert!(matches!(
+            f.hedy.rename_account("personal", "   "),
+            Err(AppError::Domain(DomainError::EmptyAccountName))
+        ));
+        assert!(matches!(
+            f.hedy.rename_account("nadie", "X"),
+            Err(AppError::AccountNotFound(_))
+        ));
     }
 
     #[test]

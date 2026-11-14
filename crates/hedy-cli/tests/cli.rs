@@ -165,6 +165,36 @@ fn without_accounts_status_and_list_explain_how_to_add_one() {
 }
 
 #[test]
+fn renaming_an_account_keeps_its_id() {
+    let env = Env::new();
+    env.hedy(&[
+        "account",
+        "add",
+        "Claude personal",
+        "--claude",
+        "--no-login",
+    ])
+    .assert()
+    .success();
+    env.hedy(&["cuenta", "renombrar", "claude-personal", "Claude casa"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Cuenta renombrada"))
+        .stdout(predicate::str::contains("Claude casa (claude-personal)"));
+    env.hedy_lang("en", &["account", "rename", "claude-personal", "Home"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Account renamed"));
+    env.hedy(&["account", "rename", "claude-personal", "  "])
+        .assert()
+        .failure();
+    env.hedy(&["account", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Home"));
+}
+
+#[test]
 fn status_shows_login_without_identifying_data() {
     let env = Env::new();
     let repo = env.repo("code/homming");

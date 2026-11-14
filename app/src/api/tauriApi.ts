@@ -26,6 +26,7 @@ export const tauriApi: HedyApi = {
   addAccount: (input) => invoke("add_account", { input }),
   setApiKey: (id, key) => invoke("set_api_key", { id, key }),
   removeAccount: (id) => invoke("remove_account", { id }),
+  renameAccount: (id, name) => invoke("rename_account", { id, name }),
   setDefaultAccount: (id) => invoke("set_default_account", { id }),
   setAccountColor: (id, color) => invoke("set_account_color", { id, color }),
 

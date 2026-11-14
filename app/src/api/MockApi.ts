@@ -677,6 +677,11 @@ export class MockApi implements HedyApi {
     this.state.defaultAccount = id;
   }
 
+  async renameAccount(id: string, name: string): Promise<void> {
+    if (!name.trim()) throw new Error("El nombre de la cuenta no puede estar vacío");
+    this.account(id).name = name.trim();
+  }
+
   async setAccountColor(id: string, color: string): Promise<void> {
     this.account(id).color = color;
   }

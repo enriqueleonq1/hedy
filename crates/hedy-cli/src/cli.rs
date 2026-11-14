@@ -316,6 +316,22 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             ),
         ),
         (
+            "account rename",
+            "",
+            tr!(
+                "Cambia el nombre que ves de una cuenta (su id y su carpeta no cambian)",
+                "Change an account's display name (its id and folder stay the same)"
+            ),
+        ),
+        (
+            "account rename",
+            "name",
+            tr!(
+                "Nombre nuevo, p. ej. \"Claude casa\"",
+                "New name, e.g. \"Claude home\""
+            ),
+        ),
+        (
             "account default",
             "",
             tr!(
@@ -748,6 +764,12 @@ pub enum AccountCommand {
     #[command(visible_alias = "quitar")]
     Remove {
         account: String,
+    },
+
+    #[command(visible_alias = "renombrar")]
+    Rename {
+        account: String,
+        name: String,
     },
 
     #[command(visible_alias = "predeterminada")]

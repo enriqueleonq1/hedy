@@ -80,6 +80,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
             AccountCommand::List => commands::list_accounts(&hedy),
             AccountCommand::Login { account } => commands::login(&hedy, &account),
             AccountCommand::Remove { account } => commands::remove_account(&hedy, &account),
+            AccountCommand::Rename { account, name } => {
+                commands::rename_account(&hedy, &account, &name)
+            }
             AccountCommand::Default { account, clear } => {
                 commands::set_default(&hedy, if clear { None } else { account.as_deref() })
             }

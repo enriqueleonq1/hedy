@@ -58,6 +58,52 @@ export function AccountsScreen({ overview }: { overview: Overview }) {
   );
 }
 
+/** The name, and a pencil to rename it in place: Enter or leaving saves, Escape cancels. */
+function AccountName({ account }: { account: Account }) {
+  const t = useT();
+  const rename = useAction((api, name: string) => api.renameAccount(account.id, name));
+  const [editing, setEditing] = useState(false);
+
+  if (!editing) {
+    return (
+      <div className="account-card__name">
+        <h3>{account.name}</h3>
+        <Button
+          small
+          variant="ghost"
+          className="account-card__rename"
+          aria-label={t("accounts.card.rename", { name: account.name })}
+          title={t("accounts.card.renameHint")}
+          onClick={() => setEditing(true)}
+        >
+          ✎
+        </Button>
+      </div>
+    );
+  }
+
+  const save = (value: string) => {
+    setEditing(false);
+    const name = value.trim();
+    if (name && name !== account.name) rename.mutate(name);
+  };
+  return (
+    <input
+      className="account-card__name-input"
+      aria-label={t("accounts.card.nameLabel")}
+      defaultValue={account.name}
+      maxLength={60}
+      autoFocus
+      onFocus={(e) => e.target.select()}
+      onBlur={(e) => save(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") setEditing(false);
+      }}
+    />
+  );
+}
+
 function AccountCard({
   account,
   projects,
@@ -87,7 +133,7 @@ function AccountCard({
           label={t("accounts.card.mascot", { name: account.name })}
         />
         <div className="account-card__title">
-          <h3>{account.name}</h3>
+          <AccountName account={account} />
           <p className="muted">
             {accountSubtitle(account, t)}
             {isDefault && <span className="pill pill--current">{t("accounts.card.default")}</span>}

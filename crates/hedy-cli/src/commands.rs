@@ -883,6 +883,18 @@ pub fn remove_account(hedy: &Hedy, id: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn rename_account(hedy: &Hedy, id: &str, name: &str) -> Result<()> {
+    let s = Style::for_stdout();
+    let account = hedy.rename_account(id, name)?;
+    let label = account_label(&s, &account);
+    println!(
+        "{} {}",
+        s.ok("✔"),
+        tr!("Cuenta renombrada: {label}", "Account renamed: {label}")
+    );
+    Ok(())
+}
+
 pub fn set_default(hedy: &Hedy, id: Option<&str>) -> Result<()> {
     let s = Style::for_stdout();
     hedy.set_setting(Setting::DefaultAccount, id)?;

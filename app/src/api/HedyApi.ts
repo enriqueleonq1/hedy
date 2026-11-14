@@ -43,6 +43,8 @@ export interface HedyApi {
   addAccount(input: NewAccountInput): Promise<string>;
   setApiKey(id: string, key: string): Promise<void>;
   removeAccount(id: string): Promise<void>;
+  /** Display name only; the id stays. */
+  renameAccount(id: string, name: string): Promise<void>;
   setDefaultAccount(id: string | null): Promise<void>;
   setAccountColor(id: string, color: string): Promise<void>;
 

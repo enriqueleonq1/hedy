@@ -43,6 +43,7 @@ pub fn run() {
             commands::add_account,
             commands::set_api_key,
             commands::remove_account,
+            commands::rename_account,
             commands::set_default_account,
             commands::set_account_color,
             commands::use_account,
