@@ -1,10 +1,12 @@
-//! Data sent to the web UI. The domain knows nothing about serde: mapping
-//! lives here, in the driving adapter.
+//! Data sent to the web UI. Domain types that already have the shape the UI
+//! needs (tasks, notes, agent events, diffs, commits, phase plans) derive
+//! serde and are sent as they are; the DTOs here are for the shapes that
+//! combine or reshape domain data (overview, accounts, usage, memory screen…).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use hedy_core::adapters::find_program;
+use hedy_core::adapters::{CODE_MAP_PROGRAM, find_program};
 use hedy_core::application::{
     AccountStatus, AccountUsage, AppResult, Hedy, MemoryView, ProjectStatus, Setting, TestRun,
     UsageSummary,
@@ -42,8 +44,6 @@ pub struct CodeMapDto {
     /// Where it is installed, if found.
     pub found: Option<String>,
 }
-
-pub const CODE_MAP_PROGRAM: &str = "codebase-memory-mcp";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,8 +98,6 @@ pub struct AccountDto {
     pub provider_name: &'static str,
     /// `subscription` or `apiKey`.
     pub kind: &'static str,
-    /// Hedy-managed folder; `None` for API keys and the CLI's default folder.
-    pub folder: Option<String>,
     pub default_folder: bool,
     pub color: String,
     pub login: LoginDto,
@@ -204,7 +202,6 @@ impl From<&UsageSample> for SpendDto {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageSummaryDto {
-    pub since: i64,
     pub projects: Vec<ProjectSpendDto>,
     pub clients: Vec<ClientSpendDto>,
 }
@@ -231,7 +228,6 @@ pub struct ClientSpendDto {
 impl From<UsageSummary> for UsageSummaryDto {
     fn from(s: UsageSummary) -> Self {
         Self {
-            since: s.since,
             projects: s
                 .projects
                 .iter()
@@ -346,12 +342,10 @@ fn path_string(path: &Path) -> String {
 
 impl AccountDto {
     pub fn new(account: &Account, login: &LoginState, projects: &[Project]) -> Self {
-        let (kind, folder, default_folder) = match &account.credentials {
-            Credentials::ApiKey => ("apiKey", None, false),
-            Credentials::Subscription(ConfigFolder::Default) => ("subscription", None, true),
-            Credentials::Subscription(ConfigFolder::Managed(p)) => {
-                ("subscription", Some(path_string(p)), false)
-            }
+        let (kind, default_folder) = match &account.credentials {
+            Credentials::ApiKey => ("apiKey", false),
+            Credentials::Subscription(ConfigFolder::Default) => ("subscription", true),
+            Credentials::Subscription(ConfigFolder::Managed(_)) => ("subscription", false),
         };
         Self {
             id: account.id.to_string(),
@@ -359,7 +353,6 @@ impl AccountDto {
             provider: account.provider.as_str(),
             provider_name: account.provider.display_name(),
             kind,
-            folder,
             default_folder,
             color: account.color.to_string(),
             login: login.into(),
@@ -490,7 +483,6 @@ mod tests {
         assert_eq!(json["providerName"], "Claude Code");
         assert_eq!(json["kind"], "subscription");
         assert_eq!(json["defaultFolder"], true);
-        assert_eq!(json["folder"], serde_json::Value::Null);
         assert_eq!(json["color"], "#7AA2F7");
         assert_eq!(json["login"]["state"], "loggedIn");
         assert_eq!(json["login"]["plan"], "team");

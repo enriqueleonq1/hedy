@@ -72,6 +72,9 @@ pub fn system_with_hook(paths: &HedyPaths, program: &std::path::Path) -> PortRes
 /// First argument that makes the app binary serve the memory MCP server.
 pub const MEMORY_SERVER_ARG: &str = "memory-mcp";
 
+/// The code-map MCP server's program (codebase-memory-mcp), looked up on `PATH`.
+pub const CODE_MAP_PROGRAM: &str = "codebase-memory-mcp";
+
 /// Like [`system_with_hook`], and `program` also serves the project memory
 /// (`program memory-mcp --data-dir …`, see the `hedy-memory` crate).
 pub fn system_for_app(paths: &HedyPaths, program: &std::path::Path) -> PortResult<Hedy> {

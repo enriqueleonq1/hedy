@@ -264,10 +264,27 @@ impl Hedy {
             tools: Arc::new(TaskMemory {
                 hedy: self.clone(),
                 project: project.path.clone(),
-                task: task.clone(),
+                task: Some(task.clone()),
                 author,
             }),
         })
+    }
+
+    /// The memory tools an agent uses in the project containing `path`: what
+    /// the memory MCP server serves. Reads count as uses of `task` when known;
+    /// proposals are signed by `author`.
+    pub fn memory_tools(
+        &self,
+        path: &Path,
+        task: Option<&TaskId>,
+        author: &str,
+    ) -> AppResult<Arc<dyn MemoryTools>> {
+        Ok(Arc::new(TaskMemory {
+            hedy: self.clone(),
+            project: self.project_at(path)?.path,
+            task: task.cloned(),
+            author: author.to_owned(),
+        }))
     }
 }
 
@@ -290,11 +307,12 @@ pub fn format_notes(notes: &[Note]) -> String {
         .join("\n")
 }
 
-/// Memory tools for an agent that runs its tools through Hedy (API agents).
+/// Memory tools for an agent: the API agent calls them through Hedy, CLI
+/// agents through the memory MCP server.
 struct TaskMemory {
     hedy: Hedy,
     project: PathBuf,
-    task: TaskId,
+    task: Option<TaskId>,
     author: String,
 }
 
@@ -302,7 +320,7 @@ impl MemoryTools for TaskMemory {
     fn search(&self, query: &str) -> String {
         match self
             .hedy
-            .read_memory_for_agent(&self.project, Some(&self.task), query)
+            .read_memory_for_agent(&self.project, self.task.as_ref(), query)
         {
             Ok(notes) => format_notes(&notes),
             Err(e) => format!("No se pudo leer la memoria: {e}"),
@@ -310,7 +328,14 @@ impl MemoryTools for TaskMemory {
     }
 
     fn propose(&self, text: &str, category: &str) -> String {
-        let category = category.parse().unwrap_or(Category::Convention);
+        let Ok(category) = category.parse::<Category>() else {
+            let valid: Vec<&str> = Category::ALL.iter().map(|c| c.as_str()).collect();
+            return format!(
+                "Categoría desconocida: «{}». No se guardó la nota; usa una de estas: {}.",
+                category.trim(),
+                valid.join(", ")
+            );
+        };
         match self
             .hedy
             .propose_note(&self.project, text, category, &self.author)
@@ -458,6 +483,30 @@ mod tests {
 
         let note = &f.hedy.memory(&moira).unwrap().notes[0];
         assert_eq!(note.uses, 1);
+    }
+
+    #[test]
+    fn unknown_categories_are_not_saved() {
+        let f = setup();
+        let moira = f.dir("/code/moira");
+        let tools = f.hedy.memory_tools(&moira, None, "Codex").unwrap();
+        let answer = tools.propose("Precios en USD", "idea");
+        assert!(answer.contains("decision, convention, rule, preference"));
+        assert!(f.hedy.memory(&moira).unwrap().proposed.is_empty());
+
+        assert!(
+            tools
+                .propose("Precios en USD", "Regla")
+                .contains("Propuesta")
+        );
+        let proposed = f.hedy.memory(&moira).unwrap().proposed;
+        assert_eq!(proposed[0].category, Category::Rule);
+        assert_eq!(proposed[0].author, "Codex");
+        assert!(
+            f.hedy
+                .memory_tools(&f.dir("/elsewhere"), None, "Codex")
+                .is_err()
+        );
     }
 
     #[test]

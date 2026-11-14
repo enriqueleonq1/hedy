@@ -4,11 +4,12 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
+use hedy_core::adapters::CODE_MAP_PROGRAM;
 use hedy_core::application::ports::TaskEvents;
 use hedy_core::application::{Hedy, NewTask, Setting};
 use hedy_core::domain::{AccountId, AgentEvent, Decision, Task, TaskId, TaskMode, TaskStatus};
@@ -23,23 +24,24 @@ enum Update {
 }
 
 /// Forwards everything Hedy reports to the runner's thread.
-struct ChannelEvents(Mutex<Sender<Update>>);
+struct ChannelEvents(Sender<Update>);
 
 impl TaskEvents for ChannelEvents {
     fn event(&self, task: &TaskId, event: &AgentEvent) {
-        let _ = self
-            .0
-            .lock()
-            .unwrap()
-            .send(Update::Event(task.clone(), event.clone()));
+        let _ = self.0.send(Update::Event(task.clone(), event.clone()));
     }
 
     fn task_updated(&self, task: &Task) {
-        let _ = self
-            .0
-            .lock()
-            .unwrap()
-            .send(Update::Status(task.id.clone(), task.status));
+        let _ = self.0.send(Update::Status(task.id.clone(), task.status));
+    }
+}
+
+/// A folder removed when dropped, on every way out (errors included).
+pub struct RemoveOnDrop(pub PathBuf);
+
+impl Drop for RemoveOnDrop {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 
@@ -119,7 +121,7 @@ impl Runner {
     /// `hedy` must run on its own data folder: each run registers a project.
     pub fn new(hedy: Hedy, options: RunnerOptions) -> Self {
         let (tx, rx) = channel();
-        let hedy = hedy.with_task_events(Arc::new(ChannelEvents(Mutex::new(tx))));
+        let hedy = hedy.with_task_events(Arc::new(ChannelEvents(tx)));
         Self {
             hedy,
             events: rx,
@@ -127,31 +129,52 @@ impl Runner {
         }
     }
 
-    pub fn run(&self, case: &Case, layer: Layer, attempt: u32) -> Result<RunResult> {
+    /// One run. Whatever goes wrong (copying the repo, launching the agent,
+    /// running the check) fails this run only: it is recorded in
+    /// [`RunResult::error`] and the suite goes on.
+    pub fn run(&self, case: &Case, layer: Layer, attempt: u32) -> RunResult {
         let started_at = now();
+        let mut result = RunResult {
+            case: case.name.clone(),
+            layer,
+            attempt,
+            account: self.options.account.as_str().to_owned(),
+            model: self.options.model.clone(),
+            passed: false,
+            tokens: 0,
+            cost_usd: None,
+            duration_ms: 0,
+            actions: 0,
+            notes_read: 0,
+            error: None,
+            check_output: String::new(),
+            started_at,
+        };
         let repo = self
             .options
             .work_dir
             .join(format!("{}-{layer}-{attempt}-{started_at}", case.name));
-        copy_dir(&case.repo(), &repo)?;
-        git(&repo, &["init", "-q", "-b", "main"])?;
-        git(&repo, &["add", "-A"])?;
-        git(&repo, &["commit", "-q", "-m", "Estado inicial del caso"])?;
-        let repo = repo.canonicalize()?;
-
-        let result = self.run_in(case, layer, attempt, &repo, started_at);
-        let _ = std::fs::remove_dir_all(&repo);
+        let _repo = RemoveOnDrop(repo.clone());
+        if let Err(e) = self.run_in(case, layer, &repo, &mut result) {
+            result.passed = false;
+            result.error.get_or_insert_with(|| format!("{e:#}"));
+        }
         result
     }
 
-    fn run_in(
-        &self,
-        case: &Case,
-        layer: Layer,
-        attempt: u32,
-        repo: &Path,
-        started_at: i64,
-    ) -> Result<RunResult> {
+    /// Prepares the repo and runs the task in it; always forgets the project.
+    fn run_in(&self, case: &Case, layer: Layer, repo: &Path, out: &mut RunResult) -> Result<()> {
+        copy_dir(&case.repo(), repo)?;
+        git(repo, &["init", "-q", "-b", "main"])?;
+        git(repo, &["add", "-A"])?;
+        git(repo, &["commit", "-q", "-m", "Estado inicial del caso"])?;
+        let repo = repo.canonicalize()?;
+        let result = self.run_task(case, layer, &repo, out);
+        let _ = self.hedy.remove_project(&repo);
+        result
+    }
+
+    fn run_task(&self, case: &Case, layer: Layer, repo: &Path, out: &mut RunResult) -> Result<()> {
         let hedy = &self.hedy;
         let account = self.options.account.as_str();
         hedy.use_account(repo, account, None)?;
@@ -164,7 +187,7 @@ impl Runner {
         }
         let code_map = match layer.code_map() {
             true => Some(self.options.code_map.as_deref().with_context(|| {
-                format!("la capa {layer} necesita el mapa del código (codebase-memory-mcp)")
+                format!("la capa {layer} necesita el mapa del código ({CODE_MAP_PROGRAM})")
             })?),
             false => None,
         };
@@ -177,38 +200,47 @@ impl Runner {
             mode: TaskMode::Project,
             model: self.options.model.clone(),
             plan_first: false,
-        })?;
-        let observed = self.drive(&task.id, Duration::from_secs(case.spec.timeout_secs));
-        let duration_ms = clock.elapsed().as_millis() as u64;
-
-        let task = hedy.task(&task.id)?;
-        let (passed, check_output) = if observed.error.is_none() {
-            self.check(case, &task.work_dir())?
-        } else {
-            (false, String::new())
+        });
+        let task = match task {
+            Ok(task) => task,
+            Err(e) => {
+                out.duration_ms = clock.elapsed().as_millis() as u64;
+                return Err(e.into());
+            }
         };
-        let notes_read = hedy.memory(repo)?.used_last_task.len();
-        if matches!(task.status, TaskStatus::Review | TaskStatus::Failed) {
-            let _ = hedy.discard_task(&task.id);
+        let result = self.finish(case, &task.id, repo, clock, out);
+        // In review the agent's session is still alive: discarding stops it
+        // and removes the worktree, whatever happened above.
+        match hedy.task(&task.id) {
+            Ok(current) if current.status.is_closed() => {}
+            _ => {
+                let _ = hedy.discard_task(&task.id);
+            }
         }
-        let _ = hedy.remove_project(repo);
+        result
+    }
 
-        Ok(RunResult {
-            case: case.name.clone(),
-            layer,
-            attempt,
-            account: account.to_owned(),
-            model: self.options.model.clone(),
-            passed,
-            tokens: observed.tokens,
-            cost_usd: observed.cost_usd,
-            duration_ms,
-            actions: observed.actions,
-            notes_read,
-            error: observed.error,
-            check_output,
-            started_at,
-        })
+    /// Waits for the task, then checks its work.
+    fn finish(
+        &self,
+        case: &Case,
+        id: &TaskId,
+        repo: &Path,
+        clock: Instant,
+        out: &mut RunResult,
+    ) -> Result<()> {
+        let observed = self.drive(id, Duration::from_secs(case.spec.timeout_secs));
+        out.duration_ms = clock.elapsed().as_millis() as u64;
+        out.tokens = observed.tokens;
+        out.cost_usd = observed.cost_usd;
+        out.actions = observed.actions;
+        out.error = observed.error;
+        out.notes_read = self.hedy.memory(repo)?.used_last_task.len();
+        if out.error.is_none() {
+            let task = self.hedy.task(id)?;
+            (out.passed, out.check_output) = self.check(case, &task.work_dir())?;
+        }
+        Ok(())
     }
 
     /// Answers cards and collects usage until the task stops.

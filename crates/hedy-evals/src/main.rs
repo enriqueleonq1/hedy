@@ -1,15 +1,19 @@
 //! `hedy-evals`: runs the eval suite against a real account. Each run spends
 //! tokens of that account.
 
+use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
-use hedy_core::adapters::{self, HedyPaths, MEMORY_SERVER_ARG, find_program, hook};
+use hedy_core::adapters::{self, CODE_MAP_PROGRAM, HedyPaths, find_program};
 use hedy_core::application::Setting;
 use hedy_core::domain::Provider;
-use hedy_evals::{Layer, Runner, RunnerOptions, load_suite, summarize};
+use hedy_evals::{
+    Case, Layer, RemoveOnDrop, RunResult, Runner, RunnerOptions, load_suite, select_cases,
+    summarize,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -47,26 +51,15 @@ struct Args {
 fn main() -> Result<()> {
     // Claude Code runs this binary as its PreToolUse hook and as the memory
     // MCP server, like the app.
-    if std::env::args().skip(1).eq(hook::HOOK_ARGS) {
-        std::process::exit(hook::run());
-    }
-    if std::env::args().nth(1).as_deref() == Some(MEMORY_SERVER_ARG) {
-        return hedy_memory::serve(hedy_memory::Options::parse(std::env::args().skip(2))?);
+    if let Some(code) = hedy_memory::serve_helper_mode() {
+        std::process::exit(code);
     }
     run(Args::parse())
 }
 
 fn run(args: Args) -> Result<()> {
-    let mut cases = load_suite(&args.suite)?;
-    if !args.cases.is_empty() {
-        cases.retain(|c| args.cases.contains(&c.name));
-        if cases.len() != args.cases.len() {
-            bail!(
-                "no encontré todos los casos pedidos en {}",
-                args.suite.display()
-            );
-        }
-    }
+    let cases = select_cases(load_suite(&args.suite)?, &args.cases)
+        .with_context(|| format!("en {}", args.suite.display()))?;
     if args.list {
         for case in &cases {
             let measures = case.spec.measures.as_deref().unwrap_or("-");
@@ -86,13 +79,18 @@ fn run(args: Args) -> Result<()> {
             user.account(&id)?
         }
     };
+    let code_map = find_program(CODE_MAP_PROGRAM).map(|p| p.to_string_lossy().into_owned());
+    if args.layers.iter().any(|l| l.code_map()) && code_map.is_none() {
+        bail!("las capas code-map y full necesitan {CODE_MAP_PROGRAM} (instálalo desde Ajustes)");
+    }
 
     // Runs go to their own data folder, so they do not fill the user's
-    // projects, tasks and memory.
+    // projects, tasks and memory. It is removed on every way out.
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
     let work = std::env::temp_dir().join(format!("hedy-evals-{stamp}"));
+    let _work = RemoveOnDrop(work.clone());
     let program = std::env::current_exe()?;
     let hedy = adapters::system_for_app(&HedyPaths::at(work.join("data")), &program)?;
     hedy.adopt_account(&account)?;
@@ -106,10 +104,6 @@ fn run(args: Args) -> Result<()> {
                 hedy.set_setting(setting, Some(&value))?;
             }
         }
-    }
-    let code_map = find_program("codebase-memory-mcp").map(|p| p.to_string_lossy().into_owned());
-    if args.layers.iter().any(|l| l.code_map()) && code_map.is_none() {
-        bail!("las capas code-map y full necesitan codebase-memory-mcp (instálalo desde Ajustes)");
     }
 
     let out = args.out.clone().unwrap_or_else(|| {
@@ -143,11 +137,25 @@ fn run(args: Args) -> Result<()> {
     );
 
     let mut results = Vec::new();
-    for case in &cases {
+    let finished = run_all(&runner, &cases, &args, &mut file, &mut results);
+    print_summary(&results);
+    finished
+}
+
+/// Every case, layer and attempt; `results` keeps the runs done even when
+/// writing one fails.
+fn run_all(
+    runner: &Runner,
+    cases: &[Case],
+    args: &Args,
+    file: &mut File,
+    results: &mut Vec<RunResult>,
+) -> Result<()> {
+    for case in cases {
         for &layer in &args.layers {
             for attempt in 1..=args.repeat {
                 eprint!("· {} [{layer}] #{attempt}… ", case.name);
-                let result = runner.run(case, layer, attempt)?;
+                let result = runner.run(case, layer, attempt);
                 eprintln!(
                     "{} · {} tokens · {:.0} s{}",
                     if result.passed { "pasó" } else { "falló" },
@@ -159,18 +167,24 @@ fn run(args: Args) -> Result<()> {
                         .map(|e| format!(" · {e}"))
                         .unwrap_or_default()
                 );
-                writeln!(file, "{}", serde_json::to_string(&result)?)?;
+                let line = serde_json::to_string(&result)?;
                 results.push(result);
+                writeln!(file, "{line}")?;
             }
         }
     }
-    let _ = std::fs::remove_dir_all(&work);
+    Ok(())
+}
 
+fn print_summary(results: &[RunResult]) {
+    if results.is_empty() {
+        return;
+    }
     println!(
         "\n{:<22} {:<9} {:>7} {:>9} {:>8} {:>7}",
         "caso", "capa", "pasaron", "tokens", "costo", "seg"
     );
-    for s in summarize(&results) {
+    for s in summarize(results) {
         println!(
             "{:<22} {:<9} {:>7} {:>9} {:>8} {:>7.0}",
             s.case,
@@ -185,5 +199,4 @@ fn run(args: Args) -> Result<()> {
     println!(
         "\nPromedios por corrida. El costo es la estimación de la CLI, no lo que cobra una suscripción."
     );
-    Ok(())
 }
