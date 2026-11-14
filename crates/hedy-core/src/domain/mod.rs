@@ -34,7 +34,7 @@ pub use launch::{LaunchPurpose, LaunchSpec};
 pub use login::LoginState;
 pub use memory::{Category, Note, NoteStatus};
 pub use phase::{Assignment, Phase, PhasePlan, Stage};
-pub use plan_usage::{PlanUsage, UsageSource, UsageWindow, WindowKind};
+pub use plan_usage::{PlanUsage, UsageProblem, UsageSource, UsageWindow, WindowKind};
 pub use project::Project;
 pub use provider::Provider;
 pub use queue::{HoldReason, QueuedMessage};

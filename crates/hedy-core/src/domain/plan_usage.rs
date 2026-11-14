@@ -58,6 +58,47 @@ pub enum UsageSource {
     CodexRateLimits,
     /// A rate-limit report during one of Hedy's tasks.
     TaskReport,
+    /// Moonshot's `GET /v1/users/me/balance` (Kimi API keys).
+    MoonshotBalance,
+}
+
+/// Prepaid API credit (Kimi API keys), as the provider reports it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Balance {
+    /// What can still be spent (cash plus vouchers).
+    pub available: f64,
+    /// ISO 4217: `USD` on the global platform, `CNY` on the China one.
+    pub currency: String,
+}
+
+/// Why the last attempt to read the usage gave nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UsageProblem {
+    /// This provider (or kind of account) has no source Hedy can read yet.
+    Unsupported,
+    /// The CLI did not answer, failed, or answered something unknown.
+    Unavailable,
+    /// This CLI version reached the model to answer, so Hedy stopped asking it
+    /// until the version changes.
+    SpendsTokens,
+}
+
+impl UsageProblem {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unsupported => "unsupported",
+            Self::Unavailable => "unavailable",
+            Self::SpendsTokens => "spends_tokens",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        [Self::Unsupported, Self::Unavailable, Self::SpendsTokens]
+            .into_iter()
+            .find(|p| p.as_str() == s)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -67,6 +108,9 @@ pub struct PlanUsage {
     /// Unix seconds.
     pub checked_at: i64,
     pub source: UsageSource,
+    /// Prepaid credit, for API keys whose provider reports it.
+    #[serde(default)]
+    pub balance: Option<Balance>,
 }
 
 impl PlanUsage {
@@ -407,6 +451,102 @@ fn parse_relative(text: &str) -> Option<i64> {
     found.then_some(total)
 }
 
+/// Reads the `result` of Codex's `account/rateLimits/read` (app-server,
+/// docs/decisions.md §4): `rateLimitsByLimitId` (one snapshot per metered
+/// limit) when present, else `rateLimits`. Each snapshot has `primary` and
+/// `secondary` windows with `usedPercent` (0–100), `windowDurationMins` and
+/// `resetsAt` (Unix seconds). The `codex` limit is shared by every model;
+/// other limits are named by `limitName` (or the model slug, or the id).
+/// `None` when no window can be read.
+pub fn parse_codex_rate_limits(json: &str, checked_at: i64) -> Option<PlanUsage> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let mut snapshots: Vec<(String, &serde_json::Value)> =
+        match value["rateLimitsByLimitId"].as_object() {
+            Some(map) if !map.is_empty() => map.iter().map(|(id, s)| (id.clone(), s)).collect(),
+            _ => vec![(
+                value["rateLimits"]["limitId"]
+                    .as_str()
+                    .unwrap_or("codex")
+                    .to_owned(),
+                &value["rateLimits"],
+            )],
+        };
+    // The shared limit first.
+    snapshots.sort_by_key(|(id, _)| id != "codex");
+    let mut windows = Vec::new();
+    for (id, snapshot) in snapshots {
+        let model = (id != "codex").then(|| {
+            ["limitName", "normalModelSlug"]
+                .iter()
+                .find_map(|k| snapshot[k].as_str().filter(|s| !s.is_empty()))
+                .unwrap_or(&id)
+                .to_owned()
+        });
+        for key in ["primary", "secondary"] {
+            let w = &snapshot[key];
+            let Some(percent) = w["usedPercent"].as_f64() else {
+                continue;
+            };
+            let minutes = w["windowDurationMins"]
+                .as_u64()
+                .and_then(|m| u32::try_from(m).ok());
+            windows.push(UsageWindow {
+                kind: minutes.map_or(WindowKind::Other, WindowKind::from_minutes),
+                minutes,
+                model: model.clone(),
+                percent: percent.clamp(0.0, 100.0),
+                resets_text: None,
+                resets_at: w["resetsAt"].as_i64(),
+            });
+        }
+    }
+    (!windows.is_empty()).then_some(PlanUsage {
+        windows,
+        checked_at,
+        source: UsageSource::CodexRateLimits,
+        balance: None,
+    })
+}
+
+/// The currency of Moonshot's balance, by API host: the global platform
+/// (`api.moonshot.ai`) reports USD and the China one (`api.moonshot.cn`)
+/// CNY. `None` for any other endpoint (Kimi Code, a proxy), which has no
+/// documented balance.
+pub fn moonshot_currency(base_url: &str) -> Option<&'static str> {
+    let host = base_url
+        .split("://")
+        .nth(1)
+        .unwrap_or(base_url)
+        .split(['/', ':'])
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match host.as_str() {
+        "api.moonshot.ai" => Some("USD"),
+        "api.moonshot.cn" => Some("CNY"),
+        _ => None,
+    }
+}
+
+/// Reads `GET /v1/users/me/balance` (platform.kimi.ai/docs/api/balance):
+/// `{"code":0,"data":{"available_balance":49.58,...},"status":true}`.
+pub fn parse_moonshot_balance(json: &str, currency: &str, checked_at: i64) -> Option<PlanUsage> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    if value["status"].as_bool() == Some(false) {
+        return None;
+    }
+    let available = value["data"]["available_balance"].as_f64()?;
+    Some(PlanUsage {
+        windows: Vec::new(),
+        checked_at,
+        source: UsageSource::MoonshotBalance,
+        balance: Some(Balance {
+            available,
+            currency: currency.to_owned(),
+        }),
+    })
+}
+
 /// Turns parsed windows into a [`PlanUsage`]. `resolve` gives the Unix
 /// seconds of a wall time (next occurrence after the check), or `None`.
 pub fn resolve_windows(
@@ -439,6 +579,7 @@ pub fn resolve_windows(
         windows,
         checked_at,
         source,
+        balance: None,
     }
 }
 
@@ -633,5 +774,76 @@ mod tests {
         assert_eq!(json["windows"][0]["kind"], "session");
         let back: PlanUsage = serde_json::from_value(json).unwrap();
         assert_eq!(back, usage);
+    }
+
+    #[test]
+    fn reads_the_moonshot_balance() {
+        let body = r#"{"code":0,"data":{"available_balance":49.58894,"voucher_balance":46.58893,"cash_balance":3.00001},"scode":"0x0","status":true}"#;
+        let usage = parse_moonshot_balance(body, "USD", 3).unwrap();
+        assert_eq!(usage.source, UsageSource::MoonshotBalance);
+        assert_eq!(
+            usage.balance,
+            Some(Balance {
+                available: 49.58894,
+                currency: "USD".into()
+            })
+        );
+        assert!(usage.headline().is_none());
+        assert_eq!(parse_moonshot_balance("{}", "USD", 3), None);
+        assert_eq!(
+            parse_moonshot_balance(
+                r#"{"status":false,"data":{"available_balance":1}}"#,
+                "USD",
+                3
+            ),
+            None
+        );
+        assert_eq!(moonshot_currency("https://api.moonshot.ai/v1"), Some("USD"));
+        assert_eq!(
+            moonshot_currency("https://api.moonshot.cn/v1/"),
+            Some("CNY")
+        );
+        assert_eq!(moonshot_currency("https://api.kimi.com/coding/v1"), None);
+        assert_eq!(moonshot_currency("http://127.0.0.1:9/v1"), None);
+    }
+
+    #[test]
+    fn reads_codex_rate_limits() {
+        // Shape of the official docs example (learn.chatgpt.com/docs/app-server).
+        let json = serde_json::json!({
+            "rateLimits": {"limitId": "codex", "limitName": null,
+                "primary": {"usedPercent": 25, "windowDurationMins": 300, "resetsAt": 1730947200},
+                "secondary": {"usedPercent": 60, "windowDurationMins": 10080, "resetsAt": 1731500000}},
+            "rateLimitsByLimitId": {
+                "codex": {"limitId": "codex",
+                    "primary": {"usedPercent": 25, "windowDurationMins": 300, "resetsAt": 1730947200},
+                    "secondary": {"usedPercent": 60, "windowDurationMins": 10080, "resetsAt": 1731500000}},
+                "codex_other": {"limitName": "codex_other",
+                    "primary": {"usedPercent": 42, "windowDurationMins": 60, "resetsAt": 1730950800},
+                    "secondary": null}
+            }
+        })
+        .to_string();
+        let usage = parse_codex_rate_limits(&json, 7).unwrap();
+        assert_eq!(usage.source, UsageSource::CodexRateLimits);
+        assert_eq!(usage.session().unwrap().percent, 25.0);
+        assert_eq!(usage.week().unwrap().resets_at, Some(1731500000));
+        let other: Vec<_> = usage.model_windows().collect();
+        assert_eq!(other.len(), 1);
+        assert_eq!(other[0].model.as_deref(), Some("codex_other"));
+        assert_eq!(
+            (other[0].kind, other[0].minutes),
+            (WindowKind::Other, Some(60))
+        );
+        assert_eq!(usage.headline().unwrap().percent, 60.0);
+
+        // Older servers: only the single-bucket view, secondary may be null.
+        let old = r#"{"rateLimits":{"primary":{"usedPercent":5,"windowDurationMins":300,"resetsAt":1},"secondary":null}}"#;
+        let usage = parse_codex_rate_limits(old, 7).unwrap();
+        assert_eq!(usage.windows.len(), 1);
+
+        for garbage in ["", "{}", r#"{"rateLimits":{"primary":null}}"#] {
+            assert_eq!(parse_codex_rate_limits(garbage, 7), None, "{garbage}");
+        }
     }
 }

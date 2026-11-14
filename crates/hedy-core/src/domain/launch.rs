@@ -14,6 +14,9 @@ pub enum LaunchPurpose {
     /// Non-interactive login check. `None` from [`LaunchSpec::for_account`] when
     /// the CLI has no such command.
     LoginStatus,
+    /// Non-interactive read of the plan's usage limits that never reaches the
+    /// model. `None` from [`LaunchSpec::for_account`] when the CLI has none.
+    PlanUsage,
 }
 
 /// A process to start: program, arguments and the account folder variable.
@@ -58,7 +61,26 @@ impl LaunchSpec {
             (super::Provider::Antigravity, LaunchPurpose::Login) => {
                 vec!["acp".into(), "--login".into()]
             }
-            (_, LaunchPurpose::LoginStatus) => return Ok(None),
+            // The built-in `/usage` runs locally in print mode (turns and cost
+            // 0, docs/decisions.md §3). Safe mode skips hooks, MCP servers and
+            // custom commands; nothing is saved as a session.
+            (super::Provider::Claude, LaunchPurpose::PlanUsage) => [
+                "-p",
+                "/usage",
+                "--output-format",
+                "json",
+                "--no-session-persistence",
+                "--safe-mode",
+            ]
+            .map(String::from)
+            .to_vec(),
+            // JSON-RPC over stdio; the adapter asks `account/rateLimits/read`.
+            (super::Provider::Codex, LaunchPurpose::PlanUsage) => {
+                ["app-server", "--listen", "stdio://"]
+                    .map(String::from)
+                    .to_vec()
+            }
+            (_, LaunchPurpose::LoginStatus | LaunchPurpose::PlanUsage) => return Ok(None),
         };
 
         let env = match folder {
@@ -174,6 +196,25 @@ mod tests {
             ),
             (Provider::Gemini, LaunchPurpose::Login, Some(vec![])),
             (Provider::Gemini, LaunchPurpose::LoginStatus, None),
+            (
+                Provider::Claude,
+                LaunchPurpose::PlanUsage,
+                Some(vec![
+                    "-p",
+                    "/usage",
+                    "--output-format",
+                    "json",
+                    "--no-session-persistence",
+                    "--safe-mode",
+                ]),
+            ),
+            (
+                Provider::Codex,
+                LaunchPurpose::PlanUsage,
+                Some(vec!["app-server", "--listen", "stdio://"]),
+            ),
+            (Provider::Kimi, LaunchPurpose::PlanUsage, None),
+            (Provider::Gemini, LaunchPurpose::PlanUsage, None),
         ];
         for (provider, purpose, args) in cases {
             let spec =

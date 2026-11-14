@@ -11,6 +11,7 @@ mod paths;
 mod process;
 mod pty;
 mod sqlite;
+mod usage_probe;
 
 use std::sync::Arc;
 
@@ -26,11 +27,13 @@ pub use process::SystemProcessRunner;
 pub use process::find_program;
 pub use pty::{PtyOutput, PtySession};
 pub use sqlite::SqliteStore;
+pub use usage_probe::SystemUsageProbe;
 
 use crate::application::ports::{
     AgentBackend, AgentLauncher, AgentRequest, AgentSession, Clock, EventSink, PortResult,
 };
 use crate::application::{Hedy, MemoryServerCommand, Ports};
+use crate::domain::plan_usage::WallTime;
 
 /// Sends each request to the adapter of its backend.
 pub struct AgentRouter {
@@ -59,6 +62,42 @@ impl Clock for SystemClock {
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_millis() as i64)
     }
+
+    fn resolve_wall_time(&self, wall: &WallTime, after: i64) -> Option<i64> {
+        resolve_wall_time(wall, after)
+    }
+}
+
+/// See [`Clock::resolve_wall_time`]. Uses the system's time-zone database.
+fn resolve_wall_time(wall: &WallTime, after: i64) -> Option<i64> {
+    use jiff::civil::Date;
+    use jiff::tz::TimeZone;
+
+    let tz = match &wall.zone {
+        Some(zone) if zone.eq_ignore_ascii_case("utc") => TimeZone::UTC,
+        Some(zone) => TimeZone::get(zone).ok()?,
+        None => TimeZone::system(),
+    };
+    let now = jiff::Timestamp::from_second(after)
+        .ok()?
+        .to_zoned(tz.clone());
+    let earliest = after - 3600;
+    let dates: Vec<Date> = match (wall.month, wall.day) {
+        (Some(month), Some(day)) => [now.year(), now.year() + 1]
+            .into_iter()
+            .filter_map(|year| Date::new(year, month as i8, day as i8).ok())
+            .collect(),
+        _ => [now.date(), now.date().tomorrow().ok()?].to_vec(),
+    };
+    dates.into_iter().find_map(|date| {
+        let at = date
+            .at(wall.hour as i8, wall.minute as i8, 0, 0)
+            .to_zoned(tz.clone())
+            .ok()?
+            .timestamp()
+            .as_second();
+        (at >= earliest).then_some(at)
+    })
 }
 
 /// Wires the real adapters together. Agents run without the `PreToolUse`
@@ -109,10 +148,55 @@ fn build(paths: &HedyPaths, claude: ClaudeCodeLauncher) -> PortResult<Hedy> {
             acp: AcpLauncher,
         }),
         clock: Arc::new(SystemClock),
+        usage: Arc::new(SystemUsageProbe),
     });
     // The setting is read from the store: a failure keeps the system language.
     if hedy.apply_language().is_err() {
         crate::i18n::init(None);
     }
     Ok(hedy)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wall(month: Option<u8>, day: Option<u8>, hour: u8, zone: &str) -> WallTime {
+        WallTime {
+            month,
+            day,
+            hour,
+            minute: 0,
+            zone: Some(zone.into()),
+        }
+    }
+
+    #[test]
+    fn wall_times_resolve_to_the_next_occurrence() {
+        // 2026-11-14 12:00 UTC.
+        let now = 1_794_657_600;
+        // Nov 14, 7pm in Caracas (UTC-4) = Nov 14, 23:00 UTC.
+        let caracas = resolve_wall_time(&wall(Some(11), Some(14), 19, "America/Caracas"), now);
+        assert_eq!(caracas, Some(now + 11 * 3600));
+        // A date already past this year is next year's.
+        let jan = resolve_wall_time(&wall(Some(1), Some(2), 0, "UTC"), now).unwrap();
+        assert!(jan > now + 40 * 86_400);
+        // Only a time: today if still ahead, otherwise tomorrow.
+        assert_eq!(
+            resolve_wall_time(&wall(None, None, 13, "UTC"), now),
+            Some(now + 3600)
+        );
+        assert_eq!(
+            resolve_wall_time(&wall(None, None, 9, "UTC"), now),
+            Some(now + 21 * 3600)
+        );
+        assert_eq!(
+            resolve_wall_time(&wall(Some(2), Some(30), 9, "UTC"), now),
+            None
+        );
+        assert_eq!(
+            resolve_wall_time(&wall(Some(11), Some(14), 9, "Mars/Olympus"), now),
+            None
+        );
+    }
 }

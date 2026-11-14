@@ -8,6 +8,7 @@ mod error;
 mod launch;
 mod memory;
 mod metrics;
+mod plan_usage;
 pub mod ports;
 mod projects;
 mod queue;
@@ -33,6 +34,7 @@ pub use memory::{
     MemoryServerCommand, MemoryView, Proposal, format_note, format_notes, format_topics,
 };
 pub use metrics::{ProjectStatus, TestRun, UsageSummary};
+pub use plan_usage::{PLAN_USAGE_MIN_INTERVAL_SECS, PlanUsageState};
 pub use settings::{Setting, THEMES};
 pub use skills::{
     SkillChange, SkillDraft, SkillFiles, SkillProposal, SkillsView, format_skill, format_skills,
@@ -44,7 +46,7 @@ pub use templates::{NewTemplate, TemplateScope};
 use crate::domain::TaskId;
 use ports::{
     AgentLauncher, Clock, FileSystem, Git, NoTaskEvents, ProcessRunner, SecretStore, Store,
-    TaskEvents,
+    TaskEvents, UsageProbe,
 };
 
 /// Everything the use cases need from the outside world.
@@ -56,6 +58,7 @@ pub struct Ports {
     pub git: Arc<dyn Git>,
     pub agents: Arc<dyn AgentLauncher>,
     pub clock: Arc<dyn Clock>,
+    pub usage: Arc<dyn UsageProbe>,
 }
 
 /// Application facade used by every driving adapter (the CLI and the app).
@@ -68,6 +71,7 @@ pub struct Hedy {
     git: Arc<dyn Git>,
     agents: Arc<dyn AgentLauncher>,
     clock: Arc<dyn Clock>,
+    usage: Arc<dyn UsageProbe>,
     events: Arc<dyn TaskEvents>,
     /// Running agent sessions, by task.
     live: Arc<Mutex<HashMap<TaskId, tasks::LiveTask>>>,
@@ -89,6 +93,7 @@ impl Hedy {
             git: ports.git,
             agents: ports.agents,
             clock: ports.clock,
+            usage: ports.usage,
             events: Arc::new(NoTaskEvents),
             live: Arc::default(),
             sessions: Arc::default(),
