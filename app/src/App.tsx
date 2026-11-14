@@ -1,7 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { ApiProvider, errorMessage, useOverview } from "./api/context";
+import { ApiProvider, errorMessage, useApi, useOverview } from "./api/context";
 import type { HedyApi } from "./api/HedyApi";
 import type { TaskMode } from "./api/types";
 import { Shell, Sidebar, Topbar, viewProject, type View } from "./components/Layout";
@@ -11,6 +11,7 @@ import { TerminalProvider } from "./components/Terminal/TerminalProvider";
 import { Button } from "./components/ui/Button";
 import { ToastProvider } from "./components/ui/Toast";
 import { AccountsScreen } from "./screens/accounts/AccountsScreen";
+import { ActivityScreen } from "./screens/activity/ActivityScreen";
 import { MemoryScreen } from "./screens/memory/MemoryScreen";
 import { Onboarding } from "./screens/onboarding/Onboarding";
 import { Settings } from "./screens/Settings";
@@ -51,10 +52,13 @@ function Localized({ children }: { children: ReactNode }) {
   return <I18nProvider setting={overview.data?.language ?? "system"}>{children}</I18nProvider>;
 }
 
-/** `#accounts`, `#settings`, `#p=<path>` (workspace), `#m=<path>` (memory), `#s=<path>` (status). */
+/**
+ * `#accounts`, `#settings`, `#activity`, `#p=<path>` (workspace), `#m=<path>`
+ * (memory), `#s=<path>` (status).
+ */
 function viewFromHash(): View {
   const hash = decodeURIComponent(window.location.hash.slice(1));
-  if (hash === "accounts" || hash === "settings") return { screen: hash };
+  if (hash === "accounts" || hash === "settings" || hash === "activity") return { screen: hash };
   if (hash.startsWith("p=")) return { screen: "workspace", project: hash.slice(2) };
   if (hash.startsWith("m=")) return { screen: "memory", project: hash.slice(2) };
   if (hash.startsWith("s=")) return { screen: "status", project: hash.slice(2) };
@@ -77,13 +81,20 @@ function Root() {
     return project ? [project] : [];
   });
   const [mode, setMode] = useState<TaskMode>("project");
+  const api = useApi();
 
-  const navigate = (next: View) => {
+  const navigate = useCallback((next: View) => {
     setView(next);
     const project = viewProject(next);
     if (project) setOpenProjects((open) => (open.includes(project) ? open : [...open, project]));
     history.replaceState(null, "", hashFor(next));
-  };
+  }, []);
+
+  // A click on a desktop notification opens that task.
+  useEffect(
+    () => api.onOpenTask(({ taskId, project }) => navigate({ screen: "workspace", project, task: taskId })),
+    [api, navigate],
+  );
 
   const closeProject = (path: string) => {
     const rest = openProjects.filter((p) => p !== path);
@@ -150,11 +161,18 @@ function Root() {
           {current.screen === "welcome" && <Welcome overview={data} onNavigate={navigate} />}
           {current.screen === "accounts" && <AccountsScreen overview={data} />}
           {current.screen === "settings" && <Settings overview={data} />}
+          {current.screen === "activity" && (
+            <ActivityScreen
+              overview={data}
+              onOpenTask={(project, task) => navigate({ screen: "workspace", project, task })}
+            />
+          )}
           {current.screen === "workspace" && (
             <Workspace
-              key={current.project}
+              key={`${current.project}\n${current.task ?? ""}`}
               overview={data}
               project={current.project}
+              initialTask={current.task}
               mode={mode}
               onOpenMemory={() => navigate({ screen: "memory", project: current.project })}
               onOpenStatus={() => navigate({ screen: "status", project: current.project })}

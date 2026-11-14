@@ -1,4 +1,5 @@
 import type {
+  ActivityItem,
   AgentEvent,
   Commit,
   Decision,
@@ -13,6 +14,7 @@ import type {
   UsageSummary,
   NewAccountInput,
   NewTaskInput,
+  OpenTaskRequest,
   Overview,
   SettingKey,
   Task,
@@ -69,6 +71,8 @@ export interface HedyApi {
   /** Newest first. */
   tasks(project: string): Promise<Task[]>;
   taskEvents(id: string): Promise<AgentEvent[]>;
+  /** The task board: every project's running and recent tasks, what needs the user first. */
+  activity(): Promise<ActivityItem[]>;
   answerPermission(id: string, requestId: string, decision: Decision): Promise<void>;
   answerPlan(id: string, requestId: string, approve: boolean, feedback: string | null): Promise<void>;
   sendMessage(id: string, text: string): Promise<void>;
@@ -96,4 +100,6 @@ export interface HedyApi {
   /** Live events of every task. */
   onTaskEvent(listener: (taskId: string, event: AgentEvent) => void): Unsubscribe;
   onTaskUpdated(listener: (task: Omit<Task, "live">) => void): Unsubscribe;
+  /** The user clicked one of Hedy's desktop notifications. */
+  onOpenTask(listener: (request: OpenTaskRequest) => void): Unsubscribe;
 }

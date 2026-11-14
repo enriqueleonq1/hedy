@@ -135,6 +135,38 @@ describe("English", () => {
     expect(spanishLeftovers()).toEqual([]);
   });
 
+  it("shows the task board in English", async () => {
+    const { user } = setup(MockApi.withSampleData().withSampleActivity());
+    await user.click(await screen.findByRole("button", { name: "Activity: 3 tasks need you" }));
+    expect(await screen.findByRole("heading", { name: "Activity" })).toBeInTheDocument();
+    const needs = await screen.findByRole("region", { name: "Need you (3)" });
+    expect(within(needs).getByText("Plan to approve")).toBeInTheDocument();
+    expect(within(needs).getByText("Asks for permission")).toBeInTheDocument();
+    expect(within(needs).getByText("Blocked by a limit")).toBeInTheDocument();
+    expect(within(needs).getAllByText(/^running for \d+ min$/)).toHaveLength(3);
+    const running = screen.getByRole("region", { name: "Running (1)" });
+    expect(within(running).getByText("Working")).toBeInTheDocument();
+    expect(within(running).getByText("Implementation")).toBeInTheDocument();
+    const recent = screen.getByRole("region", { name: "Last 24 h (4)" });
+    for (const state of ["Changes to review", "Failed", "Answered", "Cancelled"]) {
+      expect(within(recent).getByText(state)).toBeInTheDocument();
+    }
+    expect(within(recent).getByText("40 min ago")).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+
+    await user.click(within(needs).getByRole("button", { name: /Traduce los correos/ }));
+    expect(await screen.findByRole("heading", { name: "Traduce los correos de confirmación" })).toBeInTheDocument();
+  });
+
+  it("shows the empty task board in English", async () => {
+    window.history.replaceState(null, "", "#activity");
+    setup();
+    expect(await screen.findByText("No running tasks, and none in the last 24 h.")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Sleeping" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+    window.history.replaceState(null, "", "#");
+  });
+
   it("shows settings in English", async () => {
     window.history.replaceState(null, "", "#settings");
     setup();
@@ -144,6 +176,7 @@ describe("English", () => {
     expect(screen.getByText("Done!")).toBeInTheDocument();
     expect(screen.getByLabelText("Your name")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Code map" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Tell me when a task needs me or finishes" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
   });
 

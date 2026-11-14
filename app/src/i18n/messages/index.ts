@@ -3,6 +3,7 @@
 // does not compile.
 
 import accounts from "./accounts";
+import activity from "./activity";
 import common from "./common";
 import memory from "./memory";
 import onboarding from "./onboarding";
@@ -24,6 +25,7 @@ const es = {
   ...memory.es,
   ...status.es,
   ...workspace.es,
+  ...activity.es,
 };
 const en: Record<keyof typeof es, string> = {
   ...common.en,
@@ -35,6 +37,7 @@ const en: Record<keyof typeof es, string> = {
   ...memory.en,
   ...status.en,
   ...workspace.en,
+  ...activity.en,
 };
 
 export type MessageKey = keyof typeof es;

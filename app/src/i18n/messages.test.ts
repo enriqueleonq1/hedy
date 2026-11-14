@@ -1,4 +1,5 @@
 import accounts from "./messages/accounts";
+import activity from "./messages/activity";
 import common from "./messages/common";
 import memory from "./messages/memory";
 import onboarding from "./messages/onboarding";
@@ -10,7 +11,7 @@ import workspace from "./messages/workspace";
 import { messages } from "./messages";
 import { translator } from ".";
 
-const AREAS = { accounts, common, memory, onboarding, settings, shell, status, welcome, workspace };
+const AREAS = { accounts, activity, common, memory, onboarding, settings, shell, status, welcome, workspace };
 
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
 

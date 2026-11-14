@@ -21,6 +21,10 @@ const es = {
     "Precio para estimar el costo de las tareas por API: entrada/salida en USD por millón de tokens, como lo publica el proveedor (por ejemplo, 0.60/2.50). Sin precio, Hedy solo cuenta tokens.",
   "settings.price": "{name}: precio",
   "settings.pricePlaceholder": "entrada/salida",
+  "settings.notifications": "Avisos",
+  "settings.notifications.toggle": "Avisarme cuando una tarea me necesita o termina",
+  "settings.notifications.hint":
+    "Notificaciones del sistema cuando una IA espera tu aprobación, termina, falla o llega a su límite, solo si Hedy no está en primer plano. Dicen qué IA y en qué proyecto, nunca el contenido de tus archivos.",
   "settings.data": "Datos",
   "settings.dataDir": "Hedy guarda todo en tu equipo:",
   "settings.dataHintBefore": "Para usar otra carpeta, abre Hedy con la variable",
@@ -60,6 +64,10 @@ const en: Record<keyof typeof es, string> = {
     "Price used to estimate the cost of API tasks: input/output in USD per million tokens, as the provider publishes it (for example, 0.60/2.50). Without a price, Hedy only counts tokens.",
   "settings.price": "{name}: price",
   "settings.pricePlaceholder": "input/output",
+  "settings.notifications": "Notifications",
+  "settings.notifications.toggle": "Tell me when a task needs me or finishes",
+  "settings.notifications.hint":
+    "System notifications when an AI waits for your approval, finishes, fails or hits its limit, only while Hedy is not in front. They say which AI and which project, never what is in your files.",
   "settings.data": "Data",
   "settings.dataDir": "Hedy keeps everything on your computer:",
   "settings.dataHintBefore": "To use another folder, start Hedy with the variable",

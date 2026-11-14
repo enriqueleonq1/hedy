@@ -18,18 +18,21 @@ export function Workspace({
   overview,
   project,
   mode,
+  initialTask,
   onOpenMemory,
   onOpenStatus,
 }: {
   overview: Overview;
   project: string;
   mode: TaskMode;
+  /** Open this task (from the task board or a notification). */
+  initialTask?: string;
   onOpenMemory?: () => void;
   onOpenStatus?: () => void;
 }) {
   const t = useT();
   const tasks = useTasks(project);
-  const [chosen, setChosen] = useState<string | null | undefined>(undefined);
+  const [chosen, setChosen] = useState<string | null | undefined>(initialTask);
   const info = overview.projects.find((p) => p.path === project);
   const account = overview.accounts.find((a) => a.id === info?.account);
 

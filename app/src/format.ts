@@ -24,6 +24,18 @@ export function formatDuration(ms: number | null): string {
   return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
 }
 
+/** How long something has been going on: "42 s", "6 min", "2 h 5 min", "3 d". */
+export function formatElapsed(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return `${s} s`;
+  if (s < 3600) return `${Math.floor(s / 60)} min`;
+  if (s < 86_400) {
+    const minutes = Math.floor((s % 3600) / 60);
+    return minutes === 0 ? `${Math.floor(s / 3600)} h` : `${Math.floor(s / 3600)} h ${minutes} min`;
+  }
+  return `${Math.floor(s / 86_400)} d`;
+}
+
 /** "hace 3 días" / "3 days ago" from Unix seconds. */
 export function timeAgo(seconds: number, t: Translate, now = Date.now() / 1000): string {
   const minutes = Math.max(0, Math.round((now - seconds) / 60));

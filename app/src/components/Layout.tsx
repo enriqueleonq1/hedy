@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { Account, Overview, TaskMode } from "../api/types";
 import { formatTokens, formatUsd } from "../format";
 import { useLanguage, useT, type Language } from "../i18n";
+import { useNeedsYouCount } from "../tasks/hooks";
 import { MODE_LABEL } from "../tasks/timeline";
 import { DEFAULT_ACCOUNT_COLOR, TIP_MASCOT_COLOR } from "../theme/tokens";
 import { shortAccountLabel } from "./accounts";
@@ -17,7 +18,9 @@ export type View =
   | { screen: "welcome" }
   | { screen: "accounts" }
   | { screen: "settings" }
-  | { screen: "workspace"; project: string }
+  | { screen: "activity" }
+  /** `task`: open that task instead of the most recent open one. */
+  | { screen: "workspace"; project: string; task?: string }
   | { screen: "memory"; project: string }
   | { screen: "status"; project: string };
 
@@ -162,9 +165,30 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
   const tipColor = defaultAccount(overview)?.color ?? TIP_MASCOT_COLOR;
   const active = viewProject(view);
   const used = overview.accounts.some((a) => a.usage.weekTokens > 0);
+  const needsYou = useNeedsYouCount();
 
   return (
     <aside className="sidebar" aria-label={t("common.projectsAndAccounts")}>
+      <button
+        className="sidebar__item sidebar__nav"
+        aria-current={view.screen === "activity" ? "page" : undefined}
+        aria-label={
+          needsYou === 0
+            ? t("activity.title")
+            : needsYou === 1
+              ? t("activity.navOne")
+              : t("activity.navMany", { n: needsYou })
+        }
+        onClick={() => onNavigate({ screen: "activity" })}
+      >
+        <span className="sidebar__name">{t("activity.title")}</span>
+        {needsYou > 0 && (
+          <span className="nav-badge" aria-hidden>
+            {needsYou}
+          </span>
+        )}
+      </button>
+
       <section>
         <h2 className="sidebar__title">{t("common.projects")}</h2>
         {overview.projects.length === 0 && <p className="hint sidebar__empty">{t("shell.noProjects")}</p>}

@@ -137,6 +137,19 @@ describe("Settings", () => {
     expect(screen.getByRole("radio", { name: "Claro" })).toHaveAttribute("aria-checked", "true");
   });
 
+  it("turns task notifications off and on", async () => {
+    const { api, user } = renderApp();
+    await user.click(await screen.findByRole("button", { name: "Ajustes" }));
+    expect(screen.getByRole("heading", { name: "Avisos" })).toBeInTheDocument();
+    const toggle = screen.getByRole("switch", { name: "Avisarme cuando una tarea me necesita o termina" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    await user.click(toggle);
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"));
+    expect((await api.overview()).notifications).toBe(false);
+    await user.click(toggle);
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+  });
+
   it("previews the four mascot states", async () => {
     const { user } = renderApp();
     await user.click(await screen.findByRole("button", { name: "Ajustes" }));
