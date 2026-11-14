@@ -17,7 +17,7 @@ use tauri::ipc::Channel;
 use crate::AppState;
 use crate::dto::{
     self, ActivityDto, MemoryDto, NewAccountInput, NewTaskInput, NewTemplateInput, OverviewDto,
-    ProjectStatusDto, SkillChangeDto, SkillDraftInput, SkillFilesDto, SkillsDto, TaskDto,
+    PlanDto, ProjectStatusDto, SkillChangeDto, SkillDraftInput, SkillFilesDto, SkillsDto, TaskDto,
     TemplateDto, UsagePointDto, UsageSummaryDto,
 };
 use crate::terminal::{TerminalEvent, TerminalRequest, Terminals};
@@ -86,6 +86,14 @@ pub async fn rename_account(
     name: String,
 ) -> CommandResult<()> {
     blocking(&state, move |h| h.rename_account(&id, &name).map(drop)).await
+}
+
+/// Asks the provider for a new plan-usage reading (at most every few minutes
+/// per account; otherwise the cached one comes back). Failures keep the last
+/// reading and come back as `problem`, not as an error.
+#[tauri::command]
+pub async fn refresh_plan_usage(state: State<'_, AppState>, id: String) -> CommandResult<PlanDto> {
+    blocking(&state, move |h| Ok(h.refresh_plan_usage(&id)?.into())).await
 }
 
 #[tauri::command]

@@ -9,12 +9,12 @@ use std::path::{Path, PathBuf};
 use hedy_core::adapters::{CODE_MAP_PROGRAM, find_program};
 use hedy_core::application::{
     AccountStatus, AccountUsage, AppResult, CheckLevel, DoctorReport, Hedy, MemoryView,
-    ProjectStatus, Proposal, Setting, SkillChange, SkillDraft, SkillFiles, SkillsView,
-    TaskActivity, TestRun, UsageSummary,
+    PlanUsageState, ProjectStatus, Proposal, Setting, SkillChange, SkillDraft, SkillFiles,
+    SkillsView, TaskActivity, TestRun, UsageSummary,
 };
 use hedy_core::domain::{
-    Account, ConfigFolder, Credentials, LoginState, Note, Phase, PhasePlan, Project,
-    PromptTemplate, Provider, Skill, Task, TaskMode, TaskState, UsageSample,
+    Account, ConfigFolder, Credentials, LoginState, Note, Phase, PhasePlan, PlanUsage, Project,
+    PromptTemplate, Provider, Skill, Task, TaskMode, TaskState, UsageProblem, UsageSample,
 };
 use serde::{Deserialize, Serialize};
 
@@ -234,6 +234,31 @@ pub struct UsageDto {
     /// The CLI's estimate; not what a subscription bills.
     pub week_cost_usd: Option<f64>,
     pub limit: Option<LimitDto>,
+    /// The plan's limit windows (cached reading).
+    pub plan: PlanDto,
+}
+
+/// What is known about the plan's limits: the last reading (domain type, as
+/// is), when Hedy last asked, and why it gave nothing if it did.
+#[derive(Debug, Default, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanDto {
+    pub usage: Option<PlanUsage>,
+    pub attempted_at: Option<i64>,
+    pub problem: Option<UsageProblem>,
+    /// Whether Hedy has a source for this account at all.
+    pub supported: bool,
+}
+
+impl From<PlanUsageState> for PlanDto {
+    fn from(state: PlanUsageState) -> Self {
+        Self {
+            usage: state.usage,
+            attempted_at: state.attempted_at,
+            problem: state.problem,
+            supported: state.supported,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -255,6 +280,7 @@ impl From<AccountUsage> for UsageDto {
                 percent: l.utilization,
                 resets_at: l.resets_at,
             }),
+            plan: usage.plan.into(),
         }
     }
 }
