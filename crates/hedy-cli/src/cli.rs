@@ -41,6 +41,27 @@ pub enum Command {
         unprotect: bool,
     },
 
+    /// Uso y costo estimado por cliente y por proyecto.
+    #[command(visible_alias = "resumen")]
+    Summary {
+        /// Los últimos 7 días (por defecto).
+        #[arg(long, visible_alias = "semana", conflicts_with = "days")]
+        week: bool,
+        /// Los últimos N días.
+        #[arg(long, visible_alias = "dias", value_name = "N")]
+        days: Option<u32>,
+    },
+
+    /// Para quién es el proyecto actual, para sumar el costo por cliente.
+    #[command(visible_alias = "cliente")]
+    Client {
+        #[arg(required_unless_present = "clear")]
+        name: Option<String>,
+        /// Quita el cliente.
+        #[arg(long)]
+        clear: bool,
+    },
+
     /// Abre la CLI oficial con la cuenta del proyecto.
     Run {
         /// Usa esta cuenta en vez de la del proyecto.

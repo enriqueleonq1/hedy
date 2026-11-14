@@ -67,7 +67,7 @@ fn current_stage(task: &Task) -> Stage {
 }
 
 impl Hedy {
-    fn now_secs(&self) -> i64 {
+    pub(super) fn now_secs(&self) -> i64 {
         self.clock.now_ms() / 1000
     }
 
@@ -352,12 +352,21 @@ impl Hedy {
             return Ok(());
         };
         let task = self.task(id)?;
+        let mut sample = sample.clone();
+        // API agents report tokens only; the cost comes from the user's price.
+        if sample.cost_usd.is_none()
+            && let Ok(account) = self.account(task.account.as_str())
+            && matches!(account.credentials, Credentials::ApiKey)
+            && let Some(price) = self.api_price(account.provider)?
+        {
+            sample.cost_usd = Some(price.cost(&sample));
+        }
         self.store.record_usage(&UsageRecord {
             at: self.now_secs(),
             account: task.account.clone(),
             project: task.project.clone(),
             task: task.id.clone(),
-            sample: sample.clone(),
+            sample,
         })?;
         Ok(())
     }
@@ -1372,6 +1381,40 @@ mod tests {
                 crate::domain::DomainError::ProtectedProject { .. }
             ))
         ));
+    }
+
+    #[test]
+    fn api_usage_is_priced_with_the_configured_price() {
+        use crate::application::Setting;
+        use crate::domain::UsageSample;
+        let f = Fixture::new();
+        f.add_kimi("Kimi");
+        f.hedy.set_api_key("kimi", "sk").unwrap();
+        f.hedy.use_account(&f.dir("/code/x"), "kimi", None).unwrap();
+        assert!(
+            f.hedy
+                .set_setting(Setting::ApiPrice(Provider::Kimi), Some("caro"))
+                .is_err()
+        );
+        f.hedy
+            .set_setting(Setting::ApiPrice(Provider::Kimi), Some("1/4"))
+            .unwrap();
+        f.hedy
+            .start_task(NewTask {
+                project: f.dir("/code/x"),
+                prompt: "hola".into(),
+                mode: TaskMode::Ask,
+                model: None,
+                plan_first: false,
+            })
+            .unwrap();
+        f.agents.emit(AgentEvent::Usage(UsageSample {
+            input_tokens: 500_000,
+            output_tokens: 250_000,
+            ..UsageSample::default()
+        }));
+        let summary = f.hedy.usage_summary(7).unwrap();
+        assert_eq!(summary.projects[0].usage.cost_usd, Some(1.5));
     }
 
     #[test]

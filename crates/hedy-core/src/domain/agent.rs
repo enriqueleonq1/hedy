@@ -166,6 +166,18 @@ impl UsageSample {
     pub fn total_tokens(&self) -> u64 {
         self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_write_tokens
     }
+
+    /// Adds `other` to this total. The cost stays unknown only if both are.
+    pub fn add(&mut self, other: &UsageSample) {
+        self.input_tokens += other.input_tokens;
+        self.output_tokens += other.output_tokens;
+        self.cache_read_tokens += other.cache_read_tokens;
+        self.cache_write_tokens += other.cache_write_tokens;
+        self.cost_usd = match (self.cost_usd, other.cost_usd) {
+            (None, None) => None,
+            (a, b) => Some(a.unwrap_or(0.0) + b.unwrap_or(0.0)),
+        };
+    }
 }
 
 /// Whether a shell command looks like a test run.

@@ -23,7 +23,7 @@ pub struct MemoryStore {
     projects: Mutex<Vec<Project>>,
     settings: Mutex<BTreeMap<String, String>>,
     tasks: Mutex<Vec<Task>>,
-    events: Mutex<HashMap<TaskId, Vec<AgentEvent>>>,
+    events: Mutex<HashMap<TaskId, Vec<(i64, AgentEvent)>>>,
     usage: Mutex<Vec<UsageRecord>>,
     limits: Mutex<HashMap<AccountId, RateLimit>>,
     notes: Mutex<Vec<Note>>,
@@ -172,16 +172,19 @@ impl TaskRepository for MemoryStore {
         tasks.sort_by_key(|t| std::cmp::Reverse(t.created_at));
         Ok(tasks)
     }
-    fn append_event(&self, id: &TaskId, _at: i64, event: &AgentEvent) -> PortResult<()> {
+    fn append_event(&self, id: &TaskId, at: i64, event: &AgentEvent) -> PortResult<()> {
         self.events
             .lock()
             .unwrap()
             .entry(id.clone())
             .or_default()
-            .push(event.clone());
+            .push((at, event.clone()));
         Ok(())
     }
     fn events(&self, id: &TaskId) -> PortResult<Vec<AgentEvent>> {
+        Ok(self.timed_events(id)?.into_iter().map(|(_, e)| e).collect())
+    }
+    fn timed_events(&self, id: &TaskId) -> PortResult<Vec<(i64, AgentEvent)>> {
         Ok(self
             .events
             .lock()
@@ -201,13 +204,27 @@ impl UsageRepository for MemoryStore {
         let mut total = UsageSample::default();
         for r in self.usage.lock().unwrap().iter() {
             if &r.account == account && r.at >= since {
-                total.input_tokens += r.sample.input_tokens;
-                total.output_tokens += r.sample.output_tokens;
-                total.cache_read_tokens += r.sample.cache_read_tokens;
-                total.cache_write_tokens += r.sample.cache_write_tokens;
+                total.add(&r.sample);
             }
         }
         Ok(total)
+    }
+    fn usage_by_project(&self, since: i64) -> PortResult<Vec<(PathBuf, UsageSample)>> {
+        let mut totals: BTreeMap<PathBuf, UsageSample> = BTreeMap::new();
+        for r in self.usage.lock().unwrap().iter().filter(|r| r.at >= since) {
+            totals.entry(r.project.clone()).or_default().add(&r.sample);
+        }
+        Ok(totals.into_iter().collect())
+    }
+    fn usage_points(&self, project: &Path, since: i64) -> PortResult<Vec<(i64, UsageSample)>> {
+        Ok(self
+            .usage
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r.project == project && r.at >= since)
+            .map(|r| (r.at, r.sample.clone()))
+            .collect())
     }
     fn set_rate_limit(&self, account: &AccountId, limit: &RateLimit) -> PortResult<()> {
         self.limits
@@ -265,6 +282,9 @@ impl FakeGit {
 }
 
 impl Git for FakeGit {
+    fn uncommitted_changes(&self, _: &Path) -> PortResult<usize> {
+        Ok(3)
+    }
     fn current_branch(&self, _: &Path) -> PortResult<String> {
         Ok("main".into())
     }
@@ -589,6 +609,7 @@ impl FileSystem for FakeFs {
 
 pub struct Fixture {
     pub hedy: Hedy,
+    pub store: Arc<MemoryStore>,
     pub secrets: Arc<MemorySecrets>,
     pub runner: Arc<FakeRunner>,
     pub fs: Arc<FakeFs>,
@@ -603,8 +624,9 @@ impl Fixture {
         let fs = Arc::new(FakeFs::default());
         let git = Arc::new(FakeGit::default());
         let agents = Arc::new(FakeAgents::default());
+        let store = Arc::new(MemoryStore::default());
         let hedy = Hedy::new(Ports {
-            store: Arc::new(MemoryStore::default()),
+            store: store.clone(),
             secrets: secrets.clone(),
             runner: runner.clone(),
             fs: fs.clone(),
@@ -614,6 +636,7 @@ impl Fixture {
         });
         Self {
             hedy,
+            store,
             secrets,
             runner,
             fs,

@@ -18,6 +18,8 @@ pub struct Project {
     pub phases: PhasePlan,
     /// Accounts that do not read the project's memory ("Quién la lee").
     pub memory_off: BTreeSet<AccountId>,
+    /// Who the work is for, to add up cost per client.
+    pub client: Option<String>,
 }
 
 impl Project {
@@ -34,6 +36,7 @@ impl Project {
             color: None,
             phases: PhasePlan::new(),
             memory_off: BTreeSet::new(),
+            client: None,
         }
     }
 

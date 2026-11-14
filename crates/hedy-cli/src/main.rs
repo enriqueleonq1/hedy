@@ -51,6 +51,10 @@ fn run(cli: Cli) -> Result<()> {
             };
             commands::use_account(&hedy, &dir, &account, protection)
         }
+        Command::Summary { week: _, days } => commands::summary(&hedy, days.unwrap_or(7)),
+        Command::Client { name, clear } => {
+            commands::set_client(&hedy, &dir, if clear { None } else { name.as_deref() })
+        }
         Command::Run { account, args } => commands::run(&hedy, &dir, account.as_deref(), args),
         Command::Account(sub) => match sub {
             AccountCommand::Add(args) => commands::add_account(&hedy, args),

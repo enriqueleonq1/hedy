@@ -143,6 +143,10 @@ impl Git for GitCli {
         git(repo, &["branch", "-D", branch]).map(drop)
     }
 
+    fn uncommitted_changes(&self, repo: &Path) -> PortResult<usize> {
+        Ok(git(repo, &["status", "--porcelain"])?.lines().count())
+    }
+
     fn recent_commits(&self, repo: &Path, limit: usize) -> PortResult<Vec<Commit>> {
         let out =
             git(repo, &["log", &format!("-n{limit}"), "--format=%h%x1f%s"]).unwrap_or_default();

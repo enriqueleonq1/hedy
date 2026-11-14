@@ -50,7 +50,7 @@ impl Hedy {
     }
 
     /// Accounts that work in a project: its own and the ones in its phases.
-    fn project_agents(&self, project: &Project) -> AppResult<Vec<Account>> {
+    pub(super) fn project_agents(&self, project: &Project) -> AppResult<Vec<Account>> {
         let mut ids: Vec<AccountId> = project.account.iter().cloned().collect();
         for assignment in project.phases.values() {
             if !ids.contains(&assignment.account) {

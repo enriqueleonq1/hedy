@@ -20,6 +20,11 @@ pub enum DomainError {
     #[error("categoría desconocida: {0} (decisión, convención, regla o preferencia)")]
     UnknownCategory(String),
 
+    #[error(
+        "precio no válido: «{0}» (usa entrada/salida en USD por millón de tokens, p. ej. 0.60/2.50)"
+    )]
+    InvalidPrice(String),
+
     #[error("fase desconocida: {0}")]
     UnknownPhase(String),
 

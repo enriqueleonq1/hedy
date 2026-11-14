@@ -50,6 +50,8 @@ pub trait TaskRepository: Send + Sync {
     fn tasks(&self, project: &Path) -> PortResult<Vec<Task>>;
     fn append_event(&self, id: &TaskId, at: i64, event: &AgentEvent) -> PortResult<()>;
     fn events(&self, id: &TaskId) -> PortResult<Vec<AgentEvent>>;
+    /// Events with the time they were recorded (seconds).
+    fn timed_events(&self, id: &TaskId) -> PortResult<Vec<(i64, AgentEvent)>>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -75,6 +77,10 @@ pub trait UsageRepository: Send + Sync {
     fn record_usage(&self, record: &UsageRecord) -> PortResult<()>;
     /// Sum of everything recorded for `account` since `since` (seconds).
     fn usage_since(&self, account: &AccountId, since: i64) -> PortResult<UsageSample>;
+    /// Totals per project since `since`.
+    fn usage_by_project(&self, since: i64) -> PortResult<Vec<(PathBuf, UsageSample)>>;
+    /// Every record of a project since `since`, oldest first, as (time, usage).
+    fn usage_points(&self, project: &Path, since: i64) -> PortResult<Vec<(i64, UsageSample)>>;
     fn set_rate_limit(&self, account: &AccountId, limit: &RateLimit) -> PortResult<()>;
     fn rate_limit(&self, account: &AccountId) -> PortResult<Option<RateLimit>>;
 }
@@ -195,6 +201,8 @@ pub trait Git: Send + Sync {
     /// Removes the worktree and deletes its branch.
     fn remove_worktree(&self, repo: &Path, path: &Path, branch: &str) -> PortResult<()>;
     fn recent_commits(&self, repo: &Path, limit: usize) -> PortResult<Vec<Commit>>;
+    /// Files with uncommitted changes in the main checkout (untracked included).
+    fn uncommitted_changes(&self, repo: &Path) -> PortResult<usize>;
 }
 
 /// Receives the agent's events, on the adapter's own thread.

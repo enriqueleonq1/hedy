@@ -9,6 +9,7 @@ pub mod error;
 pub mod launch;
 pub mod login;
 pub mod memory;
+pub mod metrics;
 pub mod permissions;
 pub mod phase;
 pub mod policy;

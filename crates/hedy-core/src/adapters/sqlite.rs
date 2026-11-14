@@ -119,6 +119,10 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (a, b)
     );
 "#,
+    r#"
+    ALTER TABLE projects ADD COLUMN client TEXT;
+    CREATE INDEX usage_by_project ON usage (project, at);
+"#,
 ];
 
 pub struct SqliteStore {
@@ -281,6 +285,7 @@ fn project_from_row(row: &Row) -> rusqlite::Result<Project> {
         .map_err(invalid(6))?
         .unwrap_or_default();
     Ok(Project {
+        client: row.get(7)?,
         path: PathBuf::from(row.get::<_, String>(0)?),
         name: row.get(1)?,
         account,
@@ -295,7 +300,7 @@ impl ProjectRepository for SqliteStore {
     fn list_projects(&self) -> PortResult<Vec<Project>> {
         self.with(|c| {
             c.prepare(
-                "SELECT path, name, account_id, protected, color, phases, memory_off FROM projects ORDER BY name",
+                "SELECT path, name, account_id, protected, color, phases, memory_off, client FROM projects ORDER BY name",
             )?
             .query_map([], project_from_row)?
             .collect()
@@ -313,12 +318,13 @@ impl ProjectRepository for SqliteStore {
             .map_err(json_error)?;
         self.with(|c| {
             c.execute(
-                "INSERT INTO projects (path, name, account_id, protected, color, phases, memory_off)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                "INSERT INTO projects (path, name, account_id, protected, color, phases, memory_off, client)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT (path) DO UPDATE SET
                     name = excluded.name, account_id = excluded.account_id,
                     protected = excluded.protected, color = excluded.color,
-                    phases = excluded.phases, memory_off = excluded.memory_off",
+                    phases = excluded.phases, memory_off = excluded.memory_off,
+                    client = excluded.client",
                 params![
                     project.path.to_string_lossy(),
                     project.name,
@@ -327,6 +333,7 @@ impl ProjectRepository for SqliteStore {
                     project.color.map(|c| c.to_string()),
                     phases,
                     memory_off,
+                    project.client,
                 ],
             )
             .map(drop)
@@ -408,15 +415,33 @@ impl TaskRepository for SqliteStore {
     }
 
     fn events(&self, id: &TaskId) -> PortResult<Vec<AgentEvent>> {
-        let rows: Vec<String> = self.with(|c| {
-            c.prepare("SELECT event FROM task_events WHERE task_id = ?1 ORDER BY seq")?
-                .query_map([id.as_str()], |r| r.get(0))?
+        Ok(self.timed_events(id)?.into_iter().map(|(_, e)| e).collect())
+    }
+
+    fn timed_events(&self, id: &TaskId) -> PortResult<Vec<(i64, AgentEvent)>> {
+        let rows: Vec<(i64, String)> = self.with(|c| {
+            c.prepare("SELECT at, event FROM task_events WHERE task_id = ?1 ORDER BY seq")?
+                .query_map([id.as_str()], |r| Ok((r.get(0)?, r.get(1)?)))?
                 .collect()
         })?;
-        rows.iter()
-            .map(|d| serde_json::from_str(d).map_err(json_error))
+        rows.into_iter()
+            .map(|(at, d)| Ok((at, serde_json::from_str(&d).map_err(json_error)?)))
             .collect()
     }
+}
+
+const USAGE_SUMS: &str = "COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
+     COALESCE(SUM(cache_read_tokens), 0), COALESCE(SUM(cache_write_tokens), 0), SUM(cost_usd)";
+
+/// Five usage columns starting at `first`.
+fn usage_from_row(r: &Row, first: usize) -> rusqlite::Result<UsageSample> {
+    Ok(UsageSample {
+        input_tokens: r.get::<_, i64>(first)? as u64,
+        output_tokens: r.get::<_, i64>(first + 1)? as u64,
+        cache_read_tokens: r.get::<_, i64>(first + 2)? as u64,
+        cache_write_tokens: r.get::<_, i64>(first + 3)? as u64,
+        cost_usd: r.get(first + 4)?,
+    })
 }
 
 impl UsageRepository for SqliteStore {
@@ -446,21 +471,33 @@ impl UsageRepository for SqliteStore {
     fn usage_since(&self, account: &AccountId, since: i64) -> PortResult<UsageSample> {
         self.with(|c| {
             c.query_row(
-                "SELECT COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
-                        COALESCE(SUM(cache_read_tokens), 0), COALESCE(SUM(cache_write_tokens), 0),
-                        SUM(cost_usd)
-                 FROM usage WHERE account_id = ?1 AND at >= ?2",
+                &format!("SELECT {USAGE_SUMS} FROM usage WHERE account_id = ?1 AND at >= ?2"),
                 params![account.as_str(), since],
-                |r| {
-                    Ok(UsageSample {
-                        input_tokens: r.get::<_, i64>(0)? as u64,
-                        output_tokens: r.get::<_, i64>(1)? as u64,
-                        cache_read_tokens: r.get::<_, i64>(2)? as u64,
-                        cache_write_tokens: r.get::<_, i64>(3)? as u64,
-                        cost_usd: r.get(4)?,
-                    })
-                },
+                |r| usage_from_row(r, 0),
             )
+        })
+    }
+
+    fn usage_by_project(&self, since: i64) -> PortResult<Vec<(PathBuf, UsageSample)>> {
+        self.with(|c| {
+            c.prepare(&format!(
+                "SELECT project, {USAGE_SUMS} FROM usage WHERE at >= ?1 GROUP BY project ORDER BY project"
+            ))?
+            .query_map([since], |r| Ok((PathBuf::from(r.get::<_, String>(0)?), usage_from_row(r, 1)?)))?
+            .collect()
+        })
+    }
+
+    fn usage_points(&self, project: &Path, since: i64) -> PortResult<Vec<(i64, UsageSample)>> {
+        self.with(|c| {
+            c.prepare(
+                "SELECT at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd
+                 FROM usage WHERE project = ?1 AND at >= ?2 ORDER BY at",
+            )?
+            .query_map(params![project.to_string_lossy(), since], |r| {
+                Ok((r.get(0)?, usage_from_row(r, 1)?))
+            })?
+            .collect()
         })
     }
 

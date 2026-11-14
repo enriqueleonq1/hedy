@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use super::ports::McpServer;
 use super::{AppError, AppResult, Hedy};
+use crate::domain::metrics::ApiPrice;
 use crate::domain::{AccountId, Provider, policy};
 
 /// User settings that are stored as plain key/value pairs.
@@ -13,6 +14,9 @@ pub enum Setting {
     Binary(Provider),
     /// API endpoint for an API-key provider (e.g. Kimi China or Kimi Code).
     ApiUrl(Provider),
+    /// Price of an API-key provider, `input/output` in USD per million tokens,
+    /// to estimate what API tasks cost.
+    ApiPrice(Provider),
     /// App theme: `system`, `light` or `dark`.
     Theme,
     /// Name used to greet the user in the app.
@@ -30,6 +34,7 @@ impl Setting {
             Self::DefaultAccount => "default_account".into(),
             Self::Binary(p) => format!("binary.{}", p.as_str()),
             Self::ApiUrl(p) => format!("api_url.{}", p.as_str()),
+            Self::ApiPrice(p) => format!("api_price.{}", p.as_str()),
             Self::Theme => "ui.theme".into(),
             Self::UserName => "ui.name".into(),
             Self::CodeMap => "code_map.binary".into(),
@@ -44,7 +49,7 @@ impl Setting {
         let api_urls = Provider::ALL
             .into_iter()
             .filter(|p| p.supports_api_key())
-            .map(Self::ApiUrl);
+            .flat_map(|p| [Self::ApiUrl(p), Self::ApiPrice(p)]);
         std::iter::once(Self::DefaultAccount)
             .chain(binaries)
             .chain(api_urls)
@@ -77,6 +82,9 @@ impl Hedy {
                 // A reserved account cannot be offered everywhere.
                 policy::check_launch(None, &account.id, &self.projects()?)?;
             }
+            (Setting::ApiPrice(_), Some(price)) => {
+                price.parse::<ApiPrice>()?;
+            }
             (Setting::Theme, Some(theme)) if !THEMES.contains(&theme) => {
                 return Err(AppError::InvalidSettingValue {
                     key: setting.key(),
@@ -92,6 +100,13 @@ impl Hedy {
         Ok(self
             .setting(Setting::DefaultAccount)?
             .and_then(|id| AccountId::new(id).ok()))
+    }
+
+    /// The configured price of an API-key provider, if any.
+    pub(crate) fn api_price(&self, provider: Provider) -> AppResult<Option<ApiPrice>> {
+        Ok(self
+            .setting(Setting::ApiPrice(provider))?
+            .and_then(|p| p.parse().ok()))
     }
 
     pub(crate) fn binary_for(&self, provider: Provider) -> AppResult<Option<String>> {

@@ -72,7 +72,72 @@ pub fn status(hedy: &Hedy, dir: &Path) -> Result<()> {
     print_accounts(&s, &status.accounts, status.default_account.as_ref());
     println!(
         "\n{}",
-        s.muted("Consumo: aún sin datos. Hedy lo registra desde el chat (fase 3).")
+        s.muted("Uso por proyecto y cliente: `hedy resumen`.")
+    );
+    Ok(())
+}
+
+pub fn set_client(hedy: &Hedy, dir: &Path, client: Option<&str>) -> Result<()> {
+    let s = Style::for_stdout();
+    let Some(project) = hedy.project_for(dir)? else {
+        bail!("esta carpeta no es un proyecto de Hedy; usa `hedy use <cuenta>` primero");
+    };
+    let project = hedy.set_project_client(&project.path, client)?;
+    match &project.client {
+        Some(client) => println!("{} es para {}", s.bold(&project.name), s.bold(client)),
+        None => println!("{} ya no tiene cliente", s.bold(&project.name)),
+    }
+    Ok(())
+}
+
+/// "182 k" / "1,2 M" tokens.
+fn tokens(n: u64) -> String {
+    match n {
+        0..1_000 => n.to_string(),
+        1_000..1_000_000 => format!("{} k", n / 1_000),
+        _ => format!("{:.1} M", n as f64 / 1_000_000.0).replace('.', ","),
+    }
+}
+
+fn usd(cost: Option<f64>) -> String {
+    cost.map_or_else(|| "—".into(), |c| format!("${c:.2}").replace('.', ","))
+}
+
+pub fn summary(hedy: &Hedy, days: u32) -> Result<()> {
+    let s = Style::for_stdout();
+    let summary = hedy.usage_summary(days)?;
+    let period = if days == 7 {
+        "esta semana".to_owned()
+    } else {
+        format!("los últimos {days} días")
+    };
+    if summary.projects.is_empty() {
+        println!("{}", s.muted(format!("Sin uso registrado {period}.")));
+        return Ok(());
+    }
+    let row = |name: &str, tokens_text: String, cost: String| {
+        let len = name.chars().count();
+        println!("  {} {:>9}  {:>8}", pad(name, len, 28), tokens_text, cost);
+    };
+    println!("{} {period}", s.bold("Uso por cliente"));
+    for c in &summary.clients {
+        let name = c.client.as_deref().unwrap_or("Sin cliente");
+        row(name, tokens(c.usage.total_tokens()), usd(c.usage.cost_usd));
+    }
+    println!("\n{}", s.bold("Por proyecto"));
+    for p in &summary.projects {
+        row(
+            &p.name,
+            tokens(p.usage.total_tokens()),
+            usd(p.usage.cost_usd),
+        );
+    }
+    println!(
+        "\n{}",
+        s.muted(
+            "Tokens que Hedy registró en sus tareas. El costo es una estimación: en suscripciones, \
+             lo que calcula la CLI (no lo que se cobra); en API keys, según el precio de `api_price.<proveedor>`."
+        )
     );
     Ok(())
 }
