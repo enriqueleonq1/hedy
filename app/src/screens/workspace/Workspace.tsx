@@ -9,6 +9,7 @@ import { Button } from "../../components/ui/Button";
 import { tasksKey, useTaskEvents, useTasks } from "../../tasks/hooks";
 import { agentName, buildTimeline, isOpen, mascotState, MODE_LABEL, STATUS_LABEL } from "../../tasks/timeline";
 import { MODEL_SUGGESTIONS } from "../../components/models";
+import { useT } from "../../i18n";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { ChangesPanel } from "./ChangesPanel";
 import { Timeline } from "./Timeline";
@@ -26,6 +27,7 @@ export function Workspace({
   onOpenMemory?: () => void;
   onOpenStatus?: () => void;
 }) {
+  const t = useT();
   const tasks = useTasks(project);
   const [chosen, setChosen] = useState<string | null | undefined>(undefined);
   const info = overview.projects.find((p) => p.path === project);
@@ -43,28 +45,30 @@ export function Workspace({
 
   return (
     <div className="workspace">
-      <section className="chat" aria-label="Chat">
+      <section className="chat" aria-label={t("workspace.chat")}>
         <header className="chat__head">
           <div className="chat__title">
             <h1>{task ? task.title : name}</h1>
             <p className="muted">
               {name}
-              {task?.workspace && <> · rama {task.workspace.branch}</>}
-              {task && <> · {MODE_LABEL[task.mode]} · {STATUS_LABEL[task.status]}</>}
+              {task?.workspace && <> · {t("common.branch", { branch: task.workspace.branch })}</>}
+              {task && <> · {t(MODE_LABEL[task.mode])} · {t(STATUS_LABEL[task.status])}</>}
             </p>
           </div>
           <div className="chat__tools">
             {list.length > 0 && (
               <select
                 className="pill-select"
-                aria-label="Tarea"
+                aria-label={t("workspace.task")}
                 value={task?.id ?? ""}
                 onChange={(e) => setChosen(e.target.value || null)}
               >
-                <option value="">+ Nueva tarea</option>
-                {list.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.id === task?.id ? `Tareas (${list.length})` : `${t.title} · ${STATUS_LABEL[t.status]}`}
+                <option value="">{t("workspace.newTask")}</option>
+                {list.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.id === task?.id
+                      ? t("workspace.tasks", { n: list.length })
+                      : `${item.title} · ${t(STATUS_LABEL[item.status])}`}
                   </option>
                 ))}
               </select>
@@ -72,12 +76,12 @@ export function Workspace({
             {task?.live && <StopButton task={task} />}
             {onOpenStatus && (
               <Button small variant="ghost" onClick={onOpenStatus}>
-                Estado
+                {t("workspace.status")}
               </Button>
             )}
             {onOpenMemory && (
               <Button small variant="ghost" onClick={onOpenMemory}>
-                Memoria
+                {t("common.memory")}
               </Button>
             )}
           </div>
@@ -85,13 +89,13 @@ export function Workspace({
 
         {tasks.isError && (
           <p className="error-text" role="alert">
-            {errorMessage(tasks.error)}
+            {errorMessage(tasks.error, t)}
           </p>
         )}
         {task ? (
           <Timeline
             task={task}
-            items={buildTimeline(history)}
+            items={buildTimeline(history, t)}
             agent={agent}
             account={account}
             accounts={overview.accounts}
@@ -102,8 +106,8 @@ export function Workspace({
             <Mascot color={account?.color ?? DEFAULT_ACCOUNT_COLOR} state="idle" size={120} label="Hedy" />
             <p>
               {account
-                ? `¿Qué hacemos en ${name}? Trabajaré con ${account.name} en una rama aparte; nada toca tu carpeta hasta que aceptes.`
-                : "Este proyecto no tiene cuenta. Asígnale una en Cuentas y modelos."}
+                ? t("workspace.empty", { name, account: account.name })
+                : t("workspace.noAccount")}
             </p>
           </div>
         )}
@@ -125,10 +129,11 @@ export function Workspace({
 }
 
 function StopButton({ task }: { task: Task }) {
+  const t = useT();
   const stop = useAction((api) => api.stopTask(task.id), { invalidate: [tasksKey(task.project)] });
   return (
     <Button small variant="ghost" onClick={() => stop.mutate(undefined)} disabled={stop.isPending}>
-      Detener
+      {t("workspace.stop")}
     </Button>
   );
 }
@@ -150,6 +155,7 @@ function Composer({
   disabled: boolean;
   onStarted: (task: Task) => void;
 }) {
+  const t = useT();
   const client = useQueryClient();
   const [text, setText] = useState("");
   const [model, setModel] = useState("");
@@ -188,7 +194,7 @@ function Composer({
       }}
     >
       <label className="composer__label" htmlFor="composer-input">
-        {followUp ? "Responde o pide algo más" : `Pídele algo a ${name}`}
+        {followUp ? t("workspace.composer.followUp") : t("workspace.composer.ask", { name })}
       </label>
       <textarea
         id="composer-input"
@@ -196,7 +202,9 @@ function Composer({
         rows={3}
         value={text}
         disabled={disabled}
-        placeholder={mode === "project" ? "Ej.: agrega un reporte semanal de comisiones" : "Ej.: ¿cómo se calculan las comisiones?"}
+        placeholder={
+          mode === "project" ? t("workspace.composer.placeholderProject") : t("workspace.composer.placeholderAsk")
+        }
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
@@ -208,18 +216,18 @@ function Composer({
       <div className="composer__bar">
         {!followUp && (
           <>
-            <select className="pill-select" aria-label="Modelos" value={model} onChange={(e) => setModel(e.target.value)}>
-              <option value="">Modelos: auto por fase</option>
+            <select className="pill-select" aria-label={t("common.models")} value={model} onChange={(e) => setModel(e.target.value)}>
+              <option value="">{t("workspace.composer.autoModels")}</option>
               {models.map((m) => (
                 <option key={m} value={m}>
-                  Solo {m}
+                  {t("workspace.composer.onlyModel", { model: m })}
                 </option>
               ))}
             </select>
             {mode === "project" && (
               <label className="check">
                 <input type="checkbox" checked={planFirst} onChange={(e) => setPlanFirst(e.target.checked)} />
-                Planificar primero
+                {t("workspace.composer.planFirst")}
               </label>
             )}
           </>
@@ -227,7 +235,7 @@ function Composer({
         <span className="spacer" />
         <span className="muted small">Ctrl + Enter</span>
         <Button type="submit" variant="primary" disabled={!text.trim() || busy || disabled}>
-          Enviar
+          {t("workspace.composer.send")}
         </Button>
       </div>
     </form>

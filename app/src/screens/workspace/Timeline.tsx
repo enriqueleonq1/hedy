@@ -8,6 +8,7 @@ import { Button } from "../../components/ui/Button";
 import { formatDuration } from "../../format";
 import { tasksKey } from "../../tasks/hooks";
 import { isOpen, PHASE_VERB, type Resolution, type TimelineItem } from "../../tasks/timeline";
+import { useT, type MessageKey, type Translate } from "../../i18n";
 import { DEFAULT_ACCOUNT_COLOR, WARNING_MASCOT_COLOR } from "../../theme/tokens";
 
 interface TimelineProps {
@@ -20,6 +21,7 @@ interface TimelineProps {
 }
 
 export function Timeline({ task, items, agent, account, accounts, mascot }: TimelineProps) {
+  const t = useT();
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView?.({ block: "end" });
@@ -42,7 +44,7 @@ export function Timeline({ task, items, agent, account, accounts, mascot }: Time
           return (
             <p key={item.key} className="phase-divider">
               <span>
-                <strong>{item.agent}</strong> {PHASE_VERB[item.phase]} · {item.account}
+                <strong>{item.agent}</strong> {t(PHASE_VERB[item.phase])} · {item.account}
               </span>
             </p>
           );
@@ -69,6 +71,7 @@ export function Timeline({ task, items, agent, account, accounts, mascot }: Time
 }
 
 function Item({ task, item }: { task: Task; item: TimelineItem }) {
+  const t = useT();
   switch (item.type) {
     case "agent":
       return <p className="agent-text">{item.text}</p>;
@@ -76,8 +79,8 @@ function Item({ task, item }: { task: Task; item: TimelineItem }) {
       return <PlanCard task={task} item={item} agent={item.agent} />;
     case "steps":
       return (
-        <section className="card plan-card" aria-label="Pasos">
-          <h3>Pasos</h3>
+        <section className="card plan-card" aria-label={t("workspace.steps")}>
+          <h3>{t("workspace.steps")}</h3>
           <ul className="steps">
             {item.steps.map((s, i) => (
               <li key={i} className={`step step--${s.status}`}>
@@ -86,7 +89,13 @@ function Item({ task, item }: { task: Task; item: TimelineItem }) {
                 </span>
                 <span>{s.text}</span>
                 <span className="sr-only">
-                  {s.status === "done" ? " (hecho)" : s.status === "inProgress" ? " (en curso)" : " (pendiente)"}
+                  {t(
+                    s.status === "done"
+                      ? "workspace.step.done"
+                      : s.status === "inProgress"
+                        ? "workspace.step.inProgress"
+                        : "workspace.step.pending",
+                  )}
                 </span>
               </li>
             ))}
@@ -110,7 +119,7 @@ function Item({ task, item }: { task: Task; item: TimelineItem }) {
           <span className="activity__mark" aria-hidden>
             {item.ok ? "✓" : "✗"}
           </span>
-          {item.ok ? "Terminó" : "Terminó con error"}
+          {item.ok ? t("workspace.finished") : t("workspace.finishedWithError")}
           {item.durationMs !== null && ` · ${formatDuration(item.durationMs)}`}
         </p>
       );
@@ -128,25 +137,37 @@ function Item({ task, item }: { task: Task; item: TimelineItem }) {
   }
 }
 
-function resolutionText(r: Resolution): string {
-  if (r.automatic) return r.reason ?? (r.decision === "deny" ? "Hedy lo rechazó" : "Permitido por una regla");
-  return { allow: "Permitido", allowForTask: "Permitido en este chat", deny: "Rechazado" }[r.decision];
+const RESOLUTION: Record<Decision, MessageKey> = {
+  allow: "workspace.resolution.allow",
+  allowForTask: "workspace.resolution.allowForTask",
+  deny: "workspace.resolution.deny",
+};
+
+function resolutionText(r: Resolution, t: Translate): string {
+  if (r.automatic) {
+    return r.reason ?? (r.decision === "deny" ? t("workspace.resolution.hedyDenied") : t("workspace.resolution.rule"));
+  }
+  return t(RESOLUTION[r.decision]);
 }
 
-const TOOL_TITLE: Record<string, string> = {
-  Bash: "quiere correr un comando",
-  Edit: "quiere editar un archivo",
-  MultiEdit: "quiere editar un archivo",
-  Write: "quiere crear un archivo",
-  NotebookEdit: "quiere editar un notebook",
-  WebFetch: "quiere abrir una página",
-  WebSearch: "quiere buscar en la web",
+const TOOL_TITLE: Record<string, MessageKey> = {
+  Bash: "workspace.permission.Bash",
+  Edit: "workspace.permission.Edit",
+  MultiEdit: "workspace.permission.Edit",
+  Write: "workspace.permission.Write",
+  NotebookEdit: "workspace.permission.NotebookEdit",
+  WebFetch: "workspace.permission.WebFetch",
+  WebSearch: "workspace.permission.WebSearch",
 };
 
 function PermissionCard({ task, item }: { task: Task; item: Extract<TimelineItem, { type: "permission" }> }) {
+  const t = useT();
   const answer = useAction((api, decision: Decision) => api.answerPermission(task.id, item.requestId, decision));
-  const name = item.agent.split(" ")[0];
-  const title = `${name} ${TOOL_TITLE[item.tool] ?? `quiere usar ${item.tool}`}`;
+  const name = item.agent.split(" ")[0] ?? item.agent;
+  const titleKey = TOOL_TITLE[item.tool];
+  const title = titleKey
+    ? t(titleKey, { agent: name })
+    : t("workspace.permission.other", { agent: name, tool: item.tool });
 
   if (item.resolution) {
     const denied = item.resolution.decision === "deny";
@@ -155,7 +176,7 @@ function PermissionCard({ task, item }: { task: Task; item: Extract<TimelineItem
         <span className="activity__mark" aria-hidden>
           {denied ? "✗" : "✓"}
         </span>
-        {resolutionText(item.resolution)} · <code>{item.summary}</code>
+        {resolutionText(item.resolution, t)} · <code>{item.summary}</code>
       </p>
     );
   }
@@ -166,21 +187,22 @@ function PermissionCard({ task, item }: { task: Task; item: Extract<TimelineItem
       <code className="permission-card__what">{item.summary}</code>
       <div className="actions">
         <Button variant="primary" disabled={!waiting || answer.isPending} onClick={() => answer.mutate("allow")}>
-          Permitir
+          {t("workspace.permission.allow")}
         </Button>
         <Button className="btn--warn" disabled={!waiting || answer.isPending} onClick={() => answer.mutate("allowForTask")}>
-          Permitir en este chat
+          {t("workspace.permission.allowForTask")}
         </Button>
         <Button className="btn--warn" disabled={!waiting || answer.isPending} onClick={() => answer.mutate("deny")}>
-          Rechazar
+          {t("workspace.permission.deny")}
         </Button>
       </div>
-      {!waiting && <p className="small">El agente se detuvo; envía un mensaje para retomar.</p>}
+      {!waiting && <p className="small">{t("workspace.permission.stopped")}</p>}
     </section>
   );
 }
 
 function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineItem, { type: "plan" }>; agent: string }) {
+  const t = useT();
   const [changing, setChanging] = useState(false);
   const [feedback, setFeedback] = useState("");
   const answer = useAction((api, vars: { approve: boolean; feedback: string | null }) =>
@@ -189,12 +211,12 @@ function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineIte
   const pending = item.requestId !== null && item.resolution === null;
 
   return (
-    <section className={`card plan-card${pending ? " plan-card--pending" : ""}`} aria-label={`Plan de ${agent}`}>
+    <section className={`card plan-card${pending ? " plan-card--pending" : ""}`} aria-label={t("workspace.plan.of", { agent })}>
       <h3>
         Plan · {agent}
         {item.resolution && (
           <span className={`plan-card__state plan-card__state--${item.resolution.decision}`}>
-            {item.resolution.decision === "deny" ? " · con cambios pedidos" : " · aprobado"}
+            {item.resolution.decision === "deny" ? t("workspace.plan.changesRequested") : t("workspace.plan.approved")}
           </span>
         )}
       </h3>
@@ -202,10 +224,10 @@ function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineIte
       {pending && !changing && (
         <div className="actions">
           <Button variant="primary" disabled={!task.live || answer.isPending} onClick={() => answer.mutate({ approve: true, feedback: null })}>
-            Aprobar plan
+            {t("workspace.plan.approve")}
           </Button>
           <Button disabled={!task.live} onClick={() => setChanging(true)}>
-            Pedir cambios
+            {t("workspace.plan.requestChanges")}
           </Button>
         </div>
       )}
@@ -218,15 +240,15 @@ function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineIte
           }}
         >
           <label className="field">
-            <span className="field__label">¿Qué cambiarías?</span>
+            <span className="field__label">{t("workspace.plan.whatToChange")}</span>
             <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={2} />
           </label>
           <div className="actions">
             <Button type="submit" variant="primary" disabled={!feedback.trim() || answer.isPending}>
-              Enviar cambios
+              {t("workspace.plan.sendChanges")}
             </Button>
             <Button variant="ghost" onClick={() => setChanging(false)}>
-              Cancelar
+              {t("common.cancel")}
             </Button>
           </div>
         </form>
@@ -235,11 +257,13 @@ function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineIte
   );
 }
 
-function resetsIn(resetsAt: number | null): string | null {
+function resetsIn(resetsAt: number | null, t: Translate): string | null {
   if (!resetsAt) return null;
   const minutes = Math.round((resetsAt * 1000 - Date.now()) / 60_000);
-  if (minutes <= 0) return "Ya debería haberse renovado.";
-  return minutes < 90 ? `Se renueva en ${minutes} min.` : `Se renueva en ${Math.round(minutes / 60)} h.`;
+  if (minutes <= 0) return t("workspace.limit.resetPassed");
+  return minutes < 90
+    ? t("workspace.limit.resetsMinutes", { n: minutes })
+    : t("workspace.limit.resetsHours", { n: Math.round(minutes / 60) });
 }
 
 /**
@@ -256,6 +280,7 @@ function LimitCard({
   accounts: Account[];
 }) {
   const api = useApi();
+  const t = useT();
   const [waiting, setWaiting] = useState(false);
   const actionable = item.latest && isOpen(task) && !waiting;
   const options = useQuery({
@@ -270,10 +295,10 @@ function LimitCard({
   const name = account?.name ?? item.account;
   const title =
     item.level === "reached"
-      ? `${name} llegó a su límite`
+      ? t("workspace.limit.reached", { name })
       : item.percent != null
-        ? `Tu cuenta ${name} va por el ${Math.round(item.percent)}%`
-        : `Tu cuenta ${name} está cerca de su límite`;
+        ? t("workspace.limit.percent", { name, percent: Math.round(item.percent) })
+        : t("workspace.limit.near", { name });
   const candidates = (options.data ?? [])
     .map((id) => accounts.find((a) => a.id === id))
     .filter((a): a is Account => !!a);
@@ -284,27 +309,24 @@ function LimitCard({
       <div className="limit-card__body">
         <h3>{title}</h3>
         <p>
-          {resetsIn(item.resetsAt) ?? ""} {candidates.length > 0 && "Puedo seguir la tarea con otro modelo."}
+          {resetsIn(item.resetsAt, t) ?? ""} {candidates.length > 0 && t("workspace.limit.canHandOff")}
         </p>
         {actionable && (
           <div className="actions">
             <Button variant="primary" onClick={() => setWaiting(true)}>
-              Esperar
+              {t("workspace.limit.wait")}
             </Button>
             {candidates.map((c) => (
               <Button key={c.id} className="btn--warn" disabled={handoff.isPending} onClick={() => handoff.mutate(c.id)}>
-                Pasar la tarea a {c.name}
+                {t("workspace.limit.handOff", { name: c.name })}
               </Button>
             ))}
           </div>
         )}
         {actionable && options.isSuccess && candidates.length === 0 && (
-          <p className="small">
-            No hay otro proveedor disponible aquí (o el proyecto está protegido). Puedes agregar Codex o una API key en
-            Cuentas y modelos.
-          </p>
+          <p className="small">{t("workspace.limit.noOther")}</p>
         )}
-        {waiting && <p className="small">De acuerdo, esperamos. La tarea sigue con esta cuenta.</p>}
+        {waiting && <p className="small">{t("workspace.limit.waiting")}</p>}
       </div>
     </section>
   );
