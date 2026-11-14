@@ -15,6 +15,9 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - App (from `app/`): `npm install`, then `npm run tauri dev`; UI only with sample data:
   `npm run dev` (`?theme=light|dark`, `#accounts`, `#settings`)
 - App checks (from `app/`): `npm run typecheck`, `npm run lint`, `npm test`
+- Icons: edit `app/src-tauri/icons/logo.svg`, render it to `logo.png` (1024 px), then
+  `npx tauri icon src-tauri/icons/logo.png`. Dev window icon on Wayland:
+  `app/scripts/install-dev-icon.sh`
 - Real end-to-end check (spends a few tokens of the `~/.claude` account):
   `cargo run -p hedy-core --example smoke_task -- haiku` (`env` / `bash` check `.env` stays unread)
 - Evals (real tasks, spend tokens): `cargo run -p hedy-evals -- --model haiku` (`--list`,

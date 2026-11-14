@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="1024" height="1024">
+  <!-- Hedy's logo: the lava blob at rest, as in the visual identity (0-identidad-01.png).
+       Source of every app icon: `npx tauri icon src-tauri/icons/logo.png` after rendering it. -->
+  <rect x="4" y="4" width="152" height="152" rx="34" fill="#1A1B26"/>
+  <circle cx="80" cy="86" r="62" fill="#7AA2F7" opacity="0.12"/>
+  <circle cx="80" cy="90" r="48" fill="#7AA2F7" opacity="0.16"/>
+  <g transform="translate(0 -2)">
+    <circle cx="80" cy="26" r="8.5" fill="#7AA2F7"/>
+    <path d="M40 92c-4-26 14-48 40-48s46 18 42 44c-3 22-18 36-42 36S43 112 40 92z" fill="#7AA2F7"/>
+    <ellipse cx="64" cy="64" rx="12" ry="7" fill="#fff" opacity="0.3"/>
+    <circle cx="58" cy="100" r="5" fill="#F7768E" opacity="0.35"/>
+    <circle cx="102" cy="100" r="5" fill="#F7768E" opacity="0.35"/>
+    <ellipse cx="68" cy="90" rx="5.5" ry="5.5" fill="#1A1B26"/>
+    <ellipse cx="92" cy="90" rx="5.5" ry="5.5" fill="#1A1B26"/>
+    <circle cx="70" cy="88" r="2" fill="#fff"/>
+    <circle cx="94" cy="88" r="2" fill="#fff"/>
+    <path d="M72 102q8 8 16 0" fill="none" stroke="#1A1B26" stroke-width="3.2" stroke-linecap="round"/>
+  </g>
+</svg>
