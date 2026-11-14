@@ -5,8 +5,9 @@ use std::path::Path;
 
 use anyhow::{Result, bail};
 use chrono::Timelike;
-use hedy_core::application::{AccountStatus, Hedy, NewAccount, Setting};
-use hedy_core::domain::{Account, ConfigFolder, Credentials, LoginState, Provider};
+use hedy_core::application::{AccountStatus, Hedy, NewAccount, Proposal, Setting};
+use hedy_core::domain::memory::USER_AUTHOR;
+use hedy_core::domain::{Account, Category, ConfigFolder, Credentials, LoginState, Note, Provider};
 use hedy_core::i18n::{self, Language};
 use hedy_core::tr;
 
@@ -94,6 +95,10 @@ fn tips() -> Vec<String> {
         tr!(
             "`hedy client <nombre>` suma el costo de tus proyectos por cliente.",
             "`hedy client <name>` adds up the cost of your projects by client."
+        ),
+        tr!(
+            "`hedy memoria` lista lo que tus IAs propusieron recordar; tú decides qué se guarda.",
+            "`hedy memory` lists what your AIs proposed to remember; you decide what is kept."
         ),
         tr!(
             "`hedy config set ui.name <tu nombre>` y te saludo por tu nombre.",
@@ -784,6 +789,159 @@ pub fn run(hedy: &Hedy, dir: &Path, account: Option<&str>, args: Vec<String>) ->
         s.muted(format!("· {}{place}", resolved.spec.program))
     );
     Err(hedy.exec(&resolved).into())
+}
+
+fn category_label(category: Category) -> String {
+    match category {
+        Category::Decision => tr!("Decisión", "Decision"),
+        Category::Convention => tr!("Convención", "Convention"),
+        Category::Rule => tr!("Regla", "Rule"),
+        Category::Preference => tr!("Preferencia", "Preference"),
+    }
+}
+
+/// Width of the `#12` column.
+const ID_WIDTH: usize = 5;
+const NOTE_WIDTH: usize = 68;
+
+/// `#12  Decisión · pagos/stripe · Codex`, then the text, wrapped.
+fn print_note(s: &Style, note: &Note) {
+    let id = format!("#{}", note.id);
+    let mut details = vec![category_label(note.category)];
+    if let Some(topic) = &note.topic {
+        details.push(topic.clone());
+    }
+    details.push(if note.author == USER_AUTHOR {
+        tr!("tú", "you")
+    } else {
+        note.author.clone()
+    });
+    if note.project.is_none() {
+        details.push(tr!("todos los proyectos", "all projects"));
+    }
+    println!(
+        "  {} {}",
+        pad(&s.bold(&id), id.chars().count(), ID_WIDTH),
+        s.muted(details.join(" · "))
+    );
+    for line in wrap(&note.text, NOTE_WIDTH) {
+        println!("  {} {line}", " ".repeat(ID_WIDTH));
+    }
+}
+
+/// What a proposal changes, or the notes it looks like, under it.
+fn print_proposal(s: &Style, proposal: &Proposal) {
+    print_note(s, &proposal.note);
+    let indent = " ".repeat(ID_WIDTH);
+    if let Some(old) = &proposal.replaces {
+        let id = old.id;
+        let label = tr!("cambia #{id}, que dice:", "changes #{id}, which says:");
+        println!("  {indent} {}", s.warn(label));
+        for line in wrap(&old.text, NOTE_WIDTH - 2) {
+            println!("  {indent}   {}", s.muted(line));
+        }
+    }
+    for other in &proposal.similar {
+        let id = other.id;
+        let text = fit(&other.text, NOTE_WIDTH - 20);
+        println!(
+            "  {indent} {}",
+            s.muted(tr!("parecida a #{id}: {text}", "similar to #{id}: {text}"))
+        );
+    }
+}
+
+pub fn memory_list(hedy: &Hedy, dir: &Path) -> Result<()> {
+    let s = Style::for_stdout();
+    let Some(project) = hedy.project_for(dir)? else {
+        bail!(
+            "{}",
+            tr!(
+                "esta carpeta no es un proyecto de Hedy; usa `hedy use <cuenta>` primero",
+                "this folder is not a Hedy project; use `hedy use <account>` first"
+            )
+        );
+    };
+    let memory = hedy.memory(&project.path)?;
+    let name = s.bold(&project.name);
+    if memory.notes.is_empty() && memory.proposed.is_empty() {
+        let mut text = vec![tr!(
+            "Todavía no hay notas en la memoria de {name}.",
+            "{name}'s memory has no notes yet."
+        )];
+        if s.enabled() {
+            text.push(s.muted(tr!(
+                "Tus IAs propondrán decisiones mientras trabajan: nada se guarda sin tu aprobación.",
+                "Your AIs will propose decisions as they work: nothing is kept without your approval."
+            )));
+        }
+        mascot::print_beside(&s, Mood::Sleepy, &text);
+        return Ok(());
+    }
+    println!();
+    println!(
+        "  {}  {}",
+        tr!("Memoria de {name}", "{name} memory"),
+        s.muted(short_path(&project.path))
+    );
+    if !memory.proposed.is_empty() {
+        println!(
+            "\n{}",
+            s.section(&tr!(
+                "Propuestas · para aprobar",
+                "Proposals · awaiting approval"
+            ))
+        );
+        for proposal in &memory.proposed {
+            print_proposal(&s, proposal);
+        }
+    }
+    if !memory.notes.is_empty() {
+        println!("\n{}", s.section(&tr!("Aprobadas", "Approved")));
+        for note in &memory.notes {
+            print_note(&s, note);
+        }
+    }
+    println!();
+    if !memory.proposed.is_empty() {
+        let line = tr!(
+            "Aprueba con `hedy memory approve <id>` o rechaza con `hedy memory reject <id>`.",
+            "Approve with `hedy memory approve <id>` or reject with `hedy memory reject <id>`."
+        );
+        println!("  {}\n", hint(&s, &line));
+    }
+    Ok(())
+}
+
+pub fn memory_approve(hedy: &Hedy, id: i64) -> Result<()> {
+    let s = Style::for_stdout();
+    let note = hedy.approve_note(id)?;
+    let text = s.muted(fit(&note.text, NOTE_WIDTH));
+    let done = if note.id == id {
+        tr!("Nota #{id} aprobada: {text}", "Note #{id} approved: {text}")
+    } else {
+        let old = note.id;
+        tr!(
+            "Nota #{old} actualizada: {text}",
+            "Note #{old} updated: {text}"
+        )
+    };
+    println!("{} {done}", s.ok("✔"));
+    Ok(())
+}
+
+pub fn memory_reject(hedy: &Hedy, id: i64) -> Result<()> {
+    let s = Style::for_stdout();
+    hedy.reject_note(id)?;
+    println!(
+        "{} {}",
+        s.ok("✔"),
+        tr!(
+            "Propuesta #{id} rechazada; la memoria no cambió.",
+            "Proposal #{id} rejected; the memory did not change."
+        )
+    );
+    Ok(())
 }
 
 pub fn config_get(hedy: &Hedy, key: &str) -> Result<()> {
