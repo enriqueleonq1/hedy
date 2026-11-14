@@ -146,7 +146,7 @@ pub enum ConfigCommand {
 }
 
 #[derive(Debug, Args)]
-#[command(group(clap::ArgGroup::new("kind").required(true).args(["claude", "codex", "gemini", "api"])))]
+#[command(group(clap::ArgGroup::new("kind").required(true).args(["claude", "codex", "gemini", "kimi", "antigravity", "api"])))]
 pub struct AddAccount {
     /// Nombre visible, por ejemplo "Claude personal".
     pub name: String,
@@ -159,6 +159,12 @@ pub struct AddAccount {
     /// Gemini CLI (Code Assist Standard/Enterprise).
     #[arg(long)]
     pub gemini: bool,
+    /// Suscripción de Kimi Code.
+    #[arg(long)]
+    pub kimi: bool,
+    /// Antigravity CLI con tu cuenta personal de Google (una por equipo).
+    #[arg(long)]
+    pub antigravity: bool,
     /// Proveedor por API key: kimi o gemini.
     #[arg(long, value_name = "PROVEEDOR")]
     pub api: Option<Provider>,
@@ -175,13 +181,18 @@ pub struct AddAccount {
 
 impl AddAccount {
     pub fn provider(&self) -> Provider {
-        match (self.claude, self.codex, self.gemini, self.api) {
-            (true, ..) => Provider::Claude,
-            (_, true, ..) => Provider::Codex,
-            (_, _, true, _) => Provider::Gemini,
-            (.., Some(p)) => p,
-            _ => unreachable!("clap requires one of the provider flags"),
-        }
+        let flags = [
+            (self.claude, Provider::Claude),
+            (self.codex, Provider::Codex),
+            (self.gemini, Provider::Gemini),
+            (self.kimi, Provider::Kimi),
+            (self.antigravity, Provider::Antigravity),
+        ];
+        flags
+            .into_iter()
+            .find_map(|(set, provider)| set.then_some(provider))
+            .or(self.api)
+            .expect("clap requires one of the provider flags")
     }
 }
 

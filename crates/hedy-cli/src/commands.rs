@@ -304,7 +304,7 @@ pub fn add_account(hedy: &Hedy, args: AddAccount) -> Result<()> {
     if provider == Provider::Gemini && !api_key {
         println!(
             "{}",
-            s.warn("Aviso: Gemini CLI ya no acepta cuentas personales de Google (solo Code Assist Standard/Enterprise). Para una cuenta personal usa `--api gemini`.")
+            s.warn("Aviso: Gemini CLI ya no acepta cuentas personales de Google (solo Code Assist Standard/Enterprise). Para una cuenta personal usa `--antigravity` o `--api gemini`.")
         );
     }
     if !args.no_login {
@@ -334,13 +334,7 @@ pub fn login(hedy: &Hedy, id: &str) -> Result<()> {
         );
         return Ok(());
     }
-    match account.provider {
-        Provider::Gemini => println!(
-            "{}",
-            s.muted("Gemini pide el login al abrirse: elige «Log in with Google» y sal con /quit.")
-        ),
-        _ => println!("{}", s.muted("Abriendo el login oficial…")),
-    }
+    println!("{}", s.muted(login_hint(account.provider)));
     let code = hedy.login(id)?;
     if code != Some(0) {
         bail!("el login terminó con error (código {code:?})");
@@ -350,6 +344,22 @@ pub fn login(hedy: &Hedy, id: &str) -> Result<()> {
         _ => println!("{}", s.ok(format!("✔ {} lista.", account.name))),
     }
     Ok(())
+}
+
+/// What the user does in the official login of each CLI.
+fn login_hint(provider: Provider) -> &'static str {
+    match provider {
+        Provider::Gemini => {
+            "Gemini pide el login al abrirse: elige «Log in with Google» y sal con /quit."
+        }
+        Provider::Kimi => {
+            "Kimi Code se abre: escribe /login, elige «Kimi Code (OAuth)» y sal con /exit."
+        }
+        Provider::Antigravity => {
+            "Antigravity abre el login de Google: inicia sesión y pega el código que te muestra."
+        }
+        _ => "Abriendo el login oficial…",
+    }
 }
 
 fn read_api_key(account: &Account) -> Result<String> {
