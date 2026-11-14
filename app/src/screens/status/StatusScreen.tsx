@@ -7,28 +7,31 @@ import { Mascot } from "../../components/Mascot/Mascot";
 import { projectColor, shortPath } from "../../components/projects";
 import { Button } from "../../components/ui/Button";
 import { formatTokens, timeAgo } from "../../format";
+import { useLanguage, useT, type Language, type MessageKey, type Translate } from "../../i18n";
 import { useTaskEvents, useTasks } from "../../tasks/hooks";
 import { agentName, isOpen, mascotState, PHASE_VERB } from "../../tasks/timeline";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 
-const DAY_LETTER = ["D", "L", "M", "M", "J", "V", "S"];
-const DAY_NAME = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
-
-const TASK_BADGE: Record<Task["status"], { label: string; tone: string }> = {
-  running: { label: "Trabajando", tone: "warn" },
-  waitingApproval: { label: "Te espera", tone: "info" },
-  review: { label: "Listo", tone: "ok" },
-  accepted: { label: "Aceptada", tone: "muted" },
-  discarded: { label: "Descartada", tone: "muted" },
-  failed: { label: "Con error", tone: "danger" },
+const TASK_BADGE: Record<Task["status"], { label: MessageKey; tone: string }> = {
+  running: { label: "status.badge.running", tone: "warn" },
+  waitingApproval: { label: "status.badge.waitingApproval", tone: "info" },
+  review: { label: "status.badge.review", tone: "ok" },
+  accepted: { label: "status.badge.accepted", tone: "muted" },
+  discarded: { label: "status.badge.discarded", tone: "muted" },
+  failed: { label: "status.badge.failed", tone: "danger" },
 };
 
-const NEXT_PHASE: Record<Phase, string> = {
-  plan: "lo planifica",
-  implement: "lo implementa",
-  tests: "escribe los tests",
-  review: "lo revisará",
+const NEXT_PHASE: Record<Phase, MessageKey> = {
+  plan: "status.next.plan",
+  implement: "status.next.implement",
+  tests: "status.next.tests",
+  review: "status.next.review",
 };
+
+/** "lunes" / "Monday". */
+function dayName(date: Date, language: Language): string {
+  return new Intl.DateTimeFormat(language, { weekday: "long" }).format(date);
+}
 
 interface DayUsage {
   /** Local midnight. */
@@ -53,27 +56,29 @@ export function usageByDay(points: UsagePoint[], today = new Date()): DayUsage[]
 }
 
 /** One sentence about what is going on in the project right now. */
-export function headline(task: Task | undefined, agent: string, accounts: Account[]): string {
-  if (!task) return "No hay tareas en curso. Escribe un pedido en el chat para empezar.";
-  const title = `«${task.title}»`;
+export function headline(task: Task | undefined, agent: string, accounts: Account[], t: Translate): string {
+  if (!task) return t("status.headline.none");
+  const title = t("status.headline.quoted", { title: task.title });
   const { stages, stage } = task;
   const current = stages[stage];
   switch (task.status) {
     case "running": {
-      const doing = current ? `${agent} ${PHASE_VERB[current.phase]} ${title}` : `${agent} trabaja en ${title}`;
+      const doing = current
+        ? t("status.headline.doing", { agent, verb: t(PHASE_VERB[current.phase]), title })
+        : t("status.headline.working", { agent, title });
       const next = stages[stage + 1];
       if (!next) return `${doing}.`;
       const who = accounts.find((a) => a.id === next.account)?.name ?? next.account;
-      return `${doing}; después ${who} ${NEXT_PHASE[next.phase]}.`;
+      return t("status.headline.then", { doing, who, next: t(NEXT_PHASE[next.phase]) });
     }
     case "waitingApproval":
-      return `${title} espera tu respuesta.`;
+      return t("status.headline.waiting", { title });
     case "review":
-      return `${title} está lista para revisar.`;
+      return t("status.headline.review", { title });
     case "failed":
-      return `${title} terminó con un error.`;
+      return t("status.headline.failed", { title });
     default:
-      return "No hay tareas en curso.";
+      return t("status.headline.idle");
   }
 }
 
@@ -89,6 +94,8 @@ export function StatusScreen({
   onOpenMemory: () => void;
 }) {
   const api = useApi();
+  const t = useT();
+  const language = useLanguage();
   const status = useQuery({ queryKey: ["status", project], queryFn: () => api.projectStatus(project) });
   const usage = useQuery({ queryKey: ["projectUsage", project], queryFn: () => api.projectUsage(project, 7) });
   const commits = useQuery({ queryKey: ["commits", project], queryFn: () => api.recentCommits(project) });
@@ -107,18 +114,18 @@ export function StatusScreen({
 
   return (
     <div className="screen status">
-      <section className="card status__hero" aria-label="Estado del proyecto">
+      <section className="card status__hero" aria-label={t("status.title")}>
         <Mascot color={color} state={mascotState(current, history)} size={120} label="" />
         <div className="status__hero-text">
-          <p className="status__eyebrow">Estado del proyecto</p>
+          <p className="status__eyebrow">{t("status.title")}</p>
           <h1>{name}</h1>
-          <p className="muted">{headline(current, agentName(history), overview.accounts)}</p>
+          <p className="muted">{headline(current, agentName(history), overview.accounts, t)}</p>
           <div className="actions">
             <Button small variant="primary" onClick={onOpenChat}>
-              Abrir chat
+              {t("status.openChat")}
             </Button>
             <Button small onClick={onOpenMemory}>
-              Memoria
+              {t("common.memory")}
             </Button>
           </div>
         </div>
@@ -131,53 +138,67 @@ export function StatusScreen({
           ))}
           {status.data?.branch && (
             <span className="chip chip--muted">
-              rama {status.data.branch}
-              {status.data.uncommitted ? ` · ${status.data.uncommitted} cambios sin commit` : " · sin cambios"}
+              {t("common.branch", { branch: status.data.branch })}
+              {status.data.uncommitted
+                ? t(status.data.uncommitted === 1 ? "status.uncommitted.one" : "status.uncommitted.other", {
+                    n: status.data.uncommitted,
+                  })
+                : t("status.clean")}
             </span>
           )}
-          {info?.client && <span className="chip chip--muted">cliente: {info.client}</span>}
+          {info?.client && <span className="chip chip--muted">{t("status.client", { client: info.client })}</span>}
         </div>
       </section>
 
       {status.isError && (
         <p className="error-text" role="alert">
-          {errorMessage(status.error)}
+          {errorMessage(status.error, t)}
         </p>
       )}
       {status.data && (
         <div className="status__stats">
           <Stat label="Tests" tone={status.data.lastTests ? (status.data.lastTests.passed ? "ok" : "danger") : "muted"}
-            value={status.data.lastTests ? (status.data.lastTests.passed ? "Pasaron" : "Fallaron") : "Sin datos"}
+            value={
+              status.data.lastTests
+                ? status.data.lastTests.passed
+                  ? t("status.tests.passed")
+                  : t("status.tests.failed")
+                : t("status.tests.noData")
+            }
             detail={
               status.data.lastTests
-                ? `${timeAgo(status.data.lastTests.at)} · ${status.data.lastTests.command}`
-                : "Aún ninguna tarea corrió tests aquí."
+                ? `${timeAgo(status.data.lastTests.at, t)} · ${status.data.lastTests.command}`
+                : t("status.tests.none")
             }
           />
           <Stat
-            label="Modelos"
+            label={t("common.models")}
             tone="info"
-            value={`${agents.length} ${agents.length === 1 ? "activo" : "activos"}`}
-            detail={agents.map((a) => `${a.name} ${usageLabel(a)}`).join(" · ") || "Asigna una cuenta al proyecto."}
+            value={t(agents.length === 1 ? "status.models.active.one" : "status.models.active.other", { n: agents.length })}
+            detail={agents.map((a) => `${a.name} ${usageLabel(a, language)}`).join(" · ") || t("status.models.none")}
           />
           <Stat
-            label="Mapa del código"
+            label={t("common.codeMap")}
             tone={status.data.codeMap ? "accent" : "muted"}
-            value={status.data.codeMap ? "Activo" : "Apagado"}
-            detail={status.data.codeMap ? "Tus IAs consultan el índice del código." : "Actívalo en Ajustes."}
+            value={status.data.codeMap ? t("status.codeMap.on") : t("status.codeMap.off")}
+            detail={status.data.codeMap ? t("status.codeMap.onDetail") : t("status.codeMap.offDetail")}
           />
           <Stat
-            label="Memoria"
+            label={t("common.memory")}
             tone="warn"
-            value={`${status.data.memoryNotes} ${status.data.memoryNotes === 1 ? "nota" : "notas"}`}
+            value={t(status.data.memoryNotes === 1 ? "status.memory.notes.one" : "status.memory.notes.other", {
+              n: status.data.memoryNotes,
+            })}
             detail={
               [
-                status.data.memoryStale > 0 && `${status.data.memoryStale} para revisar`,
+                status.data.memoryStale > 0 && t("status.memory.stale", { n: status.data.memoryStale }),
                 status.data.memoryProposed > 0 &&
-                  `${status.data.memoryProposed} ${status.data.memoryProposed === 1 ? "propuesta" : "propuestas"}`,
+                  t(status.data.memoryProposed === 1 ? "status.memory.proposed.one" : "status.memory.proposed.other", {
+                    n: status.data.memoryProposed,
+                  }),
               ]
                 .filter(Boolean)
-                .join(" · ") || "Todo al día."
+                .join(" · ") || t("status.memory.upToDate")
             }
           />
         </div>
@@ -185,23 +206,23 @@ export function StatusScreen({
 
       <div className="status__layout">
         <section className="card status__tasks" aria-labelledby="status-tasks">
-          <h2 id="status-tasks">Tareas</h2>
+          <h2 id="status-tasks">{t("status.tasks")}</h2>
           {tasks.isError ? (
-            <p className="error-text">{errorMessage(tasks.error)}</p>
+            <p className="error-text">{errorMessage(tasks.error, t)}</p>
           ) : (
-            list.length === 0 && <p className="muted">Todavía no hay tareas en este proyecto.</p>
+            list.length === 0 && <p className="muted">{t("status.tasks.empty")}</p>
           )}
           <ul className="status__task-list">
-            {list.slice(0, 6).map((t) => (
-              <TaskRow key={t.id} task={t} accounts={overview.accounts} />
+            {list.slice(0, 6).map((task) => (
+              <TaskRow key={task.id} task={task} accounts={overview.accounts} />
             ))}
           </ul>
         </section>
         <div className="status__side">
-          <WeekChart name={name} points={usage.data ?? []} error={usage.isError ? errorMessage(usage.error) : null} />
+          <WeekChart name={name} points={usage.data ?? []} error={usage.isError ? errorMessage(usage.error, t) : null} />
           <section className="card" aria-labelledby="status-commits">
-            <h2 id="status-commits">Últimos commits</h2>
-            {commits.data?.length === 0 && <p className="muted small">Sin commits todavía.</p>}
+            <h2 id="status-commits">{t("common.recentCommits")}</h2>
+            {commits.data?.length === 0 && <p className="muted small">{t("status.commits.empty")}</p>}
             <ul className="status__commits">
               {commits.data?.map((c) => (
                 <li key={c.hash}>
@@ -228,6 +249,7 @@ function Stat({ label, value, detail, tone }: { label: string; value: string; de
 }
 
 function TaskRow({ task, accounts }: { task: Task; accounts: Account[] }) {
+  const t = useT();
   const events = useTaskEvents(task.id);
   const history = events.data ?? [];
   const account = accounts.find((a) => a.id === task.account);
@@ -237,10 +259,10 @@ function TaskRow({ task, accounts }: { task: Task; accounts: Account[] }) {
   const agent = agentName(history);
   const detail =
     task.status === "running" && steps?.kind === "steps"
-      ? `${agent} · ${done} de ${steps.steps.length} pasos`
+      ? t("status.task.steps", { agent, done, total: steps.steps.length })
       : task.status === "waitingApproval"
-        ? `${agent.split(" ")[0]} necesita tu respuesta`
-        : `${agent} · ${timeAgo(task.createdAt)}`;
+        ? t("status.task.needsYou", { agent: agent.split(" ")[0] ?? agent })
+        : `${agent} · ${timeAgo(task.createdAt, t)}`;
   return (
     <li className="status__task">
       <Mascot color={account?.color ?? DEFAULT_ACCOUNT_COLOR} state={mascotState(task, history)} size={48} label="" />
@@ -248,22 +270,25 @@ function TaskRow({ task, accounts }: { task: Task; accounts: Account[] }) {
         <strong>{task.title}</strong>
         <span className="small muted">{detail}</span>
       </div>
-      <span className={`status__badge status__badge--${badge.tone}`}>{badge.label}</span>
+      <span className={`status__badge status__badge--${badge.tone}`}>{t(badge.label)}</span>
     </li>
   );
 }
 
 function WeekChart({ name, points, error }: { name: string; points: UsagePoint[]; error: string | null }) {
+  const t = useT();
+  const language = useLanguage();
+  const letters = t("status.week.letters");
   const days = usageByDay(points);
   const max = Math.max(...days.map((d) => d.tokens), 1);
   const busiest = days.reduce((a, b) => (b.tokens > a.tokens ? b : a));
   const total = days.reduce((sum, d) => sum + d.tokens, 0);
   return (
     <section className="card" aria-labelledby="status-week">
-      <h2 id="status-week">Uso de {name} esta semana</h2>
-      <div className="week-chart" role="img" aria-label={`Tokens por día; total ${formatTokens(total)}`}>
+      <h2 id="status-week">{t("status.week.title", { name })}</h2>
+      <div className="week-chart" role="img" aria-label={t("status.week.chart", { total: formatTokens(total) })}>
         {days.map((d) => {
-          const label = `${DAY_NAME[d.date.getDay()]} ${d.date.getDate()}: ${formatTokens(d.tokens)} tokens`;
+          const label = `${dayName(d.date, language)} ${d.date.getDate()}: ${formatTokens(d.tokens)} tokens`;
           return (
             <div key={d.date.toISOString()} className="week-chart__day" title={label}>
               <div className="week-chart__track">
@@ -276,7 +301,7 @@ function WeekChart({ name, points, error }: { name: string; points: UsagePoint[]
                 </span>
               </div>
               <span className="week-chart__letter" aria-hidden>
-                {DAY_LETTER[d.date.getDay()]}
+                {letters[d.date.getDay()]}
               </span>
             </div>
           );
@@ -287,16 +312,16 @@ function WeekChart({ name, points, error }: { name: string; points: UsagePoint[]
       ) : (
         <p className="small muted">
           {total === 0
-            ? "Sin uso registrado esta semana."
-            : `El ${DAY_NAME[busiest.date.getDay()]} fue el día más intenso · ${formatTokens(total)} tokens en total.`}
+            ? t("common.noUsageThisWeek")
+            : t("status.week.busiest", { day: dayName(busiest.date, language), total: formatTokens(total) })}
         </p>
       )}
       <table className="sr-only">
-        <caption>Tokens por día</caption>
+        <caption>{t("status.week.caption")}</caption>
         <tbody>
           {days.map((d) => (
             <tr key={d.date.toISOString()}>
-              <th scope="row">{`${DAY_NAME[d.date.getDay()]} ${d.date.getDate()}`}</th>
+              <th scope="row">{`${dayName(d.date, language)} ${d.date.getDate()}`}</th>
               <td>{d.tokens}</td>
             </tr>
           ))}
