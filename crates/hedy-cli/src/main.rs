@@ -11,7 +11,7 @@ use std::process::ExitCode;
 use anyhow::Result;
 use hedy_core::adapters::{self, HedyPaths};
 
-use cli::{AccountCommand, Cli, Command, ConfigCommand, MemoryCommand};
+use cli::{AccountCommand, Cli, Command, ConfigCommand, MemoryCommand, TemplateCommand};
 use style::Style;
 
 fn main() -> ExitCode {
@@ -86,6 +86,17 @@ fn run(cli: Cli) -> Result<ExitCode> {
             MemoryCommand::List => commands::memory_list(&hedy, &dir),
             MemoryCommand::Approve { id } => commands::memory_approve(&hedy, id),
             MemoryCommand::Reject { id } => commands::memory_reject(&hedy, id),
+        },
+        Command::Template { command } => match command.unwrap_or(TemplateCommand::List) {
+            TemplateCommand::List => commands::template_list(&hedy, &dir),
+            TemplateCommand::Add {
+                name,
+                project,
+                text,
+            } => commands::template_add(&hedy, &dir, &name, project, &text),
+            TemplateCommand::Remove { name, project } => {
+                commands::template_remove(&hedy, &dir, &name, project)
+            }
         },
         Command::Config(sub) => match sub {
             ConfigCommand::Get { key } => commands::config_get(&hedy, &key),

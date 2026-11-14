@@ -377,6 +377,72 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             ),
         ),
         (
+            "template",
+            "",
+            tr!(
+                "Plantillas de pedidos para el chat de Hedy, globales o del proyecto",
+                "Prompt templates for Hedy's chat, global or for the project"
+            ),
+        ),
+        (
+            "template list",
+            "",
+            tr!(
+                "Lista las plantillas del proyecto actual y las globales (por defecto)",
+                "List the current project's templates and the global ones (default)"
+            ),
+        ),
+        (
+            "template add",
+            "",
+            tr!(
+                "Guarda una plantilla; escribe `{{nombre}}` donde quieras completar algo al usarla",
+                "Save a template; write `{{name}}` wherever you want to fill something in when using it"
+            ),
+        ),
+        (
+            "template add",
+            "name",
+            tr!("Nombre de la plantilla", "Template name"),
+        ),
+        (
+            "template add",
+            "project",
+            tr!(
+                "Solo para el proyecto actual (por defecto, para todos)",
+                "Only for the current project (by default, for all of them)"
+            ),
+        ),
+        (
+            "template add",
+            "text",
+            tr!(
+                "El texto del pedido, p. ej. \"Escribe pruebas para {{archivo}}\"",
+                "The request text, e.g. \"Write tests for {{file}}\""
+            ),
+        ),
+        (
+            "template remove",
+            "",
+            tr!(
+                "Borra una plantilla (los ejemplos se recuperan desde Ajustes)",
+                "Delete a template (the examples can be restored from Settings)"
+            ),
+        ),
+        (
+            "template remove",
+            "name",
+            tr!("Nombre de la plantilla", "Template name"),
+        ),
+        (
+            "template remove",
+            "project",
+            tr!(
+                "Borra la del proyecto actual (por defecto, la global)",
+                "Delete the current project's one (by default, the global one)"
+            ),
+        ),
+        (
             "config",
             "",
             tr!(
@@ -428,6 +494,7 @@ fn value_names() -> Vec<(&'static str, String)> {
         ("args", tr!("ARGUMENTOS", "ARGS")),
         ("key", tr!("CLAVE", "KEY")),
         ("value", tr!("VALOR", "VALUE")),
+        ("text", tr!("TEXTO", "TEXT")),
     ]
 }
 
@@ -568,6 +635,12 @@ pub enum Command {
         command: Option<MemoryCommand>,
     },
 
+    #[command(visible_alias = "plantilla")]
+    Template {
+        #[command(subcommand)]
+        command: Option<TemplateCommand>,
+    },
+
     #[command(subcommand)]
     Config(ConfigCommand),
 
@@ -613,6 +686,28 @@ pub enum MemoryCommand {
 
     #[command(visible_alias = "rechazar")]
     Reject { id: i64 },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TemplateCommand {
+    #[command(visible_alias = "listar")]
+    List,
+
+    #[command(visible_alias = "agregar")]
+    Add {
+        name: String,
+        #[arg(long, alias = "proyecto")]
+        project: bool,
+        #[arg(long, alias = "texto")]
+        text: String,
+    },
+
+    #[command(visible_alias = "quitar")]
+    Remove {
+        name: String,
+        #[arg(long, alias = "proyecto")]
+        project: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -791,6 +886,43 @@ mod tests {
             })
         ));
         assert!(Cli::try_parse_from(["hedy", "memory", "approve", "x"]).is_err());
+    }
+
+    #[test]
+    fn templates_list_by_default_and_take_spanish_aliases() {
+        let parse = |args: &[&str]| Cli::try_parse_from(args).unwrap().command;
+        assert!(matches!(
+            parse(&["hedy", "template"]),
+            Some(Command::Template { command: None })
+        ));
+        let Some(Command::Template {
+            command:
+                Some(TemplateCommand::Add {
+                    name,
+                    project,
+                    text,
+                }),
+        }) = parse(&[
+            "hedy",
+            "plantilla",
+            "agregar",
+            "Pruebas",
+            "--proyecto",
+            "--texto",
+            "Pruebas para {archivo}",
+        ])
+        else {
+            panic!("expected template add");
+        };
+        assert_eq!((name.as_str(), project), ("Pruebas", true));
+        assert_eq!(text, "Pruebas para {archivo}");
+        assert!(Cli::try_parse_from(["hedy", "template", "add", "x"]).is_err());
+        assert!(matches!(
+            parse(&["hedy", "plantilla", "quitar", "x"]),
+            Some(Command::Template {
+                command: Some(TemplateCommand::Remove { project: false, .. })
+            })
+        ));
     }
 
     #[test]

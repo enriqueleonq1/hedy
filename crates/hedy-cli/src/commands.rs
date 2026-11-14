@@ -6,12 +6,13 @@ use std::path::Path;
 use anyhow::{Result, bail};
 use chrono::Timelike;
 use hedy_core::application::{
-    AccountStatus, CheckArea, CheckLevel, DoctorReport, Hedy, NewAccount, Proposal, RECENT_HOURS,
-    Setting, TaskActivity,
+    AccountStatus, CheckArea, CheckLevel, DoctorReport, Hedy, NewAccount, NewTemplate, Proposal,
+    RECENT_HOURS, Setting, TaskActivity, TemplateScope,
 };
 use hedy_core::domain::memory::USER_AUTHOR;
 use hedy_core::domain::{
-    Account, Category, ConfigFolder, Credentials, LoginState, Note, Phase, Provider, TaskState,
+    Account, Category, ConfigFolder, Credentials, LoginState, Note, Phase, PromptTemplate,
+    Provider, TaskState,
 };
 use hedy_core::i18n::{self, Language};
 use hedy_core::tr;
@@ -1092,6 +1093,171 @@ pub fn memory_reject(hedy: &Hedy, id: i64) -> Result<()> {
             "Propuesta #{id} rechazada; la memoria no cambió.",
             "Proposal #{id} rejected; the memory did not change."
         )
+    );
+    Ok(())
+}
+
+/// The project of `dir`, or why templates for it cannot be used.
+fn template_project(hedy: &Hedy, dir: &Path) -> Result<hedy_core::domain::Project> {
+    match hedy.project_for(dir)? {
+        Some(project) => Ok(project),
+        None => bail!(
+            "{}",
+            tr!(
+                "esta carpeta no es un proyecto de Hedy; usa `hedy use <cuenta>` primero o quita --project",
+                "this folder is not a Hedy project; use `hedy use <account>` first or drop --project"
+            )
+        ),
+    }
+}
+
+const TEMPLATE_WIDTH: usize = 68;
+
+/// `Escribir pruebas  ejemplo · {archivo}`, then the text, wrapped.
+fn print_template(s: &Style, template: &PromptTemplate) {
+    let mut details = Vec::new();
+    if template.builtin.is_some() {
+        details.push(tr!("ejemplo", "example"));
+    }
+    let placeholders: Vec<String> = template
+        .placeholders()
+        .iter()
+        .map(|p| format!("{{{p}}}"))
+        .collect();
+    if !placeholders.is_empty() {
+        details.push(placeholders.join(" "));
+    }
+    println!(
+        "  {}  {}",
+        s.bold(&template.name),
+        s.muted(details.join(" · "))
+    );
+    for line in wrap(&template.text, TEMPLATE_WIDTH) {
+        println!("    {}", s.muted(line));
+    }
+}
+
+pub fn template_list(hedy: &Hedy, dir: &Path) -> Result<()> {
+    let s = Style::for_stdout();
+    let project = hedy.project_for(dir)?;
+    let templates = hedy.templates(TemplateScope::For(
+        project.as_ref().map(|p| p.path.as_path()),
+    ))?;
+    if templates.is_empty() {
+        let text = vec![
+            tr!("Todavía no hay plantillas.", "There are no templates yet."),
+            s.muted(tr!(
+                "Agrega una con `hedy template add <nombre> --text \"…\"`.",
+                "Add one with `hedy template add <name> --text \"…\"`."
+            )),
+        ];
+        mascot::print_beside(&s, Mood::Sleepy, &text);
+        return Ok(());
+    }
+    let (own, global): (Vec<_>, Vec<_>) = templates.iter().partition(|t| t.project.is_some());
+    println!();
+    if let Some(project) = &project
+        && !own.is_empty()
+    {
+        let name = &project.name;
+        println!(
+            "{}",
+            s.section(&tr!("Del proyecto {name}", "For project {name}"))
+        );
+        for template in own {
+            print_template(&s, template);
+        }
+        println!();
+    }
+    if !global.is_empty() {
+        println!(
+            "{}",
+            s.section(&tr!("Para todos los proyectos", "For every project"))
+        );
+        for template in global {
+            print_template(&s, template);
+        }
+        println!();
+    }
+    let line = tr!(
+        "En el chat de Hedy, escribe / al empezar un mensaje para usarlas.",
+        "In Hedy's chat, type / at the start of a message to use them."
+    );
+    println!("  {}\n", hint(&s, &line));
+    Ok(())
+}
+
+pub fn template_add(
+    hedy: &Hedy,
+    dir: &Path,
+    name: &str,
+    for_project: bool,
+    text: &str,
+) -> Result<()> {
+    let s = Style::for_stdout();
+    let project = if for_project {
+        Some(template_project(hedy, dir)?)
+    } else {
+        None
+    };
+    let template = hedy.add_template(NewTemplate {
+        project: project.as_ref().map(|p| p.path.clone()),
+        name: name.into(),
+        text: text.into(),
+    })?;
+    let name = s.bold(&template.name);
+    let done = match &project {
+        Some(project) => {
+            let project = &project.name;
+            tr!(
+                "Plantilla {name} guardada para {project}.",
+                "Template {name} saved for {project}."
+            )
+        }
+        None => tr!(
+            "Plantilla {name} guardada para todos los proyectos.",
+            "Template {name} saved for every project."
+        ),
+    };
+    println!("{} {done}", s.ok("✔"));
+    let placeholders = template.placeholders();
+    if !placeholders.is_empty() {
+        let list = placeholders
+            .iter()
+            .map(|p| format!("{{{p}}}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!(
+            "  {}",
+            s.muted(tr!(
+                "Al usarla, Hedy te pedirá: {list}",
+                "When you use it, Hedy will ask you for: {list}"
+            ))
+        );
+    }
+    Ok(())
+}
+
+pub fn template_remove(hedy: &Hedy, dir: &Path, name: &str, for_project: bool) -> Result<()> {
+    let s = Style::for_stdout();
+    let project = if for_project {
+        Some(template_project(hedy, dir)?.path)
+    } else {
+        None
+    };
+    let template = hedy
+        .templates(TemplateScope::All)?
+        .into_iter()
+        .find(|t| t.project == project && hedy_core::domain::template::same_name(&t.name, name))
+        .ok_or_else(|| {
+            hedy_core::application::AppError::TemplateNotFound(name.trim().to_owned())
+        })?;
+    hedy.remove_template(&template.id)?;
+    let name = s.bold(&template.name);
+    println!(
+        "{} {}",
+        s.ok("✔"),
+        tr!("Plantilla {name} borrada.", "Template {name} deleted.")
     );
     Ok(())
 }
