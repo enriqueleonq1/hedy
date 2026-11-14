@@ -178,8 +178,13 @@ function AccountCard({
             {t("accounts.card.makeDefault")}
           </Button>
         )}
-        <ConfirmButton small confirmLabel={t("accounts.card.removeConfirm")} onConfirm={() => remove.mutate(undefined)}>
-          {t("common.remove")}
+        <ConfirmButton
+          small
+          title={t("accounts.card.removeHint")}
+          confirmLabel={t("accounts.card.removeConfirm")}
+          onConfirm={() => remove.mutate(undefined)}
+        >
+          {t("accounts.card.remove")}
         </ConfirmButton>
       </footer>
     </article>
