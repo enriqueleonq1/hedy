@@ -11,20 +11,19 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use crate::domain::permissions::{DEFAULT_BLOCKED, protected_file_reason};
+use crate::domain::permissions::protected_file_reason;
 
 pub const HOOK_ARGS: [&str; 2] = ["hook", "pre-tool-use"];
 
 /// Tools the hook is registered for.
-pub const HOOK_MATCHER: &str = "Bash|Read|Edit|Write|MultiEdit|NotebookEdit";
+pub const HOOK_MATCHER: &str = "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob";
 
 /// Hook output for a tool call, or `None` to let Claude Code decide as usual.
 pub fn decide(input: &str) -> Option<String> {
     let input: Value = serde_json::from_str(input).ok()?;
     let tool = input["tool_name"].as_str()?;
     let cwd = PathBuf::from(input["cwd"].as_str().unwrap_or("/"));
-    let blocked: Vec<String> = DEFAULT_BLOCKED.iter().map(|s| s.to_string()).collect();
-    let reason = protected_file_reason(tool, &input["tool_input"], &cwd, &blocked)?;
+    let reason = protected_file_reason(tool, &input["tool_input"], &cwd)?;
     Some(
         json!({"hookSpecificOutput": {
             "hookEventName": "PreToolUse",

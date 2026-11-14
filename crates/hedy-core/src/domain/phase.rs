@@ -29,9 +29,12 @@ impl Phase {
         }
     }
 
-    /// Whether the phase only reads (its agent gets no write tools).
-    pub fn read_only(self) -> bool {
-        matches!(self, Self::Plan | Self::Review)
+    /// Whether an agent on this phase in `mode` only reads (gets no write
+    /// tools) for its whole session. Planning is not: the same session goes on
+    /// implementing once the plan is approved, and `plan_first` holds writes
+    /// until then.
+    pub fn read_only_in(self, mode: TaskMode) -> bool {
+        mode != TaskMode::Project || self == Self::Review
     }
 }
 
@@ -215,6 +218,11 @@ mod tests {
         for p in Phase::ALL {
             assert_eq!(p.as_str().parse::<Phase>().unwrap(), p);
         }
-        assert!(Phase::Review.read_only() && !Phase::Tests.read_only());
+        assert!(Phase::Review.read_only_in(TaskMode::Project));
+        assert!(
+            !Phase::Plan.read_only_in(TaskMode::Project),
+            "the planner implements next"
+        );
+        assert!(Phase::Implement.read_only_in(TaskMode::Ask));
     }
 }

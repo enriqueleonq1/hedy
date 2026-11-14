@@ -50,13 +50,6 @@ pub(super) struct LiveTask {
     warned: Option<LimitLevel>,
 }
 
-fn blocked_patterns() -> Vec<String> {
-    permissions::DEFAULT_BLOCKED
-        .iter()
-        .map(|s| s.to_string())
-        .collect()
-}
-
 /// Tasks stored before phases existed have no stages.
 fn current_stage(task: &Task) -> Stage {
     task.stages.get(task.stage).cloned().unwrap_or(Stage {
@@ -384,13 +377,7 @@ impl Hedy {
                 let Some(running) = live.get_mut(id) else {
                     return Ok(());
                 };
-                let verdict = permissions::evaluate(
-                    tool,
-                    input,
-                    &task.work_dir(),
-                    &blocked_patterns(),
-                    &running.rules,
-                );
+                let verdict = permissions::evaluate(tool, input, &task.work_dir(), &running.rules);
                 let resolved = |decision, reason| AgentEvent::PermissionResolved {
                     request_id: request_id.clone(),
                     decision,
@@ -545,10 +532,12 @@ impl Hedy {
                 decision.allows(),
                 (!decision.allows()).then_some("El usuario rechazó esta acción."),
             )?;
+            // Chained shell commands are allowed once but never remembered.
             if let Some((tool, input)) = running.pending.remove(request_id)
                 && decision == Decision::AllowForTask
+                && let Some(rule) = permissions::rule_for(&tool, &input)
             {
-                running.rules.push(permissions::rule_for(&tool, &input));
+                running.rules.push(rule);
             }
             Ok(())
         })?;

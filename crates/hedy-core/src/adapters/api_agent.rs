@@ -6,10 +6,10 @@
 
 use std::collections::VecDeque;
 use std::io::Read;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -20,7 +20,8 @@ use crate::application::ports::{
     PortResult, Secret,
 };
 use crate::domain::agent::looks_like_tests;
-use crate::domain::permissions::{DEFAULT_BLOCKED, protected_file_reason};
+use crate::domain::permissions::{normalize, protected_file_reason};
+use crate::domain::task::SHARED_DEPENDENCY_DIRS;
 use crate::domain::{AgentEvent, LaunchSpec, TaskMode, UsageSample, prompts};
 
 pub struct ApiAgentLauncher;
@@ -76,7 +77,17 @@ impl AgentLauncher for ApiAgentLauncher {
             .ok_or_else(|| PortError::new("el agente por API necesita un modelo"))?;
         let (tx, rx) = mpsc::channel();
         let stopped = Arc::new(AtomicBool::new(false));
-        let read_only = request.mode != TaskMode::Project || request.phase.read_only();
+        let read_only = request.phase.read_only_in(request.mode);
+        let cwd = request.launch.cwd.clone().unwrap_or_default();
+        // Real paths, so symlinks cannot lead out of the folder.
+        let cwd = cwd.canonicalize().unwrap_or(cwd);
+        // Dependencies shared with the main checkout (symlinks Hedy made) can
+        // be read, never written.
+        let shared = SHARED_DEPENDENCY_DIRS
+            .iter()
+            .filter_map(|dir| cwd.join(dir).canonicalize().ok())
+            .filter(|target| !target.starts_with(&cwd))
+            .collect();
         let mut agent = Agent {
             http: ureq::Agent::config_builder()
                 .timeout_global(Some(Duration::from_secs(300)))
@@ -86,7 +97,8 @@ impl AgentLauncher for ApiAgentLauncher {
             url: format!("{}/chat/completions", base_url.trim_end_matches('/')),
             key: api_key,
             model,
-            cwd: request.launch.cwd.clone().unwrap_or_default(),
+            cwd,
+            shared,
             events,
             read_only,
             planning: request.plan_first,
@@ -140,7 +152,10 @@ struct Agent {
     url: String,
     key: Secret,
     model: String,
+    /// The task folder, canonical.
     cwd: PathBuf,
+    /// Canonical targets of the shared dependency folders (read-only).
+    shared: Vec<PathBuf>,
     events: EventSink,
     read_only: bool,
     planning: bool,
@@ -238,6 +253,18 @@ fn truncate(mut text: String, max: usize) -> String {
     text
 }
 
+/// The end of a command's output: summaries and errors come last.
+fn keep_tail(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return text.to_owned();
+    }
+    let mut start = text.len() - max;
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    format!("[…recortado]\n{}", &text[start..])
+}
+
 impl Agent {
     fn emit(&self, event: AgentEvent) {
         (self.events)(event);
@@ -281,7 +308,12 @@ impl Agent {
 
     fn run(&mut self, rx: mpsc::Receiver<Command>, mode: TaskMode, prompt: String) {
         self.emit(AgentEvent::SessionStarted {
-            session_id: format!("api-{}", std::process::id()),
+            session_id: format!(
+                "api-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_nanos())
+            ),
             model: self.model.clone(),
         });
         self.messages
@@ -454,28 +486,35 @@ impl Agent {
         }
     }
 
-    /// `path` inside the working folder, or why not.
-    fn resolve(&self, path: &str) -> Result<PathBuf, String> {
-        let joined = if Path::new(path).is_absolute() {
-            PathBuf::from(path)
-        } else {
-            self.cwd.join(path)
-        };
-        let mut out = PathBuf::new();
-        for part in joined.components() {
-            match part {
-                Component::ParentDir => {
-                    out.pop();
-                }
-                Component::CurDir => {}
-                other => out.push(other),
+    /// The real path of `path` (symlinks followed), if it stays inside the
+    /// working folder and is not a protected file; otherwise why not. Reads may
+    /// also reach the shared dependency folders.
+    fn resolve(&self, path: &str, write: bool) -> Result<PathBuf, String> {
+        let outside = || "Solo puedo trabajar dentro de la carpeta de la tarea.".to_owned();
+        let lexical = normalize(&self.cwd, Path::new(path));
+        if !lexical.starts_with(&self.cwd) {
+            return Err(outside());
+        }
+        // New files: resolve the closest folder that exists.
+        let existing = lexical
+            .ancestors()
+            .find(|p| p.exists())
+            .unwrap_or(&self.cwd);
+        let real = existing
+            .canonicalize()
+            .map_err(|e| format!("No se pudo resolver {path}: {e}"))?
+            .join(lexical.strip_prefix(existing).unwrap_or(Path::new("")));
+        let inside = real.starts_with(&self.cwd)
+            || (!write && self.shared.iter().any(|dir| real.starts_with(dir)));
+        if !inside {
+            return Err(outside());
+        }
+        for target in [&lexical, &real] {
+            if let Some(reason) = self.protected("Read", &json!({"file_path": target})) {
+                return Err(reason);
             }
         }
-        if out.starts_with(&self.cwd) {
-            Ok(out)
-        } else {
-            Err("Solo puedo trabajar dentro de la carpeta de la tarea.".into())
-        }
+        Ok(real)
     }
 
     fn relative(&self, path: &Path) -> String {
@@ -485,8 +524,7 @@ impl Agent {
     }
 
     fn protected(&self, tool: &str, input: &Value) -> Option<String> {
-        let blocked: Vec<String> = DEFAULT_BLOCKED.iter().map(|s| s.to_string()).collect();
-        protected_file_reason(tool, input, &self.cwd, &blocked)
+        protected_file_reason(tool, input, &self.cwd)
     }
 
     fn run_tool(&mut self, call: &Value, rx: &mpsc::Receiver<Command>) -> Result<String, End> {
@@ -510,7 +548,7 @@ impl Agent {
                 None => format!("Herramienta desconocida: {name}"),
             },
             "write_file" | "edit_file" => {
-                let target = match self.resolve(&arg("path")) {
+                let target = match self.resolve(&arg("path"), true) {
                     Ok(p) => p,
                     Err(e) => return Ok(e),
                 };
@@ -556,19 +594,22 @@ impl Agent {
     }
 
     fn read_file(&self, path: &str) -> String {
-        let target = match self.resolve(path) {
+        let target = match self.resolve(path, false) {
             Ok(p) => p,
             Err(e) => return e,
         };
-        if let Some(reason) = self.protected("Read", &json!({"file_path": target})) {
-            return reason;
+        if !target.is_file() {
+            return format!("{path} no es un archivo.");
         }
         self.emit(AgentEvent::ToolUsed {
             tool: "Read".into(),
             summary: self.relative(&target),
         });
-        match std::fs::read(&target) {
-            Ok(bytes) => truncate(String::from_utf8_lossy(&bytes).into_owned(), MAX_READ),
+        let mut bytes = Vec::new();
+        match std::fs::File::open(&target)
+            .and_then(|file| file.take(MAX_READ as u64 + 1).read_to_end(&mut bytes))
+        {
+            Ok(_) => truncate(String::from_utf8_lossy(&bytes).into_owned(), MAX_READ),
             Err(e) => format!("No se pudo leer: {e}"),
         }
     }
@@ -584,8 +625,12 @@ impl Agent {
             for entry in entries {
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().into_owned();
-                let is_dir = entry.file_type().is_ok_and(|t| t.is_dir());
-                if is_dir && SKIPPED_DIRS.contains(&name.as_str()) {
+                // Not followed: symlinks may lead outside the folder.
+                let Ok(kind) = entry.file_type() else {
+                    continue;
+                };
+                let is_dir = kind.is_dir();
+                if kind.is_symlink() || (is_dir && SKIPPED_DIRS.contains(&name.as_str())) {
                     continue;
                 }
                 if !visit(&path, is_dir) {
@@ -599,7 +644,7 @@ impl Agent {
     }
 
     fn list_files(&self, path: &str) -> String {
-        let start = match self.resolve(if path.is_empty() { "." } else { path }) {
+        let start = match self.resolve(if path.is_empty() { "." } else { path }, false) {
             Ok(p) => p,
             Err(e) => return e,
         };
@@ -624,7 +669,7 @@ impl Agent {
     }
 
     fn search(&self, pattern: &str, path: &str) -> String {
-        let start = match self.resolve(if path.is_empty() { "." } else { path }) {
+        let start = match self.resolve(if path.is_empty() { "." } else { path }, false) {
             Ok(p) => p,
             Err(e) => return e,
         };
@@ -638,7 +683,7 @@ impl Agent {
             if is_dir || self.protected("Read", &json!({"file_path": p})).is_some() {
                 return true;
             }
-            if std::fs::metadata(p).is_ok_and(|m| m.len() < 1_000_000)
+            if std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.len() < 1_000_000)
                 && let Ok(text) = std::fs::read_to_string(p)
             {
                 for (n, line) in text.lines().enumerate() {
@@ -687,26 +732,45 @@ impl Agent {
         }
     }
 
+    /// Runs a shell command in its own process group, with stderr merged into
+    /// stdout. Timeouts and stops kill the whole group, and processes left in
+    /// the background never keep the agent waiting.
     fn run_command(&self, command_line: &str) -> String {
-        let spec = LaunchSpec::program("sh", vec!["-c".into(), command_line.to_owned()])
-            .in_dir(self.cwd.clone());
-        let child = command(&spec)
-            .stdin(Stdio::null())
+        // `exec 2>&1` first: one pipe, so a chatty stderr cannot fill up unread.
+        let script = format!("exec 2>&1\n{command_line}");
+        let spec = LaunchSpec::program("sh", vec!["-c".into(), script]).in_dir(self.cwd.clone());
+        let mut cmd = command(&spec);
+        cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn();
+            .stderr(Stdio::null());
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        let child = cmd.spawn();
         let mut child = match child {
             Ok(c) => c,
             Err(e) => return format!("No se pudo ejecutar: {e}"),
         };
-        let (mut out, mut err) = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
-        let reader = std::thread::spawn(move || {
-            let mut text = String::new();
-            let _ = out.read_to_string(&mut text);
-            let mut errors = String::new();
-            let _ = err.read_to_string(&mut errors);
-            text + &errors
-        });
+        let mut out = child.stdout.take().expect("stdout is piped");
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let (done_tx, done) = mpsc::channel();
+        {
+            let output = Arc::clone(&output);
+            std::thread::spawn(move || {
+                let mut buf = [0u8; 8192];
+                while let Ok(n @ 1..) = out.read(&mut buf) {
+                    output.lock().unwrap().extend_from_slice(&buf[..n]);
+                }
+                let _ = done_tx.send(());
+            });
+        }
+        let kill_group = |child: &mut std::process::Child| {
+            #[cfg(unix)]
+            let _ = std::process::Command::new("kill")
+                .args(["-KILL", "--", &format!("-{}", child.id())])
+                .status();
+            let _ = child.kill();
+            let _ = child.wait();
+        };
         let started = Instant::now();
         let code = loop {
             match child.try_wait() {
@@ -715,14 +779,21 @@ impl Agent {
                     if started.elapsed() > COMMAND_TIMEOUT
                         || self.stopped.load(Ordering::SeqCst) =>
                 {
-                    let _ = child.kill();
+                    kill_group(&mut child);
                     break None;
                 }
                 Ok(None) => std::thread::sleep(Duration::from_millis(50)),
                 Err(_) => break None,
             }
         };
-        let output = truncate(reader.join().unwrap_or_default(), MAX_OUTPUT);
+        // Background processes (`server &`) keep the pipe open: wait a moment
+        // for the output, then end them.
+        if done.recv_timeout(Duration::from_secs(2)).is_err() {
+            kill_group(&mut child);
+            let _ = done.recv_timeout(Duration::from_secs(1));
+        }
+        let bytes = std::mem::take(&mut *output.lock().unwrap());
+        let output = keep_tail(&String::from_utf8_lossy(&bytes), MAX_OUTPUT);
         let passed = code == Some(0);
         self.emit(if looks_like_tests(command_line) {
             AgentEvent::TestsRun {
@@ -909,6 +980,58 @@ mod tests {
             (Some("tool"), Some("c1"))
         );
         session.stop();
+    }
+
+    /// An agent on `dir` that is only used to call its tools.
+    fn local_agent(dir: &Path) -> Agent {
+        Agent {
+            http: ureq::Agent::new_with_defaults(),
+            url: String::new(),
+            key: Secret::new("x"),
+            model: String::new(),
+            cwd: dir.canonicalize().unwrap(),
+            shared: Vec::new(),
+            events: Arc::new(|_| {}),
+            read_only: false,
+            planning: false,
+            plans: 0,
+            messages: Vec::new(),
+            queued: VecDeque::new(),
+            stopped: Arc::new(AtomicBool::new(false)),
+            memory: None,
+        }
+    }
+
+    #[test]
+    fn symlinks_cannot_reach_secrets_or_leave_the_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join(".env"), "SECRETO=42").unwrap();
+        std::fs::write(outside.path().join("private.txt"), "fuera").unwrap();
+        std::os::unix::fs::symlink(dir.join(".env"), dir.join("notes.txt")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.join("link")).unwrap();
+        std::os::unix::fs::symlink("/dev/zero", dir.join("zero")).unwrap();
+        let agent = local_agent(dir);
+
+        assert!(agent.read_file("notes.txt").contains("Hedy no permite"));
+        assert!(agent.read_file("link/private.txt").contains("dentro de la carpeta"));
+        assert!(!agent.read_file("zero").contains('\0'));
+        assert!(!agent.search("SECRETO", "").contains("42"));
+        assert!(agent.resolve("link/new.txt", true).is_err());
+        assert!(agent.resolve("nuevo/archivo.txt", true).is_ok());
+    }
+
+    #[test]
+    fn commands_with_noisy_stderr_or_background_jobs_return() {
+        let tmp = tempfile::tempdir().unwrap();
+        let agent = local_agent(tmp.path());
+        let started = Instant::now();
+        let out = agent.run_command("head -c 200000 /dev/zero | tr '\\0' x 1>&2; echo listo");
+        assert!(out.contains("listo") && out.contains("Código de salida: 0"), "{}", &out[..80]);
+        let out = agent.run_command("sleep 30 & echo en-segundo-plano");
+        assert!(out.contains("en-segundo-plano"));
+        assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
     }
 
     #[test]

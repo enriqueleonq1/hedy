@@ -18,7 +18,7 @@ use crate::application::ports::{
     AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
 use crate::domain::agent::looks_like_tests;
-use crate::domain::{AgentEvent, Phase, PlanStep, StepStatus, TaskMode, UsageSample, prompts};
+use crate::domain::{AgentEvent, PlanStep, StepStatus, UsageSample, prompts};
 
 pub struct CodexLauncher;
 
@@ -126,7 +126,7 @@ impl AgentLauncher for CodexLauncher {
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
 
-        let read_only = request.mode != TaskMode::Project || request.phase == Phase::Review;
+        let read_only = request.phase.read_only_in(request.mode);
         let first_prompt = if request.plan_first {
             format!("{}\n\n{}", prompts::PLAN_FIRST, request.prompt)
         } else {
@@ -542,7 +542,7 @@ mod tests {
 
     use super::*;
     use crate::application::ports::AgentBackend;
-    use crate::domain::LaunchSpec;
+    use crate::domain::{LaunchSpec, Phase, TaskMode};
 
     /// Plays `codex app-server`: a read-only turn proposes a plan; a writable
     /// turn asks to add hola.txt and writes it only when accepted.
