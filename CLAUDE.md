@@ -40,7 +40,7 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 ## Architecture (hexagonal)
 
 - `domain/`: pure types and rules. No I/O, no async runtime; only `thiserror` and
-  `serde_json` (parsing).
+  `serde` (some domain types, such as `Task` and `AgentEvent`, are sent to the UI as is).
 - `application/`: use cases, depending only on traits declared in `application/ports`.
 - `adapters/`: implementations of the ports (filesystem, CLI processes, keyring, git).
 - Driving adapters (CLI, Tauri) call use cases; they never call adapters directly.
