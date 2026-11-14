@@ -27,7 +27,9 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(move |app| {
+            events::open_tasks_from_notifications(app.handle());
             let events = Arc::new(events::UiEvents(app.handle().clone()));
             app.manage(AppState {
                 hedy: hedy.with_task_events(events),
@@ -55,6 +57,7 @@ pub fn run() {
             commands::terminal_close,
             commands::start_task,
             commands::tasks,
+            commands::activity,
             commands::task_events,
             commands::answer_permission,
             commands::answer_plan,
