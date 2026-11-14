@@ -85,7 +85,10 @@ export interface HedyApi {
   /** A note written by the user; `project: null` makes it global. */
   addNote(project: string | null, text: string, category: NoteCategory): Promise<Note>;
   editNote(id: number, text: string, category: NoteCategory): Promise<Note>;
+  /** Approves a proposal; under the topic of an approved note, it replaces that note. */
   approveNote(id: number): Promise<void>;
+  /** "Reemplazar esa": the proposal becomes the new text of an approved note. */
+  replaceNote(proposal: number, target: number): Promise<void>;
   /** Forgets a note, or rejects a proposal. */
   forgetNote(id: number): Promise<void>;
   /** Resolves a contradiction. */

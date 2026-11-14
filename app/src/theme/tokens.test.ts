@@ -24,6 +24,11 @@ const textPairs: [string, string][] = [
   ["warnInk", "warnBg"],
   ["diffAddInk", "diffAddBg"],
   ["diffDelInk", "diffDelBg"],
+  // A proposed change to a note: before and after.
+  ["ink", "diffAddBg"],
+  ["muted", "diffAddBg"],
+  ["muted", "diffDelBg"],
+  ["accent", "panel2"],
 ];
 
 describe.each(Object.keys(themes) as ThemeName[])("%s theme", (name) => {

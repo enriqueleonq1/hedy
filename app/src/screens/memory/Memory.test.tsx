@@ -32,6 +32,8 @@ const note = (text: string): Note => ({
   createdAt: 0,
   uses: 0,
   lastUsed: null,
+  topic: null,
+  updatedAt: null,
 });
 
 describe("Memory", () => {
@@ -70,10 +72,12 @@ describe("Memory", () => {
   it("approves what an AI proposed and adds notes of the user", async () => {
     const { user } = await setup();
     const proposed = screen.getByRole("region", { name: "Propuestas por tus IAs · para aprobar" });
-    expect(within(proposed).getByText("Codex")).toBeInTheDocument();
+    expect(within(proposed).getAllByText("Codex")).toHaveLength(2);
     await user.click(within(proposed).getByRole("button", { name: "Aprobar" }));
-    await waitFor(() => expect(screen.queryByRole("region", { name: /Propuestas/ })).toBeNull());
-    expect(within(screen.getByRole("region", { name: "Convenciones" })).getByText("Los formularios validan con zod")).toBeInTheDocument();
+    expect(
+      await within(screen.getByRole("region", { name: "Convenciones" })).findByText("Los formularios validan con zod"),
+    ).toBeInTheDocument();
+    expect(within(proposed).queryByText("Los formularios validan con zod")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "+ Nueva nota" }));
     const dialog = screen.getByRole("dialog", { name: "Nueva nota" });
@@ -81,6 +85,67 @@ describe("Memory", () => {
     await user.click(within(dialog).getByRole("radio", { name: "Regla" }));
     await user.click(within(dialog).getByRole("button", { name: "Guardar nota" }));
     expect(await within(screen.getByRole("region", { name: "Reglas" })).findByText("Nunca subir secretos al repo")).toBeInTheDocument();
+  });
+
+  it("shows a proposal under a known topic as a change to that note", async () => {
+    const { user } = await setup();
+    const proposed = screen.getByRole("region", { name: "Propuestas por tus IAs · para aprobar" });
+    const change = within(proposed).getByText("Cambio de una nota con el mismo tema").closest("li");
+    if (!change) throw new Error("no change card");
+    const old = "Las citas usan la zona horaria del salón, no la del servidor";
+    const proposal = "Las citas usan la zona horaria del salón; el servidor guarda las fechas en UTC";
+    expect(within(change).getByText("Ahora dice")).toBeInTheDocument();
+    expect(within(change).getByText(old)).toBeInTheDocument();
+    expect(within(change).getByText(proposal)).toBeInTheDocument();
+    expect(within(change).getByText("citas/zona-horaria")).toBeInTheDocument();
+    // The note it changes is not offered again as a similar one.
+    expect(within(change).queryByRole("region", { name: "Parecida a" })).toBeNull();
+
+    await user.click(within(change).getByRole("button", { name: "Aprobar cambio" }));
+    const decisions = screen.getByRole("region", { name: "Decisiones" });
+    expect(await within(decisions).findByText(proposal)).toBeInTheDocument();
+    expect(within(decisions).queryByText(old)).toBeNull();
+    expect(within(decisions).getByText(/actualizada/)).toBeInTheDocument();
+    expect(screen.queryByText("Cambio de una nota con el mismo tema")).toBeNull();
+  });
+
+  it("rejecting a change leaves the note as it was", async () => {
+    const { user } = await setup();
+    const change = screen.getByText("Cambio de una nota con el mismo tema").closest("li");
+    if (!change) throw new Error("no change card");
+    await user.click(within(change).getByRole("button", { name: "Rechazar" }));
+    await waitFor(() => expect(screen.queryByText("Cambio de una nota con el mismo tema")).toBeNull());
+    const decisions = screen.getByRole("region", { name: "Decisiones" });
+    expect(within(decisions).getByText("Las citas usan la zona horaria del salón, no la del servidor")).toBeInTheDocument();
+  });
+
+  it("offers to replace a similar note, keep both or discard the proposal", async () => {
+    const { api, user } = await setup();
+    const similar = screen.getByRole("region", { name: "Parecida a" });
+    const long = "Los precios se guardan en USD y se muestran también en Bs a tasa BCV";
+    expect(within(similar).getByText(long)).toBeInTheDocument();
+    const card = similar.closest("li.note");
+    if (!(card instanceof HTMLElement)) throw new Error("no proposal card");
+    expect(within(card).getByRole("button", { name: "Conservar las dos" })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Descartar la propuesta" })).toBeInTheDocument();
+
+    await user.click(within(similar).getByRole("button", { name: "Reemplazar esa" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Parecida a" })).toBeNull());
+    const decisions = screen.getByRole("region", { name: "Decisiones" });
+    expect(within(decisions).getByText("Los precios se guardan en USD")).toBeInTheDocument();
+    expect(within(decisions).queryByText(long)).toBeNull();
+    const view = await api.memory("/code/hedy");
+    expect(view.notes.find((n) => n.text === "Los precios se guardan en USD")?.uses).toBe(23);
+  });
+
+  it("keeps both notes when the user says so", async () => {
+    const { user } = await setup();
+    const card = screen.getByRole("region", { name: "Parecida a" }).closest("li.note");
+    if (!(card instanceof HTMLElement)) throw new Error("no proposal card");
+    await user.click(within(card).getByRole("button", { name: "Conservar las dos" }));
+    const decisions = screen.getByRole("region", { name: "Decisiones" });
+    expect(await within(decisions).findByText("Los precios se guardan en USD")).toBeInTheDocument();
+    expect(within(decisions).getByText("Los precios se guardan en USD y se muestran también en Bs a tasa BCV")).toBeInTheDocument();
   });
 
   it("drops an abandoned edit", async () => {

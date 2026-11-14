@@ -118,11 +118,24 @@ export interface Note {
   createdAt: number;
   uses: number;
   lastUsed: number | null;
+  /** Stable subject, a lowercase path such as `arquitectura/pagos`. */
+  topic: string | null;
+  /** Unix seconds: when an approved note was last replaced by a newer version. */
+  updatedAt: number | null;
+}
+
+/** A note an AI proposed, with what the user needs to decide on it. */
+export interface Proposal {
+  note: Note;
+  /** The approved note with the same topic: approving replaces its text. */
+  replaces: Note | null;
+  /** Approved notes that look like this one (local full-text search), best first. */
+  similar: Note[];
 }
 
 export interface MemoryView {
   notes: Note[];
-  proposed: Note[];
+  proposed: Proposal[];
   contradictions: [Note, Note][];
   stale: Note[];
   usedLastTask: Note[];

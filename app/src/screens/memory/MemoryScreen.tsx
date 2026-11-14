@@ -160,8 +160,8 @@ function Groups({ project, view }: { project: string; view: MemoryView }) {
             {t("memory.group.proposed")}
           </h2>
           <ul className="memory__list">
-            {view.proposed.map((n) => (
-              <NoteCard key={n.id} project={project} note={n} />
+            {view.proposed.map((p) => (
+              <NoteCard key={p.note.id} project={project} note={p.note} replaces={p.replaces} similar={p.similar} />
             ))}
           </ul>
         </section>

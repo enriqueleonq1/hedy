@@ -122,17 +122,32 @@ export class MockApi implements HedyApi {
         createdAt: now - 30 * day,
         uses: 3,
         lastUsed: now - day,
+        topic: null,
+        updatedAt: null,
         ...extra,
       });
     note("Los recordatorios se envían 24 h antes de la cita.", "decision", { createdAt: now - 2 * day });
     note("Los recordatorios se envían 2 h antes de la cita.", "decision", { author: "Claude", createdAt: now - 21 * day });
     note("Los precios se guardan en USD y se muestran también en Bs a tasa BCV", "decision", { uses: 23 });
-    note("Las citas usan la zona horaria del salón, no la del servidor", "decision", { author: "Claude", uses: 4 });
+    note("Las citas usan la zona horaria del salón, no la del servidor", "decision", {
+      author: "Claude",
+      uses: 4,
+      topic: "citas/zona-horaria",
+    });
     note("Tests con pytest; correr pytest -q antes de cada commit", "convention", { uses: 31 });
     note("Nunca tocar .env ni correr migraciones en producción", "rule", { uses: 12 });
     note("El deploy se hace los viernes", "convention", { lastUsed: now - 90 * day, createdAt: now - 120 * day });
     note("Prefiere respuestas cortas y en español", "preference", { project: null, uses: 58 });
-    note("Los formularios validan con zod", "convention", { author: "Codex", status: "proposed", uses: 0, lastUsed: null });
+    const proposal = { status: "proposed", uses: 0, lastUsed: null, createdAt: now - 3600 } as const;
+    note("Los formularios validan con zod", "convention", { ...proposal, author: "Codex" });
+    // A change to the approved note with the same topic.
+    note("Las citas usan la zona horaria del salón; el servidor guarda las fechas en UTC", "decision", {
+      ...proposal,
+      author: "Claude",
+      topic: "citas/zona-horaria",
+    });
+    // A new note similar to an approved one.
+    note("Los precios se guardan en USD", "decision", { ...proposal, author: "Codex" });
     api.usedLast = [3, 5];
     // A week of usage: one record per day and project, busiest on the 4th day.
     const today = new Date();
@@ -236,9 +251,18 @@ export class MockApi implements HedyApi {
       (id, i, all): id is string => !!id && all.indexOf(id) === i,
     );
     const off = this.memoryOff.get(path) ?? new Set();
+    const proposed = scoped
+      .filter((n) => n.status === "proposed")
+      .map((note) => {
+        const replaces = topicTarget(notes, note);
+        const similar = notes
+          .filter((n) => n.id !== replaces?.id && mockSimilar(n.text, note.text))
+          .slice(0, 3);
+        return { note, replaces, similar };
+      });
     return structuredClone({
       notes,
-      proposed: scoped.filter((n) => n.status === "proposed"),
+      proposed,
       contradictions,
       stale: notes.filter((n) => now - (n.lastUsed ?? n.createdAt) > 60 * 86_400),
       usedLastTask: notes.filter((n) => this.usedLast.includes(n.id)),
@@ -250,7 +274,10 @@ export class MockApi implements HedyApi {
   async searchMemory(path: string, query: string): Promise<Note[]> {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     return this.notes.filter(
-      (n) => this.inScope(path, n) && words.some((w) => n.text.toLowerCase().includes(w)),
+      (n) =>
+        this.inScope(path, n) &&
+        n.status === "approved" &&
+        words.some((w) => `${n.text} ${n.topic ?? ""}`.toLowerCase().includes(w)),
     );
   }
 
@@ -266,6 +293,8 @@ export class MockApi implements HedyApi {
       createdAt: Math.floor(Date.now() / 1000),
       uses: 0,
       lastUsed: null,
+      topic: null,
+      updatedAt: null,
     };
     this.notes.push(note);
     return note;
@@ -285,7 +314,32 @@ export class MockApi implements HedyApi {
   }
 
   async approveNote(id: number): Promise<void> {
-    this.note(id).status = "approved";
+    const note = this.note(id);
+    if (note.status === "approved") return;
+    const target = topicTarget(
+      this.notes.filter((n) => n.status === "approved"),
+      note,
+    );
+    if (target) this.revise(note, target);
+    else note.status = "approved";
+  }
+
+  async replaceNote(proposal: number, target: number): Promise<void> {
+    const note = this.note(proposal);
+    if (note.status !== "proposed") throw `la nota ${proposal} no es una propuesta: ya está aprobada`;
+    this.revise(note, this.note(target));
+  }
+
+  /** The proposal becomes the new version of `target`, which keeps its id and uses. */
+  private revise(proposal: Note, target: Note) {
+    Object.assign(target, {
+      text: proposal.text,
+      category: proposal.category,
+      author: proposal.author,
+      topic: target.topic ?? proposal.topic,
+      updatedAt: Math.floor(Date.now() / 1000),
+    });
+    this.notes = this.notes.filter((n) => n.id !== proposal.id);
   }
 
   async forgetNote(id: number): Promise<void> {
@@ -722,6 +776,25 @@ export class MockApi implements HedyApi {
 }
 
 /** A rough stand-in for the backend heuristic: same words, other numbers or a negation. */
+/** The approved note a proposal would change: same topic, same scope. */
+function topicTarget(approved: Note[], proposal: Note): Note | null {
+  if (!proposal.topic) return null;
+  return approved.find((n) => n.id !== proposal.id && n.project === proposal.project && n.topic === proposal.topic) ?? null;
+}
+
+/** Like the app: they share at least two meaningful words, and half of the shorter note's. */
+function mockSimilar(a: string, b: string): boolean {
+  const words = (t: string) =>
+    new Set(
+      (t.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").match(/[a-z0-9]+/g) ?? [])
+        .filter((w) => w.length > 3)
+        .map((w) => w.replace(/s$/, "")),
+    );
+  const [wa, wb] = [words(a), words(b)];
+  const common = [...wa].filter((w) => wb.has(w)).length;
+  return common >= 2 && common * 2 >= Math.min(wa.size, wb.size);
+}
+
 function mockContradicts(a: string, b: string): boolean {
   const strip = (t: string) => t.toLowerCase().replace(/\b(no|nunca)\b|\d+/g, "").replace(/\s+/g, " ").trim();
   return a !== b && strip(a) === strip(b);

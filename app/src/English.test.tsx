@@ -161,6 +161,15 @@ describe("English", () => {
     expect(await screen.findByRole("heading", { name: "hedy memory" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Decisions" })).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: "Search memory" })).toBeInTheDocument();
+    // A proposed change under a topic, and a proposal similar to an approved note.
+    const proposed = screen.getByRole("region", { name: "Proposed by your AIs · awaiting approval" });
+    expect(within(proposed).getByText("Change to a note with the same topic")).toBeInTheDocument();
+    expect(within(proposed).getByText("Now says")).toBeInTheDocument();
+    expect(within(proposed).getByRole("button", { name: "Approve change" })).toBeInTheDocument();
+    const similar = within(proposed).getByRole("region", { name: "Similar to" });
+    expect(within(similar).getByRole("button", { name: "Replace that one" })).toBeInTheDocument();
+    expect(within(proposed).getByRole("button", { name: "Keep both" })).toBeInTheDocument();
+    expect(within(proposed).getByRole("button", { name: "Discard the proposal" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
   });
 });

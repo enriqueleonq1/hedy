@@ -50,6 +50,19 @@ const es = {
   "memory.note.usedOnce": " · usada 1 vez",
   "memory.note.usedTimes": " · usada {n} veces",
   "memory.note.approve": "Aprobar",
+  "memory.note.topic": "Tema",
+  "memory.note.updated": " · actualizada {when}",
+
+  "memory.change.title": "Cambio de una nota con el mismo tema",
+  "memory.change.before": "Ahora dice",
+  "memory.change.after": "Propuesta",
+  "memory.change.approve": "Aprobar cambio",
+
+  "memory.similar.title": "Parecida a",
+  "memory.similar.global": "todos los proyectos",
+  "memory.similar.replace": "Reemplazar esa",
+  "memory.similar.keepBoth": "Conservar las dos",
+  "memory.similar.discard": "Descartar la propuesta",
 
   "memory.new.title": "Nueva nota",
   "memory.new.save": "Guardar nota",
@@ -110,6 +123,19 @@ const en: Record<keyof typeof es, string> = {
   "memory.note.usedOnce": " · used once",
   "memory.note.usedTimes": " · used {n} times",
   "memory.note.approve": "Approve",
+  "memory.note.topic": "Topic",
+  "memory.note.updated": " · updated {when}",
+
+  "memory.change.title": "Change to a note with the same topic",
+  "memory.change.before": "Now says",
+  "memory.change.after": "Proposed",
+  "memory.change.approve": "Approve change",
+
+  "memory.similar.title": "Similar to",
+  "memory.similar.global": "all projects",
+  "memory.similar.replace": "Replace that one",
+  "memory.similar.keepBoth": "Keep both",
+  "memory.similar.discard": "Discard the proposal",
 
   "memory.new.title": "New note",
   "memory.new.save": "Save note",

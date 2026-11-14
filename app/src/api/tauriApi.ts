@@ -68,6 +68,7 @@ export const tauriApi: HedyApi = {
   addNote: (project, text, category) => invoke("add_note", { project, text, category }),
   editNote: (id, text, category) => invoke("edit_note", { id, text, category }),
   approveNote: (id) => invoke("approve_note", { id }),
+  replaceNote: (proposal, target) => invoke("replace_note", { proposal, target }),
   forgetNote: (id) => invoke("forget_note", { id }),
   keepNote: (keep, forget) => invoke("keep_note", { keep, forget }),
   dismissContradiction: (a, b) => invoke("dismiss_contradiction", { a, b }),

@@ -7,7 +7,22 @@ import { timeAgo } from "../../format";
 import { useT } from "../../i18n";
 import { authorLabel, CATEGORY_LABEL, categoryOptions, useMemoryAction } from "./notes";
 
-export function NoteCard({ project, note }: { project: string; note: Note }) {
+/**
+ * One note. A proposal may come with the approved note it changes (same
+ * topic: shown as before/after) or with approved notes that look like it
+ * ("parecida a": keep both, replace that one or discard the proposal).
+ */
+export function NoteCard({
+  project,
+  note,
+  replaces = null,
+  similar = [],
+}: {
+  project: string;
+  note: Note;
+  replaces?: Note | null;
+  similar?: Note[];
+}) {
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(note.text);
@@ -15,7 +30,10 @@ export function NoteCard({ project, note }: { project: string; note: Note }) {
   const save = useMemoryAction(project, (api) => api.editNote(note.id, text, category));
   const forget = useMemoryAction(project, (api) => api.forgetNote(note.id));
   const approve = useMemoryAction(project, (api) => api.approveNote(note.id));
+  const replace = useMemoryAction(project, (api, target: number) => api.replaceNote(note.id, target));
   const proposed = note.status === "proposed";
+  const looksLike = proposed && !replaces ? similar : [];
+  const busy = approve.isPending || forget.isPending || replace.isPending;
 
   // Every edit starts from the note as it is, not from an abandoned draft.
   const edit = () => {
@@ -56,27 +74,70 @@ export function NoteCard({ project, note }: { project: string; note: Note }) {
 
   return (
     <li className={`note${proposed ? " note--proposed" : ""}`}>
+      {replaces && <p className="note__kicker">{t("memory.change.title")}</p>}
       <div className="note__head">
-        <p className="note__text">{note.text}</p>
+        {replaces ? (
+          <div className="note__change">
+            <div className="note__version">
+              <p className="note__version-label">{t("memory.change.before")}</p>
+              <p className="note__old">{replaces.text}</p>
+            </div>
+            <div className="note__version">
+              <p className="note__version-label">{t("memory.change.after")}</p>
+              <p className="note__text">{note.text}</p>
+            </div>
+          </div>
+        ) : (
+          <p className="note__text">{note.text}</p>
+        )}
         <span className={`category category--${note.category}`}>{t(CATEGORY_LABEL[note.category])}</span>
       </div>
+      {looksLike.length > 0 && (
+        <section className="note__similar" aria-label={t("memory.similar.title")}>
+          <p className="note__version-label">{t("memory.similar.title")}</p>
+          <ul>
+            {looksLike.map((other) => (
+              <li key={other.id}>
+                <span className="note__similar-text">
+                  {other.text}
+                  <span className="small muted">
+                    {" · "}
+                    {authorLabel(other, t)}
+                    {other.project === null ? ` · ${t("memory.similar.global")}` : ""}
+                  </span>
+                </span>
+                <Button small disabled={busy} onClick={() => replace.mutate(other.id)}>
+                  {t("memory.similar.replace")}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <div className="note__foot">
         <span className={`note__author${note.author === "user" ? "" : " note__author--ai"}`}>{authorLabel(note, t)}</span>
+        {note.topic && (
+          <span className="note__topic" title={t("memory.note.topic")}>
+            <span className="sr-only">{t("memory.note.topic")}: </span>
+            {note.topic}
+          </span>
+        )}
         <span className="small muted">
           {proposed ? t("memory.note.proposed") : ""} {timeAgo(note.createdAt, t)}
+          {!proposed && note.updatedAt !== null && t("memory.note.updated", { when: timeAgo(note.updatedAt, t) })}
           {!proposed && (note.uses === 1 ? t("memory.note.usedOnce") : t("memory.note.usedTimes", { n: note.uses }))}
         </span>
         <span className="spacer" />
         {proposed ? (
           <>
-            <Button small variant="primary" disabled={approve.isPending} onClick={() => approve.mutate(undefined)}>
-              {t("memory.note.approve")}
+            <Button small variant="primary" disabled={busy} onClick={() => approve.mutate(undefined)}>
+              {t(replaces ? "memory.change.approve" : looksLike.length > 0 ? "memory.similar.keepBoth" : "memory.note.approve")}
             </Button>
             <Button small onClick={edit}>
               {t("common.edit")}
             </Button>
-            <Button small className="btn--danger" disabled={forget.isPending} onClick={() => forget.mutate(undefined)}>
-              {t("common.reject")}
+            <Button small className="btn--danger" disabled={busy} onClick={() => forget.mutate(undefined)}>
+              {t(looksLike.length > 0 ? "memory.similar.discard" : "common.reject")}
             </Button>
           </>
         ) : (
