@@ -2,8 +2,9 @@
 
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use clap_complete::Shell;
+use hedy_core::application::Setting;
 use hedy_core::domain::{Color, Provider};
 
 #[derive(Debug, Parser)]
@@ -20,6 +21,29 @@ pub struct Cli {
 
     #[command(subcommand)]
     pub command: Option<Command>,
+}
+
+impl Cli {
+    /// The command line, with every setting key listed in `hedy config --help`
+    /// (they depend on the providers, so they are added at runtime).
+    pub fn full_command() -> clap::Command {
+        let keys: Vec<String> = Setting::all()
+            .into_iter()
+            .map(|s| format!("  {}", s.key()))
+            .collect();
+        let keys = format!("Claves:\n{}", keys.join("\n"));
+        Self::command().mut_subcommand("config", |config| {
+            ["get", "set", "unset"]
+                .into_iter()
+                .fold(config.after_help(&keys), |config, name| {
+                    config.mut_subcommand(name, |sub| sub.after_help(&keys))
+                })
+        })
+    }
+
+    pub fn parse_args() -> Self {
+        Self::from_arg_matches(&Self::full_command().get_matches()).unwrap_or_else(|e| e.exit())
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -55,7 +79,7 @@ pub enum Command {
     /// Para quién es el proyecto actual, para sumar el costo por cliente.
     #[command(visible_alias = "cliente")]
     Client {
-        #[arg(required_unless_present = "clear")]
+        #[arg(required_unless_present = "clear", conflicts_with = "clear")]
         name: Option<String>,
         /// Quita el cliente.
         #[arg(long)]
@@ -76,7 +100,7 @@ pub enum Command {
     #[command(visible_alias = "cuenta", subcommand)]
     Account(AccountCommand),
 
-    /// Ajustes: `default_account`, `binary.claude`, `binary.codex`, `binary.gemini`.
+    /// Ajustes (las claves están en `hedy config --help`).
     #[command(subcommand)]
     Config(ConfigCommand),
 
@@ -104,7 +128,7 @@ pub enum AccountCommand {
     /// Cuenta para los proyectos que no tienen una asignada.
     #[command(visible_alias = "predeterminada")]
     Default {
-        #[arg(required_unless_present = "clear")]
+        #[arg(required_unless_present = "clear", conflicts_with = "clear")]
         account: Option<String>,
         #[arg(long)]
         clear: bool,
@@ -164,11 +188,33 @@ impl AddAccount {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::CommandFactory;
 
     #[test]
     fn definition_is_valid() {
-        Cli::command().debug_assert();
+        Cli::full_command().debug_assert();
+    }
+
+    #[test]
+    fn config_help_lists_every_key() {
+        let mut command = Cli::full_command();
+        let config = command.find_subcommand_mut("config").unwrap();
+        let help = config.render_help().to_string();
+        for setting in Setting::all() {
+            assert!(help.contains(&setting.key()), "{} missing", setting.key());
+        }
+        assert!(help.contains("api_price.kimi") && help.contains("code_map.binary"));
+        let set = config.find_subcommand_mut("set").unwrap();
+        assert!(set.render_help().to_string().contains("ui.theme"));
+    }
+
+    #[test]
+    fn clear_does_not_take_a_value_too() {
+        let parse = |args: &[&str]| Cli::try_parse_from(args);
+        assert!(parse(&["hedy", "account", "default", "x", "--clear"]).is_err());
+        assert!(parse(&["hedy", "client", "x", "--clear"]).is_err());
+        assert!(parse(&["hedy", "account", "default", "--clear"]).is_ok());
+        assert!(parse(&["hedy", "client", "--clear"]).is_ok());
+        assert!(parse(&["hedy", "client"]).is_err());
     }
 
     #[test]

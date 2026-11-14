@@ -10,20 +10,25 @@ use hedy_core::domain::{Account, ConfigFolder, Credentials, LoginState, Provider
 use crate::cli::AddAccount;
 use crate::style::{Style, pad, tilde};
 
+/// What to do when there are no accounts yet.
+fn print_no_accounts(s: &Style) {
+    println!("Todavía no hay cuentas. Agrega la primera, por ejemplo:");
+    println!(
+        "  {}",
+        s.accent("hedy account add \"Claude personal\" --claude")
+    );
+    println!(
+        "  {}",
+        s.accent("hedy account add \"Claude trabajo\" --claude --default-folder")
+    );
+}
+
 pub fn status(hedy: &Hedy, dir: &Path) -> Result<()> {
     let s = Style::for_stdout();
     let status = hedy.status(dir)?;
 
     if status.accounts.is_empty() {
-        println!("Todavía no hay cuentas. Agrega la primera, por ejemplo:");
-        println!(
-            "  {}",
-            s.accent("hedy account add \"Claude personal\" --claude")
-        );
-        println!(
-            "  {}",
-            s.accent("hedy account add \"Claude trabajo\" --claude --default-folder")
-        );
+        print_no_accounts(&s);
         return Ok(());
     }
 
@@ -242,8 +247,13 @@ fn print_accounts(
 
 pub fn list_accounts(hedy: &Hedy) -> Result<()> {
     let s = Style::for_stdout();
+    let accounts = hedy.accounts()?;
+    if accounts.is_empty() {
+        print_no_accounts(&s);
+        return Ok(());
+    }
     let default = hedy.setting(Setting::DefaultAccount)?;
-    for a in hedy.accounts()? {
+    for a in accounts {
         let folder = match &a.credentials {
             Credentials::Subscription(ConfigFolder::Managed(p)) => tilde(p),
             Credentials::Subscription(ConfigFolder::Default) => {
@@ -271,12 +281,6 @@ pub fn add_account(hedy: &Hedy, args: AddAccount) -> Result<()> {
     let s = Style::for_stdout();
     let provider = args.provider();
     let api_key = args.api.is_some();
-    if !api_key && !provider.supports_subscription() {
-        bail!(
-            "{provider} solo funciona con API key: usa `--api {}`",
-            provider.as_str()
-        );
-    }
     let account = hedy.add_account(NewAccount {
         name: args.name,
         provider,

@@ -7,14 +7,13 @@ mod style;
 use std::process::ExitCode;
 
 use anyhow::Result;
-use clap::{CommandFactory, Parser};
 use hedy_core::adapters::{self, HedyPaths};
 
 use cli::{AccountCommand, Cli, Command, ConfigCommand};
 use style::Style;
 
 fn main() -> ExitCode {
-    match run(Cli::parse()) {
+    match run(Cli::parse_args()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("{} {err}", Style::for_stderr().error("error:"));
@@ -27,7 +26,7 @@ fn run(cli: Cli) -> Result<()> {
     let command = cli.command.unwrap_or(Command::Status);
     if let Command::Completions { shell } = command {
         let mut script = Vec::new();
-        clap_complete::generate(shell, &mut Cli::command(), "hedy", &mut script);
+        clap_complete::generate(shell, &mut Cli::full_command(), "hedy", &mut script);
         return write_stdout(&script);
     }
 

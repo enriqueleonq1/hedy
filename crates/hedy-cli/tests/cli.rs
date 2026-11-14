@@ -125,6 +125,18 @@ fn default_folder_account_runs_without_the_variable() {
 }
 
 #[test]
+fn without_accounts_status_and_list_explain_how_to_add_one() {
+    let env = Env::new();
+    for args in [&["status"][..], &["account", "list"]] {
+        env.hedy(args)
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Todavía no hay cuentas"))
+            .stdout(predicate::str::contains("hedy account add"));
+    }
+}
+
+#[test]
 fn status_shows_login_without_identifying_data() {
     let env = Env::new();
     let repo = env.repo("code/homming");
