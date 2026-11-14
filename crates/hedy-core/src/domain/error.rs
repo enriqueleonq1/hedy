@@ -25,14 +25,16 @@ pub enum DomainError {
     )]
     InvalidPrice(String),
 
-    #[error("{provider} no admite cuentas de suscripción")]
-    SubscriptionNotSupported { provider: Provider },
-
     #[error("{provider} no admite cuentas por API key")]
     ApiKeyNotSupported { provider: Provider },
 
     #[error("las cuentas por API key no tienen CLI que lanzar; se usan desde el chat de Hedy")]
     NothingToLaunch,
+
+    #[error(
+        "{provider} guarda la sesión en el llavero del sistema y no permite elegir carpeta: solo admite una cuenta por equipo, en su carpeta por defecto"
+    )]
+    SingleAccountProvider { provider: super::Provider },
 
     #[error("la cuenta «{account}» está reservada para el proyecto protegido {}", project.display())]
     AccountReserved {

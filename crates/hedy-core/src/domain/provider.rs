@@ -10,10 +10,19 @@ pub enum Provider {
     Codex,
     Gemini,
     Kimi,
+    /// Google's Antigravity CLI (`agy`), which replaced Gemini CLI for personal
+    /// Google accounts.
+    Antigravity,
 }
 
 impl Provider {
-    pub const ALL: [Provider; 4] = [Self::Claude, Self::Codex, Self::Gemini, Self::Kimi];
+    pub const ALL: [Provider; 5] = [
+        Self::Claude,
+        Self::Codex,
+        Self::Gemini,
+        Self::Kimi,
+        Self::Antigravity,
+    ];
 
     /// Stable identifier used in storage and on the command line.
     pub fn as_str(self) -> &'static str {
@@ -22,6 +31,7 @@ impl Provider {
             Self::Codex => "codex",
             Self::Gemini => "gemini",
             Self::Kimi => "kimi",
+            Self::Antigravity => "antigravity",
         }
     }
 
@@ -31,12 +41,8 @@ impl Provider {
             Self::Codex => "Codex",
             Self::Gemini => "Gemini",
             Self::Kimi => "Kimi",
+            Self::Antigravity => "Antigravity",
         }
-    }
-
-    /// Whether the provider has an official CLI that logs in with a subscription.
-    pub fn supports_subscription(self) -> bool {
-        matches!(self, Self::Claude | Self::Codex | Self::Gemini)
     }
 
     /// Whether the provider can be used over HTTP with an API key.
@@ -50,18 +56,57 @@ impl Provider {
             Self::Claude => Some("claude"),
             Self::Codex => Some("codex"),
             Self::Gemini => Some("gemini"),
-            Self::Kimi => None,
+            Self::Kimi => Some("kimi"),
+            Self::Antigravity => Some("agy"),
         }
     }
 
     /// Environment variable that points the official CLI at an account folder.
+    /// `None`: the CLI keeps its login in the OS keyring with no way to choose
+    /// a folder, so only one account (its default folder) fits per machine.
     pub fn folder_env_var(self) -> Option<&'static str> {
         match self {
             Self::Claude => Some("CLAUDE_CONFIG_DIR"),
             Self::Codex => Some("CODEX_HOME"),
             Self::Gemini => Some("GEMINI_CLI_HOME"),
-            Self::Kimi => None,
+            Self::Kimi => Some("KIMI_CODE_HOME"),
+            Self::Antigravity => None,
         }
+    }
+
+    /// Arguments that start the CLI as an Agent Client Protocol server, for
+    /// providers driven through ACP (docs/decisions.md §14).
+    pub fn acp_args(self) -> Option<&'static [&'static str]> {
+        match self {
+            Self::Gemini => Some(&["--acp"]),
+            Self::Kimi | Self::Antigravity => Some(&["acp"]),
+            Self::Claude | Self::Codex => None,
+        }
+    }
+
+    /// The CLI's own name, for messages: "Gemini CLI", "Kimi Code".
+    pub fn cli_name(self) -> &'static str {
+        match self {
+            Self::Claude => "Claude Code",
+            Self::Codex => "Codex",
+            Self::Gemini => "Gemini CLI",
+            Self::Kimi => "Kimi Code",
+            Self::Antigravity => "Antigravity",
+        }
+    }
+
+    /// The CLI flag that picks a model, where verified (`gemini -m`).
+    pub fn model_flag(self) -> Option<&'static str> {
+        match self {
+            Self::Gemini => Some("-m"),
+            _ => None,
+        }
+    }
+
+    /// Whether its CLI reads files without asking Hedy first. Such agents always
+    /// work in a worktree, where protected files like `.env` do not exist.
+    pub fn always_in_worktree(self) -> bool {
+        self == Self::Codex || self.acp_args().is_some()
     }
 
     /// OpenAI-compatible endpoint for API-key accounts (overridable in settings).
@@ -148,14 +193,19 @@ mod tests {
     }
 
     #[test]
-    fn every_subscription_provider_has_cli_and_folder_var() {
-        for p in Provider::ALL
-            .into_iter()
-            .filter(|p| p.supports_subscription())
-        {
+    fn every_provider_has_an_official_cli() {
+        for p in Provider::ALL {
             assert!(p.program().is_some(), "{p}");
-            assert!(p.folder_env_var().is_some(), "{p}");
+            // Only Antigravity keeps one login per machine.
+            assert_eq!(
+                p.folder_env_var().is_none(),
+                p == Provider::Antigravity,
+                "{p}"
+            );
         }
+        assert_eq!(Provider::Gemini.acp_args(), Some(&["--acp"][..]));
+        assert!(Provider::Kimi.always_in_worktree() && Provider::Codex.always_in_worktree());
+        assert!(!Provider::Claude.always_in_worktree());
     }
 
     #[test]

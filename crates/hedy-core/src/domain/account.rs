@@ -133,11 +133,13 @@ impl Account {
             return Err(DomainError::EmptyAccountName);
         }
         match credentials {
-            Credentials::Subscription(_) if !provider.supports_subscription() => {
-                return Err(DomainError::SubscriptionNotSupported { provider });
-            }
             Credentials::ApiKey if !provider.supports_api_key() => {
                 return Err(DomainError::ApiKeyNotSupported { provider });
+            }
+            Credentials::Subscription(ConfigFolder::Managed(_))
+                if provider.folder_env_var().is_none() =>
+            {
+                return Err(DomainError::SingleAccountProvider { provider });
             }
             _ => {}
         }
@@ -188,13 +190,26 @@ mod tests {
     #[test]
     fn rejects_unsupported_credential_kinds() {
         let id = AccountId::new("x").unwrap();
-        let sub = Credentials::Subscription(ConfigFolder::Default);
+        let managed = Credentials::Subscription(ConfigFolder::Managed("/acc/agy".into()));
         assert_eq!(
-            Account::new(id.clone(), "Kimi", Provider::Kimi, sub, color()),
-            Err(DomainError::SubscriptionNotSupported {
-                provider: Provider::Kimi
-            })
+            Account::new(id.clone(), "Agy", Provider::Antigravity, managed, color()),
+            Err(DomainError::SingleAccountProvider {
+                provider: Provider::Antigravity
+            }),
+            "Antigravity only lives in its default folder"
         );
+        let default = Credentials::Subscription(ConfigFolder::Default);
+        assert!(
+            Account::new(
+                id.clone(),
+                "Agy",
+                Provider::Antigravity,
+                default.clone(),
+                color()
+            )
+            .is_ok()
+        );
+        assert!(Account::new(id.clone(), "Kimi Code", Provider::Kimi, default, color()).is_ok());
         assert_eq!(
             Account::new(
                 id.clone(),

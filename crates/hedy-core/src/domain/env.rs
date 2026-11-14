@@ -22,14 +22,25 @@ const BLOCKED: &[&str] = &[
     "GOOGLE_API_KEY",
     "GOOGLE_GENAI_USE_VERTEXAI",
     "GEMINI_FORCE_ENCRYPTED_FILE_STORAGE",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    // Antigravity: Application Default Credentials instead of the Google login.
+    "AGY_ADC_AUTH",
+    // Kimi Code: API keys, endpoints and OAuth hosts that replace the login.
+    "KIMI_API_KEY",
+    "KIMI_BASE_URL",
+    "KIMI_CODE_BASE_URL",
+    "KIMI_CODE_OAUTH_HOST",
+    "KIMI_OAUTH_HOST",
     // Folder variables: Hedy sets the right one for the selected account.
     "CLAUDE_CONFIG_DIR",
     "CODEX_HOME",
     "GEMINI_CLI_HOME",
+    "KIMI_CODE_HOME",
 ];
 
-/// Includes `CLAUDE_CODE_OAUTH_TOKEN`, which outranks the folder login.
-const BLOCKED_PREFIXES: &[&str] = &["CLAUDE_CODE_"];
+/// `CLAUDE_CODE_OAUTH_TOKEN` outranks the folder login; `KIMI_MODEL_*` sets a
+/// temporary model with its own API key and endpoint.
+const BLOCKED_PREFIXES: &[&str] = &["CLAUDE_CODE_", "KIMI_MODEL_"];
 
 pub fn is_blocked(name: &str) -> bool {
     BLOCKED.contains(&name) || BLOCKED_PREFIXES.iter().any(|p| name.starts_with(p))
@@ -49,6 +60,9 @@ mod tests {
             "GEMINI_FORCE_ENCRYPTED_FILE_STORAGE",
             "CLAUDE_CONFIG_DIR",
             "CODEX_HOME",
+            "KIMI_CODE_HOME",
+            "KIMI_MODEL_API_KEY",
+            "AGY_ADC_AUTH",
         ] {
             assert!(is_blocked(var), "{var}");
         }

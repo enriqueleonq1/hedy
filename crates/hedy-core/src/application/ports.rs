@@ -278,6 +278,14 @@ pub enum AgentBackend {
         base_url: String,
         api_key: Secret,
     },
+    /// An official CLI that speaks the Agent Client Protocol (Gemini CLI,
+    /// Kimi Code, Antigravity). `launch` already holds its ACP arguments.
+    Acp {
+        /// For messages: "Gemini CLI".
+        name: String,
+        /// The CLI's flag to pick a model, if it has one.
+        model_flag: Option<&'static str>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

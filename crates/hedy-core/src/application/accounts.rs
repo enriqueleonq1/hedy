@@ -40,9 +40,11 @@ impl Hedy {
             return Err(AppError::AccountExists(id));
         }
 
+        // A CLI that cannot be pointed at a folder only has its default one.
+        let default_folder = request.default_folder || request.provider.folder_env_var().is_none();
         let credentials = if request.api_key {
             Credentials::ApiKey
-        } else if request.default_folder {
+        } else if default_folder {
             let taken = existing.iter().any(|a| {
                 a.provider == request.provider
                     && a.credentials == Credentials::Subscription(ConfigFolder::Default)

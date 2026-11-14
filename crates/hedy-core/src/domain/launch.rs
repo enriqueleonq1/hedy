@@ -37,9 +37,7 @@ impl LaunchSpec {
             return Err(DomainError::NothingToLaunch);
         };
         let provider = account.provider;
-        let (Some(default_program), Some(folder_var)) =
-            (provider.program(), provider.folder_env_var())
-        else {
+        let Some(default_program) = provider.program() else {
             return Err(DomainError::NothingToLaunch);
         };
 
@@ -53,15 +51,24 @@ impl LaunchSpec {
             (super::Provider::Codex, LaunchPurpose::LoginStatus) => {
                 vec!["login".into(), "status".into()]
             }
-            // Gemini logs in from its first interactive run and has no status command.
-            (super::Provider::Gemini, LaunchPurpose::Login) => vec![],
+            // Gemini logs in from its first interactive run, Kimi Code with `/login`
+            // inside it; neither has a status command.
+            (super::Provider::Gemini | super::Provider::Kimi, LaunchPurpose::Login) => vec![],
+            // Signs in with Google by pasting a code, then exits.
+            (super::Provider::Antigravity, LaunchPurpose::Login) => {
+                vec!["acp".into(), "--login".into()]
+            }
             (_, LaunchPurpose::LoginStatus) => return Ok(None),
-            (_, LaunchPurpose::Login) => return Err(DomainError::NothingToLaunch),
         };
 
         let env = match folder {
             ConfigFolder::Default => vec![],
-            ConfigFolder::Managed(path) => vec![(folder_var.to_owned(), path.clone())],
+            ConfigFolder::Managed(path) => {
+                let var = provider
+                    .folder_env_var()
+                    .ok_or(DomainError::SingleAccountProvider { provider })?;
+                vec![(var.to_owned(), path.clone())]
+            }
         };
         Ok(Some(Self {
             program: program.unwrap_or(default_program).to_owned(),

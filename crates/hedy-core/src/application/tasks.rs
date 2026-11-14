@@ -105,15 +105,24 @@ impl Hedy {
             };
             return Ok((backend, LaunchSpec::program("", vec![])));
         }
-        let backend = match account.provider {
-            Provider::Claude => AgentBackend::ClaudeCode,
-            Provider::Codex => AgentBackend::Codex,
-            // Gemini CLI only serves Code Assist accounts; use Gemini by API key.
-            other => return Err(AppError::ProviderNotYetSupported(other)),
+        let provider = account.provider;
+        let (backend, args) = match provider {
+            Provider::Claude => (AgentBackend::ClaudeCode, vec![]),
+            Provider::Codex => (AgentBackend::Codex, vec![]),
+            _ => {
+                let args = provider
+                    .acp_args()
+                    .ok_or(AppError::ProviderNotYetSupported(provider))?;
+                let backend = AgentBackend::Acp {
+                    name: provider.cli_name().to_owned(),
+                    model_flag: provider.model_flag(),
+                };
+                (backend, args.iter().map(|a| a.to_string()).collect())
+            }
         };
-        let program = self.binary_for(account.provider)?;
+        let program = self.binary_for(provider)?;
         let launch =
-            LaunchSpec::for_account(account, LaunchPurpose::Run(vec![]), program.as_deref())?
+            LaunchSpec::for_account(account, LaunchPurpose::Run(args), program.as_deref())?
                 .expect("run is always launchable for subscription accounts");
         Ok((backend, launch))
     }
@@ -134,12 +143,13 @@ impl Hedy {
         );
         // Every agent of the pipeline must be allowed here and ready to work.
         let projects = self.projects()?;
-        let mut codex = false;
+        // Agents that read without asking work in a worktree, without `.env`.
+        let mut isolated = false;
         for stage in &stages {
             policy::check_launch(Some(&project), &stage.account, &projects)?;
             let account = self.account(stage.account.as_str())?;
             self.backend(&account)?;
-            codex |= account.provider == Provider::Codex;
+            isolated |= account.provider.always_in_worktree();
         }
 
         let now = self.clock.now_ms();
@@ -147,9 +157,9 @@ impl Hedy {
         let seq = self.sessions.fetch_add(1, Ordering::Relaxed) % 256;
         let id = TaskId::new(format!("t{now:x}{seq:02x}"));
         let title = title_from_prompt(&request.prompt);
-        // Codex cannot be kept away from protected files, so it always works
-        // in a worktree, where `.env` and friends do not exist.
-        let workspace = if request.mode.changes_files() || codex {
+        // Codex and ACP agents read files without asking Hedy, so they always
+        // work in a worktree, where `.env` and friends do not exist.
+        let workspace = if request.mode.changes_files() || isolated {
             Some(self.create_workspace(&project.path, &title, &id)?)
         } else {
             None
@@ -1529,7 +1539,7 @@ mod tests {
     }
 
     #[test]
-    fn api_accounts_need_their_key_and_gemini_cli_is_not_supported() {
+    fn api_accounts_need_their_key() {
         let f = Fixture::new();
         f.add_kimi("Kimi");
         f.hedy.use_account(&f.dir("/code/x"), "kimi", None).unwrap();
@@ -1559,32 +1569,63 @@ mod tests {
             Some("kimi-k3.1-pro"),
             "API default model"
         );
+    }
 
-        f.hedy
-            .add_account(crate::application::NewAccount {
-                name: "Gemini CLI".into(),
-                provider: Provider::Gemini,
+    #[test]
+    fn acp_providers_run_their_cli_in_a_worktree() {
+        let f = Fixture::new();
+        let add = |name: &str, provider: Provider, default_folder: bool| {
+            f.hedy.add_account(crate::application::NewAccount {
+                name: name.into(),
+                provider,
                 api_key: false,
-                default_folder: false,
+                default_folder,
                 color: None,
             })
-            .unwrap();
-        f.hedy
-            .use_account(&f.dir("/code/y"), "gemini-cli", None)
-            .unwrap();
-        let err = f
-            .hedy
-            .start_task(NewTask {
-                project: f.dir("/code/y"),
-                prompt: "hola".into(),
-                mode: TaskMode::Project,
-                model: None,
-                plan_first: false,
-            })
-            .unwrap_err();
+        };
+        add("Gemini CLI", Provider::Gemini, false).unwrap();
+        add("Kimi Code", Provider::Kimi, false).unwrap();
+        // Antigravity always uses its default folder: one login per machine.
+        add("Antigravity", Provider::Antigravity, false).unwrap();
         assert!(matches!(
-            err,
-            AppError::ProviderNotYetSupported(Provider::Gemini)
+            add("Otra Antigravity", Provider::Antigravity, false),
+            Err(AppError::DefaultFolderTaken(_))
         ));
+
+        for (account, args, model_flag) in [
+            ("gemini-cli", vec!["--acp"], Some("-m")),
+            ("kimi-code", vec!["acp"], None),
+            ("antigravity", vec!["acp"], None),
+        ] {
+            let dir = f.dir(&format!("/code/{account}"));
+            f.hedy.use_account(&dir, account, None).unwrap();
+            // Even a question gets a worktree: these CLIs read without asking.
+            let task = f
+                .hedy
+                .start_task(NewTask {
+                    project: dir,
+                    prompt: "¿Qué hace esto?".into(),
+                    mode: TaskMode::Ask,
+                    model: None,
+                    plan_first: false,
+                })
+                .unwrap();
+            assert!(task.workspace.is_some(), "{account}");
+            let request = f.agents.last_request();
+            assert!(
+                matches!(&request.backend, AgentBackend::Acp { model_flag: m, .. } if *m == model_flag),
+                "{account}"
+            );
+            assert_eq!(request.launch.args, args, "{account}");
+        }
+        let kimi = f.agents.requests();
+        let kimi = &kimi[kimi.len() - 2];
+        assert!(
+            kimi.launch
+                .env
+                .iter()
+                .any(|(var, _)| var == "KIMI_CODE_HOME"),
+            "Kimi Code accounts live in their own folder"
+        );
     }
 }

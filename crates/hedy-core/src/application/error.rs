@@ -79,9 +79,7 @@ pub enum AppError {
     #[error("escribe qué quieres que haga")]
     EmptyPrompt,
 
-    #[error(
-        "las tareas con {0} por suscripción no están disponibles: Gemini CLI solo sirve cuentas de Code Assist; usa Gemini con API key"
-    )]
+    #[error("las tareas con {0} todavía no están disponibles en Hedy")]
     ProviderNotYetSupported(Provider),
 
     #[error("{}", merge_message(branch, reason))]

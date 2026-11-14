@@ -143,7 +143,7 @@ mod tests {
         for s in Setting::all() {
             assert_eq!(s.key().parse::<Setting>().unwrap(), s);
         }
-        assert!("binary.kimi".parse::<Setting>().is_err());
+        assert!("binary.nope".parse::<Setting>().is_err());
     }
 
     #[test]

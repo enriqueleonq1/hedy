@@ -1,5 +1,6 @@
 //! Port implementations and the composition root.
 
+mod acp;
 mod api_agent;
 mod claude;
 mod codex;
@@ -13,6 +14,7 @@ mod sqlite;
 
 use std::sync::Arc;
 
+pub use acp::AcpLauncher;
 pub use api_agent::ApiAgentLauncher;
 pub use claude::{ClaudeCodeLauncher, hook};
 pub use codex::CodexLauncher;
@@ -35,6 +37,7 @@ pub struct AgentRouter {
     pub claude: ClaudeCodeLauncher,
     pub codex: CodexLauncher,
     pub api: ApiAgentLauncher,
+    pub acp: AcpLauncher,
 }
 
 impl AgentLauncher for AgentRouter {
@@ -43,6 +46,7 @@ impl AgentLauncher for AgentRouter {
             AgentBackend::ClaudeCode => self.claude.start(request, events),
             AgentBackend::Codex => self.codex.start(request, events),
             AgentBackend::OpenAiCompatible { .. } => self.api.start(request, events),
+            AgentBackend::Acp { .. } => self.acp.start(request, events),
         }
     }
 }
@@ -102,6 +106,7 @@ fn build(paths: &HedyPaths, claude: ClaudeCodeLauncher) -> PortResult<Hedy> {
             claude,
             codex: CodexLauncher,
             api: ApiAgentLauncher,
+            acp: AcpLauncher,
         }),
         clock: Arc::new(SystemClock),
     }))

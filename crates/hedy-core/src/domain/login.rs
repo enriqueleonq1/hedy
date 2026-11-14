@@ -24,7 +24,7 @@ impl LoginState {
                 Some(_) => Self::LoggedOut,
                 None => Self::Unknown,
             },
-            Provider::Gemini | Provider::Kimi => Self::Unknown,
+            Provider::Gemini | Provider::Kimi | Provider::Antigravity => Self::Unknown,
         }
     }
 }
