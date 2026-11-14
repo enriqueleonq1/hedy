@@ -51,7 +51,7 @@ export class MockApi implements HedyApi {
       theme: "system",
       dataDir: "/home/demo/.local/share/hedy",
       defaultAccount: null,
-      binaries: { claude: null, codex: null, gemini: null },
+      binaries: { claude: null, codex: null, gemini: null, kimi: null, antigravity: null },
       apiUrls: { kimi: null, gemini: null },
       apiPrices: { kimi: null, gemini: null },
       accounts: [],
@@ -315,13 +315,24 @@ export class MockApi implements HedyApi {
     if (this.state.accounts.some((a) => a.id === id)) {
       throw `ya existe una cuenta con el identificador «${id}»`;
     }
+    // Like the backend: Antigravity keeps one login per machine, in its default folder.
+    const onlyDefault = input.provider === "antigravity";
+    if (onlyDefault && this.state.accounts.some((a) => a.provider === "antigravity")) {
+      throw "ya hay una cuenta que usa la carpeta por defecto de Antigravity";
+    }
     this.state.accounts.push({
       id,
       name: input.name.trim(),
       provider: input.provider,
-      providerName: { claude: "Claude Code", codex: "Codex", gemini: "Gemini", kimi: "Kimi" }[input.provider],
+      providerName: {
+        claude: "Claude Code",
+        codex: "Codex",
+        gemini: "Gemini",
+        kimi: "Kimi",
+        antigravity: "Antigravity",
+      }[input.provider],
       kind: input.apiKey ? "apiKey" : "subscription",
-      defaultFolder: input.defaultFolder,
+      defaultFolder: input.defaultFolder || onlyDefault,
       color: input.color ?? PALETTE[this.state.accounts.length % PALETTE.length] ?? PALETTE[0],
       login: { state: "loggedOut", plan: null },
       projects: [],

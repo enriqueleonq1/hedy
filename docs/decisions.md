@@ -490,7 +490,51 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
 - **Not done yet:** automatic model routing per phase (the spec says "más adelante"). It
   should wait for enough eval results to choose on data.
 
-## 14. Decisions
+## 14. Providers over ACP: Gemini CLI, Kimi Code, Antigravity
+
+Verified again in November 2026 (official docs, and the `@agentclientprotocol/sdk` 2.7
+schemas):
+
+| CLI | ACP command | Login | Folder per account |
+|---|---|---|---|
+| Gemini CLI (Code Assist) | `gemini --acp` | first interactive run | `GEMINI_CLI_HOME` |
+| Kimi Code (`kimi` 2.x) | `kimi acp` | `/login` inside `kimi` (OAuth) | `KIMI_CODE_HOME` |
+| Antigravity (`agy`) | `agy acp` | `agy acp --login` (paste a code) | none: OS keyring |
+
+- **One adapter for the three** (`adapters/acp.rs`).
+  - It speaks ACP **v1**, negotiated in `initialize`. v2 is a large redesign and still
+    evolving; agents that answer another version end the stage with a clear message.
+  - Hedy offers no file system or terminal (`clientCapabilities` all false). Agents use
+    their own tools and ask through `session/request_permission`, which becomes Hedy's
+    card. Hedy answers with the agent's one-time options (`allow_once` / `reject_once`),
+    never "always", since Hedy keeps its own rules.
+  - Plan-first is emulated as with Codex: a turn that only proposes a plan; edits and
+    commands are refused until the plan is approved. Ask and Research refuse them too.
+  - Memory and the code map are passed as `mcpServers` in `session/new`. ACP v1 has no
+    stable system prompt, so the guidance opens the first prompt.
+  - `session/load` resumes a session when the agent supports it; its replayed history is
+    not shown again.
+- **Always in a worktree.** These CLIs read files without asking, like Codex, so their
+  tasks (questions too) run in a worktree, where `.env` does not exist. Their edits and
+  commands still go through Hedy's checks.
+- **Antigravity: one account per machine.** Its login lives in the OS keyring and there is
+  no documented way to choose a folder. Community tools change `HOME` or use an
+  undocumented `--gemini_dir`; Hedy does not, under rule 1. Hedy always uses its default
+  folder and refuses a second account.
+- **Usage.** ACP reports the session's cumulative cost (`usage_update.cost`) and the
+  context size, not tokens spent. Hedy records the cost when it comes in USD and no
+  tokens, rather than inventing them.
+- **Models.** Only Gemini CLI's model flag (`-m`) is verified; Kimi Code and Antigravity
+  use the model set in their own CLI.
+- **Environment.** Variables that would replace the login or the account are stripped:
+  `KIMI_API_KEY`, `KIMI_BASE_URL`, `KIMI_CODE_BASE_URL`, the Kimi OAuth hosts,
+  `KIMI_MODEL_*` (a temporary model with its own key), `KIMI_CODE_HOME`, `AGY_ADC_AUTH`
+  and `GOOGLE_APPLICATION_CREDENTIALS`.
+- **Not yet verified with the real CLIs** (none was installed): the adapter is tested
+  against a fake agent that follows the v1 schema. A first real run with each CLI is
+  still to do.
+
+## 15. Decisions
 
 - **Claude accounts:** `~/.claude` (Team) is registered as the default-folder account and
   launched without `CLAUDE_CONFIG_DIR`. New accounts live in Hedy folders.

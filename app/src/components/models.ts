@@ -9,6 +9,8 @@ export const MODEL_SUGGESTIONS: Record<ProviderId, string[]> = {
   codex: [],
   kimi: ["kimi-k3.1-pro", "kimi-k3.1-pro-highspeed", "kimi-k3"],
   gemini: ["gemini-4-hydrogen", "gemini-4-carbon", "gemini-3.8-flash"],
+  // The ACP CLIs pick their own model.
+  antigravity: [],
 };
 
 export const PHASES: { phase: Phase; label: string; optional: boolean }[] = [

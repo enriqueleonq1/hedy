@@ -1,7 +1,8 @@
 // Mirrors the DTOs in `src-tauri/src/dto.rs`.
 
-export type ProviderId = "claude" | "codex" | "gemini" | "kimi";
-export type CliProviderId = Exclude<ProviderId, "kimi">;
+export type ProviderId = "claude" | "codex" | "gemini" | "kimi" | "antigravity";
+/** Every provider has an official CLI (Kimi: Kimi Code). */
+export type CliProviderId = ProviderId;
 
 export interface Login {
   state: "loggedIn" | "loggedOut" | "unknown";
@@ -138,6 +139,8 @@ export type SettingKey =
   | "binary.claude"
   | "binary.codex"
   | "binary.gemini"
+  | "binary.kimi"
+  | "binary.antigravity"
   | "api_url.kimi"
   | "api_url.gemini"
   | "api_price.kimi"

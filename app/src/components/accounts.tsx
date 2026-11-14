@@ -2,7 +2,7 @@ import type { Account, Login } from "../api/types";
 import { formatTokens, formatUsd } from "../format";
 import { PROVIDER_NAMES } from "./providers";
 
-const BRANDS = ["claude", "chatgpt", "codex", "gemini", "kimi"];
+const BRANDS = ["claude", "chatgpt", "codex", "gemini", "kimi", "antigravity"];
 
 /** "Claude personal" → "personal"; names without a brand prefix stay as they are. */
 export function shortAccountLabel(account: Pick<Account, "name">): string {
@@ -21,6 +21,7 @@ export function accountSubtitle(account: Account): string {
   const parts = [PROVIDER_NAMES[account.provider].vendor, plan];
   if (account.provider === "codex") parts.push("Codex");
   if (account.provider === "gemini" && account.kind === "subscription") parts.push("Gemini CLI");
+  if (account.provider === "kimi" && account.kind === "subscription") parts.push("Kimi Code");
   return parts.join(" · ");
 }
 

@@ -15,6 +15,8 @@ interface Kind {
   title: string;
   detail: string;
   defaultFolder?: string;
+  /** The CLI keeps one login per machine: only its default folder. */
+  onlyDefault?: boolean;
   warning?: string;
 }
 
@@ -37,7 +39,25 @@ const KINDS: Kind[] = [
     detail: "Suscripción de ChatGPT",
     defaultFolder: "~/.codex",
   },
-  { id: "kimi", provider: "kimi", apiKey: true, title: "Kimi", detail: "API key de pago por uso" },
+  {
+    id: "kimi-code",
+    provider: "kimi",
+    apiKey: false,
+    title: "Kimi Code",
+    detail: "Suscripción de Kimi Code",
+    defaultFolder: "~/.kimi-code",
+  },
+  { id: "kimi", provider: "kimi", apiKey: true, title: "Kimi (API)", detail: "API key de pago por uso" },
+  {
+    id: "antigravity",
+    provider: "antigravity",
+    apiKey: false,
+    title: "Antigravity",
+    detail: "Tu cuenta personal de Google",
+    onlyDefault: true,
+    warning:
+      "Antigravity guarda la sesión en el llavero del sistema y no deja elegir carpeta: solo admite una cuenta por equipo.",
+  },
   { id: "gemini-api", provider: "gemini", apiKey: true, title: "Gemini", detail: "API key de Google AI Studio" },
   {
     id: "gemini-cli",
@@ -46,7 +66,8 @@ const KINDS: Kind[] = [
     title: "Gemini CLI",
     detail: "Code Assist Standard o Enterprise",
     defaultFolder: "~/.gemini",
-    warning: "Gemini CLI ya no acepta cuentas personales de Google. Para una cuenta personal usa Gemini con API key.",
+    warning:
+      "Gemini CLI ya no acepta cuentas personales de Google. Para una cuenta personal usa Antigravity o Gemini con API key.",
   },
 ];
 
@@ -68,7 +89,7 @@ export function AddAccountDialog({
   );
 
   const defaultTaken = overview.accounts.some((a) => a.provider === kind.provider && a.defaultFolder);
-  const defaultFolder = !kind.apiKey && useDefault && !defaultTaken;
+  const defaultFolder = !kind.apiKey && (kind.onlyDefault || (useDefault && !defaultTaken));
 
   const create = useAction((api, input: NewAccountInput) => api.addAccount(input), {
     onSuccess: (id, input) => {
@@ -87,7 +108,8 @@ export function AddAccountDialog({
       };
       if (input.apiKey) onNeedsKey(created);
       // An adopted default folder is usually logged in already.
-      else if (!input.defaultFolder) terminals.open({ kind: "login", account: id }, `Login · ${input.name}`);
+      else if (!input.defaultFolder || kind.onlyDefault)
+        terminals.open({ kind: "login", account: id }, `Login · ${input.name}`);
     },
   });
 
@@ -100,12 +122,12 @@ export function AddAccountDialog({
           <Button onClick={onClose}>Cancelar</Button>
           <Button
             variant="primary"
-            disabled={!name.trim() || create.isPending}
+            disabled={!name.trim() || create.isPending || (kind.onlyDefault && defaultTaken)}
             onClick={() =>
               create.mutate({ name: name.trim(), provider: kind.provider, apiKey: kind.apiKey, defaultFolder, color })
             }
           >
-            {kind.apiKey ? "Crear y guardar key" : defaultFolder ? "Crear" : "Crear e iniciar sesión"}
+            {kind.apiKey ? "Crear y guardar key" : defaultFolder && !kind.onlyDefault ? "Crear" : "Crear e iniciar sesión"}
           </Button>
         </>
       }
@@ -135,6 +157,7 @@ export function AddAccountDialog({
 
       {kind.warning && <p className="warning">{kind.warning}</p>}
 
+      {kind.onlyDefault && defaultTaken && <p className="error-text">Ya tienes una cuenta de {kind.title} en este equipo.</p>}
       {kind.defaultFolder && (
         <label className="check">
           <input

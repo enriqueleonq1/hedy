@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { LOGIN_HINT } from "../../components/providers";
 import { useAction } from "../../api/context";
 import type { Account, Overview } from "../../api/types";
 import { accountSubtitle, LoginBadge, UsageBars } from "../../components/accounts";
@@ -95,6 +96,9 @@ function AccountCard({
           : "El % aparece solo si la CLI lo informa; los tokens los cuenta Hedy."}
         {account.defaultFolder && " Usa la sesión de la carpeta por defecto de la CLI."}
       </p>
+      {account.kind === "subscription" && !loggedIn && LOGIN_HINT[account.provider] && (
+        <p className="small muted">{LOGIN_HINT[account.provider]}</p>
+      )}
 
       {projects.length > 0 && (
         <ul className="pills" aria-label="Proyectos">

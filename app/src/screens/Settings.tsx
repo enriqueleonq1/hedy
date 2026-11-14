@@ -12,6 +12,8 @@ const CLIS: { id: CliProviderId; name: string }[] = [
   { id: "claude", name: "Claude Code" },
   { id: "codex", name: "Codex" },
   { id: "gemini", name: "Gemini CLI" },
+  { id: "kimi", name: "Kimi Code" },
+  { id: "antigravity", name: "Antigravity" },
 ];
 
 export function Settings({ overview }: { overview: Overview }) {

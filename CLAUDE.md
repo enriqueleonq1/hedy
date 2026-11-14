@@ -1,7 +1,8 @@
 # Hedy
 
 Desktop app (Tauri v2 + React 19) and `hedy` command to work with several coding AIs
-(Claude Code, Codex, Gemini, Kimi) and several accounts per provider.
+(Claude Code, Codex, Gemini CLI, Kimi Code, Antigravity, and Kimi/Gemini by API key) and
+several accounts per provider. Gemini CLI, Kimi Code and Antigravity are driven over ACP.
 Verified facts live in `docs/decisions.md`; read it before touching adapters.
 
 ## Commands
@@ -50,8 +51,9 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 ## Non-negotiable rules (enforced in code, not only in text)
 
 1. Hedy never reads, copies or stores session tokens. Each subscription account lives in
-   its official folder (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`); login is
-   always the CLI's official flow. Hedy only picks the folder at launch.
+   its official folder (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`,
+   `KIMI_CODE_HOME`); login is always the CLI's official flow. Hedy only picks the folder
+   at launch. A CLI without a folder variable (Antigravity) gets one account per machine.
 2. Official binaries, unmodified.
 3. Never switch automatically from one subscription account to another on hitting a
    limit: warn and offer to wait, move to another provider, or use a paid API key.
