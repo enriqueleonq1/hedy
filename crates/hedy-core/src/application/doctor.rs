@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use super::{AppResult, Hedy, Setting};
+use crate::domain::env;
 use crate::domain::version::parse_version;
 use crate::domain::{
     Account, ConfigFolder, Credentials, LaunchPurpose, LaunchSpec, LoginState, Provider, policy,
@@ -563,21 +564,15 @@ impl Hedy {
         Ok(checks)
     }
 
-    /// Names only: a value may be a key.
+    /// Names only: a value may be a key. What a Claude Code session leaves
+    /// behind goes on one line, so the variables that matter stand out.
     fn check_environment(&self) -> Vec<Check> {
-        let names = self.runner.blocked_env_vars();
-        if names.is_empty() {
-            return vec![Check::new(
-                CheckArea::Environment,
-                tr!("Variables de entorno", "Environment variables"),
-                CheckLevel::Ok,
-                tr!(
-                    "ninguna cambia la cuenta o la facturación",
-                    "none changes the account or the billing"
-                ),
-            )];
-        }
-        names
+        let (leftovers, names): (Vec<String>, Vec<String>) = self
+            .runner
+            .blocked_env_vars()
+            .into_iter()
+            .partition(|name| env::is_session_leftover(name));
+        let mut checks: Vec<Check> = names
             .into_iter()
             .map(|name| {
                 Check::new(
@@ -585,12 +580,43 @@ impl Hedy {
                     name,
                     CheckLevel::Info,
                     tr!(
-                        "está en tu shell; Hedy la quita al lanzar las CLIs",
-                        "set in your shell; Hedy removes it when launching CLIs"
+                        "está en tu shell y cambiaría la cuenta o el cobro; Hedy la quita al lanzar las CLIs",
+                        "set in your shell and would change the account or the billing; Hedy removes it when launching CLIs"
                     ),
                 )
             })
-            .collect()
+            .collect();
+        if checks.is_empty() {
+            checks.push(Check::new(
+                CheckArea::Environment,
+                tr!("Variables de entorno", "Environment variables"),
+                CheckLevel::Ok,
+                tr!(
+                    "ninguna cambia la cuenta o la facturación",
+                    "none changes the account or the billing"
+                ),
+            ));
+        }
+        if !leftovers.is_empty() {
+            let n = leftovers.len();
+            checks.push(Check::new(
+                CheckArea::Environment,
+                tr!("Sesión de Claude Code", "Claude Code session"),
+                CheckLevel::Info,
+                if n == 1 {
+                    tr!(
+                        "1 variable interna, inofensiva; Hedy la quita al lanzar las CLIs",
+                        "1 internal variable, harmless; Hedy removes it when launching CLIs"
+                    )
+                } else {
+                    tr!(
+                        "{n} variables internas, inofensivas; Hedy las quita al lanzar las CLIs",
+                        "{n} internal variables, harmless; Hedy removes them when launching CLIs"
+                    )
+                },
+            ));
+        }
+        checks
     }
 }
 
@@ -861,6 +887,30 @@ mod tests {
         assert_eq!(env.len(), 2);
         assert!(env.iter().all(|c| c.level == CheckLevel::Info));
         assert_eq!(env[0].subject, "ANTHROPIC_API_KEY");
+    }
+
+    #[test]
+    fn claude_code_leftovers_share_one_line() {
+        let f = Fixture::new();
+        f.runner.set_env(&[
+            "CLAUDECODE",
+            "CLAUDE_CODE_ENTRYPOINT",
+            "CLAUDE_CODE_SESSION_ID",
+        ]);
+        let report = f.hedy.doctor().unwrap();
+        let env: Vec<_> = report.in_area(CheckArea::Environment).collect();
+        assert_eq!(env.len(), 2);
+        assert_eq!(env[0].level, CheckLevel::Ok);
+        assert_eq!(env[1].subject, "Sesión de Claude Code");
+        assert!(env[1].message.starts_with("3 variables"));
+
+        f.runner
+            .set_env(&["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_ENTRYPOINT"]);
+        let report = f.hedy.doctor().unwrap();
+        let env: Vec<_> = report.in_area(CheckArea::Environment).collect();
+        assert_eq!(env.len(), 2);
+        assert_eq!(env[0].subject, "CLAUDE_CODE_OAUTH_TOKEN");
+        assert!(env[1].message.starts_with("1 variable "));
     }
 
     #[test]

@@ -611,7 +611,9 @@ schemas):
 - **Hedy:** data folder writable, SQLite `PRAGMA quick_check`, git, the memory MCP server /
   `PreToolUse` hook entry point (the app binary; info from the `hedy` command when the
   app is not on `PATH`), the code-map program if set, project folders that are gone.
-- **Environment:** names of the variables Hedy strips (§2) that are set, as info.
+- **Environment:** names of the variables Hedy strips (§2) that are set, as info. What a
+  Claude Code session leaves behind (`CLAUDECODE`, `CLAUDE_CODE_*` except the credential
+  and billing ones) is one counted line, so a stray API key stands out.
 - Levels: ok, info, warning, error. The CLI exits with 1 when there is an error. CLI
   and account checks run in parallel, like `detect_clis`.
 

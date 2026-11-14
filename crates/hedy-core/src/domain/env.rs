@@ -8,11 +8,6 @@ const BLOCKED: &[&str] = &[
     // Claude Code: credentials that outrank the folder login.
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
-    // Leftovers when Hedy itself runs inside a Claude Code session.
-    "CLAUDECODE",
-    "CLAUDE_PID",
-    "CLAUDE_EFFORT",
-    "AI_AGENT",
     // Codex.
     "OPENAI_API_KEY",
     "CODEX_API_KEY",
@@ -42,8 +37,30 @@ const BLOCKED: &[&str] = &[
 /// temporary model with its own API key and endpoint.
 const BLOCKED_PREFIXES: &[&str] = &["CLAUDE_CODE_", "KIMI_MODEL_"];
 
+/// Left behind when Hedy itself runs inside a Claude Code session. Blocked too,
+/// but they change neither the account nor the billing.
+const SESSION_LEFTOVERS: &[&str] = &["CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "AI_AGENT"];
+
+/// `CLAUDE_CODE_*` variables that do change the account or the billing.
+const CLAUDE_CODE_CREDENTIALS: &[&str] = &[
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+];
+
 pub fn is_blocked(name: &str) -> bool {
-    BLOCKED.contains(&name) || BLOCKED_PREFIXES.iter().any(|p| name.starts_with(p))
+    BLOCKED.contains(&name)
+        || SESSION_LEFTOVERS.contains(&name)
+        || BLOCKED_PREFIXES.iter().any(|p| name.starts_with(p))
+}
+
+/// A blocked variable that a Claude Code session sets for its own children
+/// (`CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`…), as opposed to one that would
+/// change the account or the billing.
+pub fn is_session_leftover(name: &str) -> bool {
+    SESSION_LEFTOVERS.contains(&name)
+        || (name.starts_with("CLAUDE_CODE_") && !CLAUDE_CODE_CREDENTIALS.contains(&name))
 }
 
 #[cfg(test)]
@@ -79,6 +96,27 @@ mod tests {
             "MY_ANTHROPIC_API_KEY_NOTE",
         ] {
             assert!(!is_blocked(var), "{var}");
+        }
+    }
+
+    #[test]
+    fn tells_session_leftovers_from_credentials() {
+        for var in [
+            "CLAUDECODE",
+            "AI_AGENT",
+            "CLAUDE_CODE_ENTRYPOINT",
+            "CLAUDE_CODE_SESSION_ID",
+        ] {
+            assert!(is_blocked(var) && is_session_leftover(var), "{var}");
+        }
+        for var in [
+            "ANTHROPIC_API_KEY",
+            "CLAUDE_CODE_OAUTH_TOKEN",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CONFIG_DIR",
+            "KIMI_MODEL_API_KEY",
+        ] {
+            assert!(!is_session_leftover(var), "{var}");
         }
     }
 }
