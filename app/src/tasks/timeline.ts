@@ -198,9 +198,11 @@ export function buildTimeline(events: AgentEvent[], t: Translate): TimelineItem[
   return items;
 }
 
-const WORK: AgentEvent["kind"][] = ["fileEdited", "commandRun", "testsRun", "toolUsed", "permissionResolved"];
-
-/** The mascot reacts to what the agent is doing (spec §6). */
+/**
+ * The mascot reacts to what the agent is doing (spec §6). While the agent
+ * runs it is `working`; what it does then (reading, testing, thinking...)
+ * is the activity, from `useMascot`.
+ */
 export function mascotState(task: Task | null | undefined, events: AgentEvent[]): MascotState {
   if (!task) return "idle";
   switch (task.status) {
@@ -215,11 +217,8 @@ export function mascotState(task: Task | null | undefined, events: AgentEvent[])
       const finished = [...events].reverse().find((e) => e.kind === "finished");
       return finished?.kind === "finished" && finished.ok ? "done" : "idle";
     }
-    case "running": {
-      if (!task.live) return "sleeping";
-      const last = [...events].reverse().find((e) => e.kind !== "usage" && e.kind !== "rateLimit");
-      return last && WORK.includes(last.kind) ? "working" : "thinking";
-    }
+    case "running":
+      return task.live ? "working" : "sleeping";
   }
 }
 

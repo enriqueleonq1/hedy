@@ -53,6 +53,9 @@ describe("Activity", () => {
 
     const running = screen.getByRole("region", { name: "En curso (1)" });
     expect(within(running).getByText("Trabajando")).toBeInTheDocument();
+    // What it is doing, as a word next to the state (decorative).
+    const word = await within(running).findByText("Rastreando");
+    expect(word.closest(".working-word")).toHaveAttribute("aria-hidden");
     expect(within(running).getByText("homming")).toBeInTheDocument();
 
     const recent = screen.getByRole("region", { name: "Últimas 24 h (4)" });

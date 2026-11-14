@@ -3,11 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 
 import { useAction, useApi } from "../../api/context";
 import type { Account, Decision, Task } from "../../api/types";
-import { Mascot, type MascotState } from "../../components/Mascot/Mascot";
+import { Mascot } from "../../components/Mascot/Mascot";
+import { WorkingWord } from "../../components/Mascot/WorkingWord";
 import { Button } from "../../components/ui/Button";
 import { formatDuration } from "../../format";
 import { tasksKey } from "../../tasks/hooks";
 import { isOpen, PHASE_VERB, type Resolution, type TimelineItem } from "../../tasks/timeline";
+import type { TaskMascot } from "../../tasks/useMascot";
 import { useT, type MessageKey, type Translate } from "../../i18n";
 import { DEFAULT_ACCOUNT_COLOR, WARNING_MASCOT_COLOR } from "../../theme/tokens";
 
@@ -17,7 +19,8 @@ interface TimelineProps {
   agent: string;
   account: Account | undefined;
   accounts: Account[];
-  mascot: MascotState;
+  /** The latest agent row shows it; while it works, a row of its own at the end. */
+  mascot: TaskMascot;
   /** Shown after the history (the queued messages). */
   footer?: ReactNode;
   /** Scrolls to the end when it changes, besides new items. */
@@ -33,6 +36,7 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
 
   const color = account?.color ?? DEFAULT_ACCOUNT_COLOR;
   const lastAgent = items.findLastIndex((i) => i.type !== "user");
+  const working = mascot.state === "working";
 
   return (
     <div className="timeline" aria-live="polite">
@@ -60,7 +64,12 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
           <div key={item.key} className="agent-row">
             <span className="agent-row__avatar">
               {(index === 0 || items[index - 1]?.type === "user") && (
-                <Mascot color={color} state={index === lastAgent ? mascot : "idle"} size={30} label={agent} />
+                <Mascot
+                  color={color}
+                  state={index === lastAgent && !working ? mascot.state : "idle"}
+                  size={30}
+                  label={agent}
+                />
               )}
             </span>
             <div className="agent-row__body">
@@ -69,6 +78,15 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
           </div>
         );
       })}
+      {working && (
+        // What the agent is doing now; decorative: the activity lines say it too.
+        <div className="agent-row agent-row--live" aria-hidden>
+          <span className="agent-row__avatar">
+            <Mascot color={color} state="working" activity={mascot.activity} size={44} label={agent} />
+          </span>
+          <WorkingWord activity={mascot.activity} className="working-word--chat" />
+        </div>
+      )}
       {footer}
       <div ref={end} />
     </div>

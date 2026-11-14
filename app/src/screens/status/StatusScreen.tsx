@@ -4,12 +4,14 @@ import { errorMessage, useApi } from "../../api/context";
 import type { Account, Overview, Phase, Task, UsagePoint } from "../../api/types";
 import { usageLabel } from "../../components/Layout";
 import { Mascot } from "../../components/Mascot/Mascot";
+import { WorkingWord } from "../../components/Mascot/WorkingWord";
 import { projectColor, shortPath } from "../../components/projects";
 import { Button } from "../../components/ui/Button";
 import { formatTokens, timeAgo } from "../../format";
 import { useLanguage, useT, type Language, type MessageKey, type Translate } from "../../i18n";
 import { useTaskEvents, useTasks } from "../../tasks/hooks";
-import { agentName, isOpen, mascotState, PHASE_VERB } from "../../tasks/timeline";
+import { agentName, isOpen, PHASE_VERB } from "../../tasks/timeline";
+import { useMascot } from "../../tasks/useMascot";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 
 const TASK_BADGE: Record<Task["status"], { label: MessageKey; tone: string }> = {
@@ -106,6 +108,7 @@ export function StatusScreen({
   const current = list.find(isOpen);
   const events = useTaskEvents(current?.id ?? null);
   const history = events.data ?? [];
+  const mascot = useMascot(current, history);
   const account = overview.accounts.find((a) => a.id === (current?.account ?? info?.account));
   const color = account?.color ?? (info ? projectColor(info, overview.accounts) : DEFAULT_ACCOUNT_COLOR);
   const agents = (status.data?.agents ?? [])
@@ -115,11 +118,12 @@ export function StatusScreen({
   return (
     <div className="screen status">
       <section className="card status__hero" aria-label={t("status.title")}>
-        <Mascot color={color} state={mascotState(current, history)} size={120} label="" />
+        <Mascot color={color} state={mascot.state} activity={mascot.activity} size={120} label="" />
         <div className="status__hero-text">
           <p className="status__eyebrow">{t("status.title")}</p>
           <h1>{name}</h1>
           <p className="muted">{headline(current, agentName(history), overview.accounts, t)}</p>
+          {mascot.activity && <WorkingWord activity={mascot.activity} className="working-word--status" />}
           <div className="actions">
             <Button small variant="primary" onClick={onOpenChat}>
               {t("status.openChat")}
@@ -252,6 +256,7 @@ function TaskRow({ task, accounts }: { task: Task; accounts: Account[] }) {
   const t = useT();
   const events = useTaskEvents(task.id);
   const history = events.data ?? [];
+  const mascot = useMascot(task, history);
   const account = accounts.find((a) => a.id === task.account);
   const badge = TASK_BADGE[task.status];
   const steps = [...history].reverse().find((e) => e.kind === "steps");
@@ -265,10 +270,24 @@ function TaskRow({ task, accounts }: { task: Task; accounts: Account[] }) {
         : `${agent} · ${timeAgo(task.createdAt, t)}`;
   return (
     <li className="status__task">
-      <Mascot color={account?.color ?? DEFAULT_ACCOUNT_COLOR} state={mascotState(task, history)} size={48} label="" />
+      <Mascot
+        color={account?.color ?? DEFAULT_ACCOUNT_COLOR}
+        state={mascot.state}
+        activity={mascot.activity}
+        size={48}
+        label=""
+      />
       <div className="status__task-text">
         <strong>{task.title}</strong>
-        <span className="small muted">{detail}</span>
+        <span className="small muted">
+          {detail}
+          {mascot.activity && (
+            <>
+              <span aria-hidden> · </span>
+              <WorkingWord activity={mascot.activity} />
+            </>
+          )}
+        </span>
       </div>
       <span className={`status__badge status__badge--${badge.tone}`}>{t(badge.label)}</span>
     </li>

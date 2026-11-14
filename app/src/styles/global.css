@@ -669,6 +669,9 @@ select:disabled { opacity: 0.65; }
 }
 
 .mascot-gallery figcaption { font-weight: 700; font-family: var(--font-title); }
+.mascot-gallery figure { max-width: 180px; text-align: center; }
+.mascot-gallery__title { font: 700 14px var(--font-ui); color: var(--muted); margin-top: 8px; }
+.mascot-gallery__words { font-size: 12.5px; color: var(--muted); }
 
 /* ---------------------------------------------------------------- terminal */
 
@@ -779,6 +782,10 @@ select:disabled { opacity: 0.65; }
 .agent-row { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: start; }
 .agent-row__avatar { padding-top: 4px; }
 .agent-row__body { min-width: 0; }
+/* The mascot at work, at the end of the chat: big enough to show its props. */
+.agent-row--live { align-items: center; }
+.agent-row--live .agent-row__avatar { padding-top: 0; margin-left: -4px; }
+.working-word--chat { font: 600 14px var(--font-ui); color: var(--accent); }
 .agent-text { white-space: pre-wrap; line-height: 1.55; }
 
 .plan-card { padding: 16px 18px; gap: 10px; }
@@ -1316,6 +1323,7 @@ select:disabled { opacity: 0.65; }
 @media (max-width: 860px) { .status__hero { grid-template-columns: minmax(0, 1fr); } }
 .status__hero-text { display: grid; gap: 6px; }
 .status__hero-text h1 { font-size: 34px; }
+.working-word--status { font: 700 15px var(--font-title); color: var(--accent); }
 .status__eyebrow {
   font: 700 12.5px var(--font-ui);
   letter-spacing: 0.12em;
