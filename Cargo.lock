@@ -1841,9 +1841,7 @@ dependencies = [
  "anyhow",
  "hedy-core",
  "rmcp",
- "schemars 1.2.3",
  "serde",
- "serde_json",
  "tokio",
 ]
 

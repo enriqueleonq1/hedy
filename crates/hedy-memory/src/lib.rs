@@ -6,11 +6,12 @@
 //! approves in the app (spec rule 6).
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
-use hedy_core::adapters::{self, HedyPaths};
-use hedy_core::application::{Hedy, format_notes};
-use hedy_core::domain::{Category, TaskId};
+use hedy_core::adapters::{self, HedyPaths, MEMORY_SERVER_ARG, hook};
+use hedy_core::application::ports::MemoryTools;
+use hedy_core::domain::TaskId;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{ServiceExt, schemars, tool, tool_router};
 use serde::Deserialize;
@@ -66,9 +67,9 @@ pub struct ProposeParams {
     pub category: String,
 }
 
+/// Hedy's memory tools for one project and task, over MCP.
 pub struct MemoryServer {
-    hedy: Hedy,
-    options: Options,
+    tools: Arc<dyn MemoryTools>,
 }
 
 #[tool_router(server_handler)]
@@ -78,14 +79,7 @@ impl MemoryServer {
         description = "Busca en la memoria del proyecto: decisiones, convenciones, reglas y preferencias aprobadas por el usuario. Sin texto devuelve todas."
     )]
     fn memory_search(&self, Parameters(params): Parameters<SearchParams>) -> String {
-        match self.hedy.read_memory_for_agent(
-            &self.options.project,
-            self.options.task.as_ref(),
-            &params.query,
-        ) {
-            Ok(notes) => format_notes(&notes),
-            Err(e) => format!("No se pudo leer la memoria: {e}"),
-        }
+        self.tools.search(&params.query)
     }
 
     #[tool(
@@ -93,29 +87,21 @@ impl MemoryServer {
         description = "Propone una nota para la memoria del proyecto (una decisión duradera o una convención). No se guarda hasta que el usuario la apruebe."
     )]
     fn memory_propose(&self, Parameters(params): Parameters<ProposeParams>) -> String {
-        let category = params.category.parse().unwrap_or(Category::Convention);
-        match self.hedy.propose_note(
-            &self.options.project,
-            &params.text,
-            category,
-            &self.options.agent,
-        ) {
-            Ok(_) => "Propuesta guardada; el usuario la revisará en Hedy.".into(),
-            Err(e) => format!("No se pudo proponer la nota: {e}"),
-        }
+        self.tools.propose(&params.text, &params.category)
     }
 }
 
 impl MemoryServer {
-    pub fn new(hedy: Hedy, options: Options) -> Self {
-        Self { hedy, options }
+    pub fn new(tools: Arc<dyn MemoryTools>) -> Self {
+        Self { tools }
     }
 }
 
 /// Serves the memory over stdin/stdout until the agent closes it.
 pub fn serve(options: Options) -> Result<()> {
     let hedy = adapters::system(&HedyPaths::at(options.data_dir.clone()))?;
-    let server = MemoryServer::new(hedy, options);
+    let tools = hedy.memory_tools(&options.project, options.task.as_ref(), &options.agent)?;
+    let server = MemoryServer::new(tools);
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
@@ -127,6 +113,26 @@ pub fn serve(options: Options) -> Result<()> {
                 .await?;
             Ok(())
         })
+}
+
+/// Serves what Claude Code and the CLI agents start Hedy's binaries for: the
+/// `PreToolUse` hook ([`hook::HOOK_ARGS`]) and the memory server
+/// ([`MEMORY_SERVER_ARG`]). Returns the exit code when the process was started
+/// as one of them; `None` when it should run as usual.
+pub fn serve_helper_mode() -> Option<i32> {
+    if std::env::args().skip(1).eq(hook::HOOK_ARGS) {
+        return Some(hook::run());
+    }
+    if std::env::args().nth(1).as_deref() != Some(MEMORY_SERVER_ARG) {
+        return None;
+    }
+    match Options::parse(std::env::args().skip(2)).and_then(serve) {
+        Ok(()) => Some(0),
+        Err(e) => {
+            eprintln!("hedy-memory: {e:#}");
+            Some(1)
+        }
+    }
 }
 
 #[cfg(test)]
