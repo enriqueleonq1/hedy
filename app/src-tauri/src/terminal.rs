@@ -66,10 +66,14 @@ impl TerminalRequest {
     }
 }
 
+type Session = Arc<Mutex<PtySession>>;
+
+/// Open terminals. The map's lock is only held to look a session up, so a
+/// terminal that blocks (a full PTY buffer) never stalls the others.
 #[derive(Default)]
 pub struct Terminals {
     next_id: AtomicU32,
-    sessions: Arc<Mutex<HashMap<u32, PtySession>>>,
+    sessions: Arc<Mutex<HashMap<u32, Session>>>,
 }
 
 impl Terminals {
@@ -83,7 +87,11 @@ impl Terminals {
         let (session, mut output) =
             PtySession::spawn(spec, cols, rows).map_err(|e| e.to_string())?;
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        self.sessions.lock().unwrap().insert(id, session);
+        let session = Arc::new(Mutex::new(session));
+        self.sessions
+            .lock()
+            .unwrap()
+            .insert(id, Arc::clone(&session));
 
         let sessions = Arc::clone(&self.sessions);
         std::thread::spawn(move || {
@@ -99,11 +107,12 @@ impl Terminals {
                     }
                 }
             }
-            let code = sessions
+            // The process ended (or was closed): forget it, then report how.
+            sessions.lock().unwrap().remove(&id);
+            let code = session
                 .lock()
                 .unwrap()
-                .get_mut(&id)
-                .and_then(|s| s.wait_exit(std::time::Duration::from_millis(500)));
+                .wait_exit(std::time::Duration::from_millis(500));
             let _ = events.send(TerminalEvent::Exit { code });
         });
         Ok(id)
@@ -114,11 +123,15 @@ impl Terminals {
         id: u32,
         f: impl FnOnce(&mut PtySession) -> Result<T, String>,
     ) -> Result<T, String> {
-        let mut sessions = self.sessions.lock().unwrap();
-        let session = sessions
-            .get_mut(&id)
+        let session = self
+            .sessions
+            .lock()
+            .unwrap()
+            .get(&id)
+            .cloned()
             .ok_or_else(|| format!("la terminal {id} ya no existe"))?;
-        f(session)
+        let mut session = session.lock().unwrap();
+        f(&mut session)
     }
 
     pub fn write(&self, id: u32, data: &str) -> Result<(), String> {
@@ -129,9 +142,13 @@ impl Terminals {
         self.with(id, |s| s.resize(cols, rows).map_err(|e| e.to_string()))
     }
 
-    /// Ends the process (if still running) and forgets the session.
+    /// Ends the process (if still running) and forgets the session. The
+    /// reader thread then sees the end of the output and reports the exit.
     pub fn close(&self, id: u32) {
-        self.sessions.lock().unwrap().remove(&id);
+        let session = self.sessions.lock().unwrap().remove(&id);
+        if let Some(session) = session {
+            session.lock().unwrap().kill();
+        }
     }
 }
 

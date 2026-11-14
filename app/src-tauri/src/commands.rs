@@ -1,7 +1,8 @@
-//! Tauri commands: thin wrappers over `Hedy` use cases. Each one runs on a
-//! blocking thread, because some use cases start CLI processes.
+//! Tauri commands: thin wrappers over `Hedy` use cases. Each one runs off the
+//! main thread, because some use cases start CLI processes or wait on I/O.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use hedy_core::application::{AppResult, Hedy, NewAccount, NewTask, Setting};
 use hedy_core::domain::{
@@ -15,7 +16,7 @@ use crate::dto::{
     self, MemoryDto, NewAccountInput, NewTaskInput, OverviewDto, ProjectStatusDto, TaskDto,
     UsagePointDto, UsageSummaryDto,
 };
-use crate::terminal::{TerminalEvent, TerminalRequest};
+use crate::terminal::{TerminalEvent, TerminalRequest, Terminals};
 
 type CommandResult<T> = Result<T, String>;
 
@@ -174,24 +175,44 @@ pub async fn terminal_open(
     state.terminals.open(&spec, cols, rows, on_event)
 }
 
-#[tauri::command]
-pub fn terminal_write(state: State<'_, AppState>, id: u32, data: String) -> CommandResult<()> {
-    state.terminals.write(id, &data)
+/// Terminal I/O can block (a busy process that does not read its input), so
+/// it runs off the main thread like the use cases.
+async fn on_terminals<T: Send + 'static>(
+    state: &State<'_, AppState>,
+    f: impl FnOnce(&Terminals) -> CommandResult<T> + Send + 'static,
+) -> CommandResult<T> {
+    let terminals = Arc::clone(&state.terminals);
+    tauri::async_runtime::spawn_blocking(move || f(&terminals))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn terminal_resize(
+pub async fn terminal_write(
+    state: State<'_, AppState>,
+    id: u32,
+    data: String,
+) -> CommandResult<()> {
+    on_terminals(&state, move |t| t.write(id, &data)).await
+}
+
+#[tauri::command]
+pub async fn terminal_resize(
     state: State<'_, AppState>,
     id: u32,
     cols: u16,
     rows: u16,
 ) -> CommandResult<()> {
-    state.terminals.resize(id, cols, rows)
+    on_terminals(&state, move |t| t.resize(id, cols, rows)).await
 }
 
 #[tauri::command]
-pub fn terminal_close(state: State<'_, AppState>, id: u32) {
-    state.terminals.close(id);
+pub async fn terminal_close(state: State<'_, AppState>, id: u32) -> CommandResult<()> {
+    on_terminals(&state, move |t| {
+        t.close(id);
+        Ok(())
+    })
+    .await
 }
 
 // ---------------------------------------------------------------- tasks

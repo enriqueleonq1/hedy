@@ -15,7 +15,7 @@ use tauri::Manager;
 pub struct AppState {
     pub hedy: Hedy,
     pub paths: HedyPaths,
-    pub terminals: terminal::Terminals,
+    pub terminals: Arc<terminal::Terminals>,
 }
 
 pub fn run() {
@@ -32,7 +32,7 @@ pub fn run() {
             app.manage(AppState {
                 hedy: hedy.with_task_events(events),
                 paths,
-                terminals: terminal::Terminals::default(),
+                terminals: Arc::default(),
             });
             Ok(())
         })
