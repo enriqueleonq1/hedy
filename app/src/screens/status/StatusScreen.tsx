@@ -1,14 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { useApi } from "../../api/context";
+import { errorMessage, useApi } from "../../api/context";
 import type { Account, Overview, Phase, Task, UsagePoint } from "../../api/types";
 import { usageLabel } from "../../components/Layout";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { projectColor, shortPath } from "../../components/projects";
 import { Button } from "../../components/ui/Button";
+import { formatTokens, timeAgo } from "../../format";
 import { useTaskEvents, useTasks } from "../../tasks/hooks";
-import { agentName, formatTokens, isOpen, mascotState, PHASE_VERB } from "../../tasks/timeline";
-import { timeAgo } from "../memory/MemoryScreen";
+import { agentName, isOpen, mascotState, PHASE_VERB } from "../../tasks/timeline";
+import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 
 const DAY_LETTER = ["D", "L", "M", "M", "J", "V", "S"];
 const DAY_NAME = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
@@ -29,7 +30,7 @@ const NEXT_PHASE: Record<Phase, string> = {
   review: "lo revisará",
 };
 
-export interface DayUsage {
+interface DayUsage {
   /** Local midnight. */
   date: Date;
   tokens: number;
@@ -55,12 +56,12 @@ export function usageByDay(points: UsagePoint[], today = new Date()): DayUsage[]
 export function headline(task: Task | undefined, agent: string, accounts: Account[]): string {
   if (!task) return "No hay tareas en curso. Escribe un pedido en el chat para empezar.";
   const title = `«${task.title}»`;
-  const stages = task.stages ?? [];
-  const current = stages[task.stage ?? 0];
+  const { stages, stage } = task;
+  const current = stages[stage];
   switch (task.status) {
     case "running": {
       const doing = current ? `${agent} ${PHASE_VERB[current.phase]} ${title}` : `${agent} trabaja en ${title}`;
-      const next = stages[(task.stage ?? 0) + 1];
+      const next = stages[stage + 1];
       if (!next) return `${doing}.`;
       const who = accounts.find((a) => a.id === next.account)?.name ?? next.account;
       return `${doing}; después ${who} ${NEXT_PHASE[next.phase]}.`;
@@ -99,7 +100,7 @@ export function StatusScreen({
   const events = useTaskEvents(current?.id ?? null);
   const history = events.data ?? [];
   const account = overview.accounts.find((a) => a.id === (current?.account ?? info?.account));
-  const color = account?.color ?? (info ? projectColor(info, overview.accounts) : "#7AA2F7");
+  const color = account?.color ?? (info ? projectColor(info, overview.accounts) : DEFAULT_ACCOUNT_COLOR);
   const agents = (status.data?.agents ?? [])
     .map((id) => overview.accounts.find((a) => a.id === id))
     .filter((a): a is Account => !!a);
@@ -138,6 +139,11 @@ export function StatusScreen({
         </div>
       </section>
 
+      {status.isError && (
+        <p className="error-text" role="alert">
+          {errorMessage(status.error)}
+        </p>
+      )}
       {status.data && (
         <div className="status__stats">
           <Stat label="Tests" tone={status.data.lastTests ? (status.data.lastTests.passed ? "ok" : "danger") : "muted"}
@@ -180,7 +186,11 @@ export function StatusScreen({
       <div className="status__layout">
         <section className="card status__tasks" aria-labelledby="status-tasks">
           <h2 id="status-tasks">Tareas</h2>
-          {list.length === 0 && <p className="muted">Todavía no hay tareas en este proyecto.</p>}
+          {tasks.isError ? (
+            <p className="error-text">{errorMessage(tasks.error)}</p>
+          ) : (
+            list.length === 0 && <p className="muted">Todavía no hay tareas en este proyecto.</p>
+          )}
           <ul className="status__task-list">
             {list.slice(0, 6).map((t) => (
               <TaskRow key={t.id} task={t} accounts={overview.accounts} />
@@ -188,7 +198,7 @@ export function StatusScreen({
           </ul>
         </section>
         <div className="status__side">
-          <WeekChart name={name} points={usage.data ?? []} />
+          <WeekChart name={name} points={usage.data ?? []} error={usage.isError ? errorMessage(usage.error) : null} />
           <section className="card" aria-labelledby="status-commits">
             <h2 id="status-commits">Últimos commits</h2>
             {commits.data?.length === 0 && <p className="muted small">Sin commits todavía.</p>}
@@ -233,7 +243,7 @@ function TaskRow({ task, accounts }: { task: Task; accounts: Account[] }) {
         : `${agent} · ${timeAgo(task.createdAt)}`;
   return (
     <li className="status__task">
-      <Mascot color={account?.color ?? "#7AA2F7"} state={mascotState(task, history)} size={48} label="" />
+      <Mascot color={account?.color ?? DEFAULT_ACCOUNT_COLOR} state={mascotState(task, history)} size={48} label="" />
       <div className="status__task-text">
         <strong>{task.title}</strong>
         <span className="small muted">{detail}</span>
@@ -243,7 +253,7 @@ function TaskRow({ task, accounts }: { task: Task; accounts: Account[] }) {
   );
 }
 
-function WeekChart({ name, points }: { name: string; points: UsagePoint[] }) {
+function WeekChart({ name, points, error }: { name: string; points: UsagePoint[]; error: string | null }) {
   const days = usageByDay(points);
   const max = Math.max(...days.map((d) => d.tokens), 1);
   const busiest = days.reduce((a, b) => (b.tokens > a.tokens ? b : a));
@@ -272,11 +282,15 @@ function WeekChart({ name, points }: { name: string; points: UsagePoint[] }) {
           );
         })}
       </div>
-      <p className="small muted">
-        {total === 0
-          ? "Sin uso registrado esta semana."
-          : `El ${DAY_NAME[busiest.date.getDay()]} fue el día más intenso · ${formatTokens(total)} tokens en total.`}
-      </p>
+      {error ? (
+        <p className="error-text">{error}</p>
+      ) : (
+        <p className="small muted">
+          {total === 0
+            ? "Sin uso registrado esta semana."
+            : `El ${DAY_NAME[busiest.date.getDay()]} fue el día más intenso · ${formatTokens(total)} tokens en total.`}
+        </p>
+      )}
       <table className="sr-only">
         <caption>Tokens por día</caption>
         <tbody>

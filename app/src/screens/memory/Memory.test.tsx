@@ -5,7 +5,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { App } from "../../App";
 import { MockApi } from "../../api/MockApi";
 import type { Note } from "../../api/types";
-import { keepLabel, timeAgo } from "./MemoryScreen";
+import { keepLabel } from "./notes";
 
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
 
@@ -41,7 +41,6 @@ describe("Memory", () => {
     const b = note("Los recordatorios se envían 2 h antes de la cita.");
     expect(keepLabel(a, b, "primera")).toBe("Quedarme con 24 h");
     expect(keepLabel(note("Usar Twilio"), note("No usar Twilio"), "primera")).toBe("Quedarme con la primera");
-    expect(timeAgo(0, 3 * 86_400)).toBe("hace 3 días");
   });
 
   it("groups notes and shows what the last task used and who reads it", async () => {
@@ -80,6 +79,16 @@ describe("Memory", () => {
     await user.click(within(dialog).getByRole("radio", { name: "Regla" }));
     await user.click(within(dialog).getByRole("button", { name: "Guardar nota" }));
     expect(await within(screen.getByRole("region", { name: "Reglas" })).findByText("Nunca subir secretos al repo")).toBeInTheDocument();
+  });
+
+  it("drops an abandoned edit", async () => {
+    const { user } = await setup();
+    const rules = screen.getByRole("region", { name: "Reglas" });
+    await user.click(within(rules).getByRole("button", { name: "Editar" }));
+    await user.type(within(rules).getByLabelText("Texto de la nota"), " y nunca borrar");
+    await user.click(within(rules).getByRole("button", { name: "Cancelar" }));
+    await user.click(within(rules).getByRole("button", { name: "Editar" }));
+    expect(within(rules).getByLabelText("Texto de la nota")).toHaveValue("Nunca tocar .env ni correr migraciones en producción");
   });
 
   it("searches the memory", async () => {
