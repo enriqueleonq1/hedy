@@ -58,6 +58,26 @@ describe("Workspace", () => {
     // Many steps: well over the default 5 s on a busy machine.
   }, 20_000);
 
+  it("shows what the agent is doing: the working mascot and its word", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    // The running sample task in homming last searched the code (Grep).
+    await openProject(user, /^homming/);
+    const word = await screen.findByText("Rastreando");
+    const live = word.closest(".agent-row--live");
+    expect(live).toHaveAttribute("aria-hidden");
+    expect(live?.querySelector(".mascot")).toHaveAttribute("data-activity", "search");
+    expect(live?.querySelector(".m-lens")).not.toBeNull();
+    // A single working mascot in the chat: the others rest.
+    expect(document.querySelectorAll('.timeline .mascot[data-state="working"]')).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: "Estado" }));
+    expect(await screen.findByRole("heading", { name: "homming" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText("Rastreando").length).toBeGreaterThanOrEqual(2));
+  });
+
   it("sends the plan back with feedback", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);

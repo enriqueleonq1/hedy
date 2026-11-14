@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 
-import { translator } from "../../i18n";
+import { I18nProvider, translator } from "../../i18n";
+import { ACTIVITY_LABEL, ACTIVITY_TIMING, WORKING_ACTIVITIES, type WorkingActivity } from "./activity";
 import { Mascot, MASCOT_STATE_LABEL, type MascotState } from "./Mascot";
+import { WorkingWord } from "./WorkingWord";
 
 const states = Object.keys(MASCOT_STATE_LABEL) as MascotState[];
 
@@ -59,4 +61,121 @@ describe("Mascot", () => {
     const ids = [...container.querySelectorAll("filter")].map((f) => f.id);
     expect(new Set(ids).size).toBe(2);
   });
+
+  const props: Record<WorkingActivity, string> = {
+    reading: ".m-book",
+    search: ".m-lens",
+    edit: ".m-laptop",
+    command: ".m-term",
+    test: ".m-flask",
+    web: ".m-globe",
+    think: ".m-gear",
+    subagents: ".m-mini",
+    waiting: ".m-lava",
+    long: ".m-sweat",
+  };
+
+  it.each(WORKING_ACTIVITIES)("works on %s with its props and a bilingual name", (activity) => {
+    const { container, unmount } = render(<Mascot color="#7AA2F7" state="working" activity={activity} />);
+    const svg = screen.getByRole("img", { name: translator("es")(ACTIVITY_LABEL[activity]) });
+    expect(svg).toHaveAttribute("data-activity", activity);
+    expect(svg.classList.contains(`mascot--act-${activity}`)).toBe(true);
+    expect(container.querySelector(props[activity]), activity).not.toBeNull();
+    unmount();
+
+    render(
+      <I18nProvider setting="en">
+        <Mascot color="#7AA2F7" state="working" activity={activity} />
+      </I18nProvider>,
+    );
+    expect(screen.getByRole("img", { name: translator("en")(ACTIVITY_LABEL[activity]) })).toBeInTheDocument();
+  });
+
+  it("works on the laptop by default, and named as working", () => {
+    const { container } = render(<Mascot color="#7AA2F7" state="working" />);
+    expect(screen.getByRole("img", { name: "Trabajando" })).toHaveAttribute("data-activity", "edit");
+    expect(container.querySelector(".m-laptop")).not.toBeNull();
+  });
+
+  it("ignores the activity outside the working state", () => {
+    const { container } = render(<Mascot color="#7AA2F7" state="thinking" activity="reading" />);
+    expect(screen.getByRole("img", { name: "Pensando" })).not.toHaveAttribute("data-activity");
+    expect(container.querySelector(".m-book")).toBeNull();
+  });
+
+  it("keeps a tiny working mascot simple, whatever it does", () => {
+    for (const activity of WORKING_ACTIVITIES) {
+      const { container, unmount } = render(
+        <Mascot color="#7AA2F7" state="working" activity={activity} size={24} />,
+      );
+      expect(container.querySelector(".mascot--tiny"), activity).not.toBeNull();
+      for (const selector of [".m-props", ".m-behind", ".m-drop", ".m-hand", ".m-glasses", ".m-cheeks"]) {
+        expect(container.querySelector(selector), `${activity} ${selector}`).toBeNull();
+      }
+      expect(container.querySelector(".m-eyes"), activity).not.toBeNull();
+      unmount();
+    }
+  });
+
+  it("cross-fades from one activity to the next", () => {
+    vi.useFakeTimers();
+    try {
+      const { container, rerender } = render(<Mascot color="#7AA2F7" state="working" activity="reading" />);
+      expect(container.querySelector(".m-leave")).toBeNull();
+      rerender(<Mascot color="#7AA2F7" state="working" activity="test" />);
+      expect(container.querySelector(".m-props.m-leave .m-book")).not.toBeNull();
+      expect(container.querySelector(".m-props.m-enter .m-flask")).not.toBeNull();
+      expect(container.querySelector(".m-face.m-leave")).toHaveAttribute("aria-hidden");
+      act(() => {
+        vi.advanceTimersByTime(ACTIVITY_TIMING.fadeMs);
+      });
+      expect(container.querySelector(".m-leave")).toBeNull();
+      expect(container.querySelector(".m-book")).toBeNull();
+      expect(container.querySelector(".m-props:not(.m-enter) .m-flask")).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
+
+describe("WorkingWord", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const word = (container: HTMLElement) => container.querySelector(".working-word__text")?.textContent;
+
+  it("rotates the words of its activity, and starts again on a new one", () => {
+    const { container, rerender } = render(<WorkingWord activity="reading" />);
+    expect(container.querySelector(".working-word")).toHaveAttribute("aria-hidden");
+    expect(word(container)).toBe("Leyendo");
+    act(() => {
+      vi.advanceTimersByTime(ACTIVITY_TIMING.wordEveryMs);
+    });
+    expect(word(container)).toBe("Hojeando");
+    act(() => {
+      vi.advanceTimersByTime(2 * ACTIVITY_TIMING.wordEveryMs);
+    });
+    expect(word(container)).toBe("Leyendo");
+    act(() => {
+      vi.advanceTimersByTime(ACTIVITY_TIMING.wordEveryMs);
+    });
+    rerender(<WorkingWord activity="long" />);
+    expect(word(container)).toBe("Sudando la gota");
+    rerender(<WorkingWord activity={undefined} />);
+    expect(container.querySelector(".working-word")).toBeNull();
+  });
+
+  it("speaks English", () => {
+    const { container } = render(
+      <I18nProvider setting="en">
+        <WorkingWord activity="search" />
+      </I18nProvider>,
+    );
+    expect(word(container)).toBe("Sniffing around");
+  });
+});
+

@@ -7,6 +7,7 @@ import { useTerminals } from "../components/Terminal/TerminalProvider";
 import { Button } from "../components/ui/Button";
 import type { CliProviderId, Overview, SettingKey, ThemeSetting } from "../api/types";
 import { Mascot, MASCOT_STATE_LABEL, type MascotState } from "../components/Mascot/Mascot";
+import { ACTIVITY_LABEL, ACTIVITY_WORDS, WORKING_ACTIVITIES } from "../components/Mascot/activity";
 import { ColorPicker, Field, Segmented, Switch } from "../components/ui/controls";
 import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 import { TemplatesSection } from "./templates/TemplatesSection";
@@ -92,6 +93,16 @@ export function Settings({ overview }: { overview: Overview }) {
             <figure key={state}>
               <Mascot color={preview} state={state} size={110} />
               <figcaption>{t(MASCOT_STATE_LABEL[state])}</figcaption>
+            </figure>
+          ))}
+        </div>
+        <h3 className="mascot-gallery__title">{t("settings.mascotWorking")}</h3>
+        <div className="mascot-gallery" aria-label={t("settings.mascotWorking")}>
+          {WORKING_ACTIVITIES.map((activity) => (
+            <figure key={activity}>
+              <Mascot color={preview} state="working" activity={activity} size={110} />
+              <figcaption>{t(ACTIVITY_LABEL[activity])}</figcaption>
+              <span className="mascot-gallery__words">{ACTIVITY_WORDS[activity].map((key) => t(key)).join(" · ")}</span>
             </figure>
           ))}
         </div>

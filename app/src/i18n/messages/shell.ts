@@ -1,5 +1,5 @@
 // The frame around every screen: top bar, sidebar, terminal panel, toasts,
-// dialogs, shared controls and the mascot's states.
+// dialogs and shared controls.
 
 const es = {
   "shell.home": "Inicio",
@@ -18,12 +18,6 @@ const es = {
   "shell.exitCode": "código {code}",
   "shell.dismiss": "Cerrar aviso",
   "shell.customColor": "{label}: color personalizado",
-
-  "mascot.idle": "En espera",
-  "mascot.sleeping": "Durmiendo",
-  "mascot.thinking": "Pensando",
-  "mascot.working": "Trabajando",
-  "mascot.done": "¡Listo!",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -43,12 +37,6 @@ const en: Record<keyof typeof es, string> = {
   "shell.exitCode": "code {code}",
   "shell.dismiss": "Dismiss",
   "shell.customColor": "{label}: custom color",
-
-  "mascot.idle": "Idle",
-  "mascot.sleeping": "Sleeping",
-  "mascot.thinking": "Thinking",
-  "mascot.working": "Working",
-  "mascot.done": "Done!",
 };
 
 export default { es, en };

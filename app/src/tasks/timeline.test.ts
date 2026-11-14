@@ -94,7 +94,8 @@ describe("mascotState", () => {
     expect(mascotState(null, [])).toBe("idle");
     expect(mascotState(task({ status: "waitingApproval" }), [])).toBe("thinking");
     expect(mascotState(task({}), [{ kind: "fileEdited", path: "a" }])).toBe("working");
-    expect(mascotState(task({}), [{ kind: "message", text: "pienso" }])).toBe("thinking");
+    // Thinking before any tool is an activity of the working mascot.
+    expect(mascotState(task({}), [{ kind: "message", text: "pienso" }])).toBe("working");
     expect(mascotState(task({ live: false }), [])).toBe("sleeping");
     expect(
       mascotState(task({ status: "review" }), [{ kind: "finished", ok: true, summary: "", durationMs: 1 }]),

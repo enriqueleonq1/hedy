@@ -5,6 +5,7 @@
 import accounts from "./accounts";
 import activity from "./activity";
 import common from "./common";
+import mascot from "./mascot";
 import memory from "./memory";
 import onboarding from "./onboarding";
 import queue from "./queue";
@@ -21,6 +22,7 @@ export type Language = "es" | "en";
 const es = {
   ...common.es,
   ...shell.es,
+  ...mascot.es,
   ...onboarding.es,
   ...welcome.es,
   ...accounts.es,
@@ -36,6 +38,7 @@ const es = {
 const en: Record<keyof typeof es, string> = {
   ...common.en,
   ...shell.en,
+  ...mascot.en,
   ...onboarding.en,
   ...welcome.en,
   ...accounts.en,

@@ -7,7 +7,8 @@ import { Mascot } from "../../components/Mascot/Mascot";
 import { shortPath } from "../../components/projects";
 import { Button } from "../../components/ui/Button";
 import { isBusy, tasksKey, useQueue, useSetQueue, useTaskEvents, useTasks, useTemplates } from "../../tasks/hooks";
-import { agentName, buildTimeline, isOpen, mascotState, MODE_LABEL, STATUS_LABEL } from "../../tasks/timeline";
+import { agentName, buildTimeline, isOpen, MODE_LABEL, STATUS_LABEL } from "../../tasks/timeline";
+import { useMascot } from "../../tasks/useMascot";
 import { MODEL_SUGGESTIONS } from "../../components/models";
 import { useT } from "../../i18n";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
@@ -48,6 +49,7 @@ export function Workspace({
   const history = events.data ?? [];
   const queue = useQueue(task?.id ?? null).data ?? [];
   const agent = agentName(history);
+  const mascot = useMascot(task, history);
   const name = info?.name ?? shortPath(project);
 
   return (
@@ -106,7 +108,7 @@ export function Workspace({
             agent={agent}
             account={account}
             accounts={overview.accounts}
-            mascot={mascotState(task, history)}
+            mascot={mascot}
             scrollKey={queue.length}
             footer={
               <QueuedMessages task={task} queue={queue} agent={agent} cardWaiting={task.status === "waitingApproval"} />

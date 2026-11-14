@@ -4,10 +4,12 @@ import { errorMessage } from "../../api/context";
 import type { ActivityItem, BoardState, Overview, Phase } from "../../api/types";
 import { defaultAccount } from "../../components/Layout";
 import { Mascot } from "../../components/Mascot/Mascot";
+import { WorkingWord } from "../../components/Mascot/WorkingWord";
 import { Button } from "../../components/ui/Button";
 import { formatElapsed, timeAgo } from "../../format";
 import { useT, type MessageKey } from "../../i18n";
-import { needsYou, useActivity } from "../../tasks/hooks";
+import { needsYou, useActivity, useTaskEvents } from "../../tasks/hooks";
+import { useMascot } from "../../tasks/useMascot";
 import { DEFAULT_ACCOUNT_COLOR, ERROR_MASCOT_COLOR } from "../../theme/tokens";
 
 /** Finished tasks stay on the board this long (the backend's `RECENT_HOURS`). */
@@ -175,6 +177,9 @@ function BoardRow({
   const t = useT();
   const { task, state } = item;
   const account = overview.accounts.find((a) => a.id === task.account);
+  // While it works, the state reads as what it is doing ("Leyendo…").
+  const events = useTaskEvents(state === "working" ? task.id : null);
+  const { activity } = useMascot(state === "working" ? task : null, events.data ?? []);
   const active = TONE[state] === "needs" || state === "working";
   const time = active
     ? t("activity.runningFor", { time: formatElapsed(now - task.createdAt) })
@@ -185,7 +190,14 @@ function BoardRow({
         <span className="board-row__title">{task.title}</span>
         <span className={`board-state board-state--${TONE[state]}`}>
           <span aria-hidden>{MARK[state]}</span>
-          {t(STATE_LABEL[state])}
+          {activity ? (
+            <>
+              <span className="sr-only">{t(STATE_LABEL[state])}</span>
+              <WorkingWord activity={activity} />
+            </>
+          ) : (
+            t(STATE_LABEL[state])
+          )}
         </span>
         <span className="board-row__meta">
           <span className="board-row__project">{item.projectName}</span>
