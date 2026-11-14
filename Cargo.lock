@@ -1843,6 +1843,7 @@ dependencies = [
  "hedy-core",
  "rmcp",
  "serde",
+ "serde_json",
  "tokio",
 ]
 

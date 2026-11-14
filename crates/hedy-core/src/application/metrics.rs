@@ -207,7 +207,13 @@ mod tests {
             .add_note(Some(&moira), "Precios en USD", Category::Decision)
             .unwrap();
         f.hedy
-            .propose_note(&moira, "Tests con pytest", Category::Convention, "Codex")
+            .propose_note(
+                &moira,
+                "Tests con pytest",
+                Category::Convention,
+                "Codex",
+                None,
+            )
             .unwrap();
         let status = f.hedy.project_status(&moira).unwrap();
         assert_eq!(status.branch.as_deref(), Some("main"));

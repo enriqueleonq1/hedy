@@ -60,11 +60,25 @@ pub struct SearchParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetParams {
+    /// The note's id, from memory_search.
+    #[serde(default)]
+    pub id: Option<i64>,
+    /// Or its topic, such as arquitectura/pagos.
+    #[serde(default)]
+    pub topic: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ProposeParams {
     /// The note, in one sentence.
     pub text: String,
     /// decision, convention, rule or preference.
     pub category: String,
+    /// Optional stable topic, a lowercase path such as arquitectura/pagos.
+    /// Under the topic of an existing note, the proposal is a change to it.
+    #[serde(default)]
+    pub topic: Option<String>,
 }
 
 /// Hedy's memory tools for one project and task, over MCP.
@@ -76,18 +90,35 @@ pub struct MemoryServer {
 impl MemoryServer {
     #[tool(
         name = "memory_search",
-        description = "Busca en la memoria del proyecto: decisiones, convenciones, reglas y preferencias aprobadas por el usuario. Sin texto devuelve todas."
+        description = "Busca en la memoria del proyecto: decisiones, convenciones, reglas y preferencias aprobadas por el usuario. Devuelve un resumen por nota (id, categoría, tema y el comienzo del texto); memory_get devuelve una completa. Sin texto devuelve todas."
     )]
     fn memory_search(&self, Parameters(params): Parameters<SearchParams>) -> String {
         self.tools.search(&params.query)
     }
 
     #[tool(
+        name = "memory_get",
+        description = "Devuelve una nota completa de la memoria del proyecto, por id (de memory_search) o por tema."
+    )]
+    fn memory_get(&self, Parameters(params): Parameters<GetParams>) -> String {
+        self.tools.get(params.id, params.topic.as_deref())
+    }
+
+    #[tool(
+        name = "memory_topics",
+        description = "Lista los temas de la memoria del proyecto (p. ej. arquitectura/pagos) con la nota de cada uno, para proponer cambios bajo el mismo tema."
+    )]
+    fn memory_topics(&self) -> String {
+        self.tools.topics()
+    }
+
+    #[tool(
         name = "memory_propose",
-        description = "Propone una nota para la memoria del proyecto (una decisión duradera o una convención). No se guarda hasta que el usuario la apruebe."
+        description = "Propone una nota para la memoria del proyecto (una decisión duradera o una convención). No se guarda hasta que el usuario la apruebe. Con el tema de una nota existente, propone un cambio de esa nota."
     )]
     fn memory_propose(&self, Parameters(params): Parameters<ProposeParams>) -> String {
-        self.tools.propose(&params.text, &params.category)
+        self.tools
+            .propose(&params.text, &params.category, params.topic.as_deref())
     }
 }
 
@@ -137,7 +168,97 @@ pub fn serve_helper_mode() -> Option<i32> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
+
+    /// Records what the server asks the memory for.
+    #[derive(Default)]
+    struct Recorder(Mutex<Vec<String>>);
+
+    impl MemoryTools for Recorder {
+        fn search(&self, query: &str) -> String {
+            self.0.lock().unwrap().push(format!("search {query}"));
+            "- #1 [decision · proyecto] pagos: Stripe".into()
+        }
+        fn get(&self, id: Option<i64>, topic: Option<&str>) -> String {
+            self.0.lock().unwrap().push(format!("get {id:?} {topic:?}"));
+            "#1 [decision · proyecto]\nStripe".into()
+        }
+        fn topics(&self) -> String {
+            self.0.lock().unwrap().push("topics".into());
+            "- pagos → #1: Stripe".into()
+        }
+        fn propose(&self, text: &str, category: &str, topic: Option<&str>) -> String {
+            self.0
+                .lock()
+                .unwrap()
+                .push(format!("propose {text} {category} {topic:?}"));
+            "ok".into()
+        }
+    }
+
+    fn parameters<T: serde::de::DeserializeOwned>(json: serde_json::Value) -> Parameters<T> {
+        Parameters(serde_json::from_value(json).unwrap())
+    }
+
+    #[test]
+    fn serves_the_memory_tools() {
+        let names: Vec<String> = MemoryServer::tool_router()
+            .list_all()
+            .into_iter()
+            .map(|t| t.name.to_string())
+            .collect();
+        for name in [
+            "memory_search",
+            "memory_get",
+            "memory_topics",
+            "memory_propose",
+        ] {
+            assert!(names.iter().any(|n| n == name), "{name} missing: {names:?}");
+        }
+        let propose = MemoryServer::tool_router()
+            .list_all()
+            .into_iter()
+            .find(|t| t.name == "memory_propose")
+            .unwrap();
+        let schema = serde_json::Value::Object((*propose.input_schema).clone());
+        assert!(schema["properties"]["topic"].is_object());
+        let required = schema["required"].as_array().unwrap();
+        assert!(required.iter().all(|r| r != "topic"), "topic is optional");
+    }
+
+    #[test]
+    fn tools_reach_the_memory() {
+        let recorder = Arc::new(Recorder::default());
+        let server = MemoryServer::new(recorder.clone());
+        assert!(
+            server
+                .memory_search(parameters(serde_json::json!({})))
+                .contains("#1")
+        );
+        server.memory_get(parameters(serde_json::json!({"id": 1})));
+        server.memory_get(parameters(serde_json::json!({"topic": "pagos"})));
+        assert!(server.memory_topics().contains("pagos"));
+        // Older agents propose without a topic.
+        server.memory_propose(parameters(
+            serde_json::json!({"text": "Precios en USD", "category": "decision"}),
+        ));
+        server.memory_propose(parameters(serde_json::json!(
+            {"text": "Pagos con Stripe", "category": "decision", "topic": "pagos"}
+        )));
+        assert_eq!(
+            *recorder.0.lock().unwrap(),
+            [
+                "search ",
+                "get Some(1) None",
+                "get None Some(\"pagos\")",
+                "topics",
+                "propose Precios en USD decision None",
+                "propose Pagos con Stripe decision Some(\"pagos\")",
+            ]
+        );
+    }
 
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()

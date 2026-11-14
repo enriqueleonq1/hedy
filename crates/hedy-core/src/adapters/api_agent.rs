@@ -23,7 +23,7 @@ use crate::application::ports::{
 use crate::domain::agent::looks_like_tests;
 use crate::domain::permissions::{normalize, protected_file_reason};
 use crate::domain::task::SHARED_DEPENDENCY_DIRS;
-use crate::domain::{AgentEvent, LaunchSpec, TaskMode, UsageSample, prompts};
+use crate::domain::{AgentEvent, LaunchSpec, Phase, TaskMode, UsageSample, prompts};
 use crate::tr;
 
 pub struct ApiAgentLauncher;
@@ -103,6 +103,7 @@ impl AgentLauncher for ApiAgentLauncher {
             shared,
             events,
             read_only,
+            phase: request.phase,
             planning: request.plan_first,
             plans: 0,
             messages: Vec::new(),
@@ -170,6 +171,7 @@ struct Agent {
     shared: Vec<PathBuf>,
     events: EventSink,
     read_only: bool,
+    phase: Phase,
     planning: bool,
     plans: u32,
     messages: Vec<Value>,
@@ -188,19 +190,32 @@ fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> 
     }})
 }
 
-fn memory_tools() -> [Value; 2] {
+fn memory_tools() -> [Value; 4] {
     [
         tool(
             "memory_search",
-            "Busca en la memoria del proyecto (decisiones, convenciones, reglas). Vacío: todas.",
+            "Busca en la memoria del proyecto (decisiones, convenciones, reglas). Devuelve un resumen por nota: id, tema y el comienzo del texto. Vacío: todas.",
             json!({"query": {"type": "string"}}),
             &[],
         ),
         tool(
+            "memory_get",
+            "Lee una nota completa de la memoria, por id (de memory_search) o por tema.",
+            json!({"id": {"type": "integer"}, "topic": {"type": "string"}}),
+            &[],
+        ),
+        tool(
+            "memory_topics",
+            "Lista los temas de la memoria del proyecto, con la nota de cada uno.",
+            json!({}),
+            &[],
+        ),
+        tool(
             "memory_propose",
-            "Propone una nota para la memoria del proyecto; el usuario decide si se guarda.",
+            "Propone una nota para la memoria del proyecto; el usuario decide si se guarda. Con el tema de una nota existente, propone un cambio de esa nota.",
             json!({"text": {"type": "string"},
-                   "category": {"type": "string", "enum": ["decision", "convention", "rule", "preference"]}}),
+                   "category": {"type": "string", "enum": ["decision", "convention", "rule", "preference"]},
+                   "topic": {"type": "string", "description": "Tema estable en minúsculas, p. ej. arquitectura/pagos (opcional)"}}),
             &["text", "category"],
         ),
     ]
@@ -311,7 +326,7 @@ impl Agent {
         }
         if self.memory.is_some() {
             prompt.push(' ');
-            prompt.push_str(&prompts::memory_guidance());
+            prompt.push_str(&prompts::memory_guidance(self.phase, mode));
         }
         if self.planning {
             prompt.push(' ');
@@ -579,11 +594,21 @@ impl Agent {
             "list_files" => self.list_files(&arg("path")),
             "read_file" => self.read_file(&arg("path")),
             "search" => self.search(&arg("pattern"), &arg("path")),
-            "memory_search" | "memory_propose" => match &self.memory {
-                Some(memory) if name == "memory_search" => memory.search(&arg("query")),
-                Some(memory) => memory.propose(&arg("text"), &arg("category")),
-                None => tr!("Herramienta desconocida: {name}", "Unknown tool: {name}"),
-            },
+            "memory_search" | "memory_get" | "memory_topics" | "memory_propose" => {
+                let Some(memory) = &self.memory else {
+                    return Ok(tr!(
+                        "Herramienta desconocida: {name}",
+                        "Unknown tool: {name}"
+                    ));
+                };
+                let topic = args["topic"].as_str();
+                match name {
+                    "memory_search" => memory.search(&arg("query")),
+                    "memory_get" => memory.get(args["id"].as_i64(), topic),
+                    "memory_topics" => memory.topics(),
+                    _ => memory.propose(&arg("text"), &arg("category"), topic),
+                }
+            }
             "write_file" | "edit_file" => {
                 let target = match self.resolve(&arg("path"), true) {
                     Ok(p) => p,
@@ -1040,6 +1065,7 @@ mod tests {
             shared: Vec::new(),
             events: Arc::new(|_| {}),
             read_only: false,
+            phase: Phase::Implement,
             planning: false,
             plans: 0,
             messages: Vec::new(),

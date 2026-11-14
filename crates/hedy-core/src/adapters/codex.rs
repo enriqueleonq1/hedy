@@ -152,7 +152,10 @@ impl AgentLauncher for CodexLauncher {
                 first_prompt: Some(first_prompt),
                 model: request.model.clone(),
                 resume: request.resume.clone(),
-                instructions: request.memory.is_some().then(prompts::memory_guidance),
+                instructions: request
+                    .memory
+                    .is_some()
+                    .then(|| prompts::memory_guidance(request.phase, request.mode)),
                 approvals: HashMap::new(),
                 changes: HashMap::new(),
                 last_message: String::new(),

@@ -4,8 +4,8 @@ use std::sync::Mutex;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::application::ports::{
-    AccountRepository, MemoryRepository, NewNote, PortError, PortResult, ProjectRepository,
-    RateLimit, SettingsRepository, TaskRepository, UsageRecord, UsageRepository,
+    AccountRepository, MemoryRepository, NewNote, NoteRevision, PortError, PortResult,
+    ProjectRepository, RateLimit, SettingsRepository, TaskRepository, UsageRecord, UsageRepository,
 };
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Color, ConfigFolder, Credentials, Note, NoteStatus,
@@ -127,6 +127,36 @@ const MIGRATIONS: &[&str] = &[
     r#"
     -- Forgetting a note deletes its uses.
     CREATE INDEX note_uses_by_note ON note_uses (note_id);
+"#,
+    r#"
+    -- A stable subject (`arquitectura/pagos`): a proposal under the topic of an
+    -- approved note is a change to that note.
+    ALTER TABLE notes ADD COLUMN topic TEXT;
+    -- When an approved note was last replaced by a newer version.
+    ALTER TABLE notes ADD COLUMN updated_at INTEGER;
+    CREATE INDEX notes_by_topic ON notes (project, topic);
+    -- The full-text index covers topics too, so "pagos" finds `arquitectura/pagos`.
+    DROP TRIGGER notes_fts_insert;
+    DROP TRIGGER notes_fts_delete;
+    DROP TRIGGER notes_fts_update;
+    DROP TABLE notes_fts;
+    CREATE VIRTUAL TABLE notes_fts USING fts5(
+        text, topic, content = 'notes', content_rowid = 'id',
+        tokenize = 'unicode61 remove_diacritics 2'
+    );
+    INSERT INTO notes_fts (notes_fts) VALUES ('rebuild');
+    CREATE TRIGGER notes_fts_insert AFTER INSERT ON notes BEGIN
+        INSERT INTO notes_fts (rowid, text, topic) VALUES (new.id, new.text, new.topic);
+    END;
+    CREATE TRIGGER notes_fts_delete AFTER DELETE ON notes BEGIN
+        INSERT INTO notes_fts (notes_fts, rowid, text, topic)
+            VALUES ('delete', old.id, old.text, old.topic);
+    END;
+    CREATE TRIGGER notes_fts_update AFTER UPDATE OF text, topic ON notes BEGIN
+        INSERT INTO notes_fts (notes_fts, rowid, text, topic)
+            VALUES ('delete', old.id, old.text, old.topic);
+        INSERT INTO notes_fts (rowid, text, topic) VALUES (new.id, new.text, new.topic);
+    END;
 "#,
 ];
 
@@ -534,8 +564,8 @@ impl UsageRepository for SqliteStore {
 }
 
 /// Note columns, for queries that name the notes table `n`.
-const NOTE_COLUMNS: &str =
-    "n.id, n.project, n.text, n.category, n.author, n.status, n.created_at, n.uses, n.last_used";
+const NOTE_COLUMNS: &str = "n.id, n.project, n.text, n.category, n.author, n.status, \
+     n.created_at, n.uses, n.last_used, n.topic, n.updated_at";
 
 fn note_from_row(row: &Row) -> rusqlite::Result<Note> {
     Ok(Note {
@@ -552,6 +582,8 @@ fn note_from_row(row: &Row) -> rusqlite::Result<Note> {
         created_at: row.get(6)?,
         uses: row.get(7)?,
         last_used: row.get(8)?,
+        topic: row.get(9)?,
+        updated_at: row.get(10)?,
     })
 }
 
@@ -588,8 +620,8 @@ impl MemoryRepository for SqliteStore {
     fn add_note(&self, note: &NewNote) -> PortResult<Note> {
         let id = self.with(|c| {
             c.execute(
-                "INSERT INTO notes (project, text, category, author, status, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO notes (project, text, category, author, status, created_at, topic)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     note.project
                         .as_ref()
@@ -599,6 +631,7 @@ impl MemoryRepository for SqliteStore {
                     note.author,
                     status_str(note.status),
                     note.created_at,
+                    note.topic,
                 ],
             )?;
             Ok(c.last_insert_rowid())
@@ -623,6 +656,24 @@ impl MemoryRepository for SqliteStore {
             c.execute(
                 "UPDATE notes SET text = ?2, category = ?3 WHERE id = ?1",
                 params![id, text, category.as_str()],
+            )
+            .map(drop)
+        })
+    }
+
+    fn revise_note(&self, id: i64, r: &NoteRevision) -> PortResult<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE notes SET text = ?2, category = ?3, author = ?4, topic = ?5, updated_at = ?6
+                 WHERE id = ?1",
+                params![
+                    id,
+                    r.text,
+                    r.category.as_str(),
+                    r.author,
+                    r.topic,
+                    r.updated_at
+                ],
             )
             .map(drop)
         })
@@ -937,6 +988,7 @@ mod tests {
                     author: "user".into(),
                     status,
                     created_at: 10,
+                    topic: None,
                 })
                 .unwrap()
         };
@@ -1025,6 +1077,149 @@ mod tests {
                 .unwrap()
                 .iter()
                 .all(|n| n.id != price.id)
+        );
+    }
+
+    #[test]
+    fn topics_are_searched_and_notes_revised_in_place() {
+        let store = SqliteStore::in_memory().unwrap();
+        let moira = Path::new("/code/moira");
+        let note = store
+            .add_note(&NewNote {
+                project: Some(moira.into()),
+                text: "Los pagos van por Stripe".into(),
+                category: Category::Decision,
+                author: "Claude".into(),
+                status: NoteStatus::Approved,
+                created_at: 10,
+                topic: Some("arquitectura/cobros".into()),
+            })
+            .unwrap();
+        assert_eq!(note.topic.as_deref(), Some("arquitectura/cobros"));
+        assert_eq!(note.updated_at, None);
+        // The topic is indexed too.
+        let found = store.search_notes(Some(moira), false, "cobros").unwrap();
+        assert_eq!(found.iter().map(|n| n.id).collect::<Vec<_>>(), [note.id]);
+
+        store.record_uses(&[note.id], None, 20).unwrap();
+        store
+            .revise_note(
+                note.id,
+                &NoteRevision {
+                    text: "Los pagos van por Mercado Pago".into(),
+                    category: Category::Rule,
+                    author: "Codex".into(),
+                    topic: Some("arquitectura/pagos".into()),
+                    updated_at: 30,
+                },
+            )
+            .unwrap();
+        let revised = store.note(note.id).unwrap().unwrap();
+        assert_eq!(revised.text, "Los pagos van por Mercado Pago");
+        assert_eq!(
+            (revised.category, revised.author.as_str()),
+            (Category::Rule, "Codex")
+        );
+        assert_eq!(
+            (revised.created_at, revised.uses),
+            (10, 1),
+            "keeps its history"
+        );
+        assert_eq!(revised.updated_at, Some(30));
+        // The index follows the new text and topic.
+        assert!(
+            store
+                .search_notes(Some(moira), false, "Stripe")
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            store
+                .search_notes(Some(moira), false, "cobros")
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            store
+                .search_notes(Some(moira), false, "mercado")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            store
+                .search_notes(Some(moira), false, "pagos")
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn similar_notes_are_found_by_their_key_words() {
+        use crate::domain::memory::{key_words, similar};
+        let store = SqliteStore::in_memory().unwrap();
+        let moira = Path::new("/code/moira");
+        let add = |text: &str| {
+            store
+                .add_note(&NewNote {
+                    project: Some(moira.into()),
+                    text: text.into(),
+                    category: Category::Decision,
+                    author: "user".into(),
+                    status: NoteStatus::Approved,
+                    created_at: 1,
+                    topic: None,
+                })
+                .unwrap()
+        };
+        let prices = add("Los precios se guardan en USD y se muestran también en Bs");
+        add("Los recordatorios se envían por WhatsApp");
+        add("Tests con pytest");
+        let proposal = "El precio se guarda siempre en dólares USD";
+        // What the memory screen does: search by key words (plurals and
+        // accents folded), then keep the close ones.
+        let query = key_words(proposal).join(" ");
+        let found: Vec<Note> = store
+            .search_notes(Some(moira), false, &query)
+            .unwrap()
+            .into_iter()
+            .filter(|n| similar(&n.text, proposal))
+            .collect();
+        assert_eq!(found.iter().map(|n| n.id).collect::<Vec<_>>(), [prices.id]);
+    }
+
+    #[test]
+    fn the_topic_migration_keeps_existing_notes_searchable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("hedy.db");
+        {
+            // A database from before topics: migrations up to the 6th.
+            let conn = Connection::open(&path).unwrap();
+            for sql in &MIGRATIONS[..6] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.pragma_update(None, "user_version", 6).unwrap();
+            conn.execute(
+                "INSERT INTO notes (project, text, category, author, status, created_at)
+                 VALUES ('/code/moira', 'Los recordatorios se envían por WhatsApp', 'decision',
+                         'user', 'approved', 5)",
+                [],
+            )
+            .unwrap();
+        }
+        let store = SqliteStore::open(&path).unwrap();
+        let notes = store
+            .search_notes(Some(Path::new("/code/moira")), false, "recordatorio")
+            .unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!((notes[0].topic.as_ref(), notes[0].updated_at), (None, None));
+        store.delete_note(notes[0].id).unwrap();
+        assert!(
+            store
+                .search_notes(Some(Path::new("/code/moira")), false, "whatsapp")
+                .unwrap()
+                .is_empty()
         );
     }
 

@@ -17,6 +17,8 @@ pub enum DomainError {
     #[error("{}", self.message())]
     UnknownCategory(String),
     #[error("{}", self.message())]
+    InvalidTopic(String),
+    #[error("{}", self.message())]
     InvalidPrice(String),
     #[error("{}", self.message())]
     ApiKeyNotSupported { provider: Provider },
@@ -65,6 +67,10 @@ impl DomainError {
             Self::UnknownCategory(c) => tr!(
                 "categoría desconocida: {c} (decisión, convención, regla o preferencia)",
                 "unknown category: {c} (decision, convention, rule or preference)"
+            ),
+            Self::InvalidTopic(t) => tr!(
+                "tema no válido: «{t}» (usa una ruta corta en minúsculas, p. ej. arquitectura/pagos)",
+                "invalid topic: «{t}» (use a short lowercase path, e.g. architecture/payments)"
             ),
             Self::InvalidPrice(p) => tr!(
                 "precio no válido: «{p}» (usa entrada/salida en USD por millón de tokens, p. ej. 0.60/2.50)",

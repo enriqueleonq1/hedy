@@ -204,7 +204,7 @@ impl AgentLauncher for AcpLauncher {
             ));
         }
         if request.memory.is_some() {
-            intro.push(prompts::memory_guidance());
+            intro.push(prompts::memory_guidance(request.phase, request.mode));
         }
         if request.plan_first {
             intro.push(prompts::plan_first());
