@@ -20,7 +20,7 @@ fn main() -> ExitCode {
     // database, the `ui.language` setting (if any) applies to everything else.
     hedy_core::i18n::init(None);
     match run(Cli::parse_args()) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(err) => {
             eprintln!("{} {err}", Style::for_stderr().error("✗ error:"));
             ExitCode::FAILURE
@@ -28,12 +28,13 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(cli: Cli) -> Result<()> {
+fn run(cli: Cli) -> Result<ExitCode> {
     let command = cli.command.unwrap_or(Command::Status);
     if let Command::Completions { shell } = command {
         let mut script = Vec::new();
         clap_complete::generate(shell, &mut Cli::full_command(), "hedy", &mut script);
-        return write_stdout(&script);
+        write_stdout(&script)?;
+        return Ok(ExitCode::SUCCESS);
     }
 
     let dir = match cli.dir {
@@ -41,6 +42,16 @@ fn run(cli: Cli) -> Result<()> {
         None => std::env::current_dir()?,
     };
     let hedy = adapters::system(&HedyPaths::detect()?)?;
+
+    // The only command whose findings (not a failure) set the exit code.
+    if let Command::Doctor = command {
+        let healthy = commands::doctor(&hedy)?;
+        return Ok(if healthy {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        });
+    }
 
     match command {
         Command::Status => commands::status(&hedy, &dir),
@@ -75,8 +86,9 @@ fn run(cli: Cli) -> Result<()> {
             ConfigCommand::Set { key, value } => commands::config_set(&hedy, &key, Some(&value)),
             ConfigCommand::Unset { key } => commands::config_set(&hedy, &key, None),
         },
-        Command::Completions { .. } => unreachable!("handled above"),
-    }
+        Command::Completions { .. } | Command::Doctor => unreachable!("handled above"),
+    }?;
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Writes to stdout, treating a closed pipe (`hedy … | head`) as success.

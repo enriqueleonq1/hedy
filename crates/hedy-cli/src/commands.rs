@@ -5,7 +5,9 @@ use std::path::Path;
 
 use anyhow::{Result, bail};
 use chrono::Timelike;
-use hedy_core::application::{AccountStatus, Hedy, NewAccount, Setting};
+use hedy_core::application::{
+    AccountStatus, CheckArea, CheckLevel, DoctorReport, Hedy, NewAccount, Setting,
+};
 use hedy_core::domain::{Account, ConfigFolder, Credentials, LoginState, Provider};
 use hedy_core::i18n::{self, Language};
 use hedy_core::tr;
@@ -106,6 +108,10 @@ fn tips() -> Vec<String> {
         tr!(
             "`hedy completions fish` activa el autocompletado (también bash y zsh).",
             "`hedy completions fish` turns on completions (bash and zsh too)."
+        ),
+        tr!(
+            "`hedy diagnostico` revisa tus CLIs y cuentas, y avisa si una CLI cambió de versión.",
+            "`hedy doctor` checks your CLIs and accounts, and warns when a CLI changed version."
         ),
         tr!(
             "`-C <carpeta>` usa cualquier comando sobre otro proyecto sin entrar en él.",
@@ -786,6 +792,111 @@ pub fn run(hedy: &Hedy, dir: &Path, account: Option<&str>, args: Vec<String>) ->
     Err(hedy.exec(&resolved).into())
 }
 
+fn area_title(area: CheckArea) -> String {
+    match area {
+        CheckArea::Cli => tr!("CLIs oficiales", "Official CLIs"),
+        CheckArea::Account => tr!("Cuentas", "Accounts"),
+        CheckArea::Hedy => "Hedy".into(),
+        CheckArea::Environment => tr!("Entorno", "Environment"),
+    }
+}
+
+fn level_mark(s: &Style, level: CheckLevel) -> String {
+    match level {
+        CheckLevel::Ok => s.ok("✔"),
+        CheckLevel::Info => s.accent("i"),
+        CheckLevel::Warning => s.warn("!"),
+        CheckLevel::Error => s.error("✗"),
+    }
+}
+
+/// "2 avisos, 1 error"; `None` when there are neither.
+fn doctor_summary(report: &DoctorReport) -> Option<String> {
+    let (warnings, errors) = (
+        report.count(CheckLevel::Warning),
+        report.count(CheckLevel::Error),
+    );
+    let warnings = match warnings {
+        0 => None,
+        1 => Some(tr!("1 aviso", "1 warning")),
+        n => Some(tr!("{n} avisos", "{n} warnings")),
+    };
+    let errors = match errors {
+        0 => None,
+        1 => Some(tr!("1 error", "1 error")),
+        n => Some(tr!("{n} errores", "{n} errors")),
+    };
+    let parts: Vec<String> = warnings.into_iter().chain(errors).collect();
+    (!parts.is_empty()).then(|| parts.join(", "))
+}
+
+/// Widest subject shown before the message; longer ones are cut.
+const SUBJECT_WIDTH: usize = 28;
+
+/// Prints the report. Returns `false` when something is broken (an error).
+pub fn doctor(hedy: &Hedy) -> Result<bool> {
+    let s = Style::for_stdout();
+    let report = spinner::while_running(
+        &tr!(
+            "Revisando las CLIs, las cuentas y Hedy…",
+            "Checking the CLIs, the accounts and Hedy…"
+        ),
+        || hedy.doctor(),
+    )?;
+
+    let width = report
+        .checks
+        .iter()
+        .map(|c| c.subject.chars().count())
+        .max()
+        .unwrap_or(0)
+        .min(SUBJECT_WIDTH);
+    for area in CheckArea::ALL {
+        let checks: Vec<_> = report.in_area(area).collect();
+        if checks.is_empty() {
+            continue;
+        }
+        println!("\n{}", s.section(&area_title(area)));
+        for check in checks {
+            let subject = fit(&check.subject, width);
+            let len = subject.chars().count();
+            let message = match check.level {
+                CheckLevel::Ok | CheckLevel::Info => s.muted(&check.message),
+                CheckLevel::Warning | CheckLevel::Error => check.message.clone(),
+            };
+            println!(
+                "  {} {}  {message}",
+                level_mark(&s, check.level),
+                pad(&s.bold(&subject), len, width)
+            );
+            if let Some(fix) = &check.fix {
+                println!("    {} {}", s.accent("→"), s.command(fix));
+            }
+        }
+    }
+    println!();
+
+    match doctor_summary(&report) {
+        None => mascot::print_beside(
+            &s,
+            Mood::Happy,
+            &[s.ok(tr!("✔ Todo en orden.", "✔ All good."))],
+        ),
+        Some(summary) => {
+            let summary = if report.has_errors() {
+                s.error(format!("✗ {summary}"))
+            } else {
+                s.warn(format!("! {summary}"))
+            };
+            println!("  {summary}");
+            if s.enabled() {
+                println!();
+            }
+        }
+    }
+    Ok(!report.has_errors())
+}
+
 pub fn config_get(hedy: &Hedy, key: &str) -> Result<()> {
     match hedy.setting(key.parse()?)? {
         Some(v) => println!("{v}"),
@@ -814,6 +925,37 @@ mod tests {
         );
         assert_eq!(fit("tienda-online", 20), "tienda-online");
         assert_eq!(fit("tienda-online", 7), "tienda…");
+    }
+
+    #[test]
+    fn doctor_summary_counts_warnings_and_errors() {
+        use hedy_core::application::Check;
+        let check = |level| Check {
+            area: CheckArea::Cli,
+            subject: "x".into(),
+            level,
+            message: String::new(),
+            fix: None,
+        };
+        let report = |levels: &[CheckLevel]| DoctorReport {
+            checks: levels.iter().map(|l| check(*l)).collect(),
+        };
+        assert_eq!(
+            doctor_summary(&report(&[CheckLevel::Ok, CheckLevel::Info])),
+            None
+        );
+        // "2 avisos, 1 error" or "2 warnings, 1 error": another test may
+        // switch the process-wide language.
+        let summary = doctor_summary(&report(&[
+            CheckLevel::Warning,
+            CheckLevel::Warning,
+            CheckLevel::Error,
+        ]))
+        .unwrap();
+        assert!(
+            summary.starts_with("2 ") && summary.ends_with(", 1 error"),
+            "{summary}"
+        );
     }
 
     #[test]

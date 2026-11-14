@@ -9,6 +9,10 @@ use predicates::prelude::*;
 use tempfile::TempDir;
 
 const FAKE_CLAUDE: &str = r#"#!/bin/sh
+if [ "$1" = --version ]; then
+  echo "${FAKE_CLAUDE_VERSION:-2.1.306} (Claude Code)"
+  exit 0
+fi
 if [ "$1" = auth ] && [ "$2" = status ]; then
   echo '{"loggedIn":true,"subscriptionType":"max","email":"secret@example.com"}'
   exit 0
@@ -62,6 +66,24 @@ impl Env {
             .env("HEDY_LANGUAGE", language)
             .env_remove("CLAUDE_CONFIG_DIR")
             .args(args);
+        cmd
+    }
+
+    /// `hedy doctor` that only finds the fake `claude` and git: a `PATH` with
+    /// nothing else and a `HOME` without `~/.local/bin`, so the CLIs on this
+    /// computer are not run.
+    fn doctor(&self, language: &str, args: &[&str]) -> Command {
+        let bin = self.path("doctor-bin");
+        if !bin.exists() {
+            fs::create_dir_all(&bin).unwrap();
+            let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+                .map(|dir| dir.join("git"))
+                .find(|p| p.is_file())
+                .expect("git is installed");
+            std::os::unix::fs::symlink(git, bin.join("git")).unwrap();
+        }
+        let mut cmd = self.hedy_lang(language, args);
+        cmd.env("PATH", &bin).env("HOME", self.path("home"));
         cmd
     }
 
@@ -331,4 +353,95 @@ fn help_follows_the_language() {
     env.hedy_lang("es", &["cuenta", "agregar", "--help"])
         .assert()
         .stdout(predicate::str::contains("<NOMBRE>  Nombre visible"));
+}
+
+#[test]
+fn doctor_checks_clis_accounts_and_the_environment() {
+    let env = Env::new();
+    env.hedy(&[
+        "account",
+        "add",
+        "Claude trabajo",
+        "--claude",
+        "--default-folder",
+        "--no-login",
+    ])
+    .assert()
+    .success();
+    env.doctor("es", &["diagnostico"])
+        .env("ANTHROPIC_API_KEY", "sk-should-not-leak")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("CLIs oficiales"))
+        .stdout(predicate::str::contains("✔ Claude Code"))
+        .stdout(predicate::str::contains("2.1.306 (verificada)"))
+        .stdout(predicate::str::contains("i Codex"))
+        .stdout(predicate::str::contains("no está instalada"))
+        .stdout(predicate::str::contains("sesión iniciada · max"))
+        .stdout(predicate::str::contains("✔ git"))
+        .stdout(predicate::str::contains("i ANTHROPIC_API_KEY"))
+        .stdout(predicate::str::contains("Todo en orden"))
+        .stdout(predicate::str::contains("sk-should-not-leak").not())
+        .stdout(predicate::str::contains("secret@example.com").not());
+
+    // A new version since the last check is a warning, but not an error.
+    env.doctor("es", &["doctor"])
+        .env("FAKE_CLAUDE_VERSION", "2.1.310")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("! Claude Code"))
+        .stdout(predicate::str::contains(
+            "2.1.306 → 2.1.310: cambió desde la última revisión. Hedy se verificó con 2.1.306",
+        ))
+        .stdout(predicate::str::contains("1 aviso"));
+}
+
+#[test]
+fn doctor_fails_when_something_is_broken() {
+    let env = Env::new();
+    env.hedy(&[
+        "account",
+        "add",
+        "Claude personal",
+        "--claude",
+        "--no-login",
+    ])
+    .assert()
+    .success();
+    fs::remove_dir_all(env.path("data/accounts/claude-personal")).unwrap();
+    env.doctor("es", &["doctor"])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("✗ Claude personal"))
+        .stdout(predicate::str::contains("no existe"))
+        .stdout(predicate::str::contains(
+            "→ hedy account login claude-personal",
+        ))
+        .stdout(predicate::str::contains("1 error"))
+        .stderr(predicate::str::is_empty());
+}
+
+#[test]
+fn doctor_speaks_english() {
+    let env = Env::new();
+    env.hedy(&[
+        "account",
+        "add",
+        "Work",
+        "--claude",
+        "--default-folder",
+        "--no-login",
+    ])
+    .assert()
+    .success();
+    env.doctor("en", &["doctor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Official CLIs"))
+        .stdout(predicate::str::contains("2.1.306 (verified)"))
+        .stdout(predicate::str::contains("signed in · max"))
+        .stdout(predicate::str::contains("Environment"))
+        .stdout(predicate::str::contains("All good"))
+        .stdout(predicate::str::contains("verificada").not())
+        .stdout(predicate::str::contains("Cuentas").not());
 }
