@@ -24,7 +24,7 @@ const es = {
   "onboarding.concept.step1": "Conecta tus cuentas",
   "onboarding.concept.step1Body": "Claude, ChatGPT, Gemini, Kimi o Antigravity, cada una con su login oficial.",
   "onboarding.concept.step2": "Elige con qué cuenta trabaja cada proyecto",
-  "onboarding.concept.step2Body": "El trabajo con la cuenta del trabajo; lo personal, con la tuya. Sin mezclarlas.",
+  "onboarding.concept.step2Body": "Cada proyecto recuerda su cuenta. Tú no tienes que cambiarla a mano.",
   "onboarding.concept.step3": "Pide, revisa y acepta",
   "onboarding.concept.step3Body": "La IA propone un plan, te pide permiso y tú decides qué cambios se quedan.",
 
@@ -122,7 +122,7 @@ const en: Record<keyof typeof es, string> = {
   "onboarding.concept.step1": "Connect your accounts",
   "onboarding.concept.step1Body": "Claude, ChatGPT, Gemini, Kimi or Antigravity, each with its official login.",
   "onboarding.concept.step2": "Choose which account each project uses",
-  "onboarding.concept.step2Body": "Work with your work account, personal things with yours. Never mixed.",
+  "onboarding.concept.step2Body": "Each project remembers its account. No switching by hand.",
   "onboarding.concept.step3": "Ask, review and accept",
   "onboarding.concept.step3Body": "The AI proposes a plan, asks for permission, and you decide which changes stay.",
 
