@@ -1,19 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="1024" height="1024">
-  <!-- Hedy's logo: the lava blob at rest, as in the visual identity (0-identidad-01.png).
-       Source of every app icon: `npx tauri icon src-tauri/icons/logo.png` after rendering it. -->
+  <!-- Hedy's logo: the lava blob at rest, as in the visual identity (0-identidad-01.png),
+       with the same body as the Mascot component. Source of every app icon: render it
+       to logo.png (1024 px) and run `npx tauri icon src-tauri/icons/logo.png`. -->
+  <defs>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.1"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
   <rect x="4" y="4" width="152" height="152" rx="34" fill="#1A1B26"/>
-  <circle cx="80" cy="86" r="62" fill="#7AA2F7" opacity="0.12"/>
-  <circle cx="80" cy="90" r="48" fill="#7AA2F7" opacity="0.16"/>
-  <g transform="translate(0 -2)">
-    <circle cx="80" cy="26" r="8.5" fill="#7AA2F7"/>
-    <path d="M40 92c-4-26 14-48 40-48s46 18 42 44c-3 22-18 36-42 36S43 112 40 92z" fill="#7AA2F7"/>
-    <ellipse cx="64" cy="64" rx="12" ry="7" fill="#fff" opacity="0.3"/>
-    <circle cx="58" cy="100" r="5" fill="#F7768E" opacity="0.35"/>
-    <circle cx="102" cy="100" r="5" fill="#F7768E" opacity="0.35"/>
-    <ellipse cx="68" cy="90" rx="5.5" ry="5.5" fill="#1A1B26"/>
-    <ellipse cx="92" cy="90" rx="5.5" ry="5.5" fill="#1A1B26"/>
-    <circle cx="70" cy="88" r="2" fill="#fff"/>
-    <circle cx="94" cy="88" r="2" fill="#fff"/>
-    <path d="M72 102q8 8 16 0" fill="none" stroke="#1A1B26" stroke-width="3.2" stroke-linecap="round"/>
+  <g transform="translate(80 84) scale(1.12) translate(-80 -84)">
+    <circle cx="80" cy="88.6" r="56.6" fill="#7AA2F7" opacity="0.18"/>
+    <circle cx="80" cy="30" r="6.6" fill="#7AA2F7"/>
+    <path d="M80 48.5C97.5 48.5 111 58.5 114.8 71C116.8 77.5 116.4 83 116.5 88.5C116.6 93.5 115.6 96.8 117.5 100.5C119.5 105 118 109 112.5 110C106.5 111 102 112 97 114.5C91 117.5 84 118.5 77 117.5C70 116.5 65 113 59 111.5C53 110 46.5 110.5 44.5 106C43 102.5 46.4 98 46 93C45.6 89 44.6 83.5 45.4 77C47 60.5 61.5 48.5 80 48.5Z" fill="#7AA2F7"/>
+    <path d="M80 48.5C97.5 48.5 111 58.5 114.8 71C116.8 77.5 116.4 83 116.5 88.5C116.6 93.5 115.6 96.8 117.5 100.5C119.5 105 118 109 112.5 110C106.5 111 102 112 97 114.5C91 117.5 84 118.5 77 117.5C70 116.5 65 113 59 111.5C53 110 46.5 110.5 44.5 106C43 102.5 46.4 98 46 93C45.6 89 44.6 83.5 45.4 77C47 60.5 61.5 48.5 80 48.5Z" fill="url(#shade)"/>
+    <ellipse cx="66.3" cy="66.3" rx="10.3" ry="5.7" fill="#fff" opacity="0.3"/>
+    <circle cx="60.9" cy="96.6" r="4.3" fill="#F7768E" opacity="0.35"/>
+    <circle cx="98.6" cy="96.6" r="4.3" fill="#F7768E" opacity="0.35"/>
+    <circle cx="67.4" cy="88.6" r="4.8" fill="#1A1B26"/>
+    <circle cx="90.4" cy="88.6" r="4.8" fill="#1A1B26"/>
+    <circle cx="68.8" cy="87.2" r="1.65" fill="#fff"/>
+    <circle cx="91.8" cy="87.2" r="1.65" fill="#fff"/>
+    <path d="M72.4 98.6q6.6 6.4 13.4 0" fill="none" stroke="#1A1B26" stroke-width="2.5" stroke-linecap="round"/>
   </g>
 </svg>

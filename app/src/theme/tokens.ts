@@ -45,6 +45,8 @@ export const themes: Record<ThemeName, Record<string, string>> = {
     warning: tokyoNight.yellow,
     danger: tokyoNight.red,
     focus: tokyoNight.cyan,
+    // The mascot's eyes and mouth: dark ink in both themes, as in the identity.
+    face: "#1A1B26",
     cheek: "#F7768E",
     tongue: "#FF7AB6",
     star: tokyoNight.yellow,
@@ -79,6 +81,7 @@ export const themes: Record<ThemeName, Record<string, string>> = {
     warning: "#7A5300",
     danger: "#A1213F",
     focus: "#7C5CFF",
+    face: "#2B2340",
     cheek: "#F7768E",
     tongue: "#FF7AB6",
     star: "#E0AF68",

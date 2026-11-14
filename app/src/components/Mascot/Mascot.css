@@ -1,6 +1,8 @@
-/* Lava blob. Animations use only transform and opacity (plus fill for color). */
+/* Lava blob. Animations use only transform and opacity (plus fill for color),
+   with ease-in-out curves so every motion starts and stops softly. */
 
 .mascot {
+  --m-ease: cubic-bezier(0.45, 0, 0.55, 1);
   overflow: visible;
   flex: none;
 }
@@ -11,6 +13,8 @@
 }
 
 .mascot .m-goo,
+.mascot .m-body,
+.mascot .m-drop,
 .mascot .m-halo,
 .mascot .m-hand {
   fill: var(--mascot-color);
@@ -19,12 +23,12 @@
 
 .mascot .m-halo {
   opacity: 0.18;
-  animation: m-pulse 3s ease-in-out infinite;
+  animation: m-pulse 3s var(--m-ease) infinite;
 }
 
 .mascot .m-squish {
   transform-origin: 50% 100%;
-  animation: m-squish 3.2s ease-in-out infinite;
+  animation: m-squish 3.2s var(--m-ease) infinite;
 }
 
 .mascot .m-shine {
@@ -39,7 +43,7 @@
 
 .mascot .m-eye,
 .mascot .m-mouth {
-  fill: var(--bg);
+  fill: var(--face);
 }
 
 .mascot .m-glint {
@@ -48,8 +52,8 @@
 
 .mascot .m-line {
   fill: none;
-  stroke: var(--bg);
-  stroke-width: 3.2;
+  stroke: var(--face);
+  stroke-width: 2.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -58,16 +62,17 @@
   fill: var(--tongue);
 }
 
+/* Every 4 s, as in the visual identity; a quick close and a softer open. */
 .mascot .m-eyes {
   animation: m-blink 4s infinite;
 }
 
 .mascot .m-drop {
-  animation: m-bob 4.5s ease-in-out infinite;
+  animation: m-bob 4.5s var(--m-ease) infinite;
 }
 
 .mascot .m-drop-top {
-  animation: m-float 4.5s ease-in-out infinite;
+  animation-name: m-float;
 }
 
 .mascot .m-drop-2 {
@@ -94,155 +99,155 @@
   font-family: var(--font-title);
   font-weight: 700;
   opacity: 0;
-  animation: m-z 3s ease-out infinite;
+  animation: m-z 3s var(--m-ease) infinite;
 }
 
-.mascot .m-z1 { font-size: 12px; }
-.mascot .m-z2 { font-size: 15px; animation-delay: 1s; }
-.mascot .m-z3 { font-size: 18px; animation-delay: 2s; }
+.mascot .m-z1 { font-size: 11px; }
+.mascot .m-z2 { font-size: 14px; animation-delay: 1s; }
+.mascot .m-z3 { font-size: 17px; animation-delay: 2s; }
 
-/* Thinking: cloud with dots lighting up in sequence. */
+/* Thinking: a calm bubble whose dots rise in turn, like someone typing. */
 .mascot .m-bubble {
   fill: var(--panel);
   stroke: var(--mascot-color);
-  stroke-width: 2;
+  stroke-width: 1.5;
+  stroke-opacity: 0.7;
 }
 
 .mascot .m-trail {
   fill: var(--mascot-color);
+  opacity: 0.7;
 }
 
 .mascot .m-dot {
   fill: var(--mascot-color);
-  opacity: 0.35;
-  animation: m-dot 1.2s ease-in-out infinite;
+  animation: m-dot 1.4s var(--m-ease) infinite;
 }
 
-.mascot .m-dot2 { animation-delay: 0.2s; }
-.mascot .m-dot3 { animation-delay: 0.4s; }
+.mascot .m-dot2 { animation-delay: 0.18s; }
+.mascot .m-dot3 { animation-delay: 0.36s; }
 
 .mascot .m-brow {
-  animation: m-brow 2.4s ease-in-out infinite;
+  animation: m-brow 2.4s var(--m-ease) infinite;
 }
 
-/* Working: laptop with blinking code and typing hands. */
+/* Working: a thin laptop, code lines appearing, hands typing. */
 .mascot .m-screen {
   fill: var(--panel);
-  stroke: var(--muted);
-  stroke-width: 2;
+  stroke: var(--line);
+  stroke-width: 1.5;
 }
 
 .mascot .m-base {
   fill: var(--muted);
 }
 
-.mascot .m-code { animation: m-code 1.4s steps(2, jump-none) infinite; }
-.mascot .m-code1 { fill: #bb9af7; }
-.mascot .m-code2 { fill: #9ece6a; animation-delay: 0.45s; }
-.mascot .m-code3 { fill: #7dcfff; animation-delay: 0.9s; }
+.mascot .m-code { animation: m-code 1.6s var(--m-ease) infinite; }
+.mascot .m-code1 { fill: var(--accent); }
+.mascot .m-code2 { fill: var(--success); animation-delay: 0.5s; }
+.mascot .m-code3 { fill: var(--activity); animation-delay: 1s; }
 
 .mascot .m-hand {
-  animation: m-type 0.36s ease-in-out infinite alternate;
+  animation: m-type 0.4s var(--m-ease) infinite alternate;
 }
 
 .mascot .m-hand-right {
-  animation-delay: 0.18s;
+  animation-delay: 0.2s;
 }
 
-/* Done: jump with stretch, arms up, stars and confetti. */
+/* Done: a springy hop with squash and stretch, and a few sparkles. */
 .mascot--done .m-jump {
   transform-origin: 50% 100%;
-  animation: m-jump 1.3s ease-in-out infinite;
+  animation: m-jump 1.4s var(--m-ease) infinite;
 }
 
 .mascot--done .m-squish {
   animation: none;
 }
 
-
-.mascot .m-star {
+.mascot .m-sparkle {
   fill: var(--star);
-  animation: m-twinkle 1.3s ease-in-out infinite;
+  animation: m-twinkle 1.4s var(--m-ease) infinite;
 }
 
-.mascot .m-star2 { animation-delay: 0.4s; }
-.mascot .m-star3 { animation-delay: 0.8s; }
+.mascot .m-sparkle2 { animation-delay: 0.45s; }
+.mascot .m-sparkle3 { animation-delay: 0.9s; }
 
-.mascot .m-confetti { animation: m-confetti 1.6s linear infinite; }
-.mascot .m-c1 { fill: #ff7ab6; }
-.mascot .m-c2 { fill: #7dcfff; animation-delay: 0.4s; }
-.mascot .m-c3 { fill: #9ece6a; animation-delay: 0.8s; }
-.mascot .m-c4 { fill: #ff9e64; animation-delay: 1.2s; }
+.mascot .m-confetti { animation: m-confetti 1.8s var(--m-ease) infinite; }
+.mascot .m-c1 { fill: var(--cheek); }
+.mascot .m-c2 { fill: var(--activity); animation-delay: 0.6s; }
+.mascot .m-c3 { fill: var(--success); animation-delay: 1.2s; }
 
 @keyframes m-pulse {
   0%, 100% { opacity: 0.18; transform: scale(1); }
-  50% { opacity: 0.28; transform: scale(1.05); }
+  50% { opacity: 0.24; transform: scale(1.03); }
 }
 
-/* Gentle idle stretch. The full 0.88/1.14 stretch is used by the jump. */
+/* Gentle idle stretch; the full squash and stretch is kept for the hop. */
 @keyframes m-squish {
   0%, 100% { transform: scale(1, 1); }
-  50% { transform: scale(1.04, 0.96); }
+  50% { transform: scale(1.03, 0.97); }
 }
 
 @keyframes m-bob {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-7px); }
+  50% { transform: translateY(-5px); }
 }
 
 @keyframes m-float {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
+  50% { transform: translateY(-4px); }
 }
 
 @keyframes m-blink {
-  0%, 93%, 100% { transform: scaleY(1); }
-  96% { transform: scaleY(0.1); }
+  0%, 94%, 100% { transform: scaleY(1); }
+  95.5% { transform: scaleY(0.08); }
 }
 
 @keyframes m-z {
   0% { opacity: 0; transform: translate(0, 0); }
-  30% { opacity: 1; }
-  100% { opacity: 0; transform: translate(8px, -16px); }
+  30% { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(7px, -14px); }
 }
 
 @keyframes m-dot {
-  0%, 100% { opacity: 0.25; }
-  40% { opacity: 1; }
+  0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-2px); }
 }
 
 @keyframes m-brow {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-2px); }
+  50% { transform: translateY(-1.5px); }
 }
 
 @keyframes m-code {
-  0% { opacity: 1; }
-  100% { opacity: 0.35; }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 @keyframes m-type {
   from { transform: translateY(0); }
-  to { transform: translateY(-4px); }
+  to { transform: translateY(-3px); }
 }
 
 @keyframes m-jump {
-  0% { transform: translateY(0) scale(1.14, 0.88); }
-  30% { transform: translateY(-16px) scale(0.88, 1.14); }
-  55% { transform: translateY(-4px) scale(0.96, 1.04); }
-  75% { transform: translateY(0) scale(1.06, 0.94); }
-  100% { transform: translateY(0) scale(1.14, 0.88); }
+  0% { transform: translateY(0) scale(1.1, 0.9); }
+  28% { transform: translateY(-14px) scale(0.92, 1.08); }
+  50% { transform: translateY(-16px) scale(1, 1); }
+  72% { transform: translateY(0) scale(1.08, 0.92); }
+  86% { transform: translateY(0) scale(0.98, 1.02); }
+  100% { transform: translateY(0) scale(1.1, 0.9); }
 }
 
 @keyframes m-twinkle {
-  0%, 100% { opacity: 0.4; transform: scale(0.8) rotate(0deg); }
-  50% { opacity: 1; transform: scale(1.2) rotate(20deg); }
+  0%, 100% { opacity: 0.3; transform: scale(0.7) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.1) rotate(45deg); }
 }
 
 @keyframes m-confetti {
-  0% { opacity: 0; transform: translateY(-8px) rotate(0deg); }
-  20% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(18px) rotate(220deg); }
+  0% { opacity: 0; transform: translateY(-6px) rotate(0deg); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(16px) rotate(180deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
