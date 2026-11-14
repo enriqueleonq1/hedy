@@ -12,6 +12,12 @@ pub const PLAN_APPROVED: &str = "Plan aprobado. Impleméntalo ahora.";
 /// Answer to a planner whose plan another agent will implement.
 pub const PLAN_HANDED_OFF: &str = "Plan aprobado. Otra IA lo va a implementar; no hagas nada más.";
 
+/// For agents that have the project's memory (the `hedy-memory` tools).
+pub const MEMORY_GUIDANCE: &str = "Este proyecto tiene una memoria compartida entre IAs: decisiones, convenciones y reglas. \
+Antes de elegir una convención o tomar una decisión, búscala con memory_search. \
+Si tomas una decisión duradera o descubres una convención que otras IAs deberían seguir, propónla con memory_propose \
+(una frase; el usuario decide si se guarda). No propongas secretos ni datos personales.";
+
 fn section(title: &str, body: &str) -> String {
     format!("## {title}\n{}\n", body.trim())
 }

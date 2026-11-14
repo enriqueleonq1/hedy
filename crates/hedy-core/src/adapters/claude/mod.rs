@@ -14,10 +14,10 @@ use serde_json::{Value, json};
 
 use super::process::{command, launch_error};
 use crate::application::ports::{
-    AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
+    AgentLauncher, AgentRequest, AgentSession, EventSink, McpServer, PortError, PortResult,
 };
 use crate::domain::permissions::DEFAULT_BLOCKED;
-use crate::domain::{AgentEvent, Phase, TaskMode};
+use crate::domain::{AgentEvent, Phase, TaskMode, prompts};
 pub use translate::Translator;
 
 /// `hook`: shell command for the `PreToolUse` hook (see [`hook`]); without it
@@ -83,23 +83,51 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     } else {
         request.mode
     };
+    let mut allowed: Vec<String> = Vec::new();
+    let mut system: Vec<&str> = Vec::new();
     match mode {
         TaskMode::Project => {}
-        TaskMode::Ask => args.extend([
-            "--disallowedTools".into(),
-            READ_ONLY_TOOLS_DENIED.into(),
-            "--append-system-prompt".into(),
-            "Modo Pregunta de Hedy: responde y explica; no modifiques archivos.".into(),
-        ]),
-        TaskMode::Research => args.extend([
-            "--disallowedTools".into(),
-            READ_ONLY_TOOLS_DENIED.into(),
-            "--allowedTools".into(),
-            "WebSearch,WebFetch".into(),
-            "--append-system-prompt".into(),
-            "Modo Research de Hedy: investiga (también en la web), cita tus fuentes y no modifiques archivos."
-                .into(),
-        ]),
+        TaskMode::Ask => {
+            args.extend(["--disallowedTools".into(), READ_ONLY_TOOLS_DENIED.into()]);
+            system.push("Modo Pregunta de Hedy: responde y explica; no modifiques archivos.");
+        }
+        TaskMode::Research => {
+            args.extend(["--disallowedTools".into(), READ_ONLY_TOOLS_DENIED.into()]);
+            allowed.extend(["WebSearch".into(), "WebFetch".into()]);
+            system.push(
+                "Modo Research de Hedy: investiga (también en la web), cita tus fuentes y no modifiques archivos.",
+            );
+        }
+    }
+    let servers = mcp_servers(request);
+    if !servers.is_empty() {
+        let config: serde_json::Map<String, Value> = servers
+            .iter()
+            .map(|s| {
+                let env: serde_json::Map<String, Value> =
+                    s.env.iter().map(|(k, v)| (k.clone(), json!(v))).collect();
+                (
+                    s.name.clone(),
+                    json!({"type": "stdio", "command": s.command, "args": s.args, "env": env}),
+                )
+            })
+            .collect();
+        args.extend([
+            "--mcp-config".into(),
+            json!({ "mcpServers": config }).to_string(),
+        ]);
+        // Hedy's own servers only read the project (memory proposals wait for
+        // the user), so their tools need no prompt.
+        allowed.extend(servers.iter().map(|s| format!("mcp__{}", s.name)));
+    }
+    if request.memory.is_some() {
+        system.push(prompts::MEMORY_GUIDANCE);
+    }
+    if !allowed.is_empty() {
+        args.extend(["--allowedTools".into(), allowed.join(",")]);
+    }
+    if !system.is_empty() {
+        args.extend(["--append-system-prompt".into(), system.join("\n\n")]);
     }
     if let Some(model) = &request.model {
         args.extend(["--model".into(), model.clone()]);
@@ -108,6 +136,16 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
         args.extend(["--resume".into(), session.clone()]);
     }
     args
+}
+
+/// The memory server (when the agent has memory) and the extra ones, such as the code map.
+pub(crate) fn mcp_servers(request: &AgentRequest) -> Vec<&McpServer> {
+    request
+        .memory
+        .iter()
+        .filter_map(|m| m.server.as_ref())
+        .chain(&request.mcp)
+        .collect()
 }
 
 fn user_message(text: &str) -> Value {
@@ -316,7 +354,57 @@ mod tests {
             model: Some("opus".into()),
             prompt: "hola".into(),
             resume: Some("s-1".into()),
+            memory: None,
+            mcp: vec![],
         }
+    }
+
+    struct NoMemory;
+    impl crate::application::ports::MemoryTools for NoMemory {
+        fn search(&self, _: &str) -> String {
+            String::new()
+        }
+        fn propose(&self, _: &str, _: &str) -> String {
+            String::new()
+        }
+    }
+
+    pub(crate) fn with_servers(mut request: AgentRequest) -> AgentRequest {
+        let server = |name: &str, env: Vec<(String, String)>| McpServer {
+            name: name.into(),
+            command: "/opt/hedy".into(),
+            args: vec!["memory-mcp".into(), "--project".into(), "/code/a b".into()],
+            env,
+        };
+        request.memory = Some(crate::application::ports::MemoryLink {
+            server: Some(server("hedy-memory", vec![])),
+            tools: Arc::new(NoMemory),
+        });
+        request.mcp = vec![server(
+            "codebase-memory",
+            vec![("CBM_ALLOWED_ROOT".into(), "/code/a b".into())],
+        )];
+        request
+    }
+
+    #[test]
+    fn memory_and_code_map_are_registered_for_the_run() {
+        let args = args(&with_servers(request(TaskMode::Research, false)), None);
+        let value = |flag: &str| args[args.iter().position(|a| a == flag).unwrap() + 1].clone();
+        let config: Value = serde_json::from_str(&value("--mcp-config")).unwrap();
+        assert_eq!(config["mcpServers"]["hedy-memory"]["command"], "/opt/hedy");
+        assert_eq!(
+            config["mcpServers"]["codebase-memory"]["env"]["CBM_ALLOWED_ROOT"],
+            "/code/a b"
+        );
+        assert_eq!(
+            value("--allowedTools"),
+            "WebSearch,WebFetch,mcp__hedy-memory,mcp__codebase-memory"
+        );
+        let system = value("--append-system-prompt");
+        assert!(system.starts_with("Modo Research"));
+        assert!(system.contains("memory_propose"));
+        assert_eq!(args.iter().filter(|a| *a == "--allowedTools").count(), 1);
     }
 
     #[test]

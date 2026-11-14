@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use super::{AccountId, Color, PhasePlan};
@@ -15,6 +16,8 @@ pub struct Project {
     pub color: Option<Color>,
     /// Who plans, implements, writes tests and reviews.
     pub phases: PhasePlan,
+    /// Accounts that do not read the project's memory ("Quién la lee").
+    pub memory_off: BTreeSet<AccountId>,
 }
 
 impl Project {
@@ -30,6 +33,7 @@ impl Project {
             protected: false,
             color: None,
             phases: PhasePlan::new(),
+            memory_off: BTreeSet::new(),
         }
     }
 

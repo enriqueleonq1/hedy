@@ -4,12 +4,12 @@ use std::sync::Mutex;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::application::ports::{
-    AccountRepository, PortError, PortResult, ProjectRepository, RateLimit, SettingsRepository,
-    TaskRepository, UsageRecord, UsageRepository,
+    AccountRepository, MemoryRepository, NewNote, PortError, PortResult, ProjectRepository,
+    RateLimit, SettingsRepository, TaskRepository, UsageRecord, UsageRepository,
 };
 use crate::domain::{
-    Account, AccountId, AgentEvent, Color, ConfigFolder, Credentials, Project, Task, TaskId,
-    UsageSample,
+    Account, AccountId, AgentEvent, Category, Color, ConfigFolder, Credentials, Note, NoteStatus,
+    Project, Task, TaskId, UsageSample,
 };
 
 /// Schema migrations, applied in order. `PRAGMA user_version` stores how many ran.
@@ -78,6 +78,47 @@ const MIGRATIONS: &[&str] = &[
     -- Who plans, implements, writes tests and reviews (JSON).
     ALTER TABLE projects ADD COLUMN phases TEXT;
 "#,
+    r#"
+    -- Accounts that do not read the project's memory (JSON list).
+    ALTER TABLE projects ADD COLUMN memory_off TEXT;
+    CREATE TABLE notes (
+        id          INTEGER PRIMARY KEY,
+        -- NULL: a global note.
+        project     TEXT,
+        text        TEXT NOT NULL,
+        category    TEXT NOT NULL,
+        author      TEXT NOT NULL,
+        status      TEXT NOT NULL CHECK (status IN ('proposed', 'approved')),
+        created_at  INTEGER NOT NULL,
+        uses        INTEGER NOT NULL DEFAULT 0,
+        last_used   INTEGER
+    );
+    CREATE INDEX notes_by_project ON notes (project);
+    CREATE VIRTUAL TABLE notes_fts USING fts5(
+        text, content = 'notes', content_rowid = 'id', tokenize = 'unicode61 remove_diacritics 2'
+    );
+    CREATE TRIGGER notes_fts_insert AFTER INSERT ON notes BEGIN
+        INSERT INTO notes_fts (rowid, text) VALUES (new.id, new.text);
+    END;
+    CREATE TRIGGER notes_fts_delete AFTER DELETE ON notes BEGIN
+        INSERT INTO notes_fts (notes_fts, rowid, text) VALUES ('delete', old.id, old.text);
+    END;
+    CREATE TRIGGER notes_fts_update AFTER UPDATE OF text ON notes BEGIN
+        INSERT INTO notes_fts (notes_fts, rowid, text) VALUES ('delete', old.id, old.text);
+        INSERT INTO notes_fts (rowid, text) VALUES (new.id, new.text);
+    END;
+    CREATE TABLE note_uses (
+        note_id  INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+        task_id  TEXT,
+        at       INTEGER NOT NULL
+    );
+    CREATE INDEX note_uses_by_task ON note_uses (task_id);
+    CREATE TABLE note_dismissed_pairs (
+        a  INTEGER NOT NULL,
+        b  INTEGER NOT NULL,
+        PRIMARY KEY (a, b)
+    );
+"#,
 ];
 
 pub struct SqliteStore {
@@ -94,7 +135,10 @@ impl SqliteStore {
             std::fs::create_dir_all(dir)
                 .map_err(|e| PortError::new(format!("no se pudo crear {}: {e}", dir.display())))?;
         }
-        Self::from_connection(Connection::open(path).map_err(db_error)?)
+        let store = Self::from_connection(Connection::open(path).map_err(db_error)?)?;
+        // Readers (the memory server) don't block the app while it writes.
+        store.with(|c| c.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(())))?;
+        Ok(store)
     }
 
     pub fn in_memory() -> PortResult<Self> {
@@ -103,6 +147,9 @@ impl SqliteStore {
 
     fn from_connection(mut conn: Connection) -> PortResult<Self> {
         conn.pragma_update(None, "foreign_keys", true)
+            .map_err(db_error)?;
+        // The memory MCP server opens the same file from another process.
+        conn.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(db_error)?;
         migrate(&mut conn)?;
         Ok(Self {
@@ -227,6 +274,12 @@ fn project_from_row(row: &Row) -> rusqlite::Result<Project> {
         .transpose()
         .map_err(invalid(5))?
         .unwrap_or_default();
+    let memory_off = row
+        .get::<_, Option<String>>(6)?
+        .map(|p| serde_json::from_str(&p))
+        .transpose()
+        .map_err(invalid(6))?
+        .unwrap_or_default();
     Ok(Project {
         path: PathBuf::from(row.get::<_, String>(0)?),
         name: row.get(1)?,
@@ -234,6 +287,7 @@ fn project_from_row(row: &Row) -> rusqlite::Result<Project> {
         protected: row.get(3)?,
         color,
         phases,
+        memory_off,
     })
 }
 
@@ -241,7 +295,7 @@ impl ProjectRepository for SqliteStore {
     fn list_projects(&self) -> PortResult<Vec<Project>> {
         self.with(|c| {
             c.prepare(
-                "SELECT path, name, account_id, protected, color, phases FROM projects ORDER BY name",
+                "SELECT path, name, account_id, protected, color, phases, memory_off FROM projects ORDER BY name",
             )?
             .query_map([], project_from_row)?
             .collect()
@@ -253,14 +307,18 @@ impl ProjectRepository for SqliteStore {
             .then(|| serde_json::to_string(&project.phases))
             .transpose()
             .map_err(json_error)?;
+        let memory_off = (!project.memory_off.is_empty())
+            .then(|| serde_json::to_string(&project.memory_off))
+            .transpose()
+            .map_err(json_error)?;
         self.with(|c| {
             c.execute(
-                "INSERT INTO projects (path, name, account_id, protected, color, phases)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "INSERT INTO projects (path, name, account_id, protected, color, phases, memory_off)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT (path) DO UPDATE SET
                     name = excluded.name, account_id = excluded.account_id,
                     protected = excluded.protected, color = excluded.color,
-                    phases = excluded.phases",
+                    phases = excluded.phases, memory_off = excluded.memory_off",
                 params![
                     project.path.to_string_lossy(),
                     project.name,
@@ -268,6 +326,7 @@ impl ProjectRepository for SqliteStore {
                     project.protected,
                     project.color.map(|c| c.to_string()),
                     phases,
+                    memory_off,
                 ],
             )
             .map(drop)
@@ -433,6 +492,203 @@ impl UsageRepository for SqliteStore {
                 },
             )
             .optional()
+        })
+    }
+}
+
+const NOTE_COLUMNS: &str =
+    "id, project, text, category, author, status, created_at, uses, last_used";
+
+fn note_from_row(row: &Row) -> rusqlite::Result<Note> {
+    Ok(Note {
+        id: row.get(0)?,
+        project: row.get::<_, Option<String>>(1)?.map(PathBuf::from),
+        text: row.get(2)?,
+        category: row.get::<_, String>(3)?.parse().map_err(invalid(3))?,
+        author: row.get(4)?,
+        status: if row.get::<_, String>(5)? == "proposed" {
+            NoteStatus::Proposed
+        } else {
+            NoteStatus::Approved
+        },
+        created_at: row.get(6)?,
+        uses: row.get(7)?,
+        last_used: row.get(8)?,
+    })
+}
+
+fn status_str(status: NoteStatus) -> &'static str {
+    match status {
+        NoteStatus::Proposed => "proposed",
+        NoteStatus::Approved => "approved",
+    }
+}
+
+/// `WHERE` clause and parameter for a memory scope.
+fn scope(project: Option<&Path>, with_global: bool) -> (&'static str, Option<String>) {
+    let path = project.map(|p| p.to_string_lossy().into_owned());
+    let clause = match (path.is_some(), with_global) {
+        (true, true) => "(n.project = ?1 OR n.project IS NULL)",
+        (true, false) => "n.project = ?1",
+        // Only global notes; `?1` is NULL here but must appear in the query.
+        (false, _) => "(n.project IS NULL AND ?1 IS NULL)",
+    };
+    (clause, path)
+}
+
+/// Free text → an FTS5 query matching any word (prefixes included).
+fn fts_query(text: &str) -> Option<String> {
+    let words: Vec<String> = text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.chars().count() >= 2)
+        .map(|w| format!("\"{}\"*", w.to_lowercase()))
+        .collect();
+    (!words.is_empty()).then(|| words.join(" OR "))
+}
+
+impl MemoryRepository for SqliteStore {
+    fn add_note(&self, note: &NewNote) -> PortResult<Note> {
+        let id = self.with(|c| {
+            c.execute(
+                "INSERT INTO notes (project, text, category, author, status, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    note.project
+                        .as_ref()
+                        .map(|p| p.to_string_lossy().into_owned()),
+                    note.text,
+                    note.category.as_str(),
+                    note.author,
+                    status_str(note.status),
+                    note.created_at,
+                ],
+            )?;
+            Ok(c.last_insert_rowid())
+        })?;
+        self.note(id)?
+            .ok_or_else(|| PortError::new("la nota no se guardó"))
+    }
+
+    fn note(&self, id: i64) -> PortResult<Option<Note>> {
+        self.with(|c| {
+            c.query_row(
+                &format!("SELECT {NOTE_COLUMNS} FROM notes WHERE id = ?1"),
+                [id],
+                note_from_row,
+            )
+            .optional()
+        })
+    }
+
+    fn update_note(&self, id: i64, text: &str, category: Category) -> PortResult<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE notes SET text = ?2, category = ?3 WHERE id = ?1",
+                params![id, text, category.as_str()],
+            )
+            .map(drop)
+        })
+    }
+
+    fn set_note_status(&self, id: i64, status: NoteStatus) -> PortResult<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE notes SET status = ?2 WHERE id = ?1",
+                params![id, status_str(status)],
+            )
+            .map(drop)
+        })
+    }
+
+    fn delete_note(&self, id: i64) -> PortResult<()> {
+        self.with(|c| c.execute("DELETE FROM notes WHERE id = ?1", [id]).map(drop))
+    }
+
+    fn notes(&self, project: Option<&Path>, with_global: bool) -> PortResult<Vec<Note>> {
+        let (clause, path) = scope(project, with_global);
+        self.with(|c| {
+            c.prepare(&format!(
+                "SELECT {NOTE_COLUMNS} FROM notes n WHERE {clause} ORDER BY n.created_at DESC, n.id DESC"
+            ))?
+            .query_map([path], note_from_row)?
+            .collect()
+        })
+    }
+
+    fn search_notes(
+        &self,
+        project: Option<&Path>,
+        with_global: bool,
+        query: &str,
+    ) -> PortResult<Vec<Note>> {
+        let Some(fts) = fts_query(query) else {
+            return self.notes(project, with_global);
+        };
+        let (clause, path) = scope(project, with_global);
+        let columns = NOTE_COLUMNS
+            .split(", ")
+            .map(|c| format!("n.{c}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.with(|c| {
+            c.prepare(&format!(
+                "SELECT {columns} FROM notes_fts f JOIN notes n ON n.id = f.rowid
+                 WHERE notes_fts MATCH ?2 AND {clause} ORDER BY bm25(notes_fts)"
+            ))?
+            .query_map(params![path, fts], note_from_row)?
+            .collect()
+        })
+    }
+
+    fn record_uses(&self, ids: &[i64], task: Option<&TaskId>, at: i64) -> PortResult<()> {
+        let mut conn = self.conn.lock().expect("sqlite mutex poisoned");
+        let tx = conn.transaction().map_err(db_error)?;
+        for id in ids {
+            tx.execute(
+                "UPDATE notes SET uses = uses + 1, last_used = ?2 WHERE id = ?1",
+                params![id, at],
+            )
+            .map_err(db_error)?;
+            tx.execute(
+                "INSERT INTO note_uses (note_id, task_id, at) VALUES (?1, ?2, ?3)",
+                params![id, task.map(TaskId::as_str), at],
+            )
+            .map_err(db_error)?;
+        }
+        tx.commit().map_err(db_error)
+    }
+
+    fn notes_used_by(&self, task: &TaskId) -> PortResult<Vec<Note>> {
+        let columns = NOTE_COLUMNS
+            .split(", ")
+            .map(|c| format!("n.{c}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.with(|c| {
+            c.prepare(&format!(
+                "SELECT DISTINCT {columns} FROM note_uses u JOIN notes n ON n.id = u.note_id
+                 WHERE u.task_id = ?1 ORDER BY n.id"
+            ))?
+            .query_map([task.as_str()], note_from_row)?
+            .collect()
+        })
+    }
+
+    fn dismiss_pair(&self, a: i64, b: i64) -> PortResult<()> {
+        self.with(|c| {
+            c.execute(
+                "INSERT OR IGNORE INTO note_dismissed_pairs (a, b) VALUES (?1, ?2)",
+                params![a.min(b), a.max(b)],
+            )
+            .map(drop)
+        })
+    }
+
+    fn dismissed_pairs(&self) -> PortResult<Vec<(i64, i64)>> {
+        self.with(|c| {
+            c.prepare("SELECT a, b FROM note_dismissed_pairs")?
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect()
         })
     }
 }
@@ -639,6 +895,109 @@ mod tests {
         };
         store.set_rate_limit(&account, &limit).unwrap();
         assert_eq!(store.rate_limit(&account).unwrap(), Some(limit));
+    }
+
+    #[test]
+    fn memory_notes_search_and_uses() {
+        let store = SqliteStore::in_memory().unwrap();
+        let add = |project: Option<&str>, text: &str, status: NoteStatus| {
+            store
+                .add_note(&NewNote {
+                    project: project.map(PathBuf::from),
+                    text: text.into(),
+                    category: Category::Decision,
+                    author: "user".into(),
+                    status,
+                    created_at: 10,
+                })
+                .unwrap()
+        };
+        let price = add(
+            Some("/code/moira"),
+            "Los precios se guardan en USD",
+            NoteStatus::Approved,
+        );
+        let remind = add(
+            Some("/code/moira"),
+            "Los recordatorios se envían por WhatsApp",
+            NoteStatus::Proposed,
+        );
+        let global = add(
+            None,
+            "Prefiere respuestas cortas y en español",
+            NoteStatus::Approved,
+        );
+        add(
+            Some("/code/otro"),
+            "Nota de otro proyecto",
+            NoteStatus::Approved,
+        );
+
+        let ids = |notes: Vec<Note>| notes.iter().map(|n| n.id).collect::<Vec<_>>();
+        let moira = Some(Path::new("/code/moira"));
+        assert_eq!(ids(store.notes(moira, true).unwrap()).len(), 3);
+        assert_eq!(ids(store.notes(moira, false).unwrap()).len(), 2);
+        assert_eq!(ids(store.notes(None, false).unwrap()), vec![global.id]);
+
+        // Accents and prefixes match: "recordatorio" finds "recordatorios".
+        assert_eq!(
+            ids(store
+                .search_notes(moira, true, "recordatorio whatsapp")
+                .unwrap()),
+            vec![remind.id]
+        );
+        assert_eq!(
+            ids(store.search_notes(moira, true, "espanol").unwrap()),
+            vec![global.id]
+        );
+        assert!(
+            store
+                .search_notes(moira, false, "espanol")
+                .unwrap()
+                .is_empty()
+        );
+
+        store
+            .update_note(
+                price.id,
+                "Los precios se guardan en USD y Bs",
+                Category::Convention,
+            )
+            .unwrap();
+        assert_eq!(
+            ids(store.search_notes(moira, true, "Bs").unwrap()),
+            vec![price.id]
+        );
+        store
+            .set_note_status(remind.id, NoteStatus::Approved)
+            .unwrap();
+        assert_eq!(
+            store.note(remind.id).unwrap().unwrap().status,
+            NoteStatus::Approved
+        );
+
+        let task = TaskId::new("t1");
+        store
+            .record_uses(&[price.id, global.id], Some(&task), 99)
+            .unwrap();
+        store.record_uses(&[price.id], Some(&task), 100).unwrap();
+        let used = store.notes_used_by(&task).unwrap();
+        assert_eq!(ids(used.clone()), vec![price.id, global.id]);
+        assert_eq!((used[0].uses, used[0].last_used), (2, Some(100)));
+
+        store.dismiss_pair(5, 2).unwrap();
+        store.dismiss_pair(2, 5).unwrap();
+        assert_eq!(store.dismissed_pairs().unwrap(), vec![(2, 5)]);
+
+        store.delete_note(price.id).unwrap();
+        assert!(store.search_notes(moira, true, "USD").unwrap().is_empty());
+        assert!(
+            store
+                .notes_used_by(&task)
+                .unwrap()
+                .iter()
+                .all(|n| n.id != price.id)
+        );
     }
 
     #[test]

@@ -16,8 +16,8 @@ use serde_json::{Value, json};
 
 use super::process::command;
 use crate::application::ports::{
-    AgentBackend, AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
-    Secret,
+    AgentBackend, AgentLauncher, AgentRequest, AgentSession, EventSink, MemoryTools, PortError,
+    PortResult, Secret,
 };
 use crate::domain::agent::looks_like_tests;
 use crate::domain::permissions::{DEFAULT_BLOCKED, protected_file_reason};
@@ -94,6 +94,7 @@ impl AgentLauncher for ApiAgentLauncher {
             messages: Vec::new(),
             queued: VecDeque::new(),
             stopped: Arc::clone(&stopped),
+            memory: request.memory.as_ref().map(|m| Arc::clone(&m.tools)),
         };
         let prompt = request.prompt.clone();
         let mode = request.mode;
@@ -148,6 +149,8 @@ struct Agent {
     /// User messages that arrived while a tool waited for an answer.
     queued: VecDeque<String>,
     stopped: Arc<AtomicBool>,
+    /// The project's memory, when this account reads it.
+    memory: Option<Arc<dyn MemoryTools>>,
 }
 
 fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> Value {
@@ -156,6 +159,24 @@ fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> 
         "description": description,
         "parameters": {"type": "object", "properties": properties, "required": required},
     }})
+}
+
+fn memory_tools() -> [Value; 2] {
+    [
+        tool(
+            "memory_search",
+            "Busca en la memoria del proyecto (decisiones, convenciones, reglas). Vacío: todas.",
+            json!({"query": {"type": "string"}}),
+            &[],
+        ),
+        tool(
+            "memory_propose",
+            "Propone una nota para la memoria del proyecto; el usuario decide si se guarda.",
+            json!({"text": {"type": "string"},
+                   "category": {"type": "string", "enum": ["decision", "convention", "rule", "preference"]}}),
+            &["text", "category"],
+        ),
+    ]
 }
 
 fn tools(read_only: bool) -> Value {
@@ -222,6 +243,16 @@ impl Agent {
         (self.events)(event);
     }
 
+    fn tools(&self) -> Value {
+        let mut list = tools(self.read_only || self.planning);
+        if self.memory.is_some()
+            && let Value::Array(list) = &mut list
+        {
+            list.extend(memory_tools());
+        }
+        list
+    }
+
     fn system_prompt(&self, mode: TaskMode) -> String {
         let mut prompt = format!(
             "Eres un agente de programación trabajando a través de Hedy en la carpeta {}. \
@@ -236,6 +267,10 @@ impl Agent {
             TaskMode::Research => prompt
                 .push_str(" Modo Research: investiga en el código y cita dónde está cada cosa."),
             TaskMode::Project => {}
+        }
+        if self.memory.is_some() {
+            prompt.push(' ');
+            prompt.push_str(prompts::MEMORY_GUIDANCE);
         }
         if self.planning {
             prompt.push(' ');
@@ -352,7 +387,7 @@ impl Agent {
         let body = json!({
             "model": self.model,
             "messages": self.messages,
-            "tools": tools(self.read_only || self.planning),
+            "tools": self.tools(),
             "tool_choice": "auto",
         });
         let mut response = self
@@ -469,6 +504,11 @@ impl Agent {
             "list_files" => self.list_files(&arg("path")),
             "read_file" => self.read_file(&arg("path")),
             "search" => self.search(&arg("pattern"), &arg("path")),
+            "memory_search" | "memory_propose" => match &self.memory {
+                Some(memory) if name == "memory_search" => memory.search(&arg("query")),
+                Some(memory) => memory.propose(&arg("text"), &arg("category")),
+                None => format!("Herramienta desconocida: {name}"),
+            },
             "write_file" | "edit_file" => {
                 let target = match self.resolve(&arg("path")) {
                     Ok(p) => p,
@@ -785,6 +825,8 @@ mod tests {
             model: Some("kimi-k3".into()),
             prompt: "Crea hola.txt".into(),
             resume: None,
+            memory: None,
+            mcp: vec![],
         };
         let session = ApiAgentLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))

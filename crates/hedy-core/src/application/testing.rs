@@ -7,13 +7,14 @@ use std::sync::{Arc, Mutex};
 
 use super::ports::{
     AccountRepository, AgentLauncher, AgentRequest, AgentSession, CapturedOutput, Clock, EventSink,
-    FileSystem, Git, MergeOutcome, PortError, PortResult, ProcessRunner, ProjectRepository,
-    RateLimit, SecretStore, SettingsRepository, TaskRepository, UsageRecord, UsageRepository,
+    FileSystem, Git, MemoryRepository, MergeOutcome, NewNote, PortError, PortResult, ProcessRunner,
+    ProjectRepository, RateLimit, SecretStore, SettingsRepository, TaskRepository, UsageRecord,
+    UsageRepository,
 };
 use super::{Hedy, NewAccount, Ports};
 use crate::domain::{
-    Account, AccountId, AgentEvent, Commit, FileDiff, LaunchSpec, Project, Provider, Task, TaskId,
-    UsageSample,
+    Account, AccountId, AgentEvent, Category, Commit, FileDiff, LaunchSpec, Note, NoteStatus,
+    Project, Provider, Task, TaskId, UsageSample,
 };
 
 #[derive(Default)]
@@ -25,6 +26,122 @@ pub struct MemoryStore {
     events: Mutex<HashMap<TaskId, Vec<AgentEvent>>>,
     usage: Mutex<Vec<UsageRecord>>,
     limits: Mutex<HashMap<AccountId, RateLimit>>,
+    notes: Mutex<Vec<Note>>,
+    uses: Mutex<Vec<(i64, Option<TaskId>)>>,
+    dismissed: Mutex<Vec<(i64, i64)>>,
+}
+
+fn in_scope(note: &Note, project: Option<&Path>, with_global: bool) -> bool {
+    match (&note.project, project) {
+        (None, Some(_)) => with_global,
+        (None, None) => true,
+        (Some(p), Some(q)) => p == q,
+        (Some(_), None) => false,
+    }
+}
+
+impl MemoryRepository for MemoryStore {
+    fn add_note(&self, n: &NewNote) -> PortResult<Note> {
+        let mut notes = self.notes.lock().unwrap();
+        let note = Note {
+            id: notes.iter().map(|n| n.id).max().unwrap_or(0) + 1,
+            project: n.project.clone(),
+            text: n.text.clone(),
+            category: n.category,
+            author: n.author.clone(),
+            status: n.status,
+            created_at: n.created_at,
+            uses: 0,
+            last_used: None,
+        };
+        notes.push(note.clone());
+        Ok(note)
+    }
+    fn note(&self, id: i64) -> PortResult<Option<Note>> {
+        Ok(self
+            .notes
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|n| n.id == id)
+            .cloned())
+    }
+    fn update_note(&self, id: i64, text: &str, category: Category) -> PortResult<()> {
+        if let Some(n) = self.notes.lock().unwrap().iter_mut().find(|n| n.id == id) {
+            n.text = text.into();
+            n.category = category;
+        }
+        Ok(())
+    }
+    fn set_note_status(&self, id: i64, status: NoteStatus) -> PortResult<()> {
+        if let Some(n) = self.notes.lock().unwrap().iter_mut().find(|n| n.id == id) {
+            n.status = status;
+        }
+        Ok(())
+    }
+    fn delete_note(&self, id: i64) -> PortResult<()> {
+        self.notes.lock().unwrap().retain(|n| n.id != id);
+        Ok(())
+    }
+    fn notes(&self, project: Option<&Path>, with_global: bool) -> PortResult<Vec<Note>> {
+        Ok(self
+            .notes
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|n| in_scope(n, project, with_global))
+            .cloned()
+            .collect())
+    }
+    fn search_notes(
+        &self,
+        project: Option<&Path>,
+        with_global: bool,
+        query: &str,
+    ) -> PortResult<Vec<Note>> {
+        let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+        Ok(self
+            .notes(project, with_global)?
+            .into_iter()
+            .filter(|n| words.is_empty() || words.iter().any(|w| n.text.to_lowercase().contains(w)))
+            .collect())
+    }
+    fn record_uses(&self, ids: &[i64], task: Option<&TaskId>, at: i64) -> PortResult<()> {
+        let mut notes = self.notes.lock().unwrap();
+        for id in ids {
+            if let Some(n) = notes.iter_mut().find(|n| n.id == *id) {
+                n.uses += 1;
+                n.last_used = Some(at);
+            }
+            self.uses.lock().unwrap().push((*id, task.cloned()));
+        }
+        Ok(())
+    }
+    fn notes_used_by(&self, task: &TaskId) -> PortResult<Vec<Note>> {
+        let used: Vec<i64> = self
+            .uses
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, t)| t.as_ref() == Some(task))
+            .map(|(id, _)| *id)
+            .collect();
+        Ok(self
+            .notes
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|n| used.contains(&n.id))
+            .cloned()
+            .collect())
+    }
+    fn dismiss_pair(&self, a: i64, b: i64) -> PortResult<()> {
+        self.dismissed.lock().unwrap().push((a.min(b), a.max(b)));
+        Ok(())
+    }
+    fn dismissed_pairs(&self) -> PortResult<Vec<(i64, i64)>> {
+        Ok(self.dismissed.lock().unwrap().clone())
+    }
 }
 
 impl TaskRepository for MemoryStore {

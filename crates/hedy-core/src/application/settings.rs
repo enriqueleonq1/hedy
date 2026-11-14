@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use super::ports::McpServer;
 use super::{AppError, AppResult, Hedy};
 use crate::domain::{AccountId, Provider, policy};
 
@@ -16,6 +17,9 @@ pub enum Setting {
     Theme,
     /// Name used to greet the user in the app.
     UserName,
+    /// Code-map MCP server (codebase-memory-mcp) to register in every run.
+    /// Unset: no code map.
+    CodeMap,
 }
 
 pub const THEMES: [&str; 3] = ["system", "light", "dark"];
@@ -28,6 +32,7 @@ impl Setting {
             Self::ApiUrl(p) => format!("api_url.{}", p.as_str()),
             Self::Theme => "ui.theme".into(),
             Self::UserName => "ui.name".into(),
+            Self::CodeMap => "code_map.binary".into(),
         }
     }
 
@@ -43,7 +48,7 @@ impl Setting {
         std::iter::once(Self::DefaultAccount)
             .chain(binaries)
             .chain(api_urls)
-            .chain([Self::Theme, Self::UserName])
+            .chain([Self::Theme, Self::UserName, Self::CodeMap])
             .collect()
     }
 }
@@ -91,6 +96,25 @@ impl Hedy {
 
     pub(crate) fn binary_for(&self, provider: Provider) -> AppResult<Option<String>> {
         self.setting(Setting::Binary(provider))
+    }
+
+    /// The code map for a run, limited to the project folder. Hedy only
+    /// registers it; the server indexes on its own (spec phase 5).
+    pub(crate) fn code_map_servers(&self, project: &std::path::Path) -> AppResult<Vec<McpServer>> {
+        Ok(self
+            .setting(Setting::CodeMap)?
+            .filter(|program| !program.trim().is_empty())
+            .map(|program| McpServer {
+                name: "codebase-memory".into(),
+                command: program,
+                args: Vec::new(),
+                env: vec![(
+                    "CBM_ALLOWED_ROOT".into(),
+                    project.to_string_lossy().into_owned(),
+                )],
+            })
+            .into_iter()
+            .collect())
     }
 }
 

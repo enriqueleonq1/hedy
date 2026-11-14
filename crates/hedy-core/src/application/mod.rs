@@ -3,6 +3,7 @@
 mod accounts;
 mod error;
 mod launch;
+mod memory;
 pub mod ports;
 mod projects;
 mod settings;
@@ -18,6 +19,7 @@ use std::sync::{Arc, Mutex};
 pub use accounts::NewAccount;
 pub use error::{AppError, AppResult};
 pub use launch::Resolved;
+pub use memory::{MemoryServerCommand, MemoryView, format_notes};
 pub use settings::{Setting, THEMES};
 pub use status::{AccountStatus, AccountUsage, Status};
 pub use tasks::NewTask;
@@ -54,6 +56,8 @@ pub struct Hedy {
     live: Arc<Mutex<HashMap<TaskId, tasks::LiveTask>>>,
     /// Numbers sessions, so late events from a replaced session are ignored.
     sessions: Arc<AtomicU64>,
+    /// How to start the memory MCP server for CLI agents.
+    memory_server: Option<MemoryServerCommand>,
 }
 
 impl Hedy {
@@ -69,6 +73,7 @@ impl Hedy {
             events: Arc::new(NoTaskEvents),
             live: Arc::default(),
             sessions: Arc::default(),
+            memory_server: None,
         }
     }
 

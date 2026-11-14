@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::domain::{
-    Account, AccountId, AgentEvent, Commit, FileDiff, LaunchSpec, Phase, Project, Task, TaskId,
-    TaskMode, UsageSample,
+    Account, AccountId, AgentEvent, Category, Commit, FileDiff, LaunchSpec, Note, NoteStatus,
+    Phase, Project, Task, TaskId, TaskMode, UsageSample,
 };
 
 /// Failure in an adapter. The message is user-facing (Spanish).
@@ -79,9 +79,47 @@ pub trait UsageRepository: Send + Sync {
     fn rate_limit(&self, account: &AccountId) -> PortResult<Option<RateLimit>>;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewNote {
+    /// `None`: a global note.
+    pub project: Option<PathBuf>,
+    pub text: String,
+    pub category: Category,
+    pub author: String,
+    pub status: NoteStatus,
+    pub created_at: i64,
+}
+
+pub trait MemoryRepository: Send + Sync {
+    fn add_note(&self, note: &NewNote) -> PortResult<Note>;
+    fn note(&self, id: i64) -> PortResult<Option<Note>>;
+    fn update_note(&self, id: i64, text: &str, category: Category) -> PortResult<()>;
+    fn set_note_status(&self, id: i64, status: NoteStatus) -> PortResult<()>;
+    fn delete_note(&self, id: i64) -> PortResult<()>;
+    /// The project's notes, plus global ones when `with_global`. `None`: only global.
+    fn notes(&self, project: Option<&Path>, with_global: bool) -> PortResult<Vec<Note>>;
+    /// Full-text search, best matches first.
+    fn search_notes(
+        &self,
+        project: Option<&Path>,
+        with_global: bool,
+        query: &str,
+    ) -> PortResult<Vec<Note>>;
+    fn record_uses(&self, ids: &[i64], task: Option<&TaskId>, at: i64) -> PortResult<()>;
+    fn notes_used_by(&self, task: &TaskId) -> PortResult<Vec<Note>>;
+    /// The user said both notes of a pair are valid.
+    fn dismiss_pair(&self, a: i64, b: i64) -> PortResult<()>;
+    fn dismissed_pairs(&self) -> PortResult<Vec<(i64, i64)>>;
+}
+
 /// Persistent state. One adapter usually implements every repository.
 pub trait Store:
-    AccountRepository + ProjectRepository + SettingsRepository + TaskRepository + UsageRepository
+    AccountRepository
+    + ProjectRepository
+    + SettingsRepository
+    + TaskRepository
+    + UsageRepository
+    + MemoryRepository
 {
 }
 impl<T> Store for T where
@@ -90,6 +128,7 @@ impl<T> Store for T where
         + SettingsRepository
         + TaskRepository
         + UsageRepository
+        + MemoryRepository
 {
 }
 
@@ -181,6 +220,46 @@ impl std::fmt::Debug for Secret {
     }
 }
 
+/// A stdio MCP server to register for one agent run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpServer {
+    pub name: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
+}
+
+/// Memory for an agent that calls tools through Hedy (the API agent).
+pub trait MemoryTools: Send + Sync {
+    /// Approved notes matching `query` (all of them when empty), as text.
+    fn search(&self, query: &str) -> String;
+    /// Proposes a note for the user to approve.
+    fn propose(&self, text: &str, category: &str) -> String;
+}
+
+/// The project's memory for one agent run: an MCP server for CLIs, tools for APIs.
+#[derive(Clone)]
+pub struct MemoryLink {
+    pub server: Option<McpServer>,
+    pub tools: Arc<dyn MemoryTools>,
+}
+
+impl std::fmt::Debug for MemoryLink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MemoryLink")
+            .field("server", &self.server)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for MemoryLink {
+    fn eq(&self, other: &Self) -> bool {
+        self.server == other.server
+    }
+}
+
+impl Eq for MemoryLink {}
+
 /// Which adapter runs the agent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentBackend {
@@ -207,6 +286,10 @@ pub struct AgentRequest {
     pub prompt: String,
     /// CLI session to continue.
     pub resume: Option<String>,
+    /// The project's shared memory, unless turned off for this account.
+    pub memory: Option<MemoryLink>,
+    /// Other MCP servers to register (the code map).
+    pub mcp: Vec<McpServer>,
 }
 
 pub trait AgentLauncher: Send + Sync {

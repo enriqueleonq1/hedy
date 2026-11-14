@@ -41,6 +41,8 @@ struct State {
     first_prompt: Option<String>,
     model: Option<String>,
     resume: Option<String>,
+    /// Extra instructions for the thread (the memory guidance).
+    instructions: Option<String>,
     /// Approval request ids (as sent to the UI) → JSON-RPC ids to answer.
     approvals: HashMap<String, Value>,
     /// fileChange item id → paths.
@@ -112,6 +114,7 @@ pub struct CodexSession {
 impl AgentLauncher for CodexLauncher {
     fn start(&self, request: AgentRequest, events: EventSink) -> PortResult<Box<dyn AgentSession>> {
         let mut spec = request.launch.clone();
+        spec.args.extend(mcp_overrides(&request));
         spec.args
             .extend(["app-server", "--listen", "stdio://"].map(String::from));
         let mut child = command(&spec)
@@ -142,6 +145,10 @@ impl AgentLauncher for CodexLauncher {
                 first_prompt: Some(first_prompt),
                 model: request.model.clone(),
                 resume: request.resume.clone(),
+                instructions: request
+                    .memory
+                    .is_some()
+                    .then(|| prompts::MEMORY_GUIDANCE.to_owned()),
                 approvals: HashMap::new(),
                 changes: HashMap::new(),
                 last_message: String::new(),
@@ -169,6 +176,33 @@ impl AgentLauncher for CodexLauncher {
         )?;
         Ok(Box::new(CodexSession { shared, child }))
     }
+}
+
+/// MCP servers as `-c` config overrides (TOML values) for this run only;
+/// the account's `config.toml` is left untouched.
+fn mcp_overrides(request: &AgentRequest) -> Vec<String> {
+    // JSON strings are valid TOML basic strings.
+    let toml = |s: &str| Value::String(s.to_owned()).to_string();
+    let mut out = Vec::new();
+    for server in super::claude::mcp_servers(request) {
+        let key = format!("mcp_servers.{}", server.name);
+        let args: Vec<String> = server.args.iter().map(|a| toml(a)).collect();
+        out.extend([
+            "-c".into(),
+            format!("{key}.command={}", toml(&server.command)),
+            "-c".into(),
+            format!("{key}.args=[{}]", args.join(", ")),
+        ]);
+        if !server.env.is_empty() {
+            let env: Vec<String> = server
+                .env
+                .iter()
+                .map(|(k, v)| format!("{k} = {}", toml(v)))
+                .collect();
+            out.extend(["-c".into(), format!("{key}.env={{ {} }}", env.join(", "))]);
+        }
+    }
+    out
 }
 
 fn relative(cwd: &Path, path: &str) -> String {
@@ -200,13 +234,14 @@ fn response(shared: &Shared, id: u64, msg: &Value) -> PortResult<()> {
     match kind {
         Some(Pending::Initialize) => {
             shared.write(&json!({"jsonrpc": "2.0", "method": "initialized"}))?;
-            let (cwd, read_only, model, resume) = {
+            let (cwd, read_only, model, resume, instructions) = {
                 let s = shared.state.lock().unwrap();
                 (
                     s.cwd.clone(),
                     s.read_only,
                     s.model.clone(),
                     s.resume.clone(),
+                    s.instructions.clone(),
                 )
             };
             let mut params = json!({
@@ -216,6 +251,9 @@ fn response(shared: &Shared, id: u64, msg: &Value) -> PortResult<()> {
             });
             if let Some(model) = model {
                 params["model"] = json!(model);
+            }
+            if let Some(instructions) = instructions {
+                params["developerInstructions"] = json!(instructions);
             }
             match resume {
                 Some(thread) => {
@@ -546,6 +584,40 @@ for line in sys.stdin:
         note("turn/completed", {"threadId": "th-1", "turn": {"id": "tu", "status": "completed", "items": [], "durationMs": 7}})
 "#;
 
+    #[test]
+    fn mcp_servers_are_config_overrides() {
+        let mut request = AgentRequest {
+            backend: AgentBackend::Codex,
+            launch: LaunchSpec::program("codex", vec![]),
+            mode: TaskMode::Project,
+            phase: Phase::Implement,
+            plan_first: false,
+            model: None,
+            prompt: String::new(),
+            resume: None,
+            memory: None,
+            mcp: vec![],
+        };
+        assert!(mcp_overrides(&request).is_empty());
+        request.mcp = vec![crate::application::ports::McpServer {
+            name: "codebase-memory".into(),
+            command: "/bin/cbm".into(),
+            args: vec!["a\"b".into()],
+            env: vec![("CBM_ALLOWED_ROOT".into(), "/code/x".into())],
+        }];
+        assert_eq!(
+            mcp_overrides(&request),
+            [
+                "-c",
+                r#"mcp_servers.codebase-memory.command="/bin/cbm""#,
+                "-c",
+                r#"mcp_servers.codebase-memory.args=["a\"b"]"#,
+                "-c",
+                r#"mcp_servers.codebase-memory.env={ CBM_ALLOWED_ROOT = "/code/x" }"#,
+            ]
+        );
+    }
+
     fn start(dir: &Path, plan_first: bool) -> (Box<dyn AgentSession>, mpsc::Receiver<AgentEvent>) {
         let script = dir.join("fake_codex.py");
         std::fs::write(&script, FAKE_CODEX).unwrap();
@@ -568,6 +640,8 @@ for line in sys.stdin:
             model: Some("gpt-5".into()),
             prompt: "Crea hola.txt".into(),
             resume: None,
+            memory: None,
+            mcp: vec![],
         };
         let session = CodexLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))

@@ -263,6 +263,11 @@ impl Hedy {
                 .or_else(|| account.provider.default_api_model().map(str::to_owned)),
             _ => stage.model.clone(),
         };
+        let project = self.project_at(&task.project).ok();
+        let memory = project
+            .as_ref()
+            .and_then(|p| self.memory_link(p, &task.id, account));
+        let mcp = self.code_map_servers(&task.project)?;
         let number = self.sessions.fetch_add(1, Ordering::Relaxed) + 1;
         let hedy = self.clone();
         let id = task.id.clone();
@@ -282,6 +287,8 @@ impl Hedy {
                 model,
                 prompt,
                 resume,
+                memory,
+                mcp,
             },
             sink,
         )?;

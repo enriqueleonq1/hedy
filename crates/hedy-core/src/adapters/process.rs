@@ -85,6 +85,19 @@ impl ProcessRunner for SystemProcessRunner {
     }
 }
 
+/// Finds an installed program on `PATH` or in `~/.local/bin` (where many
+/// installers put it before the shell picks up the new `PATH`).
+pub fn find_program(name: &str) -> Option<std::path::PathBuf> {
+    let local = std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".local/bin"));
+    std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect::<Vec<_>>())
+        .unwrap_or_default()
+        .into_iter()
+        .chain(local)
+        .map(|dir| dir.join(name))
+        .find(|path| path.is_file())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

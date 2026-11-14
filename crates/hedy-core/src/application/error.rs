@@ -70,6 +70,12 @@ pub enum AppError {
     #[error("no se puede pasar la tarea a «{0}»: elige otro proveedor o una API key")]
     NotAHandoffCandidate(AccountId),
 
+    #[error("no existe la nota {0}")]
+    NoteNotFound(i64),
+
+    #[error("la nota está vacía")]
+    EmptyNote,
+
     #[error("escribe qué quieres que haga")]
     EmptyPrompt,
 
