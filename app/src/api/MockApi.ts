@@ -36,9 +36,51 @@ import type {
   Task,
   TerminalEvent,
   Usage,
+  PlanState,
+  UsageWindow,
 } from "./types";
 
-const NO_USAGE: Usage = { weekTokens: 0, weekCostUsd: null, limit: null };
+const NO_PLAN: PlanState = { usage: null, attemptedAt: null, problem: null, supported: false };
+const NO_USAGE: Usage = { weekTokens: 0, weekCostUsd: null, limit: null, plan: NO_PLAN };
+
+/** Like the backend: Claude Code and Codex subscriptions, and Kimi API keys. */
+function planSupported(provider: string, kind: Account["kind"]): boolean {
+  return kind === "subscription" ? provider === "claude" || provider === "codex" : provider === "kimi";
+}
+
+/** A `/usage` reading of Claude Code, as the backend caches it. */
+function claudePlan(
+  now: number,
+  session: number,
+  week: number,
+  models: [string, number][],
+  sessionResetsIn: number,
+): PlanState {
+  const window = (kind: UsageWindow["kind"], percent: number, resetsAt: number, model: string | null = null) => ({
+    kind,
+    minutes: kind === "session" ? 300 : 10080,
+    model,
+    percent,
+    resetsText: null,
+    resetsAt,
+  });
+  const weekResets = now + 4 * 86_400 + 3 * 3600;
+  return {
+    usage: {
+      windows: [
+        window("session", session, now + sessionResetsIn),
+        window("week", week, weekResets),
+        ...models.map(([model, percent]) => window("week", percent, weekResets, model)),
+      ],
+      checkedAt: now - 120,
+      source: "claudeUsage",
+      balance: null,
+    },
+    attemptedAt: now - 120,
+    problem: null,
+    supported: true,
+  };
+}
 
 /** The built-in examples, as the backend has them (`domain/template.rs`). */
 const BUILTIN_TEMPLATES: Record<"es" | "en", [string, string, string][]> = {
@@ -170,22 +212,30 @@ export class MockApi implements HedyApi {
       usage: NO_USAGE,
       ...extra,
     });
+    const now = Math.floor(Date.now() / 1000);
     api.state.accounts = [
       account("claude-personal", "Claude personal", {
         color: "#BB9AF7",
         projects: ["/code/hedy"],
-        usage: { weekTokens: 182_000, weekCostUsd: 3.1, limit: { status: "allowed", percent: 34, resetsAt: null } },
+        usage: {
+          weekTokens: 182_000,
+          weekCostUsd: 3.1,
+          limit: { status: "allowed", percent: 34, resetsAt: null },
+          plan: claudePlan(now, 58, 83, [["Opus", 12]], 3 * 3600),
+        },
       }),
       account("claude-trabajo", "Claude trabajo", {
         defaultFolder: true,
         login: { state: "loggedIn", plan: "team" },
         projects: ["/code/homming"],
+        usage: { ...NO_USAGE, plan: claudePlan(now, 34, 29, [["Fable", 0]], 90 * 60) },
       }),
       account("chatgpt", "ChatGPT", {
         provider: "codex",
         providerName: "Codex",
         color: "#9ECE6A",
         login: { state: "loggedOut", plan: null },
+        usage: { ...NO_USAGE, plan: { ...NO_PLAN, supported: true, attemptedAt: now - 60, problem: "unavailable" } },
       }),
       account("kimi", "Kimi", {
         provider: "kimi",
@@ -193,6 +243,7 @@ export class MockApi implements HedyApi {
         kind: "apiKey",
         color: "#FF9E64",
         login: { state: "loggedOut", plan: null },
+        usage: { ...NO_USAGE, plan: { ...NO_PLAN, supported: true } },
       }),
     ];
     api.state.projects = [
@@ -201,7 +252,6 @@ export class MockApi implements HedyApi {
     ];
     api.recomputeOffers();
     const day = 86_400;
-    const now = Math.floor(Date.now() / 1000);
     const note = (text: string, category: NoteCategory, extra: Partial<Note> = {}) =>
       api.notes.push({
         id: api.notes.length + 1,
@@ -652,7 +702,10 @@ export class MockApi implements HedyApi {
       color: input.color ?? PALETTE[this.state.accounts.length % PALETTE.length] ?? PALETTE[0],
       login: { state: "loggedOut", plan: null },
       projects: [],
-      usage: NO_USAGE,
+      usage: {
+        ...NO_USAGE,
+        plan: { ...NO_PLAN, supported: planSupported(input.provider, input.apiKey ? "apiKey" : "subscription") },
+      },
     });
     this.state.defaultAccount ??= id;
     this.recomputeOffers();
@@ -684,6 +737,16 @@ export class MockApi implements HedyApi {
 
   async setAccountColor(id: string, color: string): Promise<void> {
     this.account(id).color = color;
+  }
+
+  /** Plays the backend's cache: the reading stays, only the attempt time moves. */
+  async refreshPlanUsage(id: string): Promise<PlanState> {
+    const account = this.account(id);
+    const plan = account.usage.plan;
+    if (plan.supported) {
+      account.usage = { ...account.usage, plan: { ...plan, attemptedAt: Math.floor(Date.now() / 1000) } };
+    }
+    return structuredClone(account.usage.plan);
   }
 
   async useAccount(path: string, account: string, protect?: boolean): Promise<void> {

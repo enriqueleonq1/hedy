@@ -240,6 +240,46 @@ export interface Usage {
   /** The CLI's estimate; not what a subscription bills. */
   weekCostUsd: number | null;
   limit: { status: string; percent: number | null; resetsAt: number | null } | null;
+  /** The plan's limit windows, as the provider reports them (cached reading). */
+  plan: PlanState;
+}
+
+/** session = the rolling 5 hours. */
+export type WindowKind = "session" | "week" | "day" | "other";
+
+export interface UsageWindow {
+  kind: WindowKind;
+  /** Length in minutes, when the source says it. */
+  minutes: number | null;
+  /** The model this window is limited to; null: every model. */
+  model: string | null;
+  /** 0–100. */
+  percent: number;
+  /** When it renews, as the source wrote it. */
+  resetsText: string | null;
+  /** When it renews, in Unix seconds, when it could be worked out. */
+  resetsAt: number | null;
+}
+
+export type UsageSource = "claudeUsage" | "codexRateLimits" | "taskReport" | "moonshotBalance";
+
+export interface PlanUsage {
+  windows: UsageWindow[];
+  /** Unix seconds. */
+  checkedAt: number;
+  source: UsageSource;
+  /** Prepaid credit (Kimi API keys). */
+  balance: { available: number; currency: string } | null;
+}
+
+export interface PlanState {
+  usage: PlanUsage | null;
+  /** When Hedy last asked (Unix seconds). */
+  attemptedAt: number | null;
+  /** Why the last attempt gave nothing. */
+  problem: "unsupported" | "unavailable" | "spendsTokens" | null;
+  /** Whether Hedy has a usage source for this account. */
+  supported: boolean;
 }
 
 // ---------------------------------------------------------------- tasks

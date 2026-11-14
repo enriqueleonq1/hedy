@@ -24,6 +24,7 @@ import type {
   PromptTemplate,
   QueuedMessage,
   Overview,
+  PlanState,
   SettingKey,
   Task,
   TerminalEvent,
@@ -47,6 +48,11 @@ export interface HedyApi {
   renameAccount(id: string, name: string): Promise<void>;
   setDefaultAccount(id: string | null): Promise<void>;
   setAccountColor(id: string, color: string): Promise<void>;
+  /**
+   * Asks the provider for a new plan-usage reading (at most every few minutes
+   * per account; otherwise the cached one). Failures come back as `problem`.
+   */
+  refreshPlanUsage(id: string): Promise<PlanState>;
 
   useAccount(path: string, account: string, protect?: boolean): Promise<void>;
   offerableAccounts(path: string): Promise<string[]>;
