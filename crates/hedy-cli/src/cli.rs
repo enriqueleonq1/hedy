@@ -195,6 +195,14 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
                 "Arguments for the CLI (after `--`)"
             ),
         ),
+        (
+            "doctor",
+            "",
+            tr!(
+                "Revisa las CLIs, las cuentas y Hedy, y avisa si una CLI cambió de versión",
+                "Check the CLIs, the accounts and Hedy, and warn when a CLI changed version"
+            ),
+        ),
         ("account", "", tr!("Gestiona cuentas", "Manage accounts")),
         (
             "account add",
@@ -537,6 +545,9 @@ pub enum Command {
         args: Vec<String>,
     },
 
+    #[command(visible_alias = "diagnostico")]
+    Doctor,
+
     #[command(visible_alias = "cuenta", subcommand)]
     Account(AccountCommand),
 
@@ -731,6 +742,12 @@ mod tests {
                 .unwrap()
                 .command,
             Some(Command::Use { protect: true, .. })
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["hedy", "diagnostico"])
+                .unwrap()
+                .command,
+            Some(Command::Doctor)
         ));
     }
 

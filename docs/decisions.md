@@ -594,7 +594,28 @@ schemas):
   dock matches the window) and the icons. Debian/Fedora/macOS bundles can come from
   `tauri build` later.
 
-## 16. Decisions
+## 16. Health check (`hedy doctor`)
+
+- **Read-only, official commands only.** `hedy doctor` (alias `diagnostico`, Tauri
+  command `doctor`) runs each CLI's `--version` (5 s timeout) and the same official login
+  status commands as `login_state`; it never opens a token file and never prints a key or
+  a variable's value. The one thing it writes is the last version seen per CLI
+  (setting `doctor.cli_version.<provider>`).
+- **CLIs** (respecting `binary.<provider>`): missing is info, or an error when an account
+  uses it or `binary.<provider>` points nowhere. A version different from the last run
+  is a warning unless it is the verified one; versions in the table at the top live in
+  `Provider::verified_version()` (Kimi Code and Antigravity: not verified yet).
+- **Accounts:** managed folder exists, login state (signed out is a warning with
+  `hedy account login <id>`), API keys only by presence in the keyring. Also the default
+  account (missing, removed, or reserved by a protected project).
+- **Hedy:** data folder writable, SQLite `PRAGMA quick_check`, git, the memory MCP server /
+  `PreToolUse` hook entry point (the app binary; info from the `hedy` command when the
+  app is not on `PATH`), the code-map program if set, project folders that are gone.
+- **Environment:** names of the variables Hedy strips (§2) that are set, as info.
+- Levels: ok, info, warning, error. The CLI exits with 1 when there is an error. CLI
+  and account checks run in parallel, like `detect_clis`.
+
+## 17. Decisions
 
 - **Claude accounts:** `~/.claude` (Team) is registered as the default-folder account and
   launched without `CLAUDE_CONFIG_DIR`. New accounts live in Hedy folders.

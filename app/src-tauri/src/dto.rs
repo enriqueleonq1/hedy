@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use hedy_core::adapters::{CODE_MAP_PROGRAM, find_program};
 use hedy_core::application::{
-    AccountStatus, AccountUsage, AppResult, Hedy, MemoryView, ProjectStatus, Proposal, Setting,
-    TestRun, UsageSummary,
+    AccountStatus, AccountUsage, AppResult, CheckLevel, DoctorReport, Hedy, MemoryView,
+    ProjectStatus, Proposal, Setting, TestRun, UsageSummary,
 };
 use hedy_core::domain::{
     Account, ConfigFolder, Credentials, LoginState, Note, PhasePlan, Project, Provider, Task,
@@ -359,6 +359,48 @@ impl From<&hedy_core::application::DetectedCli> for DetectedCliDto {
             installed: d.installed,
             login: (&d.login).into(),
             account: d.account.as_ref().map(ToString::to_string),
+        }
+    }
+}
+
+/// The result of `doctor`: a list of checks, grouped by area.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DoctorReportDto {
+    pub checks: Vec<CheckDto>,
+    pub warnings: usize,
+    pub errors: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckDto {
+    /// `cli`, `account`, `hedy` or `environment`.
+    pub area: &'static str,
+    pub subject: String,
+    /// `ok`, `info`, `warning` or `error`.
+    pub level: &'static str,
+    pub message: String,
+    /// A command (or a short instruction) that fixes it.
+    pub fix: Option<String>,
+}
+
+impl From<&DoctorReport> for DoctorReportDto {
+    fn from(report: &DoctorReport) -> Self {
+        Self {
+            checks: report
+                .checks
+                .iter()
+                .map(|c| CheckDto {
+                    area: c.area.as_str(),
+                    subject: c.subject.clone(),
+                    level: c.level.as_str(),
+                    message: c.message.clone(),
+                    fix: c.fix.clone(),
+                })
+                .collect(),
+            warnings: report.count(CheckLevel::Warning),
+            errors: report.count(CheckLevel::Error),
         }
     }
 }

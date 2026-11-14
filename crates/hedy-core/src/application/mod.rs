@@ -2,6 +2,7 @@
 
 mod accounts;
 mod detect;
+mod doctor;
 mod error;
 mod launch;
 mod memory;
@@ -20,6 +21,7 @@ use std::sync::{Arc, Mutex};
 
 pub use accounts::NewAccount;
 pub use detect::DetectedCli;
+pub use doctor::{Check, CheckArea, CheckLevel, DoctorReport};
 pub use error::{AppError, AppResult};
 pub use launch::Resolved;
 pub use memory::{

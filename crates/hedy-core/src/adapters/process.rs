@@ -1,6 +1,8 @@
 use std::ffi::OsString;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read};
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use crate::application::ports::{CapturedOutput, PortError, PortResult, ProcessRunner};
 use crate::domain::LaunchSpec;
@@ -58,6 +60,63 @@ impl ProcessRunner for SystemProcessRunner {
             exit_code: output.status.code(),
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         })
+    }
+
+    fn run_captured_within(
+        &self,
+        spec: &LaunchSpec,
+        timeout: Duration,
+    ) -> PortResult<CapturedOutput> {
+        let mut child = command(spec)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| launch_error(spec, e))?;
+        // Read on another thread: a full pipe would block the child, and a
+        // grandchild holding the pipe open must not block Hedy.
+        let mut stdout = child.stdout.take().expect("stdout is piped");
+        let (sender, output) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let _ = stdout.read_to_end(&mut bytes);
+            let _ = sender.send(bytes);
+        });
+        let deadline = Instant::now() + timeout;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Ok(None) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let (program, secs) = (&spec.program, timeout.as_secs_f32());
+                    return Err(PortError::new(crate::tr!(
+                        "«{program}» no respondió en {secs} s",
+                        "«{program}» did not answer within {secs} s"
+                    )));
+                }
+                Err(e) => return Err(launch_error(spec, e)),
+            }
+        };
+        let bytes = output
+            .recv_timeout(Duration::from_millis(500))
+            .unwrap_or_default();
+        Ok(CapturedOutput {
+            exit_code: status.code(),
+            stdout: String::from_utf8_lossy(&bytes).into_owned(),
+        })
+    }
+
+    fn blocked_env_vars(&self) -> Vec<String> {
+        let mut names: Vec<String> = std::env::vars_os()
+            .filter_map(|(name, _)| name.into_string().ok())
+            .filter(|name| is_blocked(name))
+            .collect();
+        names.sort();
+        names
     }
 
     fn is_installed(&self, program: &str) -> bool {
@@ -156,6 +215,23 @@ mod tests {
         let out = SystemProcessRunner.run_captured(&spec).unwrap();
         assert_eq!(out.exit_code, Some(3));
         assert_eq!(out.stdout.trim(), "/acc/codex");
+    }
+
+    #[test]
+    fn a_slow_process_is_killed_after_the_timeout() {
+        let spec = LaunchSpec::program("sh", vec!["-c".into(), "echo 1.2.3".into()]);
+        let out = SystemProcessRunner
+            .run_captured_within(&spec, Duration::from_secs(5))
+            .unwrap();
+        assert_eq!((out.exit_code, out.stdout.trim()), (Some(0), "1.2.3"));
+
+        let slow = LaunchSpec::program("sh", vec!["-c".into(), "sleep 10".into()]);
+        let started = Instant::now();
+        let err = SystemProcessRunner
+            .run_captured_within(&slow, Duration::from_millis(200))
+            .unwrap_err();
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(err.message.contains("sh"), "{err}");
     }
 
     #[test]

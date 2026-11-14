@@ -131,6 +131,15 @@ pub trait MemoryRepository: Send + Sync {
     fn dismissed_pairs(&self) -> PortResult<Vec<(i64, i64)>>;
 }
 
+/// Health of the storage itself, for `hedy doctor`.
+pub trait StoreHealth: Send + Sync {
+    /// The folder holding the database, when it lives on disk.
+    fn data_dir(&self) -> Option<PathBuf>;
+    /// A quick integrity check (`PRAGMA quick_check` in SQLite). Empty when
+    /// the database is healthy; otherwise, the problems found.
+    fn integrity_problems(&self) -> PortResult<Vec<String>>;
+}
+
 /// Persistent state. One adapter usually implements every repository.
 pub trait Store:
     AccountRepository
@@ -139,6 +148,7 @@ pub trait Store:
     + TaskRepository
     + UsageRepository
     + MemoryRepository
+    + StoreHealth
 {
 }
 impl<T> Store for T where
@@ -148,6 +158,7 @@ impl<T> Store for T where
         + TaskRepository
         + UsageRepository
         + MemoryRepository
+        + StoreHealth
 {
 }
 
@@ -178,6 +189,16 @@ pub trait ProcessRunner: Send + Sync {
     fn run_interactive(&self, spec: &LaunchSpec) -> PortResult<Option<i32>>;
     /// Runs without a terminal and captures stdout.
     fn run_captured(&self, spec: &LaunchSpec) -> PortResult<CapturedOutput>;
+    /// Like [`ProcessRunner::run_captured`], but kills the process and fails
+    /// when it takes longer than `timeout` (e.g. `--version` checks).
+    fn run_captured_within(
+        &self,
+        spec: &LaunchSpec,
+        timeout: std::time::Duration,
+    ) -> PortResult<CapturedOutput>;
+    /// Names (never values) of the variables in Hedy's own environment that
+    /// launched CLIs do not get, because [`crate::domain::env::is_blocked`].
+    fn blocked_env_vars(&self) -> Vec<String>;
     /// Starts without waiting and without a terminal (e.g. opening the editor).
     fn spawn_detached(&self, spec: &LaunchSpec) -> PortResult<()>;
     /// Whether `program` (a name on `PATH` or a path) is installed.
@@ -375,6 +396,8 @@ pub trait FileSystem: Send + Sync {
     /// folders hold CLI logins.
     fn create_private_dir(&self, path: &Path) -> PortResult<()>;
     fn exists(&self, path: &Path) -> bool;
+    /// Whether files can be created in `dir` (writes and removes a probe file).
+    fn check_writable(&self, dir: &Path) -> PortResult<()>;
     /// `link` → `target`.
     fn symlink_dir(&self, target: &Path, link: &Path) -> PortResult<()>;
     /// Writes `contents` unless the file already exists.

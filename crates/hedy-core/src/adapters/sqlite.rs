@@ -5,7 +5,8 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::application::ports::{
     AccountRepository, MemoryRepository, NewNote, NoteRevision, PortError, PortResult,
-    ProjectRepository, RateLimit, SettingsRepository, TaskRepository, UsageRecord, UsageRepository,
+    ProjectRepository, RateLimit, SettingsRepository, StoreHealth, TaskRepository, UsageRecord,
+    UsageRepository,
 };
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Color, ConfigFolder, Credentials, Note, NoteStatus,
@@ -162,6 +163,8 @@ const MIGRATIONS: &[&str] = &[
 
 pub struct SqliteStore {
     conn: Mutex<Connection>,
+    /// The database file; `None` in memory.
+    path: Option<PathBuf>,
 }
 
 fn db_error(err: rusqlite::Error) -> PortError {
@@ -174,7 +177,8 @@ impl SqliteStore {
             std::fs::create_dir_all(dir)
                 .map_err(|e| PortError::new(format!("no se pudo crear {}: {e}", dir.display())))?;
         }
-        let store = Self::from_connection(Connection::open(path).map_err(db_error)?)?;
+        let mut store = Self::from_connection(Connection::open(path).map_err(db_error)?)?;
+        store.path = Some(path.to_owned());
         // Readers (the memory server) don't block the app while it writes.
         store.with(|c| c.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(())))?;
         Ok(store)
@@ -193,6 +197,7 @@ impl SqliteStore {
         migrate(&mut conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
+            path: None,
         })
     }
 
@@ -797,6 +802,23 @@ impl SettingsRepository for SqliteStore {
     }
 }
 
+impl StoreHealth for SqliteStore {
+    fn data_dir(&self) -> Option<PathBuf> {
+        self.path
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_owned)
+    }
+
+    fn integrity_problems(&self) -> PortResult<Vec<String>> {
+        let rows: Vec<String> = self.with(|c| {
+            let mut stmt = c.prepare("PRAGMA quick_check")?;
+            stmt.query_map([], |r| r.get(0))?.collect()
+        })?;
+        Ok(rows.into_iter().filter(|r| r != "ok").collect())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1230,5 +1252,8 @@ mod tests {
         SqliteStore::open(&path).unwrap();
         let store = SqliteStore::open(&path).unwrap();
         assert!(store.list_accounts().unwrap().is_empty());
+        assert_eq!(store.data_dir(), Some(tmp.path().join("nested")));
+        assert_eq!(store.integrity_problems().unwrap(), Vec::<String>::new());
+        assert_eq!(SqliteStore::in_memory().unwrap().data_dir(), None);
     }
 }

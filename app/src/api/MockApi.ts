@@ -2,9 +2,11 @@ import type { HedyApi, Unsubscribe } from "./HedyApi";
 import type {
   Account,
   AgentEvent,
+  Check,
   Commit,
   Decision,
   DetectedCli,
+  DoctorReport,
   FileDiff,
   MemoryView,
   NewAccountInput,
@@ -489,6 +491,60 @@ export class MockApi implements HedyApi {
       account:
         this.state.accounts.find((a) => a.provider === d.provider && a.defaultFolder)?.id ?? d.account,
     }));
+  }
+
+  /** One CLI updated since the last check, one missing, and a key in the shell. */
+  async doctor(): Promise<DoctorReport> {
+    const checks: Check[] = [
+      { area: "cli", subject: "Claude Code", level: "ok", message: "2.1.306 (verificada)", fix: null },
+      {
+        area: "cli",
+        subject: "Codex",
+        level: "warning",
+        message: "0.169.0 → 0.171.0: cambió desde la última revisión. Hedy se verificó con 0.169.0",
+        fix: null,
+      },
+      { area: "cli", subject: "Gemini CLI", level: "info", message: "no está instalada", fix: null },
+      {
+        area: "cli",
+        subject: "Kimi Code",
+        level: "info",
+        message: "1.4.0 · aún no verificada con Hedy",
+        fix: null,
+      },
+      { area: "cli", subject: "Antigravity", level: "info", message: "no está instalada", fix: null },
+      ...this.state.accounts.map(
+        (a): Check => ({
+          area: "account",
+          subject: `${a.name} (${a.id})`,
+          level: a.login.state === "loggedOut" ? "warning" : "ok",
+          message: a.login.state === "loggedOut" ? "sin sesión" : "sesión iniciada",
+          fix: a.login.state === "loggedOut" ? `hedy account login ${a.id}` : null,
+        }),
+      ),
+      { area: "hedy", subject: "Carpeta de datos", level: "ok", message: "~/.local/share/hedy", fix: null },
+      { area: "hedy", subject: "Base de datos", level: "ok", message: "íntegra (quick_check)", fix: null },
+      { area: "hedy", subject: "git", level: "ok", message: "instalado", fix: null },
+      {
+        area: "hedy",
+        subject: "Memoria y hook de Claude",
+        level: "ok",
+        message: "los sirve /usr/bin/hedy-app",
+        fix: null,
+      },
+      {
+        area: "environment",
+        subject: "ANTHROPIC_API_KEY",
+        level: "info",
+        message: "está en tu shell; Hedy la quita al lanzar las CLIs",
+        fix: null,
+      },
+    ];
+    return {
+      checks,
+      warnings: checks.filter((c) => c.level === "warning").length,
+      errors: checks.filter((c) => c.level === "error").length,
+    };
   }
 
   async pickFolder(): Promise<string | null> {

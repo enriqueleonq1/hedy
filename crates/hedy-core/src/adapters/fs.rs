@@ -40,6 +40,12 @@ impl FileSystem for LocalFileSystem {
         path.exists()
     }
 
+    fn check_writable(&self, dir: &Path) -> PortResult<()> {
+        let probe = dir.join(format!(".hedy-doctor-{}", std::process::id()));
+        fs::write(&probe, b"").map_err(|e| io_error("escribir en", dir, e))?;
+        fs::remove_file(&probe).map_err(|e| io_error("borrar", &probe, e))
+    }
+
     fn symlink_dir(&self, target: &Path, link: &Path) -> PortResult<()> {
         #[cfg(unix)]
         let linked = std::os::unix::fs::symlink(target, link);
@@ -94,6 +100,15 @@ mod tests {
         fs_.write_if_missing(&file, "first").unwrap();
         fs_.write_if_missing(&file, "second").unwrap();
         assert_eq!(fs::read_to_string(&file).unwrap(), "first");
+    }
+
+    #[test]
+    fn writable_check_leaves_nothing_behind() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs_ = LocalFileSystem::new(tmp.path().to_owned());
+        fs_.check_writable(tmp.path()).unwrap();
+        assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 0);
+        assert!(fs_.check_writable(&tmp.path().join("missing")).is_err());
     }
 
     #[cfg(unix)]

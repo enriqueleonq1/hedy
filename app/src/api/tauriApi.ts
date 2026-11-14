@@ -44,6 +44,7 @@ export const tauriApi: HedyApi = {
   openInEditor: (path) => invoke("open_in_editor", { path }),
   openLink: (url) => invoke("open_link", { url }),
   detectClis: () => invoke("detect_clis"),
+  doctor: () => invoke("doctor"),
   pickFolder: async () => {
     const folder = await open({ directory: true, multiple: false });
     return typeof folder === "string" ? folder : null;
