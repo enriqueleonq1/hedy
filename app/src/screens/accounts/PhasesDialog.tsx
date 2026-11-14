@@ -5,9 +5,11 @@ import type { Assignment, Overview, Phase, PhasePlan, Project } from "../../api/
 import { MODEL_SUGGESTIONS, PHASES } from "../../components/models";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
+import { useT } from "../../i18n";
 
 /** Who plans, implements, writes tests and reviews in a project. */
 export function PhasesDialog({ project, overview, onClose }: { project: Project; overview: Overview; onClose: () => void }) {
+  const t = useT();
   const [draft, setDraft] = useState<PhasePlan>(project.phases);
   const save = useAction((api, phases: PhasePlan) => api.setProjectPhases(project.path, phases), {
     invalidate: [OVERVIEW_KEY, ["status", project.path]],
@@ -41,23 +43,21 @@ export function PhasesDialog({ project, overview, onClose }: { project: Project;
 
   return (
     <Dialog
-      title={`Modelos por fase · ${project.name}`}
+      title={t("accounts.phases.title", { name: project.name })}
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>Cancelar</Button>
+          <Button onClick={onClose}>{t("common.cancel")}</Button>
           <Button variant="primary" disabled={save.isPending} onClick={() => save.mutate(cleaned())}>
-            Guardar
+            {t("common.save")}
           </Button>
         </>
       }
     >
-      <p className="hint">
-        Cada fase puede hacerla otra cuenta o modelo. Si la misma IA planifica e implementa, sigue en la misma sesión; si no, la
-        siguiente recibe el pedido, el plan aprobado y lo hecho hasta ahora.
-      </p>
+      <p className="hint">{t("accounts.phases.hint")}</p>
       <div className="phases">
-        {PHASES.map(({ phase, label, optional }) => {
+        {PHASES.map(({ phase, label: labelKey, optional }) => {
+          const label = t(labelKey);
           const assigned = draft[phase];
           const account = overview.accounts.find((a) => a.id === (assigned?.account || (optional ? "" : project.account)));
           const suggestions = account ? MODEL_SUGGESTIONS[account.provider] : [];
@@ -66,11 +66,17 @@ export function PhasesDialog({ project, overview, onClose }: { project: Project;
             <div key={phase} className="phase-row">
               <span className="phase-row__label">{label}</span>
               <select
-                aria-label={`Cuenta para ${label}`}
+                aria-label={t("accounts.phases.accountFor", { phase: label })}
                 value={assigned?.account ?? ""}
                 onChange={(e) => update(phase, optional, { account: e.target.value })}
               >
-                <option value="">{optional ? "No usar esta fase" : `Cuenta del proyecto${main ? ` (${main.name})` : ""}`}</option>
+                <option value="">
+                  {optional
+                    ? t("accounts.phases.skip")
+                    : main
+                      ? t("accounts.phases.projectAccountNamed", { name: main.name })
+                      : t("accounts.phases.projectAccount")}
+                </option>
                 {offered.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.name} · {a.providerName}
@@ -78,9 +84,9 @@ export function PhasesDialog({ project, overview, onClose }: { project: Project;
                 ))}
               </select>
               <input
-                aria-label={`Modelo para ${label}`}
+                aria-label={t("accounts.phases.modelFor", { phase: label })}
                 list={listId}
-                placeholder="automático"
+                placeholder={t("accounts.phases.auto")}
                 disabled={optional && !assigned?.account}
                 value={assigned?.model ?? ""}
                 onChange={(e) => update(phase, optional, { model: e.target.value || null })}

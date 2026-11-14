@@ -5,6 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 
 import { useApi } from "../../api/context";
 import type { TerminalRequest } from "../../api/types";
+import { useT } from "../../i18n";
 import { useThemeName } from "../../theme/ThemeProvider";
 import { terminalTheme } from "../../theme/tokens";
 
@@ -25,9 +26,12 @@ export function TerminalView({ request, active, onExit }: TerminalViewProps) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<Terminal | null>(null);
   const fit = useRef<FitAddon | null>(null);
+  const t = useT();
   const onExitRef = useRef(onExit);
+  const tRef = useRef(t);
   useEffect(() => {
     onExitRef.current = onExit;
+    tRef.current = t;
   });
 
   useEffect(() => {
@@ -57,7 +61,9 @@ export function TerminalView({ request, active, onExit }: TerminalViewProps) {
           if (event.event === "data") {
             xterm.write(decode(event.data));
           } else {
-            xterm.write(`\r\n\x1b[2m[proceso terminado${event.code === null ? "" : ` · código ${event.code}`}]\x1b[0m\r\n`);
+            const exited = tRef.current("shell.processExited");
+            const code = event.code === null ? "" : ` · ${tRef.current("shell.exitCode", { code: event.code })}`;
+            xterm.write(`\r\n\x1b[2m[${exited}${code}]\x1b[0m\r\n`);
             onExitRef.current(event.code);
           }
         });

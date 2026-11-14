@@ -5,6 +5,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { App } from "../../App";
 import { MockApi } from "../../api/MockApi";
 import type { Note } from "../../api/types";
+import { translator } from "../../i18n";
 import { keepLabel } from "./notes";
 
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
@@ -39,8 +40,9 @@ describe("Memory", () => {
   it("names the difference between contradicting notes", () => {
     const a = note("Los recordatorios se envían 24 h antes de la cita.");
     const b = note("Los recordatorios se envían 2 h antes de la cita.");
-    expect(keepLabel(a, b, "primera")).toBe("Quedarme con 24 h");
-    expect(keepLabel(note("Usar Twilio"), note("No usar Twilio"), "primera")).toBe("Quedarme con la primera");
+    const t = translator("es");
+    expect(keepLabel(a, b, "first", t)).toBe("Quedarme con 24 h");
+    expect(keepLabel(note("Usar Twilio"), note("No usar Twilio"), "first", t)).toBe("Quedarme con la primera");
   });
 
   it("groups notes and shows what the last task used and who reads it", async () => {

@@ -1,5 +1,6 @@
 import type { Account, Login } from "../api/types";
 import { formatTokens, formatUsd } from "../format";
+import { useLanguage, useT, type Language, type MessageKey, type Translate } from "../i18n";
 import { PROVIDER_NAMES } from "./providers";
 
 const BRANDS = ["claude", "chatgpt", "codex", "gemini", "kimi", "antigravity"];
@@ -11,13 +12,13 @@ export function shortAccountLabel(account: Pick<Account, "name">): string {
 }
 
 /** "Anthropic · Team", "OpenAI · Plus · Codex", "Moonshot · API key". */
-export function accountSubtitle(account: Account): string {
+export function accountSubtitle(account: Account, t: Translate): string {
   const plan =
     account.kind === "apiKey"
       ? "API key"
       : account.login.plan
         ? account.login.plan.charAt(0).toUpperCase() + account.login.plan.slice(1)
-        : "Suscripción";
+        : t("accounts.plan.subscription");
   const parts = [PROVIDER_NAMES[account.provider].vendor, plan];
   if (account.provider === "codex") parts.push("Codex");
   if (account.provider === "gemini" && account.kind === "subscription") parts.push("Gemini CLI");
@@ -34,39 +35,40 @@ export function AccountChip({ account, muted }: { account: Pick<Account, "name" 
   );
 }
 
-function loginText(login: Login, kind: Account["kind"]): string {
+function loginText(login: Login, kind: Account["kind"], t: Translate): string {
   switch (login.state) {
     case "loggedIn":
-      if (kind === "apiKey") return "Key guardada";
-      return login.plan ? `Conectada · ${login.plan}` : "Conectada";
+      if (kind === "apiKey") return t("accounts.login.keySaved");
+      return login.plan ? t("accounts.login.connectedPlan", { plan: login.plan }) : t("accounts.login.connected");
     case "loggedOut":
-      return kind === "apiKey" ? "Sin key" : "Sin sesión";
+      return kind === "apiKey" ? t("accounts.login.noKey") : t("accounts.login.noSession");
     case "unknown":
-      return "Estado desconocido";
+      return t("accounts.login.unknown");
   }
 }
 
 export function LoginBadge({ account }: { account: Account }) {
+  const t = useT();
   const icon = { loggedIn: "✔", loggedOut: "✗", unknown: "?" }[account.login.state];
   return (
     <span className={`badge badge--${account.login.state}`}>
-      <span aria-hidden>{icon}</span> {loginText(account.login, account.kind)}
+      <span aria-hidden>{icon}</span> {loginText(account.login, account.kind, t)}
     </span>
   );
 }
 
-const LIMIT_STATUS: Record<string, string> = {
-  allowed: "Dentro del límite",
-  allowed_warning: "Cerca del límite",
-  rejected: "Límite alcanzado",
+const LIMIT_STATUS: Record<string, MessageKey> = {
+  allowed: "accounts.limit.allowed",
+  allowed_warning: "accounts.limit.warning",
+  rejected: "accounts.limit.rejected",
 };
 
-function resetText(resetsAt: number | null): string | null {
+function resetText(resetsAt: number | null, t: Translate, language: Language): string | null {
   if (!resetsAt) return null;
-  const when = new Intl.DateTimeFormat("es", { weekday: "long", hour: "2-digit", minute: "2-digit" }).format(
+  const when = new Intl.DateTimeFormat(language, { weekday: "long", hour: "2-digit", minute: "2-digit" }).format(
     new Date(resetsAt * 1000),
   );
-  return `Se renueva el ${when}`;
+  return t("accounts.usage.resets", { when });
 }
 
 /**
@@ -74,40 +76,52 @@ function resetText(resetsAt: number | null): string | null {
  * it) and Hedy's own token count for the week. Nothing is guessed.
  */
 export function UsageBars({ account }: { account: Account }) {
+  const t = useT();
+  const language = useLanguage();
   const { usage } = account;
   const limit = usage.limit;
   const percent = limit?.percent ?? null;
-  const tokens = usage.weekTokens > 0 ? `${formatTokens(usage.weekTokens)} tokens` : "sin uso";
-  const cost = usage.weekCostUsd != null ? formatUsd(usage.weekCostUsd) : null;
+  const tokens = usage.weekTokens > 0 ? `${formatTokens(usage.weekTokens)} tokens` : t("accounts.usage.none");
+  const cost = usage.weekCostUsd != null ? formatUsd(usage.weekCostUsd, language) : null;
+  const limitStatus = limit && LIMIT_STATUS[limit.status];
+  const resets = resetText(limit?.resetsAt ?? null, t, language);
 
   return (
     <div className="usage">
       {account.kind === "subscription" && (
         <div className="usage__row">
           <div className="row row--between">
-            <span>Límite del plan</span>
+            <span>{t("accounts.usage.planLimit")}</span>
             <span className="usage__value">
-              {percent != null ? `${Math.round(percent)}%` : limit ? (LIMIT_STATUS[limit.status] ?? limit.status) : "sin datos"}
+              {percent != null
+                ? `${Math.round(percent)}%`
+                : limit
+                  ? limitStatus
+                    ? t(limitStatus)
+                    : limit.status
+                  : t("accounts.usage.noData")}
             </span>
           </div>
           <div
             className="bar"
             role="meter"
-            aria-label={`Límite del plan: ${percent != null ? `${Math.round(percent)}%` : "sin porcentaje"}`}
+            aria-label={t("accounts.usage.planLimitMeter", {
+              value: percent != null ? `${Math.round(percent)}%` : t("accounts.usage.noPercent"),
+            })}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={percent ?? 0}
           >
             <div className="bar__fill" style={{ width: `${Math.min(percent ?? 0, 100)}%`, background: account.color }} />
           </div>
-          {resetText(limit?.resetsAt ?? null) && <span className="muted small">{resetText(limit?.resetsAt ?? null)}</span>}
+          {resets && <span className="muted small">{resets}</span>}
         </div>
       )}
       <div className="usage__row">
         <div className="row row--between">
-          <span>{account.kind === "apiKey" ? "Gasto de la semana" : "Esta semana"}</span>
+          <span>{account.kind === "apiKey" ? t("accounts.usage.weekSpend") : t("accounts.usage.thisWeek")}</span>
           <span className="usage__value">
-            {account.kind === "apiKey" ? (cost ?? "sin uso") : tokens}
+            {account.kind === "apiKey" ? (cost ?? t("accounts.usage.none")) : tokens}
           </span>
         </div>
         {account.kind === "apiKey" && <span className="muted small">{tokens}</span>}

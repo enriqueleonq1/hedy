@@ -2,6 +2,7 @@
 
 import type { AgentEvent, Decision, Phase, StepStatus, Task, TaskMode } from "../api/types";
 import type { MascotState } from "../components/Mascot/Mascot";
+import type { MessageKey, Translate } from "../i18n";
 
 export type Resolution = { decision: Decision; automatic: boolean; reason: string | null };
 
@@ -55,23 +56,23 @@ export function agentName(events: AgentEvent[]): string {
   return modelLabel(started?.kind === "sessionStarted" ? started.model : null);
 }
 
-export const PHASE_VERB: Record<Phase, string> = {
-  plan: "planifica",
-  implement: "implementa",
-  tests: "escribe los tests",
-  review: "revisa",
+export const PHASE_VERB: Record<Phase, MessageKey> = {
+  plan: "workspace.phase.plan",
+  implement: "workspace.phase.implement",
+  tests: "workspace.phase.tests",
+  review: "workspace.phase.review",
 };
 
-const TOOL_VERB: Record<string, string> = {
-  Read: "leyó",
-  Grep: "buscó",
-  Glob: "buscó archivos",
-  WebSearch: "buscó en la web",
-  WebFetch: "leyó la página",
-  Task: "delegó una subtarea",
+const TOOL_VERB: Record<string, MessageKey> = {
+  Read: "workspace.tool.Read",
+  Grep: "workspace.tool.Grep",
+  Glob: "workspace.tool.Glob",
+  WebSearch: "workspace.tool.WebSearch",
+  WebFetch: "workspace.tool.WebFetch",
+  Task: "workspace.tool.Task",
 };
 
-export function buildTimeline(events: AgentEvent[]): TimelineItem[] {
+export function buildTimeline(events: AgentEvent[], t: Translate): TimelineItem[] {
   const resolutions = new Map<string, Resolution>();
   const requested = new Set<string>();
   let lastSteps = -1;
@@ -149,31 +150,41 @@ export function buildTimeline(events: AgentEvent[]): TimelineItem[] {
       case "permissionResolved":
         // Blocks without a card (Hedy's hook) still show up in the activity.
         if (!requested.has(e.requestId) && e.decision === "deny") {
-          items.push({ type: "activity", key, tone: "failed", text: `Bloqueado por Hedy · ${e.reason ?? ""}` });
+          const text = t("workspace.activity.blocked", { reason: e.reason ?? "" });
+          items.push({ type: "activity", key, tone: "failed", text });
         }
         break;
       case "fileEdited":
-        items.push({ type: "activity", key, tone: "done", text: `${name()} editó ${e.path}` });
+        items.push({ type: "activity", key, tone: "done", text: t("workspace.activity.edited", { agent: name(), path: e.path }) });
         break;
       case "commandRun":
-        items.push({ type: "activity", key, tone: "done", text: `${name()} corrió ${e.command}` });
+        items.push({ type: "activity", key, tone: "done", text: t("workspace.activity.ran", { agent: name(), command: e.command }) });
         break;
       case "testsRun":
         items.push({
           type: "activity",
           key,
           tone: e.passed ? "done" : "failed",
-          text: `${name()}: ${e.passed ? "pasan los tests" : "fallan los tests"} · ${e.command}`,
+          text: t(e.passed ? "workspace.activity.testsPassed" : "workspace.activity.testsFailed", {
+            agent: name(),
+            command: e.command,
+          }),
         });
         break;
-      case "toolUsed":
+      case "toolUsed": {
+        const verb = TOOL_VERB[e.tool];
         items.push({
           type: "activity",
           key,
           tone: "running",
-          text: `${name()} ${TOOL_VERB[e.tool] ?? `usó ${e.tool}`} · ${e.summary}`,
+          text: t("workspace.activity.tool", {
+            agent: name(),
+            verb: verb ? t(verb) : t("workspace.tool.other", { tool: e.tool }),
+            summary: e.summary,
+          }),
         });
         break;
+      }
       case "finished":
         items.push({ type: "finished", key, ok: e.ok, durationMs: e.durationMs });
         break;
@@ -212,15 +223,19 @@ export function mascotState(task: Task | null | undefined, events: AgentEvent[])
   }
 }
 
-export const MODE_LABEL: Record<TaskMode, string> = { project: "Proyecto", ask: "Pregunta", research: "Research" };
+export const MODE_LABEL: Record<TaskMode, MessageKey> = {
+  project: "workspace.mode.project",
+  ask: "workspace.mode.ask",
+  research: "workspace.mode.research",
+};
 
-export const STATUS_LABEL: Record<Task["status"], string> = {
-  running: "Trabajando",
-  waitingApproval: "Espera tu respuesta",
-  review: "Lista para revisar",
-  accepted: "Aceptada",
-  discarded: "Descartada",
-  failed: "Con error",
+export const STATUS_LABEL: Record<Task["status"], MessageKey> = {
+  running: "workspace.status.running",
+  waitingApproval: "workspace.status.waitingApproval",
+  review: "workspace.status.review",
+  accepted: "workspace.status.accepted",
+  discarded: "workspace.status.discarded",
+  failed: "workspace.status.failed",
 };
 
 /** Not accepted nor discarded: it can still take messages and changes. */

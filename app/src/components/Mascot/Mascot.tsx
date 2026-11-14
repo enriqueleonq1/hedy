@@ -1,16 +1,17 @@
 import { useId, type CSSProperties } from "react";
 
+import { useT, type MessageKey } from "../../i18n";
 import "./Mascot.css";
 
 /** `idle` is the resting pose from the visual identity; the other four are the spec's states. */
 export type MascotState = "idle" | "sleeping" | "thinking" | "working" | "done";
 
-export const MASCOT_STATE_LABEL: Record<MascotState, string> = {
-  idle: "En espera",
-  sleeping: "Durmiendo",
-  thinking: "Pensando",
-  working: "Trabajando",
-  done: "¡Listo!",
+export const MASCOT_STATE_LABEL: Record<MascotState, MessageKey> = {
+  idle: "mascot.idle",
+  sleeping: "mascot.sleeping",
+  thinking: "mascot.thinking",
+  working: "mascot.working",
+  done: "mascot.done",
 };
 
 /** Below this size droplets, halo, cheeks and props are dropped for legibility. */
@@ -43,6 +44,7 @@ interface MascotProps {
  * Animations use only transform, opacity and fill.
  */
 export function Mascot({ color, state, size = 120, label, className }: MascotProps) {
+  const t = useT();
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const tiny = size < TINY_SIZE;
   const classes = ["mascot", `mascot--${state}`, tiny && "mascot--tiny", className]
@@ -56,7 +58,7 @@ export function Mascot({ color, state, size = 120, label, className }: MascotPro
       width={size}
       height={size}
       role="img"
-      aria-label={label ?? MASCOT_STATE_LABEL[state]}
+      aria-label={label ?? t(MASCOT_STATE_LABEL[state])}
       data-state={state}
       style={{ "--mascot-color": color } as CSSProperties}
     >

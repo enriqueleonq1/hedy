@@ -5,6 +5,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { App } from "../../App";
 import { MockApi } from "../../api/MockApi";
 import type { Account, Task } from "../../api/types";
+import { translator } from "../../i18n";
 import { headline, usageByDay } from "./StatusScreen";
 
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
@@ -64,13 +65,13 @@ describe("Status", () => {
       ],
       stage: 0,
     });
-    expect(headline(running, "Codex", accounts)).toBe(
+    expect(headline(running, "Codex", accounts, translator("es"))).toBe(
       "Codex implementa «Reporte de comisiones»; después Claude personal lo revisará.",
     );
-    expect(headline(task({ status: "waitingApproval" }), "Codex", accounts)).toBe(
+    expect(headline(task({ status: "waitingApproval" }), "Codex", accounts, translator("es"))).toBe(
       "«Reporte de comisiones» espera tu respuesta.",
     );
-    expect(headline(undefined, "", accounts)).toMatch(/No hay tareas/);
+    expect(headline(undefined, "", accounts, translator("es"))).toMatch(/No hay tareas/);
   });
 
   it("shows the project's indicators, week and commits", async () => {

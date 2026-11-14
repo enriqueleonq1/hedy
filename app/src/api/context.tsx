@@ -9,6 +9,7 @@ import {
 
 import type { HedyApi } from "./HedyApi";
 import { useToast } from "../components/ui/Toast";
+import { useT, type Translate } from "../i18n";
 
 const ApiContext = createContext<HedyApi | null>(null);
 
@@ -36,8 +37,8 @@ export interface ActionOptions<TVars, TResult> extends Omit<UseMutationOptions<T
 
 /**
  * A backend action that refreshes what it changed when it succeeds (the
- * overview unless told otherwise) and shows the (Spanish) error message from
- * the backend when it fails.
+ * overview unless told otherwise) and shows the error message from the
+ * backend (already in the user's language) when it fails.
  */
 export function useAction<TVars, TResult = void>(
   action: (api: HedyApi, vars: TVars) => Promise<TResult>,
@@ -46,6 +47,7 @@ export function useAction<TVars, TResult = void>(
   const api = useApi();
   const client = useQueryClient();
   const toast = useToast();
+  const t = useT();
   const { invalidate = [OVERVIEW_KEY], ...mutation } = options ?? {};
   return useMutation<TResult, unknown, TVars>({
     mutationFn: (vars) => action(api, vars),
@@ -55,14 +57,15 @@ export function useAction<TVars, TResult = void>(
       await options?.onSuccess?.(...args);
     },
     onError: (error, ...rest) => {
-      toast.error(errorMessage(error));
+      toast.error(errorMessage(error, t));
       options?.onError?.(error, ...rest);
     },
   });
 }
 
-export function errorMessage(error: unknown): string {
+/** The backend's message (already localized), or a generic one. */
+export function errorMessage(error: unknown, t: Translate): string {
   if (typeof error === "string") return error;
   if (error instanceof Error) return error.message;
-  return "Algo salió mal.";
+  return t("common.somethingWrong");
 }

@@ -7,19 +7,21 @@ import { useProjectActions } from "../../components/projects";
 import { TerminalView } from "../../components/Terminal/TerminalView";
 import { Button, ConfirmButton } from "../../components/ui/Button";
 import { useToast } from "../../components/ui/Toast";
+import { useT, type MessageKey } from "../../i18n";
 import { useTaskDiff } from "../../tasks/hooks";
 import { isOpen } from "../../tasks/timeline";
 import { DiffView } from "./DiffView";
 
 type Tab = "changes" | "terminal" | "preview";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "changes", label: "Cambios" },
-  { id: "terminal", label: "Terminal" },
-  { id: "preview", label: "Vista previa" },
+const TABS: { id: Tab; label: MessageKey }[] = [
+  { id: "changes", label: "workspace.tab.changes" },
+  { id: "terminal", label: "common.terminal" },
+  { id: "preview", label: "workspace.tab.preview" },
 ];
 
 export function ChangesPanel({ project, task }: { project: string; task: Task | null }) {
+  const t = useT();
   const [tab, setTab] = useState<Tab>("changes");
   // Once opened, the terminal stays alive behind the other tabs: unmounting it
   // would kill what runs there (like the dev server of the preview).
@@ -27,20 +29,20 @@ export function ChangesPanel({ project, task }: { project: string; task: Task | 
   const dir = task?.workspace?.worktree ?? project;
 
   return (
-    <aside className="side-panel" aria-label="Cambios, terminal y vista previa">
+    <aside className="side-panel" aria-label={t("workspace.panel")}>
       <div className="side-panel__tabs" role="tablist">
-        {TABS.map((t) => (
+        {TABS.map((item) => (
           <button
-            key={t.id}
+            key={item.id}
             role="tab"
-            aria-selected={tab === t.id}
+            aria-selected={tab === item.id}
             className="side-tab"
             onClick={() => {
-              setTab(t.id);
-              if (t.id === "terminal") setTerminalOpened(true);
+              setTab(item.id);
+              if (item.id === "terminal") setTerminalOpened(true);
             }}
           >
-            {t.label}
+            {t(item.label)}
           </button>
         ))}
       </div>
@@ -62,6 +64,7 @@ const LOCAL_URL = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/.*)?$/;
 
 /** The project's dev server inside Hedy. Local addresses only. */
 function Preview({ project }: { project: string }) {
+  const t = useT();
   const storageKey = `hedy.preview.${project}`;
   const [url, setUrl] = useState(() => {
     try {
@@ -90,22 +93,22 @@ function Preview({ project }: { project: string }) {
           }
         }}
       >
-        <input aria-label="Dirección del servidor local" className="mono preview__url" value={url} onChange={(e) => setUrl(e.target.value)} />
+        <input aria-label={t("workspace.preview.address")} className="mono preview__url" value={url} onChange={(e) => setUrl(e.target.value)} />
         <Button type="submit" variant="primary" small disabled={!valid}>
-          {shown ? "Recargar" : "Abrir"}
+          {shown ? t("workspace.preview.reload") : t("workspace.preview.open")}
         </Button>
       </form>
-      {!valid && <p className="error-text">Solo direcciones locales (localhost o 127.0.0.1).</p>}
+      {!valid && <p className="error-text">{t("workspace.preview.localOnly")}</p>}
       {shown ? (
         <iframe
           key={reloads}
           className="preview__frame"
           src={shown}
-          title="Vista previa"
+          title={t("workspace.tab.preview")}
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
         />
       ) : (
-        <p className="empty">Arranca el servidor de desarrollo en la pestaña Terminal (por ejemplo, npm run dev) y ábrelo aquí.</p>
+        <p className="empty">{t("workspace.preview.empty")}</p>
       )}
     </div>
   );
@@ -114,6 +117,7 @@ function Preview({ project }: { project: string }) {
 function Changes({ project, task }: { project: string; task: Task | null }) {
   const api = useApi();
   const toast = useToast();
+  const t = useT();
   const actions = useProjectActions();
   const editable = !!task?.workspace && isOpen(task);
   const diff = useTaskDiff(task?.id ?? null, editable);
@@ -127,16 +131,17 @@ function Changes({ project, task }: { project: string; task: Task | null }) {
   ];
   const accept = useAction((a, id: string) => a.acceptTask(id), {
     invalidate: changed,
-    onSuccess: () => toast.info(`Cambios unidos a ${task?.workspace?.baseBranch ?? "la rama base"}.`),
+    onSuccess: () =>
+      toast.info(t("workspace.changes.merged", { branch: task?.workspace?.baseBranch ?? t("workspace.changes.baseBranch") })),
   });
   const discard = useAction((a, id: string) => a.discardTask(id), { invalidate: changed });
 
-  if (!task) return <p className="empty">Cuando pidas algo en modo Proyecto, aquí verás los cambios.</p>;
-  if (!task.workspace) return <p className="empty">Las preguntas y la investigación no cambian archivos.</p>;
+  if (!task) return <p className="empty">{t("workspace.changes.noTask")}</p>;
+  if (!task.workspace) return <p className="empty">{t("workspace.changes.noWorkspace")}</p>;
   if (!isOpen(task)) {
     return (
       <p className="empty">
-        {task.status === "accepted" ? "Esta tarea ya se aceptó y se unió a la rama base." : "Esta tarea se descartó."}
+        {task.status === "accepted" ? t("workspace.changes.accepted") : t("workspace.changes.discarded")}
       </p>
     );
   }
@@ -146,12 +151,12 @@ function Changes({ project, task }: { project: string; task: Task | null }) {
 
   return (
     <div className="changes">
-      {diff.isError && <p className="error-text">{errorMessage(diff.error)}</p>}
+      {diff.isError && <p className="error-text">{errorMessage(diff.error, t)}</p>}
       {files.length === 0 ? (
-        <p className="empty">{diff.isPending ? "Cargando cambios…" : "Todavía no hay cambios."}</p>
+        <p className="empty">{diff.isPending ? t("workspace.changes.loading") : t("workspace.changes.none")}</p>
       ) : (
         <>
-          <ul className="file-list" aria-label="Archivos cambiados">
+          <ul className="file-list" aria-label={t("workspace.changes.files")}>
             {files.map((f) => (
               <li key={f.path}>
                 <button
@@ -175,23 +180,23 @@ function Changes({ project, task }: { project: string; task: Task | null }) {
         <Button
           variant="primary"
           disabled={files.length === 0 || accept.isPending || task.status === "running"}
-          title={task.status === "running" ? "Espera a que el agente termine" : undefined}
+          title={task.status === "running" ? t("workspace.changes.waitForAgent") : undefined}
           onClick={() => accept.mutate(task.id)}
         >
-          Aceptar cambios
+          {t("workspace.changes.accept")}
         </Button>
-        <Button onClick={() => actions.openEditor({ path: task.workspace?.worktree ?? project })}>Abrir en VS Code</Button>
-        <ConfirmButton confirmLabel="¿Descartar todo?" onConfirm={() => discard.mutate(task.id)}>
-          Descartar
+        <Button onClick={() => actions.openEditor({ path: task.workspace?.worktree ?? project })}>{t("common.openInVsCode")}</Button>
+        <ConfirmButton confirmLabel={t("workspace.changes.discardConfirm")} onConfirm={() => discard.mutate(task.id)}>
+          {t("workspace.changes.discard")}
         </ConfirmButton>
       </div>
       <p className="muted small">
-        Rama <span className="mono">{task.workspace.branch}</span> desde{" "}
+        {t("workspace.changes.branch")} <span className="mono">{task.workspace.branch}</span> {t("workspace.changes.from")}{" "}
         <span className="mono">{task.workspace.baseBranch}</span>
       </p>
       {commits.data && commits.data.length > 0 && (
         <p className="muted small">
-          Últimos commits · {commits.data.map((c) => `${c.hash} ${c.subject}`).join(" · ")}
+          {t("common.recentCommits")} · {commits.data.map((c) => `${c.hash} ${c.subject}`).join(" · ")}
         </p>
       )}
     </div>

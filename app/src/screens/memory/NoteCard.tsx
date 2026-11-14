@@ -4,9 +4,11 @@ import type { Note, NoteCategory } from "../../api/types";
 import { Button, ConfirmButton } from "../../components/ui/Button";
 import { Segmented } from "../../components/ui/controls";
 import { timeAgo } from "../../format";
-import { authorLabel, CATEGORY_LABEL, CATEGORY_OPTIONS, useMemoryAction } from "./notes";
+import { useT } from "../../i18n";
+import { authorLabel, CATEGORY_LABEL, categoryOptions, useMemoryAction } from "./notes";
 
 export function NoteCard({ project, note }: { project: string; note: Note }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(note.text);
   const [category, setCategory] = useState(note.category);
@@ -32,14 +34,19 @@ export function NoteCard({ project, note }: { project: string; note: Note }) {
             save.mutate(undefined, { onSuccess: () => setEditing(false) });
           }}
         >
-          <textarea aria-label="Texto de la nota" value={text} rows={2} onChange={(e) => setText(e.target.value)} />
-          <Segmented<NoteCategory> label="Tipo" value={category} options={CATEGORY_OPTIONS} onChange={setCategory} />
+          <textarea aria-label={t("memory.note.text")} value={text} rows={2} onChange={(e) => setText(e.target.value)} />
+          <Segmented<NoteCategory>
+            label={t("common.type")}
+            value={category}
+            options={categoryOptions(t)}
+            onChange={setCategory}
+          />
           <div className="actions">
             <Button type="submit" variant="primary" small disabled={!text.trim() || save.isPending}>
-              Guardar
+              {t("common.save")}
             </Button>
             <Button small variant="ghost" onClick={() => setEditing(false)}>
-              Cancelar
+              {t("common.cancel")}
             </Button>
           </div>
         </form>
@@ -51,34 +58,34 @@ export function NoteCard({ project, note }: { project: string; note: Note }) {
     <li className={`note${proposed ? " note--proposed" : ""}`}>
       <div className="note__head">
         <p className="note__text">{note.text}</p>
-        <span className={`category category--${note.category}`}>{CATEGORY_LABEL[note.category]}</span>
+        <span className={`category category--${note.category}`}>{t(CATEGORY_LABEL[note.category])}</span>
       </div>
       <div className="note__foot">
-        <span className={`note__author${note.author === "user" ? "" : " note__author--ai"}`}>{authorLabel(note)}</span>
+        <span className={`note__author${note.author === "user" ? "" : " note__author--ai"}`}>{authorLabel(note, t)}</span>
         <span className="small muted">
-          {proposed ? "propuso" : ""} {timeAgo(note.createdAt)}
-          {!proposed && ` · usada ${note.uses === 1 ? "1 vez" : `${note.uses} veces`}`}
+          {proposed ? t("memory.note.proposed") : ""} {timeAgo(note.createdAt, t)}
+          {!proposed && (note.uses === 1 ? t("memory.note.usedOnce") : t("memory.note.usedTimes", { n: note.uses }))}
         </span>
         <span className="spacer" />
         {proposed ? (
           <>
             <Button small variant="primary" disabled={approve.isPending} onClick={() => approve.mutate(undefined)}>
-              Aprobar
+              {t("memory.note.approve")}
             </Button>
             <Button small onClick={edit}>
-              Editar
+              {t("common.edit")}
             </Button>
             <Button small className="btn--danger" disabled={forget.isPending} onClick={() => forget.mutate(undefined)}>
-              Rechazar
+              {t("common.reject")}
             </Button>
           </>
         ) : (
           <>
             <Button small onClick={edit}>
-              Editar
+              {t("common.edit")}
             </Button>
-            <ConfirmButton small className="note__forget" confirmLabel="¿Olvidarla?" onConfirm={() => forget.mutate(undefined)}>
-              Olvidar
+            <ConfirmButton small className="note__forget" confirmLabel={t("common.forgetConfirm")} onConfirm={() => forget.mutate(undefined)}>
+              {t("common.forget")}
             </ConfirmButton>
           </>
         )}

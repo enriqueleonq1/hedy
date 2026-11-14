@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 
 import { OVERVIEW_KEY } from "../../api/context";
+import { useT } from "../../i18n";
 import { Button } from "../ui/Button";
 import { useTerminals } from "./TerminalProvider";
 import { TerminalView } from "./TerminalView";
@@ -8,12 +9,13 @@ import { TerminalView } from "./TerminalView";
 export function TerminalPanel() {
   const { sessions, activeKey, panelOpen, open, close, activate, markExited, setPanelOpen } = useTerminals();
   const queryClient = useQueryClient();
+  const t = useT();
 
   if (sessions.length === 0) return null;
 
   return (
-    <section className="terminal-panel" hidden={!panelOpen} aria-label="Terminal">
-      <div className="terminal-panel__bar" role="tablist" aria-label="Terminales">
+    <section className="terminal-panel" hidden={!panelOpen} aria-label={t("common.terminal")}>
+      <div className="terminal-panel__bar" role="tablist" aria-label={t("shell.terminals")}>
         {sessions.map((s) => (
           <div key={s.key} className={`terminal-tab${s.key === activeKey ? " terminal-tab--active" : ""}`}>
             <button
@@ -25,17 +27,17 @@ export function TerminalPanel() {
               <span className={`dot ${s.running ? "dot--running" : "dot--idle"}`} aria-hidden />
               {s.title}
             </button>
-            <button className="terminal-tab__close" aria-label={`Cerrar ${s.title}`} onClick={() => close(s.key)}>
+            <button className="terminal-tab__close" aria-label={t("common.closeNamed", { name: s.title })} onClick={() => close(s.key)}>
               ×
             </button>
           </div>
         ))}
-        <Button small variant="ghost" onClick={() => open({ kind: "shell", path: null }, "Terminal")}>
-          + Terminal
+        <Button small variant="ghost" onClick={() => open({ kind: "shell", path: null }, t("common.terminal"))}>
+          + {t("common.terminal")}
         </Button>
         <span className="spacer" />
-        <Button small variant="ghost" onClick={() => setPanelOpen(false)} aria-label="Ocultar terminal">
-          Ocultar
+        <Button small variant="ghost" onClick={() => setPanelOpen(false)} aria-label={t("shell.hideTerminal")}>
+          {t("shell.hide")}
         </Button>
       </div>
       <div className="terminal-panel__body">

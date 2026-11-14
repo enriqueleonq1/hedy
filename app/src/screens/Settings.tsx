@@ -28,20 +28,20 @@ export function Settings({ overview }: { overview: Overview }) {
 
   return (
     <div className="screen settings">
-      <h1>Ajustes</h1>
+      <h1>{t("common.settings")}</h1>
 
       <section className="card settings__section">
-        <h2>Apariencia</h2>
+        <h2>{t("settings.appearance")}</h2>
         <div className="field">
-          <span className="field__label">Tema</span>
+          <span className="field__label">{t("settings.theme")}</span>
           <Segmented<ThemeSetting>
-            label="Tema"
+            label={t("settings.theme")}
             value={overview.theme}
             onChange={(value) => setSetting.mutate({ key: "ui.theme", value })}
             options={[
-              { value: "system", label: "Según el sistema" },
-              { value: "light", label: "Claro" },
-              { value: "dark", label: "Oscuro" },
+              { value: "system", label: t("settings.theme.system") },
+              { value: "light", label: t("settings.theme.light") },
+              { value: "dark", label: t("settings.theme.dark") },
             ]}
           />
         </div>
@@ -58,7 +58,7 @@ export function Settings({ overview }: { overview: Overview }) {
             ]}
           />
         </div>
-        <Field label="Tu nombre" hint="Para saludarte en la bienvenida.">
+        <Field label={t("settings.name")} hint={t("settings.nameHint")}>
           {(id) => (
             <input
               id={id}
@@ -74,35 +74,35 @@ export function Settings({ overview }: { overview: Overview }) {
       </section>
 
       <section className="card settings__section">
-        <h2>Colores de cuenta</h2>
-        {overview.accounts.length === 0 && <p className="hint">Aún no hay cuentas.</p>}
+        <h2>{t("settings.colors")}</h2>
+        {overview.accounts.length === 0 && <p className="hint">{t("settings.noAccounts")}</p>}
         {overview.accounts.map((a) => (
           <div key={a.id} className="row row--between settings__color-row">
             <span>{a.name}</span>
             <ColorPicker
-              label={`Color de ${a.name}`}
+              label={t("common.colorOf", { name: a.name })}
               value={a.color}
               onChange={(color) => setColor.mutate({ id: a.id, color })}
             />
           </div>
         ))}
-        <div className="mascot-gallery" aria-label="Estados de la mascota">
+        <div className="mascot-gallery" aria-label={t("settings.mascotStates")}>
           {(Object.keys(MASCOT_STATE_LABEL) as MascotState[]).map((state) => (
             <figure key={state}>
               <Mascot color={preview} state={state} size={110} />
-              <figcaption>{MASCOT_STATE_LABEL[state]}</figcaption>
+              <figcaption>{t(MASCOT_STATE_LABEL[state])}</figcaption>
             </figure>
           ))}
         </div>
         <div className="field">
-          <span className="field__label">Probar color</span>
-          <ColorPicker label="Color de prueba de la mascota" value={preview} onChange={setPreview} />
+          <span className="field__label">{t("settings.tryColor")}</span>
+          <ColorPicker label={t("settings.tryColorLabel")} value={preview} onChange={setPreview} />
         </div>
       </section>
 
       <section className="card settings__section">
-        <h2>Rutas de las CLIs</h2>
-        <p className="hint">Déjalo vacío si el comando está en tu PATH.</p>
+        <h2>{t("settings.cliPaths")}</h2>
+        <p className="hint">{t("settings.cliPathsHint")}</p>
         {CLIS.map((cli) => (
           <Field key={cli.id} label={cli.name}>
             {(id) => (
@@ -125,14 +125,14 @@ export function Settings({ overview }: { overview: Overview }) {
 
       <section className="card settings__section">
         <h2>APIs</h2>
-        <p className="hint">Déjalo vacío para usar la dirección oficial. Kimi Code o la región de China tienen las suyas.</p>
+        <p className="hint">{t("settings.apiUrlHint")}</p>
         {(
           [
             { id: "kimi", name: "Kimi", placeholder: "https://api.moonshot.ai/v1" },
             { id: "gemini", name: "Gemini", placeholder: "https://generativelanguage.googleapis.com/v1beta/openai" },
           ] as const
         ).map((api) => (
-          <Field key={api.id} label={`${api.name}: dirección`}>
+          <Field key={api.id} label={t("settings.apiUrl", { name: api.name })}>
             {(id) => (
               <input
                 id={id}
@@ -149,19 +149,16 @@ export function Settings({ overview }: { overview: Overview }) {
             )}
           </Field>
         ))}
-        <p className="hint">
-          Precio para estimar el costo de las tareas por API: entrada/salida en USD por millón de tokens, como lo publica
-          el proveedor (por ejemplo, 0.60/2.50). Sin precio, Hedy solo cuenta tokens.
-        </p>
+        <p className="hint">{t("settings.priceHint")}</p>
         {(["kimi", "gemini"] as const).map((provider) => (
-          <Field key={provider} label={`${provider === "kimi" ? "Kimi" : "Gemini"}: precio`}>
+          <Field key={provider} label={t("settings.price", { name: provider === "kimi" ? "Kimi" : "Gemini" })}>
             {(id) => (
               <input
                 id={id}
                 className="mono"
                 key={overview.apiPrices[provider] ?? ""}
                 defaultValue={overview.apiPrices[provider] ?? ""}
-                placeholder="entrada/salida"
+                placeholder={t("settings.pricePlaceholder")}
                 spellCheck={false}
                 onBlur={(e) =>
                   e.target.value.trim() !== (overview.apiPrices[provider] ?? "") &&
@@ -176,13 +173,13 @@ export function Settings({ overview }: { overview: Overview }) {
       <CodeMap overview={overview} />
 
       <section className="card settings__section">
-        <h2>Datos</h2>
+        <h2>{t("settings.data")}</h2>
         <p>
-          Hedy guarda todo en tu equipo: <span className="mono">{overview.dataDir}</span>
+          {t("settings.dataDir")} <span className="mono">{overview.dataDir}</span>
         </p>
         <p className="hint">
-          Para usar otra carpeta, abre Hedy con la variable <span className="mono">HEDY_DATA_DIR</span>. Los logins de
-          suscripción viven en la carpeta oficial de cada cuenta; las API keys, en el llavero del sistema.
+          {t("settings.dataHintBefore")} <span className="mono">HEDY_DATA_DIR</span>
+          {t("settings.dataHintAfter")}
         </p>
         <div>
           <Button onClick={() => setSetting.mutate({ key: "ui.onboarded", value: null })}>
@@ -200,6 +197,7 @@ export function Settings({ overview }: { overview: Overview }) {
  * run; the index stays on this PC.
  */
 function CodeMap({ overview }: { overview: Overview }) {
+  const t = useT();
   const terminals = useTerminals();
   // Every project status says whether the code map is on.
   const setSetting = useAction((api, value: string | null) => api.setSetting("code_map.binary", value), {
@@ -208,19 +206,18 @@ function CodeMap({ overview }: { overview: Overview }) {
   const { enabled, found } = overview.codeMap;
   return (
     <section className="card settings__section">
-      <h2>Mapa del código</h2>
+      <h2>{t("common.codeMap")}</h2>
       <p className="hint">
-        Un índice local del código (funciones, llamadas, rutas) que todas tus IAs pueden consultar para gastar menos
-        tokens leyendo archivos. Usa <span className="mono">codebase-memory-mcp</span> (MIT, sin telemetría); el índice
-        se guarda en tu PC.
+        {t("settings.codeMap.hintBefore")} <span className="mono">codebase-memory-mcp</span>
+        {t("settings.codeMap.hintAfter")}
       </p>
       {found ? (
         <div className="row row--between">
           <span>
-            Instalado en <span className="mono">{found}</span>
+            {t("settings.codeMap.installedAt")} <span className="mono">{found}</span>
           </span>
           <Switch
-            label="Registrar el mapa del código en las tareas"
+            label={t("settings.codeMap.register")}
             checked={enabled !== null}
             disabled={setSetting.isPending}
             onChange={(on) => setSetting.mutate(on ? found : null)}
@@ -229,17 +226,14 @@ function CodeMap({ overview }: { overview: Overview }) {
       ) : (
         <div className="row row--between">
           <span className="muted">
-            {enabled ? `Configurado como ${enabled}, pero no lo encuentro.` : "No está instalado."}
+            {enabled ? t("settings.codeMap.missing", { path: enabled }) : t("settings.codeMap.notInstalled")}
           </span>
-          <Button onClick={() => terminals.open({ kind: "installCodeMap" }, "Instalar mapa del código")}>
-            Instalar
+          <Button onClick={() => terminals.open({ kind: "installCodeMap" }, t("settings.codeMap.installTitle"))}>
+            {t("settings.codeMap.install")}
           </Button>
         </div>
       )}
-      <p className="small muted">
-        Se instala con el script oficial, que verifica la descarga, y sin tocar la configuración de tus CLIs: Hedy lo
-        registra en cada tarea, limitado a la carpeta del proyecto. Al terminar, vuelve a esta pantalla para activarlo.
-      </p>
+      <p className="small muted">{t("settings.codeMap.note")}</p>
     </section>
   );
 }

@@ -4,7 +4,8 @@ import type { NoteCategory } from "../../api/types";
 import { Button } from "../../components/ui/Button";
 import { Segmented } from "../../components/ui/controls";
 import { Dialog } from "../../components/ui/Dialog";
-import { CATEGORY_OPTIONS, useMemoryAction } from "./notes";
+import { useT } from "../../i18n";
+import { categoryOptions, useMemoryAction } from "./notes";
 
 export function NewNoteDialog({
   project,
@@ -15,6 +16,7 @@ export function NewNoteDialog({
   canBeGlobal: boolean;
   onClose: () => void;
 }) {
+  const t = useT();
   const [text, setText] = useState("");
   const [category, setCategory] = useState<NoteCategory>("decision");
   const [scope, setScope] = useState<"project" | "global">("project");
@@ -23,45 +25,50 @@ export function NewNoteDialog({
   );
   return (
     <Dialog
-      title="Nueva nota"
+      title={t("memory.new.title")}
       onClose={onClose}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Cancelar
+            {t("common.cancel")}
           </Button>
           <Button
             variant="primary"
             disabled={!text.trim() || add.isPending}
             onClick={() => add.mutate(undefined, { onSuccess: onClose })}
           >
-            Guardar nota
+            {t("memory.new.save")}
           </Button>
         </>
       }
     >
       <label className="field">
-        <span className="field__label">Nota</span>
+        <span className="field__label">{t("memory.new.note")}</span>
         <textarea
           value={text}
           rows={3}
-          placeholder="Por ejemplo: los precios se guardan en USD."
+          placeholder={t("memory.new.placeholder")}
           onChange={(e) => setText(e.target.value)}
         />
       </label>
       <div className="field">
-        <span className="field__label">Tipo</span>
-        <Segmented<NoteCategory> label="Tipo" value={category} options={CATEGORY_OPTIONS} onChange={setCategory} />
+        <span className="field__label">{t("common.type")}</span>
+        <Segmented<NoteCategory>
+          label={t("common.type")}
+          value={category}
+          options={categoryOptions(t)}
+          onChange={setCategory}
+        />
       </div>
       {canBeGlobal && (
         <div className="field">
-          <span className="field__label">Dónde</span>
+          <span className="field__label">{t("memory.new.where")}</span>
           <Segmented<"project" | "global">
-            label="Dónde"
+            label={t("memory.new.where")}
             value={scope}
             options={[
-              { value: "project", label: "Solo este proyecto" },
-              { value: "global", label: "Todos los proyectos" },
+              { value: "project", label: t("memory.new.project") },
+              { value: "global", label: t("memory.new.global") },
             ]}
             onChange={setScope}
           />

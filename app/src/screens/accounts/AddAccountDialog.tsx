@@ -6,6 +6,7 @@ import { useTerminals } from "../../components/Terminal/TerminalProvider";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { ColorPicker, Field } from "../../components/ui/controls";
+import { useT, type MessageKey } from "../../i18n";
 import { accountPalette, DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 
 interface Kind {
@@ -13,11 +14,11 @@ interface Kind {
   provider: ProviderId;
   apiKey: boolean;
   title: string;
-  detail: string;
+  detail: MessageKey;
   defaultFolder?: string;
   /** The CLI keeps one login per machine: only its default folder. */
   onlyDefault?: boolean;
-  warning?: string;
+  warning?: MessageKey;
 }
 
 const CLAUDE: Kind = {
@@ -25,7 +26,7 @@ const CLAUDE: Kind = {
   provider: "claude",
   apiKey: false,
   title: "Claude Code",
-  detail: "Suscripción Pro, Max o Team",
+  detail: "accounts.kind.claude",
   defaultFolder: "~/.claude",
 };
 
@@ -36,7 +37,7 @@ const KINDS: Kind[] = [
     provider: "codex",
     apiKey: false,
     title: "Codex",
-    detail: "Suscripción de ChatGPT",
+    detail: "accounts.kind.codex",
     defaultFolder: "~/.codex",
   },
   {
@@ -44,30 +45,28 @@ const KINDS: Kind[] = [
     provider: "kimi",
     apiKey: false,
     title: "Kimi Code",
-    detail: "Suscripción de Kimi Code",
+    detail: "accounts.kind.kimiCode",
     defaultFolder: "~/.kimi-code",
   },
-  { id: "kimi", provider: "kimi", apiKey: true, title: "Kimi (API)", detail: "API key de pago por uso" },
+  { id: "kimi", provider: "kimi", apiKey: true, title: "Kimi (API)", detail: "accounts.kind.kimiApi" },
   {
     id: "antigravity",
     provider: "antigravity",
     apiKey: false,
     title: "Antigravity",
-    detail: "Tu cuenta personal de Google",
+    detail: "accounts.kind.antigravity",
     onlyDefault: true,
-    warning:
-      "Antigravity guarda la sesión en el llavero del sistema y no deja elegir carpeta: solo admite una cuenta por equipo.",
+    warning: "accounts.kind.antigravityWarning",
   },
-  { id: "gemini-api", provider: "gemini", apiKey: true, title: "Gemini", detail: "API key de Google AI Studio" },
+  { id: "gemini-api", provider: "gemini", apiKey: true, title: "Gemini", detail: "accounts.kind.geminiApi" },
   {
     id: "gemini-cli",
     provider: "gemini",
     apiKey: false,
     title: "Gemini CLI",
-    detail: "Code Assist Standard o Enterprise",
+    detail: "accounts.kind.geminiCli",
     defaultFolder: "~/.gemini",
-    warning:
-      "Gemini CLI ya no acepta cuentas personales de Google. Para una cuenta personal usa Antigravity o Gemini con API key.",
+    warning: "accounts.kind.geminiCliWarning",
   },
 ];
 
@@ -80,6 +79,7 @@ export function AddAccountDialog({
   onClose: () => void;
   onNeedsKey: (account: Account) => void;
 }) {
+  const t = useT();
   const terminals = useTerminals();
   const [kind, setKind] = useState<Kind>(CLAUDE);
   const [name, setName] = useState("");
@@ -115,11 +115,11 @@ export function AddAccountDialog({
 
   return (
     <Dialog
-      title="Agregar cuenta"
+      title={t("common.addAccount")}
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>Cancelar</Button>
+          <Button onClick={onClose}>{t("common.cancel")}</Button>
           <Button
             variant="primary"
             disabled={!name.trim() || create.isPending || (kind.onlyDefault && defaultTaken)}
@@ -127,12 +127,16 @@ export function AddAccountDialog({
               create.mutate({ name: name.trim(), provider: kind.provider, apiKey: kind.apiKey, defaultFolder, color })
             }
           >
-            {kind.apiKey ? "Crear y guardar key" : defaultFolder && !kind.onlyDefault ? "Crear" : "Crear e iniciar sesión"}
+            {kind.apiKey
+              ? t("accounts.add.createAndSaveKey")
+              : defaultFolder && !kind.onlyDefault
+                ? t("accounts.add.create")
+                : t("accounts.add.createAndSignIn")}
           </Button>
         </>
       }
     >
-      <Field label="Nombre">
+      <Field label={t("common.name")}>
         {(id) => (
           <input
             id={id}
@@ -145,19 +149,21 @@ export function AddAccountDialog({
       </Field>
 
       <fieldset className="kind-picker">
-        <legend className="field__label">Tipo</legend>
+        <legend className="field__label">{t("common.type")}</legend>
         {KINDS.map((k) => (
           <label key={k.id} className={`kind${k.id === kind.id ? " kind--selected" : ""}`}>
             <input type="radio" name="kind" checked={k.id === kind.id} onChange={() => setKind(k)} />
             <span className="kind__title">{k.title}</span>
-            <span className="kind__detail">{k.detail}</span>
+            <span className="kind__detail">{t(k.detail)}</span>
           </label>
         ))}
       </fieldset>
 
-      {kind.warning && <p className="warning">{kind.warning}</p>}
+      {kind.warning && <p className="warning">{t(kind.warning)}</p>}
 
-      {kind.onlyDefault && defaultTaken && <p className="error-text">Ya tienes una cuenta de {kind.title} en este equipo.</p>}
+      {kind.onlyDefault && defaultTaken && (
+        <p className="error-text">{t("accounts.add.alreadyHave", { name: kind.title })}</p>
+      )}
       {kind.defaultFolder && (
         <label className="check">
           <input
@@ -167,15 +173,15 @@ export function AddAccountDialog({
             onChange={(e) => setUseDefault(e.target.checked)}
           />
           <span>
-            Usar la sesión que ya existe en <span className="mono">{kind.defaultFolder}</span>
-            {defaultTaken && " (ya la usa otra cuenta)"}
+            {t("accounts.add.useExisting")} <span className="mono">{kind.defaultFolder}</span>
+            {defaultTaken && t("accounts.add.taken")}
           </span>
         </label>
       )}
 
       <div className="field">
-        <span className="field__label">Color</span>
-        <ColorPicker label="Color de la cuenta" value={color} onChange={setColor} />
+        <span className="field__label">{t("common.color")}</span>
+        <ColorPicker label={t("accounts.add.colorLabel")} value={color} onChange={setColor} />
       </div>
     </Dialog>
   );
