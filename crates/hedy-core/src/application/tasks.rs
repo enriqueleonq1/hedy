@@ -18,9 +18,9 @@ use crate::domain::phase::pipeline;
 use crate::domain::prompts;
 use crate::domain::task::{SHARED_DEPENDENCY_DIRS, branch_name, title_from_prompt};
 use crate::domain::{
-    Account, AccountId, AgentEvent, Commit, Credentials, Decision, FileDiff, LaunchPurpose,
-    LaunchSpec, LimitLevel, Notice, NoticeKind, Phase, Provider, Stage, Task, TaskId, TaskMode,
-    TaskStatus, UsageSample, Workspace, policy,
+    Account, AccountId, AgentEvent, Commit, Credentials, Decision, FileDiff, HoldReason,
+    LaunchPurpose, LaunchSpec, LimitLevel, Notice, NoticeKind, Phase, Provider, Stage, Task,
+    TaskId, TaskMode, TaskStatus, UsageSample, Workspace, policy,
 };
 use crate::tr;
 
@@ -47,9 +47,9 @@ pub(super) struct LiveTask {
     /// Remembered by "Permitir en este chat".
     rules: Vec<AllowRule>,
     /// Open requests, to remember their rule when the user answers.
-    pending: HashMap<String, (String, Value)>,
+    pub(super) pending: HashMap<String, (String, Value)>,
     /// Highest limit level already shown for this session.
-    warned: Option<LimitLevel>,
+    pub(super) warned: Option<LimitLevel>,
 }
 
 /// Tasks stored before phases existed have no stages.
@@ -242,6 +242,7 @@ impl Hedy {
 
     fn fail(&self, task: &mut Task, error: &AppError) {
         self.stop_session(&task.id);
+        self.hold_queue(&task.id, HoldReason::Failed);
         let _ = self.record(
             &task.id,
             AgentEvent::Error {
@@ -508,6 +509,19 @@ impl Hedy {
             }
             AgentEvent::Finished { ok, summary, .. } => {
                 self.record(id, event.clone())?;
+                // Messages written during the turn go first, to the same
+                // session; after a failure or a limit they wait for the user.
+                let limited = self.limit_reached_now(id);
+                if !*ok || limited {
+                    let reason = if limited {
+                        HoldReason::Limit
+                    } else {
+                        HoldReason::Failed
+                    };
+                    self.hold_queue(id, reason);
+                } else if self.deliver_queue_at_turn_end(&mut task)? {
+                    return Ok(());
+                }
                 let next = task.stage + 1;
                 let advances =
                     *ok && current_stage(&task).phase != Phase::Plan && next < task.stages.len();
@@ -594,6 +608,7 @@ impl Hedy {
             },
         )?;
         if level == LimitLevel::Reached {
+            self.hold_queue(&task.id, HoldReason::Limit);
             self.notify(task, NoticeKind::LimitReached);
         }
         Ok(())
@@ -748,15 +763,15 @@ impl Hedy {
         self.set_status(&mut task, TaskStatus::Running)
     }
 
-    /// A follow-up message. Restarts the agent (resuming its session) if needed.
+    /// A follow-up message: it goes now when the agent is idle, or waits in
+    /// the queue until its turn ends (see [`Hedy::queue_message`]).
     pub fn send_message(&self, id: &TaskId, text: &str) -> AppResult<()> {
-        let mut task = self.task(id)?;
-        if task.status.is_closed() {
-            return Err(AppError::TaskClosed(id.clone()));
-        }
-        if text.trim().is_empty() {
-            return Err(AppError::EmptyPrompt);
-        }
+        self.queue_message(id, text).map(drop)
+    }
+
+    /// Sends a user turn now. Restarts the agent (resuming its session) if needed.
+    pub(super) fn deliver(&self, task: &mut Task, text: &str) -> AppResult<()> {
+        let id = &task.id.clone();
         self.record(
             id,
             AgentEvent::UserMessage {
@@ -772,10 +787,10 @@ impl Hedy {
             // The process is gone (crashed or stopped): resume its session.
             Some(Err(_)) | None => {
                 self.live.lock().unwrap().remove(id);
-                let stage = current_stage(&task);
+                let stage = current_stage(task);
                 let account = self.account(stage.account.as_str())?;
                 self.spawn(
-                    &task,
+                    task,
                     &account,
                     &stage,
                     text.to_owned(),
@@ -783,7 +798,7 @@ impl Hedy {
                 )?;
             }
         }
-        self.set_status(&mut task, TaskStatus::Running)
+        self.set_status(task, TaskStatus::Running)
     }
 
     /// Who the task may be handed over to (another provider or an API key).
@@ -857,6 +872,7 @@ impl Hedy {
     /// Stops the agent; the worktree stays for review.
     pub fn stop_task(&self, id: &TaskId) -> AppResult<()> {
         self.stop_session(id);
+        self.hold_queue(id, HoldReason::Stopped);
         let mut task = self.task(id)?;
         if !task.status.is_closed() && task.status != TaskStatus::Failed {
             self.set_status(&mut task, TaskStatus::Review)?;
@@ -905,6 +921,7 @@ impl Hedy {
         self.git
             .remove_worktree(&task.project, &ws.worktree, &ws.branch)?;
         self.set_status(&mut task, TaskStatus::Accepted)?;
+        self.clear_queue(id)?;
         Ok(task)
     }
 
@@ -920,6 +937,7 @@ impl Hedy {
                 .remove_worktree(&task.project, &ws.worktree, &ws.branch)?;
         }
         self.set_status(&mut task, TaskStatus::Discarded)?;
+        self.clear_queue(id)?;
         Ok(task)
     }
 
@@ -1141,6 +1159,11 @@ mod tests {
         f.agents.emit(AgentEvent::SessionStarted {
             session_id: "s-1".into(),
             model: "m".into(),
+        });
+        f.agents.emit(AgentEvent::Finished {
+            ok: true,
+            summary: "Listo".into(),
+            duration_ms: None,
         });
         f.hedy.send_message(&task.id, "y los tests?").unwrap();
         assert_eq!(

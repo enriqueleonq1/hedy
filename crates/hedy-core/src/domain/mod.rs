@@ -17,7 +17,9 @@ pub mod policy;
 pub mod project;
 pub mod prompts;
 pub mod provider;
+pub mod queue;
 pub mod task;
+pub mod template;
 pub mod version;
 
 pub use account::{Account, AccountId, ConfigFolder, Credentials};
@@ -32,4 +34,6 @@ pub use memory::{Category, Note, NoteStatus};
 pub use phase::{Assignment, Phase, PhasePlan, Stage};
 pub use project::Project;
 pub use provider::Provider;
+pub use queue::{HoldReason, QueuedMessage};
 pub use task::{Task, TaskId, TaskMode, TaskStatus, Workspace};
+pub use template::{PromptTemplate, TemplateId};

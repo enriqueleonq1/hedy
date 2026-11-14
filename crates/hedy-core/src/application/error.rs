@@ -65,6 +65,12 @@ pub enum AppError {
     },
     #[error("{}", self.message())]
     UnknownSetting(String),
+    #[error("{}", self.message())]
+    QueuedMessageNotFound(i64),
+    #[error("{}", self.message())]
+    TemplateNotFound(String),
+    #[error("{}", self.message())]
+    TemplateExists(String),
 }
 
 pub type AppResult<T> = Result<T, AppError>;
@@ -186,6 +192,18 @@ impl AppError {
             Self::UnknownSetting(key) => {
                 tr!("ajuste desconocido: «{key}»", "unknown setting: «{key}»")
             }
+            Self::QueuedMessageNotFound(_) => tr!(
+                "ese mensaje ya no está en cola: puede que ya se haya enviado",
+                "that message is no longer queued: it may have been sent already"
+            ),
+            Self::TemplateNotFound(name) => tr!(
+                "no existe la plantilla «{name}» (mira `hedy template list`)",
+                "template «{name}» does not exist (see `hedy template list`)"
+            ),
+            Self::TemplateExists(name) => tr!(
+                "ya hay una plantilla llamada «{name}» en ese alcance",
+                "there is already a template called «{name}» in that scope"
+            ),
         }
     }
 }

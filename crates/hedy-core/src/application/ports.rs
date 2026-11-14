@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::domain::{
-    Account, AccountId, AgentEvent, Category, Commit, FileDiff, LaunchSpec, Note, NoteStatus,
-    Notice, Phase, Project, Task, TaskId, TaskMode, UsageSample,
+    Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, LaunchSpec, Note,
+    NoteStatus, Notice, Phase, Project, QueuedMessage, Task, TaskId, TaskMode, UsageSample,
 };
 
 /// Failure in an adapter. The message is user-facing (Spanish).
@@ -134,6 +134,43 @@ pub trait MemoryRepository: Send + Sync {
     fn dismissed_pairs(&self) -> PortResult<Vec<(i64, i64)>>;
 }
 
+/// Messages written while an agent works, waiting for the end of its turn.
+pub trait QueueRepository: Send + Sync {
+    fn add_queued(&self, task: &TaskId, text: &str, at: i64) -> PortResult<QueuedMessage>;
+    /// The task's queue, oldest first.
+    fn queued(&self, task: &TaskId) -> PortResult<Vec<QueuedMessage>>;
+    fn queued_message(&self, id: i64) -> PortResult<Option<QueuedMessage>>;
+    fn update_queued(&self, id: i64, text: &str) -> PortResult<()>;
+    fn delete_queued(&self, ids: &[i64]) -> PortResult<()>;
+    /// `Some`: holds every message of the task that is not held yet (keeping
+    /// the reason of those that are). `None`: releases them all.
+    fn hold_queue(&self, task: &TaskId, reason: Option<HoldReason>) -> PortResult<()>;
+}
+
+/// A stored template row: a template of the user, or an edited (or deleted)
+/// built-in example. Built-ins that were never touched have no row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateRecord {
+    /// 0 for a new row.
+    pub id: i64,
+    pub project: Option<PathBuf>,
+    pub name: String,
+    pub text: String,
+    pub builtin: Option<String>,
+    /// A built-in example the user deleted.
+    pub deleted: bool,
+}
+
+pub trait TemplateRepository: Send + Sync {
+    /// Every row, oldest first.
+    fn template_records(&self) -> PortResult<Vec<TemplateRecord>>;
+    /// Inserts (id 0) or updates the row. Returns its id.
+    fn save_template(&self, record: &TemplateRecord) -> PortResult<i64>;
+    fn delete_template(&self, id: i64) -> PortResult<()>;
+    /// Forgets every change to the built-in examples.
+    fn reset_builtin_templates(&self) -> PortResult<()>;
+}
+
 /// Health of the storage itself, for `hedy doctor`.
 pub trait StoreHealth: Send + Sync {
     /// The folder holding the database, when it lives on disk.
@@ -151,6 +188,8 @@ pub trait Store:
     + TaskRepository
     + UsageRepository
     + MemoryRepository
+    + QueueRepository
+    + TemplateRepository
     + StoreHealth
 {
 }
@@ -161,6 +200,8 @@ impl<T> Store for T where
         + TaskRepository
         + UsageRepository
         + MemoryRepository
+        + QueueRepository
+        + TemplateRepository
         + StoreHealth
 {
 }
@@ -387,6 +428,9 @@ pub trait TaskEvents: Send + Sync {
     /// wants to hear about it (`ui.notifications`). The adapter decides how
     /// (the app: a desktop notification while its window is not focused).
     fn notice(&self, _task: &Task, _notice: &Notice) {}
+    /// The task's queue of messages changed (added, edited, removed, held,
+    /// released or delivered). `queue` is what is left, oldest first.
+    fn queue_changed(&self, _task: &TaskId, _queue: &[QueuedMessage]) {}
 }
 
 pub struct NoTaskEvents;

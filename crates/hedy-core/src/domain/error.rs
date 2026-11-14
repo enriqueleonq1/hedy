@@ -43,6 +43,12 @@ pub enum DomainError {
         account: AccountId,
         others: Vec<PathBuf>,
     },
+    #[error("{}", self.message())]
+    InvalidTemplate(String),
+    #[error("{}", self.message())]
+    InvalidTemplateName(String),
+    #[error("{}", self.message())]
+    EmptyTemplate,
 }
 
 impl DomainError {
@@ -117,6 +123,17 @@ impl DomainError {
                     "cannot protect it: account «{account}» is also used by {others}"
                 )
             }
+            Self::InvalidTemplate(id) => {
+                tr!("plantilla no válida: «{id}»", "invalid template: «{id}»")
+            }
+            Self::InvalidTemplateName(name) => tr!(
+                "nombre de plantilla no válido: «{name}» (una línea de hasta 60 caracteres)",
+                "invalid template name: «{name}» (one line of up to 60 characters)"
+            ),
+            Self::EmptyTemplate => tr!(
+                "la plantilla está vacía (o es demasiado larga)",
+                "the template is empty (or too long)"
+            ),
         }
     }
 }
