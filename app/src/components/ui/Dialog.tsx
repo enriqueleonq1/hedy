@@ -7,23 +7,50 @@ interface DialogProps {
   footer?: ReactNode;
 }
 
-/** Modal dialog: Escape and backdrop close it; focus moves in and comes back. */
+const FOCUSABLE = "a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])";
+
+/** Modal dialog: Escape and backdrop close it; focus moves in, stays in and comes back. */
 export function Dialog({ title, onClose, children, footer }: DialogProps) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
+  // Callers pass `onClose` inline: the effect below must not rerun (and move
+  // the focus) on every render of the parent.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     panel.current
       ?.querySelector<HTMLElement>("input, select, textarea, button:not(.dialog__close)")
       ?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab" || !panel.current) return;
+      // In document order (a selector list alone does not guarantee it everywhere).
+      const focusable = [...panel.current.querySelectorAll<HTMLElement>("*")].filter((el) => el.matches(FOCUSABLE));
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) return;
+      const inside = panel.current.contains(document.activeElement);
+      if (e.shiftKey && (document.activeElement === first || !inside)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
       previous?.focus();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
