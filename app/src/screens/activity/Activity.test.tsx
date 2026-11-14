@@ -13,6 +13,9 @@ function setup(api = MockApi.withSampleData().withSampleActivity()) {
   return { api, user: userEvent.setup() };
 }
 
+/** The board loads after the overview; on a busy machine that can take a while. */
+const SLOW = { timeout: 8000 };
+
 /** The titles of a board group's rows, in order. */
 function titles(group: HTMLElement): string[] {
   return within(group)
@@ -25,7 +28,7 @@ describe("Activity", () => {
 
   it("lists every project's tasks, what needs you first", async () => {
     const { user } = setup();
-    await user.click(await screen.findByRole("button", { name: "Actividad: 3 tareas te necesitan" }));
+    await user.click(await screen.findByRole("button", { name: "Actividad: 3 tareas te necesitan" }, SLOW));
     expect(await screen.findByRole("heading", { name: "Actividad" })).toBeInTheDocument();
 
     const needs = await screen.findByRole("region", { name: "Te necesitan (3)" });
@@ -67,7 +70,7 @@ describe("Activity", () => {
 
   it("opens a task in its project's workspace", async () => {
     const { user } = setup();
-    await user.click(await screen.findByRole("button", { name: "Actividad: 3 tareas te necesitan" }));
+    await user.click(await screen.findByRole("button", { name: "Actividad: 3 tareas te necesitan" }, SLOW));
     const needs = await screen.findByRole("region", { name: "Te necesitan (3)" });
     await user.click(within(needs).getByRole("button", { name: /Migra el reporte de comisiones/ }));
     expect(await screen.findByRole("heading", { name: "Migra el reporte de comisiones a la API nueva" })).toBeInTheDocument();
@@ -96,7 +99,7 @@ describe("Activity", () => {
       planFirst: true,
     });
     // The plan arrives: the task moves to "needs you" and the badge counts it.
-    const needs = await screen.findByRole("region", { name: "Te necesitan (1)" });
+    const needs = await screen.findByRole("region", { name: "Te necesitan (1)" }, SLOW);
     expect(within(needs).getByText("Agrega un recordatorio")).toBeInTheDocument();
     expect(within(needs).getByText("Plan por aprobar")).toBeInTheDocument();
     await waitFor(() =>

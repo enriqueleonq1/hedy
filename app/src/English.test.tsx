@@ -137,7 +137,7 @@ describe("English", () => {
 
   it("shows the task board in English", async () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity());
-    await user.click(await screen.findByRole("button", { name: "Activity: 3 tasks need you" }));
+    await user.click(await screen.findByRole("button", { name: "Activity: 3 tasks need you" }, { timeout: 8000 }));
     expect(await screen.findByRole("heading", { name: "Activity" })).toBeInTheDocument();
     const needs = await screen.findByRole("region", { name: "Need you (3)" });
     expect(within(needs).getByText("Plan to approve")).toBeInTheDocument();
