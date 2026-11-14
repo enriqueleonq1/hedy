@@ -1,0 +1,434 @@
+//! Claude Code in headless mode: `claude -p` with stream-json both ways and
+//! permission requests over stdio (docs/decisions.md §3).
+
+mod translate;
+
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::process::{Child, ChildStdin, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
+use serde_json::{Value, json};
+
+use super::process::{command, launch_error};
+use crate::application::ports::{
+    AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
+};
+use crate::domain::{AgentEvent, TaskMode};
+pub use translate::Translator;
+
+pub struct ClaudeCodeLauncher;
+
+const READ_ONLY_TOOLS_DENIED: &str = "Edit,Write,MultiEdit,NotebookEdit";
+
+/// Command-line arguments for a request (after the program and its own args).
+pub fn args(request: &AgentRequest) -> Vec<String> {
+    let mut args: Vec<String> = [
+        "-p",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--permission-prompt-tool",
+        "stdio",
+        "--permission-mode",
+        if request.plan_first {
+            "plan"
+        } else {
+            "default"
+        },
+    ]
+    .map(String::from)
+    .to_vec();
+    match request.mode {
+        TaskMode::Project => {}
+        TaskMode::Ask => args.extend([
+            "--disallowedTools".into(),
+            READ_ONLY_TOOLS_DENIED.into(),
+            "--append-system-prompt".into(),
+            "Modo Pregunta de Hedy: responde y explica; no modifiques archivos.".into(),
+        ]),
+        TaskMode::Research => args.extend([
+            "--disallowedTools".into(),
+            READ_ONLY_TOOLS_DENIED.into(),
+            "--allowedTools".into(),
+            "WebSearch,WebFetch".into(),
+            "--append-system-prompt".into(),
+            "Modo Research de Hedy: investiga (también en la web), cita tus fuentes y no modifiques archivos."
+                .into(),
+        ]),
+    }
+    if let Some(model) = &request.model {
+        args.extend(["--model".into(), model.clone()]);
+    }
+    if let Some(session) = &request.resume {
+        args.extend(["--resume".into(), session.clone()]);
+    }
+    args
+}
+
+fn user_message(text: &str) -> Value {
+    json!({"type": "user", "session_id": "", "parent_tool_use_id": null,
+           "message": {"role": "user", "content": text}})
+}
+
+/// State shared by the reader thread and the session handle.
+#[derive(Default)]
+struct Shared {
+    /// Inputs of open requests: an "allow" must send them back.
+    inputs: HashMap<String, Value>,
+    /// request_id → tool_use_id, to hide the activity of denied tools.
+    tool_use_of: HashMap<String, String>,
+    denied: HashSet<String>,
+}
+
+struct Writer(Mutex<ChildStdin>);
+
+impl Writer {
+    fn send(&self, value: &Value) -> PortResult<()> {
+        let mut line = value.to_string();
+        line.push('\n');
+        let mut stdin = self.0.lock().unwrap();
+        stdin
+            .write_all(line.as_bytes())
+            .and_then(|()| stdin.flush())
+            .map_err(|e| PortError::new(format!("Claude Code ya no responde: {e}")))
+    }
+}
+
+pub struct ClaudeSession {
+    writer: Arc<Writer>,
+    child: Arc<Mutex<Child>>,
+    shared: Arc<Mutex<Shared>>,
+    stopped: Arc<AtomicBool>,
+    turn_open: Arc<AtomicBool>,
+}
+
+impl AgentLauncher for ClaudeCodeLauncher {
+    fn start(&self, request: AgentRequest, events: EventSink) -> PortResult<Box<dyn AgentSession>> {
+        let mut spec = request.launch.clone();
+        spec.args.extend(args(&request));
+        let mut child = command(&spec)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| launch_error(&spec, e))?;
+        let stdin = child.stdin.take().expect("stdin is piped");
+        let stdout = child.stdout.take().expect("stdout is piped");
+        let stderr = child.stderr.take().expect("stderr is piped");
+
+        let session = ClaudeSession {
+            writer: Arc::new(Writer(Mutex::new(stdin))),
+            child: Arc::new(Mutex::new(child)),
+            shared: Arc::default(),
+            stopped: Arc::default(),
+            turn_open: Arc::new(AtomicBool::new(true)),
+        };
+
+        let stderr_tail = Arc::new(Mutex::new(VecDeque::<String>::new()));
+        {
+            let tail = Arc::clone(&stderr_tail);
+            std::thread::spawn(move || {
+                for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                    let mut tail = tail.lock().unwrap();
+                    if tail.len() == 20 {
+                        tail.pop_front();
+                    }
+                    tail.push_back(line);
+                }
+            });
+        }
+        {
+            let cwd = spec.cwd.clone().unwrap_or_default();
+            let (shared, stopped, turn_open, child) = (
+                Arc::clone(&session.shared),
+                Arc::clone(&session.stopped),
+                Arc::clone(&session.turn_open),
+                Arc::clone(&session.child),
+            );
+            std::thread::spawn(move || {
+                read_events(stdout, cwd, &shared, &turn_open, &events);
+                let code = child.lock().unwrap().wait().ok().and_then(|s| s.code());
+                if !stopped.load(Ordering::SeqCst) && turn_open.load(Ordering::SeqCst) {
+                    let detail = stderr_tail
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    events(AgentEvent::Error {
+                        message: format!(
+                            "Claude Code se detuvo (código {}). {}",
+                            code.map_or("?".into(), |c| c.to_string()),
+                            detail.trim()
+                        ),
+                    });
+                }
+            });
+        }
+
+        session.writer.send(
+            &json!({"type": "control_request", "request_id": "hedy-init",
+                                    "request": {"subtype": "initialize"}}),
+        )?;
+        session.writer.send(&user_message(&request.prompt))?;
+        Ok(Box::new(session))
+    }
+}
+
+fn read_events(
+    stdout: impl Read,
+    cwd: std::path::PathBuf,
+    shared: &Mutex<Shared>,
+    turn_open: &AtomicBool,
+    events: &EventSink,
+) {
+    let mut translator = Translator::new(cwd);
+    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+        let Ok(msg) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if msg["type"] == "control_request" && msg["request"]["subtype"] == "can_use_tool" {
+            let id = msg["request_id"].as_str().unwrap_or("").to_owned();
+            let mut shared = shared.lock().unwrap();
+            shared
+                .inputs
+                .insert(id.clone(), msg["request"]["input"].clone());
+            if let Some(tool_use) = msg["request"]["tool_use_id"].as_str() {
+                shared.tool_use_of.insert(id, tool_use.to_owned());
+            }
+        }
+        if msg["type"] == "result" {
+            turn_open.store(false, Ordering::SeqCst);
+        }
+        let denied = shared.lock().unwrap().denied.clone();
+        for event in translator.translate(&msg, &denied) {
+            events(event);
+        }
+    }
+}
+
+impl AgentSession for ClaudeSession {
+    fn send(&mut self, text: &str) -> PortResult<()> {
+        self.turn_open.store(true, Ordering::SeqCst);
+        self.writer.send(&user_message(text))
+    }
+
+    fn answer(&mut self, request_id: &str, allow: bool, message: Option<&str>) -> PortResult<()> {
+        let response = {
+            let mut shared = self.shared.lock().unwrap();
+            let input = shared
+                .inputs
+                .remove(request_id)
+                .unwrap_or_else(|| json!({}));
+            if allow {
+                json!({"behavior": "allow", "updatedInput": input})
+            } else {
+                if let Some(tool_use) = shared.tool_use_of.get(request_id).cloned() {
+                    shared.denied.insert(tool_use);
+                }
+                json!({"behavior": "deny", "message": message.unwrap_or("Rechazado en Hedy.")})
+            }
+        };
+        self.writer
+            .send(&json!({"type": "control_response", "response": {
+            "subtype": "success", "request_id": request_id, "response": response}}))
+    }
+
+    fn stop(&mut self) {
+        if !self.stopped.swap(true, Ordering::SeqCst) {
+            let mut child = self.child.lock().unwrap();
+            let _ = child.kill();
+        }
+    }
+}
+
+impl Drop for ClaudeSession {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use super::*;
+    use crate::domain::LaunchSpec;
+
+    fn request(mode: TaskMode, plan_first: bool) -> AgentRequest {
+        AgentRequest {
+            launch: LaunchSpec::program("claude", vec![]),
+            mode,
+            plan_first,
+            model: Some("opus".into()),
+            prompt: "hola".into(),
+            resume: Some("s-1".into()),
+        }
+    }
+
+    #[test]
+    fn arguments_per_mode() {
+        let project = args(&request(TaskMode::Project, true)).join(" ");
+        assert!(project.contains("--permission-prompt-tool stdio"));
+        assert!(project.contains("--permission-mode plan"));
+        assert!(project.ends_with("--model opus --resume s-1"));
+        assert!(!project.contains("disallowedTools"));
+
+        let ask = args(&request(TaskMode::Ask, false)).join(" ");
+        assert!(ask.contains("--permission-mode default"));
+        assert!(ask.contains("--disallowedTools Edit,Write,MultiEdit,NotebookEdit"));
+        let research = args(&request(TaskMode::Research, false)).join(" ");
+        assert!(research.contains("--allowedTools WebSearch,WebFetch"));
+    }
+
+    /// Plays Claude's side of the protocol: asks to edit a file, writes it only
+    /// if allowed, then finishes the turn. Echoes its arguments as the model.
+    const FAKE_CLAUDE: &str = r#"
+import json, os, sys
+def out(obj):
+    print(json.dumps(obj), flush=True)
+args = " ".join(sys.argv[1:])
+for line in sys.stdin:
+    msg = json.loads(line)
+    if msg.get("type") == "control_request":
+        out({"type": "control_response", "response": {"subtype": "success", "request_id": msg["request_id"]}})
+        continue
+    if msg.get("type") != "user":
+        continue
+    out({"type": "system", "subtype": "init", "session_id": "s-42", "model": args})
+    path = os.path.join(os.getcwd(), "hola.txt")
+    out({"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "Creo el archivo."},
+        {"type": "tool_use", "id": "tu1", "name": "Write", "input": {"file_path": path, "content": "hola"}}]}})
+    out({"type": "control_request", "request_id": "req-1", "request": {
+        "subtype": "can_use_tool", "tool_name": "Write", "tool_use_id": "tu1",
+        "input": {"file_path": path, "content": "hola"}}})
+    answer = json.loads(sys.stdin.readline())["response"]["response"]
+    if answer["behavior"] == "allow":
+        open(answer["updatedInput"]["file_path"], "w").write(answer["updatedInput"]["content"])
+        out({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "tu1", "content": "ok"}]}})
+    else:
+        out({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "tu1", "content": answer["message"], "is_error": True}]}})
+    out({"type": "result", "subtype": "success", "is_error": False, "result": "Listo", "duration_ms": 5,
+         "total_cost_usd": 0.01, "usage": {"input_tokens": 7, "output_tokens": 3}})
+"#;
+
+    fn start(dir: &std::path::Path) -> (Box<dyn AgentSession>, mpsc::Receiver<AgentEvent>) {
+        let script = dir.join("fake_claude.py");
+        std::fs::write(&script, FAKE_CLAUDE).unwrap();
+        let (tx, rx) = mpsc::channel();
+        let tx = Mutex::new(tx);
+        let launch = LaunchSpec::program(
+            "python3",
+            vec!["-I".into(), script.to_string_lossy().into_owned()],
+        )
+        .in_dir(dir.to_owned());
+        let session = ClaudeCodeLauncher
+            .start(
+                AgentRequest {
+                    launch,
+                    ..request(TaskMode::Project, false)
+                },
+                Arc::new(move |e| {
+                    let _ = tx.lock().unwrap().send(e);
+                }),
+            )
+            .unwrap();
+        (session, rx)
+    }
+
+    fn next(rx: &mpsc::Receiver<AgentEvent>) -> AgentEvent {
+        rx.recv_timeout(Duration::from_secs(10))
+            .expect("no event from fake claude")
+    }
+
+    fn until_permission(rx: &mpsc::Receiver<AgentEvent>) -> String {
+        loop {
+            if let AgentEvent::PermissionRequest { request_id, .. } = next(rx) {
+                return request_id;
+            }
+        }
+    }
+
+    fn rest_of_turn(rx: &mpsc::Receiver<AgentEvent>) -> Vec<AgentEvent> {
+        let mut events = Vec::new();
+        loop {
+            let e = next(rx);
+            let done = matches!(e, AgentEvent::Finished { .. });
+            events.push(e);
+            if done {
+                return events;
+            }
+        }
+    }
+
+    #[test]
+    fn allowed_edit_happens_and_is_reported() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().canonicalize().unwrap();
+        let (mut session, rx) = start(&dir);
+
+        let AgentEvent::SessionStarted { session_id, model } = next(&rx) else {
+            panic!()
+        };
+        assert_eq!(session_id, "s-42");
+        assert!(model.contains("--permission-prompt-tool stdio"), "{model}");
+        assert_eq!(
+            next(&rx),
+            AgentEvent::Message {
+                text: "Creo el archivo.".into()
+            }
+        );
+
+        let request = until_permission(&rx);
+        session.answer(&request, true, None).unwrap();
+        let rest = rest_of_turn(&rx);
+        assert!(
+            rest.contains(&AgentEvent::FileEdited {
+                path: "hola.txt".into()
+            }),
+            "{rest:?}"
+        );
+        assert!(matches!(
+            rest.last(),
+            Some(AgentEvent::Finished { ok: true, .. })
+        ));
+        assert_eq!(
+            std::fs::read_to_string(dir.join("hola.txt")).unwrap(),
+            "hola"
+        );
+        session.stop();
+    }
+
+    #[test]
+    fn denied_edit_does_not_happen_and_follow_ups_work() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().canonicalize().unwrap();
+        let (mut session, rx) = start(&dir);
+
+        let request = until_permission(&rx);
+        session.answer(&request, false, Some("no")).unwrap();
+        let rest = rest_of_turn(&rx);
+        assert!(
+            !rest
+                .iter()
+                .any(|e| matches!(e, AgentEvent::FileEdited { .. })),
+            "{rest:?}"
+        );
+        assert!(!dir.join("hola.txt").exists());
+
+        // Same process, second turn.
+        session.send("otra vez").unwrap();
+        let request = until_permission(&rx);
+        session.answer(&request, true, None).unwrap();
+        rest_of_turn(&rx);
+        assert!(dir.join("hola.txt").exists());
+        session.stop();
+    }
+}

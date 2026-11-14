@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use super::ports::PortError;
-use crate::domain::{AccountId, DomainError};
+use super::ports::{MergeOutcome, PortError};
+use crate::domain::{AccountId, DomainError, Provider, TaskId};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AppError {
@@ -52,8 +52,47 @@ pub enum AppError {
     #[error("no existe el proyecto {}", .0.display())]
     ProjectNotFound(PathBuf),
 
+    #[error("no existe la tarea {0}")]
+    TaskNotFound(TaskId),
+
+    #[error("la tarea {0} no tiene un agente en marcha")]
+    TaskNotRunning(TaskId),
+
+    #[error("la tarea {0} ya está cerrada")]
+    TaskClosed(TaskId),
+
+    #[error("la tarea {0} no cambia archivos (es una pregunta)")]
+    TaskWithoutChanges(TaskId),
+
+    #[error("escribe qué quieres que haga")]
+    EmptyPrompt,
+
+    #[error("{0} llega a Hedy en la fase 4; por ahora las tareas usan Claude Code")]
+    ProviderNotYetSupported(Provider),
+
+    #[error("{}", merge_message(branch, reason))]
+    MergeBlocked {
+        branch: String,
+        reason: MergeOutcome,
+    },
+
     #[error("ajuste desconocido: «{0}»")]
     UnknownSetting(String),
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+fn merge_message(branch: &str, reason: &MergeOutcome) -> String {
+    let why = match reason {
+        MergeOutcome::NotOnBase { current } => {
+            format!("tu carpeta principal está en la rama «{current}», no en la rama base")
+        }
+        MergeOutcome::Dirty => "tu carpeta principal tiene cambios sin guardar en git".to_owned(),
+        MergeOutcome::Conflict => "hay conflictos con la rama base".to_owned(),
+        MergeOutcome::Merged => "ya está unida".to_owned(),
+    };
+    format!(
+        "Los cambios quedaron guardados en la rama «{branch}», pero no se pudieron unir: {why}. \
+         Resuélvelo y vuelve a aceptar, o únela tú con git."
+    )
+}

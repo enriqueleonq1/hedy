@@ -17,6 +17,12 @@ pub enum DomainError {
     #[error("color no válido: «{0}» (usa un nombre de la paleta o #RRGGBB)")]
     InvalidColor(String),
 
+    #[error("modo de tarea desconocido: {0}")]
+    UnknownTaskMode(String),
+
+    #[error("estado de tarea desconocido: {0}")]
+    UnknownTaskStatus(String),
+
     #[error("{provider} no admite cuentas de suscripción")]
     SubscriptionNotSupported { provider: Provider },
 

@@ -1,7 +1,19 @@
 use std::path::Path;
 
+use super::ports::RateLimit;
 use super::{AppResult, Hedy};
-use crate::domain::{Account, AccountId, LoginState, Project, policy};
+use crate::domain::{Account, AccountId, LoginState, Project, UsageSample, policy};
+
+/// What Hedy recorded for an account. Subscription limits come only from what
+/// the CLI reports; token counts are Hedy's own tally.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AccountUsage {
+    /// Last 7 days.
+    pub week: UsageSample,
+    pub rate_limit: Option<RateLimit>,
+}
+
+const WEEK_SECS: i64 = 7 * 24 * 60 * 60;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountStatus {
@@ -21,6 +33,14 @@ pub struct Status {
 }
 
 impl Hedy {
+    pub fn account_usage(&self, account: &AccountId) -> AppResult<AccountUsage> {
+        let since = self.clock.now_ms() / 1000 - WEEK_SECS;
+        Ok(AccountUsage {
+            week: self.store.usage_since(account, since)?,
+            rate_limit: self.store.rate_limit(account)?,
+        })
+    }
+
     /// Accounts with their login state, as seen from `dir`. Login checks run in
     /// parallel because each one starts a CLI process.
     pub fn status(&self, dir: &Path) -> AppResult<Status> {

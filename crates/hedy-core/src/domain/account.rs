@@ -4,8 +4,25 @@ use std::path::PathBuf;
 use super::{Color, DomainError, Provider};
 
 /// Account slug, e.g. `claude-personal`. Also the keyring user for API keys.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(try_from = "String", into = "String")]
 pub struct AccountId(String);
+
+impl TryFrom<String> for AccountId {
+    type Error = DomainError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<AccountId> for String {
+    fn from(id: AccountId) -> Self {
+        id.0
+    }
+}
 
 impl AccountId {
     const MAX_LEN: usize = 48;

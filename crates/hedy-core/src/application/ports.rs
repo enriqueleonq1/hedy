@@ -2,8 +2,12 @@
 //! tests use in-memory fakes.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use crate::domain::{Account, AccountId, LaunchSpec, Project};
+use crate::domain::{
+    Account, AccountId, AgentEvent, Commit, FileDiff, LaunchSpec, Project, Task, TaskId, TaskMode,
+    UsageSample,
+};
 
 /// Failure in an adapter. The message is user-facing (Spanish).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -39,9 +43,59 @@ pub trait SettingsRepository: Send + Sync {
     fn set_setting(&self, key: &str, value: Option<&str>) -> PortResult<()>;
 }
 
-/// Persistent state. One adapter usually implements all three repositories.
-pub trait Store: AccountRepository + ProjectRepository + SettingsRepository {}
-impl<T: AccountRepository + ProjectRepository + SettingsRepository> Store for T {}
+pub trait TaskRepository: Send + Sync {
+    fn save_task(&self, task: &Task) -> PortResult<()>;
+    fn task(&self, id: &TaskId) -> PortResult<Option<Task>>;
+    /// Newest first.
+    fn tasks(&self, project: &Path) -> PortResult<Vec<Task>>;
+    fn append_event(&self, id: &TaskId, at: i64, event: &AgentEvent) -> PortResult<()>;
+    fn events(&self, id: &TaskId) -> PortResult<Vec<AgentEvent>>;
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UsageRecord {
+    pub at: i64,
+    pub account: AccountId,
+    pub project: PathBuf,
+    pub task: TaskId,
+    pub sample: UsageSample,
+}
+
+/// Last rate-limit status a CLI reported for an account.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RateLimit {
+    pub status: String,
+    pub utilization: Option<f64>,
+    pub resets_at: Option<i64>,
+    pub at: i64,
+}
+
+pub trait UsageRepository: Send + Sync {
+    fn record_usage(&self, record: &UsageRecord) -> PortResult<()>;
+    /// Sum of everything recorded for `account` since `since` (seconds).
+    fn usage_since(&self, account: &AccountId, since: i64) -> PortResult<UsageSample>;
+    fn set_rate_limit(&self, account: &AccountId, limit: &RateLimit) -> PortResult<()>;
+    fn rate_limit(&self, account: &AccountId) -> PortResult<Option<RateLimit>>;
+}
+
+/// Persistent state. One adapter usually implements every repository.
+pub trait Store:
+    AccountRepository + ProjectRepository + SettingsRepository + TaskRepository + UsageRepository
+{
+}
+impl<T> Store for T where
+    T: AccountRepository
+        + ProjectRepository
+        + SettingsRepository
+        + TaskRepository
+        + UsageRepository
+{
+}
+
+pub trait Clock: Send + Sync {
+    /// Milliseconds since the Unix epoch.
+    fn now_ms(&self) -> i64;
+}
 
 /// API keys in the OS keyring. Never used for subscription logins.
 pub trait SecretStore: Send + Sync {
@@ -67,6 +121,78 @@ pub trait ProcessRunner: Send + Sync {
     fn spawn_detached(&self, spec: &LaunchSpec) -> PortResult<()>;
     /// Replaces the current process when the platform allows it. Only returns on error.
     fn exec(&self, spec: &LaunchSpec) -> PortError;
+}
+
+/// Result of merging a task branch into its base branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MergeOutcome {
+    Merged,
+    /// The main checkout is on another branch.
+    NotOnBase {
+        current: String,
+    },
+    /// The main checkout has uncommitted changes.
+    Dirty,
+    /// Merge conflicts; the merge was aborted.
+    Conflict,
+}
+
+pub trait Git: Send + Sync {
+    fn current_branch(&self, repo: &Path) -> PortResult<String>;
+    fn head_commit(&self, repo: &Path) -> PortResult<String>;
+    /// Adds `pattern` to `.git/info/exclude` (never to the team's `.gitignore`).
+    fn ensure_excluded(&self, repo: &Path, pattern: &str) -> PortResult<()>;
+    fn add_worktree(&self, repo: &Path, path: &Path, branch: &str, base: &str) -> PortResult<()>;
+    /// Every change in the worktree (committed or not) since `base`.
+    fn diff(&self, worktree: &Path, base: &str) -> PortResult<Vec<FileDiff>>;
+    /// Commits everything; `false` when there was nothing to commit.
+    fn commit_all(&self, worktree: &Path, message: &str) -> PortResult<bool>;
+    fn merge(&self, repo: &Path, base_branch: &str, branch: &str) -> PortResult<MergeOutcome>;
+    /// Removes the worktree and deletes its branch.
+    fn remove_worktree(&self, repo: &Path, path: &Path, branch: &str) -> PortResult<()>;
+    fn recent_commits(&self, repo: &Path, limit: usize) -> PortResult<Vec<Commit>>;
+}
+
+/// Receives the agent's events, on the adapter's own thread.
+pub type EventSink = Arc<dyn Fn(AgentEvent) + Send + Sync>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentRequest {
+    /// Program, account folder variable and working directory.
+    pub launch: LaunchSpec,
+    pub mode: TaskMode,
+    /// Start in plan mode: the agent proposes a plan before changing anything.
+    pub plan_first: bool,
+    pub model: Option<String>,
+    pub prompt: String,
+    /// CLI session to continue.
+    pub resume: Option<String>,
+}
+
+pub trait AgentLauncher: Send + Sync {
+    fn start(&self, request: AgentRequest, events: EventSink) -> PortResult<Box<dyn AgentSession>>;
+}
+
+/// A running agent process.
+pub trait AgentSession: Send {
+    /// A follow-up message from the user.
+    fn send(&mut self, text: &str) -> PortResult<()>;
+    /// Answers a permission (or plan) request.
+    fn answer(&mut self, request_id: &str, allow: bool, message: Option<&str>) -> PortResult<()>;
+    fn stop(&mut self);
+}
+
+/// Lets a driving adapter (the app) follow tasks live.
+pub trait TaskEvents: Send + Sync {
+    fn event(&self, task: &TaskId, event: &AgentEvent);
+    fn task_updated(&self, task: &Task);
+}
+
+pub struct NoTaskEvents;
+
+impl TaskEvents for NoTaskEvents {
+    fn event(&self, _: &TaskId, _: &AgentEvent) {}
+    fn task_updated(&self, _: &Task) {}
 }
 
 pub trait FileSystem: Send + Sync {
