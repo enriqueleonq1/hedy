@@ -390,6 +390,7 @@ mod tests {
         request.memory = Some(crate::application::ports::MemoryLink {
             server: Some(server("hedy-memory", vec![])),
             tools: Arc::new(NoMemory),
+            skills: None,
         });
         request.mcp = vec![server(
             "codebase-memory",

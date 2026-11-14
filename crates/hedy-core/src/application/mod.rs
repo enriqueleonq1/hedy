@@ -11,6 +11,7 @@ mod metrics;
 pub mod ports;
 mod projects;
 mod settings;
+mod skills;
 mod status;
 mod tasks;
 #[cfg(test)]
@@ -31,6 +32,9 @@ pub use memory::{
 };
 pub use metrics::{ProjectStatus, TestRun, UsageSummary};
 pub use settings::{Setting, THEMES};
+pub use skills::{
+    SkillChange, SkillDraft, SkillFiles, SkillProposal, SkillsView, format_skill, format_skills,
+};
 pub use status::{AccountStatus, AccountUsage, Status};
 pub use tasks::NewTask;
 

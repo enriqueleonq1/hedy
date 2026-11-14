@@ -203,6 +203,7 @@ impl Hedy {
         self.git
             .add_worktree(repo, &worktree, &branch, &base_commit)?;
         self.share_dependencies(repo, &worktree)?;
+        self.install_skills_in(repo, &worktree)?;
         Ok(Workspace {
             worktree,
             branch,

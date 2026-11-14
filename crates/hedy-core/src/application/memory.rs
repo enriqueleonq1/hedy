@@ -486,6 +486,7 @@ impl Hedy {
         });
         Some(MemoryLink {
             server,
+            skills: Some(self.task_skills(project, task, &author)),
             tools: Arc::new(TaskMemory {
                 hedy: self.clone(),
                 project: project.path.clone(),

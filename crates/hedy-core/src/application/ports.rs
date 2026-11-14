@@ -329,11 +329,26 @@ pub trait MemoryTools: Send + Sync {
     fn propose(&self, text: &str, category: &str, topic: Option<&str>) -> String;
 }
 
+/// The learned skills an agent reads and proposes: through Hedy (the API
+/// agent) or the memory MCP server (CLI agents). Every answer is text.
+pub trait SkillTools: Send + Sync {
+    /// Approved skills in scope, one compact line each: name, scope and
+    /// when to use it.
+    fn list(&self) -> String;
+    /// One approved skill in full, by name.
+    fn get(&self, name: &str) -> String;
+    /// Proposes a skill for the user to approve. With the name of an
+    /// approved skill, it proposes an update of that skill.
+    fn propose(&self, name: &str, description: &str, body: &str) -> String;
+}
+
 /// The project's memory for one agent run: an MCP server for CLIs, tools for APIs.
 #[derive(Clone)]
 pub struct MemoryLink {
     pub server: Option<McpServer>,
     pub tools: Arc<dyn MemoryTools>,
+    /// The learned skills, served next to the memory (same server).
+    pub skills: Option<Arc<dyn SkillTools>>,
 }
 
 impl std::fmt::Debug for MemoryLink {
@@ -447,6 +462,14 @@ pub trait FileSystem: Send + Sync {
     fn symlink_dir(&self, target: &Path, link: &Path) -> PortResult<()>;
     /// Writes `contents` unless the file already exists.
     fn write_if_missing(&self, path: &Path, contents: &str) -> PortResult<()>;
+    /// A text file's contents; `None` when it does not exist.
+    fn read_text(&self, path: &Path) -> PortResult<Option<String>>;
+    /// Creates or replaces a file, creating its parent folders.
+    fn write_text(&self, path: &Path, contents: &str) -> PortResult<()>;
+    /// Deletes a file; nothing happens when it does not exist.
+    fn remove_file(&self, path: &Path) -> PortResult<()>;
+    /// Deletes a folder only when it exists and is empty.
+    fn remove_empty_dir(&self, path: &Path) -> PortResult<()>;
     /// Canonical form of `dir`.
     fn canonicalize(&self, dir: &Path) -> PortResult<PathBuf>;
     /// Root of the git repository containing `dir`, if any.

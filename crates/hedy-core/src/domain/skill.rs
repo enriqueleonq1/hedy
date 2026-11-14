@@ -173,11 +173,12 @@ const SECRET_NAMES: &[&str] = &[
 /// `API_KEY=$API_KEY`, `TOKEN=<your token>` or `password: ***`.
 fn secret_assignment(line: &str) -> Option<&'static str> {
     let (name, value) = line.split_once(['=', ':'])?;
+    // The word right before the sign: `1. export API_TOKEN=…` → `api_token`.
     let name = name
-        .trim()
-        .trim_start_matches("export ")
-        .trim_matches(|c: char| c == '"' || c == '\'' || c == '-' || c == '*')
-        .trim()
+        .split_whitespace()
+        .last()
+        .unwrap_or("")
+        .trim_matches(|c: char| "\"'`-*".contains(c))
         .to_lowercase();
     // Only a short identifier: prose such as "Note: the token..." is fine.
     if name.is_empty()
@@ -208,8 +209,42 @@ fn secret_assignment(line: &str) -> Option<&'static str> {
     (!placeholder && long_enough).then_some("secret value")
 }
 
-/// First line of every skill file Hedy writes. Hedy only ever rewrites or
-/// deletes files that carry it: a user's own skill is never touched.
+/// Where a CLI reads a project's skills: `<folder>/<name>/SKILL.md`, relative
+/// to the folder it works in (see `docs/decisions.md`, "Learned skills").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillFolder {
+    /// `.claude/skills`: Claude Code.
+    Claude,
+    /// `.agents/skills`: the cross-tool folder Codex, Gemini CLI, Kimi Code
+    /// and Antigravity read.
+    Agents,
+}
+
+impl SkillFolder {
+    pub const ALL: [SkillFolder; 2] = [Self::Claude, Self::Agents];
+
+    pub fn path(self) -> &'static str {
+        match self {
+            Self::Claude => ".claude/skills",
+            Self::Agents => ".agents/skills",
+        }
+    }
+
+    /// `.claude/skills/<name>/SKILL.md`.
+    pub fn file(self, name: &str) -> PathBuf {
+        PathBuf::from(self.path()).join(name).join("SKILL.md")
+    }
+
+    /// The `.git/info/exclude` line for a skill's folder, anchored at the
+    /// top of the checkout (worktrees included).
+    pub fn exclude_pattern(self, name: &str) -> String {
+        format!("/{}/{name}/", self.path())
+    }
+}
+
+/// Line every skill file Hedy writes carries, right after the frontmatter.
+/// Hedy only ever rewrites or deletes files that carry it: a user's own
+/// skill is never touched.
 pub const MANAGED_MARKER: &str = "<!-- hedy: managed skill -->";
 
 pub fn is_managed(contents: &str) -> bool {

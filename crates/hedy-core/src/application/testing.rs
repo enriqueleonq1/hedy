@@ -736,6 +736,7 @@ pub struct FakeFs {
     files: Mutex<Vec<(PathBuf, String)>>,
     git_roots: Mutex<Vec<PathBuf>>,
     read_only: Mutex<HashSet<PathBuf>>,
+    removed_dirs: Mutex<Vec<PathBuf>>,
 }
 
 impl FakeFs {
@@ -754,6 +755,16 @@ impl FakeFs {
     pub fn make_read_only(&self, path: &str) {
         self.read_only.lock().unwrap().insert(path.into());
     }
+    /// The text of the file at `path`, if any.
+    pub fn file(&self, path: &str) -> Option<String> {
+        self.read_text(Path::new(path)).unwrap()
+    }
+    pub fn add_file(&self, path: &str, contents: &str) {
+        self.write_text(Path::new(path), contents).unwrap();
+    }
+    pub fn removed_dirs(&self) -> Vec<PathBuf> {
+        self.removed_dirs.lock().unwrap().clone()
+    }
     pub fn add_git_root(&self, path: &str) {
         self.git_roots.lock().unwrap().push(path.into());
     }
@@ -769,6 +780,7 @@ impl FileSystem for FakeFs {
     }
     fn exists(&self, path: &Path) -> bool {
         self.existing.lock().unwrap().contains(path)
+            || self.files.lock().unwrap().iter().any(|(p, _)| p == path)
     }
     fn check_writable(&self, dir: &Path) -> PortResult<()> {
         if self.read_only.lock().unwrap().contains(dir) {
@@ -789,6 +801,32 @@ impl FileSystem for FakeFs {
         if !files.iter().any(|(p, _)| p == path) {
             files.push((path.to_owned(), contents.to_owned()));
         }
+        Ok(())
+    }
+    fn read_text(&self, path: &Path) -> PortResult<Option<String>> {
+        Ok(self
+            .files
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(p, _)| p == path)
+            .map(|(_, text)| text.clone()))
+    }
+    fn write_text(&self, path: &Path, contents: &str) -> PortResult<()> {
+        if self.read_only.lock().unwrap().contains(path) {
+            return Err(PortError::new("permission denied"));
+        }
+        let mut files = self.files.lock().unwrap();
+        files.retain(|(p, _)| p != path);
+        files.push((path.to_owned(), contents.to_owned()));
+        Ok(())
+    }
+    fn remove_file(&self, path: &Path) -> PortResult<()> {
+        self.files.lock().unwrap().retain(|(p, _)| p != path);
+        Ok(())
+    }
+    fn remove_empty_dir(&self, path: &Path) -> PortResult<()> {
+        self.removed_dirs.lock().unwrap().push(path.to_owned());
         Ok(())
     }
     fn canonicalize(&self, dir: &Path) -> PortResult<PathBuf> {
