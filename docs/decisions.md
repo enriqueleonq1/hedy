@@ -648,7 +648,75 @@ schemas):
   reports clicks only while the toast is on screen. Not tried by hand on macOS, where a
   development build may not be allowed to notify until the app is bundled and signed.
 
-## 18. Decisions
+## 18. Learned skills
+
+Idea taken from Hermes Agent's self-created skills, with one change: agents only
+**propose**, the user approves (rule 6 applies to skills as to notes). Checked on
+November 14, 2026 against the official docs below; nothing here modifies a CLI.
+
+**Where each CLI reads project skills** (a folder `<name>/SKILL.md` with YAML frontmatter,
+the [Agent Skills format](https://agentskills.io/specification): `name` of 1–64
+lowercase letters, digits and single dashes, equal to the folder name; `description` of
+1–1024 characters):
+
+| CLI | Project folder | Discovery | Source |
+|---|---|---|---|
+| Claude Code | `.claude/skills/` | cwd and parents up to the repo root; in a linked worktree only up to the worktree root, but since 2.1.277 a worktree **without** its own `.claude/skills` reads the main checkout's. `claude -p` loads skills (not with `--bare`) | [skills](https://code.claude.com/docs/en/skills), [worktrees](https://code.claude.com/docs/en/worktrees), [headless](https://code.claude.com/docs/en/headless) |
+| Codex | `.agents/skills/` | every folder from cwd up to the repo root; also via `skills/list` in the app server | [build skills](https://learn.chatgpt.com/docs/build-skills.md), [app server](https://learn.chatgpt.com/docs/app-server.md) |
+| Gemini CLI | `.gemini/skills/` or `.agents/skills/` (the alias wins) | the current folder | [skills](https://geminicli.com/docs/cli/skills.md) |
+| Kimi Code | `.kimi-code/skills/` or `.agents/skills/` | the project root (nearest `.git` going up) | [skills](https://moonshotai.github.io/kimi-code/en/customization/skills) |
+| Antigravity | `.agents/skills/` | the start folder up to the repo root | [skills](https://www.antigravity.google/docs/skills?tab=cli) |
+
+- **Storage.** Table `skills` (the 8th migration): project (NULL = global), name, description,
+  body, status (`proposed` / `approved`), author, created/updated, source task. A
+  proposal with the name of an approved skill in the same scope is a proposed
+  **update** (shown as before/after, the steps as a line diff); approving it replaces
+  the description, steps and author in place (same id); rejecting deletes it. Same
+  pattern as note topics (§12), separate concept.
+- **Proposing.** `skill_propose {name, description, body}` in the memory MCP server and
+  the API agent. The name is turned into a slug; Claude's reserved names (`synced`,
+  `anthropic-skills`) are refused; bodies up to 20,000 characters. A local heuristic
+  refuses text that looks like a secret (known key prefixes such as `sk-`, `ghp_`,
+  `AKIA`, `AIza`; private keys; JWTs; `TOKEN=value` assignments of secret-looking names
+  that are not placeholders such as `$TOKEN` or `<your key>`), with an error that never
+  repeats the value. The guidance asks only agents that may change the project, at the
+  end of a successful task, for at most one skill, and only for a non-obvious, reusable
+  procedure; otherwise they stay quiet.
+- **Reading.** Every agent with the memory server (and the API agent) gets
+  `skill_list` (one line per approved skill: name, scope, when to use it) and
+  `skill_get {name}` (the whole skill), progressive like `memory_search` /
+  `memory_get`. Claude already pre-allows `mcp__hedy-memory`. Turning the memory off for
+  an account also turns these tools off; the native files below stay.
+- **Native files.** Approving a project skill writes `.claude/skills/<name>/SKILL.md` and
+  `.agents/skills/<name>/SKILL.md` (one copy each, no symlinks: only Codex documents
+  following them) in the project and in the worktrees of its open tasks, and new
+  worktrees get them when they are created. Each folder is added to
+  `.git/info/exclude` (`/.claude/skills/<name>/`, `/.agents/skills/<name>/`, anchored, so
+  it also covers worktrees) before the file is written, so a task's diff and commit
+  never include them. Editing, renaming, moving to global or deleting rewrites or
+  removes them (and empty folders left behind); the exclude lines stay, harmless.
+  - **Claude in worktrees:** a worktree only gets Claude's copy when it already has a
+    `.claude/skills` folder (committed by the team). Otherwise Claude Code reads the
+    main checkout's, which also keeps the user's own uncommitted skills working there;
+    writing a `.claude/skills` into the worktree would hide them.
+  - **Never overwrite the user's files:** every file Hedy writes carries the line
+    `<!-- hedy: managed skill -->`; a file at that path without it is the user's and is
+    skipped (the UI and `hedy skills` warn), and never deleted.
+- **Global skills: only through the MCP tools.** Hedy does not write into
+  `~/.claude/skills`, `$CODEX_HOME`, `~/.agents/skills` or any account folder: rule 1 says
+  Hedy only picks the folder at launch, and `~/.agents/skills` would be shared by every
+  account. Protected projects neither see nor create global skills.
+- **UI and CLI.** A "Habilidades" / "Skills" tab in the memory screen (`#k=<path>`) and
+  `hedy skills` (`habilidades`) with `list`, `show <name>`, `approve <id>`,
+  `reject <id>` and `remove <name>`.
+- **Not verified with the real CLIs yet:** that Codex, Gemini CLI, Kimi Code and
+  Antigravity load `.agents/skills` in ACP / app-server mode (their docs describe the
+  interactive CLI); that Codex and Kimi stop the root search at a linked worktree's
+  `.git` file (likely); that Gemini CLI loads skills in an untrusted folder. Claude
+  Code's `--bare`, announced as the future default for `-p`, would skip native skills;
+  the MCP tools still work then.
+
+## 19. Decisions
 
 - **Claude accounts:** `~/.claude` (Team) is registered as the default-folder account and
   launched without `CLAUDE_CONFIG_DIR`. New accounts live in Hedy folders.

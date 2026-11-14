@@ -13,6 +13,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Format: `cargo fmt`
 - Install the CLI: `cargo install --path crates/hedy-cli` (binary `hedy`)
 - Isolated manual testing: `HEDY_DATA_DIR=/tmp/hedy-test hedy status`
+- Learned skills from the terminal: `hedy skills` (`list`, `show <name>`, `approve <id>`,
+  `reject <id>`, `remove <name>`); in the UI, `#k=<path>` opens a project's skills tab
 - Health check (CLIs and their versions, accounts, Hedy, environment): `hedy doctor`
 - Running and recent tasks across projects: `hedy tasks` (alias `tareas`)
 - App (from `app/`): `npm install`, then `npm run tauri dev`; UI only with sample data:
@@ -34,7 +36,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 
 - `crates/hedy-core`: domain + application (ports) + adapters
 - `crates/hedy-cli`: `hedy` binary (driving adapter)
-- `crates/hedy-memory`: project-memory MCP server (rmcp, stdio); the app binary serves it
+- `crates/hedy-memory`: project-memory MCP server (rmcp, stdio; also the learned-skill
+  tools `skill_list` / `skill_get` / `skill_propose`); the app binary serves it
   as `memory-mcp`, like Claude's `PreToolUse` hook (`app/src-tauri/src/main.rs`)
 - `crates/hedy-evals`: eval runner; cases (`case.json`, `repo/`, hidden `check/`) in `evals/`
 - `app/src-tauri`: Tauri commands (driving adapter; DTOs live here, not in the domain)
