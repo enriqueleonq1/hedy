@@ -123,6 +123,15 @@ impl Hedy {
         ))
     }
 
+    /// Registers an account defined in another Hedy data folder as it is (same
+    /// id, folder and color). Evals use it to run on a separate database.
+    pub fn adopt_account(&self, account: &Account) -> AppResult<()> {
+        if self.accounts()?.iter().any(|a| a.id == account.id) {
+            return Err(AppError::AccountExists(account.id.clone()));
+        }
+        Ok(self.store.save_account(account)?)
+    }
+
     pub fn set_api_key(&self, id: &str, key: &str) -> AppResult<()> {
         let account = self.account(id)?;
         if account.is_subscription() {

@@ -1822,6 +1822,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "hedy-evals"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hedy-core",
+ "hedy-memory",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "hedy-memory"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,7 @@
+{
+  "title": "Arreglar el conteo de días hábiles",
+  "measures": "plain",
+  "prompt": "business_days en calendar_utils.py da un día menos cuando el rango empieza en día hábil: del lunes 3 al viernes 7 de marzo de 2025 debería dar 5. Arréglalo y agrega un test.",
+  "check": "python3 -m unittest -q test_hidden_calendar && python3 -m unittest discover -q -s tests -t .",
+  "timeoutSecs": 600
+}
