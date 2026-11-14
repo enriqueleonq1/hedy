@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, LaunchSpec, Note, NoteStatus,
-    Notice, Phase, Project, Task, TaskId, TaskMode, UsageSample,
+    Notice, Phase, Project, Skill, SkillStatus, Task, TaskId, TaskMode, UsageSample,
 };
 
 /// Failure in an adapter. The message is user-facing (Spanish).
@@ -134,6 +134,42 @@ pub trait MemoryRepository: Send + Sync {
     fn dismissed_pairs(&self) -> PortResult<Vec<(i64, i64)>>;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewSkill {
+    /// `None`: a global skill.
+    pub project: Option<PathBuf>,
+    pub name: String,
+    pub description: String,
+    pub body: String,
+    pub author: String,
+    pub status: SkillStatus,
+    pub created_at: i64,
+    pub source_task: Option<TaskId>,
+}
+
+/// A newer version of a skill (an approved update or the user's edit): it
+/// keeps its id, creation date and source task.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillRevision {
+    pub project: Option<PathBuf>,
+    pub name: String,
+    pub description: String,
+    pub body: String,
+    pub author: String,
+    pub updated_at: i64,
+}
+
+pub trait SkillRepository: Send + Sync {
+    fn add_skill(&self, skill: &NewSkill) -> PortResult<Skill>;
+    fn skill(&self, id: i64) -> PortResult<Option<Skill>>;
+    fn revise_skill(&self, id: i64, revision: &SkillRevision) -> PortResult<()>;
+    fn set_skill_status(&self, id: i64, status: SkillStatus) -> PortResult<()>;
+    fn delete_skill(&self, id: i64) -> PortResult<()>;
+    /// The project's skills, plus global ones when `with_global`; `None`:
+    /// only global. Sorted by name, then id.
+    fn skills(&self, project: Option<&Path>, with_global: bool) -> PortResult<Vec<Skill>>;
+}
+
 /// Health of the storage itself, for `hedy doctor`.
 pub trait StoreHealth: Send + Sync {
     /// The folder holding the database, when it lives on disk.
@@ -151,6 +187,7 @@ pub trait Store:
     + TaskRepository
     + UsageRepository
     + MemoryRepository
+    + SkillRepository
     + StoreHealth
 {
 }
@@ -161,6 +198,7 @@ impl<T> Store for T where
         + TaskRepository
         + UsageRepository
         + MemoryRepository
+        + SkillRepository
         + StoreHealth
 {
 }

@@ -85,8 +85,8 @@ impl DomainError {
                 "invalid price: «{p}» (use input/output in USD per million tokens, e.g. 0.60/2.50)"
             ),
             Self::InvalidSkillName(name) => tr!(
-                "nombre de habilidad no válido: «{name}» (minúsculas, números y guiones, hasta 64 caracteres, sin «claude» ni «anthropic»; p. ej. correr-tests-e2e)",
-                "invalid skill name: «{name}» (lowercase letters, digits and dashes, up to 64 characters, without «claude» or «anthropic»; e.g. run-e2e-tests)"
+                "nombre de habilidad no válido: «{name}» (minúsculas, números y guiones, hasta 64 caracteres; p. ej. correr-tests-e2e)",
+                "invalid skill name: «{name}» (lowercase letters, digits and dashes, up to 64 characters; e.g. run-e2e-tests)"
             ),
             Self::InvalidSkillDescription => tr!(
                 "la descripción de la habilidad debe ser una línea de hasta 1024 caracteres, sin < ni >, que diga cuándo usarla",

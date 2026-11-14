@@ -4,13 +4,13 @@ use std::sync::Mutex;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::application::ports::{
-    AccountRepository, MemoryRepository, NewNote, NoteRevision, PortError, PortResult,
-    ProjectRepository, RateLimit, SettingsRepository, StoreHealth, TaskRepository, UsageRecord,
-    UsageRepository,
+    AccountRepository, MemoryRepository, NewNote, NewSkill, NoteRevision, PortError, PortResult,
+    ProjectRepository, RateLimit, SettingsRepository, SkillRepository, SkillRevision, StoreHealth,
+    TaskRepository, UsageRecord, UsageRepository,
 };
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Color, ConfigFolder, Credentials, Note, NoteStatus,
-    Project, Task, TaskId, UsageSample,
+    Project, Skill, SkillStatus, Task, TaskId, UsageSample,
 };
 use crate::tr;
 
@@ -158,6 +158,23 @@ const MIGRATIONS: &[&str] = &[
             VALUES ('delete', old.id, old.text, old.topic);
         INSERT INTO notes_fts (rowid, text, topic) VALUES (new.id, new.text, new.topic);
     END;
+"#,
+    r#"
+    -- Learned skills: reusable procedures agents propose and the user approves.
+    CREATE TABLE skills (
+        id          INTEGER PRIMARY KEY,
+        -- NULL: a global skill.
+        project     TEXT,
+        name        TEXT NOT NULL,
+        description TEXT NOT NULL,
+        body        TEXT NOT NULL,
+        status      TEXT NOT NULL CHECK (status IN ('proposed', 'approved')),
+        author      TEXT NOT NULL,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER,
+        source_task TEXT
+    );
+    CREATE INDEX skills_by_project ON skills (project, name);
 "#,
 ];
 
@@ -794,6 +811,125 @@ impl MemoryRepository for SqliteStore {
     }
 }
 
+const SKILL_COLUMNS: &str = "id, project, name, description, body, status, author, \
+     created_at, updated_at, source_task";
+
+fn skill_from_row(row: &Row) -> rusqlite::Result<Skill> {
+    Ok(Skill {
+        id: row.get(0)?,
+        project: row.get::<_, Option<String>>(1)?.map(PathBuf::from),
+        name: row.get(2)?,
+        description: row.get(3)?,
+        body: row.get(4)?,
+        status: if row.get::<_, String>(5)? == "proposed" {
+            SkillStatus::Proposed
+        } else {
+            SkillStatus::Approved
+        },
+        author: row.get(6)?,
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
+        source_task: row.get::<_, Option<String>>(9)?.map(TaskId::new),
+    })
+}
+
+fn skill_status_str(status: SkillStatus) -> &'static str {
+    match status {
+        SkillStatus::Proposed => "proposed",
+        SkillStatus::Approved => "approved",
+    }
+}
+
+fn path_text(path: Option<&PathBuf>) -> Option<String> {
+    path.map(|p| p.to_string_lossy().into_owned())
+}
+
+impl SkillRepository for SqliteStore {
+    fn add_skill(&self, s: &NewSkill) -> PortResult<Skill> {
+        let id = self.with(|c| {
+            c.execute(
+                "INSERT INTO skills (project, name, description, body, status, author, created_at,
+                                     source_task)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    path_text(s.project.as_ref()),
+                    s.name,
+                    s.description,
+                    s.body,
+                    skill_status_str(s.status),
+                    s.author,
+                    s.created_at,
+                    s.source_task.as_ref().map(TaskId::as_str),
+                ],
+            )?;
+            Ok(c.last_insert_rowid())
+        })?;
+        self.skill(id)?.ok_or_else(|| {
+            PortError::new(tr!("la habilidad no se guardó", "the skill was not saved"))
+        })
+    }
+
+    fn skill(&self, id: i64) -> PortResult<Option<Skill>> {
+        self.with(|c| {
+            c.query_row(
+                &format!("SELECT {SKILL_COLUMNS} FROM skills WHERE id = ?1"),
+                [id],
+                skill_from_row,
+            )
+            .optional()
+        })
+    }
+
+    fn revise_skill(&self, id: i64, r: &SkillRevision) -> PortResult<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE skills SET project = ?2, name = ?3, description = ?4, body = ?5,
+                                   author = ?6, updated_at = ?7
+                 WHERE id = ?1",
+                params![
+                    id,
+                    path_text(r.project.as_ref()),
+                    r.name,
+                    r.description,
+                    r.body,
+                    r.author,
+                    r.updated_at
+                ],
+            )
+            .map(drop)
+        })
+    }
+
+    fn set_skill_status(&self, id: i64, status: SkillStatus) -> PortResult<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE skills SET status = ?2 WHERE id = ?1",
+                params![id, skill_status_str(status)],
+            )
+            .map(drop)
+        })
+    }
+
+    fn delete_skill(&self, id: i64) -> PortResult<()> {
+        self.with(|c| {
+            c.execute("DELETE FROM skills WHERE id = ?1", [id])
+                .map(drop)
+        })
+    }
+
+    fn skills(&self, project: Option<&Path>, with_global: bool) -> PortResult<Vec<Skill>> {
+        let (clause, path) = scope(project, with_global);
+        let clause = clause.replace("n.project", "project");
+        self.with(|c| {
+            c.prepare(&format!(
+                "SELECT {SKILL_COLUMNS} FROM skills WHERE {clause} ORDER BY name, id"
+            ))?
+            .query_map([path], skill_from_row)?
+            .collect()
+        })
+    }
+}
+
 impl SettingsRepository for SqliteStore {
     fn get_setting(&self, key: &str) -> PortResult<Option<String>> {
         self.with(|c| {
@@ -1300,6 +1436,110 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn skills_round_trip_by_scope() {
+        let store = SqliteStore::in_memory().unwrap();
+        let moira = PathBuf::from("/code/moira");
+        let new = |project: Option<&PathBuf>, name: &str, status| NewSkill {
+            project: project.cloned(),
+            name: name.into(),
+            description: "Cuándo usarla".into(),
+            body: "1. npm test".into(),
+            author: "Claude".into(),
+            status,
+            created_at: 10,
+            source_task: Some(TaskId::new("t-1")),
+        };
+        let tests = store
+            .add_skill(&new(Some(&moira), "run-tests", SkillStatus::Proposed))
+            .unwrap();
+        assert_eq!(tests.source_task, Some(TaskId::new("t-1")));
+        assert_eq!(
+            (tests.status, tests.updated_at),
+            (SkillStatus::Proposed, None)
+        );
+        store
+            .add_skill(&new(None, "a-global", SkillStatus::Approved))
+            .unwrap();
+        store
+            .add_skill(&new(
+                Some(&PathBuf::from("/code/otro")),
+                "x",
+                SkillStatus::Approved,
+            ))
+            .unwrap();
+
+        let names = |skills: Vec<Skill>| skills.into_iter().map(|s| s.name).collect::<Vec<_>>();
+        assert_eq!(
+            names(store.skills(Some(&moira), true).unwrap()),
+            ["a-global", "run-tests"]
+        );
+        assert_eq!(
+            names(store.skills(Some(&moira), false).unwrap()),
+            ["run-tests"]
+        );
+        assert_eq!(names(store.skills(None, false).unwrap()), ["a-global"]);
+
+        store
+            .set_skill_status(tests.id, SkillStatus::Approved)
+            .unwrap();
+        store
+            .revise_skill(
+                tests.id,
+                &SkillRevision {
+                    project: None,
+                    name: "run-all-tests".into(),
+                    description: "Antes de entregar".into(),
+                    body: "1. cargo test".into(),
+                    author: "user".into(),
+                    updated_at: 20,
+                },
+            )
+            .unwrap();
+        let revised = store.skill(tests.id).unwrap().unwrap();
+        assert_eq!(
+            (revised.name.as_str(), revised.project, revised.updated_at),
+            ("run-all-tests", None, Some(20))
+        );
+        assert_eq!(
+            (revised.created_at, revised.status),
+            (10, SkillStatus::Approved)
+        );
+        store.delete_skill(tests.id).unwrap();
+        assert_eq!(store.skill(tests.id).unwrap(), None);
+    }
+
+    #[test]
+    fn the_skills_migration_keeps_existing_data() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("hedy.db");
+        let before = MIGRATIONS.len() - 1;
+        {
+            // A database from before skills.
+            let conn = Connection::open(&path).unwrap();
+            for sql in &MIGRATIONS[..before] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.pragma_update(None, "user_version", before as i64)
+                .unwrap();
+            conn.execute(
+                "INSERT INTO notes (project, text, category, author, status, created_at)
+                 VALUES ('/code/moira', 'Precios en USD', 'decision', 'user', 'approved', 5)",
+                [],
+            )
+            .unwrap();
+        }
+        let store = SqliteStore::open(&path).unwrap();
+        assert_eq!(
+            store
+                .notes(Some(Path::new("/code/moira")), false)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(store.skills(None, true).unwrap().is_empty());
     }
 
     #[test]

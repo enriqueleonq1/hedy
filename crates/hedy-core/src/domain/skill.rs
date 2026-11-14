@@ -47,8 +47,8 @@ pub const DESCRIPTION_MAX: usize = 1024;
 /// under 500 lines; this is about that much text).
 pub const BODY_MAX: usize = 20_000;
 
-/// Words a skill name may not contain (Claude reserves them).
-const RESERVED: &[&str] = &["anthropic", "claude"];
+/// Names Claude Code reserves for its own skill folders.
+const RESERVED: &[&str] = &["synced", "anthropic-skills"];
 
 /// A skill name as a slug: `Run E2E tests` → `run-e2e-tests`. Lowercase ASCII
 /// letters, digits and single dashes, at most [`NAME_MAX`] characters.
@@ -65,7 +65,7 @@ pub fn normalize_skill_name(raw: &str) -> Result<String, DomainError> {
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join("-");
-    let reserved = name.split('-').any(|part| RESERVED.contains(&part));
+    let reserved = RESERVED.contains(&name.as_str());
     if name.is_empty() || name.len() > NAME_MAX || reserved {
         return Err(DomainError::InvalidSkillName(raw.trim().to_owned()));
     }
@@ -257,7 +257,7 @@ mod tests {
         assert_eq!(name("Run E2E tests"), "run-e2e-tests");
         assert_eq!(name("  añadir_endpoint / API "), "anadir-endpoint-api");
         assert_eq!(name("release--checklist-"), "release-checklist");
-        for bad in ["", "¿?", "claude-helper", "my-anthropic-skill"] {
+        for bad in ["", "¿?", "synced", "Anthropic Skills"] {
             assert!(
                 matches!(
                     normalize_skill_name(bad),
