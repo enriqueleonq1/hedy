@@ -54,6 +54,7 @@ impl Env {
         let mut cmd = Command::cargo_bin("hedy").unwrap();
         cmd.env("HEDY_DATA_DIR", self.path("data"))
             .env("NO_COLOR", "1")
+            .env("HEDY_LANGUAGE", "es")
             .env_remove("CLAUDE_CONFIG_DIR")
             .args(args);
         cmd

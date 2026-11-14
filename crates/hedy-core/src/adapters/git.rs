@@ -8,6 +8,7 @@ use std::process::{Command, Output};
 
 use crate::application::ports::{Git, MergeOutcome, PortError, PortResult};
 use crate::domain::diff::{Commit, FileDiff, parse_unified};
+use crate::tr;
 
 pub struct GitCli;
 
@@ -39,13 +40,23 @@ impl Git for GitCli {
     fn current_branch(&self, repo: &Path) -> PortResult<String> {
         git(repo, &["symbolic-ref", "--quiet", "--short", "HEAD"])
             .map(|s| s.trim().to_owned())
-            .map_err(|_| PortError::new("el repositorio no está en una rama (HEAD separado)"))
+            .map_err(|_| {
+                PortError::new(tr!(
+                    "el repositorio no está en una rama (HEAD separado)",
+                    "the repository is not on a branch (detached HEAD)"
+                ))
+            })
     }
 
     fn head_commit(&self, repo: &Path) -> PortResult<String> {
         git(repo, &["rev-parse", "--verify", "HEAD"])
             .map(|s| s.trim().to_owned())
-            .map_err(|_| PortError::new("el repositorio no tiene commits todavía; haz el primero"))
+            .map_err(|_| {
+                PortError::new(tr!(
+                    "el repositorio no tiene commits todavía; haz el primero",
+                    "the repository has no commits yet; make the first one"
+                ))
+            })
     }
 
     fn ensure_excluded(&self, repo: &Path, pattern: &str) -> PortResult<()> {

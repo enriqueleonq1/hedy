@@ -141,7 +141,7 @@ impl Translator {
             let failed = block["is_error"].as_bool().unwrap_or(false);
             // Blocked by Hedy's PreToolUse hook: report the block, not a run.
             let text = result_text(&block["content"]);
-            if failed && text.contains(HOOK_MARK) {
+            if failed && HOOK_MARKS.iter().any(|mark| text.contains(mark)) {
                 events.push(AgentEvent::PermissionResolved {
                     request_id: format!("hook-{id}"),
                     decision: Decision::Deny,
@@ -191,8 +191,9 @@ impl Translator {
     }
 }
 
-/// Every reason Hedy gives starts with this (see `domain::permissions`).
-const HOOK_MARK: &str = "Hedy no permite";
+/// Every reason Hedy gives starts with one of these (see `domain::permissions`),
+/// in either language.
+const HOOK_MARKS: [&str; 2] = ["Hedy no permite", "Hedy does not allow"];
 
 /// A tool result's content: a string or a list of text blocks.
 fn result_text(content: &Value) -> String {

@@ -1,62 +1,116 @@
 use std::path::PathBuf;
 
 use super::{AccountId, Provider};
+use crate::tr;
 
-/// Violations of domain rules. Messages are user-facing (Spanish).
+/// Violations of domain rules. Messages are user-facing, in the current language.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DomainError {
-    #[error("proveedor desconocido: {0} (usa claude, codex, gemini o kimi)")]
+    #[error("{}", self.message())]
     UnknownProvider(String),
-
-    #[error("identificador de cuenta no válido: «{0}» (solo minúsculas, números y guiones)")]
+    #[error("{}", self.message())]
     InvalidAccountId(String),
-
-    #[error("el nombre de la cuenta no puede estar vacío")]
+    #[error("{}", self.message())]
     EmptyAccountName,
-
-    #[error("color no válido: «{0}» (usa un nombre de la paleta o #RRGGBB)")]
+    #[error("{}", self.message())]
     InvalidColor(String),
-
-    #[error("categoría desconocida: {0} (decisión, convención, regla o preferencia)")]
+    #[error("{}", self.message())]
     UnknownCategory(String),
-
-    #[error(
-        "precio no válido: «{0}» (usa entrada/salida en USD por millón de tokens, p. ej. 0.60/2.50)"
-    )]
+    #[error("{}", self.message())]
     InvalidPrice(String),
-
-    #[error("{provider} no admite cuentas por API key")]
+    #[error("{}", self.message())]
     ApiKeyNotSupported { provider: Provider },
-
-    #[error("las cuentas por API key no tienen CLI que lanzar; se usan desde el chat de Hedy")]
+    #[error("{}", self.message())]
     NothingToLaunch,
-
-    #[error(
-        "{provider} guarda la sesión en el llavero del sistema y no permite elegir carpeta: solo admite una cuenta por equipo, en su carpeta por defecto"
-    )]
-    SingleAccountProvider { provider: super::Provider },
-
-    #[error("la cuenta «{account}» está reservada para el proyecto protegido {}", project.display())]
+    #[error("{}", self.message())]
+    SingleAccountProvider { provider: Provider },
+    #[error("{}", self.message())]
     AccountReserved {
         account: AccountId,
         project: PathBuf,
     },
-
-    #[error("el proyecto {} está protegido y solo puede usar la cuenta «{assigned}»", project.display())]
+    #[error("{}", self.message())]
     ProtectedProject {
         project: PathBuf,
         assigned: AccountId,
     },
-
-    #[error("para proteger un proyecto primero asígnale una cuenta con `hedy use <cuenta>`")]
+    #[error("{}", self.message())]
     ProtectWithoutAccount,
-
-    #[error(
-        "no se puede proteger: la cuenta «{account}» también la usan {}",
-        others.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")
-    )]
+    #[error("{}", self.message())]
     AccountShared {
         account: AccountId,
         others: Vec<PathBuf>,
     },
+}
+
+impl DomainError {
+    fn message(&self) -> String {
+        match self {
+            Self::UnknownProvider(p) => tr!(
+                "proveedor desconocido: {p} (usa claude, codex, gemini, kimi o antigravity)",
+                "unknown provider: {p} (use claude, codex, gemini, kimi or antigravity)"
+            ),
+            Self::InvalidAccountId(id) => tr!(
+                "identificador de cuenta no válido: «{id}» (solo minúsculas, números y guiones)",
+                "invalid account id: «{id}» (lowercase letters, digits and dashes only)"
+            ),
+            Self::EmptyAccountName => tr!(
+                "el nombre de la cuenta no puede estar vacío",
+                "the account name cannot be empty"
+            ),
+            Self::InvalidColor(c) => tr!(
+                "color no válido: «{c}» (usa un nombre de la paleta o #RRGGBB)",
+                "invalid color: «{c}» (use a palette name or #RRGGBB)"
+            ),
+            Self::UnknownCategory(c) => tr!(
+                "categoría desconocida: {c} (decisión, convención, regla o preferencia)",
+                "unknown category: {c} (decision, convention, rule or preference)"
+            ),
+            Self::InvalidPrice(p) => tr!(
+                "precio no válido: «{p}» (usa entrada/salida en USD por millón de tokens, p. ej. 0.60/2.50)",
+                "invalid price: «{p}» (use input/output in USD per million tokens, e.g. 0.60/2.50)"
+            ),
+            Self::ApiKeyNotSupported { provider } => tr!(
+                "{provider} no admite cuentas por API key",
+                "{provider} does not take API-key accounts"
+            ),
+            Self::NothingToLaunch => tr!(
+                "las cuentas por API key no tienen CLI que lanzar; se usan desde el chat de Hedy",
+                "API-key accounts have no CLI to launch; use them from Hedy's chat"
+            ),
+            Self::SingleAccountProvider { provider } => tr!(
+                "{provider} guarda la sesión en el llavero del sistema y no permite elegir carpeta: solo admite una cuenta por equipo, en su carpeta por defecto",
+                "{provider} keeps its login in the system keyring and cannot use another folder: only one account per computer, in its default folder"
+            ),
+            Self::AccountReserved { account, project } => {
+                let project = project.display();
+                tr!(
+                    "la cuenta «{account}» está reservada para el proyecto protegido {project}",
+                    "account «{account}» is reserved for the protected project {project}"
+                )
+            }
+            Self::ProtectedProject { project, assigned } => {
+                let project = project.display();
+                tr!(
+                    "el proyecto {project} está protegido y solo puede usar la cuenta «{assigned}»",
+                    "project {project} is protected and can only use account «{assigned}»"
+                )
+            }
+            Self::ProtectWithoutAccount => tr!(
+                "para proteger un proyecto primero asígnale una cuenta con `hedy use <cuenta>`",
+                "to protect a project, first assign it an account with `hedy use <account>`"
+            ),
+            Self::AccountShared { account, others } => {
+                let others = others
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                tr!(
+                    "no se puede proteger: la cuenta «{account}» también la usan {others}",
+                    "cannot protect it: account «{account}» is also used by {others}"
+                )
+            }
+        }
+    }
 }

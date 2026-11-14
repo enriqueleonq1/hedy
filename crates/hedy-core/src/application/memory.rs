@@ -8,6 +8,7 @@ use super::ports::{McpServer, MemoryLink, MemoryTools, NewNote};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::memory::{USER_AUTHOR, contradictions, is_stale};
 use crate::domain::{Account, AccountId, Category, Note, NoteStatus, Project, TaskId};
+use crate::tr;
 
 /// Everything the memory screen shows for a project.
 #[derive(Debug, Clone, PartialEq)]
@@ -291,15 +292,18 @@ impl Hedy {
 /// Text an agent reads for a list of notes.
 pub fn format_notes(notes: &[Note]) -> String {
     if notes.is_empty() {
-        return "No hay notas sobre eso en la memoria del proyecto.".into();
+        return tr!(
+            "No hay notas sobre eso en la memoria del proyecto.",
+            "The project's memory has no notes about that."
+        );
     }
     notes
         .iter()
         .map(|n| {
             let scope = if n.project.is_some() {
-                "proyecto"
+                tr!("proyecto", "project")
             } else {
-                "global"
+                "global".to_owned()
             };
             format!("- [{}·{scope}] {}", n.category.as_str(), n.text)
         })
@@ -323,25 +327,34 @@ impl MemoryTools for TaskMemory {
             .read_memory_for_agent(&self.project, self.task.as_ref(), query)
         {
             Ok(notes) => format_notes(&notes),
-            Err(e) => format!("No se pudo leer la memoria: {e}"),
+            Err(e) => tr!(
+                "No se pudo leer la memoria: {e}",
+                "Could not read the memory: {e}"
+            ),
         }
     }
 
     fn propose(&self, text: &str, category: &str) -> String {
         let Ok(category) = category.parse::<Category>() else {
             let valid: Vec<&str> = Category::ALL.iter().map(|c| c.as_str()).collect();
-            return format!(
-                "Categoría desconocida: «{}». No se guardó la nota; usa una de estas: {}.",
-                category.trim(),
-                valid.join(", ")
+            let (category, valid) = (category.trim(), valid.join(", "));
+            return tr!(
+                "Categoría desconocida: «{category}». No se guardó la nota; usa una de estas: {valid}.",
+                "Unknown category: «{category}». The note was not saved; use one of: {valid}."
             );
         };
         match self
             .hedy
             .propose_note(&self.project, text, category, &self.author)
         {
-            Ok(_) => "Propuesta guardada; el usuario la revisará.".into(),
-            Err(e) => format!("No se pudo proponer la nota: {e}"),
+            Ok(_) => tr!(
+                "Propuesta guardada; el usuario la revisará.",
+                "Proposal saved; the user will review it."
+            ),
+            Err(e) => tr!(
+                "No se pudo proponer la nota: {e}",
+                "Could not propose the note: {e}"
+            ),
         }
     }
 }

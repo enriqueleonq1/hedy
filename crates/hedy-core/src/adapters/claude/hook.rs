@@ -36,6 +36,7 @@ pub fn decide(input: &str) -> Option<String> {
 
 /// Runs the hook on this process's stdin/stdout. Returns the exit code.
 pub fn run() -> i32 {
+    crate::i18n::init(None);
     let mut input = String::new();
     if std::io::stdin().read_to_string(&mut input).is_err() {
         return 0;

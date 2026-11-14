@@ -21,6 +21,7 @@ use crate::application::ports::{
 };
 use crate::domain::agent::looks_like_tests;
 use crate::domain::{AgentEvent, PlanStep, StepStatus, UsageSample, prompts};
+use crate::tr;
 
 pub struct CodexLauncher;
 
@@ -93,7 +94,10 @@ impl Shared {
     fn turn(&self, text: &str, read_only: bool) -> PortResult<()> {
         let thread = self.state.lock().unwrap().thread.clone();
         let Some(thread) = thread else {
-            return Err(PortError::new("Codex todavía no abrió la conversación"));
+            return Err(PortError::new(tr!(
+                "Codex todavía no abrió la conversación",
+                "Codex has not opened the conversation yet"
+            )));
         };
         self.request(
             "turn/start",
@@ -131,7 +135,7 @@ impl AgentLauncher for CodexLauncher {
 
         let read_only = request.phase.read_only_in(request.mode);
         let first_prompt = if request.plan_first {
-            format!("{}\n\n{}", prompts::PLAN_FIRST, request.prompt)
+            format!("{}\n\n{}", prompts::plan_first(), request.prompt)
         } else {
             request.prompt.clone()
         };
@@ -148,10 +152,7 @@ impl AgentLauncher for CodexLauncher {
                 first_prompt: Some(first_prompt),
                 model: request.model.clone(),
                 resume: request.resume.clone(),
-                instructions: request
-                    .memory
-                    .is_some()
-                    .then(|| prompts::MEMORY_GUIDANCE.to_owned()),
+                instructions: request.memory.is_some().then(prompts::memory_guidance),
                 approvals: HashMap::new(),
                 changes: HashMap::new(),
                 last_message: String::new(),
@@ -178,9 +179,10 @@ impl AgentLauncher for CodexLauncher {
                 // The app-server only exits when stopped; anything else is a crash.
                 let code = wait_unlocked(&child);
                 if !stopped.load(Ordering::SeqCst) {
-                    let message = format!(
-                        "Codex se detuvo (código {}).",
-                        code.map_or("?".into(), |c| c.to_string())
+                    let code = code.map_or("?".into(), |c| c.to_string());
+                    let message = tr!(
+                        "Codex se detuvo (código {code}).",
+                        "Codex stopped (code {code})."
                     );
                     shared.emit(AgentEvent::Error {
                         message: message.clone(),
@@ -354,7 +356,7 @@ fn server_request(shared: &Shared, method: &str, id: Value, params: &Value) -> P
         // Anything else Codex asks (user input, MCP elicitation) is declined.
         _ => {
             return shared.write(&json!({"jsonrpc": "2.0", "id": id,
-                "error": {"code": -32601, "message": "Hedy no admite esta petición"}}));
+                "error": {"code": -32601, "message": "Hedy does not support this request"}}));
         }
     };
     shared
@@ -538,7 +540,7 @@ impl AgentSession for CodexSession {
                     s.planning = false;
                     s.read_only
                 };
-                return self.shared.turn(prompts::PLAN_APPROVED, read_only);
+                return self.shared.turn(&prompts::plan_approved(), read_only);
             }
             return self.shared.turn(message.unwrap_or("Revisa el plan."), true);
         }
@@ -785,7 +787,7 @@ for line in sys.stdin:
             |e| matches!(e, AgentEvent::Usage(u) if u.input_tokens == 6 && u.cache_read_tokens == 4)
         ));
         assert!(
-            matches!(seen.last(), Some(AgentEvent::Finished { ok: true, summary, .. }) if summary.contains(prompts::PLAN_APPROVED))
+            matches!(seen.last(), Some(AgentEvent::Finished { ok: true, summary, .. }) if summary.contains(&prompts::plan_approved()))
         );
         assert_eq!(
             std::fs::read_to_string(dir.join("hola.txt")).unwrap(),

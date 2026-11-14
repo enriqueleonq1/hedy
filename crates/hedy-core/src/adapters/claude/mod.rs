@@ -18,6 +18,7 @@ use crate::application::ports::{
 };
 use crate::domain::permissions::DEFAULT_BLOCKED;
 use crate::domain::{AgentEvent, Phase, TaskMode, prompts};
+use crate::tr;
 use translate::Translator;
 
 /// `hook`: shell command for the `PreToolUse` hook (see [`hook`]); without it
@@ -84,19 +85,23 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
         request.mode
     };
     let mut allowed: Vec<String> = Vec::new();
-    let mut system: Vec<&str> = Vec::new();
+    let mut system: Vec<String> = vec![prompts::reply_language()];
     match mode {
         TaskMode::Project => {}
         TaskMode::Ask => {
             args.extend(["--disallowedTools".into(), READ_ONLY_TOOLS_DENIED.into()]);
-            system.push("Modo Pregunta de Hedy: responde y explica; no modifiques archivos.");
+            system.push(tr!(
+                "Modo Pregunta de Hedy: responde y explica; no modifiques archivos.",
+                "Hedy's Ask mode: answer and explain; do not modify files."
+            ));
         }
         TaskMode::Research => {
             args.extend(["--disallowedTools".into(), READ_ONLY_TOOLS_DENIED.into()]);
             allowed.extend(["WebSearch".into(), "WebFetch".into()]);
-            system.push(
+            system.push(tr!(
                 "Modo Research de Hedy: investiga (también en la web), cita tus fuentes y no modifiques archivos.",
-            );
+                "Hedy's Research mode: investigate (on the web too), cite your sources and do not modify files."
+            ));
         }
     }
     let servers = request.mcp_servers();
@@ -121,7 +126,7 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
         allowed.extend(servers.iter().map(|s| format!("mcp__{}", s.name)));
     }
     if request.memory.is_some() {
-        system.push(prompts::MEMORY_GUIDANCE);
+        system.push(prompts::memory_guidance());
     }
     if !allowed.is_empty() {
         args.extend(["--allowedTools".into(), allowed.join(",")]);
@@ -229,10 +234,11 @@ impl AgentLauncher for ClaudeCodeLauncher {
                         .cloned()
                         .collect::<Vec<_>>()
                         .join("\n");
-                    let message = format!(
-                        "Claude Code se detuvo (código {}). {}",
-                        code.map_or("?".into(), |c| c.to_string()),
-                        detail.trim()
+                    let code = code.map_or("?".into(), |c| c.to_string());
+                    let detail = detail.trim();
+                    let message = tr!(
+                        "Claude Code se detuvo (código {code}). {detail}",
+                        "Claude Code stopped (code {code}). {detail}"
                     );
                     events(AgentEvent::Error {
                         message: message.clone(),
@@ -307,7 +313,7 @@ impl AgentSession for ClaudeSession {
                 if let Some(tool_use) = shared.tool_use_of.get(request_id).cloned() {
                     shared.denied.insert(tool_use);
                 }
-                json!({"behavior": "deny", "message": message.unwrap_or("Rechazado en Hedy.")})
+                json!({"behavior": "deny", "message": message.map_or_else(|| tr!("Rechazado en Hedy.", "Rejected in Hedy."), str::to_owned)})
             }
         };
         self.writer
@@ -401,7 +407,7 @@ mod tests {
             "WebSearch,WebFetch,mcp__hedy-memory,mcp__codebase-memory"
         );
         let system = value("--append-system-prompt");
-        assert!(system.starts_with("Modo Research"));
+        assert!(system.starts_with("Responde en español.") && system.contains("Modo Research"));
         assert!(system.contains("memory_propose"));
         assert_eq!(args.iter().filter(|a| *a == "--allowedTools").count(), 1);
     }

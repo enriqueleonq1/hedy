@@ -21,12 +21,15 @@ pub enum Setting {
     Theme,
     /// Name used to greet the user in the app.
     UserName,
+    /// Interface language: `system`, `es` or `en`.
+    Language,
     /// Code-map MCP server (codebase-memory-mcp) to register in every run.
     /// Unset: no code map.
     CodeMap,
 }
 
 pub const THEMES: [&str; 3] = ["system", "light", "dark"];
+pub const LANGUAGES: [&str; 3] = ["system", "es", "en"];
 
 impl Setting {
     pub fn key(self) -> String {
@@ -37,6 +40,7 @@ impl Setting {
             Self::ApiPrice(p) => format!("api_price.{}", p.as_str()),
             Self::Theme => "ui.theme".into(),
             Self::UserName => "ui.name".into(),
+            Self::Language => "ui.language".into(),
             Self::CodeMap => "code_map.binary".into(),
         }
     }
@@ -53,7 +57,7 @@ impl Setting {
         std::iter::once(Self::DefaultAccount)
             .chain(binaries)
             .chain(api_urls)
-            .chain([Self::Theme, Self::UserName, Self::CodeMap])
+            .chain([Self::Theme, Self::UserName, Self::Language, Self::CodeMap])
             .collect()
     }
 }
@@ -91,9 +95,25 @@ impl Hedy {
                     value: theme.to_owned(),
                 });
             }
+            (Setting::Language, Some(language)) if !LANGUAGES.contains(&language) => {
+                return Err(AppError::InvalidSettingValue {
+                    key: setting.key(),
+                    value: language.to_owned(),
+                });
+            }
             _ => {}
         }
-        Ok(self.store.set_setting(&setting.key(), value)?)
+        self.store.set_setting(&setting.key(), value)?;
+        if setting == Setting::Language {
+            self.apply_language()?;
+        }
+        Ok(())
+    }
+
+    /// Uses the language setting (or the system's) for every text from now on.
+    pub fn apply_language(&self) -> AppResult<()> {
+        crate::i18n::init(self.setting(Setting::Language)?.as_deref());
+        Ok(())
     }
 
     pub(crate) fn default_account_id(&self) -> AppResult<Option<AccountId>> {

@@ -25,6 +25,7 @@ use crate::application::ports::{
 };
 use crate::domain::agent::looks_like_tests;
 use crate::domain::{AgentEvent, Decision, PlanStep, StepStatus, UsageSample, prompts};
+use crate::tr;
 
 /// The protocol version Hedy speaks.
 const PROTOCOL_VERSION: u64 = 1;
@@ -195,19 +196,20 @@ impl AgentLauncher for AcpLauncher {
             })
             .collect();
         // ACP v1 has no stable system prompt: the guidance opens the first prompt.
-        let mut intro = Vec::new();
+        let mut intro = vec![prompts::reply_language()];
         if request.phase.read_only_in(request.mode) {
-            intro.push(
+            intro.push(tr!(
                 "Modo de solo lectura de Hedy: responde e investiga; no modifiques archivos.",
-            );
+                "Hedy's read-only mode: answer and investigate; do not modify files."
+            ));
         }
         if request.memory.is_some() {
-            intro.push(prompts::MEMORY_GUIDANCE);
+            intro.push(prompts::memory_guidance());
         }
         if request.plan_first {
-            intro.push(prompts::PLAN_FIRST);
+            intro.push(prompts::plan_first());
         }
-        intro.push(&request.prompt);
+        intro.push(request.prompt.clone());
 
         let shared = Arc::new(Shared {
             stdin: Mutex::new(stdin),
@@ -254,9 +256,10 @@ impl AgentLauncher for AcpLauncher {
                 let code = wait_unlocked(&child);
                 if !stopped.load(Ordering::SeqCst) {
                     let name = shared.state.lock().unwrap().name.clone();
-                    shared.fail(format!(
-                        "{name} se detuvo (código {}).",
-                        code.map_or("?".into(), |c| c.to_string())
+                    let code = code.map_or("?".into(), |c| c.to_string());
+                    shared.fail(tr!(
+                        "{name} se detuvo (código {code}).",
+                        "{name} stopped (code {code})."
                     ));
                 }
             });
@@ -294,7 +297,10 @@ fn handle(shared: &Shared, msg: &Value) -> PortResult<()> {
 fn error_message(name: &str, error: &Value) -> String {
     let text = error["message"].as_str().unwrap_or("error");
     if text.to_lowercase().contains("auth") {
-        format!("{name} no tiene la sesión iniciada: inicia sesión desde Cuentas y modelos.")
+        tr!(
+            "{name} no tiene la sesión iniciada: inicia sesión desde Cuentas y modelos.",
+            "{name} is not logged in: log in from Accounts and models."
+        )
     } else {
         format!("{name}: {text}")
     }
@@ -322,8 +328,9 @@ fn response(shared: &Shared, id: u64, msg: &Value) -> PortResult<()> {
         Some(Pending::Initialize) => {
             let version = result["protocolVersion"].as_u64().unwrap_or(0);
             if version != PROTOCOL_VERSION {
-                shared.fail(format!(
-                    "{name} habla ACP versión {version}; Hedy usa la {PROTOCOL_VERSION}."
+                shared.fail(tr!(
+                    "{name} habla ACP versión {version}; Hedy usa la {PROTOCOL_VERSION}.",
+                    "{name} speaks ACP version {version}; Hedy uses {PROTOCOL_VERSION}."
                 ));
                 return Ok(());
             }
@@ -401,8 +408,11 @@ fn turn_ended(shared: &Shared, stop_reason: &str) -> PortResult<()> {
         });
     } else {
         let summary = match stop_reason {
-            "refusal" => "El agente se negó a continuar.".to_owned(),
-            "cancelled" => "Detenido.".to_owned(),
+            "refusal" => tr!(
+                "El agente se negó a continuar.",
+                "The agent refused to go on."
+            ),
+            "cancelled" => tr!("Detenido.", "Stopped."),
             _ => message,
         };
         shared.emit(AgentEvent::Finished {
@@ -563,7 +573,7 @@ fn tool_name(kind: &str) -> &'static str {
         "read" => "Read",
         "search" => "Grep",
         "fetch" => "WebFetch",
-        _ => "Herramienta",
+        _ => "Tool",
     }
 }
 
@@ -672,7 +682,7 @@ impl AgentSession for AcpSession {
         if request_id.starts_with("acp-plan-") {
             if allow {
                 self.shared.state.lock().unwrap().planning = false;
-                return self.shared.prompt(prompts::PLAN_APPROVED);
+                return self.shared.prompt(&prompts::plan_approved());
             }
             return self.shared.prompt(message.unwrap_or("Revisa el plan."));
         }

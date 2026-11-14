@@ -2,21 +2,43 @@
 //! between agents. Pure text, so it is easy to read and to test.
 
 use super::Phase;
+use crate::tr;
 
 /// For agents without a native plan mode.
-pub const PLAN_FIRST: &str = "Antes de cambiar nada, propón un plan breve y numerado para este pedido. \
-No modifiques archivos todavía: espera a que el plan se apruebe.";
+pub fn plan_first() -> String {
+    tr!(
+        "Antes de cambiar nada, propón un plan breve y numerado para este pedido. No modifiques archivos todavía: espera a que el plan se apruebe.",
+        "Before changing anything, propose a short numbered plan for this request. Do not modify files yet: wait for the plan to be approved."
+    )
+}
 
-pub const PLAN_APPROVED: &str = "Plan aprobado. Impleméntalo ahora.";
+pub fn plan_approved() -> String {
+    tr!(
+        "Plan aprobado. Impleméntalo ahora.",
+        "Plan approved. Implement it now."
+    )
+}
 
 /// Answer to a planner whose plan another agent will implement.
-pub const PLAN_HANDED_OFF: &str = "Plan aprobado. Otra IA lo va a implementar; no hagas nada más.";
+pub fn plan_handed_off() -> String {
+    tr!(
+        "Plan aprobado. Otra IA lo va a implementar; no hagas nada más.",
+        "Plan approved. Another AI will implement it; do nothing else."
+    )
+}
 
 /// For agents that have the project's memory (the `hedy-memory` tools).
-pub const MEMORY_GUIDANCE: &str = "Este proyecto tiene una memoria compartida entre IAs: decisiones, convenciones y reglas. \
-Antes de elegir una convención o tomar una decisión, búscala con memory_search. \
-Si tomas una decisión duradera o descubres una convención que otras IAs deberían seguir, propónla con memory_propose \
-(una frase; el usuario decide si se guarda). No propongas secretos ni datos personales.";
+pub fn memory_guidance() -> String {
+    tr!(
+        "Este proyecto tiene una memoria compartida entre IAs: decisiones, convenciones y reglas. Antes de elegir una convención o tomar una decisión, búscala con memory_search. Si tomas una decisión duradera o descubres una convención que otras IAs deberían seguir, propónla con memory_propose (una frase; el usuario decide si se guarda). No propongas secretos ni datos personales.",
+        "This project has a memory shared between AIs: decisions, conventions and rules. Before choosing a convention or making a decision, look it up with memory_search. If you make a lasting decision or find a convention other AIs should follow, propose it with memory_propose (one sentence; the user decides whether it is kept). Never propose secrets or personal data."
+    )
+}
+
+/// Asks the agent to answer in the user's language.
+pub fn reply_language() -> String {
+    tr!("Responde en español.", "Reply in English.")
+}
 
 fn section(title: &str, body: &str) -> String {
     format!("## {title}\n{}\n", body.trim())
@@ -31,26 +53,32 @@ pub fn stage_prompt(
     previous: Option<&str>,
 ) -> String {
     let mut out = String::new();
-    out.push_str(&section("Pedido original", request));
+    out.push_str(&section(
+        &tr!("Pedido original", "Original request"),
+        request,
+    ));
     if let Some(plan) = plan {
-        out.push_str(&section("Plan aprobado", plan));
+        out.push_str(&section(&tr!("Plan aprobado", "Approved plan"), plan));
     }
     if let Some(previous) = previous {
-        out.push_str(&section("Hecho hasta ahora", previous));
+        out.push_str(&section(&tr!("Hecho hasta ahora", "Done so far"), previous));
     }
     let part = match phase {
-            Phase::Plan => PLAN_FIRST.to_owned(),
-            Phase::Implement => "Implementa el pedido siguiendo el plan. Los cambios anteriores ya están en esta carpeta.".to_owned(),
-            Phase::Tests => format!(
-                "Escribe o actualiza los tests para los cambios de esta rama (compara con el commit {base_commit}) y córrelos. \
-                 No cambies el código de producción salvo para arreglar un error evidente."
-            ),
-            Phase::Review => format!(
-                "Revisa los cambios de esta rama respecto al commit {base_commit} (usa git diff): errores, casos sin cubrir, \
-                 tests. Responde con una lista breve y concreta. No modifiques archivos."
-            ),
-        };
-    out.push_str(&section("Tu parte", &part));
+        Phase::Plan => plan_first(),
+        Phase::Implement => tr!(
+            "Implementa el pedido siguiendo el plan. Los cambios anteriores ya están en esta carpeta.",
+            "Implement the request following the plan. Earlier changes are already in this folder."
+        ),
+        Phase::Tests => tr!(
+            "Escribe o actualiza los tests para los cambios de esta rama (compara con el commit {base_commit}) y córrelos. No cambies el código de producción salvo para arreglar un error evidente.",
+            "Write or update the tests for this branch's changes (compare with commit {base_commit}) and run them. Do not change production code except to fix an obvious bug."
+        ),
+        Phase::Review => tr!(
+            "Revisa los cambios de esta rama respecto al commit {base_commit} (usa git diff): errores, casos sin cubrir, tests. Responde con una lista breve y concreta. No modifiques archivos.",
+            "Review this branch's changes against commit {base_commit} (use git diff): bugs, uncovered cases, tests. Answer with a short, concrete list. Do not modify files."
+        ),
+    };
+    out.push_str(&section(&tr!("Tu parte", "Your part"), &part));
     out
 }
 
@@ -62,22 +90,23 @@ pub fn handoff_prompt(
     changed_files: &[String],
 ) -> String {
     let files = if changed_files.is_empty() {
-        "Todavía no hay cambios.".to_owned()
+        tr!("Todavía no hay cambios.", "There are no changes yet.")
     } else {
-        format!(
-            "Archivos cambiados hasta ahora: {}.",
-            changed_files.join(", ")
+        let files = changed_files.join(", ");
+        tr!(
+            "Archivos cambiados hasta ahora: {files}.",
+            "Files changed so far: {files}."
         )
     };
-    let mut out = section("Pedido original", request);
+    let mut out = section(&tr!("Pedido original", "Original request"), request);
     if let Some(plan) = plan {
-        out.push_str(&section("Plan aprobado", plan));
+        out.push_str(&section(&tr!("Plan aprobado", "Approved plan"), plan));
     }
     out.push_str(&section(
-        "Contexto",
-        &format!(
-            "{previous_agent} estaba trabajando en esta tarea y se detuvo. {files} \
-             Revisa el estado actual de la carpeta y continúa donde quedó."
+        &tr!("Contexto", "Context"),
+        &tr!(
+            "{previous_agent} estaba trabajando en esta tarea y se detuvo. {files} Revisa el estado actual de la carpeta y continúa donde quedó.",
+            "{previous_agent} was working on this task and stopped. {files} Check the folder's current state and pick up where it left off."
         ),
     ));
     out

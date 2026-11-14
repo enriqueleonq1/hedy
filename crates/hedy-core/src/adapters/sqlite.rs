@@ -11,6 +11,7 @@ use crate::domain::{
     Account, AccountId, AgentEvent, Category, Color, ConfigFolder, Credentials, Note, NoteStatus,
     Project, Task, TaskId, UsageSample,
 };
+use crate::tr;
 
 /// Schema migrations, applied in order. `PRAGMA user_version` stores how many ran.
 const MIGRATIONS: &[&str] = &[
@@ -177,9 +178,10 @@ fn migrate(conn: &mut Connection) -> PortResult<()> {
         .map_err(db_error)?;
     let applied = usize::try_from(applied).unwrap_or(usize::MAX);
     if applied > MIGRATIONS.len() {
-        return Err(PortError::new(
+        return Err(PortError::new(tr!(
             "la base de datos es de una versión más nueva de Hedy",
-        ));
+            "the database comes from a newer version of Hedy"
+        )));
     }
     for (i, sql) in MIGRATIONS.iter().enumerate().skip(applied) {
         let tx = conn.transaction().map_err(db_error)?;
@@ -602,7 +604,7 @@ impl MemoryRepository for SqliteStore {
             Ok(c.last_insert_rowid())
         })?;
         self.note(id)?
-            .ok_or_else(|| PortError::new("la nota no se guardó"))
+            .ok_or_else(|| PortError::new(tr!("la nota no se guardó", "the note was not saved")))
     }
 
     fn note(&self, id: i64) -> PortResult<Option<Note>> {

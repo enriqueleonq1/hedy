@@ -24,6 +24,7 @@ use crate::domain::agent::looks_like_tests;
 use crate::domain::permissions::{normalize, protected_file_reason};
 use crate::domain::task::SHARED_DEPENDENCY_DIRS;
 use crate::domain::{AgentEvent, LaunchSpec, TaskMode, UsageSample, prompts};
+use crate::tr;
 
 pub struct ApiAgentLauncher;
 
@@ -123,7 +124,12 @@ impl AgentSession for ApiSession {
     fn send(&mut self, text: &str) -> PortResult<()> {
         self.commands
             .send(Command::Message(text.to_owned()))
-            .map_err(|_| PortError::new("el agente por API ya terminó"))
+            .map_err(|_| {
+                PortError::new(tr!(
+                    "el agente por API ya terminó",
+                    "the API agent has ended"
+                ))
+            })
     }
 
     fn answer(&mut self, request_id: &str, allow: bool, message: Option<&str>) -> PortResult<()> {
@@ -133,7 +139,12 @@ impl AgentSession for ApiSession {
                 allow,
                 message: message.map(str::to_owned),
             })
-            .map_err(|_| PortError::new("el agente por API ya terminó"))
+            .map_err(|_| {
+                PortError::new(tr!(
+                    "el agente por API ya terminó",
+                    "the API agent has ended"
+                ))
+            })
     }
 
     fn stop(&mut self) {
@@ -282,27 +293,29 @@ impl Agent {
     }
 
     fn system_prompt(&self, mode: TaskMode) -> String {
-        let mut prompt = format!(
-            "Eres un agente de programación trabajando a través de Hedy en la carpeta {}. \
-             Usa las herramientas para leer, buscar y, si están disponibles, cambiar archivos y correr comandos. \
-             Las rutas son relativas a esa carpeta. Sé breve y responde en español.",
-            self.cwd.display()
+        let folder = self.cwd.display();
+        let mut prompt = tr!(
+            "Eres un agente de programación trabajando a través de Hedy en la carpeta {folder}. Usa las herramientas para leer, buscar y, si están disponibles, cambiar archivos y correr comandos. Las rutas son relativas a esa carpeta. Sé breve y responde en español.",
+            "You are a coding agent working through Hedy in the folder {folder}. Use the tools to read, search and, when available, change files and run commands. Paths are relative to that folder. Be brief and reply in English."
         );
         match mode {
-            TaskMode::Ask => {
-                prompt.push_str(" Modo Pregunta: responde y explica; no modifiques archivos.")
-            }
-            TaskMode::Research => prompt
-                .push_str(" Modo Research: investiga en el código y cita dónde está cada cosa."),
+            TaskMode::Ask => prompt.push_str(&tr!(
+                " Modo Pregunta: responde y explica; no modifiques archivos.",
+                " Ask mode: answer and explain; do not modify files."
+            )),
+            TaskMode::Research => prompt.push_str(&tr!(
+                " Modo Research: investiga en el código y cita dónde está cada cosa.",
+                " Research mode: investigate the code and cite where each thing is."
+            )),
             TaskMode::Project => {}
         }
         if self.memory.is_some() {
             prompt.push(' ');
-            prompt.push_str(prompts::MEMORY_GUIDANCE);
+            prompt.push_str(&prompts::memory_guidance());
         }
         if self.planning {
             prompt.push(' ');
-            prompt.push_str(prompts::PLAN_FIRST);
+            prompt.push_str(&prompts::plan_first());
         }
         prompt
     }
@@ -335,7 +348,7 @@ impl Agent {
                         Ok((true, _)) => {
                             self.planning = false;
                             self.messages
-                                .push(json!({"role": "user", "content": prompts::PLAN_APPROVED}));
+                                .push(json!({"role": "user", "content": prompts::plan_approved()}));
                         }
                         Ok((false, message)) => {
                             let feedback = message.unwrap_or_else(|| "Revisa el plan.".into());
@@ -388,7 +401,10 @@ impl Agent {
             self.report_usage(&response["usage"]);
             let message = response["choices"][0]["message"].clone();
             if !message.is_object() {
-                return Err(End::Failed("La API respondió sin mensaje.".into()));
+                return Err(End::Failed(tr!(
+                    "La API respondió sin mensaje.",
+                    "The API answered without a message."
+                )));
             }
             self.messages.push(message.clone());
             let text = message["content"].as_str().unwrap_or("").trim().to_owned();
@@ -411,9 +427,10 @@ impl Agent {
                 }));
             }
         }
-        Err(End::Failed(
-            "Demasiados pasos seguidos sin terminar; me detengo aquí.".into(),
-        ))
+        Err(End::Failed(tr!(
+            "Demasiados pasos seguidos sin terminar; me detengo aquí.",
+            "Too many steps in a row without finishing; stopping here."
+        )))
     }
 
     fn complete(&self) -> Result<Value, End> {
@@ -428,14 +445,20 @@ impl Agent {
             .post(&self.url)
             .header("Authorization", &format!("Bearer {}", self.key.expose()))
             .send_json(&body)
-            .map_err(|e| End::Failed(format!("No se pudo llamar a la API: {e}")))?;
+            .map_err(|e| {
+                End::Failed(tr!(
+                    "No se pudo llamar a la API: {e}",
+                    "Could not reach the API: {e}"
+                ))
+            })?;
         let status = response.status().as_u16();
         let json: Value = response.body_mut().read_json().unwrap_or(Value::Null);
         let detail = json["error"]["message"].as_str().unwrap_or("").to_owned();
         match status {
             200..=299 => Ok(json),
-            401 | 403 => Err(End::Failed(format!(
-                "La API rechazó la key (HTTP {status}). {detail}"
+            401 | 403 => Err(End::Failed(tr!(
+                "La API rechazó la key (HTTP {status}). {detail}",
+                "The API rejected the key (HTTP {status}). {detail}"
             ))),
             429 => {
                 self.emit(AgentEvent::RateLimit {
@@ -443,12 +466,14 @@ impl Agent {
                     utilization: None,
                     resets_at: None,
                 });
-                Err(End::Failed(format!(
-                    "La API llegó a su límite (HTTP 429). {detail}"
+                Err(End::Failed(tr!(
+                    "La API llegó a su límite (HTTP 429). {detail}",
+                    "The API hit its limit (HTTP 429). {detail}"
                 )))
             }
-            _ => Err(End::Failed(format!(
-                "La API respondió HTTP {status}. {detail}"
+            _ => Err(End::Failed(tr!(
+                "La API respondió HTTP {status}. {detail}",
+                "The API answered HTTP {status}. {detail}"
             ))),
         }
     }
@@ -491,7 +516,12 @@ impl Agent {
     /// working folder and is not a protected file; otherwise why not. Reads may
     /// also reach the shared dependency folders.
     fn resolve(&self, path: &str, write: bool) -> Result<PathBuf, String> {
-        let outside = || "Solo puedo trabajar dentro de la carpeta de la tarea.".to_owned();
+        let outside = || {
+            tr!(
+                "Solo puedo trabajar dentro de la carpeta de la tarea.",
+                "I can only work inside the task folder."
+            )
+        };
         let lexical = normalize(&self.cwd, Path::new(path));
         if !lexical.starts_with(&self.cwd) {
             return Err(outside());
@@ -503,7 +533,12 @@ impl Agent {
             .unwrap_or(&self.cwd);
         let real = existing
             .canonicalize()
-            .map_err(|e| format!("No se pudo resolver {path}: {e}"))?
+            .map_err(|e| {
+                tr!(
+                    "No se pudo resolver {path}: {e}",
+                    "Could not resolve {path}: {e}"
+                )
+            })?
             .join(lexical.strip_prefix(existing).unwrap_or(Path::new("")));
         let inside = real.starts_with(&self.cwd)
             || (!write && self.shared.iter().any(|dir| real.starts_with(dir)));
@@ -535,7 +570,10 @@ impl Agent {
         let arg = |key: &str| args[key].as_str().unwrap_or("").to_owned();
         let writes = matches!(name, "write_file" | "edit_file" | "run_command");
         if writes && (self.read_only || self.planning) {
-            return Ok("Ahora no puedes cambiar archivos ni correr comandos.".into());
+            return Ok(tr!(
+                "Ahora no puedes cambiar archivos ni correr comandos.",
+                "You cannot change files or run commands now."
+            ));
         }
         Ok(match name {
             "list_files" => self.list_files(&arg("path")),
@@ -544,7 +582,7 @@ impl Agent {
             "memory_search" | "memory_propose" => match &self.memory {
                 Some(memory) if name == "memory_search" => memory.search(&arg("query")),
                 Some(memory) => memory.propose(&arg("text"), &arg("category")),
-                None => format!("Herramienta desconocida: {name}"),
+                None => tr!("Herramienta desconocida: {name}", "Unknown tool: {name}"),
             },
             "write_file" | "edit_file" => {
                 let target = match self.resolve(&arg("path"), true) {
@@ -568,7 +606,10 @@ impl Agent {
                 });
                 match self.wait_answer(rx, &id)? {
                     (true, _) => self.change_file(name, &target, &args),
-                    (false, message) => format!("Rechazado: {}", message.unwrap_or_default()),
+                    (false, message) => {
+                        let message = message.unwrap_or_default();
+                        tr!("Rechazado: {message}", "Rejected: {message}")
+                    }
                 }
             }
             "run_command" => {
@@ -585,10 +626,13 @@ impl Agent {
                 });
                 match self.wait_answer(rx, &id)? {
                     (true, _) => self.run_command(&command),
-                    (false, message) => format!("Rechazado: {}", message.unwrap_or_default()),
+                    (false, message) => {
+                        let message = message.unwrap_or_default();
+                        tr!("Rechazado: {message}", "Rejected: {message}")
+                    }
                 }
             }
-            other => format!("Herramienta desconocida: {other}"),
+            other => tr!("Herramienta desconocida: {other}", "Unknown tool: {other}"),
         })
     }
 
@@ -609,7 +653,7 @@ impl Agent {
             .and_then(|file| file.take(MAX_READ as u64 + 1).read_to_end(&mut bytes))
         {
             Ok(_) => truncate(String::from_utf8_lossy(&bytes).into_owned(), MAX_READ),
-            Err(e) => format!("No se pudo leer: {e}"),
+            Err(e) => tr!("No se pudo leer: {e}", "Could not read: {e}"),
         }
     }
 
@@ -661,7 +705,7 @@ impl Agent {
             lines.len() < 400
         });
         if lines.is_empty() {
-            "(vacío)".into()
+            tr!("(vacío)", "(empty)")
         } else {
             lines.join("\n")
         }
@@ -694,7 +738,7 @@ impl Agent {
             hits.len() < 100
         });
         if hits.is_empty() {
-            "Sin resultados.".into()
+            tr!("Sin resultados.", "No results.")
         } else {
             hits.join("\n")
         }
@@ -725,9 +769,12 @@ impl Agent {
                 self.emit(AgentEvent::FileEdited {
                     path: self.relative(target),
                 });
-                "Hecho.".into()
+                tr!("Hecho.", "Done.")
             }
-            Err(e) => format!("No se pudo cambiar el archivo: {e}"),
+            Err(e) => tr!(
+                "No se pudo cambiar el archivo: {e}",
+                "Could not change the file: {e}"
+            ),
         }
     }
 
@@ -747,7 +794,7 @@ impl Agent {
         let child = cmd.spawn();
         let mut child = match child {
             Ok(c) => c,
-            Err(e) => return format!("No se pudo ejecutar: {e}"),
+            Err(e) => return tr!("No se pudo ejecutar: {e}", "Could not run it: {e}"),
         };
         let mut out = child.stdout.take().expect("stdout is piped");
         let output = Arc::new(Mutex::new(Vec::new()));
@@ -805,9 +852,10 @@ impl Agent {
                 tests: false,
             }
         });
-        format!(
-            "Código de salida: {}\n{output}",
-            code.map_or("?".into(), |c| c.to_string())
+        let code = code.map_or("?".into(), |c| c.to_string());
+        tr!(
+            "Código de salida: {code}\n{output}",
+            "Exit code: {code}\n{output}"
         )
     }
 }

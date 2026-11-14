@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::application::ports::{PortError, PortResult};
+use crate::tr;
 
 /// Where Hedy keeps its data. `HEDY_DATA_DIR` overrides the XDG location
 /// (`~/.local/share/hedy` on Linux).
@@ -16,8 +17,12 @@ impl HedyPaths {
         if let Some(dir) = std::env::var_os(Self::DATA_DIR_VAR).filter(|d| !d.is_empty()) {
             return Ok(Self::at(dir.into()));
         }
-        let dirs = directories::ProjectDirs::from("", "", "hedy")
-            .ok_or_else(|| PortError::new("no se encontró la carpeta personal del usuario"))?;
+        let dirs = directories::ProjectDirs::from("", "", "hedy").ok_or_else(|| {
+            PortError::new(tr!(
+                "no se encontró la carpeta personal del usuario",
+                "the user's home folder was not found"
+            ))
+        })?;
         Ok(Self::at(dirs.data_dir().to_owned()))
     }
 

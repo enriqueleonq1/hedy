@@ -10,6 +10,8 @@ use std::path::{Component, Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::tr;
+
 /// File names agents must never touch, in any project.
 pub const DEFAULT_BLOCKED: &[&str] = &[
     ".env",
@@ -181,9 +183,10 @@ pub fn evaluate(tool: &str, input: &Value, work_dir: &Path, remembered: &[AllowR
             .iter()
             .any(|path| !normalize(work_dir, Path::new(path)).starts_with(work_dir))
     {
-        return Verdict::Deny(format!(
-            "Hedy solo permite cambios dentro de la carpeta de la tarea ({}).",
-            work_dir.display()
+        let folder = work_dir.display();
+        return Verdict::Deny(tr!(
+            "Hedy no permite cambios fuera de la carpeta de la tarea ({folder}).",
+            "Hedy does not allow changes outside the task folder ({folder})."
         ));
     }
     match rule_for(tool, input) {
@@ -197,8 +200,9 @@ pub fn evaluate(tool: &str, input: &Value, work_dir: &Path, remembered: &[AllowR
 /// without asking (reads, searches, read-only shell commands).
 pub fn protected_file_reason(tool: &str, input: &Value, work_dir: &Path) -> Option<String> {
     let deny = |name: &str| {
-        Some(format!(
-            "Hedy no permite tocar «{name}» (archivo protegido)."
+        Some(tr!(
+            "Hedy no permite tocar «{name}» (archivo protegido).",
+            "Hedy does not allow touching «{name}» (protected file)."
         ))
     };
     if FILE_TOOLS.contains(&tool) {
@@ -232,8 +236,9 @@ pub fn protected_file_reason(tool: &str, input: &Value, work_dir: &Path) -> Opti
             .iter()
             .find_map(|w| blocked_in(w).map(str::to_owned))
     {
-        return Some(format!(
-            "Hedy no permite comandos sobre «{name}» (archivo protegido)."
+        return Some(tr!(
+            "Hedy no permite comandos sobre «{name}» (archivo protegido).",
+            "Hedy does not allow commands on «{name}» (protected file)."
         ));
     }
     None

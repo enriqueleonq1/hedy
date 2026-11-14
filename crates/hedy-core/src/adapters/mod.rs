@@ -96,7 +96,7 @@ pub fn system_for_app(paths: &HedyPaths, program: &std::path::Path) -> PortResul
 
 fn build(paths: &HedyPaths, claude: ClaudeCodeLauncher) -> PortResult<Hedy> {
     let store = SqliteStore::open(&paths.database())?;
-    Ok(Hedy::new(Ports {
+    let hedy = Hedy::new(Ports {
         store: Arc::new(store),
         secrets: Arc::new(KeyringSecretStore::default()),
         runner: Arc::new(SystemProcessRunner),
@@ -109,5 +109,10 @@ fn build(paths: &HedyPaths, claude: ClaudeCodeLauncher) -> PortResult<Hedy> {
             acp: AcpLauncher,
         }),
         clock: Arc::new(SystemClock),
-    }))
+    });
+    // The setting is read from the store: a failure keeps the system language.
+    if hedy.apply_language().is_err() {
+        crate::i18n::init(None);
+    }
+    Ok(hedy)
 }

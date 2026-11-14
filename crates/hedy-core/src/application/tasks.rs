@@ -22,6 +22,7 @@ use crate::domain::{
     LaunchSpec, LimitLevel, Phase, Provider, Stage, Task, TaskId, TaskMode, TaskStatus,
     UsageSample, Workspace, policy,
 };
+use crate::tr;
 
 /// Worktrees live inside the repository, excluded locally from git.
 const WORKTREES_DIR: &str = ".hedy/worktrees";
@@ -570,11 +571,15 @@ impl Hedy {
         request_id: &str,
         decision: Decision,
     ) -> AppResult<()> {
+        let rejected = tr!(
+            "El usuario rechazó esta acción.",
+            "The user rejected this action."
+        );
         let waiting = self.with_session(id, |running| {
             running.session.answer(
                 request_id,
                 decision.allows(),
-                (!decision.allows()).then_some("El usuario rechazó esta acción."),
+                (!decision.allows()).then_some(rejected.as_str()),
             )?;
             // Chained shell commands are allowed once but never remembered.
             if let Some((tool, input)) = running.pending.remove(request_id)
@@ -603,17 +608,20 @@ impl Hedy {
             let message = feedback
                 .map(str::trim)
                 .filter(|f| !f.is_empty())
-                .map(|f| format!("El usuario pide cambios al plan: {f}"));
+                .map(|f| {
+                    tr!(
+                        "El usuario pide cambios al plan: {f}",
+                        "The user asks for changes to the plan: {f}"
+                    )
+                })
+                .unwrap_or_else(|| {
+                    tr!(
+                        "El usuario no aprobó el plan.",
+                        "The user did not approve the plan."
+                    )
+                });
             self.with_session(id, |running| {
-                Ok(running.session.answer(
-                    request_id,
-                    false,
-                    Some(
-                        message
-                            .as_deref()
-                            .unwrap_or("El usuario no aprobó el plan."),
-                    ),
-                )?)
+                Ok(running.session.answer(request_id, false, Some(&message))?)
             })?;
             return self.resolved(id, request_id, Decision::Deny, false);
         }
@@ -626,7 +634,7 @@ impl Hedy {
             if handed_over {
                 Ok(running
                     .session
-                    .answer(request_id, false, Some(prompts::PLAN_HANDED_OFF))?)
+                    .answer(request_id, false, Some(&prompts::plan_handed_off()))?)
             } else {
                 Ok(running.session.answer(request_id, true, None)?)
             }
@@ -1247,7 +1255,7 @@ mod tests {
         assert_eq!(f.agents.calls()[0], AgentCall::Answer("p1".into(), false));
         assert_eq!(
             f.agents.answer_messages()[0].as_deref(),
-            Some(prompts::PLAN_HANDED_OFF)
+            Some(prompts::plan_handed_off().as_str())
         );
         let codex = f.agents.last_request();
         assert!(matches!(codex.backend, AgentBackend::Codex));

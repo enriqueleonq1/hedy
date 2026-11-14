@@ -20,6 +20,7 @@ pub(crate) fn command(spec: &LaunchSpec) -> Command {
     let mut cmd = Command::new(&spec.program);
     cmd.args(&spec.args);
     cmd.env_clear().envs(allowed_env());
+    cmd.env(crate::i18n::ENV_VAR, crate::i18n::language().code());
     for (name, value) in &spec.env {
         cmd.env(name, value);
     }
@@ -31,9 +32,10 @@ pub(crate) fn command(spec: &LaunchSpec) -> Command {
 
 pub(crate) fn launch_error(spec: &LaunchSpec, err: std::io::Error) -> PortError {
     if err.kind() == ErrorKind::NotFound {
-        PortError::new(format!(
-            "no se encontró «{}». Instálalo o indica su ruta con `hedy config set binary.<proveedor> <ruta>`",
-            spec.program
+        let program = &spec.program;
+        PortError::new(crate::tr!(
+            "no se encontró «{program}». Instálalo o indica su ruta con `hedy config set binary.<proveedor> <ruta>`",
+            "«{program}» was not found. Install it or set its path with `hedy config set binary.<provider> <path>`"
         ))
     } else {
         PortError::new(format!("no se pudo lanzar «{}»: {err}", spec.program))
