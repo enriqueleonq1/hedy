@@ -157,5 +157,11 @@ describe("Settings", () => {
     for (const name of ["Durmiendo", "Pensando", "Trabajando", "¡Listo!"]) {
       expect(within(gallery).getByRole("img", { name })).toBeInTheDocument();
     }
+    const working = screen.getByLabelText("La mascota trabajando, según lo que hace la IA");
+    expect(within(working).getAllByRole("img")).toHaveLength(10);
+    for (const name of ["Leyendo archivos", "Corriendo las pruebas", "Repartiendo con subagentes", "Lleva un buen rato"]) {
+      expect(within(working).getByRole("img", { name })).toBeInTheDocument();
+    }
+    expect(within(working).getByText("Sudando la gota · Sin rendirse · Dándolo todo")).toBeInTheDocument();
   });
 });

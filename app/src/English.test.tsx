@@ -188,6 +188,7 @@ describe("English", () => {
     expect(within(needs).getAllByText(/^running for \d+ min$/)).toHaveLength(3);
     const running = screen.getByRole("region", { name: "Running (1)" });
     expect(within(running).getByText("Working")).toBeInTheDocument();
+    expect(await within(running).findByText("Sniffing around")).toBeInTheDocument();
     expect(within(running).getByText("Implementation")).toBeInTheDocument();
     expect(within(running).getByText("2 queued")).toBeInTheDocument();
     const recent = screen.getByRole("region", { name: "Last 24 h (4)" });
@@ -217,6 +218,11 @@ describe("English", () => {
     expect(screen.getByRole("radiogroup", { name: "Theme" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Light" })).toBeInTheDocument();
     expect(screen.getByText("Done!")).toBeInTheDocument();
+    const working = screen.getByLabelText("The mascot at work, by what the AI is doing");
+    for (const name of ["Reading files", "Searching the web", "Thinking it through", "Waiting for a slow answer"]) {
+      expect(within(working).getByRole("img", { name })).toBeInTheDocument();
+    }
+    expect(within(working).getByText("Sniffing around · Tracking · Searching")).toBeInTheDocument();
     expect(screen.getByLabelText("Your name")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Code map" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Tell me when a task needs me or finishes" })).toBeInTheDocument();
