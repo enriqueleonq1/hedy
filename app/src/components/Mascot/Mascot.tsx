@@ -155,6 +155,11 @@ function Face({ state }: { state: MascotState }) {
       return (
         <g className="m-face">
           <OpenEyes />
+          {/* Closed, smiling eyes, shown on hover. */}
+          <g className="m-happy" aria-hidden>
+            <path className="m-line" d="M62.6 90q4.8-5.8 9.6 0" />
+            <path className="m-line" d="M85.6 90q4.8-5.8 9.6 0" />
+          </g>
           <path className="m-line" d="M72.4 98.6q6.6 6.4 13.4 0" />
         </g>
       );

@@ -41,6 +41,14 @@ describe("Mascot", () => {
     }
   });
 
+  it("keeps smiling eyes for hover only at rest", () => {
+    const { container, unmount } = render(<Mascot color="#7AA2F7" state="idle" />);
+    expect(container.querySelector(".m-happy")).toHaveAttribute("aria-hidden");
+    unmount();
+    const { container: working } = render(<Mascot color="#7AA2F7" state="working" />);
+    expect(working.querySelector(".m-happy")).toBeNull();
+  });
+
   it("gives every instance its own goo filter", () => {
     const { container } = render(
       <>
