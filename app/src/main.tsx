@@ -19,6 +19,16 @@ function browserApi(): MockApi {
   const api = MockApi.withSampleData();
   const theme = new URLSearchParams(window.location.search).get("theme");
   if (theme === "light" || theme === "dark") void api.setSetting("ui.theme", theme);
+  // `?demo=1`: a task halfway through, waiting on a permission card.
+  if (new URLSearchParams(window.location.search).has("demo")) {
+    void api.startTask({
+      project: "/code/hedy",
+      prompt: "Agrega un recordatorio por WhatsApp 24 horas antes de cada cita.",
+      mode: "project",
+      model: null,
+      planFirst: false,
+    });
+  }
   return api;
 }
 

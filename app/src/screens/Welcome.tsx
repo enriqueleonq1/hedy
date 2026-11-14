@@ -1,12 +1,12 @@
 import type { Overview, Project } from "../api/types";
 import { AccountChip } from "../components/accounts";
-import type { Screen } from "../components/Layout";
+import type { View } from "../components/Layout";
 import { Mascot } from "../components/Mascot/Mascot";
 import { projectColor, shortPath, useProjectActions } from "../components/projects";
 import { Button } from "../components/ui/Button";
 import { AddProjectDialog, useAddProject } from "./accounts/AddProjectDialog";
 
-export function Welcome({ overview, onNavigate }: { overview: Overview; onNavigate: (s: Screen) => void }) {
+export function Welcome({ overview, onNavigate }: { overview: Overview; onNavigate: (v: View) => void }) {
   const adding = useAddProject();
   const color = overview.accounts.find((a) => a.id === overview.defaultAccount)?.color ?? "#7AA2F7";
   const hasAccounts = overview.accounts.length > 0;
@@ -29,7 +29,7 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
             </p>
           </div>
           {!hasAccounts && (
-            <Button variant="primary" onClick={() => onNavigate("accounts")}>
+            <Button variant="primary" onClick={() => onNavigate({ screen: "accounts" })}>
               Agregar mi primera cuenta
             </Button>
           )}
@@ -52,7 +52,7 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
         ) : (
           <div className="project-grid">
             {overview.projects.map((p) => (
-              <ProjectCard key={p.path} project={p} overview={overview} />
+              <ProjectCard key={p.path} project={p} overview={overview} onOpen={() => onNavigate({ screen: "workspace", project: p.path })} />
             ))}
           </div>
         )}
@@ -62,7 +62,7 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
   );
 }
 
-function ProjectCard({ project, overview }: { project: Project; overview: Overview }) {
+function ProjectCard({ project, overview, onOpen }: { project: Project; overview: Overview; onOpen: () => void }) {
   const actions = useProjectActions();
   const account = overview.accounts.find((a) => a.id === project.account);
   const runnable = account?.kind === "subscription";
@@ -76,8 +76,11 @@ function ProjectCard({ project, overview }: { project: Project; overview: Overvi
       <p className="mono muted">{shortPath(project.path)}</p>
       {account ? <AccountChip account={account} /> : <span className="muted">Sin cuenta</span>}
       <div className="actions">
-        <Button small variant="primary" disabled={!runnable} onClick={() => actions.openCli(project)}>
-          Abrir {account?.providerName ?? "CLI"}
+        <Button small variant="primary" onClick={onOpen}>
+          Trabajar aquí
+        </Button>
+        <Button small disabled={!runnable} onClick={() => actions.openCli(project)}>
+          {account?.providerName ?? "CLI"} en terminal
         </Button>
         <Button small onClick={() => actions.openShell(project)}>
           Terminal

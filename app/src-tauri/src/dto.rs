@@ -2,10 +2,12 @@
 //! lives here, in the driving adapter.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use hedy_core::application::{AccountStatus, AppResult, Hedy, Setting};
-use hedy_core::domain::{Account, ConfigFolder, Credentials, LoginState, Project, Provider};
+use hedy_core::application::{AccountStatus, AccountUsage, AppResult, Hedy, Setting};
+use hedy_core::domain::{
+    Account, ConfigFolder, Credentials, LoginState, Project, Provider, Task, TaskMode,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
@@ -21,7 +23,7 @@ pub struct OverviewDto {
     pub projects: Vec<ProjectDto>,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountDto {
     pub id: String,
@@ -37,6 +39,61 @@ pub struct AccountDto {
     pub login: LoginDto,
     /// Paths of the projects assigned to this account.
     pub projects: Vec<String>,
+    pub usage: UsageDto,
+}
+
+/// What Hedy recorded: its own token tally for the last 7 days, and the last
+/// rate-limit status the CLI reported (if any).
+#[derive(Debug, Default, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageDto {
+    pub week_tokens: u64,
+    /// The CLI's estimate; not what a subscription bills.
+    pub week_cost_usd: Option<f64>,
+    pub limit: Option<LimitDto>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LimitDto {
+    pub status: String,
+    /// 0–100.
+    pub percent: Option<f64>,
+    pub resets_at: Option<i64>,
+}
+
+impl From<AccountUsage> for UsageDto {
+    fn from(usage: AccountUsage) -> Self {
+        Self {
+            week_tokens: usage.week.total_tokens(),
+            week_cost_usd: usage.week.cost_usd,
+            limit: usage.rate_limit.map(|l| LimitDto {
+                status: l.status,
+                // Claude reports utilization as 0–1.
+                percent: l.utilization.map(|u| if u <= 1.0 { u * 100.0 } else { u }),
+                resets_at: l.resets_at,
+            }),
+        }
+    }
+}
+
+/// A task plus whether its agent is running right now.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskDto {
+    #[serde(flatten)]
+    pub task: Task,
+    pub live: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewTaskInput {
+    pub project: PathBuf,
+    pub prompt: String,
+    pub mode: TaskMode,
+    pub model: Option<String>,
+    pub plan_first: bool,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -112,6 +169,7 @@ impl AccountDto {
             color: account.color.to_string(),
             login: login.into(),
             projects: projects.iter().map(|p| path_string(&p.path)).collect(),
+            usage: UsageDto::default(),
         }
     }
 }
@@ -178,7 +236,15 @@ pub fn overview(hedy: &Hedy, data_dir: &Path) -> AppResult<OverviewDto> {
         data_dir: path_string(data_dir),
         default_account: status.default_account.as_ref().map(ToString::to_string),
         binaries,
-        accounts: status.accounts.iter().map(AccountDto::from).collect(),
+        accounts: status
+            .accounts
+            .iter()
+            .map(|s| {
+                let mut dto = AccountDto::from(s);
+                dto.usage = hedy.account_usage(&s.account.id)?.into();
+                Ok(dto)
+            })
+            .collect::<AppResult<_>>()?,
         projects,
     })
 }

@@ -2,10 +2,14 @@
 
 mod commands;
 mod dto;
+mod events;
 mod terminal;
+
+use std::sync::Arc;
 
 use hedy_core::adapters::{self, HedyPaths};
 use hedy_core::application::Hedy;
+use tauri::Manager;
 
 /// Shared by every command.
 pub struct AppState {
@@ -20,10 +24,14 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState {
-            hedy,
-            paths,
-            terminals: terminal::Terminals::default(),
+        .setup(move |app| {
+            let events = Arc::new(events::UiEvents(app.handle().clone()));
+            app.manage(AppState {
+                hedy: hedy.with_task_events(events),
+                paths,
+                terminals: terminal::Terminals::default(),
+            });
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::overview,
@@ -42,6 +50,17 @@ pub fn run() {
             commands::terminal_write,
             commands::terminal_resize,
             commands::terminal_close,
+            commands::start_task,
+            commands::tasks,
+            commands::task_events,
+            commands::answer_permission,
+            commands::answer_plan,
+            commands::send_message,
+            commands::stop_task,
+            commands::task_diff,
+            commands::accept_task,
+            commands::discard_task,
+            commands::recent_commits,
         ])
         .run(tauri::generate_context!())
         .expect("error al ejecutar Hedy");

@@ -3,13 +3,13 @@
 
 use std::path::PathBuf;
 
-use hedy_core::application::{AppResult, Hedy, NewAccount, Setting};
-use hedy_core::domain::Color;
+use hedy_core::application::{AppResult, Hedy, NewAccount, NewTask, Setting};
+use hedy_core::domain::{AgentEvent, Color, Commit, Decision, FileDiff, TaskId};
 use tauri::State;
 use tauri::ipc::Channel;
 
 use crate::AppState;
-use crate::dto::{self, NewAccountInput, OverviewDto};
+use crate::dto::{self, NewAccountInput, NewTaskInput, OverviewDto, TaskDto};
 use crate::terminal::{TerminalEvent, TerminalRequest};
 
 type CommandResult<T> = Result<T, String>;
@@ -187,4 +187,111 @@ pub fn terminal_resize(
 #[tauri::command]
 pub fn terminal_close(state: State<'_, AppState>, id: u32) {
     state.terminals.close(id);
+}
+
+// ---------------------------------------------------------------- tasks
+
+fn task_id(id: String) -> TaskId {
+    TaskId::new(id)
+}
+
+#[tauri::command]
+pub async fn start_task(state: State<'_, AppState>, input: NewTaskInput) -> CommandResult<TaskDto> {
+    blocking(&state, move |h| {
+        let task = h.start_task(NewTask {
+            project: input.project,
+            prompt: input.prompt,
+            mode: input.mode,
+            model: input.model.filter(|m| !m.is_empty()),
+            plan_first: input.plan_first,
+        })?;
+        Ok(TaskDto {
+            live: h.is_running(&task.id),
+            task,
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn tasks(state: State<'_, AppState>, project: PathBuf) -> CommandResult<Vec<TaskDto>> {
+    blocking(&state, move |h| {
+        Ok(h.tasks(&project)?
+            .into_iter()
+            .map(|task| TaskDto {
+                live: h.is_running(&task.id),
+                task,
+            })
+            .collect())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn task_events(state: State<'_, AppState>, id: String) -> CommandResult<Vec<AgentEvent>> {
+    blocking(&state, move |h| h.task_events(&task_id(id))).await
+}
+
+#[tauri::command]
+pub async fn answer_permission(
+    state: State<'_, AppState>,
+    id: String,
+    request_id: String,
+    decision: Decision,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.answer_permission(&task_id(id), &request_id, decision)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn answer_plan(
+    state: State<'_, AppState>,
+    id: String,
+    request_id: String,
+    approve: bool,
+    feedback: Option<String>,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.answer_plan(&task_id(id), &request_id, approve, feedback.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn send_message(
+    state: State<'_, AppState>,
+    id: String,
+    text: String,
+) -> CommandResult<()> {
+    blocking(&state, move |h| h.send_message(&task_id(id), &text)).await
+}
+
+#[tauri::command]
+pub async fn stop_task(state: State<'_, AppState>, id: String) -> CommandResult<()> {
+    blocking(&state, move |h| h.stop_task(&task_id(id))).await
+}
+
+#[tauri::command]
+pub async fn task_diff(state: State<'_, AppState>, id: String) -> CommandResult<Vec<FileDiff>> {
+    blocking(&state, move |h| h.task_diff(&task_id(id))).await
+}
+
+#[tauri::command]
+pub async fn accept_task(state: State<'_, AppState>, id: String) -> CommandResult<()> {
+    blocking(&state, move |h| h.accept_task(&task_id(id)).map(drop)).await
+}
+
+#[tauri::command]
+pub async fn discard_task(state: State<'_, AppState>, id: String) -> CommandResult<()> {
+    blocking(&state, move |h| h.discard_task(&task_id(id)).map(drop)).await
+}
+
+#[tauri::command]
+pub async fn recent_commits(
+    state: State<'_, AppState>,
+    project: PathBuf,
+) -> CommandResult<Vec<Commit>> {
+    blocking(&state, move |h| h.recent_commits(&project, 5)).await
 }

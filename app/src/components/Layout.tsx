@@ -1,62 +1,118 @@
 import type { ReactNode } from "react";
 
-import type { Account, Overview } from "../api/types";
+import type { Account, Overview, TaskMode } from "../api/types";
+import { formatTokens } from "../tasks/timeline";
 import { shortAccountLabel } from "./accounts";
-import { Mascot } from "./Mascot/Mascot";
-import { projectColor, useProjectActions } from "./projects";
+import { Mascot, type MascotState } from "./Mascot/Mascot";
+import { projectColor } from "./projects";
 import { useTerminals } from "./Terminal/TerminalProvider";
 import { Button } from "./ui/Button";
+import { Segmented } from "./ui/controls";
 
-export type Screen = "welcome" | "accounts" | "settings";
-
-export const SCREENS: { screen: Screen; label: string }[] = [
-  { screen: "welcome", label: "Inicio" },
-  { screen: "accounts", label: "Cuentas y modelos" },
-  { screen: "settings", label: "Ajustes" },
-];
+export type View =
+  | { screen: "welcome" }
+  | { screen: "accounts" }
+  | { screen: "settings" }
+  | { screen: "workspace"; project: string };
 
 export function defaultAccount(overview: Overview): Account | undefined {
   return overview.accounts.find((a) => a.id === overview.defaultAccount) ?? overview.accounts[0];
 }
 
-export function Topbar({
-  overview,
-  screen,
-  onNavigate,
-}: {
+const PROVIDER_LABEL: Record<Account["provider"], string> = {
+  claude: "Claude",
+  codex: "ChatGPT",
+  gemini: "Gemini",
+  kimi: "Kimi",
+};
+
+/** "34%" from a reported limit, "$2,10" for API spend, tokens otherwise. */
+export function usageLabel(account: Account): string {
+  const { usage } = account;
+  if (usage.limit?.percent != null) return `${Math.round(usage.limit.percent)}%`;
+  if (account.kind === "apiKey" && usage.weekCostUsd != null) return `$${usage.weekCostUsd.toFixed(2).replace(".", ",")}`;
+  if (usage.weekTokens > 0) return `${formatTokens(usage.weekTokens)} tok`;
+  return "—";
+}
+
+/** One entry per provider, from its default (or first) account. */
+function providerSummary(overview: Overview): { label: string; account: Account }[] {
+  const seen = new Map<string, Account>();
+  const preferred = [...overview.accounts].sort((a) => (a.id === overview.defaultAccount ? -1 : 0));
+  for (const a of preferred) {
+    const label = PROVIDER_LABEL[a.provider];
+    if (!seen.has(label)) seen.set(label, a);
+  }
+  return [...seen].map(([label, account]) => ({ label, account }));
+}
+
+const MODES: { value: TaskMode; label: string }[] = [
+  { value: "project", label: "Proyecto" },
+  { value: "ask", label: "Pregunta" },
+  { value: "research", label: "Research" },
+];
+
+interface TopbarProps {
   overview: Overview;
-  screen: Screen;
-  onNavigate: (s: Screen) => void;
-}) {
+  view: View;
+  openProjects: string[];
+  mode: TaskMode;
+  mascot: MascotState;
+  onNavigate: (view: View) => void;
+  onCloseProject: (path: string) => void;
+  onMode: (mode: TaskMode) => void;
+}
+
+export function Topbar({ overview, view, openProjects, mode, mascot, onNavigate, onCloseProject, onMode }: TopbarProps) {
   const terminals = useTerminals();
-  const running = terminals.sessions.some((s) => s.running);
   const color = defaultAccount(overview)?.color ?? "#7AA2F7";
+  const active = view.screen === "workspace" ? view.project : null;
 
   return (
     <header className="topbar">
-      <div className="brand">
-        <Mascot color={color} state={running ? "working" : "idle"} size={30} label="Hedy" />
+      <button
+        className="brand"
+        aria-label="Inicio"
+        aria-current={view.screen === "welcome" ? "page" : undefined}
+        onClick={() => onNavigate({ screen: "welcome" })}
+      >
+        <Mascot color={color} state={terminals.sessions.some((s) => s.running) ? "working" : mascot} size={30} label="" />
         <span className="brand__name">Hedy</span>
-      </div>
-      <nav className="tabs" aria-label="Secciones">
-        {SCREENS.map((item) => (
-          <button
-            key={item.screen}
-            className="tab"
-            aria-current={item.screen === screen ? "page" : undefined}
-            onClick={() => onNavigate(item.screen)}
-          >
-            {item.label}
-          </button>
-        ))}
+      </button>
+
+      <nav className="tabs" aria-label="Proyectos abiertos">
+        {openProjects.map((path) => {
+          const project = overview.projects.find((p) => p.path === path);
+          if (!project) return null;
+          return (
+            <span key={path} className="tab-wrap">
+              <button
+                className="tab"
+                aria-current={active === path ? "page" : undefined}
+                onClick={() => onNavigate({ screen: "workspace", project: path })}
+              >
+                <span className="dot" style={{ background: projectColor(project, overview.accounts) }} aria-hidden />
+                {project.name}
+              </button>
+              <button className="tab__close" aria-label={`Cerrar ${project.name}`} onClick={() => onCloseProject(path)}>
+                ×
+              </button>
+            </span>
+          );
+        })}
+        <button className="tab tab--add" aria-label="Abrir otro proyecto" title="Abrir otro proyecto" onClick={() => onNavigate({ screen: "welcome" })}>
+          +
+        </button>
       </nav>
+
       <span className="spacer" />
+      {view.screen === "workspace" && <Segmented<TaskMode> label="Modo" value={mode} options={MODES} onChange={onMode} />}
       {overview.accounts.length > 0 && (
-        <div className="usage-pill" aria-label="Consumo por proveedor: aún sin datos">
-          {providerSummary(overview).map(({ label, color }) => (
+        <div className="usage-pill" aria-label="Consumo de la semana por proveedor">
+          {providerSummary(overview).map(({ label, account }) => (
             <span key={label} className="usage-pill__item">
-              <span className="dot" style={{ background: color }} aria-hidden />
-              {label} <span className="muted">—</span>
+              <span className="dot" style={{ background: account.color }} aria-hidden />
+              {label} <span className={usageLabel(account) === "—" ? "muted" : undefined}>{usageLabel(account)}</span>
             </span>
           ))}
         </div>
@@ -77,28 +133,11 @@ export function Topbar({
   );
 }
 
-const PROVIDER_LABEL: Record<Account["provider"], string> = {
-  claude: "Claude",
-  codex: "ChatGPT",
-  gemini: "Gemini",
-  kimi: "Kimi",
-};
-
-/** One entry per provider, colored like the default (or first) account of it. */
-function providerSummary(overview: Overview): { label: string; color: string }[] {
-  const seen = new Map<string, string>();
-  const preferred = [...overview.accounts].sort((a) => (a.id === overview.defaultAccount ? -1 : 0));
-  for (const a of preferred) {
-    const label = PROVIDER_LABEL[a.provider];
-    if (!seen.has(label)) seen.set(label, a.color);
-  }
-  return [...seen].map(([label, color]) => ({ label, color }));
-}
-
-export function Sidebar({ overview, onNavigate }: { overview: Overview; onNavigate: (s: Screen) => void }) {
-  const actions = useProjectActions();
+export function Sidebar({ overview, view, onNavigate }: { overview: Overview; view: View; onNavigate: (v: View) => void }) {
   const accountById = new Map(overview.accounts.map((a) => [a.id, a]));
   const tipColor = defaultAccount(overview)?.color ?? "#BB9AF7";
+  const active = view.screen === "workspace" ? view.project : null;
+  const used = overview.accounts.some((a) => a.usage.weekTokens > 0);
 
   return (
     <aside className="sidebar" aria-label="Proyectos y cuentas">
@@ -112,9 +151,8 @@ export function Sidebar({ overview, onNavigate }: { overview: Overview; onNaviga
               <li key={p.path}>
                 <button
                   className="sidebar__item"
-                  onClick={() => actions.openCli(p)}
-                  title={account?.kind === "subscription" ? `Abrir ${account.providerName} con ${account.name}` : undefined}
-                  disabled={account?.kind !== "subscription"}
+                  aria-current={active === p.path ? "page" : undefined}
+                  onClick={() => onNavigate({ screen: "workspace", project: p.path })}
                 >
                   <span className="dot" style={{ background: projectColor(p, overview.accounts) }} aria-hidden />
                   <span className="sidebar__name">{p.name}</span>
@@ -131,34 +169,59 @@ export function Sidebar({ overview, onNavigate }: { overview: Overview; onNaviga
       </section>
 
       <section>
-        <h2 className="sidebar__title">Cuentas</h2>
+        <button
+          className="sidebar__title sidebar__title--link"
+          aria-current={view.screen === "accounts" ? "page" : undefined}
+          onClick={() => onNavigate({ screen: "accounts" })}
+        >
+          Cuentas y modelos
+        </button>
         {overview.accounts.length === 0 && (
-          <Button small variant="primary" onClick={() => onNavigate("accounts")}>
+          <Button small variant="primary" onClick={() => onNavigate({ screen: "accounts" })}>
             Agregar cuenta
           </Button>
         )}
         <ul className="sidebar__list">
-          {overview.accounts.map((a) => (
-            <li key={a.id} className="sidebar__account">
-              <div className="row row--between">
-                <span className="sidebar__account-name">{a.name}</span>
-                <span className="muted small">—</span>
-              </div>
-              <div className="bar bar--thin" role="meter" aria-label={`${a.name}: sin datos de consumo`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={0}>
-                <div className="bar__fill" style={{ width: 0, background: a.color }} />
-              </div>
-            </li>
-          ))}
+          {overview.accounts.map((a) => {
+            const percent = a.usage.limit?.percent ?? 0;
+            return (
+              <li key={a.id} className="sidebar__account">
+                <div className="row row--between">
+                  <span className="sidebar__account-name">{a.name}</span>
+                  <span className="muted small">{usageLabel(a)}</span>
+                </div>
+                <div
+                  className="bar bar--thin"
+                  role="meter"
+                  aria-label={`${a.name}: ${usageLabel(a)}`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={percent}
+                >
+                  <div className="bar__fill" style={{ width: `${Math.min(percent, 100)}%`, background: a.color }} />
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </section>
 
       <span className="spacer" />
+      <button
+        className="sidebar__item sidebar__settings"
+        aria-current={view.screen === "settings" ? "page" : undefined}
+        onClick={() => onNavigate({ screen: "settings" })}
+      >
+        Ajustes
+      </button>
       <div className="tip" role="note">
         <Mascot color={tipColor} state="idle" size={18} label="" />
         <p>
           {overview.accounts.length === 0
             ? "Agrega una cuenta y te ayudo a repartir el trabajo."
-            : "Aún no llevo la cuenta de tu consumo. Cuando trabajemos desde el chat te diré cómo vas."}
+            : used
+              ? "Los tokens son mi propia cuenta; el % de tu plan aparece cuando la CLI lo informa."
+              : "Abre un proyecto y pídeme algo: trabajo en una rama aparte hasta que aceptes."}
         </p>
       </div>
     </aside>

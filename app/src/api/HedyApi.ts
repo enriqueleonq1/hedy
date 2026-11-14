@@ -1,10 +1,18 @@
 import type {
+  AgentEvent,
+  Commit,
+  Decision,
+  FileDiff,
   NewAccountInput,
+  NewTaskInput,
   Overview,
   SettingKey,
+  Task,
   TerminalEvent,
   TerminalRequest,
 } from "./types";
+
+export type Unsubscribe = () => void;
 
 /**
  * Everything the UI needs from the backend. Components depend on this
@@ -37,4 +45,20 @@ export interface HedyApi {
   terminalWrite(id: number, data: string): Promise<void>;
   terminalResize(id: number, size: { cols: number; rows: number }): Promise<void>;
   terminalClose(id: number): Promise<void>;
+
+  startTask(input: NewTaskInput): Promise<Task>;
+  /** Newest first. */
+  tasks(project: string): Promise<Task[]>;
+  taskEvents(id: string): Promise<AgentEvent[]>;
+  answerPermission(id: string, requestId: string, decision: Decision): Promise<void>;
+  answerPlan(id: string, requestId: string, approve: boolean, feedback: string | null): Promise<void>;
+  sendMessage(id: string, text: string): Promise<void>;
+  stopTask(id: string): Promise<void>;
+  taskDiff(id: string): Promise<FileDiff[]>;
+  acceptTask(id: string): Promise<void>;
+  discardTask(id: string): Promise<void>;
+  recentCommits(project: string): Promise<Commit[]>;
+  /** Live events of every task. */
+  onTaskEvent(listener: (taskId: string, event: AgentEvent) => void): Unsubscribe;
+  onTaskUpdated(listener: (task: Omit<Task, "live">) => void): Unsubscribe;
 }

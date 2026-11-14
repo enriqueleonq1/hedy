@@ -84,6 +84,7 @@ export function AddAccountDialog({
         color: input.color ?? color,
         login: { state: "loggedOut", plan: null },
         projects: [],
+        usage: { weekTokens: 0, weekCostUsd: null, limit: null },
       };
       if (input.apiKey) onNeedsKey(created);
       // An adopted default folder is usually logged in already.
