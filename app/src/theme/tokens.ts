@@ -1,6 +1,8 @@
 // Design tokens (spec §5). Single source of truth: applied as CSS variables by
 // `applyTheme` and checked for WCAG AA contrast in `tokens.test.ts`.
 
+import type { MessageKey } from "../i18n";
+
 export type ThemeName = "dark" | "light";
 
 /** Raw palette of the dark theme (Tokyo Night). */
@@ -105,16 +107,16 @@ export function applyTheme(name: ThemeName, root: HTMLElement = document.documen
   for (const [property, value] of tokens) root.style.setProperty(property, value);
 }
 
-/** Account colors offered to the user (spec §5), with Spanish names. */
-export const accountPalette: { name: string; hex: string }[] = [
-  { name: "Azul", hex: tokyoNight.blue },
-  { name: "Morado", hex: tokyoNight.magenta },
-  { name: "Verde", hex: tokyoNight.green },
-  { name: "Naranja", hex: tokyoNight.orange },
-  { name: "Cian", hex: tokyoNight.cyan },
-  { name: "Rosa", hex: "#FF7AB6" },
-  { name: "Amarillo", hex: tokyoNight.yellow },
-  { name: "Turquesa", hex: tokyoNight.teal },
+/** Account colors offered to the user (spec §5), with the key of their name. */
+export const accountPalette: { label: MessageKey; hex: string }[] = [
+  { label: "color.blue", hex: tokyoNight.blue },
+  { label: "color.purple", hex: tokyoNight.magenta },
+  { label: "color.green", hex: tokyoNight.green },
+  { label: "color.orange", hex: tokyoNight.orange },
+  { label: "color.cyan", hex: tokyoNight.cyan },
+  { label: "color.pink", hex: "#FF7AB6" },
+  { label: "color.yellow", hex: tokyoNight.yellow },
+  { label: "color.teal", hex: tokyoNight.teal },
 ];
 
 // Mascot colors (fills, never text) where there is no account to take one from.

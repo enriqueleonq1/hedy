@@ -67,7 +67,8 @@ describe("Onboarding", () => {
     await user.click(await screen.findByRole("button", { name: "Skip" }));
     expect(await screen.findByRole("heading", { name: "All set" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Explore Hedy" }));
-    expect(await screen.findByRole("button", { name: "Inicio" })).toBeInTheDocument();
+    // The rest of the app follows the chosen language.
+    expect(await screen.findByRole("button", { name: "Home" })).toBeInTheDocument();
   });
 
   it("can be seen again from Settings", async () => {

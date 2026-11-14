@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 
+import { translator } from "../../i18n";
 import { Mascot, MASCOT_STATE_LABEL, type MascotState } from "./Mascot";
 
 const states = Object.keys(MASCOT_STATE_LABEL) as MascotState[];
@@ -7,7 +8,7 @@ const states = Object.keys(MASCOT_STATE_LABEL) as MascotState[];
 describe("Mascot", () => {
   it.each(states)("renders the %s state with its accessible name", (state) => {
     render(<Mascot color="#7AA2F7" state={state} />);
-    const svg = screen.getByRole("img", { name: MASCOT_STATE_LABEL[state] });
+    const svg = screen.getByRole("img", { name: translator("es")(MASCOT_STATE_LABEL[state]) });
     expect(svg).toHaveAttribute("data-state", state);
     expect(svg.classList.contains(`mascot--${state}`)).toBe(true);
   });

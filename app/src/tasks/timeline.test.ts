@@ -1,5 +1,8 @@
 import type { AgentEvent, Task } from "../api/types";
+import { translator } from "../i18n";
 import { agentName, buildTimeline, mascotState, modelLabel } from "./timeline";
+
+const t = translator("es");
 
 const task = (extra: Partial<Task>): Task => ({
   id: "t1",
@@ -36,7 +39,7 @@ describe("buildTimeline", () => {
   ];
 
   it("links resolutions, keeps one checklist and names the model", () => {
-    const items = buildTimeline(events);
+    const items = buildTimeline(events, t);
     expect(items.map((i) => i.type)).toEqual([
       "user",
       "phase",
@@ -65,7 +68,7 @@ describe("buildTimeline", () => {
       { kind: "phaseStarted", phase: "tests", agent: "Kimi", account: "Kimi" },
       { kind: "testsRun", command: "pytest", passed: true },
       { kind: "limitWarning", account: "kimi", level: "reached", percent: null, resetsAt: null },
-    ]);
+    ], t);
     const texts = items.filter((i) => i.type === "activity").map((i) => i.type === "activity" && i.text);
     expect(texts).toEqual(["Codex editó a.py", "Kimi: pasan los tests · pytest"]);
     const limits = items.filter((i) => i.type === "limit").map((i) => i.type === "limit" && i.latest);
@@ -76,7 +79,7 @@ describe("buildTimeline", () => {
   it("shows hook blocks that had no card", () => {
     const items = buildTimeline([
       { kind: "permissionResolved", requestId: "hook-1", decision: "deny", automatic: true, reason: "Hedy no permite «.env»" },
-    ]);
+    ], t);
     expect(items).toEqual([{ type: "activity", key: "0", tone: "failed", text: "Bloqueado por Hedy · Hedy no permite «.env»" }]);
   });
 

@@ -1,4 +1,5 @@
 import { formatDuration, formatTokens, formatUsd, timeAgo } from "./format";
+import { translator } from "./i18n";
 
 it("formats token counts", () => {
   expect(formatTokens(950)).toBe("950");
@@ -10,9 +11,18 @@ it("formats token counts", () => {
 });
 
 it("formats costs, durations and ages", () => {
-  expect(formatUsd(3.1)).toBe("$3,10");
-  expect(formatUsd(null)).toBe("—");
+  expect(formatUsd(3.1, "es")).toBe("$3,10");
+  expect(formatUsd(null, "es")).toBe("—");
   expect(formatDuration(42_000)).toBe("42 s");
   expect(formatDuration(185_000)).toBe("3 min 5 s");
-  expect(timeAgo(0, 3 * 86_400)).toBe("hace 3 días");
+  expect(timeAgo(0, translator("es"), 3 * 86_400)).toBe("hace 3 días");
+});
+
+it("formats costs and ages in English", () => {
+  const t = translator("en");
+  expect(formatUsd(3.1, "en")).toBe("$3.10");
+  expect(timeAgo(0, t, 3 * 86_400)).toBe("3 days ago");
+  expect(timeAgo(0, t, 86_400)).toBe("yesterday");
+  expect(timeAgo(0, t, 20)).toBe("just now");
+  expect(timeAgo(0, t, 5 * 60)).toBe("5 min ago");
 });

@@ -1,5 +1,6 @@
 import { useId } from "react";
 
+import { useT } from "../../i18n";
 import { accountPalette } from "../../theme/tokens";
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -14,6 +15,7 @@ export function ColorPicker({
   onChange: (hex: string) => void;
   label: string;
 }) {
+  const t = useT();
   const isPalette = accountPalette.some((c) => c.hex.toLowerCase() === value.toLowerCase());
 
   return (
@@ -26,8 +28,8 @@ export function ColorPicker({
             type="button"
             role="radio"
             aria-checked={selected}
-            aria-label={c.name}
-            title={c.name}
+            aria-label={t(c.label)}
+            title={t(c.label)}
             className="swatch"
             style={{ background: c.hex }}
             onClick={() => onChange(c.hex)}
@@ -37,7 +39,7 @@ export function ColorPicker({
       <input
         key={value}
         className={`hex-input${isPalette ? "" : " hex-input--active"}`}
-        aria-label={`${label}: color personalizado`}
+        aria-label={t("shell.customColor", { label })}
         defaultValue={value}
         maxLength={7}
         spellCheck={false}

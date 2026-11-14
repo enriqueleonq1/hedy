@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
+import { useT } from "../../i18n";
+
 interface DialogProps {
   title: string;
   onClose: () => void;
@@ -11,6 +13,7 @@ const FOCUSABLE = "a[href], button:not(:disabled), input:not(:disabled), select:
 
 /** Modal dialog: Escape and backdrop close it; focus moves in, stays in and comes back. */
 export function Dialog({ title, onClose, children, footer }: DialogProps) {
+  const t = useT();
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
   // Callers pass `onClose` inline: the effect below must not rerun (and move
@@ -57,7 +60,7 @@ export function Dialog({ title, onClose, children, footer }: DialogProps) {
       <div ref={panel} className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header className="dialog__header">
           <h2 id={titleId}>{title}</h2>
-          <button className="dialog__close" aria-label="Cerrar" onClick={onClose}>
+          <button className="dialog__close" aria-label={t("common.close")} onClick={onClose}>
             ×
           </button>
         </header>
