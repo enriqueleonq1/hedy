@@ -270,6 +270,27 @@ export interface Commit {
   subject: string;
 }
 
+export type CheckArea = "cli" | "account" | "hedy" | "environment";
+export type CheckLevel = "ok" | "info" | "warning" | "error";
+
+/** One finding of the health check (`hedy doctor`). Texts come translated. */
+export interface Check {
+  area: CheckArea;
+  /** What was checked: "Claude Code", an account, "git", a variable name. */
+  subject: string;
+  level: CheckLevel;
+  message: string;
+  /** A command (or a short instruction) that fixes it. */
+  fix: string | null;
+}
+
+export interface DoctorReport {
+  /** Grouped by area: cli, account, hedy, environment. */
+  checks: Check[];
+  warnings: number;
+  errors: number;
+}
+
 /** An official CLI on this computer, for the onboarding. */
 export interface DetectedCli {
   provider: ProviderId;

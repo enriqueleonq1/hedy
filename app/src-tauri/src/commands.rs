@@ -494,6 +494,12 @@ pub async fn detect_clis(state: State<'_, AppState>) -> CommandResult<Vec<dto::D
     .await
 }
 
+/// The health check behind `hedy doctor`: CLIs, accounts, Hedy, environment.
+#[tauri::command]
+pub async fn doctor(state: State<'_, AppState>) -> CommandResult<dto::DoctorReportDto> {
+    blocking(&state, |h| Ok((&h.doctor()?).into())).await
+}
+
 #[tauri::command]
 pub async fn open_link(state: State<'_, AppState>, url: String) -> CommandResult<()> {
     blocking(&state, move |h| h.open_link(&url)).await

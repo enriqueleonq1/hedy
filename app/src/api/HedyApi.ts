@@ -3,6 +3,7 @@ import type {
   Commit,
   Decision,
   DetectedCli,
+  DoctorReport,
   FileDiff,
   MemoryView,
   Note,
@@ -54,6 +55,8 @@ export interface HedyApi {
   openLink(url: string): Promise<void>;
   /** The official CLIs installed here and their default logins. */
   detectClis(): Promise<DetectedCli[]>;
+  /** Health check of the CLIs, the accounts, Hedy and the environment. */
+  doctor(): Promise<DoctorReport>;
   pickFolder(): Promise<string | null>;
 
   terminalOpen(

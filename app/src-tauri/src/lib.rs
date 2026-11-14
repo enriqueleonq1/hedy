@@ -81,6 +81,7 @@ pub fn run() {
             commands::usage_summary,
             commands::set_project_client,
             commands::detect_clis,
+            commands::doctor,
             commands::open_link,
         ])
         .run(tauri::generate_context!())
