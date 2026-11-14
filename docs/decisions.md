@@ -534,7 +534,37 @@ schemas):
   against a fake agent that follows the v1 schema. A first real run with each CLI is
   still to do.
 
-## 15. Decisions
+## 15. Languages, first run and installation
+
+- **Two languages: Spanish and English.** The setting `ui.language` is `system`, `es` or
+  `en` (default `system`). `system` reads `HEDY_LANGUAGE`, then `LC_ALL`,
+  `LC_MESSAGES` and `LANG`; anything that is not Spanish falls back to English in the
+  core and the CLI. The app resolves `system` with `navigator.language`.
+- **Rust.** One process-wide language (`hedy_core::i18n`), set from the setting when the
+  app or the CLI starts. Texts are written in place with `tr!("es {x}", "en {x}")`, so
+  both languages sit side by side and a missing one does not compile. Errors keep
+  `thiserror` with `#[error("{}", self.message())]`. Every child process (Claude's
+  `PreToolUse` hook, the memory server) gets `HEDY_LANGUAGE`, so its messages match.
+- **Agents reply in the user's language.** Every system prompt Hedy adds starts with
+  `prompts::reply_language()`. The hook's denial text exists in both languages, and the
+  Claude adapter recognises either one.
+- **React.** `I18nProvider` / `useT()` with flat dotted keys and `{param}`. Spanish is
+  the source; each area file types its English table against the Spanish one. Tests
+  render in Spanish unless they wrap with `I18nProvider setting="en"`.
+- **First run.** While `ui.onboarded` is not `true` the app shows a six-step guide
+  (welcome and language, what Hedy is, accounts, safety, memory, ready). The accounts
+  step calls `detect_clis`: whether each CLI is installed and whether its default
+  folder is logged in (the CLI's own status command; Hedy reads no tokens). "Use this
+  session" registers the default folder; "Log in" opens the official login in the
+  terminal panel. Settings can show the guide again. Examples in the guide are generic,
+  not about programming.
+- **Installation (Arch / CachyOS).** `packaging/arch/PKGBUILD` builds the app without
+  Tauri's bundler (`tauri build --no-bundle`) and the CLI, and installs `hedy-app`,
+  `hedy`, the desktop entry `hedy-app.desktop` (named after the Wayland app id, so the
+  dock matches the window) and the icons. Debian/Fedora/macOS bundles can come from
+  `tauri build` later.
+
+## 16. Decisions
 
 - **Claude accounts:** `~/.claude` (Team) is registered as the default-folder account and
   launched without `CLAUDE_CONFIG_DIR`. New accounts live in Hedy folders.

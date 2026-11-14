@@ -14,7 +14,7 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Install the CLI: `cargo install --path crates/hedy-cli` (binary `hedy`)
 - Isolated manual testing: `HEDY_DATA_DIR=/tmp/hedy-test hedy status`
 - App (from `app/`): `npm install`, then `npm run tauri dev`; UI only with sample data:
-  `npm run dev` (`?theme=light|dark`, `#accounts`, `#settings`)
+  `npm run dev` (`?theme=light|dark`, `?lang=es|en`, `?onboarding=1`, `#accounts`, `#settings`)
 - App checks (from `app/`): `npm run typecheck`, `npm run lint`, `npm test`
 - Icons: edit `app/src-tauri/icons/logo.svg`, render it to `logo.png` (1024 px), then
   `npx tauri icon src-tauri/icons/logo.png`. Dev window icon on Wayland:
@@ -23,6 +23,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
   `cargo run -p hedy-core --example smoke_task -- haiku` (`env` / `bash` check `.env` stays unread)
 - Evals (real tasks, spend tokens): `cargo run -p hedy-evals -- --model haiku` (`--list`,
   `--case`, `--layers plain,memory,code-map,full`, `--repeat`); results in `evals/results/`
+- Install as a desktop app (Arch/CachyOS): `cd packaging/arch && makepkg -f`, then
+  `sudo pacman -U hedy-*.pkg.tar.zst`
 - Phase 0 prototypes: `cargo run -p hedy-phase0 -- --help`
 
 ## Layout
@@ -72,7 +74,9 @@ When launching a CLI, strip variables that change the account or billing
 
 ## Conventions
 
-- Code, identifiers, comments, docs and commits in English. User-facing text in Spanish.
+- Code, identifiers, comments, docs and commits in English. User-facing text in Spanish
+  and English: `tr!("es", "en")` in Rust, `t("area.key")` in React with both tables in
+  `app/src/i18n/messages/<area>.ts`. Never hard-code a visible string in one language.
 - Colors only from `app/src/theme/tokens.ts` (contrast-tested); account colors are never
   used as text. Animations: transform/opacity/fill only, off with reduced motion.
 - Small, descriptive commits.
