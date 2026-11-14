@@ -5,8 +5,12 @@ use std::path::Path;
 
 use anyhow::{Result, bail};
 use chrono::Timelike;
-use hedy_core::application::{AccountStatus, Hedy, NewAccount, Setting};
-use hedy_core::domain::{Account, ConfigFolder, Credentials, LoginState, Provider};
+use hedy_core::application::{
+    AccountStatus, Hedy, NewAccount, RECENT_HOURS, Setting, TaskActivity,
+};
+use hedy_core::domain::{
+    Account, ConfigFolder, Credentials, LoginState, Phase, Provider, TaskState,
+};
 use hedy_core::i18n::{self, Language};
 use hedy_core::tr;
 
@@ -86,6 +90,10 @@ fn tips() -> Vec<String> {
         tr!(
             "`hedy use <cuenta> --protect` reserva una cuenta solo para un proyecto.",
             "`hedy use <account> --protect` keeps an account for one project only."
+        ),
+        tr!(
+            "`hedy tareas` muestra qué hacen tus IAs en todos los proyectos.",
+            "`hedy tasks` shows what your AIs are doing in every project."
         ),
         tr!(
             "`hedy resumen` muestra cuánto usaste, por cliente y por proyecto.",
@@ -406,6 +414,145 @@ pub fn summary(hedy: &Hedy, days: u32) -> Result<()> {
         println!("  {}", hint(&s, &line));
     }
     println!();
+    Ok(())
+}
+
+/// "3 min", "2 h 5 min", "3 d".
+fn duration(seconds: i64) -> String {
+    let seconds = seconds.max(0);
+    match seconds {
+        0..60 => format!("{seconds} s"),
+        60..3_600 => format!("{} min", seconds / 60),
+        3_600..86_400 => match (seconds % 3_600) / 60 {
+            0 => format!("{} h", seconds / 3_600),
+            minutes => format!("{} h {minutes} min", seconds / 3_600),
+        },
+        _ => format!("{} d", seconds / 86_400),
+    }
+}
+
+fn phase_label(phase: Phase) -> String {
+    match phase {
+        Phase::Plan => tr!("plan", "plan"),
+        Phase::Implement => tr!("implementación", "implementation"),
+        Phase::Tests => tr!("tests", "tests"),
+        Phase::Review => tr!("revisión", "review"),
+    }
+}
+
+/// The mark and the colored label of a task's state.
+fn state_mark(s: &Style, state: TaskState) -> (String, String) {
+    let label = state.label();
+    match state {
+        TaskState::Plan | TaskState::Permission => (s.warn("◆"), s.warn(label)),
+        TaskState::Limited => (s.warn("■"), s.warn(label)),
+        TaskState::Working => (s.accent("▶"), s.accent(label)),
+        TaskState::Review | TaskState::Answered => (s.ok("✔"), s.ok(label)),
+        TaskState::Failed => (s.error("✗"), s.error(label)),
+        TaskState::Accepted | TaskState::Cancelled => (s.muted("·"), s.muted(label)),
+    }
+}
+
+const TASK_TITLE_WIDTH: usize = 46;
+
+/// `hedy tasks`: what every project's AIs are doing, what needs the user first.
+pub fn tasks(hedy: &Hedy) -> Result<()> {
+    let s = Style::for_stdout();
+    let board = hedy.activity()?;
+    if board.is_empty() {
+        let mut text = vec![tr!(
+            "No hay tareas en curso ni de las últimas {RECENT_HOURS} h.",
+            "No running tasks, and none in the last {RECENT_HOURS} h."
+        )];
+        if s.enabled() {
+            text.push(s.muted(tr!(
+                "Pídele algo a una IA desde la app de Hedy y aparecerá aquí.",
+                "Ask an AI for something in the Hedy app and it will show up here."
+            )));
+        }
+        mascot::print_beside(&s, Mood::Sleepy, &text);
+        return Ok(());
+    }
+
+    let accounts = hedy.accounts()?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let needs_you: Vec<&TaskActivity> = board.iter().filter(|a| a.state.needs_you()).collect();
+    let working: Vec<&TaskActivity> = board
+        .iter()
+        .filter(|a| a.state == TaskState::Working)
+        .collect();
+    let recent: Vec<&TaskActivity> = board.iter().filter(|a| !a.state.is_active()).collect();
+
+    let row = |item: &TaskActivity| {
+        let (mark, label) = state_mark(&s, item.state);
+        let title = fit(&item.task.title, TASK_TITLE_WIDTH);
+        let title_len = title.chars().count();
+        println!(
+            "  {mark} {}  {label}",
+            pad(&s.bold(title), title_len, TASK_TITLE_WIDTH)
+        );
+        let account = accounts.iter().find(|a| a.id == item.task.account);
+        let who = match account {
+            Some(a) => format!("{} {}", s.chip(a.color), a.name),
+            None => item.task.account.to_string(),
+        };
+        let time = if item.state.is_active() {
+            let elapsed = duration(now - item.task.created_at);
+            tr!("{elapsed} en marcha", "running for {elapsed}")
+        } else {
+            let ago = duration(now - item.updated_at);
+            tr!("hace {ago}", "{ago} ago")
+        };
+        let details = [
+            s.muted(&item.project_name),
+            who,
+            s.muted(&item.agent),
+            s.muted(phase_label(item.phase)),
+            s.muted(time),
+        ];
+        println!("    {}", details.join(&s.muted(" · ")));
+        if s.enabled() {
+            println!();
+        }
+    };
+
+    for (title, items) in [
+        (tr!("Te necesitan", "Need you"), &needs_you),
+        (tr!("En curso", "Running"), &working),
+        (
+            tr!("Últimas {RECENT_HOURS} h", "Last {RECENT_HOURS} h"),
+            &recent,
+        ),
+    ] {
+        if items.is_empty() {
+            continue;
+        }
+        println!("\n{}", s.section(&format!("{title} ({})", items.len())));
+        if s.enabled() {
+            println!();
+        }
+        for item in items.iter() {
+            row(item);
+        }
+    }
+    if !needs_you.is_empty() {
+        println!(
+            "  {} {}",
+            s.accent("→"),
+            hint(
+                &s,
+                &tr!(
+                    "Respóndeles desde la app de Hedy: ahí están el plan, el permiso o el límite.",
+                    "Answer them in the Hedy app: the plan, the permission or the limit is there."
+                )
+            )
+        );
+        if s.enabled() {
+            println!();
+        }
+    }
     Ok(())
 }
 
@@ -814,6 +961,16 @@ mod tests {
         );
         assert_eq!(fit("tienda-online", 20), "tienda-online");
         assert_eq!(fit("tienda-online", 7), "tienda…");
+    }
+
+    #[test]
+    fn durations_read_short() {
+        assert_eq!(duration(42), "42 s");
+        assert_eq!(duration(185), "3 min");
+        assert_eq!(duration(3_600), "1 h");
+        assert_eq!(duration(7_500), "2 h 5 min");
+        assert_eq!(duration(200_000), "2 d");
+        assert_eq!(duration(-5), "0 s");
     }
 
     #[test]

@@ -332,3 +332,156 @@ fn help_follows_the_language() {
         .assert()
         .stdout(predicate::str::contains("<NOMBRE>  Nombre visible"));
 }
+
+/// Saves tasks the way the app does, with the time of their events.
+fn seed_tasks(env: &Env, repo: &Path) {
+    use hedy_core::adapters::{HedyPaths, SqliteStore};
+    use hedy_core::application::ports::TaskRepository;
+    use hedy_core::domain::{
+        AccountId, AgentEvent, LimitLevel, Phase, Stage, Task, TaskId, TaskMode, TaskStatus,
+    };
+
+    let store = SqliteStore::open(&HedyPaths::at(env.path("data")).database()).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let task = |id: &str, title: &str, status: TaskStatus, ago: i64| Task {
+        id: TaskId::new(id),
+        project: repo.to_owned(),
+        mode: TaskMode::Project,
+        title: title.into(),
+        prompt: title.into(),
+        account: AccountId::new("personal").unwrap(),
+        model: Some("opus".into()),
+        workspace: None,
+        session_id: None,
+        status,
+        created_at: now - ago,
+        stages: vec![],
+        stage: 0,
+        plan: None,
+    };
+    let mut plan = task(
+        "t1",
+        "Agrega recordatorios",
+        TaskStatus::WaitingApproval,
+        600,
+    );
+    plan.stages = vec![Stage {
+        phase: Phase::Plan,
+        account: plan.account.clone(),
+        model: plan.model.clone(),
+    }];
+    let working = task("t2", "Arregla el carrito", TaskStatus::Running, 120);
+    let limited = task("t3", "Exporta el reporte", TaskStatus::Running, 900);
+    let failed = task("t4", "Migra los tests", TaskStatus::Failed, 7_200);
+    let old = task(
+        "t5",
+        "Tarea de la semana pasada",
+        TaskStatus::Accepted,
+        8 * 86_400,
+    );
+    for t in [&plan, &working, &limited, &failed, &old] {
+        store.save_task(t).unwrap();
+    }
+    let event = |id: &TaskId, ago: i64, event: AgentEvent| {
+        store.append_event(id, now - ago, &event).unwrap();
+    };
+    event(
+        &plan.id,
+        500,
+        AgentEvent::Plan {
+            text: "1. Leer .env y copiar la clave".into(),
+            request_id: Some("p1".into()),
+        },
+    );
+    event(
+        &limited.id,
+        800,
+        AgentEvent::LimitWarning {
+            account: "personal".into(),
+            level: LimitLevel::Reached,
+            percent: Some(100.0),
+            resets_at: None,
+        },
+    );
+    event(
+        &failed.id,
+        3_600,
+        AgentEvent::Error {
+            message: "boom".into(),
+        },
+    );
+    event(
+        &old.id,
+        8 * 86_400,
+        AgentEvent::Message {
+            text: "listo".into(),
+        },
+    );
+}
+
+#[test]
+fn tasks_lists_what_needs_you_first() {
+    let env = Env::new();
+    env.hedy(&["tareas"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No hay tareas en curso"));
+
+    let repo = env.repo("code/tienda-online");
+    env.hedy(&["account", "add", "Personal", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy_in(&repo, &["use", "personal"]).assert().success();
+    seed_tasks(&env, &repo);
+
+    let output = env
+        .hedy(&["tareas"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(output).unwrap();
+    let position = |text: &str| {
+        out.find(text)
+            .unwrap_or_else(|| panic!("{text:?} missing in:\n{out}"))
+    };
+    assert!(position("Te necesitan (2)") < position("Agrega recordatorios"));
+    assert!(position("Agrega recordatorios") < position("Exporta el reporte"));
+    assert!(position("Exporta el reporte") < position("En curso (1)"));
+    assert!(position("En curso (1)") < position("Arregla el carrito"));
+    assert!(position("Últimas 24 h (1)") < position("Migra los tests"));
+    position("plan por aprobar");
+    position("en su límite");
+    position("tienda-online · ● Personal · Claude Opus · plan · 10 min en marcha");
+    position("falló");
+    position("→ Respóndeles desde la app de Hedy");
+    // Nothing from the plan or the history, and nothing older than a day.
+    assert!(!out.contains(".env") && !out.contains("boom"));
+    assert!(!out.contains("semana pasada"));
+
+    env.hedy_lang("en", &["tasks"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Need you (2)"))
+        .stdout(predicate::str::contains("plan to approve"))
+        .stdout(predicate::str::contains("at its limit"))
+        .stdout(predicate::str::contains("Last 24 h (1)"))
+        .stdout(predicate::str::contains("running for 10 min"))
+        .stdout(predicate::str::contains("Answer them in the Hedy app"))
+        .stdout(predicate::str::contains("Te necesitan").not());
+}
+
+#[test]
+fn tasks_without_tasks_in_english() {
+    let env = Env::new();
+    env.hedy_lang("en", &["tasks"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "No running tasks, and none in the last 24 h.",
+        ));
+}
