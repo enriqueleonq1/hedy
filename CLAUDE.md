@@ -87,5 +87,6 @@ When launching a CLI, strip variables that change the account or billing
   `app/src/i18n/messages/<area>.ts`. Never hard-code a visible string in one language.
 - Colors only from `app/src/theme/tokens.ts` (contrast-tested); account colors are never
   used as text. Animations: transform/opacity/fill only, off with reduced motion.
-- Small, descriptive commits.
+- Small commits with a one-line message and a type prefix: `feat: …`, `fix: …`,
+  `refactor: …`, `tests: …`, `docs: …`, `chore: …`. No body and no co-author trailers.
 - If official docs contradict the plan, say so and propose an alternative.
