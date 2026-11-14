@@ -3,7 +3,7 @@
 const es = {
   "status.title": "Estado del proyecto",
   "status.openChat": "Abrir chat",
-  "status.uncommitted.one": " · {n} cambios sin commit",
+  "status.uncommitted.one": " · {n} cambio sin commit",
   "status.uncommitted.other": " · {n} cambios sin commit",
   "status.clean": " · sin cambios",
   "status.client": "cliente: {client}",
