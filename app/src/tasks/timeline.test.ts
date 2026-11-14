@@ -1,5 +1,5 @@
 import type { AgentEvent, Task } from "../api/types";
-import { buildTimeline, formatTokens, mascotState, modelLabel } from "./timeline";
+import { agentName, buildTimeline, formatTokens, mascotState, modelLabel } from "./timeline";
 
 const task = (extra: Partial<Task>): Task => ({
   id: "t1",
@@ -20,6 +20,7 @@ const task = (extra: Partial<Task>): Task => ({
 describe("buildTimeline", () => {
   const events: AgentEvent[] = [
     { kind: "userMessage", text: "Agrega recordatorios" },
+    { kind: "phaseStarted", phase: "plan", agent: "Claude Opus", account: "Claude personal" },
     { kind: "sessionStarted", sessionId: "s", model: "claude-opus-5-5" },
     { kind: "plan", text: "1. Buscar", requestId: "p1" },
     { kind: "permissionResolved", requestId: "p1", decision: "allow", automatic: false, reason: null },
@@ -36,6 +37,7 @@ describe("buildTimeline", () => {
     const items = buildTimeline(events);
     expect(items.map((i) => i.type)).toEqual([
       "user",
+      "phase",
       "plan",
       "steps",
       "activity",
@@ -43,14 +45,30 @@ describe("buildTimeline", () => {
       "activity",
       "finished",
     ]);
-    const plan = items[1];
+    const plan = items[2];
     expect(plan?.type === "plan" && plan.resolution?.decision).toBe("allow");
-    const steps = items[2];
+    const steps = items[3];
     expect(steps?.type === "steps" && steps.steps[0]?.status).toBe("done");
-    const edit = items[3];
+    const edit = items[4];
     expect(edit?.type === "activity" && edit.text).toBe("Claude editó citas/servicio.py");
-    const permission = items[4];
+    const permission = items[5];
     expect(permission?.type === "permission" && permission.resolution).toBeNull();
+  });
+
+  it("names whoever did each step and keeps only the last limit actionable", () => {
+    const items = buildTimeline([
+      { kind: "phaseStarted", phase: "implement", agent: "Codex", account: "ChatGPT" },
+      { kind: "fileEdited", path: "a.py" },
+      { kind: "limitWarning", account: "chatgpt", level: "warning", percent: 91, resetsAt: null },
+      { kind: "phaseStarted", phase: "tests", agent: "Kimi", account: "Kimi" },
+      { kind: "testsRun", command: "pytest", passed: true },
+      { kind: "limitWarning", account: "kimi", level: "reached", percent: null, resetsAt: null },
+    ]);
+    const texts = items.filter((i) => i.type === "activity").map((i) => i.type === "activity" && i.text);
+    expect(texts).toEqual(["Codex editó a.py", "Kimi: pasan los tests · pytest"]);
+    const limits = items.filter((i) => i.type === "limit").map((i) => i.type === "limit" && i.latest);
+    expect(limits).toEqual([false, true]);
+    expect(agentName([{ kind: "phaseStarted", phase: "tests", agent: "Kimi", account: "Kimi" }])).toBe("Kimi");
   });
 
   it("shows hook blocks that had no card", () => {

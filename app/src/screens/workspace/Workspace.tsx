@@ -8,17 +8,13 @@ import { shortPath } from "../../components/projects";
 import { Button } from "../../components/ui/Button";
 import { tasksKey, useTaskEvents, useTasks } from "../../tasks/hooks";
 import { agentName, buildTimeline, isOpen, mascotState, STATUS_LABEL } from "../../tasks/timeline";
+import { MODEL_SUGGESTIONS } from "../../components/models";
 import { ChangesPanel } from "./ChangesPanel";
 import { Timeline } from "./Timeline";
 
 const MODE_LABEL: Record<TaskMode, string> = { project: "Proyecto", ask: "Pregunta", research: "Research" };
 
-const MODELS: { value: string; label: string }[] = [
-  { value: "", label: "Modelo: automático" },
-  { value: "opus", label: "Modelo: Opus" },
-  { value: "sonnet", label: "Modelo: Sonnet" },
-  { value: "haiku", label: "Modelo: Haiku" },
-];
+
 
 export function Workspace({ overview, project, mode }: { overview: Overview; project: string; mode: TaskMode }) {
   const tasks = useTasks(project);
@@ -74,6 +70,7 @@ export function Workspace({ overview, project, mode }: { overview: Overview; pro
             items={buildTimeline(history)}
             agent={agent}
             account={account}
+            accounts={overview.accounts}
             mascot={mascotState(task, history)}
           />
         ) : (
@@ -93,6 +90,7 @@ export function Workspace({ overview, project, mode }: { overview: Overview; pro
           name={name}
           task={task}
           mode={mode}
+          models={account ? MODEL_SUGGESTIONS[account.provider] : []}
           disabled={!account}
           onStarted={(t) => setChosen(t.id)}
         />
@@ -116,6 +114,7 @@ function Composer({
   name,
   task,
   mode,
+  models,
   disabled,
   onStarted,
 }: {
@@ -123,6 +122,7 @@ function Composer({
   name: string;
   task: Task | null;
   mode: TaskMode;
+  models: string[];
   disabled: boolean;
   onStarted: (task: Task) => void;
 }) {
@@ -183,10 +183,11 @@ function Composer({
       <div className="composer__bar">
         {!followUp && (
           <>
-            <select className="pill-select" aria-label="Modelo" value={model} onChange={(e) => setModel(e.target.value)}>
-              {MODELS.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
+            <select className="pill-select" aria-label="Modelos" value={model} onChange={(e) => setModel(e.target.value)}>
+              <option value="">Modelos: auto por fase</option>
+              {models.map((m) => (
+                <option key={m} value={m}>
+                  Solo {m}
                 </option>
               ))}
             </select>

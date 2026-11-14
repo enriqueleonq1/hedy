@@ -33,6 +33,7 @@ export const tauriApi: HedyApi = {
     invoke("use_account", { path, account, protect: protect ?? null }),
   offerableAccounts: (path) => invoke("offerable_accounts", { path }),
   setProjectColor: (path, color) => invoke("set_project_color", { path, color }),
+  setProjectPhases: (path, phases) => invoke("set_project_phases", { path, phases }),
   removeProject: (path) => invoke("remove_project", { path }),
 
   setSetting: (key, value) => invoke("set_setting", { key, value }),
@@ -62,6 +63,8 @@ export const tauriApi: HedyApi = {
   acceptTask: (id) => invoke("accept_task", { id }),
   discardTask: (id) => invoke("discard_task", { id }),
   recentCommits: (project) => invoke("recent_commits", { project }),
+  handoffOptions: (id) => invoke("handoff_options", { id }),
+  handoffTask: (id, account, model) => invoke("handoff_task", { id, account, model }),
   onTaskEvent: (listener) =>
     subscribe<{ taskId: string; event: AgentEvent }>("task-event", ({ taskId, event }) => listener(taskId, event)),
   onTaskUpdated: (listener) => subscribe<Omit<Task, "live">>("task-updated", listener),

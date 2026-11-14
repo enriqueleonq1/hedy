@@ -64,6 +64,9 @@ pub fn run() {
             commands::accept_task,
             commands::discard_task,
             commands::recent_commits,
+            commands::set_project_phases,
+            commands::handoff_options,
+            commands::handoff_task,
         ])
         .run(tauri::generate_context!())
         .expect("error al ejecutar Hedy");

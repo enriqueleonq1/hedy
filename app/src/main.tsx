@@ -28,6 +28,10 @@ function browserApi(): MockApi {
       model: null,
       planFirst: false,
     });
+    // `?demo=limit` also shows the limit card.
+    if (new URLSearchParams(window.location.search).get("demo") === "limit") {
+      setTimeout(() => api.simulateLimit("t1"), 2500);
+    }
   }
   return api;
 }

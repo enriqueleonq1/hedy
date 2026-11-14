@@ -88,6 +88,28 @@ describe("Accounts", () => {
   });
 });
 
+describe("Models per phase", () => {
+  it("assigns phases to other providers and summarises them", async () => {
+    const { user } = renderApp();
+    await user.click(await screen.findByRole("button", { name: "Cuentas y modelos" }));
+    const edit = screen.getByRole("button", { name: "Modelos por fase de hedy" });
+    expect(edit).toHaveTextContent(/^Claude$/);
+    await user.click(edit);
+
+    const dialog = screen.getByRole("dialog", { name: "Modelos por fase · hedy" });
+    await user.selectOptions(within(dialog).getByLabelText("Cuenta para Implementar"), "chatgpt");
+    await user.selectOptions(within(dialog).getByLabelText("Cuenta para Escribir tests"), "kimi");
+    await user.type(within(dialog).getByLabelText("Modelo para Escribir tests"), "kimi-k3");
+    await user.click(within(dialog).getByRole("button", { name: "Guardar" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Modelos por fase de hedy" })).toHaveTextContent(
+        "Claude planifica · Codex implementa · Kimi tests",
+      ),
+    );
+  });
+});
+
 describe("Settings", () => {
   it("changes the theme", async () => {
     const { user } = renderApp();

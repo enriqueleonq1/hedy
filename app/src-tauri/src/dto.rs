@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use hedy_core::application::{AccountStatus, AccountUsage, AppResult, Hedy, Setting};
 use hedy_core::domain::{
-    Account, ConfigFolder, Credentials, LoginState, Project, Provider, Task, TaskMode,
+    Account, ConfigFolder, Credentials, LoginState, PhasePlan, Project, Provider, Task, TaskMode,
 };
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +19,8 @@ pub struct OverviewDto {
     pub default_account: Option<String>,
     /// Custom binary path per CLI provider (`None` = found on `PATH`).
     pub binaries: BTreeMap<&'static str, Option<String>>,
+    /// Custom API endpoint per API-key provider (`None` = the provider's default).
+    pub api_urls: BTreeMap<&'static str, Option<String>>,
     pub accounts: Vec<AccountDto>,
     pub projects: Vec<ProjectDto>,
 }
@@ -69,8 +71,7 @@ impl From<AccountUsage> for UsageDto {
             week_cost_usd: usage.week.cost_usd,
             limit: usage.rate_limit.map(|l| LimitDto {
                 status: l.status,
-                // Claude reports utilization as 0–1.
-                percent: l.utilization.map(|u| if u <= 1.0 { u * 100.0 } else { u }),
+                percent: l.utilization,
                 resets_at: l.resets_at,
             }),
         }
@@ -114,6 +115,8 @@ pub struct ProjectDto {
     pub color: Option<String>,
     /// Accounts that may be assigned here (protection rules applied).
     pub offerable_accounts: Vec<String>,
+    /// Who plans, implements, writes tests and reviews.
+    pub phases: PhasePlan,
 }
 
 #[derive(Debug, Deserialize)]
@@ -189,6 +192,7 @@ impl ProjectDto {
             protected: project.protected,
             color: project.color.map(|c| c.to_string()),
             offerable_accounts,
+            phases: project.phases.clone(),
         }
     }
 }
@@ -226,6 +230,12 @@ pub fn overview(hedy: &Hedy, data_dir: &Path) -> AppResult<OverviewDto> {
         .map(|p| Ok((p.as_str(), hedy.setting(Setting::Binary(p))?)))
         .collect::<AppResult<_>>()?;
 
+    let api_urls = Provider::ALL
+        .into_iter()
+        .filter(|p| p.supports_api_key())
+        .map(|p| Ok((p.as_str(), hedy.setting(Setting::ApiUrl(p))?)))
+        .collect::<AppResult<_>>()?;
+
     Ok(OverviewDto {
         user_name: hedy
             .setting(Setting::UserName)?
@@ -236,6 +246,7 @@ pub fn overview(hedy: &Hedy, data_dir: &Path) -> AppResult<OverviewDto> {
         data_dir: path_string(data_dir),
         default_account: status.default_account.as_ref().map(ToString::to_string),
         binaries,
+        api_urls,
         accounts: status
             .accounts
             .iter()

@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use hedy_core::application::{AppResult, Hedy, NewAccount, NewTask, Setting};
-use hedy_core::domain::{AgentEvent, Color, Commit, Decision, FileDiff, TaskId};
+use hedy_core::domain::{AgentEvent, Color, Commit, Decision, FileDiff, PhasePlan, TaskId};
 use tauri::State;
 use tauri::ipc::Channel;
 
@@ -294,4 +294,46 @@ pub async fn recent_commits(
     project: PathBuf,
 ) -> CommandResult<Vec<Commit>> {
     blocking(&state, move |h| h.recent_commits(&project, 5)).await
+}
+
+#[tauri::command]
+pub async fn set_project_phases(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    phases: PhasePlan,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.set_project_phases(&path, phases).map(drop)
+    })
+    .await
+}
+
+/// Account ids the task may be handed over to (another provider or an API key).
+#[tauri::command]
+pub async fn handoff_options(state: State<'_, AppState>, id: String) -> CommandResult<Vec<String>> {
+    blocking(&state, move |h| {
+        Ok(h.handoff_options(&task_id(id))?
+            .into_iter()
+            .map(|a| a.id.to_string())
+            .collect())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn handoff_task(
+    state: State<'_, AppState>,
+    id: String,
+    account: String,
+    model: Option<String>,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.handoff_task(
+            &task_id(id),
+            &account,
+            model.filter(|m| !m.trim().is_empty()),
+        )
+        .map(drop)
+    })
+    .await
 }

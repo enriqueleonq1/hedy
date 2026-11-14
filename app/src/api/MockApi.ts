@@ -8,6 +8,7 @@ import type {
   NewAccountInput,
   NewTaskInput,
   Overview,
+  PhasePlan,
   Project,
   Task,
   TerminalEvent,
@@ -45,6 +46,7 @@ export class MockApi implements HedyApi {
       dataDir: "/home/demo/.local/share/hedy",
       defaultAccount: null,
       binaries: { claude: null, codex: null, gemini: null },
+      apiUrls: { kimi: null, gemini: null },
       accounts: [],
       projects: [],
       ...initial,
@@ -174,6 +176,10 @@ export class MockApi implements HedyApi {
     this.project(path).color = color;
   }
 
+  async setProjectPhases(path: string, phases: PhasePlan): Promise<void> {
+    this.project(path).phases = phases;
+  }
+
   async removeProject(path: string): Promise<void> {
     this.state.projects = this.state.projects.filter((p) => p.path !== path);
     for (const a of this.state.accounts) a.projects = a.projects.filter((p) => p !== path);
@@ -183,6 +189,9 @@ export class MockApi implements HedyApi {
   async setSetting(key: string, value: string | null): Promise<void> {
     if (key === "ui.theme") this.state.theme = (value ?? "system") as Overview["theme"];
     if (key === "ui.name") this.state.userName = value ?? "Enrique";
+    if (key.startsWith("api_url.")) {
+      this.state.apiUrls[key.slice(8) as keyof Overview["apiUrls"]] = value;
+    }
     if (key.startsWith("binary.")) {
       this.state.binaries[key.slice(7) as keyof Overview["binaries"]] = value;
     }
@@ -256,6 +265,7 @@ export class MockApi implements HedyApi {
     this.diffs.set(id, []);
     this.push(id, { kind: "userMessage", text: input.prompt });
     this.script(id, [
+      { kind: "phaseStarted", phase: input.planFirst && input.mode === "project" ? "plan" : "implement", agent: "Claude Opus", account: "Claude personal" },
       { kind: "sessionStarted", sessionId: `s-${id}`, model: "claude-opus-5-5" },
       { kind: "message", text: "Voy a revisar dónde se crean las citas." },
       { kind: "toolUsed", tool: "Grep", summary: "crear_cita" },
@@ -356,7 +366,7 @@ export class MockApi implements HedyApi {
     this.script(
       id,
       approve
-        ? this.implementation(id)
+        ? [{ kind: "phaseStarted", phase: "implement", agent: "Claude Opus", account: "Claude personal" }, ...this.implementation(id)]
         : [{ kind: "plan", text: `1. Buscar\n2. Cambiar (${feedback ?? "revisado"})\n3. Tests`, requestId: `${requestId}-b` }],
     );
   }
@@ -396,6 +406,29 @@ export class MockApi implements HedyApi {
     task.status = status;
     this.diffs.set(id, []);
     this.notifyTask(task);
+  }
+
+  /** Test helper: the agent reports its account is close to the limit. */
+  simulateLimit(id: string, level: "warning" | "reached" = "warning"): void {
+    this.push(id, { kind: "limitWarning", account: this.tasksById.get(id)?.account ?? "", level, percent: 92, resetsAt: null });
+  }
+
+  async handoffOptions(id: string): Promise<string[]> {
+    const task = this.tasksById.get(id);
+    const current = this.state.accounts.find((a) => a.id === task?.account);
+    return this.state.accounts
+      .filter((a) => a.id !== current?.id && (a.provider !== current?.provider || a.kind === "apiKey"))
+      .map((a) => a.id);
+  }
+
+  async handoffTask(id: string, account: string): Promise<void> {
+    const task = this.tasksById.get(id);
+    if (!task) throw `no existe la tarea ${id}`;
+    const target = this.account(account);
+    task.account = account;
+    task.live = true;
+    this.push(id, { kind: "phaseStarted", phase: "implement", agent: target.providerName.split(" ")[0] ?? "IA", account: target.name });
+    this.script(id, this.finish());
   }
 
   async recentCommits(): Promise<Commit[]> {
@@ -449,6 +482,7 @@ function emptyProject(path: string): Project {
     protected: false,
     color: null,
     offerableAccounts: [],
+    phases: {},
   };
 }
 

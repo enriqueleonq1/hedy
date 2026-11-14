@@ -103,6 +103,34 @@ export function Settings({ overview }: { overview: Overview }) {
       </section>
 
       <section className="card settings__section">
+        <h2>APIs</h2>
+        <p className="hint">Déjalo vacío para usar la dirección oficial. Kimi Code o la región de China tienen las suyas.</p>
+        {(
+          [
+            { id: "kimi", name: "Kimi", placeholder: "https://api.moonshot.ai/v1" },
+            { id: "gemini", name: "Gemini", placeholder: "https://generativelanguage.googleapis.com/v1beta/openai" },
+          ] as const
+        ).map((api) => (
+          <Field key={api.id} label={api.name}>
+            {(id) => (
+              <input
+                id={id}
+                className="mono"
+                key={overview.apiUrls[api.id] ?? ""}
+                defaultValue={overview.apiUrls[api.id] ?? ""}
+                placeholder={api.placeholder}
+                spellCheck={false}
+                onBlur={(e) =>
+                  e.target.value.trim() !== (overview.apiUrls[api.id] ?? "") &&
+                  setSetting.mutate({ key: `api_url.${api.id}`, value: e.target.value })
+                }
+              />
+            )}
+          </Field>
+        ))}
+      </section>
+
+      <section className="card settings__section">
         <h2>Datos</h2>
         <p>
           Hedy guarda todo en tu equipo: <span className="mono">{overview.dataDir}</span>

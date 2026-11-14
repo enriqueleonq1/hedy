@@ -3,6 +3,7 @@ import type {
   Commit,
   Decision,
   FileDiff,
+  PhasePlan,
   NewAccountInput,
   NewTaskInput,
   Overview,
@@ -31,6 +32,7 @@ export interface HedyApi {
   useAccount(path: string, account: string, protect?: boolean): Promise<void>;
   offerableAccounts(path: string): Promise<string[]>;
   setProjectColor(path: string, color: string | null): Promise<void>;
+  setProjectPhases(path: string, phases: PhasePlan): Promise<void>;
   removeProject(path: string): Promise<void>;
 
   setSetting(key: SettingKey, value: string | null): Promise<void>;
@@ -58,6 +60,9 @@ export interface HedyApi {
   acceptTask(id: string): Promise<void>;
   discardTask(id: string): Promise<void>;
   recentCommits(project: string): Promise<Commit[]>;
+  /** Accounts the task may move to: another provider or an API key. */
+  handoffOptions(id: string): Promise<string[]>;
+  handoffTask(id: string, account: string, model: string | null): Promise<void>;
   /** Live events of every task. */
   onTaskEvent(listener: (taskId: string, event: AgentEvent) => void): Unsubscribe;
   onTaskUpdated(listener: (task: Omit<Task, "live">) => void): Unsubscribe;

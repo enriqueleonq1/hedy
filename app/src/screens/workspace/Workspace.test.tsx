@@ -40,7 +40,7 @@ describe("Workspace", () => {
     expect(screen.getByText("Claude editó citas/servicio.py")).toBeInTheDocument();
     await user.click(within(card).getByRole("button", { name: "Permitir en este chat" }));
 
-    expect(await screen.findByText(/Pasan los tests/)).toBeInTheDocument();
+    expect(await screen.findByText(/Claude: pasan los tests/)).toBeInTheDocument();
     expect(await screen.findByText(/Terminó/)).toBeInTheDocument();
     expect(screen.getByText(/Permitido en este chat/)).toBeInTheDocument();
     const steps = screen.getByRole("region", { name: "Pasos" });
@@ -82,6 +82,27 @@ describe("Workspace", () => {
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     expect(await screen.findByText(/no cambian archivos/)).toBeInTheDocument();
     expect(await screen.findByText(/Terminó/)).toBeInTheDocument();
+  });
+
+  it("offers to wait or hand the task to another provider at a limit", async () => {
+    const { api, user } = setup();
+    await openProject(user, /^hedy/);
+    await user.type(await screen.findByLabelText("Pídele algo a hedy"), "Recordatorios");
+    await user.click(screen.getByLabelText("Planificar primero"));
+    await user.click(screen.getByRole("button", { name: "Enviar" }));
+    await screen.findByRole("region", { name: "Claude quiere correr un comando" });
+
+    const task = (await api.tasks("/code/hedy"))[0]!;
+    api.simulateLimit(task.id);
+    const card = await screen.findByRole("region", { name: "Tu cuenta Claude personal va por el 92%" });
+    // Never another Claude subscription: only another provider or an API key.
+    expect(await within(card).findByRole("button", { name: "Pasar la tarea a ChatGPT" })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Pasar la tarea a Kimi" })).toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: /Claude trabajo/ })).not.toBeInTheDocument();
+
+    await user.click(within(card).getByRole("button", { name: "Pasar la tarea a ChatGPT" }));
+    expect(await screen.findByText("Codex")).toBeInTheDocument();
+    expect(await screen.findByText(/Codex: pasan los tests/)).toBeInTheDocument();
   });
 
   it("previews only local addresses", async () => {

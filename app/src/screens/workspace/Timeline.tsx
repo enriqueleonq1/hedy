@@ -1,20 +1,22 @@
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
-import { useAction } from "../../api/context";
+import { useAction, useApi } from "../../api/context";
 import type { Account, Decision, Task } from "../../api/types";
 import { Mascot, type MascotState } from "../../components/Mascot/Mascot";
 import { Button } from "../../components/ui/Button";
-import { formatDuration, type Resolution, type TimelineItem } from "../../tasks/timeline";
+import { formatDuration, isOpen, PHASE_VERB, type Resolution, type TimelineItem } from "../../tasks/timeline";
 
 interface TimelineProps {
   task: Task;
   items: TimelineItem[];
   agent: string;
   account: Account | undefined;
+  accounts: Account[];
   mascot: MascotState;
 }
 
-export function Timeline({ task, items, agent, account, mascot }: TimelineProps) {
+export function Timeline({ task, items, agent, account, accounts, mascot }: TimelineProps) {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView?.({ block: "end" });
@@ -33,6 +35,18 @@ export function Timeline({ task, items, agent, account, mascot }: TimelineProps)
             </div>
           );
         }
+        if (item.type === "phase") {
+          return (
+            <p key={item.key} className="phase-divider">
+              <span>
+                <strong>{item.agent}</strong> {PHASE_VERB[item.phase]} · {item.account}
+              </span>
+            </p>
+          );
+        }
+        if (item.type === "limit") {
+          return <LimitCard key={item.key} task={task} item={item} accounts={accounts} />;
+        }
         return (
           <div key={item.key} className="agent-row">
             <span className="agent-row__avatar">
@@ -41,7 +55,7 @@ export function Timeline({ task, items, agent, account, mascot }: TimelineProps)
               )}
             </span>
             <div className="agent-row__body">
-              <Item task={task} item={item} agent={agent} />
+              <Item task={task} item={item} />
             </div>
           </div>
         );
@@ -51,16 +65,16 @@ export function Timeline({ task, items, agent, account, mascot }: TimelineProps)
   );
 }
 
-function Item({ task, item, agent }: { task: Task; item: TimelineItem; agent: string }) {
+function Item({ task, item }: { task: Task; item: TimelineItem }) {
   switch (item.type) {
     case "agent":
       return <p className="agent-text">{item.text}</p>;
     case "plan":
-      return <PlanCard task={task} item={item} agent={agent} />;
+      return <PlanCard task={task} item={item} agent={item.agent} />;
     case "steps":
       return (
         <section className="card plan-card" aria-label="Pasos">
-          <h3>Plan · {agent}</h3>
+          <h3>Pasos</h3>
           <ul className="steps">
             {item.steps.map((s, i) => (
               <li key={i} className={`step step--${s.status}`}>
@@ -77,7 +91,7 @@ function Item({ task, item, agent }: { task: Task; item: TimelineItem; agent: st
         </section>
       );
     case "permission":
-      return <PermissionCard task={task} item={item} agent={agent} />;
+      return <PermissionCard task={task} item={item} />;
     case "activity":
       return (
         <p className={`activity activity--${item.tone}`}>
@@ -126,9 +140,9 @@ const TOOL_TITLE: Record<string, string> = {
   WebSearch: "quiere buscar en la web",
 };
 
-function PermissionCard({ task, item, agent }: { task: Task; item: Extract<TimelineItem, { type: "permission" }>; agent: string }) {
+function PermissionCard({ task, item }: { task: Task; item: Extract<TimelineItem, { type: "permission" }> }) {
   const answer = useAction((api, decision: Decision) => api.answerPermission(task.id, item.requestId, decision));
-  const name = agent.split(" ")[0];
+  const name = item.agent.split(" ")[0];
   const title = `${name} ${TOOL_TITLE[item.tool] ?? `quiere usar ${item.tool}`}`;
 
   if (item.resolution) {
@@ -214,6 +228,79 @@ function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineIte
           </div>
         </form>
       )}
+    </section>
+  );
+}
+
+function resetsIn(resetsAt: number | null): string | null {
+  if (!resetsAt) return null;
+  const minutes = Math.round((resetsAt * 1000 - Date.now()) / 60_000);
+  if (minutes <= 0) return "Ya debería haberse renovado.";
+  return minutes < 90 ? `Se renueva en ${minutes} min.` : `Se renueva en ${Math.round(minutes / 60)} h.`;
+}
+
+/**
+ * Hedy never switches accounts by itself (spec rule 3): the card offers to
+ * wait, or to hand the task to another provider or an API key.
+ */
+function LimitCard({
+  task,
+  item,
+  accounts,
+}: {
+  task: Task;
+  item: Extract<TimelineItem, { type: "limit" }>;
+  accounts: Account[];
+}) {
+  const api = useApi();
+  const [waiting, setWaiting] = useState(false);
+  const actionable = item.latest && isOpen(task) && !waiting;
+  const options = useQuery({
+    queryKey: ["handoff", task.id, item.key],
+    queryFn: () => api.handoffOptions(task.id),
+    enabled: actionable,
+  });
+  const handoff = useAction((a, account: string) => a.handoffTask(task.id, account, null));
+  const account = accounts.find((a) => a.id === item.account);
+  const name = account?.name ?? item.account;
+  const title =
+    item.level === "reached"
+      ? `${name} llegó a su límite`
+      : item.percent != null
+        ? `Tu cuenta ${name} va por el ${Math.round(item.percent)}%`
+        : `Tu cuenta ${name} está cerca de su límite`;
+  const candidates = (options.data ?? [])
+    .map((id) => accounts.find((a) => a.id === id))
+    .filter((a): a is Account => !!a);
+
+  return (
+    <section className="limit-card" aria-label={title}>
+      <Mascot color={account?.color ?? "#E0AF68"} state="sleeping" size={36} label="" />
+      <div className="limit-card__body">
+        <h3>{title}</h3>
+        <p>
+          {resetsIn(item.resetsAt) ?? ""} {candidates.length > 0 && "Puedo seguir la tarea con otro modelo."}
+        </p>
+        {actionable && (
+          <div className="actions">
+            <Button variant="primary" onClick={() => setWaiting(true)}>
+              Esperar
+            </Button>
+            {candidates.map((c) => (
+              <Button key={c.id} className="btn--warn" disabled={handoff.isPending} onClick={() => handoff.mutate(c.id)}>
+                Pasar la tarea a {c.name}
+              </Button>
+            ))}
+          </div>
+        )}
+        {actionable && options.isSuccess && candidates.length === 0 && (
+          <p className="small">
+            No hay otro proveedor disponible aquí (o el proyecto está protegido). Puedes agregar Codex o una API key en
+            Cuentas y modelos.
+          </p>
+        )}
+        {waiting && <p className="small">De acuerdo, esperamos. La tarea sigue con esta cuenta.</p>}
+      </div>
     </section>
   );
 }

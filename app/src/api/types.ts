@@ -32,7 +32,16 @@ export interface Project {
   color: string | null;
   /** Accounts that may be assigned here (protection rules applied). */
   offerableAccounts: string[];
+  /** Who plans, implements, writes tests and reviews. */
+  phases: PhasePlan;
 }
+
+export type Phase = "plan" | "implement" | "tests" | "review";
+export interface Assignment {
+  account: string;
+  model: string | null;
+}
+export type PhasePlan = Partial<Record<Phase, Assignment>>;
 
 export type ThemeSetting = "system" | "light" | "dark";
 
@@ -42,6 +51,7 @@ export interface Overview {
   dataDir: string;
   defaultAccount: string | null;
   binaries: Record<CliProviderId, string | null>;
+  apiUrls: Record<"kimi" | "gemini", string | null>;
   accounts: Account[];
   projects: Project[];
 }
@@ -59,7 +69,9 @@ export type SettingKey =
   | "ui.name"
   | "binary.claude"
   | "binary.codex"
-  | "binary.gemini";
+  | "binary.gemini"
+  | "api_url.kimi"
+  | "api_url.gemini";
 
 export type TerminalRequest =
   | { kind: "login"; account: string }
@@ -140,6 +152,14 @@ export type AgentEvent =
       costUsd: number | null;
     }
   | { kind: "rateLimit"; status: string; utilization: number | null; resetsAt: number | null }
+  | { kind: "phaseStarted"; phase: Phase; agent: string; account: string }
+  | {
+      kind: "limitWarning";
+      account: string;
+      level: "warning" | "reached";
+      percent: number | null;
+      resetsAt: number | null;
+    }
   | { kind: "finished"; ok: boolean; summary: string; durationMs: number | null }
   | { kind: "error"; message: string };
 

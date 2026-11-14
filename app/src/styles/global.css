@@ -809,6 +809,55 @@ select:disabled { opacity: 0.65; }
 .activity--running .activity__mark { color: var(--activity); }
 .activity--failed { color: var(--danger); }
 
+.phase-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  margin: 6px 0 2px;
+}
+
+.phase-divider::before,
+.phase-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--line);
+}
+
+.phase-divider strong { color: var(--activity); }
+
+.limit-card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 16px 18px;
+  border-radius: var(--radius-card);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  color: var(--warn-ink);
+}
+
+.limit-card__body { display: grid; gap: 8px; }
+.limit-card h3 { font: 700 15px var(--font-ui); }
+
+.phases { display: grid; gap: 10px; }
+.phase-row { display: grid; grid-template-columns: 120px minmax(0, 1fr) 170px; gap: 8px; align-items: center; }
+.phase-row__label { font-weight: 600; }
+
+.link-button {
+  border: 0;
+  background: transparent;
+  color: var(--action-text);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  min-height: var(--target);
+  padding: 0;
+}
+
+.link-button:hover { text-decoration: underline; }
+
 .permission-card {
   display: grid;
   gap: 12px;

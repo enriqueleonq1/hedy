@@ -1,6 +1,6 @@
 // Pure helpers that turn a task's events into what the chat shows.
 
-import type { AgentEvent, Decision, StepStatus, Task } from "../api/types";
+import type { AgentEvent, Decision, Phase, StepStatus, Task } from "../api/types";
 import type { MascotState } from "../components/Mascot/Mascot";
 
 export type Resolution = { decision: Decision; automatic: boolean; reason: string | null };
@@ -8,11 +8,29 @@ export type Resolution = { decision: Decision; automatic: boolean; reason: strin
 export type TimelineItem =
   | { type: "user"; key: string; text: string }
   | { type: "agent"; key: string; text: string }
-  | { type: "plan"; key: string; text: string; requestId: string | null; resolution: Resolution | null }
+  | {
+      type: "plan";
+      key: string;
+      agent: string;
+      text: string;
+      requestId: string | null;
+      resolution: Resolution | null;
+    }
+  | { type: "phase"; key: string; phase: Phase; agent: string; account: string }
+  | {
+      type: "limit";
+      key: string;
+      account: string;
+      level: "warning" | "reached";
+      percent: number | null;
+      resetsAt: number | null;
+      latest: boolean;
+    }
   | { type: "steps"; key: string; steps: { text: string; status: StepStatus }[] }
   | {
       type: "permission";
       key: string;
+      agent: string;
       requestId: string;
       tool: string;
       summary: string;
@@ -29,10 +47,20 @@ export function modelLabel(model: string | null | undefined): string {
   return family ? `Claude ${family.charAt(0).toUpperCase()}${family.slice(1)}` : "Claude";
 }
 
+/** Who is working now: the latest phase's agent, or the model of the session. */
 export function agentName(events: AgentEvent[]): string {
+  const phase = [...events].reverse().find((e) => e.kind === "phaseStarted");
+  if (phase?.kind === "phaseStarted") return phase.agent;
   const started = events.find((e) => e.kind === "sessionStarted");
   return modelLabel(started?.kind === "sessionStarted" ? started.model : null);
 }
+
+export const PHASE_VERB: Record<Phase, string> = {
+  plan: "planifica",
+  implement: "implementa",
+  tests: "escribe los tests",
+  review: "revisa",
+};
 
 const TOOL_VERB: Record<string, string> = {
   Read: "leyó",
@@ -56,9 +84,13 @@ export function buildTimeline(events: AgentEvent[]): TimelineItem[] {
       requested.add(e.kind === "plan" ? (e.requestId ?? "") : e.requestId);
     }
   });
-  const name = agentName(events).split(" ")[0] ?? "Claude";
   const items: TimelineItem[] = [];
   let stepsShown = false;
+  // Activity lines name whoever was working at that moment.
+  const firstPhase = events.find((e) => e.kind === "phaseStarted");
+  let agent = firstPhase?.kind === "phaseStarted" ? firstPhase.agent : agentName(events);
+  const name = () => agent.split(" ")[0] ?? "Claude";
+  const lastLimit = events.reduce((last, e, i) => (e.kind === "limitWarning" ? i : last), -1);
 
   events.forEach((e, i) => {
     const key = `${i}`;
@@ -69,10 +101,26 @@ export function buildTimeline(events: AgentEvent[]): TimelineItem[] {
       case "message":
         items.push({ type: "agent", key, text: e.text });
         break;
+      case "phaseStarted":
+        agent = e.agent;
+        items.push({ type: "phase", key, phase: e.phase, agent: e.agent, account: e.account });
+        break;
+      case "limitWarning":
+        items.push({
+          type: "limit",
+          key,
+          account: e.account,
+          level: e.level,
+          percent: e.percent,
+          resetsAt: e.resetsAt,
+          latest: i === lastLimit,
+        });
+        break;
       case "plan":
         items.push({
           type: "plan",
           key,
+          agent,
           text: e.text,
           requestId: e.requestId,
           resolution: e.requestId ? (resolutions.get(e.requestId) ?? null) : null,
@@ -91,6 +139,7 @@ export function buildTimeline(events: AgentEvent[]): TimelineItem[] {
         items.push({
           type: "permission",
           key,
+          agent,
           requestId: e.requestId,
           tool: e.tool,
           summary: e.summary,
@@ -104,17 +153,17 @@ export function buildTimeline(events: AgentEvent[]): TimelineItem[] {
         }
         break;
       case "fileEdited":
-        items.push({ type: "activity", key, tone: "done", text: `${name} editó ${e.path}` });
+        items.push({ type: "activity", key, tone: "done", text: `${name()} editó ${e.path}` });
         break;
       case "commandRun":
-        items.push({ type: "activity", key, tone: "done", text: `${name} corrió ${e.command}` });
+        items.push({ type: "activity", key, tone: "done", text: `${name()} corrió ${e.command}` });
         break;
       case "testsRun":
         items.push({
           type: "activity",
           key,
           tone: e.passed ? "done" : "failed",
-          text: `${e.passed ? "Pasan los tests" : "Fallan los tests"} · ${e.command}`,
+          text: `${name()}: ${e.passed ? "pasan los tests" : "fallan los tests"} · ${e.command}`,
         });
         break;
       case "toolUsed":
@@ -122,7 +171,7 @@ export function buildTimeline(events: AgentEvent[]): TimelineItem[] {
           type: "activity",
           key,
           tone: "running",
-          text: `${name} ${TOOL_VERB[e.tool] ?? `usó ${e.tool}`} · ${e.summary}`,
+          text: `${name()} ${TOOL_VERB[e.tool] ?? `usó ${e.tool}`} · ${e.summary}`,
         });
         break;
       case "finished":

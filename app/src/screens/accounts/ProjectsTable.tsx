@@ -1,4 +1,7 @@
+import { useState } from "react";
+
 import { useAction } from "../../api/context";
+import { phaseSummary } from "../../components/models";
 import type { Overview, Project } from "../../api/types";
 import { shortAccountLabel } from "../../components/accounts";
 import { projectColor, shortPath, useProjectActions } from "../../components/projects";
@@ -6,6 +9,7 @@ import { Button, ConfirmButton } from "../../components/ui/Button";
 import { Switch } from "../../components/ui/controls";
 import { accountPalette } from "../../theme/tokens";
 import { AddProjectDialog, useAddProject } from "./AddProjectDialog";
+import { PhasesDialog } from "./PhasesDialog";
 
 export function ProjectsTable({ overview }: { overview: Overview }) {
   const adding = useAddProject();
@@ -56,7 +60,7 @@ function ProjectRow({ project, overview }: { project: Project; overview: Overvie
   );
   const setColor = useAction((api, color: string | null) => api.setProjectColor(project.path, color));
   const remove = useAction((api) => api.removeProject(project.path));
-  const account = overview.accounts.find((a) => a.id === project.account);
+  const [editingPhases, setEditingPhases] = useState(false);
   const offered = overview.accounts.filter((a) => project.offerableAccounts.includes(a.id) || a.id === project.account);
 
   return (
@@ -83,9 +87,12 @@ function ProjectRow({ project, overview }: { project: Project; overview: Overvie
           ))}
         </select>
       </td>
-      <td className="muted">
-        {account ? account.providerName : "—"}
-        {project.protected && " · protegido"}
+      <td>
+        <button className="link-button" aria-label={`Modelos por fase de ${project.name}`} onClick={() => setEditingPhases(true)}>
+          {phaseSummary(project, overview.accounts)}
+          {project.protected && " · protegido"}
+        </button>
+        {editingPhases && <PhasesDialog project={project} overview={overview} onClose={() => setEditingPhases(false)} />}
       </td>
       <td>
         <Switch
