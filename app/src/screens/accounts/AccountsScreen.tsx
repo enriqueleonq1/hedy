@@ -9,6 +9,7 @@ import { Button, ConfirmButton } from "../../components/ui/Button";
 import { AddAccountDialog } from "./AddAccountDialog";
 import { ApiKeyDialog } from "./ApiKeyDialog";
 import { ProjectsTable } from "./ProjectsTable";
+import { SpendByClient } from "./SpendByClient";
 
 export function AccountsScreen({ overview }: { overview: Overview }) {
   const [adding, setAdding] = useState(false);
@@ -47,6 +48,7 @@ export function AccountsScreen({ overview }: { overview: Overview }) {
       )}
 
       <ProjectsTable overview={overview} />
+      <SpendByClient />
 
       {adding && (
         <AddAccountDialog overview={overview} onClose={() => setAdding(false)} onNeedsKey={(account) => setKeyFor(account)} />

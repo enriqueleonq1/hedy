@@ -13,6 +13,7 @@ import { ToastProvider } from "./components/ui/Toast";
 import { AccountsScreen } from "./screens/accounts/AccountsScreen";
 import { MemoryScreen } from "./screens/memory/MemoryScreen";
 import { Settings } from "./screens/Settings";
+import { StatusScreen } from "./screens/status/StatusScreen";
 import { Welcome } from "./screens/Welcome";
 import { Workspace } from "./screens/workspace/Workspace";
 import { TaskEventsBridge } from "./tasks/hooks";
@@ -36,18 +37,20 @@ export function App({ api, queryClient }: { api: HedyApi; queryClient?: QueryCli
   );
 }
 
-/** `#accounts`, `#settings`, `#p=<path>` (workspace), `#m=<path>` (memory). */
+/** `#accounts`, `#settings`, `#p=<path>` (workspace), `#m=<path>` (memory), `#s=<path>` (status). */
 function viewFromHash(): View {
   const hash = decodeURIComponent(window.location.hash.slice(1));
   if (hash === "accounts" || hash === "settings") return { screen: hash };
   if (hash.startsWith("p=")) return { screen: "workspace", project: hash.slice(2) };
   if (hash.startsWith("m=")) return { screen: "memory", project: hash.slice(2) };
+  if (hash.startsWith("s=")) return { screen: "status", project: hash.slice(2) };
   return { screen: "welcome" };
 }
 
 function hashFor(view: View): string {
   if (view.screen === "workspace") return `#p=${encodeURIComponent(view.project)}`;
   if (view.screen === "memory") return `#m=${encodeURIComponent(view.project)}`;
+  if (view.screen === "status") return `#s=${encodeURIComponent(view.project)}`;
   return `#${view.screen}`;
 }
 
@@ -126,6 +129,16 @@ function Root() {
               overview={data}
               project={current.project}
               mode={mode}
+              onOpenMemory={() => navigate({ screen: "memory", project: current.project })}
+              onOpenStatus={() => navigate({ screen: "status", project: current.project })}
+            />
+          )}
+          {current.screen === "status" && (
+            <StatusScreen
+              key={current.project}
+              overview={data}
+              project={current.project}
+              onOpenChat={() => navigate({ screen: "workspace", project: current.project })}
               onOpenMemory={() => navigate({ screen: "memory", project: current.project })}
             />
           )}

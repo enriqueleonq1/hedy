@@ -76,6 +76,10 @@ pub fn run() {
             commands::keep_note,
             commands::dismiss_contradiction,
             commands::set_memory_reader,
+            commands::project_status,
+            commands::project_usage,
+            commands::usage_summary,
+            commands::set_project_client,
         ])
         .run(tauri::generate_context!())
         .expect("error al ejecutar Hedy");

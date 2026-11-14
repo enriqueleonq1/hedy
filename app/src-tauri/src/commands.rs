@@ -11,7 +11,10 @@ use tauri::State;
 use tauri::ipc::Channel;
 
 use crate::AppState;
-use crate::dto::{self, MemoryDto, NewAccountInput, NewTaskInput, OverviewDto, TaskDto};
+use crate::dto::{
+    self, MemoryDto, NewAccountInput, NewTaskInput, OverviewDto, ProjectStatusDto, TaskDto,
+    UsagePointDto, UsageSummaryDto,
+};
 use crate::terminal::{TerminalEvent, TerminalRequest};
 
 type CommandResult<T> = Result<T, String>;
@@ -411,6 +414,52 @@ pub async fn set_memory_reader(
 ) -> CommandResult<()> {
     blocking(&state, move |h| {
         h.set_memory_reader(&path, &account, reads).map(drop)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn project_status(
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> CommandResult<ProjectStatusDto> {
+    blocking(&state, move |h| Ok(h.project_status(&path)?.into())).await
+}
+
+#[tauri::command]
+pub async fn project_usage(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    days: u32,
+) -> CommandResult<Vec<UsagePointDto>> {
+    blocking(&state, move |h| {
+        Ok(h.project_usage(&path, days)?
+            .iter()
+            .map(|(at, usage)| UsagePointDto {
+                at: *at,
+                spend: usage.into(),
+            })
+            .collect())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn usage_summary(
+    state: State<'_, AppState>,
+    days: u32,
+) -> CommandResult<UsageSummaryDto> {
+    blocking(&state, move |h| Ok(h.usage_summary(days)?.into())).await
+}
+
+#[tauri::command]
+pub async fn set_project_client(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    client: Option<String>,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.set_project_client(&path, client.as_deref()).map(drop)
     })
     .await
 }

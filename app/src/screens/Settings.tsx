@@ -113,7 +113,7 @@ export function Settings({ overview }: { overview: Overview }) {
             { id: "gemini", name: "Gemini", placeholder: "https://generativelanguage.googleapis.com/v1beta/openai" },
           ] as const
         ).map((api) => (
-          <Field key={api.id} label={api.name}>
+          <Field key={api.id} label={`${api.name}: dirección`}>
             {(id) => (
               <input
                 id={id}
@@ -125,6 +125,28 @@ export function Settings({ overview }: { overview: Overview }) {
                 onBlur={(e) =>
                   e.target.value.trim() !== (overview.apiUrls[api.id] ?? "") &&
                   setSetting.mutate({ key: `api_url.${api.id}`, value: e.target.value })
+                }
+              />
+            )}
+          </Field>
+        ))}
+        <p className="hint">
+          Precio para estimar el costo de las tareas por API: entrada/salida en USD por millón de tokens, como lo publica
+          el proveedor (por ejemplo, 0.60/2.50). Sin precio, Hedy solo cuenta tokens.
+        </p>
+        {(["kimi", "gemini"] as const).map((provider) => (
+          <Field key={provider} label={`${provider === "kimi" ? "Kimi" : "Gemini"}: precio`}>
+            {(id) => (
+              <input
+                id={id}
+                className="mono"
+                key={overview.apiPrices[provider] ?? ""}
+                defaultValue={overview.apiPrices[provider] ?? ""}
+                placeholder="entrada/salida"
+                spellCheck={false}
+                onBlur={(e) =>
+                  e.target.value.trim() !== (overview.apiPrices[provider] ?? "") &&
+                  setSetting.mutate({ key: `api_price.${provider}`, value: e.target.value.trim() || null })
                 }
               />
             )}

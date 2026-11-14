@@ -17,6 +17,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - App checks (from `app/`): `npm run typecheck`, `npm run lint`, `npm test`
 - Real end-to-end check (spends a few tokens of the `~/.claude` account):
   `cargo run -p hedy-core --example smoke_task -- haiku` (`env` / `bash` check `.env` stays unread)
+- Evals (real tasks, spend tokens): `cargo run -p hedy-evals -- --model haiku` (`--list`,
+  `--case`, `--layers plain,memory,code-map,full`, `--repeat`); results in `evals/results/`
 - Phase 0 prototypes: `cargo run -p hedy-phase0 -- --help`
 
 ## Layout
@@ -25,6 +27,7 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - `crates/hedy-cli`: `hedy` binary (driving adapter)
 - `crates/hedy-memory`: project-memory MCP server (rmcp, stdio); the app binary serves it
   as `memory-mcp`, like Claude's `PreToolUse` hook (`app/src-tauri/src/main.rs`)
+- `crates/hedy-evals`: eval runner; cases (`case.json`, `repo/`, hidden `check/`) in `evals/`
 - `app/src-tauri`: Tauri commands (driving adapter; DTOs live here, not in the domain)
 - `app/src`: React UI. Talks to the backend only through `api/HedyApi.ts`
   (`tauriApi` in the app, `MockApi` in tests and the browser)

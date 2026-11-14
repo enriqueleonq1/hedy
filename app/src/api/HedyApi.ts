@@ -7,6 +7,9 @@ import type {
   Note,
   NoteCategory,
   PhasePlan,
+  ProjectStatus,
+  UsagePoint,
+  UsageSummary,
   NewAccountInput,
   NewTaskInput,
   Overview,
@@ -36,6 +39,12 @@ export interface HedyApi {
   offerableAccounts(path: string): Promise<string[]>;
   setProjectColor(path: string, color: string | null): Promise<void>;
   setProjectPhases(path: string, phases: PhasePlan): Promise<void>;
+  /** Empty or null clears it. */
+  setProjectClient(path: string, client: string | null): Promise<void>;
+  projectStatus(path: string): Promise<ProjectStatus>;
+  /** Usage records of the last `days` days, oldest first. */
+  projectUsage(path: string, days: number): Promise<UsagePoint[]>;
+  usageSummary(days: number): Promise<UsageSummary>;
   removeProject(path: string): Promise<void>;
 
   setSetting(key: SettingKey, value: string | null): Promise<void>;

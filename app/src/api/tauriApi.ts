@@ -34,6 +34,10 @@ export const tauriApi: HedyApi = {
   offerableAccounts: (path) => invoke("offerable_accounts", { path }),
   setProjectColor: (path, color) => invoke("set_project_color", { path, color }),
   setProjectPhases: (path, phases) => invoke("set_project_phases", { path, phases }),
+  setProjectClient: (path, client) => invoke("set_project_client", { path, client }),
+  projectStatus: (path) => invoke("project_status", { path }),
+  projectUsage: (path, days) => invoke("project_usage", { path, days }),
+  usageSummary: (days) => invoke("usage_summary", { days }),
   removeProject: (path) => invoke("remove_project", { path }),
 
   setSetting: (key, value) => invoke("set_setting", { key, value }),

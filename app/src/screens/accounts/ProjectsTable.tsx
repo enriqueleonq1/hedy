@@ -31,6 +31,7 @@ export function ProjectsTable({ overview }: { overview: Overview }) {
               <tr>
                 <th>Proyecto</th>
                 <th>Carpeta</th>
+                <th>Cliente</th>
                 <th>Cuenta</th>
                 <th>Modelos</th>
                 <th>Protegido</th>
@@ -59,6 +60,7 @@ function ProjectRow({ project, overview }: { project: Project; overview: Overvie
     api.useAccount(project.path, vars.account, vars.protect),
   );
   const setColor = useAction((api, color: string | null) => api.setProjectColor(project.path, color));
+  const setClient = useAction((api, client: string) => api.setProjectClient(project.path, client));
   const remove = useAction((api) => api.removeProject(project.path));
   const [editingPhases, setEditingPhases] = useState(false);
   const offered = overview.accounts.filter((a) => project.offerableAccounts.includes(a.id) || a.id === project.account);
@@ -70,6 +72,16 @@ function ProjectRow({ project, overview }: { project: Project; overview: Overvie
         {project.name}
       </th>
       <td className="muted">{shortPath(project.path)}</td>
+      <td>
+        <input
+          className="table__input"
+          aria-label={`Cliente de ${project.name}`}
+          placeholder="Sin cliente"
+          key={project.client ?? ""}
+          defaultValue={project.client ?? ""}
+          onBlur={(e) => e.target.value.trim() !== (project.client ?? "") && setClient.mutate(e.target.value)}
+        />
+      </td>
       <td>
         <select
           className="pill-select pill-select--account"

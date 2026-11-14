@@ -456,7 +456,41 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
   - Once it is found (on `PATH` or in `~/.local/bin`), a switch registers it in every run
     as `codebase-memory`, with `CBM_ALLOWED_ROOT` set to the project.
 
-## 13. Decisions
+## 13. Phase 6: status and metrics
+
+- **Project status screen** (`07-estado-proyecto.png`). It shows:
+  - the mascot in the state of the current task, with one sentence about who works and
+    who comes next;
+  - the accounts working in the project, the branch and the uncommitted changes;
+  - indicators: the last test run any task saw, active models with their usage, whether
+    the code map is on, memory notes (plus stale and proposed ones);
+  - the tasks, the usage per day and the latest commits.
+
+  It does not count functions in the code map: that would mean querying the
+  codebase-memory-mcp index from Hedy, so it only says whether the map is on.
+- **Cost per project and client.** Each project can have a client (`projects.client`).
+  `hedy resumen` and the "Uso de la semana por cliente" table in Cuentas add up tokens and
+  cost per client and per project. All costs are estimates and the UI says so:
+  - For subscriptions, the cost is what the CLI reports, which is not what is billed.
+  - For API keys, it uses the price the user sets (`api_price.<provider>`, input/output
+    USD per million tokens), because Hedy does not know the providers' prices. Cached
+    input is charged as regular input, so the figure is an upper bound.
+- **Evals** (`crates/hedy-evals`, cases in `evals/`). These are real tasks run with and
+  without each layer (`plain`, `memory`, `code-map`, `full`):
+  - The runner drives Hedy like the app, approving plans and allowing permissions;
+    Hedy's own rules still apply.
+  - Each case has hidden checks that are copied into the worktree only after the agent
+    finishes.
+  - Runs use a separate data folder, so they do not fill the user's projects and memory.
+    They still spend real tokens of the chosen account.
+  - First real result (haiku, `price-format`, one run per layer): without memory the agent
+    returned `12.50` and failed; with memory it read the two notes, returned `USD 12.50`
+    and passed, with 14 % fewer tokens. One run per layer is a smoke test, not a
+    measurement: use `--repeat`.
+- **Not done yet:** automatic model routing per phase (the spec says "más adelante"). It
+  should wait for enough eval results to choose on data.
+
+## 14. Decisions
 
 - **Claude accounts:** `~/.claude` (Team) is registered as the default-folder account and
   launched without `CLAUDE_CONFIG_DIR`. New accounts live in Hedy folders.

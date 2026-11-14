@@ -13,6 +13,9 @@ import type {
   Overview,
   PhasePlan,
   Project,
+  ProjectStatus,
+  UsagePoint,
+  UsageSummary,
   Task,
   TerminalEvent,
   Usage,
@@ -50,6 +53,7 @@ export class MockApi implements HedyApi {
       defaultAccount: null,
       binaries: { claude: null, codex: null, gemini: null },
       apiUrls: { kimi: null, gemini: null },
+      apiPrices: { kimi: null, gemini: null },
       accounts: [],
       projects: [],
       codeMap: { enabled: null, found: null },
@@ -101,8 +105,8 @@ export class MockApi implements HedyApi {
       }),
     ];
     api.state.projects = [
-      project("/code/hedy", "claude-personal", { color: "#73DACA" }),
-      project("/code/homming", "claude-trabajo", { protected: true, color: "#FF9E64" }),
+      project("/code/hedy", "claude-personal", { color: "#73DACA", client: "León Blanco" }),
+      project("/code/homming", "claude-trabajo", { protected: true, color: "#FF9E64", client: "Homming" }),
     ];
     api.recomputeOffers();
     const day = 86_400;
@@ -130,7 +134,80 @@ export class MockApi implements HedyApi {
     note("Prefiere respuestas cortas y en español", "preference", { project: null, uses: 58 });
     note("Los formularios validan con zod", "convention", { author: "Codex", status: "proposed", uses: 0, lastUsed: null });
     api.usedLast = [3, 5];
+    // A week of usage: one record per day and project, busiest on the 4th day.
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    [18, 42, 25, 61, 20, 0, 0].forEach((k, i) => {
+      if (k === 0) return;
+      const at = Math.floor(today.getTime() / 1000) - (6 - i) * day;
+      api.usage.push({ project: "/code/hedy", at, tokens: k * 1000, costUsd: k / 40 });
+      api.usage.push({ project: "/code/homming", at, tokens: k * 300, costUsd: null });
+    });
     return api;
+  }
+
+  // --------------------------------------------------------------- usage
+
+  private usage: (UsagePoint & { project: string })[] = [];
+
+  async setProjectClient(path: string, client: string | null): Promise<void> {
+    this.project(path).client = client?.trim() || null;
+  }
+
+  async projectStatus(path: string): Promise<ProjectStatus> {
+    const project = this.project(path);
+    const view = await this.memory(path);
+    return {
+      branch: "main",
+      uncommitted: 3,
+      lastTests: { command: "pytest -q", passed: true, at: Math.floor(Date.now() / 1000) - 2 * 3600 },
+      agents: [project.account, ...Object.values(project.phases).map((p) => p.account)].filter(
+        (id, i, all): id is string => !!id && all.indexOf(id) === i,
+      ),
+      codeMap: this.state.codeMap.enabled !== null,
+      memoryNotes: view.notes.length,
+      memoryStale: view.stale.length,
+      memoryProposed: view.proposed.length,
+    };
+  }
+
+  async projectUsage(path: string, days: number): Promise<UsagePoint[]> {
+    const since = Date.now() / 1000 - days * 86_400;
+    return this.usage
+      .filter((u) => u.project === path && u.at >= since)
+      .map(({ at, tokens, costUsd }) => ({ at, tokens, costUsd }));
+  }
+
+  async usageSummary(days: number): Promise<UsageSummary> {
+    const since = Math.floor(Date.now() / 1000 - days * 86_400);
+    const add = (a: number | null, b: number | null) => (a === null && b === null ? null : (a ?? 0) + (b ?? 0));
+    const projects = new Map<string, UsageSummary["projects"][number]>();
+    for (const u of this.usage.filter((u) => u.at >= since)) {
+      const project = this.state.projects.find((p) => p.path === u.project);
+      const entry = projects.get(u.project) ?? {
+        path: u.project,
+        name: project?.name ?? u.project,
+        client: project?.client ?? null,
+        tokens: 0,
+        costUsd: null,
+      };
+      entry.tokens += u.tokens;
+      entry.costUsd = add(entry.costUsd, u.costUsd);
+      projects.set(u.project, entry);
+    }
+    const list = [...projects.values()].sort((a, b) => b.tokens - a.tokens);
+    const clients = new Map<string | null, UsageSummary["clients"][number]>();
+    for (const p of list) {
+      const entry = clients.get(p.client) ?? { client: p.client, projects: 0, tokens: 0, costUsd: null };
+      entry.projects += 1;
+      entry.tokens += p.tokens;
+      entry.costUsd = add(entry.costUsd, p.costUsd);
+      clients.set(p.client, entry);
+    }
+    const byClient = [...clients.values()].sort(
+      (a, b) => Number(a.client === null) - Number(b.client === null) || b.tokens - a.tokens,
+    );
+    return { since, projects: list, clients: byClient };
   }
 
   // --------------------------------------------------------------- memory
@@ -316,6 +393,9 @@ export class MockApi implements HedyApi {
   async setSetting(key: string, value: string | null): Promise<void> {
     if (key === "ui.theme") this.state.theme = (value ?? "system") as Overview["theme"];
     if (key === "ui.name") this.state.userName = value ?? "Enrique";
+    if (key.startsWith("api_price.")) {
+      this.state.apiPrices[key.slice(10) as keyof Overview["apiPrices"]] = value;
+    }
     if (key.startsWith("api_url.")) {
       this.state.apiUrls[key.slice(8) as keyof Overview["apiUrls"]] = value;
     }
@@ -616,6 +696,7 @@ function emptyProject(path: string): Project {
     color: null,
     offerableAccounts: [],
     phases: {},
+    client: null,
   };
 }
 

@@ -5,10 +5,13 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use hedy_core::adapters::find_program;
-use hedy_core::application::{AccountStatus, AccountUsage, AppResult, Hedy, MemoryView, Setting};
+use hedy_core::application::{
+    AccountStatus, AccountUsage, AppResult, Hedy, MemoryView, ProjectStatus, Setting, TestRun,
+    UsageSummary,
+};
 use hedy_core::domain::{
     Account, ConfigFolder, Credentials, LoginState, Note, PhasePlan, Project, Provider, Task,
-    TaskMode,
+    TaskMode, UsageSample,
 };
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +26,8 @@ pub struct OverviewDto {
     pub binaries: BTreeMap<&'static str, Option<String>>,
     /// Custom API endpoint per API-key provider (`None` = the provider's default).
     pub api_urls: BTreeMap<&'static str, Option<String>>,
+    /// Price per API-key provider, `input/output` USD per million tokens.
+    pub api_prices: BTreeMap<&'static str, Option<String>>,
     pub accounts: Vec<AccountDto>,
     pub projects: Vec<ProjectDto>,
     pub code_map: CodeMapDto,
@@ -176,6 +181,134 @@ pub struct ProjectDto {
     pub offerable_accounts: Vec<String>,
     /// Who plans, implements, writes tests and reviews.
     pub phases: PhasePlan,
+    pub client: Option<String>,
+}
+
+/// Tokens and estimated cost.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SpendDto {
+    pub tokens: u64,
+    pub cost_usd: Option<f64>,
+}
+
+impl From<&UsageSample> for SpendDto {
+    fn from(u: &UsageSample) -> Self {
+        Self {
+            tokens: u.total_tokens(),
+            cost_usd: u.cost_usd,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageSummaryDto {
+    pub since: i64,
+    pub projects: Vec<ProjectSpendDto>,
+    pub clients: Vec<ClientSpendDto>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSpendDto {
+    pub path: String,
+    pub name: String,
+    pub client: Option<String>,
+    #[serde(flatten)]
+    pub spend: SpendDto,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientSpendDto {
+    pub client: Option<String>,
+    pub projects: usize,
+    #[serde(flatten)]
+    pub spend: SpendDto,
+}
+
+impl From<UsageSummary> for UsageSummaryDto {
+    fn from(s: UsageSummary) -> Self {
+        Self {
+            since: s.since,
+            projects: s
+                .projects
+                .iter()
+                .map(|p| ProjectSpendDto {
+                    path: path_string(&p.project),
+                    name: p.name.clone(),
+                    client: p.client.clone(),
+                    spend: (&p.usage).into(),
+                })
+                .collect(),
+            clients: s
+                .clients
+                .iter()
+                .map(|c| ClientSpendDto {
+                    client: c.client.clone(),
+                    projects: c.projects,
+                    spend: (&c.usage).into(),
+                })
+                .collect(),
+        }
+    }
+}
+
+/// One usage record of a project, for the per-day chart.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsagePointDto {
+    pub at: i64,
+    #[serde(flatten)]
+    pub spend: SpendDto,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectStatusDto {
+    pub branch: Option<String>,
+    pub uncommitted: Option<usize>,
+    pub last_tests: Option<TestRunDto>,
+    /// Ids of the accounts that work in the project.
+    pub agents: Vec<String>,
+    pub code_map: bool,
+    pub memory_notes: usize,
+    pub memory_stale: usize,
+    pub memory_proposed: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestRunDto {
+    pub command: String,
+    pub passed: bool,
+    pub at: i64,
+}
+
+impl From<ProjectStatus> for ProjectStatusDto {
+    fn from(s: ProjectStatus) -> Self {
+        Self {
+            branch: s.branch,
+            uncommitted: s.uncommitted,
+            last_tests: s.last_tests.map(
+                |TestRun {
+                     command,
+                     passed,
+                     at,
+                 }| TestRunDto {
+                    command,
+                    passed,
+                    at,
+                },
+            ),
+            agents: s.agents.iter().map(|a| a.id.to_string()).collect(),
+            code_map: s.code_map,
+            memory_notes: s.memory_notes,
+            memory_stale: s.memory_stale,
+            memory_proposed: s.memory_proposed,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -252,6 +385,7 @@ impl ProjectDto {
             color: project.color.map(|c| c.to_string()),
             offerable_accounts,
             phases: project.phases.clone(),
+            client: project.client.clone(),
         }
     }
 }
@@ -294,6 +428,11 @@ pub fn overview(hedy: &Hedy, data_dir: &Path) -> AppResult<OverviewDto> {
         .filter(|p| p.supports_api_key())
         .map(|p| Ok((p.as_str(), hedy.setting(Setting::ApiUrl(p))?)))
         .collect::<AppResult<_>>()?;
+    let api_prices = Provider::ALL
+        .into_iter()
+        .filter(|p| p.supports_api_key())
+        .map(|p| Ok((p.as_str(), hedy.setting(Setting::ApiPrice(p))?)))
+        .collect::<AppResult<_>>()?;
 
     Ok(OverviewDto {
         user_name: hedy
@@ -306,6 +445,7 @@ pub fn overview(hedy: &Hedy, data_dir: &Path) -> AppResult<OverviewDto> {
         default_account: status.default_account.as_ref().map(ToString::to_string),
         binaries,
         api_urls,
+        api_prices,
         accounts: status
             .accounts
             .iter()

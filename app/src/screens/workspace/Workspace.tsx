@@ -21,11 +21,13 @@ export function Workspace({
   project,
   mode,
   onOpenMemory,
+  onOpenStatus,
 }: {
   overview: Overview;
   project: string;
   mode: TaskMode;
   onOpenMemory?: () => void;
+  onOpenStatus?: () => void;
 }) {
   const tasks = useTasks(project);
   const [chosen, setChosen] = useState<string | null | undefined>(undefined);
@@ -71,6 +73,11 @@ export function Workspace({
               </select>
             )}
             {task?.live && <StopButton task={task} />}
+            {onOpenStatus && (
+              <Button small variant="ghost" onClick={onOpenStatus}>
+                Estado
+              </Button>
+            )}
             {onOpenMemory && (
               <Button small variant="ghost" onClick={onOpenMemory}>
                 Memoria

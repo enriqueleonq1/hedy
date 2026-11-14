@@ -14,11 +14,12 @@ export type View =
   | { screen: "accounts" }
   | { screen: "settings" }
   | { screen: "workspace"; project: string }
-  | { screen: "memory"; project: string };
+  | { screen: "memory"; project: string }
+  | { screen: "status"; project: string };
 
 /** The project a view belongs to (its workspace or its memory). */
 export function viewProject(view: View): string | null {
-  return view.screen === "workspace" || view.screen === "memory" ? view.project : null;
+  return view.screen === "workspace" || view.screen === "memory" || view.screen === "status" ? view.project : null;
 }
 
 export function defaultAccount(overview: Overview): Account | undefined {

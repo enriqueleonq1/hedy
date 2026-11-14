@@ -34,6 +34,39 @@ export interface Project {
   offerableAccounts: string[];
   /** Who plans, implements, writes tests and reviews. */
   phases: PhasePlan;
+  /** Who the work is for, to add up cost per client. */
+  client: string | null;
+}
+
+/** Tokens and estimated cost (CLI estimate or configured API price). */
+export interface Spend {
+  tokens: number;
+  costUsd: number | null;
+}
+
+export interface UsagePoint extends Spend {
+  /** Unix seconds. */
+  at: number;
+}
+
+export interface UsageSummary {
+  since: number;
+  /** Busiest first. */
+  projects: (Spend & { path: string; name: string; client: string | null })[];
+  /** Busiest first; projects without a client last. */
+  clients: (Spend & { client: string | null; projects: number })[];
+}
+
+export interface ProjectStatus {
+  branch: string | null;
+  uncommitted: number | null;
+  lastTests: { command: string; passed: boolean; at: number } | null;
+  /** Ids of the accounts that work in the project. */
+  agents: string[];
+  codeMap: boolean;
+  memoryNotes: number;
+  memoryStale: number;
+  memoryProposed: number;
 }
 
 export type Phase = "plan" | "implement" | "tests" | "review";
@@ -52,6 +85,8 @@ export interface Overview {
   defaultAccount: string | null;
   binaries: Record<CliProviderId, string | null>;
   apiUrls: Record<"kimi" | "gemini", string | null>;
+  /** `input/output` USD per million tokens. */
+  apiPrices: Record<"kimi" | "gemini", string | null>;
   accounts: Account[];
   projects: Project[];
   codeMap: CodeMap;
@@ -108,6 +143,8 @@ export type SettingKey =
   | "binary.gemini"
   | "api_url.kimi"
   | "api_url.gemini"
+  | "api_price.kimi"
+  | "api_price.gemini"
   | "code_map.binary";
 
 export type TerminalRequest =
@@ -153,6 +190,9 @@ export interface Task {
   sessionId: string | null;
   status: TaskStatus;
   createdAt: number;
+  /** The phases this task runs through (absent in old tasks), and the current one. */
+  stages?: { phase: Phase; account: string; model: string | null }[];
+  stage?: number;
   /** Whether its agent process is running right now. */
   live: boolean;
 }
