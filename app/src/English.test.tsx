@@ -205,4 +205,31 @@ describe("English", () => {
     expect(within(proposed).getByRole("button", { name: "Discard the proposal" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
   });
+
+  it("shows a project's skills in English", async () => {
+    const { user } = setup();
+    await user.click(await screen.findByRole("button", { name: /^hedy/ }));
+    await user.click(await screen.findByRole("button", { name: "Memory" }));
+    await user.click(await screen.findByRole("tab", { name: /^Skills/ }));
+    const proposed = await screen.findByRole("region", { name: "Proposed by your AIs · awaiting approval" });
+    expect(screen.getByRole("tab", { name: /Skills.*2 to approve/ })).toHaveAttribute("aria-selected", "true");
+    expect(within(proposed).getByText("Update of an approved skill")).toBeInTheDocument();
+    expect(within(proposed).getByRole("button", { name: "Approve change" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "In this project" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Yours · in every project" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Where your AIs read them" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+
+    const endpoint = within(proposed).getByRole("listitem", { name: "agregar-endpoint" });
+    await user.click(within(endpoint).getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("button", { name: "Save and approve" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Where" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+
+    await user.click(screen.getByRole("button", { name: "Save and approve" }));
+    expect(await screen.findByText("Skill «agregar-endpoint» ready: 2 files written.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "+ New skill" }));
+    expect(screen.getByRole("dialog", { name: "New skill" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+  });
 });

@@ -21,7 +21,8 @@ export type View =
   | { screen: "activity" }
   /** `task`: open that task instead of the most recent open one. */
   | { screen: "workspace"; project: string; task?: string }
-  | { screen: "memory"; project: string }
+  /** `tab`: the skills tab instead of the notes. */
+  | { screen: "memory"; project: string; tab?: "notes" | "skills" }
   | { screen: "status"; project: string };
 
 /** The project a view belongs to (its workspace, memory or status). */

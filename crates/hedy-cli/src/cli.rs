@@ -377,6 +377,83 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             ),
         ),
         (
+            "skills",
+            "",
+            tr!(
+                "Habilidades aprendidas: procedimientos que tus IAs proponen y tú apruebas",
+                "Learned skills: procedures your AIs propose and you approve"
+            ),
+        ),
+        (
+            "skills list",
+            "",
+            tr!(
+                "Lista las habilidades aprobadas y las propuestas (por defecto)",
+                "List the approved skills and the proposals (default)"
+            ),
+        ),
+        (
+            "skills show",
+            "",
+            tr!(
+                "Muestra una habilidad completa y sus actualizaciones propuestas",
+                "Show a whole skill and its proposed updates"
+            ),
+        ),
+        (
+            "skills show",
+            "name",
+            tr!(
+                "Nombre de la habilidad (mira `hedy skills list`)",
+                "Name of the skill (see `hedy skills list`)"
+            ),
+        ),
+        (
+            "skills approve",
+            "",
+            tr!(
+                "Aprueba una propuesta y la pone a disposición de las IAs (archivos de cada CLI y herramientas de Hedy)",
+                "Approve a proposal and make it available to the AIs (each CLI's files and Hedy's tools)"
+            ),
+        ),
+        (
+            "skills approve",
+            "id",
+            tr!(
+                "Número de la propuesta (mira `hedy skills list`)",
+                "Number of the proposal (see `hedy skills list`)"
+            ),
+        ),
+        (
+            "skills reject",
+            "",
+            tr!(
+                "Rechaza una propuesta: se borra y nada más cambia",
+                "Reject a proposal: it is deleted and nothing else changes"
+            ),
+        ),
+        (
+            "skills reject",
+            "id",
+            tr!(
+                "Número de la propuesta (mira `hedy skills list`)",
+                "Number of the proposal (see `hedy skills list`)"
+            ),
+        ),
+        (
+            "skills remove",
+            "",
+            tr!(
+                "Borra una habilidad y los archivos que Hedy escribió para ella",
+                "Delete a skill and the files Hedy wrote for it"
+            ),
+        ),
+        (
+            "skills remove",
+            "name",
+            tr!("Nombre de la habilidad", "Name of the skill"),
+        ),
+        (
             "config",
             "",
             tr!(
@@ -568,6 +645,12 @@ pub enum Command {
         command: Option<MemoryCommand>,
     },
 
+    #[command(visible_alias = "habilidades")]
+    Skills {
+        #[command(subcommand)]
+        command: Option<SkillsCommand>,
+    },
+
     #[command(subcommand)]
     Config(ConfigCommand),
 
@@ -613,6 +696,24 @@ pub enum MemoryCommand {
 
     #[command(visible_alias = "rechazar")]
     Reject { id: i64 },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SkillsCommand {
+    #[command(visible_alias = "listar")]
+    List,
+
+    #[command(visible_alias = "ver")]
+    Show { name: String },
+
+    #[command(visible_alias = "aprobar")]
+    Approve { id: i64 },
+
+    #[command(visible_alias = "rechazar")]
+    Reject { id: i64 },
+
+    #[command(visible_alias = "quitar")]
+    Remove { name: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -791,6 +892,34 @@ mod tests {
             })
         ));
         assert!(Cli::try_parse_from(["hedy", "memory", "approve", "x"]).is_err());
+    }
+
+    #[test]
+    fn skills_list_by_default_and_take_spanish_aliases() {
+        let parse = |args: &[&str]| Cli::try_parse_from(args).unwrap().command;
+        assert!(matches!(
+            parse(&["hedy", "skills"]),
+            Some(Command::Skills { command: None })
+        ));
+        assert!(matches!(
+            parse(&["hedy", "habilidades", "aprobar", "4"]),
+            Some(Command::Skills {
+                command: Some(SkillsCommand::Approve { id: 4 })
+            })
+        ));
+        assert!(matches!(
+            parse(&["hedy", "habilidades", "ver", "run-tests"]),
+            Some(Command::Skills {
+                command: Some(SkillsCommand::Show { name })
+            }) if name == "run-tests"
+        ));
+        assert!(matches!(
+            parse(&["hedy", "skills", "quitar", "lint"]),
+            Some(Command::Skills {
+                command: Some(SkillsCommand::Remove { .. })
+            })
+        ));
+        assert!(Cli::try_parse_from(["hedy", "skills", "reject", "x"]).is_err());
     }
 
     #[test]

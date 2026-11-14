@@ -465,6 +465,173 @@ fn memory_lists_approves_and_rejects_proposals() {
         .stderr(predicate::str::contains("note 999 does not exist"));
 }
 
+/// A real git repository (skill files are excluded through `.git/info/exclude`).
+fn git_repo(env: &Env, rel: &str) -> PathBuf {
+    let dir = env.path(rel);
+    fs::create_dir_all(&dir).unwrap();
+    let init = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .arg(&dir)
+        .status()
+        .unwrap();
+    assert!(init.success());
+    dir.canonicalize().unwrap()
+}
+
+/// Skills as agents leave them, written straight to the database: a new
+/// proposal and an approved skill with a proposed update.
+fn seed_skills(env: &Env, repo: &Path) -> (i64, i64) {
+    use hedy_core::adapters::{self, HedyPaths};
+    let hedy = adapters::system(&HedyPaths::at(env.path("data"))).unwrap();
+    let tests = hedy
+        .propose_skill(
+            repo,
+            "run-e2e-tests",
+            "Run the end-to-end tests before a release.",
+            "1. npm run build\n2. npm run test:e2e",
+            "Claude",
+            None,
+        )
+        .unwrap();
+    hedy.approve_skill(tests.id).unwrap();
+    let update = hedy
+        .propose_skill(
+            repo,
+            "run-e2e-tests",
+            "Run the end-to-end tests, headless.",
+            "1. npm run test:e2e -- --headless",
+            "Codex",
+            None,
+        )
+        .unwrap();
+    let lint = hedy
+        .propose_skill(
+            repo,
+            "lint",
+            "Lint before committing.",
+            "1. npm run lint",
+            "Codex",
+            None,
+        )
+        .unwrap();
+    (update.id, lint.id)
+}
+
+#[test]
+fn skills_list_show_approve_reject_and_remove() {
+    let env = Env::new();
+    let repo = git_repo(&env, "code/moira");
+    env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy_in(&repo, &["use", "claude"]).assert().success();
+    env.hedy_in(&repo, &["habilidades"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Todavía no hay habilidades"));
+
+    let (update, lint) = seed_skills(&env, &repo);
+    let skill_file = repo.join(".claude/skills/run-e2e-tests/SKILL.md");
+    assert!(
+        fs::read_to_string(&skill_file)
+            .unwrap()
+            .contains("npm run build")
+    );
+    let exclude = fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
+    assert!(exclude.contains("/.claude/skills/run-e2e-tests/"));
+    assert!(exclude.contains("/.agents/skills/run-e2e-tests/"));
+
+    env.hedy_in(&repo, &["habilidades", "listar"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Propuestas · para aprobar"))
+        .stdout(predicate::str::contains(format!("#{lint}")))
+        .stdout(predicate::str::contains("hedy skills show run-e2e-tests"))
+        .stdout(predicate::str::contains("Aprobadas"))
+        .stdout(predicate::str::contains("hedy skills approve <id>"));
+    env.hedy_in(&repo, &["skills", "ver", "run-e2e-tests"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("npm run build"))
+        .stdout(predicate::str::contains(format!(
+            "Actualización propuesta #{update} · Codex"
+        )))
+        .stdout(predicate::str::contains("--headless"));
+
+    env.hedy(&["skills", "rechazar", &lint.to_string()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("rechazada"));
+    env.hedy(&["skills", "approve", &update.to_string()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Habilidad run-e2e-tests actualizada",
+        ));
+    assert!(
+        fs::read_to_string(&skill_file)
+            .unwrap()
+            .contains("--headless")
+    );
+
+    // A skill of the user's own with the same name is left alone.
+    let mine = repo.join(".agents/skills/run-e2e-tests/SKILL.md");
+    fs::write(&mine, "---\nname: run-e2e-tests\n---\nMine").unwrap();
+    env.hedy_in(&repo, &["skills", "remove", "run-e2e-tests"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Habilidad run-e2e-tests borrada"));
+    assert!(!skill_file.exists() && !repo.join(".claude").exists());
+    assert_eq!(
+        fs::read_to_string(&mine).unwrap(),
+        "---\nname: run-e2e-tests\n---\nMine"
+    );
+    env.hedy_in(&repo, &["skills", "show", "run-e2e-tests"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "no existe la habilidad «run-e2e-tests»",
+        ));
+}
+
+#[test]
+fn skills_speak_english() {
+    let env = Env::new();
+    let repo = git_repo(&env, "code/moira");
+    env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy_in(&repo, &["use", "claude"]).assert().success();
+    let dir = repo.to_str().unwrap();
+    env.hedy_lang("en", &["-C", dir, "skills"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("has no skills yet"));
+    let (update, lint) = seed_skills(&env, &repo);
+    env.hedy_lang("en", &["-C", dir, "skills", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Proposals · awaiting approval"))
+        .stdout(predicate::str::contains("updates #"))
+        .stdout(predicate::str::contains("Approved"));
+    env.hedy_lang("en", &["skills", "approve", &lint.to_string()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Skill lint approved"))
+        .stdout(predicate::str::contains("wrote "));
+    env.hedy_lang("en", &["skills", "reject", &update.to_string()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("the skills did not change"));
+    env.hedy_lang("en", &["skills", "reject", "999"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("there is no skill «999»"));
+    env.hedy_lang("en", &["skills", "--help"])
+        .assert()
+        .stdout(predicate::str::contains("Learned skills"));
+}
+
 #[test]
 fn doctor_checks_clis_accounts_and_the_environment() {
     let env = Env::new();

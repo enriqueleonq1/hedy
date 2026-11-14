@@ -7,11 +7,12 @@ use anyhow::{Result, bail};
 use chrono::Timelike;
 use hedy_core::application::{
     AccountStatus, CheckArea, CheckLevel, DoctorReport, Hedy, NewAccount, Proposal, RECENT_HOURS,
-    Setting, TaskActivity,
+    Setting, SkillFiles, TaskActivity,
 };
 use hedy_core::domain::memory::USER_AUTHOR;
 use hedy_core::domain::{
-    Account, Category, ConfigFolder, Credentials, LoginState, Note, Phase, Provider, TaskState,
+    Account, Category, ConfigFolder, Credentials, LoginState, Note, Phase, Project, Provider,
+    Skill, SkillStatus, TaskState,
 };
 use hedy_core::i18n::{self, Language};
 use hedy_core::tr;
@@ -1093,6 +1094,217 @@ pub fn memory_reject(hedy: &Hedy, id: i64) -> Result<()> {
             "Proposal #{id} rejected; the memory did not change."
         )
     );
+    Ok(())
+}
+
+fn project_here(hedy: &Hedy, dir: &Path) -> Result<Project> {
+    match hedy.project_for(dir)? {
+        Some(project) => Ok(project),
+        None => bail!(
+            "{}",
+            tr!(
+                "esta carpeta no es un proyecto de Hedy; usa `hedy use <cuenta>` primero",
+                "this folder is not a Hedy project; use `hedy use <account>` first"
+            )
+        ),
+    }
+}
+
+fn print_skill_line(s: &Style, skill: &Skill) {
+    let id = format!("#{}", skill.id);
+    let mut details = vec![if skill.author == USER_AUTHOR {
+        tr!("tú", "you")
+    } else {
+        skill.author.clone()
+    }];
+    if skill.project.is_none() {
+        details.push(tr!("todos los proyectos", "all projects"));
+    }
+    println!(
+        "  {} {}  {}",
+        pad(&s.bold(&id), id.chars().count(), ID_WIDTH),
+        s.bold(&skill.name),
+        s.muted(details.join(" · "))
+    );
+    for line in wrap(&skill.description, NOTE_WIDTH) {
+        println!("  {} {line}", " ".repeat(ID_WIDTH));
+    }
+}
+
+/// Tells what happened to the CLIs' skill files, warning about the user's
+/// own files that were left alone.
+fn print_skill_files(s: &Style, files: &SkillFiles) {
+    for path in &files.written {
+        let path = short_path(path);
+        println!("  {}", s.muted(tr!("escrita {path}", "wrote {path}")));
+    }
+    for path in &files.removed {
+        let path = short_path(path);
+        println!("  {}", s.muted(tr!("borrada {path}", "removed {path}")));
+    }
+    for path in &files.skipped {
+        let path = short_path(path);
+        println!(
+            "  {} {}",
+            s.warn("!"),
+            tr!(
+                "{path} ya existe y no es de Hedy: no se tocó (renombra la habilidad para tener las dos)",
+                "{path} already exists and is not Hedy's: left alone (rename the skill to keep both)"
+            )
+        );
+    }
+}
+
+pub fn skills_list(hedy: &Hedy, dir: &Path) -> Result<()> {
+    let s = Style::for_stdout();
+    let project = project_here(hedy, dir)?;
+    let view = hedy.skills(&project.path)?;
+    let name = s.bold(&project.name);
+    if view.approved.is_empty() && view.proposed.is_empty() {
+        let mut text = vec![tr!(
+            "Todavía no hay habilidades en {name}.",
+            "{name} has no skills yet."
+        )];
+        if s.enabled() {
+            text.push(s.muted(tr!(
+                "Cuando una IA descubra un procedimiento reutilizable te lo propondrá: nada se usa sin tu aprobación.",
+                "When an AI works out a reusable procedure it will propose it: nothing is used without your approval."
+            )));
+        }
+        mascot::print_beside(&s, Mood::Sleepy, &text);
+        return Ok(());
+    }
+    println!();
+    println!(
+        "  {}  {}",
+        tr!("Habilidades de {name}", "{name} skills"),
+        s.muted(short_path(&project.path))
+    );
+    if !view.proposed.is_empty() {
+        println!(
+            "\n{}",
+            s.section(&tr!(
+                "Propuestas · para aprobar",
+                "Proposals · awaiting approval"
+            ))
+        );
+        for proposal in &view.proposed {
+            print_skill_line(&s, &proposal.skill);
+            if let Some(old) = &proposal.replaces {
+                let indent = " ".repeat(ID_WIDTH);
+                let (id, name) = (old.id, &old.name);
+                let label = tr!(
+                    "actualiza #{id}; mira el cambio con `hedy skills show {name}`",
+                    "updates #{id}; see the change with `hedy skills show {name}`"
+                );
+                println!("  {indent} {}", s.warn(label));
+            }
+        }
+    }
+    if !view.approved.is_empty() {
+        println!("\n{}", s.section(&tr!("Aprobadas", "Approved")));
+        for skill in &view.approved {
+            print_skill_line(&s, skill);
+        }
+    }
+    println!();
+    if !view.proposed.is_empty() {
+        let line = tr!(
+            "Aprueba con `hedy skills approve <id>` o rechaza con `hedy skills reject <id>`.",
+            "Approve with `hedy skills approve <id>` or reject with `hedy skills reject <id>`."
+        );
+        println!("  {}\n", hint(&s, &line));
+    }
+    Ok(())
+}
+
+fn print_skill_body(s: &Style, body: &str) {
+    for line in body.lines() {
+        println!("    {line}");
+    }
+    if body.is_empty() {
+        println!("    {}", s.muted("—"));
+    }
+}
+
+pub fn skills_show(hedy: &Hedy, dir: &Path, name: &str) -> Result<()> {
+    let s = Style::for_stdout();
+    let project = project_here(hedy, dir)?;
+    let skill = hedy.skill_named(&project.path, name)?;
+    println!();
+    print_skill_line(&s, &skill);
+    let status = match skill.status {
+        SkillStatus::Approved => tr!("aprobada", "approved"),
+        SkillStatus::Proposed => tr!("propuesta", "proposal"),
+    };
+    println!("  {} {}", " ".repeat(ID_WIDTH), s.muted(status));
+    println!();
+    print_skill_body(&s, &skill.body);
+    // Proposed updates of this skill, with their new text.
+    let view = hedy.skills(&project.path)?;
+    for proposal in view
+        .proposed
+        .iter()
+        .filter(|p| p.replaces.as_ref().is_some_and(|old| old.id == skill.id))
+    {
+        let id = proposal.skill.id;
+        let author = &proposal.skill.author;
+        println!(
+            "\n{}",
+            s.section(&tr!(
+                "Actualización propuesta #{id} · {author}",
+                "Proposed update #{id} · {author}"
+            ))
+        );
+        if proposal.skill.description != skill.description {
+            println!("  {}", proposal.skill.description);
+        }
+        print_skill_body(&s, &proposal.skill.body);
+    }
+    println!();
+    Ok(())
+}
+
+pub fn skills_approve(hedy: &Hedy, id: i64) -> Result<()> {
+    let s = Style::for_stdout();
+    let change = hedy.approve_skill(id)?;
+    let name = s.bold(&change.skill.name);
+    let done = if change.skill.id == id {
+        tr!("Habilidad {name} aprobada.", "Skill {name} approved.")
+    } else {
+        tr!("Habilidad {name} actualizada.", "Skill {name} updated.")
+    };
+    println!("{} {done}", s.ok("✔"));
+    print_skill_files(&s, &change.files);
+    Ok(())
+}
+
+pub fn skills_reject(hedy: &Hedy, id: i64) -> Result<()> {
+    let s = Style::for_stdout();
+    hedy.reject_skill(id)?;
+    println!(
+        "{} {}",
+        s.ok("✔"),
+        tr!(
+            "Propuesta #{id} rechazada; las habilidades no cambiaron.",
+            "Proposal #{id} rejected; the skills did not change."
+        )
+    );
+    Ok(())
+}
+
+pub fn skills_remove(hedy: &Hedy, dir: &Path, name: &str) -> Result<()> {
+    let s = Style::for_stdout();
+    let project = project_here(hedy, dir)?;
+    let skill = hedy.skill_named(&project.path, name)?;
+    let files = hedy.remove_skill(skill.id)?;
+    let name = s.bold(&skill.name);
+    println!(
+        "{} {}",
+        s.ok("✔"),
+        tr!("Habilidad {name} borrada.", "Skill {name} removed.")
+    );
+    print_skill_files(&s, &files);
     Ok(())
 }
 

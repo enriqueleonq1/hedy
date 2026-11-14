@@ -55,6 +55,14 @@ pub enum AppError {
     #[error("{}", self.message())]
     EmptyNote,
     #[error("{}", self.message())]
+    SkillNotFound(String),
+    #[error("{}", self.message())]
+    SkillNotAProposal(i64),
+    #[error("{}", self.message())]
+    SkillNameTaken(String),
+    #[error("{}", self.message())]
+    GlobalSkillInProtectedProject,
+    #[error("{}", self.message())]
     EmptyPrompt,
     #[error("{}", self.message())]
     ProviderNotYetSupported(Provider),
@@ -155,6 +163,22 @@ impl AppError {
                 "note {id} is not a proposal: it is already approved"
             ),
             Self::EmptyNote => tr!("la nota está vacía", "the note is empty"),
+            Self::SkillNotFound(skill) => tr!(
+                "no existe la habilidad «{skill}» en este proyecto",
+                "there is no skill «{skill}» in this project"
+            ),
+            Self::SkillNotAProposal(id) => tr!(
+                "la habilidad {id} no es una propuesta: ya está aprobada",
+                "skill {id} is not a proposal: it is already approved"
+            ),
+            Self::SkillNameTaken(name) => tr!(
+                "ya hay otra habilidad aprobada llamada «{name}»",
+                "another approved skill is already called «{name}»"
+            ),
+            Self::GlobalSkillInProtectedProject => tr!(
+                "un proyecto protegido no comparte habilidades globales: déjala en el proyecto",
+                "a protected project does not share global skills: keep it in the project"
+            ),
             Self::EmptyPrompt => tr!("escribe qué quieres que haga", "write what you want done"),
             Self::ProviderNotYetSupported(provider) => tr!(
                 "las tareas con {provider} todavía no están disponibles en Hedy",

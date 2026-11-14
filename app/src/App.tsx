@@ -54,20 +54,21 @@ function Localized({ children }: { children: ReactNode }) {
 
 /**
  * `#accounts`, `#settings`, `#activity`, `#p=<path>` (workspace), `#m=<path>`
- * (memory), `#s=<path>` (status).
+ * (memory), `#k=<path>` (memory, skills tab), `#s=<path>` (status).
  */
 function viewFromHash(): View {
   const hash = decodeURIComponent(window.location.hash.slice(1));
   if (hash === "accounts" || hash === "settings" || hash === "activity") return { screen: hash };
   if (hash.startsWith("p=")) return { screen: "workspace", project: hash.slice(2) };
   if (hash.startsWith("m=")) return { screen: "memory", project: hash.slice(2) };
+  if (hash.startsWith("k=")) return { screen: "memory", project: hash.slice(2), tab: "skills" };
   if (hash.startsWith("s=")) return { screen: "status", project: hash.slice(2) };
   return { screen: "welcome" };
 }
 
 function hashFor(view: View): string {
   if (view.screen === "workspace") return `#p=${encodeURIComponent(view.project)}`;
-  if (view.screen === "memory") return `#m=${encodeURIComponent(view.project)}`;
+  if (view.screen === "memory") return `#${view.tab === "skills" ? "k" : "m"}=${encodeURIComponent(view.project)}`;
   if (view.screen === "status") return `#s=${encodeURIComponent(view.project)}`;
   return `#${view.screen}`;
 }
@@ -192,6 +193,8 @@ function Root() {
               key={current.project}
               overview={data}
               project={current.project}
+              initialTab={current.tab}
+              onTab={(tab) => navigate({ screen: "memory", project: current.project, tab })}
               onBack={() => navigate({ screen: "workspace", project: current.project })}
             />
           )}

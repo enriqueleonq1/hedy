@@ -145,6 +145,59 @@ export interface MemoryView {
   protected: boolean;
 }
 
+/** A learned skill: a reusable procedure an AI proposed and the user approves. */
+export interface Skill {
+  id: number;
+  /** A slug, such as `run-e2e-tests`: its folder name in each CLI. */
+  name: string;
+  /** One line: when to use it. */
+  description: string;
+  /** The steps, in Markdown. */
+  body: string;
+  /** null: a global skill (every non-protected project, only through Hedy's tools). */
+  project: string | null;
+  status: "proposed" | "approved";
+  /** "user" or the AI that proposed it. */
+  author: string;
+  /** Unix seconds. */
+  createdAt: number;
+  updatedAt: number | null;
+  /** The task it came from. */
+  sourceTask: string | null;
+}
+
+export interface SkillProposal {
+  skill: Skill;
+  /** The approved skill with the same name: approving replaces its text. */
+  replaces: Skill | null;
+}
+
+export interface SkillsView {
+  approved: Skill[];
+  proposed: SkillProposal[];
+  protected: boolean;
+}
+
+/** What happened to the CLIs' skill files after a change. */
+export interface SkillFiles {
+  written: string[];
+  removed: string[];
+  /** The user's own files with that name, left alone. */
+  skipped: string[];
+}
+
+export interface SkillChange {
+  skill: Skill;
+  files: SkillFiles;
+}
+
+export interface SkillDraft {
+  name: string;
+  description: string;
+  body: string;
+  global: boolean;
+}
+
 export interface NewAccountInput {
   name: string;
   provider: ProviderId;

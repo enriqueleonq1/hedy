@@ -3,14 +3,15 @@
 //!
 //! Hedy starts one server per agent run, scoped to a project and a task.
 //! Agents only see approved notes; what they write is a proposal the user
-//! approves in the app (spec rule 6).
+//! approves in the app (spec rule 6). The same server offers the learned
+//! skills (`skill_list`, `skill_get`, `skill_propose`), with the same rule.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use hedy_core::adapters::{self, HedyPaths, MEMORY_SERVER_ARG, hook};
-use hedy_core::application::ports::MemoryTools;
+use hedy_core::application::ports::{MemoryTools, SkillTools};
 use hedy_core::domain::TaskId;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{ServiceExt, schemars, tool, tool_router};
@@ -81,9 +82,27 @@ pub struct ProposeParams {
     pub topic: Option<String>,
 }
 
-/// Hedy's memory tools for one project and task, over MCP.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SkillGetParams {
+    /// The skill's name, from skill_list.
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SkillProposeParams {
+    /// Short lowercase name with dashes, such as run-e2e-tests. With the
+    /// name of an existing skill, the proposal is an update of it.
+    pub name: String,
+    /// One line: when to use it.
+    pub description: String,
+    /// The steps, in Markdown. No secrets, tokens or .env values.
+    pub body: String,
+}
+
+/// Hedy's memory and skill tools for one project and task, over MCP.
 pub struct MemoryServer {
     tools: Arc<dyn MemoryTools>,
+    skills: Arc<dyn SkillTools>,
 }
 
 #[tool_router(server_handler)]
@@ -120,11 +139,36 @@ impl MemoryServer {
         self.tools
             .propose(&params.text, &params.category, params.topic.as_deref())
     }
+
+    #[tool(
+        name = "skill_list",
+        description = "Lista las habilidades aprobadas del proyecto: procedimientos reutilizables (correr los tests e2e, publicar una versión…), con el nombre y cuándo usar cada una. skill_get devuelve una completa."
+    )]
+    fn skill_list(&self) -> String {
+        self.skills.list()
+    }
+
+    #[tool(
+        name = "skill_get",
+        description = "Devuelve una habilidad aprobada completa (sus pasos), por nombre."
+    )]
+    fn skill_get(&self, Parameters(params): Parameters<SkillGetParams>) -> String {
+        self.skills.get(&params.name)
+    }
+
+    #[tool(
+        name = "skill_propose",
+        description = "Propone una habilidad: un procedimiento reutilizable que no es obvio, descubierto en una tarea que salió bien. No se guarda hasta que el usuario la apruebe. Con el nombre de una existente, propone su actualización. Nunca incluyas secretos."
+    )]
+    fn skill_propose(&self, Parameters(params): Parameters<SkillProposeParams>) -> String {
+        self.skills
+            .propose(&params.name, &params.description, &params.body)
+    }
 }
 
 impl MemoryServer {
-    pub fn new(tools: Arc<dyn MemoryTools>) -> Self {
-        Self { tools }
+    pub fn new(tools: Arc<dyn MemoryTools>, skills: Arc<dyn SkillTools>) -> Self {
+        Self { tools, skills }
     }
 }
 
@@ -132,7 +176,8 @@ impl MemoryServer {
 pub fn serve(options: Options) -> Result<()> {
     let hedy = adapters::system(&HedyPaths::at(options.data_dir.clone()))?;
     let tools = hedy.memory_tools(&options.project, options.task.as_ref(), &options.agent)?;
-    let server = MemoryServer::new(tools);
+    let skills = hedy.skill_tools(&options.project, options.task.as_ref(), &options.agent)?;
+    let server = MemoryServer::new(tools, skills);
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
@@ -198,6 +243,24 @@ mod tests {
         }
     }
 
+    impl SkillTools for Recorder {
+        fn list(&self) -> String {
+            self.0.lock().unwrap().push("skill_list".into());
+            "- run-tests [proyecto]: Antes de entregar".into()
+        }
+        fn get(&self, name: &str) -> String {
+            self.0.lock().unwrap().push(format!("skill_get {name}"));
+            "# run-tests".into()
+        }
+        fn propose(&self, name: &str, description: &str, body: &str) -> String {
+            self.0
+                .lock()
+                .unwrap()
+                .push(format!("skill_propose {name} | {description} | {body}"));
+            "ok".into()
+        }
+    }
+
     fn parameters<T: serde::de::DeserializeOwned>(json: serde_json::Value) -> Parameters<T> {
         Parameters(serde_json::from_value(json).unwrap())
     }
@@ -214,8 +277,27 @@ mod tests {
             "memory_get",
             "memory_topics",
             "memory_propose",
+            "skill_list",
+            "skill_get",
+            "skill_propose",
         ] {
             assert!(names.iter().any(|n| n == name), "{name} missing: {names:?}");
+        }
+        let skill_propose = MemoryServer::tool_router()
+            .list_all()
+            .into_iter()
+            .find(|t| t.name == "skill_propose")
+            .unwrap();
+        let schema = serde_json::Value::Object((*skill_propose.input_schema).clone());
+        let required: Vec<&str> = schema["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|r| r.as_str())
+            .collect();
+        assert_eq!(required.len(), 3, "{required:?}");
+        for field in ["name", "description", "body"] {
+            assert!(required.contains(&field), "{field}");
         }
         let propose = MemoryServer::tool_router()
             .list_all()
@@ -231,7 +313,7 @@ mod tests {
     #[test]
     fn tools_reach_the_memory() {
         let recorder = Arc::new(Recorder::default());
-        let server = MemoryServer::new(recorder.clone());
+        let server = MemoryServer::new(recorder.clone(), recorder.clone());
         assert!(
             server
                 .memory_search(parameters(serde_json::json!({})))
@@ -256,6 +338,25 @@ mod tests {
                 "topics",
                 "propose Precios en USD decision None",
                 "propose Pagos con Stripe decision Some(\"pagos\")",
+            ]
+        );
+    }
+
+    #[test]
+    fn skill_tools_reach_the_skills() {
+        let recorder = Arc::new(Recorder::default());
+        let server = MemoryServer::new(recorder.clone(), recorder.clone());
+        assert!(server.skill_list().contains("run-tests"));
+        server.skill_get(parameters(serde_json::json!({"name": "run-tests"})));
+        server.skill_propose(parameters(serde_json::json!(
+            {"name": "lint", "description": "Antes de commit", "body": "npm run lint"}
+        )));
+        assert_eq!(
+            *recorder.0.lock().unwrap(),
+            [
+                "skill_list",
+                "skill_get run-tests",
+                "skill_propose lint | Antes de commit | npm run lint",
             ]
         );
     }

@@ -17,6 +17,7 @@ pub mod policy;
 pub mod project;
 pub mod prompts;
 pub mod provider;
+pub mod skill;
 pub mod task;
 pub mod version;
 
@@ -32,4 +33,5 @@ pub use memory::{Category, Note, NoteStatus};
 pub use phase::{Assignment, Phase, PhasePlan, Stage};
 pub use project::Project;
 pub use provider::Provider;
+pub use skill::{Skill, SkillStatus};
 pub use task::{Task, TaskId, TaskMode, TaskStatus, Workspace};

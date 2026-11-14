@@ -1051,6 +1051,65 @@ select:disabled { opacity: 0.65; }
 }
 .btn--warn-solid { background: var(--warning); border-color: var(--warning); color: var(--bg); font-weight: 700; }
 
+.memory__tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.memory__tabs .side-tab { display: inline-flex; align-items: center; gap: 8px; }
+.memory__badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+.memory__panel-body { display: grid; gap: 18px; }
+
+/* Learned skills (the memory screen's second tab). */
+.skill {
+  padding: 14px 16px;
+  border-radius: var(--radius-card);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.skill--proposed { border-style: dashed; border-color: var(--accent); }
+.skill__head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.skill__name { font: 600 14px var(--font-mono); color: var(--ink); overflow-wrap: anywhere; }
+.skill__scope {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--selection);
+  color: var(--action-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.skill__description { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.skill__steps summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 600; min-height: 28px; }
+.skill__body {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font: 12.5px/1.6 var(--font-mono);
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.skill__update { display: grid; gap: 10px; min-width: 0; }
+.skill__diff { margin: 0; }
+.skill__line { display: block; padding: 0 6px; border-radius: 4px; }
+.skill__line--added { background: var(--diff-add-bg); color: var(--diff-add-ink); }
+.skill__line--removed { background: var(--diff-del-bg); color: var(--diff-del-ink); text-decoration: line-through; }
+.skill__sign { display: inline-block; width: 1.4em; color: var(--muted); }
+.skill__line--added .skill__sign, .skill__line--removed .skill__sign { color: inherit; }
+.skill__form { display: grid; gap: 12px; }
+.skill__form input, .skill__form textarea { width: 100%; }
+.skill__body-input { font: 12.5px/1.6 var(--font-mono); }
+.skills__empty { display: grid; justify-items: center; gap: 10px; padding: 32px 0; text-align: center; }
+.skills__empty-title { font-size: 16px; font-weight: 600; color: var(--ink); }
+
 .memory__layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; align-items: start; }
 @media (max-width: 960px) { .memory__layout { grid-template-columns: minmax(0, 1fr); } }
 .memory__main { display: grid; gap: 18px; min-width: 0; }

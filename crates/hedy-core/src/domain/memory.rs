@@ -90,7 +90,7 @@ pub struct Note {
 /// Longest topic, in characters.
 const TOPIC_MAX: usize = 80;
 
-fn ascii_fold(c: char) -> char {
+pub(crate) fn ascii_fold(c: char) -> char {
     match c {
         'á' | 'à' | 'ä' | 'â' | 'ã' => 'a',
         'é' | 'è' | 'ë' | 'ê' => 'e',

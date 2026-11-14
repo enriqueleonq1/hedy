@@ -7,14 +7,15 @@ use std::sync::{Arc, Mutex};
 
 use super::ports::{
     AccountRepository, AgentLauncher, AgentRequest, AgentSession, CapturedOutput, Clock, EventSink,
-    FileSystem, Git, MemoryRepository, MergeOutcome, NewNote, NoteRevision, PortError, PortResult,
-    ProcessRunner, ProjectRepository, RateLimit, SecretStore, SettingsRepository, StoreHealth,
-    TaskEvents, TaskRepository, UsageRecord, UsageRepository,
+    FileSystem, Git, MemoryRepository, MergeOutcome, NewNote, NewSkill, NoteRevision, PortError,
+    PortResult, ProcessRunner, ProjectRepository, RateLimit, SecretStore, SettingsRepository,
+    SkillRepository, SkillRevision, StoreHealth, TaskEvents, TaskRepository, UsageRecord,
+    UsageRepository,
 };
 use super::{Hedy, NewAccount, Ports};
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, LaunchSpec, Note, NoteStatus,
-    Notice, Project, Provider, Task, TaskId, TaskStatus, UsageSample,
+    Notice, Project, Provider, Skill, SkillStatus, Task, TaskId, TaskStatus, UsageSample,
 };
 
 #[derive(Default)]
@@ -29,6 +30,7 @@ pub struct MemoryStore {
     notes: Mutex<Vec<Note>>,
     uses: Mutex<Vec<(i64, Option<TaskId>)>>,
     dismissed: Mutex<Vec<(i64, i64)>>,
+    skills: Mutex<Vec<Skill>>,
     integrity: Mutex<Vec<String>>,
 }
 
@@ -173,6 +175,73 @@ impl MemoryRepository for MemoryStore {
     }
     fn dismissed_pairs(&self) -> PortResult<Vec<(i64, i64)>> {
         Ok(self.dismissed.lock().unwrap().clone())
+    }
+}
+
+impl SkillRepository for MemoryStore {
+    fn add_skill(&self, s: &NewSkill) -> PortResult<Skill> {
+        let mut skills = self.skills.lock().unwrap();
+        let skill = Skill {
+            id: skills.iter().map(|s| s.id).max().unwrap_or(0) + 1,
+            name: s.name.clone(),
+            description: s.description.clone(),
+            body: s.body.clone(),
+            project: s.project.clone(),
+            status: s.status,
+            author: s.author.clone(),
+            created_at: s.created_at,
+            updated_at: None,
+            source_task: s.source_task.clone(),
+        };
+        skills.push(skill.clone());
+        Ok(skill)
+    }
+    fn skill(&self, id: i64) -> PortResult<Option<Skill>> {
+        Ok(self
+            .skills
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|s| s.id == id)
+            .cloned())
+    }
+    fn revise_skill(&self, id: i64, r: &SkillRevision) -> PortResult<()> {
+        if let Some(s) = self.skills.lock().unwrap().iter_mut().find(|s| s.id == id) {
+            s.project = r.project.clone();
+            s.name = r.name.clone();
+            s.description = r.description.clone();
+            s.body = r.body.clone();
+            s.author = r.author.clone();
+            s.updated_at = Some(r.updated_at);
+        }
+        Ok(())
+    }
+    fn set_skill_status(&self, id: i64, status: SkillStatus) -> PortResult<()> {
+        if let Some(s) = self.skills.lock().unwrap().iter_mut().find(|s| s.id == id) {
+            s.status = status;
+        }
+        Ok(())
+    }
+    fn delete_skill(&self, id: i64) -> PortResult<()> {
+        self.skills.lock().unwrap().retain(|s| s.id != id);
+        Ok(())
+    }
+    fn skills(&self, project: Option<&Path>, with_global: bool) -> PortResult<Vec<Skill>> {
+        let mut skills: Vec<Skill> = self
+            .skills
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|s| match (&s.project, project) {
+                (None, Some(_)) => with_global,
+                (None, None) => true,
+                (Some(p), Some(q)) => p == q,
+                (Some(_), None) => false,
+            })
+            .cloned()
+            .collect();
+        skills.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
+        Ok(skills)
     }
 }
 
@@ -667,6 +736,7 @@ pub struct FakeFs {
     files: Mutex<Vec<(PathBuf, String)>>,
     git_roots: Mutex<Vec<PathBuf>>,
     read_only: Mutex<HashSet<PathBuf>>,
+    removed_dirs: Mutex<Vec<PathBuf>>,
 }
 
 impl FakeFs {
@@ -685,6 +755,16 @@ impl FakeFs {
     pub fn make_read_only(&self, path: &str) {
         self.read_only.lock().unwrap().insert(path.into());
     }
+    /// The text of the file at `path`, if any.
+    pub fn file(&self, path: &str) -> Option<String> {
+        self.read_text(Path::new(path)).unwrap()
+    }
+    pub fn add_file(&self, path: &str, contents: &str) {
+        self.write_text(Path::new(path), contents).unwrap();
+    }
+    pub fn removed_dirs(&self) -> Vec<PathBuf> {
+        self.removed_dirs.lock().unwrap().clone()
+    }
     pub fn add_git_root(&self, path: &str) {
         self.git_roots.lock().unwrap().push(path.into());
     }
@@ -700,6 +780,7 @@ impl FileSystem for FakeFs {
     }
     fn exists(&self, path: &Path) -> bool {
         self.existing.lock().unwrap().contains(path)
+            || self.files.lock().unwrap().iter().any(|(p, _)| p == path)
     }
     fn check_writable(&self, dir: &Path) -> PortResult<()> {
         if self.read_only.lock().unwrap().contains(dir) {
@@ -720,6 +801,32 @@ impl FileSystem for FakeFs {
         if !files.iter().any(|(p, _)| p == path) {
             files.push((path.to_owned(), contents.to_owned()));
         }
+        Ok(())
+    }
+    fn read_text(&self, path: &Path) -> PortResult<Option<String>> {
+        Ok(self
+            .files
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(p, _)| p == path)
+            .map(|(_, text)| text.clone()))
+    }
+    fn write_text(&self, path: &Path, contents: &str) -> PortResult<()> {
+        if self.read_only.lock().unwrap().contains(path) {
+            return Err(PortError::new("permission denied"));
+        }
+        let mut files = self.files.lock().unwrap();
+        files.retain(|(p, _)| p != path);
+        files.push((path.to_owned(), contents.to_owned()));
+        Ok(())
+    }
+    fn remove_file(&self, path: &Path) -> PortResult<()> {
+        self.files.lock().unwrap().retain(|(p, _)| p != path);
+        Ok(())
+    }
+    fn remove_empty_dir(&self, path: &Path) -> PortResult<()> {
+        self.removed_dirs.lock().unwrap().push(path.to_owned());
         Ok(())
     }
     fn canonicalize(&self, dir: &Path) -> PortResult<PathBuf> {

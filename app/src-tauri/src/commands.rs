@@ -14,7 +14,8 @@ use tauri::ipc::Channel;
 use crate::AppState;
 use crate::dto::{
     self, ActivityDto, MemoryDto, NewAccountInput, NewTaskInput, OverviewDto, ProjectStatusDto,
-    TaskDto, UsagePointDto, UsageSummaryDto,
+    SkillChangeDto, SkillDraftInput, SkillFilesDto, SkillsDto, TaskDto, UsagePointDto,
+    UsageSummaryDto,
 };
 use crate::terminal::{TerminalEvent, TerminalRequest, Terminals};
 
@@ -459,6 +460,53 @@ pub async fn set_memory_reader(
         h.set_memory_reader(&path, &account, reads).map(drop)
     })
     .await
+}
+
+#[tauri::command]
+pub async fn skills(state: State<'_, AppState>, path: PathBuf) -> CommandResult<SkillsDto> {
+    blocking(&state, move |h| Ok(h.skills(&path)?.into())).await
+}
+
+/// A skill written by the user: approved right away.
+#[tauri::command]
+pub async fn add_skill(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    draft: SkillDraftInput,
+) -> CommandResult<SkillChangeDto> {
+    blocking(&state, move |h| {
+        Ok(h.add_skill(&path, &draft.into())?.into())
+    })
+    .await
+}
+
+/// Edits a proposal (before approving it) or an approved skill.
+#[tauri::command]
+pub async fn edit_skill(
+    state: State<'_, AppState>,
+    id: i64,
+    path: PathBuf,
+    draft: SkillDraftInput,
+) -> CommandResult<SkillChangeDto> {
+    blocking(&state, move |h| {
+        Ok(h.edit_skill(id, &path, &draft.into())?.into())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn approve_skill(state: State<'_, AppState>, id: i64) -> CommandResult<SkillChangeDto> {
+    blocking(&state, move |h| Ok(h.approve_skill(id)?.into())).await
+}
+
+#[tauri::command]
+pub async fn reject_skill(state: State<'_, AppState>, id: i64) -> CommandResult<()> {
+    blocking(&state, move |h| h.reject_skill(id)).await
+}
+
+#[tauri::command]
+pub async fn remove_skill(state: State<'_, AppState>, id: i64) -> CommandResult<SkillFilesDto> {
+    blocking(&state, move |h| Ok(h.remove_skill(id)?.into())).await
 }
 
 #[tauri::command]

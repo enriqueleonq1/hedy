@@ -21,6 +21,14 @@ pub enum DomainError {
     #[error("{}", self.message())]
     InvalidPrice(String),
     #[error("{}", self.message())]
+    InvalidSkillName(String),
+    #[error("{}", self.message())]
+    InvalidSkillDescription,
+    #[error("{}", self.message())]
+    InvalidSkillBody,
+    #[error("{}", self.message())]
+    SkillLooksSecret(&'static str),
+    #[error("{}", self.message())]
     ApiKeyNotSupported { provider: Provider },
     #[error("{}", self.message())]
     NothingToLaunch,
@@ -75,6 +83,22 @@ impl DomainError {
             Self::InvalidPrice(p) => tr!(
                 "precio no válido: «{p}» (usa entrada/salida en USD por millón de tokens, p. ej. 0.60/2.50)",
                 "invalid price: «{p}» (use input/output in USD per million tokens, e.g. 0.60/2.50)"
+            ),
+            Self::InvalidSkillName(name) => tr!(
+                "nombre de habilidad no válido: «{name}» (minúsculas, números y guiones, hasta 64 caracteres; p. ej. correr-tests-e2e)",
+                "invalid skill name: «{name}» (lowercase letters, digits and dashes, up to 64 characters; e.g. run-e2e-tests)"
+            ),
+            Self::InvalidSkillDescription => tr!(
+                "la descripción de la habilidad debe ser una línea de hasta 1024 caracteres, sin < ni >, que diga cuándo usarla",
+                "the skill's description must be one line of up to 1024 characters, without < or >, saying when to use it"
+            ),
+            Self::InvalidSkillBody => tr!(
+                "el contenido de la habilidad no puede estar vacío ni pasar de 20000 caracteres",
+                "the skill's body cannot be empty or longer than 20000 characters"
+            ),
+            Self::SkillLooksSecret(kind) => tr!(
+                "la habilidad parece contener un secreto ({kind}); no se guardó. Quítalo y usa un marcador como $NOMBRE_VARIABLE o <tu clave>",
+                "the skill looks like it contains a secret ({kind}); it was not saved. Remove it and use a placeholder such as $VARIABLE_NAME or <your key>"
             ),
             Self::ApiKeyNotSupported { provider } => tr!(
                 "{provider} no admite cuentas por API key",

@@ -39,6 +39,26 @@ pub fn memory_guidance(phase: Phase, mode: TaskMode) -> String {
         text.push(' ');
         text.push_str(&task_summary_guidance());
     }
+    text.push(' ');
+    text.push_str(&skills_guidance(phase, mode));
+    text
+}
+
+/// The learned skills, served by the same `hedy-memory` server. An agent
+/// that may change the project may propose one skill when it worked out a
+/// non-obvious, reusable procedure: only a proposal, and quiet otherwise.
+pub fn skills_guidance(phase: Phase, mode: TaskMode) -> String {
+    let mut text = tr!(
+        "El proyecto también tiene habilidades aprobadas por el usuario: procedimientos reutilizables (correr los tests e2e, publicar una versión…). Antes de averiguar cómo se hace algo así, mira skill_list (nombre y cuándo usar cada una) y lee la que sirva con skill_get. Algunas también pueden estar entre las habilidades propias de tu CLI.",
+        "The project also has skills approved by the user: reusable procedures (running the e2e tests, cutting a release…). Before working out how to do something like that, check skill_list (name and when to use each) and read the one that fits with skill_get. Some may also be among your CLI's own skills."
+    );
+    if !phase.read_only_in(mode) {
+        text.push(' ');
+        text.push_str(&tr!(
+            "Al terminar una tarea que salió bien y cambió el proyecto: si, y solo si, descubriste un procedimiento reutilizable que no es obvio (cómo correr algo, cómo agregar algo aquí, una lista de pasos para publicar), propón una sola habilidad con skill_propose: un nombre corto en minúsculas con guiones, una descripción de una línea que diga cuándo usarla y los pasos en Markdown. Si ya existe una con ese nombre, tu propuesta será su actualización. Nunca incluyas secretos, tokens, claves ni valores de .env (usa marcadores como $NOMBRE_VARIABLE). El usuario decide si se aprueba. Si no hay nada así, no propongas nada ni lo menciones.",
+            "When a task went well and changed the project: if, and only if, you worked out a reusable procedure that is not obvious (how to run something, how to add something here, a release checklist), propose one skill with skill_propose: a short lowercase name with dashes, a one-line description saying when to use it, and the steps in Markdown. If one with that name exists, your proposal becomes its update. Never include secrets, tokens, keys or .env values (use placeholders such as $VARIABLE_NAME). The user decides whether it is approved. If there is nothing like that, propose nothing and do not mention it."
+        ));
+    }
     text
 }
 
@@ -166,6 +186,22 @@ mod tests {
             memory_guidance(Phase::Tests, TaskMode::Project)
         });
         assert!(english.contains("When you finish your work") && english.contains("memory_get"));
+    }
+
+    #[test]
+    fn skills_guidance_only_asks_writers_for_a_proposal() {
+        let implement = memory_guidance(Phase::Implement, TaskMode::Project);
+        assert!(implement.contains("skill_list") && implement.contains("skill_get"));
+        assert!(
+            implement.contains("skill_propose") && implement.contains("Nunca incluyas secretos")
+        );
+        let review = skills_guidance(Phase::Review, TaskMode::Project);
+        assert!(review.contains("skill_get") && !review.contains("skill_propose"));
+        assert!(!skills_guidance(Phase::Implement, TaskMode::Ask).contains("skill_propose"));
+        let english = crate::i18n::with_language(crate::i18n::Language::English, || {
+            skills_guidance(Phase::Implement, TaskMode::Project)
+        });
+        assert!(english.contains("if, and only if") && english.contains("$VARIABLE_NAME"));
     }
 
     #[test]

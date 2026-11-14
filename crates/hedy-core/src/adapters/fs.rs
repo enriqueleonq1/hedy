@@ -68,6 +68,36 @@ impl FileSystem for LocalFileSystem {
         }
     }
 
+    fn read_text(&self, path: &Path) -> PortResult<Option<String>> {
+        match fs::read_to_string(path) {
+            Ok(text) => Ok(Some(text)),
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(io_error("leer", path, e)),
+        }
+    }
+
+    fn write_text(&self, path: &Path, contents: &str) -> PortResult<()> {
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir).map_err(|e| io_error("crear", dir, e))?;
+        }
+        fs::write(path, contents).map_err(|e| io_error("escribir", path, e))
+    }
+
+    fn remove_file(&self, path: &Path) -> PortResult<()> {
+        match fs::remove_file(path) {
+            Err(e) if e.kind() != ErrorKind::NotFound => Err(io_error("borrar", path, e)),
+            _ => Ok(()),
+        }
+    }
+
+    fn remove_empty_dir(&self, path: &Path) -> PortResult<()> {
+        let empty = fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_none());
+        if empty {
+            fs::remove_dir(path).map_err(|e| io_error("borrar", path, e))?;
+        }
+        Ok(())
+    }
+
     fn canonicalize(&self, dir: &Path) -> PortResult<PathBuf> {
         dir.canonicalize().map_err(|e| io_error("resolver", dir, e))
     }
@@ -100,6 +130,27 @@ mod tests {
         fs_.write_if_missing(&file, "first").unwrap();
         fs_.write_if_missing(&file, "second").unwrap();
         assert_eq!(fs::read_to_string(&file).unwrap(), "first");
+    }
+
+    #[test]
+    fn text_files_are_written_read_and_removed_with_their_empty_folders() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"));
+        let file = tmp.path().join(".claude/skills/run-tests/SKILL.md");
+        assert_eq!(fs_.read_text(&file).unwrap(), None);
+        fs_.write_text(&file, "uno").unwrap();
+        fs_.write_text(&file, "dos").unwrap();
+        assert_eq!(fs_.read_text(&file).unwrap().as_deref(), Some("dos"));
+
+        let skills = tmp.path().join(".claude/skills");
+        fs::write(skills.join("mine.md"), "user's").unwrap();
+        fs_.remove_file(&file).unwrap();
+        fs_.remove_file(&file).unwrap();
+        fs_.remove_empty_dir(&skills.join("run-tests")).unwrap();
+        fs_.remove_empty_dir(&skills).unwrap();
+        fs_.remove_empty_dir(&tmp.path().join("missing")).unwrap();
+        assert!(!skills.join("run-tests").exists());
+        assert!(skills.join("mine.md").exists(), "folders with files stay");
     }
 
     #[test]
