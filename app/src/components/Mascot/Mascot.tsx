@@ -357,11 +357,11 @@ function WorkingFace({ activity }: { activity: WorkingActivity }) {
         </>
       );
     case "waiting":
-      // Heavy lids and a slow, wavy mouth: melting while it waits.
+      // Drowsy, softly curved lids and a slow, wavy mouth: melting while it waits.
       return (
         <>
-          <OpenEyes dy={1.6} squint={0.5} />
-          <path className="m-line" d="M62.4 87.6h10M85.4 87.6h10" />
+          <OpenEyes dy={1.6} squint={0.55} />
+          <path className="m-line" d="M62.4 88.4q5-2.2 10 0M85.4 88.4q5-2.2 10 0" />
           <path className="m-line" d="M75 101q2-1.6 4 0t4 0" />
         </>
       );
