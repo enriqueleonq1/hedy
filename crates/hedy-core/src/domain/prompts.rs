@@ -1,7 +1,7 @@
 //! Instructions Hedy gives an agent when a task moves between phases or
 //! between agents. Pure text, so it is easy to read and to test.
 
-use super::Phase;
+use super::{Phase, TaskMode};
 use crate::tr;
 
 /// For agents without a native plan mode.
@@ -28,10 +28,25 @@ pub fn plan_handed_off() -> String {
 }
 
 /// For agents that have the project's memory (the `hedy-memory` tools).
-pub fn memory_guidance() -> String {
+/// An agent that may change the project is also asked to sum up, when it
+/// finishes, the lasting decisions it made (as a proposal, and only if any).
+pub fn memory_guidance(phase: Phase, mode: TaskMode) -> String {
+    let mut text = tr!(
+        "Este proyecto tiene una memoria compartida entre IAs: decisiones, convenciones y reglas aprobadas por el usuario. Antes de elegir una convención o tomar una decisión, búscala con memory_search: devuelve un resumen por nota (id, tema y el comienzo del texto); lee una nota completa con memory_get (por id o por tema) solo si la necesitas. Si tomas una decisión duradera o descubres una convención que otras IAs deberían seguir, propónla con memory_propose (una frase; el usuario decide si se guarda). Si trata un tema que ya está en la memoria (memory_topics los lista), pasa ese mismo topic: tu propuesta será un cambio de esa nota y no una nota nueva. No propongas secretos ni datos personales.",
+        "This project has a memory shared between AIs: decisions, conventions and rules approved by the user. Before choosing a convention or making a decision, look it up with memory_search: it returns a summary per note (id, topic and the start of its text); read a whole note with memory_get (by id or topic) only when you need it. If you make a lasting decision or find a convention other AIs should follow, propose it with memory_propose (one sentence; the user decides whether it is kept). If it is about a topic already in the memory (memory_topics lists them), pass that same topic: your proposal becomes a change to that note instead of a new one. Never propose secrets or personal data."
+    );
+    if !phase.read_only_in(mode) {
+        text.push(' ');
+        text.push_str(&task_summary_guidance());
+    }
+    text
+}
+
+/// The end-of-task summary: optional, quiet, and only ever a proposal.
+fn task_summary_guidance() -> String {
     tr!(
-        "Este proyecto tiene una memoria compartida entre IAs: decisiones, convenciones y reglas. Antes de elegir una convención o tomar una decisión, búscala con memory_search. Si tomas una decisión duradera o descubres una convención que otras IAs deberían seguir, propónla con memory_propose (una frase; el usuario decide si se guarda). No propongas secretos ni datos personales.",
-        "This project has a memory shared between AIs: decisions, conventions and rules. Before choosing a convention or making a decision, look it up with memory_search. If you make a lasting decision or find a convention other AIs should follow, propose it with memory_propose (one sentence; the user decides whether it is kept). Never propose secrets or personal data."
+        "Al terminar tu trabajo, antes de tu respuesta final: si tomaste decisiones duraderas que otras IAs deberían conocer y que aún no propusiste, propón una sola nota breve que las resuma con memory_propose (categoría decision). Si no decidiste nada duradero, no propongas nada ni lo menciones.",
+        "When you finish your work, before your final answer: if you made lasting decisions other AIs should know about and have not proposed yet, propose one short note summing them up with memory_propose (category decision). If you decided nothing lasting, propose nothing and do not mention it."
     )
 }
 
@@ -131,6 +146,26 @@ mod tests {
         assert!(p.contains("commit abc123"));
         let review = stage_prompt(Phase::Review, "x", None, "abc", None);
         assert!(review.contains("No modifiques archivos") && !review.contains("Plan aprobado"));
+    }
+
+    #[test]
+    fn memory_guidance_asks_for_a_summary_only_when_the_agent_writes() {
+        let implement = memory_guidance(Phase::Implement, TaskMode::Project);
+        assert!(implement.contains("memory_search") && implement.contains("memory_get"));
+        assert!(implement.contains("memory_topics") && implement.contains("Al terminar"));
+        assert!(implement.contains("no propongas nada"));
+        for (phase, mode) in [
+            (Phase::Review, TaskMode::Project),
+            (Phase::Implement, TaskMode::Ask),
+            (Phase::Implement, TaskMode::Research),
+        ] {
+            let read_only = memory_guidance(phase, mode);
+            assert!(read_only.contains("memory_propose") && !read_only.contains("Al terminar"));
+        }
+        let english = crate::i18n::with_language(crate::i18n::Language::English, || {
+            memory_guidance(Phase::Tests, TaskMode::Project)
+        });
+        assert!(english.contains("When you finish your work") && english.contains("memory_get"));
     }
 
     #[test]

@@ -430,15 +430,45 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
 - **Protected projects** neither read nor show global notes, and their notes never appear
   elsewhere.
 - **How agents read it.** One `hedy-memory` server per run, scoped to the project, task and
-  agent, with two tools: `memory_search` and `memory_propose`. It is an rmcp stdio server
+  agent, with `memory_search`, `memory_get`, `memory_topics` and `memory_propose` (see
+  below). It is an rmcp stdio server
   served by the app binary itself (`hedy-app memory-mcp --data-dir … --project …`), like the
   `PreToolUse` hook. Claude gets it with `--mcp-config` (JSON), its tools pre-allowed with
   `--allowedTools mcp__hedy-memory`, plus guidance in `--append-system-prompt`. The
   account's own MCP config is left alone. Codex gets it with `-c mcp_servers.<name>.*`
   overrides (TOML values) and the guidance as `developerInstructions`; this is **not yet
-  verified against a real Codex**. The API agent gets the same two tools natively.
+  verified against a real Codex**. The API agent gets the same tools natively.
   Verified for real: Claude Code (haiku) read a note through the server, the use was
   recorded with the task, and its proposal waited for approval.
+- **Topics, similar notes and progressive reading** (ideas taken from Engram, gentle-ai's
+  memory; nothing of it is used as code):
+  - A note may have a `topic`: a stable lowercase slug path such as `arquitectura/pagos`
+    (accents dropped, anything else becomes a dash; `normalize_topic`). Columns `topic`
+    and `updated_at` were added in a migration, and `notes_fts` was rebuilt to index the
+    topic too.
+  - A proposal under the topic of an approved note in the same scope is a *change* to
+    that note: the memory screen and `hedy memory list` show the old and the new text.
+    Approving it replaces the approved note's text, category and author in place (same
+    id, creation date and uses; `updated_at` records when) and deletes the proposal.
+    Rejecting it deletes the proposal and nothing else changes. Until then agents keep
+    reading the approved version (rule 6 holds: they only ever propose).
+  - Next to each proposal, up to three approved notes that look like it: FTS5 finds
+    candidates by the proposal's key words (accents and a plural "s" folded) and a local
+    word-overlap check keeps the close ones. No AI, no network. It is labelled "parecida
+    a" / "similar to", never a contradiction, and offers keep both, replace that one
+    (`replace_note`: the proposal becomes the new version of that note) or discard.
+  - MCP tools: `memory_search` now returns one compact line per note
+    (`- #id [category · scope] topic: first line…`, cut to 140 characters);
+    `memory_get` (`id` or `topic`) returns one whole note; `memory_topics` lists the
+    topics; `memory_propose` takes an optional `topic`. The old calls (search with a
+    query, propose with text and category) keep working. The API agent has the same four
+    tools.
+  - End-of-task summary: agents that may change the project (not review, ask or research)
+    are told to propose, before their final answer, one short note with the lasting
+    decisions they made, and to stay quiet if there were none. It is only guidance; it is
+    still a proposal the user approves.
+  - CLI: `hedy memory` (`memoria`) with `list` (default), `approve <id>` and
+    `reject <id>`.
 - **"Quién la lee"**: the project's account and the accounts in its phases. Turning one off
   (`projects.memory_off`) starts that agent without the memory.
 - **Contradictions** come from a local heuristic, with no AI involved: the notes share most

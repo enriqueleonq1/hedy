@@ -51,6 +51,8 @@ pub enum AppError {
     #[error("{}", self.message())]
     NoteNotFound(i64),
     #[error("{}", self.message())]
+    NotAProposal(i64),
+    #[error("{}", self.message())]
     EmptyNote,
     #[error("{}", self.message())]
     EmptyPrompt,
@@ -148,6 +150,10 @@ impl AppError {
                 "the task cannot move to «{id}»: pick another provider or an API key"
             ),
             Self::NoteNotFound(id) => tr!("no existe la nota {id}", "note {id} does not exist"),
+            Self::NotAProposal(id) => tr!(
+                "la nota {id} no es una propuesta: ya está aprobada",
+                "note {id} is not a proposal: it is already approved"
+            ),
             Self::EmptyNote => tr!("la nota está vacía", "the note is empty"),
             Self::EmptyPrompt => tr!("escribe qué quieres que haga", "write what you want done"),
             Self::ProviderNotYetSupported(provider) => tr!(

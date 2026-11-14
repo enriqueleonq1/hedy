@@ -126,7 +126,7 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
         allowed.extend(servers.iter().map(|s| format!("mcp__{}", s.name)));
     }
     if request.memory.is_some() {
-        system.push(prompts::memory_guidance());
+        system.push(prompts::memory_guidance(request.phase, request.mode));
     }
     if !allowed.is_empty() {
         args.extend(["--allowedTools".into(), allowed.join(",")]);
@@ -369,7 +369,13 @@ mod tests {
         fn search(&self, _: &str) -> String {
             String::new()
         }
-        fn propose(&self, _: &str, _: &str) -> String {
+        fn get(&self, _: Option<i64>, _: Option<&str>) -> String {
+            String::new()
+        }
+        fn topics(&self) -> String {
+            String::new()
+        }
+        fn propose(&self, _: &str, _: &str, _: Option<&str>) -> String {
             String::new()
         }
     }

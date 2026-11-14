@@ -22,7 +22,9 @@ pub use accounts::NewAccount;
 pub use detect::DetectedCli;
 pub use error::{AppError, AppResult};
 pub use launch::Resolved;
-pub use memory::{MemoryServerCommand, MemoryView, format_notes};
+pub use memory::{
+    MemoryServerCommand, MemoryView, Proposal, format_note, format_notes, format_topics,
+};
 pub use metrics::{ProjectStatus, TestRun, UsageSummary};
 pub use settings::{Setting, THEMES};
 pub use status::{AccountStatus, AccountUsage, Status};

@@ -407,6 +407,16 @@ pub async fn approve_note(state: State<'_, AppState>, id: i64) -> CommandResult<
     blocking(&state, move |h| h.approve_note(id).map(drop)).await
 }
 
+/// "Reemplazar esa": the proposal becomes the new text of an approved note.
+#[tauri::command]
+pub async fn replace_note(
+    state: State<'_, AppState>,
+    proposal: i64,
+    target: i64,
+) -> CommandResult<()> {
+    blocking(&state, move |h| h.replace_note(proposal, target).map(drop)).await
+}
+
 #[tauri::command]
 pub async fn forget_note(state: State<'_, AppState>, id: i64) -> CommandResult<()> {
     blocking(&state, move |h| h.forget_note(id)).await

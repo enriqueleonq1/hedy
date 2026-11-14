@@ -331,4 +331,114 @@ fn help_follows_the_language() {
     env.hedy_lang("es", &["cuenta", "agregar", "--help"])
         .assert()
         .stdout(predicate::str::contains("<NOMBRE>  Nombre visible"));
+    env.hedy_lang("en", &["memory", "--help"])
+        .assert()
+        .stdout(predicate::str::contains("Project memory"))
+        .stdout(predicate::str::contains("approve"));
+    env.hedy_lang("es", &["memoria", "--help"])
+        .assert()
+        .stdout(predicate::str::contains("Memoria del proyecto"))
+        .stdout(predicate::str::contains("Rechaza una propuesta"));
+}
+
+/// Notes as the app and the agents leave them, written straight to the database.
+fn seed_memory(env: &Env, repo: &Path) -> (i64, i64, i64) {
+    use hedy_core::adapters::{self, HedyPaths};
+    use hedy_core::domain::Category;
+    let hedy = adapters::system(&HedyPaths::at(env.path("data"))).unwrap();
+    let topic = hedy
+        .propose_note(
+            repo,
+            "Los recordatorios se envían por WhatsApp",
+            Category::Decision,
+            "Claude",
+            Some("recordatorios/canal"),
+        )
+        .unwrap();
+    let old = hedy.approve_note(topic.id).unwrap();
+    hedy.add_note(
+        Some(repo),
+        "Los precios se guardan en USD y se muestran también en Bs",
+        Category::Decision,
+    )
+    .unwrap();
+    let change = hedy
+        .propose_note(
+            repo,
+            "Los recordatorios se envían por WhatsApp y, si falla, por SMS",
+            Category::Decision,
+            "Codex",
+            Some("recordatorios/canal"),
+        )
+        .unwrap();
+    let similar = hedy
+        .propose_note(
+            repo,
+            "Los precios se guardan en USD",
+            Category::Decision,
+            "Codex",
+            None,
+        )
+        .unwrap();
+    (old.id, change.id, similar.id)
+}
+
+#[test]
+fn memory_lists_approves_and_rejects_proposals() {
+    let env = Env::new();
+    let repo = env.repo("code/moira");
+    env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy_in(&repo, &["use", "claude"]).assert().success();
+    env.hedy_in(&repo, &["memoria"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Todavía no hay notas"));
+
+    let (old, change, similar) = seed_memory(&env, &repo);
+    env.hedy_in(&repo, &["memoria", "listar"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Propuestas · para aprobar"))
+        .stdout(predicate::str::contains(format!("#{change}")))
+        .stdout(predicate::str::contains("recordatorios/canal · Codex"))
+        .stdout(predicate::str::contains(format!(
+            "cambia #{old}, que dice:"
+        )))
+        .stdout(predicate::str::contains("parecida a #"))
+        .stdout(predicate::str::contains("Aprobadas"))
+        .stdout(predicate::str::contains("hedy memory approve <id>"));
+    env.hedy_lang("en", &["-C", repo.to_str().unwrap(), "memory", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Proposals · awaiting approval"))
+        .stdout(predicate::str::contains(format!(
+            "changes #{old}, which says:"
+        )))
+        .stdout(predicate::str::contains("similar to #"));
+
+    // Rejecting changes nothing; approving a change updates the old note.
+    env.hedy(&["memoria", "rechazar", &similar.to_string()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("rechazada"));
+    env.hedy(&["memory", "approve", &change.to_string()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!("Nota #{old} actualizada")));
+    env.hedy_in(&repo, &["memory"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Propuestas").not())
+        .stdout(predicate::str::contains("si falla, por SMS"));
+
+    env.hedy(&["memory", "reject", &old.to_string()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no es una propuesta"));
+    env.hedy_lang("en", &["memory", "approve", "999"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("note 999 does not exist"));
 }

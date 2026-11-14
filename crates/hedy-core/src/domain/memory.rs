@@ -80,6 +80,78 @@ pub struct Note {
     pub created_at: i64,
     pub uses: u32,
     pub last_used: Option<i64>,
+    /// Stable subject, such as `arquitectura/pagos`. A proposal under the
+    /// topic of an approved note is a change to that note.
+    pub topic: Option<String>,
+    /// When an approved note was last replaced by a newer version.
+    pub updated_at: Option<i64>,
+}
+
+/// Longest topic, in characters.
+const TOPIC_MAX: usize = 80;
+
+fn ascii_fold(c: char) -> char {
+    match c {
+        'á' | 'à' | 'ä' | 'â' | 'ã' => 'a',
+        'é' | 'è' | 'ë' | 'ê' => 'e',
+        'í' | 'ì' | 'ï' | 'î' => 'i',
+        'ó' | 'ò' | 'ö' | 'ô' | 'õ' => 'o',
+        'ú' | 'ù' | 'ü' | 'û' => 'u',
+        'ñ' => 'n',
+        'ç' => 'c',
+        c => c,
+    }
+}
+
+/// A topic as a lowercase slug path: `Arquitectura / Pagos` → `arquitectura/pagos`.
+/// Accents are dropped and anything else becomes a dash. `None` when `raw`
+/// is blank; an error when nothing usable is left or it is too long.
+pub fn normalize_topic(raw: &str) -> Result<Option<String>, DomainError> {
+    if raw.trim().is_empty() {
+        return Ok(None);
+    }
+    let slug: String = raw
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(ascii_fold)
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '/' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let segments: Vec<String> = slug
+        .split('/')
+        .map(|segment| {
+            segment
+                .split('-')
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>()
+                .join("-")
+        })
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    let topic = segments.join("/");
+    if topic.is_empty() || topic.chars().count() > TOPIC_MAX {
+        return Err(DomainError::InvalidTopic(raw.trim().to_owned()));
+    }
+    Ok(Some(topic))
+}
+
+/// The first line of a note, cut to `max` characters; `true` when something
+/// was left out (a later line or the end of the first one).
+pub fn preview(text: &str, max: usize) -> (String, bool) {
+    let text = text.trim();
+    let first = text.lines().next().unwrap_or("").trim();
+    let more_lines = first.len() < text.len();
+    if first.chars().count() <= max {
+        return (first.to_owned(), more_lines);
+    }
+    let cut: String = first.chars().take(max.saturating_sub(1)).collect();
+    (format!("{}…", cut.trim_end()), true)
 }
 
 /// Notes unused for this long are listed "para revisar".
@@ -154,6 +226,44 @@ fn contradicts(a: &str, b: &str) -> bool {
     similar && (negation || only_numbers_differ)
 }
 
+/// Words that carry a note's meaning, folded so that small differences
+/// (accents, a plural "s") do not matter: what similar notes are compared by,
+/// and what the full-text index is searched with.
+pub fn key_words(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for word in content_words(text) {
+        let mut word: String = word.chars().map(ascii_fold).collect();
+        if word.chars().count() > 3 && word.ends_with('s') {
+            word.pop();
+        }
+        if word.chars().count() >= 2 && !out.contains(&word) {
+            out.push(word);
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Whether two notes are about the same thing, by their key words: they
+/// share at least two, and at least half of the shorter note's. Only a
+/// suggestion for the user ("parecida a"), never a claim that they disagree.
+pub fn similar(a: &str, b: &str) -> bool {
+    let (wa, wb) = (key_words(a), key_words(b));
+    // Like the full-text search, a word matches its longer forms
+    // ("guarda" / "guardan").
+    let matches = |x: &String, y: &String| {
+        x == y
+            || (x.len().min(y.len()) >= 4
+                && (x.starts_with(y.as_str()) || y.starts_with(x.as_str())))
+    };
+    let common = wa
+        .iter()
+        .filter(|x| wb.iter().any(|y| matches(x, y)))
+        .count();
+    let shorter = wa.len().min(wb.len());
+    common >= 2 && common * 2 >= shorter
+}
+
 /// Pairs of notes (ids, lower first) that contradict each other, skipping
 /// pairs the user already said are both valid.
 pub fn contradictions(notes: &[Note], dismissed: &[(i64, i64)]) -> Vec<(i64, i64)> {
@@ -184,6 +294,8 @@ mod tests {
             created_at: 0,
             uses: 0,
             last_used,
+            topic: None,
+            updated_at: None,
         }
     }
 
@@ -227,6 +339,67 @@ mod tests {
         let mut proposed = note(1, "x", None);
         proposed.status = NoteStatus::Proposed;
         assert!(!is_stale(&proposed, 100 * day));
+    }
+
+    #[test]
+    fn topics_are_slug_paths() {
+        let topic = |raw: &str| normalize_topic(raw).unwrap();
+        assert_eq!(
+            topic("arquitectura/pagos").as_deref(),
+            Some("arquitectura/pagos")
+        );
+        assert_eq!(
+            topic(" Arquitectura / Pagos con Tarjeta ").as_deref(),
+            Some("arquitectura/pagos-con-tarjeta")
+        );
+        assert_eq!(
+            topic("Decisión_técnica//Envíos").as_deref(),
+            Some("decision-tecnica/envios")
+        );
+        assert_eq!(topic("   "), None);
+        assert!(matches!(
+            normalize_topic("¿?/¡!"),
+            Err(DomainError::InvalidTopic(_))
+        ));
+        assert!(normalize_topic(&"a".repeat(81)).is_err());
+    }
+
+    #[test]
+    fn previews_cut_the_first_line() {
+        assert_eq!(
+            preview("Precios en USD", 40),
+            ("Precios en USD".into(), false)
+        );
+        assert_eq!(
+            preview("Precios en USD\nY en Bs", 40),
+            ("Precios en USD".into(), true)
+        );
+        assert_eq!(preview("uno dos tres cuatro", 9), ("uno dos…".into(), true));
+    }
+
+    #[test]
+    fn similar_notes_share_their_key_words() {
+        assert!(similar(
+            "Los precios se guardan en USD",
+            "Los precios se guardan en USD y se muestran también en Bs a tasa BCV"
+        ));
+        assert!(similar(
+            "Los recordatorios se envían por WhatsApp",
+            "El recordatorio se envía por WhatsApp y SMS"
+        ));
+        assert!(similar(
+            "El precio se guarda siempre en dólares USD",
+            "Los precios se guardan en USD y se muestran también en Bs"
+        ));
+        assert!(!similar(
+            "Tests con pytest",
+            "Los precios se guardan en USD"
+        ));
+        assert!(!similar(
+            "Los formularios validan con zod",
+            "Las citas usan la zona horaria del salón"
+        ));
+        assert_eq!(key_words("Los Precios en USD"), ["precio", "usd"]);
     }
 
     #[test]

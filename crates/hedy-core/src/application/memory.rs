@@ -4,11 +4,30 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::ports::{McpServer, MemoryLink, MemoryTools, NewNote};
+use super::ports::{McpServer, MemoryLink, MemoryTools, NewNote, NoteRevision};
 use super::{AppError, AppResult, Hedy};
-use crate::domain::memory::{USER_AUTHOR, contradictions, is_stale};
+use crate::domain::memory::{
+    USER_AUTHOR, contradictions, is_stale, key_words, normalize_topic, preview, similar,
+};
 use crate::domain::{Account, AccountId, Category, Note, NoteStatus, Project, TaskId};
 use crate::tr;
+
+/// At most this many similar notes are shown next to a proposal.
+const SIMILAR_MAX: usize = 3;
+/// Characters of each note an agent sees in search results.
+const PREVIEW_CHARS: usize = 140;
+
+/// A note an AI proposed, with what the user needs to decide on it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Proposal {
+    pub note: Note,
+    /// The approved note with the same topic: approving the proposal replaces
+    /// its text (it keeps its id and uses); rejecting it changes nothing.
+    pub replaces: Option<Note>,
+    /// Approved notes that look like this one, best first (a local full-text
+    /// search, no AI). Only a hint: they may say the same, or something else.
+    pub similar: Vec<Note>,
+}
 
 /// Everything the memory screen shows for a project.
 #[derive(Debug, Clone, PartialEq)]
@@ -16,7 +35,7 @@ pub struct MemoryView {
     /// Approved notes: the project's and, unless it is protected, global ones.
     pub notes: Vec<Note>,
     /// Proposed by AIs, waiting for the user.
-    pub proposed: Vec<Note>,
+    pub proposed: Vec<Proposal>,
     pub contradictions: Vec<(Note, Note)>,
     /// Not used for 60 days: still true?
     pub stale: Vec<Note>,
@@ -35,6 +54,21 @@ pub struct MemoryServerCommand {
     pub args: Vec<String>,
 }
 
+/// The approved note a proposal would change: the one with its topic in its
+/// own scope.
+fn topic_target(approved: &[Note], proposal: &Note) -> Option<Note> {
+    let topic = proposal.topic.as_ref()?;
+    approved
+        .iter()
+        .find(|n| {
+            n.id != proposal.id
+                && n.status == NoteStatus::Approved
+                && n.project == proposal.project
+                && n.topic.as_ref() == Some(topic)
+        })
+        .cloned()
+}
+
 impl Hedy {
     /// Where the memory MCP server comes from (the app binary serves it).
     pub fn with_memory_server(mut self, command: MemoryServerCommand) -> Self {
@@ -48,6 +82,24 @@ impl Hedy {
 
     fn note_or_error(&self, id: i64) -> AppResult<Note> {
         self.store.note(id)?.ok_or(AppError::NoteNotFound(id))
+    }
+
+    fn proposal_or_error(&self, id: i64) -> AppResult<Note> {
+        let note = self.note_or_error(id)?;
+        if note.status != NoteStatus::Proposed {
+            return Err(AppError::NotAProposal(id));
+        }
+        Ok(note)
+    }
+
+    /// Approved notes in the same scope as `note` (its project, or global).
+    fn approved_beside(&self, note: &Note) -> AppResult<Vec<Note>> {
+        Ok(self
+            .store
+            .notes(note.project.as_deref(), false)?
+            .into_iter()
+            .filter(|n| n.status == NoteStatus::Approved)
+            .collect())
     }
 
     /// Accounts that work in a project: its own and the ones in its phases.
@@ -79,6 +131,19 @@ impl Hedy {
             .into_iter()
             .filter_map(|(a, b)| Some((find(a)?, find(b)?)))
             .collect();
+        let proposed = proposed
+            .into_iter()
+            .map(|note| {
+                let replaces = topic_target(&notes, &note);
+                let skip = replaces.as_ref().map(|n| n.id);
+                let similar = self.similar_notes(&project, &note, skip)?;
+                Ok(Proposal {
+                    note,
+                    replaces,
+                    similar,
+                })
+            })
+            .collect::<AppResult<_>>()?;
         let now = self.clock.now_ms() / 1000;
         let stale = notes.iter().filter(|n| is_stale(n, now)).cloned().collect();
         let used_last_task = match self.tasks(&project.path)?.first() {
@@ -104,6 +169,32 @@ impl Hedy {
         })
     }
 
+    /// Approved notes that look like `note`: the full-text index finds
+    /// candidates by its key words, and [`similar`] keeps the close ones.
+    fn similar_notes(
+        &self,
+        project: &Project,
+        note: &Note,
+        skip: Option<i64>,
+    ) -> AppResult<Vec<Note>> {
+        let query = key_words(&note.text).join(" ");
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(self
+            .store
+            .search_notes(Some(&project.path), Self::with_global(project), &query)?
+            .into_iter()
+            .filter(|n| {
+                n.status == NoteStatus::Approved
+                    && n.id != note.id
+                    && Some(n.id) != skip
+                    && similar(&n.text, &note.text)
+            })
+            .take(SIMILAR_MAX)
+            .collect())
+    }
+
     /// A note written by the user: approved right away. `None`: a global note.
     pub fn add_note(
         &self,
@@ -115,24 +206,38 @@ impl Hedy {
             Some(path) => Some(self.project_at(path)?.path),
             None => None,
         };
-        self.new_note(project, text, category, USER_AUTHOR, NoteStatus::Approved)
+        self.new_note(
+            project,
+            text,
+            category,
+            USER_AUTHOR,
+            NoteStatus::Approved,
+            None,
+        )
     }
 
-    /// A note suggested by an AI: it waits for the user's approval.
+    /// A note suggested by an AI: it waits for the user's approval. Under the
+    /// topic of an approved note, it is a proposed change to that note.
     pub fn propose_note(
         &self,
         project: &Path,
         text: &str,
         category: Category,
         author: &str,
+        topic: Option<&str>,
     ) -> AppResult<Note> {
         let project = self.project_at(project)?;
+        let topic = match topic {
+            Some(raw) => normalize_topic(raw)?,
+            None => None,
+        };
         self.new_note(
             Some(project.path),
             text,
             category,
             author,
             NoteStatus::Proposed,
+            topic,
         )
     }
 
@@ -143,6 +248,7 @@ impl Hedy {
         category: Category,
         author: &str,
         status: NoteStatus,
+        topic: Option<String>,
     ) -> AppResult<Note> {
         let text = text.trim();
         if text.is_empty() {
@@ -155,13 +261,79 @@ impl Hedy {
             author: author.to_owned(),
             status,
             created_at: self.clock.now_ms() / 1000,
+            topic,
         })?)
     }
 
+    /// Approves a proposal. Under the topic of an approved note, the proposal
+    /// replaces that note's text (the note keeps its id and history) and the
+    /// returned note is the updated one.
     pub fn approve_note(&self, id: i64) -> AppResult<Note> {
-        self.note_or_error(id)?;
+        let note = self.note_or_error(id)?;
+        if note.status == NoteStatus::Approved {
+            return Ok(note);
+        }
+        if let Some(target) = topic_target(&self.approved_beside(&note)?, &note) {
+            let topic = note.topic.clone();
+            return self.revise_with(&note, &target, topic);
+        }
         self.store.set_note_status(id, NoteStatus::Approved)?;
         self.note_or_error(id)
+    }
+
+    /// "Reemplazar esa": the proposal becomes the new version of an approved
+    /// note (usually one shown as similar), which keeps its id and uses.
+    pub fn replace_note(&self, proposal: i64, target: i64) -> AppResult<Note> {
+        let proposal = self.proposal_or_error(proposal)?;
+        let target_note = self.note_or_error(target)?;
+        let protected = proposal
+            .project
+            .as_deref()
+            .and_then(|p| self.project_at(p).ok())
+            .is_some_and(|p| p.protected);
+        let in_scope = target_note.project == proposal.project
+            || (target_note.project.is_none() && !protected);
+        if target_note.status != NoteStatus::Approved || !in_scope {
+            return Err(AppError::NoteNotFound(target));
+        }
+        // The target keeps its topic; it takes the proposal's only when no
+        // other approved note has it.
+        let topic = match (&target_note.topic, &proposal.topic) {
+            (Some(own), _) => Some(own.clone()),
+            (None, Some(topic)) => {
+                let taken = topic_target(&self.approved_beside(&proposal)?, &proposal)
+                    .is_some_and(|n| n.id != target);
+                (!taken).then(|| topic.clone())
+            }
+            (None, None) => None,
+        };
+        self.revise_with(&proposal, &target_note, topic)
+    }
+
+    fn revise_with(
+        &self,
+        proposal: &Note,
+        target: &Note,
+        topic: Option<String>,
+    ) -> AppResult<Note> {
+        self.store.revise_note(
+            target.id,
+            &NoteRevision {
+                text: proposal.text.clone(),
+                category: proposal.category,
+                author: proposal.author.clone(),
+                topic,
+                updated_at: self.clock.now_ms() / 1000,
+            },
+        )?;
+        self.store.delete_note(proposal.id)?;
+        self.note_or_error(target.id)
+    }
+
+    /// Rejects a proposal: it is deleted and nothing else changes.
+    pub fn reject_note(&self, id: i64) -> AppResult<()> {
+        self.proposal_or_error(id)?;
+        Ok(self.store.delete_note(id)?)
     }
 
     pub fn edit_note(&self, id: i64, text: &str, category: Category) -> AppResult<Note> {
@@ -231,6 +403,58 @@ impl Hedy {
         Ok(notes)
     }
 
+    /// Approved notes an agent may read in the project containing `path`.
+    fn agent_notes(&self, path: &Path) -> AppResult<Vec<Note>> {
+        let project = self.project_at(path)?;
+        Ok(self
+            .store
+            .notes(Some(&project.path), Self::with_global(&project))?
+            .into_iter()
+            .filter(|n| n.status == NoteStatus::Approved)
+            .collect())
+    }
+
+    /// One approved note for an agent, by id or by topic (the id wins). It
+    /// counts as used. `None` when there is no such note in scope.
+    pub fn read_note_for_agent(
+        &self,
+        path: &Path,
+        task: Option<&TaskId>,
+        id: Option<i64>,
+        topic: Option<&str>,
+    ) -> AppResult<Option<Note>> {
+        let notes = self.agent_notes(path)?;
+        let found = match (id, topic) {
+            (Some(id), _) => notes.into_iter().find(|n| n.id == id),
+            (None, Some(raw)) => match normalize_topic(raw)? {
+                // The project's own note first, then a global one.
+                Some(topic) => notes
+                    .into_iter()
+                    .filter(|n| n.topic.as_ref() == Some(&topic))
+                    .min_by_key(|n| n.project.is_none()),
+                None => None,
+            },
+            (None, None) => None,
+        };
+        if let Some(note) = &found {
+            self.store
+                .record_uses(&[note.id], task, self.clock.now_ms() / 1000)?;
+        }
+        Ok(found)
+    }
+
+    /// Approved notes with a topic, sorted by topic: what agents propose
+    /// changes under.
+    pub fn memory_topics(&self, path: &Path) -> AppResult<Vec<Note>> {
+        let mut notes: Vec<Note> = self
+            .agent_notes(path)?
+            .into_iter()
+            .filter(|n| n.topic.is_some())
+            .collect();
+        notes.sort_by(|a, b| a.topic.cmp(&b.topic));
+        Ok(notes)
+    }
+
     /// The memory an agent gets for a task, unless the account is turned off.
     pub(super) fn memory_link(
         &self,
@@ -289,7 +513,18 @@ impl Hedy {
     }
 }
 
-/// Text an agent reads for a list of notes.
+/// "decision · proyecto", the label of a note for agents.
+fn note_label(note: &Note) -> String {
+    let scope = if note.project.is_some() {
+        tr!("proyecto", "project")
+    } else {
+        "global".to_owned()
+    };
+    format!("{} · {scope}", note.category.as_str())
+}
+
+/// What an agent reads for a search: one compact line per note (id, label,
+/// topic and the start of its text). [`format_note`] has the whole note.
 pub fn format_notes(notes: &[Note]) -> String {
     if notes.is_empty() {
         return tr!(
@@ -297,15 +532,52 @@ pub fn format_notes(notes: &[Note]) -> String {
             "The project's memory has no notes about that."
         );
     }
-    notes
+    let mut cut = false;
+    let mut lines: Vec<String> = notes
         .iter()
         .map(|n| {
-            let scope = if n.project.is_some() {
-                tr!("proyecto", "project")
-            } else {
-                "global".to_owned()
-            };
-            format!("- [{}·{scope}] {}", n.category.as_str(), n.text)
+            let (text, more) = preview(&n.text, PREVIEW_CHARS);
+            cut |= more;
+            let topic = n
+                .topic
+                .as_ref()
+                .map(|t| format!(" {t}:"))
+                .unwrap_or_default();
+            format!("- #{} [{}]{topic} {text}", n.id, note_label(n))
+        })
+        .collect();
+    if cut {
+        lines.push(tr!(
+            "(… = nota recortada: memory_get con su id la devuelve completa.)",
+            "(… = note cut short: memory_get with its id returns all of it.)"
+        ));
+    }
+    lines.join("\n")
+}
+
+/// One whole note, for `memory_get`.
+pub fn format_note(note: &Note) -> String {
+    let topic = match &note.topic {
+        Some(topic) => tr!(" · tema: {topic}", " · topic: {topic}"),
+        None => String::new(),
+    };
+    format!("#{} [{}]{topic}\n{}", note.id, note_label(note), note.text)
+}
+
+/// The topics in the memory, for `memory_topics`.
+pub fn format_topics(notes: &[Note]) -> String {
+    if notes.is_empty() {
+        return tr!(
+            "Todavía no hay temas en la memoria del proyecto.",
+            "The project's memory has no topics yet."
+        );
+    }
+    notes
+        .iter()
+        .filter_map(|n| {
+            let topic = n.topic.as_ref()?;
+            let (text, _) = preview(&n.text, 80);
+            Some(format!("- {topic} → #{}: {text}", n.id))
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -334,7 +606,41 @@ impl MemoryTools for TaskMemory {
         }
     }
 
-    fn propose(&self, text: &str, category: &str) -> String {
+    fn get(&self, id: Option<i64>, topic: Option<&str>) -> String {
+        let topic = topic.filter(|t| !t.trim().is_empty());
+        if id.is_none() && topic.is_none() {
+            return tr!(
+                "Indica el id de la nota (de memory_search) o su tema.",
+                "Give the note's id (from memory_search) or its topic."
+            );
+        }
+        match self
+            .hedy
+            .read_note_for_agent(&self.project, self.task.as_ref(), id, topic)
+        {
+            Ok(Some(note)) => format_note(&note),
+            Ok(None) => tr!(
+                "No hay una nota aprobada con ese id o tema en este proyecto.",
+                "There is no approved note with that id or topic in this project."
+            ),
+            Err(e) => tr!(
+                "No se pudo leer la memoria: {e}",
+                "Could not read the memory: {e}"
+            ),
+        }
+    }
+
+    fn topics(&self) -> String {
+        match self.hedy.memory_topics(&self.project) {
+            Ok(notes) => format_topics(&notes),
+            Err(e) => tr!(
+                "No se pudo leer la memoria: {e}",
+                "Could not read the memory: {e}"
+            ),
+        }
+    }
+
+    fn propose(&self, text: &str, category: &str, topic: Option<&str>) -> String {
         let Ok(category) = category.parse::<Category>() else {
             let valid: Vec<&str> = Category::ALL.iter().map(|c| c.as_str()).collect();
             let (category, valid) = (category.trim(), valid.join(", "));
@@ -343,15 +649,26 @@ impl MemoryTools for TaskMemory {
                 "Unknown category: «{category}». The note was not saved; use one of: {valid}."
             );
         };
-        match self
+        let proposed = self
             .hedy
-            .propose_note(&self.project, text, category, &self.author)
-        {
-            Ok(_) => tr!(
+            .propose_note(&self.project, text, category, &self.author, topic);
+        let target = proposed.as_ref().ok().and_then(|note| {
+            let approved = self.hedy.approved_beside(note).ok()?;
+            topic_target(&approved, note)
+        });
+        match (proposed, target) {
+            (Ok(_), Some(target)) => {
+                let id = target.id;
+                tr!(
+                    "Propuesta guardada como cambio de la nota #{id} (mismo tema); el usuario la revisará.",
+                    "Proposal saved as a change to note #{id} (same topic); the user will review it."
+                )
+            }
+            (Ok(_), None) => tr!(
                 "Propuesta guardada; el usuario la revisará.",
                 "Proposal saved; the user will review it."
             ),
-            Err(e) => tr!(
+            (Err(e), _) => tr!(
                 "No se pudo proponer la nota: {e}",
                 "Could not propose the note: {e}"
             ),
@@ -386,7 +703,7 @@ mod tests {
             .unwrap();
         let proposal = f
             .hedy
-            .propose_note(&moira, "Precios en USD", Category::Decision, "Codex")
+            .propose_note(&moira, "Precios en USD", Category::Decision, "Codex", None)
             .unwrap();
         assert!(matches!(
             f.hedy.add_note(Some(&moira), "  ", Category::Rule),
@@ -489,10 +806,13 @@ mod tests {
         assert!(link.tools.search("usd").contains("Precios en USD"));
         assert!(
             link.tools
-                .propose("Zona horaria del salón", "decisión")
+                .propose("Zona horaria del salón", "decisión", None)
                 .contains("Propuesta")
         );
-        assert_eq!(f.hedy.memory(&moira).unwrap().proposed[0].author, "Claude");
+        assert_eq!(
+            f.hedy.memory(&moira).unwrap().proposed[0].note.author,
+            "Claude"
+        );
 
         let note = &f.hedy.memory(&moira).unwrap().notes[0];
         assert_eq!(note.uses, 1);
@@ -503,23 +823,277 @@ mod tests {
         let f = setup();
         let moira = f.dir("/code/moira");
         let tools = f.hedy.memory_tools(&moira, None, "Codex").unwrap();
-        let answer = tools.propose("Precios en USD", "idea");
+        let answer = tools.propose("Precios en USD", "idea", None);
         assert!(answer.contains("decision, convention, rule, preference"));
         assert!(f.hedy.memory(&moira).unwrap().proposed.is_empty());
 
         assert!(
             tools
-                .propose("Precios en USD", "Regla")
+                .propose("Precios en USD", "Regla", None)
                 .contains("Propuesta")
         );
         let proposed = f.hedy.memory(&moira).unwrap().proposed;
-        assert_eq!(proposed[0].category, Category::Rule);
-        assert_eq!(proposed[0].author, "Codex");
+        assert_eq!(proposed[0].note.category, Category::Rule);
+        assert_eq!(proposed[0].note.author, "Codex");
+        assert!(
+            tools
+                .propose("Precios en USD", "rule", Some("¿?"))
+                .contains("tema no válido")
+        );
         assert!(
             f.hedy
                 .memory_tools(&f.dir("/elsewhere"), None, "Codex")
                 .is_err()
         );
+    }
+
+    /// An approved note under `topic`, as agents leave them: proposed, then approved.
+    fn approved_with_topic(f: &Fixture, project: &Path, text: &str, topic: &str) -> Note {
+        let note = f
+            .hedy
+            .propose_note(project, text, Category::Decision, "Claude", Some(topic))
+            .unwrap();
+        f.hedy.approve_note(note.id).unwrap()
+    }
+
+    #[test]
+    fn a_proposal_under_a_topic_changes_the_approved_note() {
+        let f = setup();
+        let moira = f.dir("/code/moira");
+        let old = approved_with_topic(
+            &f,
+            &moira,
+            "Los recordatorios se envían por WhatsApp",
+            "Recordatorios/Canal",
+        );
+        assert_eq!(old.topic.as_deref(), Some("recordatorios/canal"));
+        f.hedy.read_memory_for_agent(&moira, None, "").unwrap();
+
+        let change = f
+            .hedy
+            .propose_note(
+                &moira,
+                "Los recordatorios se envían por WhatsApp y, si falla, por SMS",
+                Category::Decision,
+                "Codex",
+                Some("recordatorios/canal"),
+            )
+            .unwrap();
+        let view = f.hedy.memory(&moira).unwrap();
+        assert_eq!(
+            view.proposed[0].replaces.as_ref().map(|n| n.id),
+            Some(old.id)
+        );
+        assert!(
+            view.proposed[0].similar.iter().all(|n| n.id != old.id),
+            "the note it changes is not listed again as similar"
+        );
+        // Agents keep reading the approved version until the user decides.
+        assert!(
+            f.hedy
+                .read_memory_for_agent(&moira, None, "SMS")
+                .unwrap()
+                .is_empty()
+        );
+
+        // Rejecting changes nothing.
+        f.hedy.reject_note(change.id).unwrap();
+        let view = f.hedy.memory(&moira).unwrap();
+        assert!(view.proposed.is_empty());
+        assert_eq!(view.notes, vec![f.hedy.note_or_error(old.id).unwrap()]);
+        assert_eq!(
+            view.notes[0].text,
+            "Los recordatorios se envían por WhatsApp"
+        );
+
+        // Approving replaces the text and keeps the note's id and history.
+        let change = f
+            .hedy
+            .propose_note(
+                &moira,
+                "Los recordatorios se envían por SMS",
+                Category::Rule,
+                "Codex",
+                Some("recordatorios/canal"),
+            )
+            .unwrap();
+        let updated = f.hedy.approve_note(change.id).unwrap();
+        assert_eq!(updated.id, old.id);
+        assert_eq!(updated.text, "Los recordatorios se envían por SMS");
+        assert_eq!(
+            (updated.category, updated.author.as_str()),
+            (Category::Rule, "Codex")
+        );
+        assert_eq!(updated.uses, 1);
+        assert!(updated.updated_at.is_some_and(|at| at > old.created_at));
+        let view = f.hedy.memory(&moira).unwrap();
+        assert_eq!(view.notes.len(), 1);
+        assert!(view.proposed.is_empty());
+        assert!(matches!(
+            f.hedy.note_or_error(change.id),
+            Err(AppError::NoteNotFound(_))
+        ));
+        assert!(matches!(
+            f.hedy.reject_note(old.id),
+            Err(AppError::NotAProposal(_))
+        ));
+    }
+
+    #[test]
+    fn topics_belong_to_their_project() {
+        let f = setup();
+        let moira = f.dir("/code/moira");
+        let other = f.dir("/code/otro");
+        f.hedy.use_account(&other, "personal", None).unwrap();
+        approved_with_topic(&f, &moira, "Pagos con Stripe", "pagos");
+        let proposal = f
+            .hedy
+            .propose_note(
+                &other,
+                "Pagos con PayPal",
+                Category::Decision,
+                "Codex",
+                Some("pagos"),
+            )
+            .unwrap();
+        assert!(
+            f.hedy.memory(&other).unwrap().proposed[0]
+                .replaces
+                .is_none()
+        );
+        let approved = f.hedy.approve_note(proposal.id).unwrap();
+        assert_eq!(approved.id, proposal.id, "a new note in the other project");
+        assert_eq!(
+            f.hedy.memory(&moira).unwrap().notes[0].text,
+            "Pagos con Stripe"
+        );
+    }
+
+    #[test]
+    fn similar_notes_are_shown_next_to_a_proposal() {
+        let f = setup();
+        let moira = f.dir("/code/moira");
+        let prices = f
+            .hedy
+            .add_note(
+                Some(&moira),
+                "Los precios se guardan en USD y se muestran también en Bs",
+                Category::Decision,
+            )
+            .unwrap();
+        f.hedy
+            .add_note(Some(&moira), "Tests con pytest", Category::Convention)
+            .unwrap();
+        let global = f
+            .hedy
+            .add_note(None, "Los precios siempre en USD", Category::Preference)
+            .unwrap();
+        let usd = f
+            .hedy
+            .propose_note(
+                &moira,
+                "Los precios se guardan en USD",
+                Category::Decision,
+                "Codex",
+                None,
+            )
+            .unwrap();
+        let zod = f
+            .hedy
+            .propose_note(
+                &moira,
+                "Los formularios validan con zod",
+                Category::Convention,
+                "Codex",
+                None,
+            )
+            .unwrap();
+        let view = f.hedy.memory(&moira).unwrap();
+        let proposal = |id: i64| view.proposed.iter().find(|p| p.note.id == id).unwrap();
+        let similar: Vec<i64> = proposal(usd.id).similar.iter().map(|n| n.id).collect();
+        assert!(similar.contains(&prices.id) && similar.contains(&global.id));
+        assert!(proposal(usd.id).replaces.is_none());
+        assert!(proposal(zod.id).similar.is_empty());
+
+        // "Reemplazar esa": the similar note takes the proposal's text.
+        let replaced = f.hedy.replace_note(usd.id, prices.id).unwrap();
+        assert_eq!(replaced.id, prices.id);
+        assert_eq!(replaced.text, "Los precios se guardan en USD");
+        assert!(replaced.updated_at.is_some());
+        let view = f.hedy.memory(&moira).unwrap();
+        assert_eq!(view.proposed.len(), 1);
+        assert_eq!(view.notes.len(), 3);
+
+        // Only proposals replace, and only approved notes in scope.
+        assert!(matches!(
+            f.hedy.replace_note(prices.id, global.id),
+            Err(AppError::NotAProposal(_))
+        ));
+        assert!(matches!(
+            f.hedy.replace_note(zod.id, zod.id),
+            Err(AppError::NoteNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn agents_search_compactly_and_read_whole_notes() {
+        let f = setup();
+        let moira = f.dir("/code/moira");
+        let long = "Los pagos se procesan con Stripe. ".repeat(8);
+        let pay = approved_with_topic(&f, &moira, &long, "arquitectura/pagos");
+        let short = f
+            .hedy
+            .add_note(Some(&moira), "Tests con pytest", Category::Convention)
+            .unwrap();
+        f.hedy
+            .propose_note(&moira, "Pagos secretos", Category::Rule, "Codex", Some("x"))
+            .unwrap();
+        let tools = f
+            .hedy
+            .memory_tools(&moira, Some(&TaskId::new("t-1")), "Codex")
+            .unwrap();
+
+        let found = tools.search("");
+        assert!(found.contains(&format!(
+            "- #{} [convention · proyecto] Tests con pytest",
+            short.id
+        )));
+        assert!(found.contains(&format!(
+            "- #{} [decision · proyecto] arquitectura/pagos:",
+            pay.id
+        )));
+        assert!(!found.contains(long.trim()), "long notes are cut short");
+        assert!(found.contains("memory_get"));
+        assert!(!found.contains("secretos"), "never proposals");
+
+        let whole = tools.get(Some(pay.id), None);
+        assert!(whole.contains(long.trim()) && whole.contains("tema: arquitectura/pagos"));
+        assert_eq!(tools.get(None, Some("Arquitectura/Pagos")), whole);
+        assert!(tools.get(Some(9_999), None).contains("No hay una nota"));
+        assert!(tools.get(None, None).contains("Indica el id"));
+        assert!(
+            tools.get(None, Some("x")).contains("No hay una nota"),
+            "proposals stay hidden"
+        );
+
+        let topics = tools.topics();
+        assert!(topics.starts_with(&format!(
+            "- arquitectura/pagos → #{}: Los pagos se procesan",
+            pay.id
+        )));
+        assert!(topics.ends_with('…') && !topics.contains('\n'));
+        let answer = tools.propose(
+            "Pagos con Mercado Pago",
+            "decision",
+            Some("arquitectura/pagos"),
+        );
+        assert!(
+            answer.contains(&format!("cambio de la nota #{}", pay.id)),
+            "{answer}"
+        );
+
+        let note = f.hedy.note_or_error(pay.id).unwrap();
+        assert_eq!(note.uses, 3, "search, get by id and get by topic");
     }
 
     #[test]

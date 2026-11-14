@@ -94,12 +94,25 @@ pub struct NewNote {
     pub author: String,
     pub status: NoteStatus,
     pub created_at: i64,
+    pub topic: Option<String>,
+}
+
+/// A newer version of an approved note (from a proposal the user approved):
+/// the note keeps its id, scope, creation date and uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NoteRevision {
+    pub text: String,
+    pub category: Category,
+    pub author: String,
+    pub topic: Option<String>,
+    pub updated_at: i64,
 }
 
 pub trait MemoryRepository: Send + Sync {
     fn add_note(&self, note: &NewNote) -> PortResult<Note>;
     fn note(&self, id: i64) -> PortResult<Option<Note>>;
     fn update_note(&self, id: i64, text: &str, category: Category) -> PortResult<()>;
+    fn revise_note(&self, id: i64, revision: &NoteRevision) -> PortResult<()>;
     fn set_note_status(&self, id: i64, status: NoteStatus) -> PortResult<()>;
     fn delete_note(&self, id: i64) -> PortResult<()>;
     /// The project's notes, plus global ones when `with_global`. `None`: only global.
@@ -239,12 +252,19 @@ pub struct McpServer {
     pub env: Vec<(String, String)>,
 }
 
-/// Memory for an agent that calls tools through Hedy (the API agent).
+/// The memory tools an agent calls: through Hedy (the API agent) or the
+/// memory MCP server (CLI agents). Every answer is text for the agent.
 pub trait MemoryTools: Send + Sync {
-    /// Approved notes matching `query` (all of them when empty), as text.
+    /// Approved notes matching `query` (all of them when empty), compact: id,
+    /// category, topic and a short preview of each.
     fn search(&self, query: &str) -> String;
-    /// Proposes a note for the user to approve.
-    fn propose(&self, text: &str, category: &str) -> String;
+    /// One approved note in full, by id or by topic.
+    fn get(&self, id: Option<i64>, topic: Option<&str>) -> String;
+    /// The topics of the approved notes, to propose changes under them.
+    fn topics(&self) -> String;
+    /// Proposes a note for the user to approve. Under the topic of an
+    /// approved note, it proposes a change to that note.
+    fn propose(&self, text: &str, category: &str, topic: Option<&str>) -> String;
 }
 
 /// The project's memory for one agent run: an MCP server for CLIs, tools for APIs.

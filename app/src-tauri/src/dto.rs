@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use hedy_core::adapters::{CODE_MAP_PROGRAM, find_program};
 use hedy_core::application::{
-    AccountStatus, AccountUsage, AppResult, Hedy, MemoryView, ProjectStatus, Setting, TestRun,
-    UsageSummary,
+    AccountStatus, AccountUsage, AppResult, Hedy, MemoryView, ProjectStatus, Proposal, Setting,
+    TestRun, UsageSummary,
 };
 use hedy_core::domain::{
     Account, ConfigFolder, Credentials, LoginState, Note, PhasePlan, Project, Provider, Task,
@@ -53,12 +53,32 @@ pub struct CodeMapDto {
 #[serde(rename_all = "camelCase")]
 pub struct MemoryDto {
     pub notes: Vec<Note>,
-    pub proposed: Vec<Note>,
+    pub proposed: Vec<ProposalDto>,
     pub contradictions: Vec<[Note; 2]>,
     pub stale: Vec<Note>,
     pub used_last_task: Vec<Note>,
     pub readers: Vec<ReaderDto>,
     pub protected: bool,
+}
+
+/// A proposal with the approved note it would change (same topic) and the
+/// approved notes that look like it.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProposalDto {
+    pub note: Note,
+    pub replaces: Option<Note>,
+    pub similar: Vec<Note>,
+}
+
+impl From<Proposal> for ProposalDto {
+    fn from(p: Proposal) -> Self {
+        Self {
+            note: p.note,
+            replaces: p.replaces,
+            similar: p.similar,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -72,7 +92,7 @@ impl From<MemoryView> for MemoryDto {
     fn from(view: MemoryView) -> Self {
         Self {
             notes: view.notes,
-            proposed: view.proposed,
+            proposed: view.proposed.into_iter().map(Into::into).collect(),
             contradictions: view
                 .contradictions
                 .into_iter()

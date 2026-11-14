@@ -7,9 +7,9 @@ use std::sync::{Arc, Mutex};
 
 use super::ports::{
     AccountRepository, AgentLauncher, AgentRequest, AgentSession, CapturedOutput, Clock, EventSink,
-    FileSystem, Git, MemoryRepository, MergeOutcome, NewNote, PortError, PortResult, ProcessRunner,
-    ProjectRepository, RateLimit, SecretStore, SettingsRepository, TaskRepository, UsageRecord,
-    UsageRepository,
+    FileSystem, Git, MemoryRepository, MergeOutcome, NewNote, NoteRevision, PortError, PortResult,
+    ProcessRunner, ProjectRepository, RateLimit, SecretStore, SettingsRepository, TaskRepository,
+    UsageRecord, UsageRepository,
 };
 use super::{Hedy, NewAccount, Ports};
 use crate::domain::{
@@ -53,6 +53,8 @@ impl MemoryRepository for MemoryStore {
             created_at: n.created_at,
             uses: 0,
             last_used: None,
+            topic: n.topic.clone(),
+            updated_at: None,
         };
         notes.push(note.clone());
         Ok(note)
@@ -70,6 +72,16 @@ impl MemoryRepository for MemoryStore {
         if let Some(n) = self.notes.lock().unwrap().iter_mut().find(|n| n.id == id) {
             n.text = text.into();
             n.category = category;
+        }
+        Ok(())
+    }
+    fn revise_note(&self, id: i64, r: &NoteRevision) -> PortResult<()> {
+        if let Some(n) = self.notes.lock().unwrap().iter_mut().find(|n| n.id == id) {
+            n.text = r.text.clone();
+            n.category = r.category;
+            n.author = r.author.clone();
+            n.topic = r.topic.clone();
+            n.updated_at = Some(r.updated_at);
         }
         Ok(())
     }
@@ -103,7 +115,10 @@ impl MemoryRepository for MemoryStore {
         Ok(self
             .notes(project, with_global)?
             .into_iter()
-            .filter(|n| words.is_empty() || words.iter().any(|w| n.text.to_lowercase().contains(w)))
+            .filter(|n| {
+                let haystack = format!("{} {}", n.text, n.topic.as_deref().unwrap_or(""));
+                words.is_empty() || words.iter().any(|w| haystack.to_lowercase().contains(w))
+            })
             .collect())
     }
     fn record_uses(&self, ids: &[i64], task: Option<&TaskId>, at: i64) -> PortResult<()> {

@@ -313,6 +313,54 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             tr!("Quita la cuenta por defecto", "Remove the default account"),
         ),
         (
+            "memory",
+            "",
+            tr!(
+                "Memoria del proyecto: notas aprobadas y propuestas de tus IAs",
+                "Project memory: approved notes and proposals from your AIs"
+            ),
+        ),
+        (
+            "memory list",
+            "",
+            tr!(
+                "Lista las notas aprobadas y las propuestas, con sus temas (por defecto)",
+                "List the approved notes and the proposals, with their topics (default)"
+            ),
+        ),
+        (
+            "memory approve",
+            "",
+            tr!(
+                "Aprueba una propuesta; si cambia una nota con el mismo tema, la reemplaza",
+                "Approve a proposal; when it changes a note with the same topic, it replaces it"
+            ),
+        ),
+        (
+            "memory approve",
+            "id",
+            tr!(
+                "Número de la propuesta (mira `hedy memory list`)",
+                "Number of the proposal (see `hedy memory list`)"
+            ),
+        ),
+        (
+            "memory reject",
+            "",
+            tr!(
+                "Rechaza una propuesta: se borra y nada más cambia",
+                "Reject a proposal: it is deleted and nothing else changes"
+            ),
+        ),
+        (
+            "memory reject",
+            "id",
+            tr!(
+                "Número de la propuesta (mira `hedy memory list`)",
+                "Number of the proposal (see `hedy memory list`)"
+            ),
+        ),
+        (
             "config",
             "",
             tr!(
@@ -492,6 +540,12 @@ pub enum Command {
     #[command(visible_alias = "cuenta", subcommand)]
     Account(AccountCommand),
 
+    #[command(visible_alias = "memoria")]
+    Memory {
+        #[command(subcommand)]
+        command: Option<MemoryCommand>,
+    },
+
     #[command(subcommand)]
     Config(ConfigCommand),
 
@@ -525,6 +579,18 @@ pub enum AccountCommand {
         #[arg(long)]
         clear: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum MemoryCommand {
+    #[command(visible_alias = "listar")]
+    List,
+
+    #[command(visible_alias = "aprobar")]
+    Approve { id: i64 },
+
+    #[command(visible_alias = "rechazar")]
+    Reject { id: i64 },
 }
 
 #[derive(Debug, Subcommand)]
@@ -675,6 +741,28 @@ mod tests {
             Cli::try_parse_from(["hedy", "account", "add", "X", "--claude", "--codex"]).is_err()
         );
         assert!(Cli::try_parse_from(["hedy", "account", "add", "X", "--api", "openai"]).is_err());
+    }
+
+    #[test]
+    fn memory_lists_by_default_and_takes_spanish_aliases() {
+        let parse = |args: &[&str]| Cli::try_parse_from(args).unwrap().command;
+        assert!(matches!(
+            parse(&["hedy", "memory"]),
+            Some(Command::Memory { command: None })
+        ));
+        assert!(matches!(
+            parse(&["hedy", "memoria", "aprobar", "7"]),
+            Some(Command::Memory {
+                command: Some(MemoryCommand::Approve { id: 7 })
+            })
+        ));
+        assert!(matches!(
+            parse(&["hedy", "memoria", "rechazar", "3"]),
+            Some(Command::Memory {
+                command: Some(MemoryCommand::Reject { id: 3 })
+            })
+        ));
+        assert!(Cli::try_parse_from(["hedy", "memory", "approve", "x"]).is_err());
     }
 
     #[test]
