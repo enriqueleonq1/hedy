@@ -1422,6 +1422,37 @@ export class MockApi implements HedyApi {
     this.notifyTask(task);
   }
 
+  /**
+   * For `npm run dev`: the running sample task ("s4", in homming) goes through
+   * every kind of tool, then stays silent a while, so its mascot shows each
+   * working pose. A few rounds, every `stepMs`.
+   */
+  withLiveTools(stepMs = 4000, rounds = 6): this {
+    const round: (AgentEvent | null)[] = [
+      { kind: "message", text: "Voy a revisar cómo se calcula el envío del carrito." },
+      { kind: "toolUsed", tool: "Read", summary: "src/carrito/total.ts" },
+      { kind: "toolUsed", tool: "Grep", summary: "calcularEnvio" },
+      { kind: "toolUsed", tool: "Task", summary: "Revisar los casos de borde del envío" },
+      { kind: "fileEdited", path: "src/carrito/total.ts" },
+      { kind: "commandRun", command: "npm run build", tests: false },
+      { kind: "testsRun", command: "npm test -- carrito", passed: true },
+      { kind: "toolUsed", tool: "WebFetch", summary: "docs de la librería de pagos" },
+      // Silence: after 20 s the mascot waits.
+      ...Array.from({ length: Math.ceil(24_000 / stepMs) }, () => null),
+    ];
+    const events = Array.from({ length: rounds }, () => round).flat();
+    let step = 0;
+    const timer = setInterval(() => {
+      const event = events[step++];
+      if (step > events.length || !this.tasksById.get("s4")?.live) {
+        clearInterval(timer);
+        return;
+      }
+      if (event) this.push("s4", event);
+    }, stepMs);
+    return this;
+  }
+
   /** Test helper: the agent reports its account is close to the limit. */
   simulateLimit(id: string, level: "warning" | "reached" = "warning"): void {
     this.push(id, { kind: "limitWarning", account: this.tasksById.get(id)?.account ?? "", level, percent: 92, resetsAt: null });
