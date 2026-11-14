@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 use super::ports::{
     AccountRepository, AgentLauncher, AgentRequest, AgentSession, CapturedOutput, Clock, EventSink,
     FileSystem, Git, MemoryRepository, MergeOutcome, NewNote, PortError, PortResult, ProcessRunner,
-    ProjectRepository, RateLimit, SecretStore, SettingsRepository, TaskRepository, UsageRecord,
-    UsageRepository,
+    ProjectRepository, RateLimit, SecretStore, SettingsRepository, StoreHealth, TaskRepository,
+    UsageRecord, UsageRepository,
 };
 use super::{Hedy, NewAccount, Ports};
 use crate::domain::{
@@ -29,6 +29,23 @@ pub struct MemoryStore {
     notes: Mutex<Vec<Note>>,
     uses: Mutex<Vec<(i64, Option<TaskId>)>>,
     dismissed: Mutex<Vec<(i64, i64)>>,
+    integrity: Mutex<Vec<String>>,
+}
+
+impl MemoryStore {
+    /// What the next integrity check finds.
+    pub fn corrupt(&self, problem: &str) {
+        self.integrity.lock().unwrap().push(problem.into());
+    }
+}
+
+impl StoreHealth for MemoryStore {
+    fn data_dir(&self) -> Option<PathBuf> {
+        Some("/data".into())
+    }
+    fn integrity_problems(&self) -> PortResult<Vec<String>> {
+        Ok(self.integrity.lock().unwrap().clone())
+    }
 }
 
 fn in_scope(note: &Note, project: Option<&Path>, with_global: bool) -> bool {
@@ -506,13 +523,24 @@ impl SecretStore for MemorySecrets {
     }
 }
 
-/// Records launches and answers captured runs with a canned reply.
+/// Records launches and answers captured runs with a canned reply, or with
+/// the reply set for that exact command line.
 #[derive(Default)]
 pub struct FakeRunner {
     interactive: Mutex<Vec<LaunchSpec>>,
     detached: Mutex<Vec<LaunchSpec>>,
+    captured: Mutex<Vec<LaunchSpec>>,
     reply: Mutex<Option<CapturedOutput>>,
+    replies: Mutex<HashMap<String, PortResult<CapturedOutput>>>,
     installed: Mutex<HashSet<String>>,
+    env: Mutex<Vec<String>>,
+}
+
+fn command_line(spec: &LaunchSpec) -> String {
+    std::iter::once(spec.program.as_str())
+        .chain(spec.args.iter().map(String::as_str))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl FakeRunner {
@@ -525,6 +553,30 @@ impl FakeRunner {
             exit_code: Some(exit_code),
             stdout: stdout.to_owned(),
         });
+    }
+    /// The reply to exactly `command` (`"claude --version"`).
+    pub fn reply_to(&self, command: &str, stdout: &str, exit_code: i32) {
+        self.replies.lock().unwrap().insert(
+            command.into(),
+            Ok(CapturedOutput {
+                exit_code: Some(exit_code),
+                stdout: stdout.to_owned(),
+            }),
+        );
+    }
+    /// `command` fails, as when it times out.
+    pub fn fail(&self, command: &str) {
+        self.replies
+            .lock()
+            .unwrap()
+            .insert(command.into(), Err(PortError::new("timed out")));
+    }
+    /// Variables in Hedy's own environment that CLIs must not inherit.
+    pub fn set_env(&self, names: &[&str]) {
+        *self.env.lock().unwrap() = names.iter().map(|n| n.to_string()).collect();
+    }
+    pub fn captured(&self) -> Vec<LaunchSpec> {
+        self.captured.lock().unwrap().clone()
     }
     pub fn interactive(&self) -> Vec<LaunchSpec> {
         self.interactive.lock().unwrap().clone()
@@ -539,12 +591,26 @@ impl ProcessRunner for FakeRunner {
         self.interactive.lock().unwrap().push(spec.clone());
         Ok(Some(0))
     }
-    fn run_captured(&self, _spec: &LaunchSpec) -> PortResult<CapturedOutput> {
+    fn run_captured(&self, spec: &LaunchSpec) -> PortResult<CapturedOutput> {
+        self.captured.lock().unwrap().push(spec.clone());
+        if let Some(reply) = self.replies.lock().unwrap().get(&command_line(spec)) {
+            return reply.clone();
+        }
         self.reply
             .lock()
             .unwrap()
             .clone()
             .ok_or_else(|| PortError::new("no reply configured"))
+    }
+    fn run_captured_within(
+        &self,
+        spec: &LaunchSpec,
+        _timeout: std::time::Duration,
+    ) -> PortResult<CapturedOutput> {
+        self.run_captured(spec)
+    }
+    fn blocked_env_vars(&self) -> Vec<String> {
+        self.env.lock().unwrap().clone()
     }
     fn spawn_detached(&self, spec: &LaunchSpec) -> PortResult<()> {
         self.detached.lock().unwrap().push(spec.clone());
@@ -566,6 +632,7 @@ pub struct FakeFs {
     dirs: Mutex<HashSet<PathBuf>>,
     files: Mutex<Vec<(PathBuf, String)>>,
     git_roots: Mutex<Vec<PathBuf>>,
+    read_only: Mutex<HashSet<PathBuf>>,
 }
 
 impl FakeFs {
@@ -580,6 +647,9 @@ impl FakeFs {
     }
     pub fn symlinks(&self) -> Vec<(PathBuf, PathBuf)> {
         self.links.lock().unwrap().clone()
+    }
+    pub fn make_read_only(&self, path: &str) {
+        self.read_only.lock().unwrap().insert(path.into());
     }
     pub fn add_git_root(&self, path: &str) {
         self.git_roots.lock().unwrap().push(path.into());
@@ -596,6 +666,13 @@ impl FileSystem for FakeFs {
     }
     fn exists(&self, path: &Path) -> bool {
         self.existing.lock().unwrap().contains(path)
+    }
+    fn check_writable(&self, dir: &Path) -> PortResult<()> {
+        if self.read_only.lock().unwrap().contains(dir) {
+            Err(PortError::new("permission denied"))
+        } else {
+            Ok(())
+        }
     }
     fn symlink_dir(&self, target: &Path, link: &Path) -> PortResult<()> {
         self.links

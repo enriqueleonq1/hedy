@@ -95,6 +95,17 @@ impl Provider {
         }
     }
 
+    /// The CLI version Hedy was last verified with (docs/decisions.md, table at
+    /// the top). `None`: not verified against a real binary yet.
+    pub fn verified_version(self) -> Option<&'static str> {
+        match self {
+            Self::Claude => Some("2.1.306"),
+            Self::Codex => Some("0.169.0"),
+            Self::Gemini => Some("0.68.0"),
+            Self::Kimi | Self::Antigravity => None,
+        }
+    }
+
     /// The CLI flag that picks a model, where verified (`gemini -m`).
     pub fn model_flag(self) -> Option<&'static str> {
         match self {

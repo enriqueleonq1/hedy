@@ -17,6 +17,7 @@ pub mod project;
 pub mod prompts;
 pub mod provider;
 pub mod task;
+pub mod version;
 
 pub use account::{Account, AccountId, ConfigFolder, Credentials};
 pub use agent::{AgentEvent, Decision, LimitLevel, PlanStep, StepStatus, UsageSample};
