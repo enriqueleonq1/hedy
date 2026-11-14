@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::application::ports::{PortError, PortResult};
 
@@ -36,4 +36,13 @@ impl HedyPaths {
     pub fn accounts_dir(&self) -> PathBuf {
         self.data_dir.join("accounts")
     }
+}
+
+/// `path` relative to `base` for display (`src/app.py`), or as given when it
+/// is elsewhere.
+pub(crate) fn relative(base: &Path, path: &Path) -> String {
+    path.strip_prefix(base)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .into_owned()
 }

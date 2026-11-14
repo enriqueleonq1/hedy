@@ -24,7 +24,7 @@ documented is marked **unverified**.
 | Claude Code | `claude -p` with stream-json both ways | interactive `claude` in a PTY |
 | Codex | `codex app-server` (JSON-RPC over stdio) | interactive `codex` in a PTY |
 | Gemini ⚠️ | `gemini --acp` (Agent Client Protocol) | interactive `gemini` in a PTY |
-| Kimi / Gemini API | OpenAI-compatible HTTP (`reqwest`) | — |
+| Kimi / Gemini API | OpenAI-compatible HTTP (`ureq`) | — |
 
 ⚠️ Gemini CLI **no longer accepts personal Google accounts** (see section 5): it only
 works with Code Assist Standard/Enterprise or a paid API key.

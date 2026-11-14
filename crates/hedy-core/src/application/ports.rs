@@ -300,6 +300,18 @@ pub struct AgentRequest {
     pub mcp: Vec<McpServer>,
 }
 
+impl AgentRequest {
+    /// The memory server (when the agent reads the memory) and the extra ones,
+    /// such as the code map.
+    pub fn mcp_servers(&self) -> Vec<&McpServer> {
+        self.memory
+            .iter()
+            .filter_map(|m| m.server.as_ref())
+            .chain(&self.mcp)
+            .collect()
+    }
+}
+
 pub trait AgentLauncher: Send + Sync {
     fn start(&self, request: AgentRequest, events: EventSink) -> PortResult<Box<dyn AgentSession>>;
 }
@@ -329,7 +341,9 @@ impl TaskEvents for NoTaskEvents {
 pub trait FileSystem: Send + Sync {
     /// Folder for a new Hedy-managed account.
     fn account_folder(&self, id: &AccountId) -> PathBuf;
-    fn create_dir_all(&self, path: &Path) -> PortResult<()>;
+    /// Creates `path` (and parents), readable only by the user: account
+    /// folders hold CLI logins.
+    fn create_private_dir(&self, path: &Path) -> PortResult<()>;
     fn exists(&self, path: &Path) -> bool;
     /// `link` → `target`.
     fn symlink_dir(&self, target: &Path, link: &Path) -> PortResult<()>;

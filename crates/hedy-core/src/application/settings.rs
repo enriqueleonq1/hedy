@@ -114,7 +114,7 @@ impl Hedy {
     }
 
     /// The code map for a run, limited to the project folder. Hedy only
-    /// registers it; the server indexes on its own (spec phase 5).
+    /// registers it; the server indexes on its own.
     pub(crate) fn code_map_servers(&self, project: &std::path::Path) -> AppResult<Vec<McpServer>> {
         Ok(self
             .setting(Setting::CodeMap)?

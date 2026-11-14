@@ -1,6 +1,7 @@
 //! Claude Code's stream-json messages → the common event language.
 //! Formats verified in phase 0 (docs/decisions.md §3).
 
+use crate::adapters::paths::relative;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -29,9 +30,7 @@ impl Translator {
     }
 
     fn relative(&self, path: &str) -> String {
-        Path::new(path)
-            .strip_prefix(&self.cwd)
-            .map_or_else(|_| path.to_owned(), |p| p.to_string_lossy().into_owned())
+        relative(&self.cwd, Path::new(path))
     }
 
     /// `denied` holds tool_use ids whose permission the user (or a rule) denied.

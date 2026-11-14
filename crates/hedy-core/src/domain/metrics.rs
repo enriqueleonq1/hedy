@@ -1,4 +1,4 @@
-//! Usage and cost per project and per client (spec phase 6).
+//! Usage and cost per project and per client.
 //!
 //! Costs are estimates: for subscriptions it is what the CLI reports (not what
 //! is billed), for API keys it comes from the price the user configured.

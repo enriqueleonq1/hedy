@@ -24,7 +24,7 @@ impl FileSystem for LocalFileSystem {
         self.accounts_dir.join(id.as_str())
     }
 
-    fn create_dir_all(&self, path: &Path) -> PortResult<()> {
+    fn create_private_dir(&self, path: &Path) -> PortResult<()> {
         fs::create_dir_all(path).map_err(|e| io_error("crear", path, e))?;
         // Account folders hold CLI logins: private to the user.
         #[cfg(unix)]
@@ -103,7 +103,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let fs_ = LocalFileSystem::new(tmp.path().to_owned());
         let folder = fs_.account_folder(&AccountId::new("personal").unwrap());
-        fs_.create_dir_all(&folder).unwrap();
+        fs_.create_private_dir(&folder).unwrap();
         let mode = fs::metadata(&folder).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o700);
     }

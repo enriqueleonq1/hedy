@@ -2,11 +2,10 @@
 
 use std::fmt;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-use super::{AccountId, DomainError, Stage};
+use super::{AccountId, Stage};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct TaskId(String);
@@ -37,29 +36,8 @@ pub enum TaskMode {
 }
 
 impl TaskMode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Project => "project",
-            Self::Ask => "ask",
-            Self::Research => "research",
-        }
-    }
-
     pub fn changes_files(self) -> bool {
         self == Self::Project
-    }
-}
-
-impl FromStr for TaskMode {
-    type Err = DomainError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "project" => Ok(Self::Project),
-            "ask" => Ok(Self::Ask),
-            "research" => Ok(Self::Research),
-            other => Err(DomainError::UnknownTaskMode(other.to_owned())),
-        }
     }
 }
 
@@ -78,38 +56,9 @@ pub enum TaskStatus {
 }
 
 impl TaskStatus {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Running => "running",
-            Self::WaitingApproval => "waitingApproval",
-            Self::Review => "review",
-            Self::Accepted => "accepted",
-            Self::Discarded => "discarded",
-            Self::Failed => "failed",
-        }
-    }
-
     /// Accepted and discarded tasks are closed: no more messages, no worktree.
     pub fn is_closed(self) -> bool {
         matches!(self, Self::Accepted | Self::Discarded)
-    }
-}
-
-impl FromStr for TaskStatus {
-    type Err = DomainError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        [
-            Self::Running,
-            Self::WaitingApproval,
-            Self::Review,
-            Self::Accepted,
-            Self::Discarded,
-            Self::Failed,
-        ]
-        .into_iter()
-        .find(|status| status.as_str() == s)
-        .ok_or_else(|| DomainError::UnknownTaskStatus(s.to_owned()))
     }
 }
 
@@ -184,15 +133,7 @@ pub fn title_from_prompt(prompt: &str) -> String {
 pub fn branch_name(title: &str, id: &TaskId) -> String {
     let mut slug = String::new();
     for c in title.to_lowercase().chars() {
-        let c = match c {
-            'á' | 'à' | 'ä' => 'a',
-            'é' | 'è' | 'ë' => 'e',
-            'í' | 'ì' | 'ï' => 'i',
-            'ó' | 'ò' | 'ö' => 'o',
-            'ú' | 'ù' | 'ü' => 'u',
-            'ñ' => 'n',
-            c => c,
-        };
+        let c = super::account::fold_accent(c);
         if c.is_ascii_alphanumeric() {
             slug.push(c);
         } else if !slug.is_empty() && !slug.ends_with('-') {
@@ -247,19 +188,8 @@ mod tests {
     }
 
     #[test]
-    fn statuses_round_trip() {
-        for s in [
-            "running",
-            "waitingApproval",
-            "review",
-            "accepted",
-            "discarded",
-            "failed",
-        ] {
-            assert_eq!(s.parse::<TaskStatus>().unwrap().as_str(), s);
-        }
+    fn closed_statuses() {
         assert!(TaskStatus::Accepted.is_closed());
         assert!(!TaskStatus::Review.is_closed());
-        assert_eq!("ask".parse::<TaskMode>().unwrap(), TaskMode::Ask);
     }
 }

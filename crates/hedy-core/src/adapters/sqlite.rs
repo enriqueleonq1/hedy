@@ -123,6 +123,10 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE projects ADD COLUMN client TEXT;
     CREATE INDEX usage_by_project ON usage (project, at);
 "#,
+    r#"
+    -- Forgetting a note deletes its uses.
+    CREATE INDEX note_uses_by_note ON note_uses (note_id);
+"#,
 ];
 
 pub struct SqliteStore {
@@ -340,12 +344,6 @@ impl ProjectRepository for SqliteStore {
         })
     }
     fn delete_project(&self, path: &Path) -> PortResult<()> {
-        self.delete_project_row(path)
-    }
-}
-
-impl SqliteStore {
-    fn delete_project_row(&self, path: &Path) -> PortResult<()> {
         self.with(|c| {
             c.execute(
                 "DELETE FROM projects WHERE path = ?1",
@@ -533,8 +531,9 @@ impl UsageRepository for SqliteStore {
     }
 }
 
+/// Note columns, for queries that name the notes table `n`.
 const NOTE_COLUMNS: &str =
-    "id, project, text, category, author, status, created_at, uses, last_used";
+    "n.id, n.project, n.text, n.category, n.author, n.status, n.created_at, n.uses, n.last_used";
 
 fn note_from_row(row: &Row) -> rusqlite::Result<Note> {
     Ok(Note {
@@ -609,7 +608,7 @@ impl MemoryRepository for SqliteStore {
     fn note(&self, id: i64) -> PortResult<Option<Note>> {
         self.with(|c| {
             c.query_row(
-                &format!("SELECT {NOTE_COLUMNS} FROM notes WHERE id = ?1"),
+                &format!("SELECT {NOTE_COLUMNS} FROM notes n WHERE n.id = ?1"),
                 [id],
                 note_from_row,
             )
@@ -662,14 +661,9 @@ impl MemoryRepository for SqliteStore {
             return self.notes(project, with_global);
         };
         let (clause, path) = scope(project, with_global);
-        let columns = NOTE_COLUMNS
-            .split(", ")
-            .map(|c| format!("n.{c}"))
-            .collect::<Vec<_>>()
-            .join(", ");
         self.with(|c| {
             c.prepare(&format!(
-                "SELECT {columns} FROM notes_fts f JOIN notes n ON n.id = f.rowid
+                "SELECT {NOTE_COLUMNS} FROM notes_fts f JOIN notes n ON n.id = f.rowid
                  WHERE notes_fts MATCH ?2 AND {clause} ORDER BY bm25(notes_fts)"
             ))?
             .query_map(params![path, fts], note_from_row)?
@@ -696,14 +690,9 @@ impl MemoryRepository for SqliteStore {
     }
 
     fn notes_used_by(&self, task: &TaskId) -> PortResult<Vec<Note>> {
-        let columns = NOTE_COLUMNS
-            .split(", ")
-            .map(|c| format!("n.{c}"))
-            .collect::<Vec<_>>()
-            .join(", ");
         self.with(|c| {
             c.prepare(&format!(
-                "SELECT DISTINCT {columns} FROM note_uses u JOIN notes n ON n.id = u.note_id
+                "SELECT DISTINCT {NOTE_COLUMNS} FROM note_uses u JOIN notes n ON n.id = u.note_id
                  WHERE u.task_id = ?1 ORDER BY n.id"
             ))?
             .query_map([task.as_str()], note_from_row)?

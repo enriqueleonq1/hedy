@@ -83,7 +83,7 @@ pub struct Note {
 }
 
 /// Notes unused for this long are listed "para revisar".
-pub const STALE_AFTER_SECS: i64 = 60 * 24 * 60 * 60;
+const STALE_AFTER_SECS: i64 = 60 * 24 * 60 * 60;
 
 pub fn is_stale(note: &Note, now: i64) -> bool {
     note.status == NoteStatus::Approved
@@ -136,7 +136,7 @@ fn has_number(words: &HashSet<String>) -> bool {
 /// A local heuristic, no AI involved: the notes share most of their words and
 /// either one is negated and the other not ("usar X" / "no usar X"), or they
 /// differ only in a number ("24 h antes" / "2 h antes").
-pub fn contradicts(a: &str, b: &str) -> bool {
+fn contradicts(a: &str, b: &str) -> bool {
     let (wa, wb) = (content_words(a), content_words(b));
     let common = wa.intersection(&wb).count();
     let union = wa.union(&wb).count();

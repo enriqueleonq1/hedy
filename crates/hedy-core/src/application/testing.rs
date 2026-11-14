@@ -582,7 +582,7 @@ impl FileSystem for FakeFs {
     fn account_folder(&self, id: &AccountId) -> PathBuf {
         Path::new("/data/accounts").join(id.as_str())
     }
-    fn create_dir_all(&self, path: &Path) -> PortResult<()> {
+    fn create_private_dir(&self, path: &Path) -> PortResult<()> {
         self.dirs.lock().unwrap().insert(path.to_owned());
         Ok(())
     }

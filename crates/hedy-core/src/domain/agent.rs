@@ -103,7 +103,7 @@ pub enum LimitLevel {
 }
 
 /// Percentage from which Hedy warns about a limit.
-pub const LIMIT_WARNING_PERCENT: f64 = 90.0;
+const LIMIT_WARNING_PERCENT: f64 = 90.0;
 
 impl LimitLevel {
     /// From a CLI's report: Claude's `status` ("allowed", "allowed_warning",

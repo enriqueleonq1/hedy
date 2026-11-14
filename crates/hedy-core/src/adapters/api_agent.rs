@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
+use super::paths::relative;
 use super::process::command;
 use crate::application::ports::{
     AgentBackend, AgentLauncher, AgentRequest, AgentSession, EventSink, MemoryTools, PortError,
@@ -518,9 +519,7 @@ impl Agent {
     }
 
     fn relative(&self, path: &Path) -> String {
-        path.strip_prefix(&self.cwd)
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| path.to_string_lossy().into_owned())
+        relative(&self.cwd, path)
     }
 
     fn protected(&self, tool: &str, input: &Value) -> Option<String> {

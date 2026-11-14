@@ -1,4 +1,4 @@
-//! Project status and usage per project and client (spec phase 6).
+//! Project status and usage per project and client.
 
 use std::path::Path;
 
@@ -114,7 +114,8 @@ impl Hedy {
     }
 
     fn last_tests(&self, project: &Path) -> AppResult<Option<TestRun>> {
-        for task in self.tasks(project)? {
+        // Recent tasks only: the screen shows the latest run, not history.
+        for task in self.tasks(project)?.into_iter().take(20) {
             let found = self
                 .store
                 .timed_events(&task.id)?

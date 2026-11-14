@@ -1,12 +1,10 @@
 //! Phases of a task and who works on each one (spec: "modelo por fase").
 
 use std::collections::BTreeMap;
-use std::fmt;
-use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-use super::{AccountId, DomainError, TaskMode};
+use super::{AccountId, TaskMode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,40 +16,12 @@ pub enum Phase {
 }
 
 impl Phase {
-    pub const ALL: [Phase; 4] = [Self::Plan, Self::Implement, Self::Tests, Self::Review];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Plan => "plan",
-            Self::Implement => "implement",
-            Self::Tests => "tests",
-            Self::Review => "review",
-        }
-    }
-
     /// Whether an agent on this phase in `mode` only reads (gets no write
     /// tools) for its whole session. Planning is not: the same session goes on
     /// implementing once the plan is approved, and `plan_first` holds writes
     /// until then.
     pub fn read_only_in(self, mode: TaskMode) -> bool {
         mode != TaskMode::Project || self == Self::Review
-    }
-}
-
-impl fmt::Display for Phase {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for Phase {
-    type Err = DomainError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::ALL
-            .into_iter()
-            .find(|p| p.as_str() == s)
-            .ok_or_else(|| DomainError::UnknownPhase(s.to_owned()))
     }
 }
 
@@ -214,10 +184,7 @@ mod tests {
     }
 
     #[test]
-    fn phases_round_trip() {
-        for p in Phase::ALL {
-            assert_eq!(p.as_str().parse::<Phase>().unwrap(), p);
-        }
+    fn read_only_phases() {
         assert!(Phase::Review.read_only_in(TaskMode::Project));
         assert!(
             !Phase::Plan.read_only_in(TaskMode::Project),

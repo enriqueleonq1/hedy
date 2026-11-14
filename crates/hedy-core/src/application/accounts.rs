@@ -62,7 +62,7 @@ impl Hedy {
         let account = Account::new(id, request.name, request.provider, credentials, color)?;
 
         if let Credentials::Subscription(ConfigFolder::Managed(folder)) = &account.credentials {
-            self.fs.create_dir_all(folder)?;
+            self.fs.create_private_dir(folder)?;
             for (file, contents) in account.provider.folder_bootstrap() {
                 self.fs.write_if_missing(&folder.join(file), contents)?;
             }

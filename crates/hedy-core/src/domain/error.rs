@@ -25,15 +25,6 @@ pub enum DomainError {
     )]
     InvalidPrice(String),
 
-    #[error("fase desconocida: {0}")]
-    UnknownPhase(String),
-
-    #[error("modo de tarea desconocido: {0}")]
-    UnknownTaskMode(String),
-
-    #[error("estado de tarea desconocido: {0}")]
-    UnknownTaskStatus(String),
-
     #[error("{provider} no admite cuentas de suscripción")]
     SubscriptionNotSupported { provider: Provider },
 

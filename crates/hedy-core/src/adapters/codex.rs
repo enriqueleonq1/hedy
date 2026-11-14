@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 
+use super::paths::relative;
 use super::process::{command, launch_error, wait_unlocked};
 use crate::application::ports::{
     AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
@@ -211,7 +212,7 @@ fn mcp_overrides(request: &AgentRequest) -> Vec<String> {
     // JSON strings are valid TOML basic strings.
     let toml = |s: &str| Value::String(s.to_owned()).to_string();
     let mut out = Vec::new();
-    for server in super::claude::mcp_servers(request) {
+    for server in request.mcp_servers() {
         let key = format!("mcp_servers.{}", server.name);
         let args: Vec<String> = server.args.iter().map(|a| toml(a)).collect();
         out.extend([
@@ -230,12 +231,6 @@ fn mcp_overrides(request: &AgentRequest) -> Vec<String> {
         }
     }
     out
-}
-
-fn relative(cwd: &Path, path: &str) -> String {
-    Path::new(path)
-        .strip_prefix(cwd)
-        .map_or_else(|_| path.to_owned(), |p| p.to_string_lossy().into_owned())
 }
 
 fn handle(shared: &Shared, msg: &Value) -> PortResult<()> {
@@ -347,7 +342,7 @@ fn server_request(shared: &Shared, method: &str, id: Value, params: &Value) -> P
                     s.changes.get(item).cloned().unwrap_or_default(),
                 )
             };
-            let shown: Vec<String> = paths.iter().map(|p| relative(&cwd, p)).collect();
+            let shown: Vec<String> = paths.iter().map(|p| relative(&cwd, Path::new(p))).collect();
             let summary = if shown.is_empty() {
                 params["reason"].as_str().unwrap_or("cambios").to_owned()
             } else {
@@ -419,7 +414,7 @@ fn notification(shared: &Shared, method: &str, p: &Value) -> PortResult<()> {
                     for change in item["changes"].as_array().into_iter().flatten() {
                         if let Some(path) = change["path"].as_str() {
                             shared.emit(AgentEvent::FileEdited {
-                                path: relative(&cwd, path),
+                                path: relative(&cwd, Path::new(path)),
                             });
                         }
                     }

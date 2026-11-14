@@ -49,8 +49,7 @@ impl AccountId {
         for c in name
             .trim()
             .chars()
-            .flat_map(fold_accent)
-            .map(|c| c.to_ascii_lowercase())
+            .map(|c| fold_accent(c).to_ascii_lowercase())
         {
             if c.is_ascii_alphanumeric() {
                 slug.push(c);
@@ -72,17 +71,18 @@ impl AccountId {
     }
 }
 
-/// Maps common Spanish accented letters to ASCII for slugs.
-fn fold_accent(c: char) -> Option<char> {
-    Some(match c {
-        'á' | 'Á' => 'a',
-        'é' | 'É' => 'e',
-        'í' | 'Í' => 'i',
-        'ó' | 'Ó' => 'o',
-        'ú' | 'Ú' | 'ü' | 'Ü' => 'u',
-        'ñ' | 'Ñ' => 'n',
-        other => other,
-    })
+/// Maps accented Latin letters to ASCII for slugs (ids, branch names).
+pub(super) fn fold_accent(c: char) -> char {
+    match c.to_lowercase().next().unwrap_or(c) {
+        'á' | 'à' | 'ä' | 'â' => 'a',
+        'é' | 'è' | 'ë' | 'ê' => 'e',
+        'í' | 'ì' | 'ï' | 'î' => 'i',
+        'ó' | 'ò' | 'ö' | 'ô' => 'o',
+        'ú' | 'ù' | 'ü' | 'û' => 'u',
+        'ñ' => 'n',
+        'ç' => 'c',
+        _ => c,
+    }
 }
 
 impl fmt::Display for AccountId {

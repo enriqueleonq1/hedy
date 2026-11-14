@@ -14,11 +14,11 @@ use serde_json::{Value, json};
 
 use super::process::{command, launch_error, wait_unlocked};
 use crate::application::ports::{
-    AgentLauncher, AgentRequest, AgentSession, EventSink, McpServer, PortError, PortResult,
+    AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
 use crate::domain::permissions::DEFAULT_BLOCKED;
 use crate::domain::{AgentEvent, Phase, TaskMode, prompts};
-pub use translate::Translator;
+use translate::Translator;
 
 /// `hook`: shell command for the `PreToolUse` hook (see [`hook`]); without it
 /// only Claude Code's own deny rules protect files it reads without asking.
@@ -99,7 +99,7 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
             );
         }
     }
-    let servers = mcp_servers(request);
+    let servers = request.mcp_servers();
     if !servers.is_empty() {
         let config: serde_json::Map<String, Value> = servers
             .iter()
@@ -136,16 +136,6 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
         args.extend(["--resume".into(), session.clone()]);
     }
     args
-}
-
-/// The memory server (when the agent has memory) and the extra ones, such as the code map.
-pub(crate) fn mcp_servers(request: &AgentRequest) -> Vec<&McpServer> {
-    request
-        .memory
-        .iter()
-        .filter_map(|m| m.server.as_ref())
-        .chain(&request.mcp)
-        .collect()
 }
 
 fn user_message(text: &str) -> Value {
@@ -346,6 +336,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::application::ports::McpServer;
     use crate::domain::LaunchSpec;
 
     fn request(mode: TaskMode, plan_first: bool) -> AgentRequest {

@@ -8,7 +8,7 @@ use std::path::Path;
 use super::{Account, AccountId, DomainError, Project};
 
 /// The protected project (other than `except`) that reserves `account`, if any.
-pub fn reserved_by<'a>(
+fn reserved_by<'a>(
     account: &AccountId,
     projects: &'a [Project],
     except: Option<&Path>,

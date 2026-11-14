@@ -125,11 +125,19 @@ impl Git for GitCli {
         }
         let merged = run(repo, &["merge", "--no-edit", branch])?;
         if merged.status.success() {
-            Ok(MergeOutcome::Merged)
-        } else {
-            let _ = run(repo, &["merge", "--abort"]);
-            Ok(MergeOutcome::Conflict)
+            return Ok(MergeOutcome::Merged);
         }
+        // Only unmerged paths are a conflict; anything else (e.g. untracked
+        // files that would be overwritten) is git's own message.
+        let conflicted = !git(repo, &["ls-files", "--unmerged"])?.trim().is_empty();
+        if conflicted {
+            let _ = run(repo, &["merge", "--abort"]);
+            return Ok(MergeOutcome::Conflict);
+        }
+        Err(PortError::new(format!(
+            "git merge: {}",
+            String::from_utf8_lossy(&merged.stderr).trim()
+        )))
     }
 
     fn remove_worktree(&self, repo: &Path, path: &Path, branch: &str) -> PortResult<()> {
@@ -299,6 +307,22 @@ mod tests {
                 current: "otra".into()
             }
         );
+    }
+
+    #[test]
+    fn a_merge_blocked_by_untracked_files_is_not_a_conflict() {
+        let (_tmp, repo) = repo();
+        let g = GitCli;
+        let base = g.head_commit(&repo).unwrap();
+        let wt = repo.join(".hedy/worktrees/t3");
+        g.add_worktree(&repo, &wt, "hedy/t3", &base).unwrap();
+        fs::write(wt.join("nuevo.py"), "x = 1\n").unwrap();
+        g.commit_all(&wt, "Nuevo").unwrap();
+        // The same file exists untracked in the main checkout.
+        fs::write(repo.join("nuevo.py"), "mío\n").unwrap();
+        let error = g.merge(&repo, "main", "hedy/t3").unwrap_err();
+        assert!(error.message.contains("nuevo.py"), "{}", error.message);
+        assert_eq!(fs::read_to_string(repo.join("nuevo.py")).unwrap(), "mío\n");
     }
 
     #[test]
