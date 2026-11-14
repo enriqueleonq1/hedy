@@ -648,7 +648,53 @@ schemas):
   reports clicks only while the toast is on screen. Not tried by hand on macOS, where a
   development build may not be allowed to notify until the app is bundled and signed.
 
-## 18. Decisions
+## 18. Writing while the agent works, and prompt templates
+
+Verified against the official docs in November 2026 (Agent SDK "Streaming Input",
+`code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode`).
+
+- **Queue, not mid-turn injection.** A message written while the agent works is queued
+  ("En cola" / "Queued") and goes as the **next user turn of the same session** (same
+  account, same phase) when the turn ends (`Finished`). The Claude docs say streaming
+  input takes "multiple messages that process sequentially", but nothing about how a
+  message written mid-turn mixes with a waiting `ExitPlanMode` request or a permission
+  prompt; ACP v1 runs one `session/prompt` at a time; Codex's app server has no
+  documented way to add input to a running turn. So Hedy always waits for the turn
+  boundary, for every provider, and never writes to a CLI's stdin mid-turn.
+- **One turn.** Every message waiting when the turn ends goes together, in order,
+  separated by a blank line (`domain::queue::join_queued`): the same for every adapter,
+  and the agent answers everything at once.
+- **Decisions first.** Nothing is delivered while a plan or permission card waits
+  (status `waitingApproval` or open requests in the session). The user answers, the
+  agent's turn ends, then the queue goes. A queued message is delivered before the
+  next phase starts, so it reaches the agent it was written to.
+- **On hold.** When the task fails, the user stops it or the account reaches its limit,
+  the queue is kept and marked held (`failed`, `stopped`, `limit`); the chat says why.
+  Held messages are only sent when the user presses "Enviar ahora" (to the task's
+  current account, resuming its session if needed). After a limit nothing goes out by
+  itself and nothing moves to another account (rule 3); a handoff does not take the held
+  queue along. Accepting or discarding a task drops its queue.
+- **Storage.** Table `queued_messages` (task, text, time, `held`), so a restart keeps
+  the queue; after a restart the process is gone and the queue waits for "Enviar
+  ahora". `hedy_core` sends `TaskEvents::queue_changed`; the app emits `task-queue`.
+  The task board shows "N en cola".
+- **Prompt templates.** Global or per project, stored in SQLite (`prompt_templates`),
+  never in the repository. A placeholder is `{name}`: letters (accents included),
+  digits, `_` or `-`, at most 40, no spaces; `{ }`, `{}` or JSON stay plain text. In the
+  composer, `/` at the start opens a listbox (filtered as you type, arrow keys,
+  `aria-activedescendant`); choosing a template with placeholders asks for each one in a
+  small form, then the text goes into the composer to be edited and sent. Names are
+  unique per scope; a project template wins over a global one with the same name.
+- **Built-in examples.** Five generic, bilingual examples live in the code
+  (`domain::template::builtins`) and follow the current language; editing or deleting
+  one stores a row for it, and "Restaurar ejemplos" removes those rows.
+- **CLI.** `hedy template` (alias `plantilla`) lists, adds (`--project` for the current
+  project) and removes templates. There is no task-launch command in the CLI (`hedy run`
+  opens the official CLI), so there is no `--template` flag yet.
+- **Not verified** with a real CLI: delivery at the turn boundary is tested with the
+  in-memory agent double and in the UI with `MockApi`; the adapters were not changed.
+
+## 19. Decisions
 
 - **Claude accounts:** `~/.claude` (Team) is registered as the default-folder account and
   launched without `CLAUDE_CONFIG_DIR`. New accounts live in Hedy folders.
