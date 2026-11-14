@@ -72,6 +72,7 @@ pub fn run() {
             commands::add_note,
             commands::edit_note,
             commands::approve_note,
+            commands::replace_note,
             commands::forget_note,
             commands::keep_note,
             commands::dismiss_contradiction,
