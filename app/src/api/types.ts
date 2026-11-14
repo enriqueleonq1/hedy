@@ -54,6 +54,42 @@ export interface Overview {
   apiUrls: Record<"kimi" | "gemini", string | null>;
   accounts: Account[];
   projects: Project[];
+  codeMap: CodeMap;
+}
+
+/** The code-map MCP server (codebase-memory-mcp). */
+export interface CodeMap {
+  /** Program registered in every run; null: off. */
+  enabled: string | null;
+  /** Where it is installed, if found. */
+  found: string | null;
+}
+
+export type NoteCategory = "decision" | "convention" | "rule" | "preference";
+
+export interface Note {
+  id: number;
+  /** null: a global note (every non-protected project). */
+  project: string | null;
+  text: string;
+  category: NoteCategory;
+  /** "user" or the AI that proposed it ("Claude", "Codex"…). */
+  author: string;
+  status: "proposed" | "approved";
+  /** Unix seconds. */
+  createdAt: number;
+  uses: number;
+  lastUsed: number | null;
+}
+
+export interface MemoryView {
+  notes: Note[];
+  proposed: Note[];
+  contradictions: [Note, Note][];
+  stale: Note[];
+  usedLastTask: Note[];
+  readers: { account: string; reads: boolean }[];
+  protected: boolean;
 }
 
 export interface NewAccountInput {
@@ -71,12 +107,14 @@ export type SettingKey =
   | "binary.codex"
   | "binary.gemini"
   | "api_url.kimi"
-  | "api_url.gemini";
+  | "api_url.gemini"
+  | "code_map.binary";
 
 export type TerminalRequest =
   | { kind: "login"; account: string }
   | { kind: "run"; path: string }
-  | { kind: "shell"; path: string | null };
+  | { kind: "shell"; path: string | null }
+  | { kind: "installCodeMap" };
 
 export type TerminalEvent =
   | { event: "data"; data: string }

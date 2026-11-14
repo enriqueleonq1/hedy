@@ -16,7 +16,17 @@ const MODE_LABEL: Record<TaskMode, string> = { project: "Proyecto", ask: "Pregun
 
 
 
-export function Workspace({ overview, project, mode }: { overview: Overview; project: string; mode: TaskMode }) {
+export function Workspace({
+  overview,
+  project,
+  mode,
+  onOpenMemory,
+}: {
+  overview: Overview;
+  project: string;
+  mode: TaskMode;
+  onOpenMemory?: () => void;
+}) {
   const tasks = useTasks(project);
   const [chosen, setChosen] = useState<string | null | undefined>(undefined);
   const info = overview.projects.find((p) => p.path === project);
@@ -61,6 +71,11 @@ export function Workspace({ overview, project, mode }: { overview: Overview; pro
               </select>
             )}
             {task?.live && <StopButton task={task} />}
+            {onOpenMemory && (
+              <Button small variant="ghost" onClick={onOpenMemory}>
+                Memoria
+              </Button>
+            )}
           </div>
         </header>
 

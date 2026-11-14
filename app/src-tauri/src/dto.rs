@@ -4,9 +4,11 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use hedy_core::application::{AccountStatus, AccountUsage, AppResult, Hedy, Setting};
+use hedy_core::adapters::find_program;
+use hedy_core::application::{AccountStatus, AccountUsage, AppResult, Hedy, MemoryView, Setting};
 use hedy_core::domain::{
-    Account, ConfigFolder, Credentials, LoginState, PhasePlan, Project, Provider, Task, TaskMode,
+    Account, ConfigFolder, Credentials, LoginState, Note, PhasePlan, Project, Provider, Task,
+    TaskMode,
 };
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +25,63 @@ pub struct OverviewDto {
     pub api_urls: BTreeMap<&'static str, Option<String>>,
     pub accounts: Vec<AccountDto>,
     pub projects: Vec<ProjectDto>,
+    pub code_map: CodeMapDto,
+}
+
+/// The code-map MCP server (codebase-memory-mcp): Hedy only installs and registers it.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeMapDto {
+    /// Program registered in every run; `None`: off.
+    pub enabled: Option<String>,
+    /// Where it is installed, if found.
+    pub found: Option<String>,
+}
+
+pub const CODE_MAP_PROGRAM: &str = "codebase-memory-mcp";
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryDto {
+    pub notes: Vec<Note>,
+    pub proposed: Vec<Note>,
+    pub contradictions: Vec<[Note; 2]>,
+    pub stale: Vec<Note>,
+    pub used_last_task: Vec<Note>,
+    pub readers: Vec<ReaderDto>,
+    pub protected: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReaderDto {
+    pub account: String,
+    pub reads: bool,
+}
+
+impl From<MemoryView> for MemoryDto {
+    fn from(view: MemoryView) -> Self {
+        Self {
+            notes: view.notes,
+            proposed: view.proposed,
+            contradictions: view
+                .contradictions
+                .into_iter()
+                .map(|(a, b)| [a, b])
+                .collect(),
+            stale: view.stale,
+            used_last_task: view.used_last_task,
+            readers: view
+                .readers
+                .into_iter()
+                .map(|(account, reads)| ReaderDto {
+                    account: account.id.to_string(),
+                    reads,
+                })
+                .collect(),
+            protected: view.protected,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -257,6 +316,10 @@ pub fn overview(hedy: &Hedy, data_dir: &Path) -> AppResult<OverviewDto> {
             })
             .collect::<AppResult<_>>()?,
         projects,
+        code_map: CodeMapDto {
+            enabled: hedy.setting(Setting::CodeMap)?,
+            found: find_program(CODE_MAP_PROGRAM).map(|p| path_string(&p)),
+        },
     })
 }
 

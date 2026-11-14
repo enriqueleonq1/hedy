@@ -5,7 +5,10 @@ import type {
   Commit,
   Decision,
   FileDiff,
+  MemoryView,
   NewAccountInput,
+  Note,
+  NoteCategory,
   NewTaskInput,
   Overview,
   PhasePlan,
@@ -49,6 +52,7 @@ export class MockApi implements HedyApi {
       apiUrls: { kimi: null, gemini: null },
       accounts: [],
       projects: [],
+      codeMap: { enabled: null, found: null },
       ...initial,
     };
   }
@@ -101,7 +105,130 @@ export class MockApi implements HedyApi {
       project("/code/homming", "claude-trabajo", { protected: true, color: "#FF9E64" }),
     ];
     api.recomputeOffers();
+    const day = 86_400;
+    const now = Math.floor(Date.now() / 1000);
+    const note = (text: string, category: NoteCategory, extra: Partial<Note> = {}) =>
+      api.notes.push({
+        id: api.notes.length + 1,
+        project: "/code/hedy",
+        text,
+        category,
+        author: "user",
+        status: "approved",
+        createdAt: now - 30 * day,
+        uses: 3,
+        lastUsed: now - day,
+        ...extra,
+      });
+    note("Los recordatorios se envían 24 h antes de la cita.", "decision", { createdAt: now - 2 * day });
+    note("Los recordatorios se envían 2 h antes de la cita.", "decision", { author: "Claude", createdAt: now - 21 * day });
+    note("Los precios se guardan en USD y se muestran también en Bs a tasa BCV", "decision", { uses: 23 });
+    note("Las citas usan la zona horaria del salón, no la del servidor", "decision", { author: "Claude", uses: 4 });
+    note("Tests con pytest; correr pytest -q antes de cada commit", "convention", { uses: 31 });
+    note("Nunca tocar .env ni correr migraciones en producción", "rule", { uses: 12 });
+    note("El deploy se hace los viernes", "convention", { lastUsed: now - 90 * day, createdAt: now - 120 * day });
+    note("Prefiere respuestas cortas y en español", "preference", { project: null, uses: 58 });
+    note("Los formularios validan con zod", "convention", { author: "Codex", status: "proposed", uses: 0, lastUsed: null });
+    api.usedLast = [3, 5];
     return api;
+  }
+
+  // --------------------------------------------------------------- memory
+
+  private notes: Note[] = [];
+  private dismissed: string[] = [];
+  private usedLast: number[] = [];
+  private memoryOff = new Map<string, Set<string>>();
+
+  private inScope(path: string, n: Note): boolean {
+    return n.project === path || (n.project === null && !this.project(path).protected);
+  }
+
+  async memory(path: string): Promise<MemoryView> {
+    const project = this.project(path);
+    const scoped = this.notes.filter((n) => this.inScope(path, n));
+    const notes = scoped.filter((n) => n.status === "approved");
+    const contradictions: [Note, Note][] = [];
+    notes.forEach((a, i) =>
+      notes.slice(i + 1).forEach((b) => {
+        if (!this.dismissed.includes(`${a.id}-${b.id}`) && mockContradicts(a.text, b.text)) contradictions.push([a, b]);
+      }),
+    );
+    const now = Date.now() / 1000;
+    const readers = [project.account, ...Object.values(project.phases).map((p) => p.account)].filter(
+      (id, i, all): id is string => !!id && all.indexOf(id) === i,
+    );
+    const off = this.memoryOff.get(path) ?? new Set();
+    return structuredClone({
+      notes,
+      proposed: scoped.filter((n) => n.status === "proposed"),
+      contradictions,
+      stale: notes.filter((n) => now - (n.lastUsed ?? n.createdAt) > 60 * 86_400),
+      usedLastTask: notes.filter((n) => this.usedLast.includes(n.id)),
+      readers: readers.map((account) => ({ account, reads: !off.has(account) })),
+      protected: project.protected,
+    });
+  }
+
+  async searchMemory(path: string, query: string): Promise<Note[]> {
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    return this.notes.filter(
+      (n) => this.inScope(path, n) && words.some((w) => n.text.toLowerCase().includes(w)),
+    );
+  }
+
+  async addNote(project: string | null, text: string, category: NoteCategory): Promise<Note> {
+    if (!text.trim()) throw "la nota está vacía";
+    const note: Note = {
+      id: Math.max(0, ...this.notes.map((n) => n.id)) + 1,
+      project,
+      text: text.trim(),
+      category,
+      author: "user",
+      status: "approved",
+      createdAt: Math.floor(Date.now() / 1000),
+      uses: 0,
+      lastUsed: null,
+    };
+    this.notes.push(note);
+    return note;
+  }
+
+  private note(id: number): Note {
+    const note = this.notes.find((n) => n.id === id);
+    if (!note) throw `no existe la nota ${id}`;
+    return note;
+  }
+
+  async editNote(id: number, text: string, category: NoteCategory): Promise<Note> {
+    if (!text.trim()) throw "la nota está vacía";
+    const note = this.note(id);
+    Object.assign(note, { text: text.trim(), category });
+    return note;
+  }
+
+  async approveNote(id: number): Promise<void> {
+    this.note(id).status = "approved";
+  }
+
+  async forgetNote(id: number): Promise<void> {
+    this.note(id);
+    this.notes = this.notes.filter((n) => n.id !== id);
+  }
+
+  async keepNote(_keep: number, forget: number): Promise<void> {
+    await this.forgetNote(forget);
+  }
+
+  async dismissContradiction(a: number, b: number): Promise<void> {
+    this.dismissed.push(`${Math.min(a, b)}-${Math.max(a, b)}`);
+  }
+
+  async setMemoryReader(path: string, account: string, reads: boolean): Promise<void> {
+    const off = this.memoryOff.get(path) ?? new Set<string>();
+    if (reads) off.delete(account);
+    else off.add(account);
+    this.memoryOff.set(path, off);
   }
 
   async overview(): Promise<Overview> {
@@ -472,6 +599,12 @@ export class MockApi implements HedyApi {
   private recomputeOffers(): void {
     for (const p of this.state.projects) p.offerableAccounts = this.offersFor(p.path);
   }
+}
+
+/** A rough stand-in for the backend heuristic: same words, other numbers or a negation. */
+function mockContradicts(a: string, b: string): boolean {
+  const strip = (t: string) => t.toLowerCase().replace(/\b(no|nunca)\b|\d+/g, "").replace(/\s+/g, " ").trim();
+  return a !== b && strip(a) === strip(b);
 }
 
 function emptyProject(path: string): Project {

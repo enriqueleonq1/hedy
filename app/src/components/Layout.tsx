@@ -13,7 +13,13 @@ export type View =
   | { screen: "welcome" }
   | { screen: "accounts" }
   | { screen: "settings" }
-  | { screen: "workspace"; project: string };
+  | { screen: "workspace"; project: string }
+  | { screen: "memory"; project: string };
+
+/** The project a view belongs to (its workspace or its memory). */
+export function viewProject(view: View): string | null {
+  return view.screen === "workspace" || view.screen === "memory" ? view.project : null;
+}
 
 export function defaultAccount(overview: Overview): Account | undefined {
   return overview.accounts.find((a) => a.id === overview.defaultAccount) ?? overview.accounts[0];
@@ -66,7 +72,7 @@ interface TopbarProps {
 export function Topbar({ overview, view, openProjects, mode, mascot, onNavigate, onCloseProject, onMode }: TopbarProps) {
   const terminals = useTerminals();
   const color = defaultAccount(overview)?.color ?? "#7AA2F7";
-  const active = view.screen === "workspace" ? view.project : null;
+  const active = viewProject(view);
 
   return (
     <header className="topbar">
@@ -136,7 +142,7 @@ export function Topbar({ overview, view, openProjects, mode, mascot, onNavigate,
 export function Sidebar({ overview, view, onNavigate }: { overview: Overview; view: View; onNavigate: (v: View) => void }) {
   const accountById = new Map(overview.accounts.map((a) => [a.id, a]));
   const tipColor = defaultAccount(overview)?.color ?? "#BB9AF7";
-  const active = view.screen === "workspace" ? view.project : null;
+  const active = viewProject(view);
   const used = overview.accounts.some((a) => a.usage.weekTokens > 0);
 
   return (

@@ -416,7 +416,47 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
   and the API agent against a local fake HTTP server. A real check of both still needs a
   ChatGPT login and a Kimi/Gemini key.
 
-## 12. Decisions
+## 12. Phase 5: shared memory and code map
+
+- **Storage.** Notes live in Hedy's SQLite database (`notes` + an FTS5 index with
+  `unicode61 remove_diacritics 2`, so "recordatorio" finds "recordatorios" and accents do
+  not matter). Each note has a project (or none: a global note), a category (decision,
+  convention, rule, preference), an author, a status and use counts (`note_uses`, per
+  task). The database runs in WAL mode with a busy timeout because the memory server opens
+  it from another process.
+- **Rule 6.** Agents only read approved notes. What they write is always a proposal
+  (`memory_propose`); the user approves, edits or rejects it in the memory screen. Notes
+  written by the user are approved right away.
+- **Protected projects** neither read nor show global notes, and their notes never appear
+  elsewhere.
+- **How agents read it.** One `hedy-memory` server per run, scoped to the project, task and
+  agent, with two tools: `memory_search` and `memory_propose`. It is an rmcp stdio server
+  served by the app binary itself (`hedy-app memory-mcp --data-dir … --project …`), like the
+  `PreToolUse` hook. Claude gets it with `--mcp-config` (JSON), its tools pre-allowed with
+  `--allowedTools mcp__hedy-memory`, plus guidance in `--append-system-prompt`. The
+  account's own MCP config is left alone. Codex gets it with `-c mcp_servers.<name>.*`
+  overrides (TOML values) and the guidance as `developerInstructions`; this is **not yet
+  verified against a real Codex**. The API agent gets the same two tools natively.
+  Verified for real: Claude Code (haiku) read a note through the server, the use was
+  recorded with the task, and its proposal waited for approval.
+- **"Quién la lee"**: the project's account and the accounts in its phases. Turning one off
+  (`projects.memory_off`) starts that agent without the memory.
+- **Contradictions** come from a local heuristic, with no AI involved: the notes share most
+  of their words and one is negated (no, nunca, evitar…) or only a number differs. The user
+  keeps one note or marks both as valid (`note_dismissed_pairs`). **Para revisar**:
+  approved notes unused for 60 days.
+- **Code map: codebase-memory-mcp** (DeusData, MIT). It is a single static binary with no
+  runtime and no telemetry. Its index stays in `~/.cache/codebase-memory-mcp`, and
+  `CBM_ALLOWED_ROOT` can confine it to a folder. Codegraph was the alternative; it needs
+  Node and a per-repo index directory inside the project. Hedy only installs and
+  registers it:
+  - "Instalar" in Ajustes runs the official script (which checks the download's sha256)
+    in the integrated terminal, with `--skip-config`, so it does not edit any CLI's
+    config.
+  - Once it is found (on `PATH` or in `~/.local/bin`), a switch registers it in every run
+    as `codebase-memory`, with `CBM_ALLOWED_ROOT` set to the project.
+
+## 13. Decisions
 
 - **Claude accounts:** `~/.claude` (Team) is registered as the default-folder account and
   launched without `CLAUDE_CONFIG_DIR`. New accounts live in Hedy folders.

@@ -4,12 +4,14 @@
 use std::path::PathBuf;
 
 use hedy_core::application::{AppResult, Hedy, NewAccount, NewTask, Setting};
-use hedy_core::domain::{AgentEvent, Color, Commit, Decision, FileDiff, PhasePlan, TaskId};
+use hedy_core::domain::{
+    AgentEvent, Category, Color, Commit, Decision, FileDiff, Note, PhasePlan, TaskId,
+};
 use tauri::State;
 use tauri::ipc::Channel;
 
 use crate::AppState;
-use crate::dto::{self, NewAccountInput, NewTaskInput, OverviewDto, TaskDto};
+use crate::dto::{self, MemoryDto, NewAccountInput, NewTaskInput, OverviewDto, TaskDto};
 use crate::terminal::{TerminalEvent, TerminalRequest};
 
 type CommandResult<T> = Result<T, String>;
@@ -334,6 +336,81 @@ pub async fn handoff_task(
             model.filter(|m| !m.trim().is_empty()),
         )
         .map(drop)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn memory(state: State<'_, AppState>, path: PathBuf) -> CommandResult<MemoryDto> {
+    blocking(&state, move |h| Ok(h.memory(&path)?.into())).await
+}
+
+#[tauri::command]
+pub async fn search_memory(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    query: String,
+) -> CommandResult<Vec<Note>> {
+    blocking(&state, move |h| h.search_memory(&path, &query)).await
+}
+
+/// A note written by the user; `project: None` makes it global.
+#[tauri::command]
+pub async fn add_note(
+    state: State<'_, AppState>,
+    project: Option<PathBuf>,
+    text: String,
+    category: Category,
+) -> CommandResult<Note> {
+    blocking(&state, move |h| {
+        h.add_note(project.as_deref(), &text, category)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn edit_note(
+    state: State<'_, AppState>,
+    id: i64,
+    text: String,
+    category: Category,
+) -> CommandResult<Note> {
+    blocking(&state, move |h| h.edit_note(id, &text, category)).await
+}
+
+#[tauri::command]
+pub async fn approve_note(state: State<'_, AppState>, id: i64) -> CommandResult<()> {
+    blocking(&state, move |h| h.approve_note(id).map(drop)).await
+}
+
+#[tauri::command]
+pub async fn forget_note(state: State<'_, AppState>, id: i64) -> CommandResult<()> {
+    blocking(&state, move |h| h.forget_note(id)).await
+}
+
+#[tauri::command]
+pub async fn keep_note(state: State<'_, AppState>, keep: i64, forget: i64) -> CommandResult<()> {
+    blocking(&state, move |h| h.keep_note(keep, forget)).await
+}
+
+#[tauri::command]
+pub async fn dismiss_contradiction(
+    state: State<'_, AppState>,
+    a: i64,
+    b: i64,
+) -> CommandResult<()> {
+    blocking(&state, move |h| h.dismiss_contradiction(a, b)).await
+}
+
+#[tauri::command]
+pub async fn set_memory_reader(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    account: String,
+    reads: bool,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.set_memory_reader(&path, &account, reads).map(drop)
     })
     .await
 }

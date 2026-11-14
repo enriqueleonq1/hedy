@@ -3,6 +3,9 @@ import type {
   Commit,
   Decision,
   FileDiff,
+  MemoryView,
+  Note,
+  NoteCategory,
   PhasePlan,
   NewAccountInput,
   NewTaskInput,
@@ -63,6 +66,19 @@ export interface HedyApi {
   /** Accounts the task may move to: another provider or an API key. */
   handoffOptions(id: string): Promise<string[]>;
   handoffTask(id: string, account: string, model: string | null): Promise<void>;
+  memory(project: string): Promise<MemoryView>;
+  searchMemory(project: string, query: string): Promise<Note[]>;
+  /** A note written by the user; `project: null` makes it global. */
+  addNote(project: string | null, text: string, category: NoteCategory): Promise<Note>;
+  editNote(id: number, text: string, category: NoteCategory): Promise<Note>;
+  approveNote(id: number): Promise<void>;
+  /** Forgets a note, or rejects a proposal. */
+  forgetNote(id: number): Promise<void>;
+  /** Resolves a contradiction. */
+  keepNote(keep: number, forget: number): Promise<void>;
+  dismissContradiction(a: number, b: number): Promise<void>;
+  setMemoryReader(project: string, account: string, reads: boolean): Promise<void>;
+
   /** Live events of every task. */
   onTaskEvent(listener: (taskId: string, event: AgentEvent) => void): Unsubscribe;
   onTaskUpdated(listener: (task: Omit<Task, "live">) => void): Unsubscribe;

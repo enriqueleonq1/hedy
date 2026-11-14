@@ -25,7 +25,13 @@ pub enum TerminalRequest {
     Run { path: PathBuf },
     /// The user's shell, exporting the project account folder.
     Shell { path: Option<PathBuf> },
+    /// Installs the code-map server with its official script, which checks the
+    /// download's checksum. `--skip-config`: Hedy registers it per run instead
+    /// of letting it edit every agent's config.
+    InstallCodeMap,
 }
+
+pub const CODE_MAP_INSTALL: &str = "curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash -s -- --skip-config";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "event", rename_all = "camelCase")]
@@ -52,6 +58,10 @@ impl TerminalRequest {
                     .unwrap_or_else(|| "/".into());
                 hedy.shell_spec(&dir, &shell)
             }
+            Self::InstallCodeMap => Ok(LaunchSpec::program(
+                "bash",
+                vec!["-c".into(), CODE_MAP_INSTALL.into()],
+            )),
         }
     }
 }
@@ -136,6 +146,8 @@ mod tests {
         assert!(matches!(req, TerminalRequest::Login { account } if account == "claude-personal"));
         let req: TerminalRequest = serde_json::from_str(r#"{"kind":"shell","path":null}"#).unwrap();
         assert!(matches!(req, TerminalRequest::Shell { path: None }));
+        let req: TerminalRequest = serde_json::from_str(r#"{"kind":"installCodeMap"}"#).unwrap();
+        assert!(matches!(req, TerminalRequest::InstallCodeMap));
     }
 
     #[test]

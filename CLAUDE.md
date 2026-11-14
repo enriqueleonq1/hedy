@@ -23,7 +23,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 
 - `crates/hedy-core`: domain + application (ports) + adapters
 - `crates/hedy-cli`: `hedy` binary (driving adapter)
-- `crates/hedy-memory`: memory MCP server (phase 5)
+- `crates/hedy-memory`: project-memory MCP server (rmcp, stdio); the app binary serves it
+  as `memory-mcp`, like Claude's `PreToolUse` hook (`app/src-tauri/src/main.rs`)
 - `app/src-tauri`: Tauri commands (driving adapter; DTOs live here, not in the domain)
 - `app/src`: React UI. Talks to the backend only through `api/HedyApi.ts`
   (`tauriApi` in the app, `MockApi` in tests and the browser)
@@ -52,7 +53,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
    assigned account, and that account is not offered elsewhere. No account is blocked
    by default.
 5. API keys in the OS keyring (`keyring` crate), never in files.
-6. New memory notes are approved by the user.
+6. New memory notes are approved by the user: agents only read approved notes and
+   only propose (`NoteStatus::Proposed`).
 7. Local files Hedy writes in a repo go to `.git/info/exclude`.
 8. Everything local: no server, no telemetry.
 

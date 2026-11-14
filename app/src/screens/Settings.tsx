@@ -1,9 +1,11 @@
 import { useState } from "react";
 
 import { useAction } from "../api/context";
+import { useTerminals } from "../components/Terminal/TerminalProvider";
+import { Button } from "../components/ui/Button";
 import type { CliProviderId, Overview, SettingKey, ThemeSetting } from "../api/types";
 import { Mascot, MASCOT_STATE_LABEL, type MascotState } from "../components/Mascot/Mascot";
-import { ColorPicker, Field, Segmented } from "../components/ui/controls";
+import { ColorPicker, Field, Segmented, Switch } from "../components/ui/controls";
 
 const CLIS: { id: CliProviderId; name: string }[] = [
   { id: "claude", name: "Claude Code" },
@@ -130,6 +132,8 @@ export function Settings({ overview }: { overview: Overview }) {
         ))}
       </section>
 
+      <CodeMap overview={overview} />
+
       <section className="card settings__section">
         <h2>Datos</h2>
         <p>
@@ -141,5 +145,52 @@ export function Settings({ overview }: { overview: Overview }) {
         </p>
       </section>
     </div>
+  );
+}
+
+/**
+ * The code map (codebase-memory-mcp): a local index of the code that every AI
+ * can query. Hedy installs it with its official script and registers it per
+ * run; the index stays on this PC.
+ */
+function CodeMap({ overview }: { overview: Overview }) {
+  const terminals = useTerminals();
+  const setSetting = useAction((api, value: string | null) => api.setSetting("code_map.binary", value));
+  const { enabled, found } = overview.codeMap;
+  return (
+    <section className="card settings__section">
+      <h2>Mapa del código</h2>
+      <p className="hint">
+        Un índice local del código (funciones, llamadas, rutas) que todas tus IAs pueden consultar para gastar menos
+        tokens leyendo archivos. Usa <span className="mono">codebase-memory-mcp</span> (MIT, sin telemetría); el índice
+        se guarda en tu PC.
+      </p>
+      {found ? (
+        <div className="row row--between">
+          <span>
+            Instalado en <span className="mono">{found}</span>
+          </span>
+          <Switch
+            label="Registrar el mapa del código en las tareas"
+            checked={enabled !== null}
+            disabled={setSetting.isPending}
+            onChange={(on) => setSetting.mutate(on ? found : null)}
+          />
+        </div>
+      ) : (
+        <div className="row row--between">
+          <span className="muted">
+            {enabled ? `Configurado como ${enabled}, pero no lo encuentro.` : "No está instalado."}
+          </span>
+          <Button onClick={() => terminals.open({ kind: "installCodeMap" }, "Instalar mapa del código")}>
+            Instalar
+          </Button>
+        </div>
+      )}
+      <p className="small muted">
+        Se instala con el script oficial, que verifica la descarga, y sin tocar la configuración de tus CLIs: Hedy lo
+        registra en cada tarea, limitado a la carpeta del proyecto. Al terminar, vuelve a esta pantalla para activarlo.
+      </p>
+    </section>
   );
 }
