@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Hedy
+GenericName=AI coding assistant
+GenericName[es]=Asistente de programación con IA
+Comment=Your coding AIs and your accounts, in one place
+Comment[es]=Tus IAs de programación y tus cuentas, en un solo lugar
+Exec=hedy-app
+Icon=hedy-app
+Terminal=false
+Categories=Development;IDE;
+Keywords=AI;Claude;Codex;Gemini;Kimi;Antigravity;IA;
+StartupWMClass=hedy-app
+StartupNotify=true

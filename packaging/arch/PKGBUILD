@@ -1,0 +1,40 @@
+# Builds Hedy from this checkout into a pacman package (Arch, CachyOS…):
+#   cd packaging/arch && makepkg -f && sudo pacman -U hedy-*.pkg.tar.zst
+pkgname=hedy
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Tus IAs de programación y tus cuentas, en un solo lugar"
+arch=('x86_64')
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'libsoup3' 'git')
+makedepends=('cargo' 'nodejs' 'npm')
+optdepends=('claude-code: Claude Code'
+            'codex: Codex (ChatGPT)')
+options=('!lto' '!debug')
+
+# The repository this PKGBUILD lives in.
+_root="$(realpath "$startdir/../..")"
+
+build() {
+  cd "$_root/app"
+  [ -d node_modules ] || npm ci
+  # The app with its interface built in, without Tauri's own bundles.
+  npm run tauri build -- --no-bundle
+  cd "$_root"
+  cargo build --release --locked -p hedy-cli
+}
+
+package() {
+  cd "$_root"
+  install -Dm755 target/release/hedy-app "$pkgdir/usr/bin/hedy-app"
+  install -Dm755 target/release/hedy "$pkgdir/usr/bin/hedy"
+  # Named after the window's app_id (hedy-app), so Wayland desktops find the icon.
+  install -Dm644 packaging/arch/hedy-app.desktop "$pkgdir/usr/share/applications/hedy-app.desktop"
+  for size in 32 64 128; do
+    install -Dm644 "app/src-tauri/icons/${size}x${size}.png" \
+      "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/hedy-app.png"
+  done
+  install -Dm644 app/src-tauri/icons/128x128@2x.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/hedy-app.png"
+  install -Dm644 app/src-tauri/icons/icon.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/hedy-app.png"
+  install -Dm644 app/src-tauri/icons/logo.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/hedy-app.svg"
+}
