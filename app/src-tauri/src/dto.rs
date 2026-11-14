@@ -12,8 +12,8 @@ use hedy_core::application::{
     ProjectStatus, Proposal, Setting, TaskActivity, TestRun, UsageSummary,
 };
 use hedy_core::domain::{
-    Account, ConfigFolder, Credentials, LoginState, Note, Phase, PhasePlan, Project, Provider,
-    Task, TaskMode, TaskState, UsageSample,
+    Account, ConfigFolder, Credentials, LoginState, Note, Phase, PhasePlan, Project,
+    PromptTemplate, Provider, Task, TaskMode, TaskState, UsageSample,
 };
 use serde::{Deserialize, Serialize};
 
@@ -186,6 +186,8 @@ pub struct ActivityDto {
     pub project_name: String,
     /// Unix seconds of the task's latest event.
     pub updated_at: i64,
+    /// Messages waiting for the end of the agent's turn.
+    pub queued: usize,
 }
 
 impl ActivityDto {
@@ -200,6 +202,7 @@ impl ActivityDto {
             agent: item.agent,
             project_name: item.project_name,
             updated_at: item.updated_at,
+            queued: item.queued,
         }
     }
 }
@@ -212,6 +215,33 @@ pub struct NewTaskInput {
     pub mode: TaskMode,
     pub model: Option<String>,
     pub plan_first: bool,
+}
+
+/// A prompt template with its placeholders (`{archivo}` → `archivo`).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateDto {
+    #[serde(flatten)]
+    pub template: PromptTemplate,
+    pub placeholders: Vec<String>,
+}
+
+impl From<PromptTemplate> for TemplateDto {
+    fn from(template: PromptTemplate) -> Self {
+        Self {
+            placeholders: template.placeholders(),
+            template,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewTemplateInput {
+    /// `None`: every project.
+    pub project: Option<PathBuf>,
+    pub name: String,
+    pub text: String,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]

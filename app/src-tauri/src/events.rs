@@ -2,13 +2,15 @@
 //! tasks with desktop notifications while Hedy's window is not focused.
 
 use hedy_core::application::ports::TaskEvents;
-use hedy_core::domain::{AgentEvent, Notice, Task, TaskId};
+use hedy_core::domain::{AgentEvent, Notice, QueuedMessage, Task, TaskId};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 pub const TASK_EVENT: &str = "task-event";
 pub const TASK_UPDATED: &str = "task-updated";
+/// A task's queue of messages changed: what is left, oldest first.
+pub const TASK_QUEUE: &str = "task-queue";
 /// A click on a notification: open that task in its project's workspace.
 pub const OPEN_TASK: &str = "open-task";
 
@@ -19,6 +21,13 @@ const MAIN_WINDOW: &str = "main";
 struct TaskEventPayload<'a> {
     task_id: &'a TaskId,
     event: &'a AgentEvent,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct TaskQueuePayload<'a> {
+    task_id: &'a TaskId,
+    queue: &'a [QueuedMessage],
 }
 
 #[derive(Serialize, Clone)]
@@ -52,6 +61,16 @@ impl TaskEvents for UiEvents {
 
     fn task_updated(&self, task: &Task) {
         let _ = self.0.emit(TASK_UPDATED, task);
+    }
+
+    fn queue_changed(&self, task: &TaskId, queue: &[QueuedMessage]) {
+        let _ = self.0.emit(
+            TASK_QUEUE,
+            TaskQueuePayload {
+                task_id: task,
+                queue,
+            },
+        );
     }
 
     /// Shown by the OS notification service (D-Bus on Linux, the
