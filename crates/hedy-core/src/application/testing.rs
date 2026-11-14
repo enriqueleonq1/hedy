@@ -341,9 +341,15 @@ pub struct FakeAgents {
     sinks: Mutex<Vec<EventSink>>,
     calls: Arc<Mutex<Vec<AgentCall>>>,
     messages: Arc<Mutex<Vec<Option<String>>>>,
+    fail_next: Mutex<bool>,
 }
 
 impl FakeAgents {
+    /// The next `start` fails, as when the CLI is missing.
+    pub fn fail_next_start(&self) {
+        *self.fail_next.lock().unwrap() = true;
+    }
+
     pub fn last_request(&self) -> AgentRequest {
         self.requests
             .lock()
@@ -411,6 +417,9 @@ impl AgentSession for FakeSession {
 
 impl AgentLauncher for FakeAgents {
     fn start(&self, request: AgentRequest, events: EventSink) -> PortResult<Box<dyn AgentSession>> {
+        if std::mem::take(&mut *self.fail_next.lock().unwrap()) {
+            return Err(PortError::new("no se encontró el programa"));
+        }
         self.requests.lock().unwrap().push(request);
         self.sinks.lock().unwrap().push(events);
         Ok(Box::new(FakeSession {

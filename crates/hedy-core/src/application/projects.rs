@@ -80,27 +80,21 @@ impl Hedy {
         };
 
         policy::check_assignment(&project, &account.id, &projects)?;
-        project.account = Some(account.id);
+        project.account = Some(account.id.clone());
         if let Some(protect) = protect {
             project.protected = protect;
         }
         if project.protected {
             policy::check_protect(&project, &projects)?;
+            policy::check_phases(&project, &projects)?;
             // The default account is offered everywhere, so it cannot be reserved.
-            if self.default_account_id()? == project.account {
-                return Err(AppError::DefaultCannotBeProtected(account_id(&project)));
+            if self.default_account_id()? == Some(account.id.clone()) {
+                return Err(AppError::DefaultCannotBeProtected(account.id));
             }
         }
         self.store.save_project(&project)?;
         Ok(project)
     }
-}
-
-fn account_id(project: &Project) -> AccountId {
-    project
-        .account
-        .clone()
-        .expect("checked by policy::check_protect")
 }
 
 #[cfg(test)]

@@ -9,11 +9,12 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 
-use super::process::{command, launch_error};
+use super::process::{command, launch_error, wait_unlocked};
 use crate::application::ports::{
     AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
@@ -109,6 +110,7 @@ impl Shared {
 pub struct CodexSession {
     shared: Arc<Shared>,
     child: Arc<Mutex<Child>>,
+    stopped: Arc<AtomicBool>,
 }
 
 impl AgentLauncher for CodexLauncher {
@@ -157,8 +159,13 @@ impl AgentLauncher for CodexLauncher {
             events,
         });
         let child = Arc::new(Mutex::new(child));
+        let stopped = Arc::new(AtomicBool::new(false));
         {
-            let shared = Arc::clone(&shared);
+            let (shared, child, stopped) = (
+                Arc::clone(&shared),
+                Arc::clone(&child),
+                Arc::clone(&stopped),
+            );
             std::thread::spawn(move || {
                 for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                     if let Ok(msg) = serde_json::from_str::<Value>(&line)
@@ -167,6 +174,22 @@ impl AgentLauncher for CodexLauncher {
                         shared.emit(AgentEvent::Error { message: e.message });
                     }
                 }
+                // The app-server only exits when stopped; anything else is a crash.
+                let code = wait_unlocked(&child);
+                if !stopped.load(Ordering::SeqCst) {
+                    let message = format!(
+                        "Codex se detuvo (código {}).",
+                        code.map_or("?".into(), |c| c.to_string())
+                    );
+                    shared.emit(AgentEvent::Error {
+                        message: message.clone(),
+                    });
+                    shared.emit(AgentEvent::Finished {
+                        ok: false,
+                        summary: message,
+                        duration_ms: None,
+                    });
+                }
             });
         }
         shared.request(
@@ -174,7 +197,11 @@ impl AgentLauncher for CodexLauncher {
             json!({"clientInfo": {"name": "hedy", "title": "Hedy", "version": env!("CARGO_PKG_VERSION")}}),
             Pending::Initialize,
         )?;
-        Ok(Box::new(CodexSession { shared, child }))
+        Ok(Box::new(CodexSession {
+            shared,
+            child,
+            stopped,
+        }))
     }
 }
 
@@ -226,9 +253,18 @@ fn handle(shared: &Shared, msg: &Value) -> PortResult<()> {
 fn response(shared: &Shared, id: u64, msg: &Value) -> PortResult<()> {
     let kind = shared.state.lock().unwrap().pending.remove(&id);
     if let Some(error) = msg.get("error") {
+        let message = format!("Codex: {}", error["message"].as_str().unwrap_or("error"));
         shared.emit(AgentEvent::Error {
-            message: format!("Codex: {}", error["message"].as_str().unwrap_or("error")),
+            message: message.clone(),
         });
+        // Without a thread no turn ever starts: end the stage.
+        if matches!(kind, Some(Pending::Initialize | Pending::Thread)) {
+            shared.emit(AgentEvent::Finished {
+                ok: false,
+                summary: message,
+                duration_ms: None,
+            });
+        }
         return Ok(());
     }
     match kind {
@@ -525,7 +561,11 @@ impl AgentSession for CodexSession {
     }
 
     fn stop(&mut self) {
-        let _ = self.child.lock().unwrap().kill();
+        if !self.stopped.swap(true, Ordering::SeqCst) {
+            let mut child = self.child.lock().unwrap();
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 
@@ -583,6 +623,34 @@ for line in sys.stdin:
              "secondary": {"usedPercent": 20, "windowDurationMins": 10080, "resetsAt": 999}}})
         note("turn/completed", {"threadId": "th-1", "turn": {"id": "tu", "status": "completed", "items": [], "durationMs": 7}})
 "#;
+
+    #[test]
+    fn a_crashed_app_server_ends_the_stage() {
+        let (tx, rx) = mpsc::channel();
+        let tx = Mutex::new(tx);
+        let request = AgentRequest {
+            backend: AgentBackend::Codex,
+            launch: LaunchSpec::program("sh", vec!["-c".into(), "read x; exit 3".into()]),
+            mode: TaskMode::Project,
+            phase: Phase::Implement,
+            plan_first: false,
+            model: None,
+            prompt: "hola".into(),
+            resume: None,
+            memory: None,
+            mcp: vec![],
+        };
+        let _session = CodexLauncher
+            .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
+            .unwrap();
+        let finished = rx
+            .iter()
+            .find(|e| matches!(e, AgentEvent::Finished { .. }))
+            .expect("a Finished event");
+        assert!(
+            matches!(finished, AgentEvent::Finished { ok: false, summary, .. } if summary.contains("código 3"))
+        );
+    }
 
     #[test]
     fn mcp_servers_are_config_overrides() {

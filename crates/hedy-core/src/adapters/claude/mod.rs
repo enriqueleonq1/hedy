@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 
-use super::process::{command, launch_error};
+use super::process::{command, launch_error, wait_unlocked};
 use crate::application::ports::{
     AgentLauncher, AgentRequest, AgentSession, EventSink, McpServer, PortError, PortResult,
 };
@@ -230,7 +230,7 @@ impl AgentLauncher for ClaudeCodeLauncher {
             );
             std::thread::spawn(move || {
                 read_events(stdout, cwd, &shared, &turn_open, &events);
-                let code = child.lock().unwrap().wait().ok().and_then(|s| s.code());
+                let code = wait_unlocked(&child);
                 if !stopped.load(Ordering::SeqCst) && turn_open.load(Ordering::SeqCst) {
                     let detail = stderr_tail
                         .lock()
@@ -239,12 +239,19 @@ impl AgentLauncher for ClaudeCodeLauncher {
                         .cloned()
                         .collect::<Vec<_>>()
                         .join("\n");
+                    let message = format!(
+                        "Claude Code se detuvo (código {}). {}",
+                        code.map_or("?".into(), |c| c.to_string()),
+                        detail.trim()
+                    );
                     events(AgentEvent::Error {
-                        message: format!(
-                            "Claude Code se detuvo (código {}). {}",
-                            code.map_or("?".into(), |c| c.to_string()),
-                            detail.trim()
-                        ),
+                        message: message.clone(),
+                    });
+                    // The turn will not finish on its own: end the task's stage.
+                    events(AgentEvent::Finished {
+                        ok: false,
+                        summary: message,
+                        duration_ms: None,
                     });
                 }
             });
@@ -322,6 +329,7 @@ impl AgentSession for ClaudeSession {
         if !self.stopped.swap(true, Ordering::SeqCst) {
             let mut child = self.child.lock().unwrap();
             let _ = child.kill();
+            let _ = child.wait();
         }
     }
 }

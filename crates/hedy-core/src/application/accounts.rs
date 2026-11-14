@@ -100,10 +100,12 @@ impl Hedy {
     /// Asks the CLI (or the keyring) whether the account is ready to use.
     pub fn login_state(&self, account: &Account) -> AppResult<LoginState> {
         if !account.is_subscription() {
-            return Ok(if self.secrets.has_api_key(&account.id)? {
-                LoginState::LoggedIn { plan: None }
-            } else {
-                LoginState::LoggedOut
+            // A keyring that cannot be read leaves this account unknown, not
+            // the whole status screen broken.
+            return Ok(match self.secrets.has_api_key(&account.id) {
+                Ok(true) => LoginState::LoggedIn { plan: None },
+                Ok(false) => LoginState::LoggedOut,
+                Err(_) => LoginState::Unknown,
             });
         }
         let program = self.binary_for(account.provider)?;
@@ -150,7 +152,10 @@ impl Hedy {
         let projects: Vec<_> = self
             .projects()?
             .into_iter()
-            .filter(|p| p.account.as_ref() == Some(&account.id))
+            .filter(|p| {
+                p.account.as_ref() == Some(&account.id)
+                    || p.phases.values().any(|a| a.account == account.id)
+            })
             .map(|p| p.path)
             .collect();
         if !projects.is_empty() {

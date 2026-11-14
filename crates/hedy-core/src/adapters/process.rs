@@ -98,6 +98,19 @@ pub fn find_program(name: &str) -> Option<std::path::PathBuf> {
         .find(|path| path.is_file())
 }
 
+/// Waits for `child` to exit without holding its lock in between, so another
+/// thread can still kill it (a `wait()` under the lock would block `stop()`).
+pub fn wait_unlocked(child: &std::sync::Mutex<std::process::Child>) -> Option<i32> {
+    loop {
+        match child.lock().unwrap().try_wait() {
+            Ok(Some(status)) => return status.code(),
+            Ok(None) => {}
+            Err(_) => return None,
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

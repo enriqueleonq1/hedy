@@ -1015,7 +1015,11 @@ mod tests {
         let agent = local_agent(dir);
 
         assert!(agent.read_file("notes.txt").contains("Hedy no permite"));
-        assert!(agent.read_file("link/private.txt").contains("dentro de la carpeta"));
+        assert!(
+            agent
+                .read_file("link/private.txt")
+                .contains("dentro de la carpeta")
+        );
         assert!(!agent.read_file("zero").contains('\0'));
         assert!(!agent.search("SECRETO", "").contains("42"));
         assert!(agent.resolve("link/new.txt", true).is_err());
@@ -1028,10 +1032,18 @@ mod tests {
         let agent = local_agent(tmp.path());
         let started = Instant::now();
         let out = agent.run_command("head -c 200000 /dev/zero | tr '\\0' x 1>&2; echo listo");
-        assert!(out.contains("listo") && out.contains("Código de salida: 0"), "{}", &out[..80]);
+        assert!(
+            out.contains("listo") && out.contains("Código de salida: 0"),
+            "{}",
+            &out[..80]
+        );
         let out = agent.run_command("sleep 30 & echo en-segundo-plano");
         assert!(out.contains("en-segundo-plano"));
-        assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "{:?}",
+            started.elapsed()
+        );
     }
 
     #[test]

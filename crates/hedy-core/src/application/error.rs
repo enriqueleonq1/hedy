@@ -42,7 +42,7 @@ pub enum AppError {
     EmptyApiKey,
 
     #[error(
-        "«{0}» es la cuenta por defecto y no se puede reservar; elige otra con `hedy account default <cuenta>`"
+        "«{0}» es la cuenta por defecto y no se puede reservar para un proyecto protegido; elige otra cuenta por defecto (`hedy account default <cuenta>`) o quita la protección (`--unprotect`)"
     )]
     DefaultCannotBeProtected(AccountId),
 
@@ -68,7 +68,7 @@ pub enum AppError {
     MissingApiKey(AccountId),
 
     #[error("no se puede pasar la tarea a «{0}»: elige otro proveedor o una API key")]
-    NotAHandoffCandidate(AccountId),
+    NotAHandoffCandidate(String),
 
     #[error("no existe la nota {0}")]
     NoteNotFound(i64),
@@ -79,7 +79,9 @@ pub enum AppError {
     #[error("escribe qué quieres que haga")]
     EmptyPrompt,
 
-    #[error("{0} llega a Hedy en la fase 4; por ahora las tareas usan Claude Code")]
+    #[error(
+        "las tareas con {0} por suscripción no están disponibles: Gemini CLI solo sirve cuentas de Code Assist; usa Gemini con API key"
+    )]
     ProviderNotYetSupported(Provider),
 
     #[error("{}", merge_message(branch, reason))]

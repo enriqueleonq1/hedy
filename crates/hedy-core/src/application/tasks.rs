@@ -18,8 +18,9 @@ use crate::domain::phase::pipeline;
 use crate::domain::prompts;
 use crate::domain::task::{SHARED_DEPENDENCY_DIRS, branch_name, title_from_prompt};
 use crate::domain::{
-    Account, AgentEvent, Commit, Credentials, Decision, FileDiff, LaunchPurpose, LaunchSpec,
-    LimitLevel, Phase, Provider, Stage, Task, TaskId, TaskMode, TaskStatus, Workspace, policy,
+    Account, AccountId, AgentEvent, Commit, Credentials, Decision, FileDiff, LaunchPurpose,
+    LaunchSpec, LimitLevel, Phase, Provider, Stage, Task, TaskId, TaskMode, TaskStatus,
+    UsageSample, Workspace, policy,
 };
 
 /// Worktrees live inside the repository, excluded locally from git.
@@ -142,7 +143,9 @@ impl Hedy {
         }
 
         let now = self.clock.now_ms();
-        let id = TaskId::new(format!("t{now:x}"));
+        // The counter keeps ids unique when two tasks start in the same ms.
+        let seq = self.sessions.fetch_add(1, Ordering::Relaxed) % 256;
+        let id = TaskId::new(format!("t{now:x}{seq:02x}"));
         let title = title_from_prompt(&request.prompt);
         // Codex cannot be kept away from protected files, so it always works
         // in a worktree, where `.env` and friends do not exist.
@@ -210,8 +213,34 @@ impl Hedy {
         Ok(())
     }
 
-    /// Starts stage `index` in a new agent session.
+    /// Starts stage `index` in a new agent session. If it cannot start, the
+    /// task fails with the reason in its history instead of staying "running".
     fn run_stage(
+        &self,
+        task: &mut Task,
+        index: usize,
+        prompt: String,
+        resume: Option<String>,
+    ) -> AppResult<()> {
+        let result = self.start_stage(task, index, prompt, resume);
+        if let Err(error) = &result {
+            self.fail(task, error);
+        }
+        result
+    }
+
+    fn fail(&self, task: &mut Task, error: &AppError) {
+        self.stop_session(&task.id);
+        let _ = self.record(
+            &task.id,
+            AgentEvent::Error {
+                message: error.to_string(),
+            },
+        );
+        let _ = self.set_status(task, TaskStatus::Failed);
+    }
+
+    fn start_stage(
         &self,
         task: &mut Task,
         index: usize,
@@ -264,7 +293,9 @@ impl Hedy {
         let number = self.sessions.fetch_add(1, Ordering::Relaxed) + 1;
         let hedy = self.clone();
         let id = task.id.clone();
-        let sink = Arc::new(move |event| hedy.on_agent_event(&id, number, event));
+        // Tokens belong to this session's account, even after a handoff.
+        let spender = account.id.clone();
+        let sink = Arc::new(move |event| hedy.on_agent_event(&id, number, &spender, event));
         // Held while starting, so events that arrive early wait for the session.
         let mut live = self.live.lock().unwrap();
         if let Some(mut old) = live.remove(&task.id) {
@@ -320,35 +351,41 @@ impl Hedy {
     }
 
     /// Called on the adapter's thread for every event of a session.
-    fn on_agent_event(&self, id: &TaskId, number: u64, event: AgentEvent) {
+    fn on_agent_event(&self, id: &TaskId, number: u64, spender: &AccountId, event: AgentEvent) {
+        if let AgentEvent::Usage(sample) = &event {
+            // Recorded even from a replaced session: the tokens were spent.
+            if let Err(error) = self.handle_usage(id, spender, sample) {
+                let _ = self.record(
+                    id,
+                    AgentEvent::Error {
+                        message: error.to_string(),
+                    },
+                );
+            }
+        }
         let current = self.live.lock().unwrap().get(id).map(|l| l.number) == Some(number);
-        let result = if current {
-            self.handle_event(id, event)
-        } else if let AgentEvent::Usage(_) = event {
-            // A replaced session still spent tokens.
-            self.handle_usage(id, &event)
-        } else {
-            Ok(())
-        };
-        if let Err(error) = result {
-            let _ = self.record(
-                id,
-                AgentEvent::Error {
-                    message: error.to_string(),
-                },
-            );
+        if !current {
+            return;
+        }
+        if let Err(error) = self.handle_event(id, event)
+            && let Ok(mut task) = self.task(id)
+            && task.status != TaskStatus::Failed
+        {
+            self.fail(&mut task, &error);
         }
     }
 
-    fn handle_usage(&self, id: &TaskId, event: &AgentEvent) -> AppResult<()> {
-        let AgentEvent::Usage(sample) = event else {
-            return Ok(());
-        };
+    fn handle_usage(
+        &self,
+        id: &TaskId,
+        spender: &AccountId,
+        sample: &UsageSample,
+    ) -> AppResult<()> {
         let task = self.task(id)?;
         let mut sample = sample.clone();
         // API agents report tokens only; the cost comes from the user's price.
         if sample.cost_usd.is_none()
-            && let Ok(account) = self.account(task.account.as_str())
+            && let Ok(account) = self.account(spender.as_str())
             && matches!(account.credentials, Credentials::ApiKey)
             && let Some(price) = self.api_price(account.provider)?
         {
@@ -356,7 +393,7 @@ impl Hedy {
         }
         self.store.record_usage(&UsageRecord {
             at: self.now_secs(),
-            account: task.account.clone(),
+            account: spender.clone(),
             project: task.project.clone(),
             task: task.id.clone(),
             sample,
@@ -450,7 +487,7 @@ impl Hedy {
                 };
                 return self.set_status(&mut task, status);
             }
-            AgentEvent::Usage(_) => self.handle_usage(id, &event)?,
+            AgentEvent::Usage(_) => {}
             AgentEvent::RateLimit {
                 status,
                 utilization,
@@ -466,9 +503,6 @@ impl Hedy {
                     },
                 )?;
                 self.warn_about_limit(&task, status, *utilization, *resets_at)?;
-            }
-            AgentEvent::Error { .. } if !self.is_running(id) => {
-                self.set_status(&mut task, TaskStatus::Failed)?;
             }
             _ => {}
         }
@@ -526,7 +560,7 @@ impl Hedy {
         request_id: &str,
         decision: Decision,
     ) -> AppResult<()> {
-        self.with_session(id, |running| {
+        let waiting = self.with_session(id, |running| {
             running.session.answer(
                 request_id,
                 decision.allows(),
@@ -539,9 +573,9 @@ impl Hedy {
             {
                 running.rules.push(rule);
             }
-            Ok(())
+            Ok(!running.pending.is_empty())
         })?;
-        self.resolved(id, request_id, decision)
+        self.resolved(id, request_id, decision, waiting)
     }
 
     /// Approves the proposed plan, or sends it back with the user's feedback.
@@ -571,7 +605,7 @@ impl Hedy {
                     ),
                 )?)
             })?;
-            return self.resolved(id, request_id, Decision::Deny);
+            return self.resolved(id, request_id, Decision::Deny, false);
         }
 
         let here = current_stage(&task);
@@ -587,7 +621,7 @@ impl Hedy {
                 Ok(running.session.answer(request_id, true, None)?)
             }
         })?;
-        self.resolved(id, request_id, Decision::Allow)?;
+        self.resolved(id, request_id, Decision::Allow, false)?;
         if here.phase != Phase::Plan || next >= task.stages.len() {
             return Ok(());
         }
@@ -624,7 +658,15 @@ impl Hedy {
         )
     }
 
-    fn resolved(&self, id: &TaskId, request_id: &str, decision: Decision) -> AppResult<()> {
+    /// Records the user's answer. The task runs again unless other cards
+    /// (parallel tool calls) still wait.
+    fn resolved(
+        &self,
+        id: &TaskId,
+        request_id: &str,
+        decision: Decision,
+        others_waiting: bool,
+    ) -> AppResult<()> {
         self.record(
             id,
             AgentEvent::PermissionResolved {
@@ -634,6 +676,9 @@ impl Hedy {
                 reason: None,
             },
         )?;
+        if others_waiting {
+            return Ok(());
+        }
         let mut task = self.task(id)?;
         self.set_status(&mut task, TaskStatus::Running)
     }
@@ -707,11 +752,7 @@ impl Hedy {
             .handoff_options(id)?
             .into_iter()
             .find(|a| a.id.as_str() == account)
-            .ok_or_else(|| {
-                AppError::NotAHandoffCandidate(
-                    crate::domain::AccountId::new(account).unwrap_or_else(|_| task.account.clone()),
-                )
-            })?;
+            .ok_or_else(|| AppError::NotAHandoffCandidate(account.to_owned()))?;
         self.backend(&target)?;
         self.stop_session(id);
 
@@ -805,10 +846,11 @@ impl Hedy {
     /// "Descartar": stops the agent and deletes the worktree and its branch.
     pub fn discard_task(&self, id: &TaskId) -> AppResult<Task> {
         let mut task = self.task(id)?;
+        if task.status.is_closed() {
+            return Err(AppError::TaskClosed(id.clone()));
+        }
         self.stop_session(id);
-        if let Some(ws) = &task.workspace
-            && !task.status.is_closed()
-        {
+        if let Some(ws) = &task.workspace {
             self.git
                 .remove_worktree(&task.project, &ws.worktree, &ws.branch)?;
         }
@@ -1303,6 +1345,86 @@ mod tests {
             .collect();
         assert_eq!(warnings, vec![LimitLevel::Warning, LimitLevel::Reached]);
         assert_eq!(f.agents.requests().len(), 1, "no automatic switch");
+    }
+
+    #[test]
+    fn a_stage_that_cannot_start_fails_the_task() {
+        let f = Fixture::new();
+        let task = phased(&f);
+        f.agents.emit(AgentEvent::Plan {
+            text: "1. Hacer".into(),
+            request_id: Some("p1".into()),
+        });
+        f.agents.fail_next_start();
+        assert!(f.hedy.answer_plan(&task.id, "p1", true, None).is_err());
+        let task = f.hedy.task(&task.id).unwrap();
+        assert_eq!(task.status, TaskStatus::Failed, "not stuck as running");
+        assert!(!f.hedy.is_running(&task.id));
+        assert!(f.hedy.task_events(&task.id).unwrap().iter().any(
+            |e| matches!(e, AgentEvent::Error { message } if message.contains("no se encontró"))
+        ));
+    }
+
+    #[test]
+    fn late_usage_is_billed_to_the_session_that_spent_it() {
+        use crate::domain::UsageSample;
+        let f = Fixture::new();
+        let task = phased(&f);
+        f.hedy.handoff_task(&task.id, "kimi", None).unwrap();
+        // The replaced Claude session reports its last tokens.
+        f.agents.emit_from(
+            0,
+            AgentEvent::Usage(UsageSample {
+                input_tokens: 70,
+                ..UsageSample::default()
+            }),
+        );
+        let personal = f.hedy.account("personal").unwrap().id;
+        let kimi = f.hedy.account("kimi").unwrap().id;
+        assert_eq!(
+            f.hedy.account_usage(&personal).unwrap().week.total_tokens(),
+            70
+        );
+        assert_eq!(f.hedy.account_usage(&kimi).unwrap().week.total_tokens(), 0);
+    }
+
+    #[test]
+    fn a_task_keeps_waiting_while_other_cards_are_open() {
+        let f = Fixture::new();
+        let task = new_task(&f, "Hola", false);
+        f.agents
+            .emit(permission("p1", "Bash", json!({"command": "pytest"})));
+        f.agents
+            .emit(permission("p2", "Bash", json!({"command": "ls"})));
+        f.hedy
+            .answer_permission(&task.id, "p1", Decision::Allow)
+            .unwrap();
+        assert_eq!(
+            f.hedy.task(&task.id).unwrap().status,
+            TaskStatus::WaitingApproval
+        );
+        f.hedy
+            .answer_permission(&task.id, "p2", Decision::Allow)
+            .unwrap();
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Running);
+    }
+
+    #[test]
+    fn closed_tasks_cannot_be_discarded_and_phase_accounts_stay() {
+        let f = Fixture::new();
+        let task = phased(&f);
+        assert!(
+            matches!(
+                f.hedy.remove_account("kimi"),
+                Err(AppError::AccountInUse { .. })
+            ),
+            "kimi writes the tests of the project"
+        );
+        f.hedy.discard_task(&task.id).unwrap();
+        assert!(matches!(
+            f.hedy.discard_task(&task.id),
+            Err(AppError::TaskClosed(_))
+        ));
     }
 
     #[test]
