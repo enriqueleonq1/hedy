@@ -98,6 +98,48 @@ describe("English", () => {
     expect(spanishLeftovers()).toEqual([]);
   });
 
+  it("queues messages and picks templates in English", async () => {
+    const { user } = setup(MockApi.withSampleData().withSampleActivity().withSampleTemplates());
+    await user.click(await screen.findByRole("button", { name: /^homming/ }));
+    const queue = await screen.findByRole("region", { name: "Queued messages" });
+    expect(within(queue).getAllByText("Queued")).toHaveLength(2);
+    expect(within(queue).getByText(/goes as a single message when Claude Opus finishes its turn/)).toBeInTheDocument();
+    expect(within(queue).getAllByRole("button", { name: "Edit the queued message" })).toHaveLength(2);
+    const composer = screen.getByLabelText(/^Write while Claude Opus works/);
+    expect(screen.getByRole("button", { name: "Queue" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+
+    await user.type(composer, "/");
+    const list = await screen.findByRole("listbox", { name: "Templates" });
+    expect(within(list).getByText("Write tests")).toBeInTheDocument();
+    expect(screen.getByText("↑ ↓ to choose · Enter to use it · Esc to close")).toBeInTheDocument();
+    await user.type(composer, "write");
+    await user.keyboard("{Enter}");
+    const fill = await screen.findByRole("group", { name: "Fill in “Write tests”" });
+    expect(within(fill).getByLabelText("{file}")).toHaveFocus();
+    expect(within(fill).getByRole("button", { name: "Use template" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+  });
+
+  it("keeps a queue on hold in English", async () => {
+    const { api, user } = setup();
+    await user.click(await screen.findByRole("button", { name: /^hedy/ }));
+    await user.type(await screen.findByLabelText("Ask hedy for something"), "Recordatorios");
+    await user.click(screen.getByLabelText("Plan first"));
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("region", { name: "Claude wants to run a command" });
+    await user.type(screen.getByLabelText(/^Write while Claude Opus works/), "Sigue");
+    await user.click(screen.getByRole("button", { name: "Queue" }));
+    const queue = await screen.findByRole("region", { name: "Queued messages" });
+    expect(within(queue).getByText("Answer the card above first; the queue goes after that.")).toBeInTheDocument();
+
+    api.simulateLimit((await api.tasks("/code/hedy"))[0]!.id, "reached");
+    expect(await within(queue).findByText("On hold")).toBeInTheDocument();
+    expect(within(queue).getByText(/the account reached its limit/)).toBeInTheDocument();
+    expect(within(queue).getByRole("button", { name: "Send when the turn ends" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+  });
+
   it("warns about a limit in English", async () => {
     const { api, user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
@@ -147,6 +189,7 @@ describe("English", () => {
     const running = screen.getByRole("region", { name: "Running (1)" });
     expect(within(running).getByText("Working")).toBeInTheDocument();
     expect(within(running).getByText("Implementation")).toBeInTheDocument();
+    expect(within(running).getByText("2 queued")).toBeInTheDocument();
     const recent = screen.getByRole("region", { name: "Last 24 h (4)" });
     for (const state of ["Changes to review", "Failed", "Answered", "Cancelled"]) {
       expect(within(recent).getByText(state)).toBeInTheDocument();
@@ -177,6 +220,11 @@ describe("English", () => {
     expect(screen.getByLabelText("Your name")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Code map" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Tell me when a task needs me or finishes" })).toBeInTheDocument();
+    const templates = screen.getByRole("region", { name: "Templates" });
+    expect(await within(templates).findByText("Explain code")).toBeInTheDocument();
+    expect(within(templates).getAllByText("Every project").length).toBeGreaterThan(0);
+    expect(within(templates).getByRole("button", { name: "Restore examples" })).toBeInTheDocument();
+    expect(within(templates).getByRole("button", { name: "Edit Explain code" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
   });
 

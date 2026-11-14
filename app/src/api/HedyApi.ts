@@ -15,7 +15,10 @@ import type {
   UsageSummary,
   NewAccountInput,
   NewTaskInput,
+  NewTemplateInput,
   OpenTaskRequest,
+  PromptTemplate,
+  QueuedMessage,
   Overview,
   SettingKey,
   Task,
@@ -79,6 +82,27 @@ export interface HedyApi {
   answerPermission(id: string, requestId: string, decision: Decision): Promise<void>;
   answerPlan(id: string, requestId: string, approve: boolean, feedback: string | null): Promise<void>;
   sendMessage(id: string, text: string): Promise<void>;
+  /** The messages waiting for the end of the agent's turn, oldest first. */
+  queued(id: string): Promise<QueuedMessage[]>;
+  /**
+   * A follow-up: queued while the agent's turn runs (or a card waits), sent
+   * now when it is idle. Returns what is left in the queue.
+   */
+  queueMessage(id: string, text: string): Promise<QueuedMessage[]>;
+  editQueued(message: number, text: string): Promise<QueuedMessage[]>;
+  removeQueued(message: number): Promise<QueuedMessage[]>;
+  /** Releases a queue on hold and sends it now, unless the agent is mid-turn. */
+  sendQueuedNow(id: string): Promise<QueuedMessage[]>;
+
+  /** What the composer of `project` offers: its templates, then the global ones. */
+  templates(project: string | null): Promise<PromptTemplate[]>;
+  /** Every template, of every project. */
+  allTemplates(): Promise<PromptTemplate[]>;
+  addTemplate(input: NewTemplateInput): Promise<PromptTemplate>;
+  updateTemplate(id: string, name: string, text: string): Promise<PromptTemplate>;
+  removeTemplate(id: string): Promise<void>;
+  /** Brings back the built-in examples as they came. */
+  restoreBuiltinTemplates(): Promise<void>;
   stopTask(id: string): Promise<void>;
   taskDiff(id: string): Promise<FileDiff[]>;
   acceptTask(id: string): Promise<void>;
@@ -106,6 +130,8 @@ export interface HedyApi {
   /** Live events of every task. */
   onTaskEvent(listener: (taskId: string, event: AgentEvent) => void): Unsubscribe;
   onTaskUpdated(listener: (task: Omit<Task, "live">) => void): Unsubscribe;
+  /** A task's queue changed: what is left, oldest first. */
+  onTaskQueue(listener: (taskId: string, queue: QueuedMessage[]) => void): Unsubscribe;
   /** The user clicked one of Hedy's desktop notifications. */
   onOpenTask(listener: (request: OpenTaskRequest) => void): Unsubscribe;
 }

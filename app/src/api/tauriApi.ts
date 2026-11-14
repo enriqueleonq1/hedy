@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import type { HedyApi } from "./HedyApi";
-import type { AgentEvent, OpenTaskRequest, Task, TerminalEvent } from "./types";
+import type { AgentEvent, OpenTaskRequest, QueuedMessage, Task, TerminalEvent } from "./types";
 
 /** Tauri's `listen` is async; this returns a synchronous unsubscribe. */
 function subscribe<T>(event: string, handler: (payload: T) => void): () => void {
@@ -76,6 +76,17 @@ export const tauriApi: HedyApi = {
   dismissContradiction: (a, b) => invoke("dismiss_contradiction", { a, b }),
   setMemoryReader: (path, account, reads) => invoke("set_memory_reader", { path, account, reads }),
   sendMessage: (id, text) => invoke("send_message", { id, text }),
+  queued: (id) => invoke("queued", { id }),
+  queueMessage: (id, text) => invoke("queue_message", { id, text }),
+  editQueued: (message, text) => invoke("edit_queued", { message, text }),
+  removeQueued: (message) => invoke("remove_queued", { message }),
+  sendQueuedNow: (id) => invoke("send_queued_now", { id }),
+  templates: (project) => invoke("templates", { project }),
+  allTemplates: () => invoke("all_templates"),
+  addTemplate: (input) => invoke("add_template", { input }),
+  updateTemplate: (id, name, text) => invoke("update_template", { id, name, text }),
+  removeTemplate: (id) => invoke("remove_template", { id }),
+  restoreBuiltinTemplates: () => invoke("restore_builtin_templates"),
   stopTask: (id) => invoke("stop_task", { id }),
   taskDiff: (id) => invoke("task_diff", { id }),
   acceptTask: (id) => invoke("accept_task", { id }),
@@ -86,6 +97,8 @@ export const tauriApi: HedyApi = {
   onTaskEvent: (listener) =>
     subscribe<{ taskId: string; event: AgentEvent }>("task-event", ({ taskId, event }) => listener(taskId, event)),
   onTaskUpdated: (listener) => subscribe<Omit<Task, "live">>("task-updated", listener),
+  onTaskQueue: (listener) =>
+    subscribe<{ taskId: string; queue: QueuedMessage[] }>("task-queue", ({ taskId, queue }) => listener(taskId, queue)),
   onOpenTask: (listener) => subscribe<OpenTaskRequest>("open-task", listener),
 };
 

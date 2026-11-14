@@ -872,6 +872,7 @@ select:disabled { opacity: 0.65; }
 .permission-card__what { font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; }
 
 .composer {
+  position: relative;
   display: grid;
   gap: 8px;
   padding: 14px 16px;
@@ -893,6 +894,113 @@ select:disabled { opacity: 0.65; }
 .composer__input:focus-visible { outline: none; }
 .composer:focus-within { border-color: var(--action); }
 .composer__bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* Queued messages ("En cola"): a user bubble with a dashed edge until it goes. */
+.queue { display: grid; gap: 8px; }
+.queue__list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+
+.bubble--queued {
+  display: grid;
+  gap: 6px;
+  justify-self: end;
+  background: transparent;
+  border: 1px dashed var(--action);
+}
+
+.bubble--held { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); }
+.bubble__tag { font-size: 12px; font-weight: 700; color: var(--action-text); }
+.bubble--held .bubble__tag { color: var(--warn-ink); }
+.bubble__text { white-space: pre-wrap; }
+.bubble__actions { display: flex; gap: 4px; justify-content: flex-end; margin: 0 -8px -6px 0; }
+.bubble__edit { display: grid; gap: 8px; min-width: min(420px, 60vw); }
+
+.queue__status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: right;
+}
+
+.queue__status p { margin: 0; }
+.queue__status--held { color: var(--warn-ink); }
+
+/* The "/" template picker, above the composer. */
+.template-picker {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  z-index: 5;
+}
+
+.template-picker__list { display: grid; gap: 2px; max-height: 260px; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+
+.template-option {
+  display: grid;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.template-option--active { background: var(--selection); }
+.template-option__name { font-weight: 700; }
+.template-option--active .template-option__name { color: var(--action-text); }
+
+.template-option__text {
+  color: var(--muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-picker__empty { margin: 0; padding: 8px 12px; color: var(--muted); }
+.template-picker__hint { margin: 0; padding: 2px 12px 4px; color: var(--muted); font-size: 12px; }
+
+.template-fill {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.template-fill__title { margin: 0; font-weight: 700; }
+.template-fill__fields { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+
+/* Templates in Settings. */
+.template-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+
+.template-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--line);
+}
+
+.template-row__main { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.template-row__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.template-row__text { margin: 0; color: var(--muted); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.template-row__actions { display: flex; gap: 4px; flex: none; }
+
+@media (max-width: 640px) {
+  .template-row { flex-direction: column; }
+}
 
 .side-panel {
   display: grid;
@@ -1380,6 +1488,7 @@ select:disabled { opacity: 0.65; }
 .board-row__project { color: var(--ink); font-weight: 600; }
 .board-row__who { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
 .board-row__who .dot { width: 8px; height: 8px; }
+.board-row__queued { color: var(--action-text); font-weight: 600; }
 
 .board-state {
   display: inline-flex;

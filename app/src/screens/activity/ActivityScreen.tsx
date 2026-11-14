@@ -204,6 +204,12 @@ function BoardRow({
           )}
           <span aria-hidden>·</span>
           <span>{time}</span>
+          {item.queued > 0 && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="board-row__queued">{t("queue.count", { n: item.queued })}</span>
+            </>
+          )}
         </span>
       </button>
     </li>

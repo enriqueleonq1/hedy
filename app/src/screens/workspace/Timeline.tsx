@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useAction, useApi } from "../../api/context";
@@ -18,14 +18,18 @@ interface TimelineProps {
   account: Account | undefined;
   accounts: Account[];
   mascot: MascotState;
+  /** Shown after the history (the queued messages). */
+  footer?: ReactNode;
+  /** Scrolls to the end when it changes, besides new items. */
+  scrollKey?: number;
 }
 
-export function Timeline({ task, items, agent, account, accounts, mascot }: TimelineProps) {
+export function Timeline({ task, items, agent, account, accounts, mascot, footer, scrollKey }: TimelineProps) {
   const t = useT();
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView?.({ block: "end" });
-  }, [items.length]);
+  }, [items.length, scrollKey]);
 
   const color = account?.color ?? DEFAULT_ACCOUNT_COLOR;
   const lastAgent = items.findLastIndex((i) => i.type !== "user");
@@ -65,6 +69,7 @@ export function Timeline({ task, items, agent, account, accounts, mascot }: Time
           </div>
         );
       })}
+      {footer}
       <div ref={end} />
     </div>
   );

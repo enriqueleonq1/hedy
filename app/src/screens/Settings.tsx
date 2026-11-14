@@ -9,6 +9,7 @@ import type { CliProviderId, Overview, SettingKey, ThemeSetting } from "../api/t
 import { Mascot, MASCOT_STATE_LABEL, type MascotState } from "../components/Mascot/Mascot";
 import { ColorPicker, Field, Segmented, Switch } from "../components/ui/controls";
 import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
+import { TemplatesSection } from "./templates/TemplatesSection";
 
 const CLIS: { id: CliProviderId; name: string }[] = [
   { id: "claude", name: "Claude Code" },
@@ -99,6 +100,8 @@ export function Settings({ overview }: { overview: Overview }) {
           <ColorPicker label={t("settings.tryColorLabel")} value={preview} onChange={setPreview} />
         </div>
       </section>
+
+      <TemplatesSection overview={overview} />
 
       <section className="card settings__section">
         <h2>{t("settings.cliPaths")}</h2>
