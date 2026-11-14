@@ -19,8 +19,8 @@ use crate::domain::prompts;
 use crate::domain::task::{SHARED_DEPENDENCY_DIRS, branch_name, title_from_prompt};
 use crate::domain::{
     Account, AccountId, AgentEvent, Commit, Credentials, Decision, FileDiff, LaunchPurpose,
-    LaunchSpec, LimitLevel, Phase, Provider, Stage, Task, TaskId, TaskMode, TaskStatus,
-    UsageSample, Workspace, policy,
+    LaunchSpec, LimitLevel, Notice, NoticeKind, Phase, Provider, Stage, Task, TaskId, TaskMode,
+    TaskStatus, UsageSample, Workspace, policy,
 };
 use crate::tr;
 
@@ -53,7 +53,7 @@ pub(super) struct LiveTask {
 }
 
 /// Tasks stored before phases existed have no stages.
-fn current_stage(task: &Task) -> Stage {
+pub(super) fn current_stage(task: &Task) -> Stage {
     task.stages.get(task.stage).cloned().unwrap_or(Stage {
         phase: Phase::Implement,
         account: task.account.clone(),
@@ -248,7 +248,36 @@ impl Hedy {
                 message: error.to_string(),
             },
         );
+        let failed_now = task.status != TaskStatus::Failed;
         let _ = self.set_status(task, TaskStatus::Failed);
+        if failed_now {
+            self.notify(task, NoticeKind::Failed);
+        }
+    }
+
+    /// Tells the driving adapter about something the user may want to hear
+    /// about, unless notifications are off. Only names the agent and the
+    /// project: never file contents, commands or the prompt.
+    fn notify(&self, task: &Task, kind: NoticeKind) {
+        if !self.notifications_on().unwrap_or(true) {
+            return;
+        }
+        let agent = self
+            .account(task.account.as_str())
+            .map(|a| a.provider.agent_label(None))
+            .unwrap_or_else(|_| "Hedy".into());
+        let project = self.project_name(&task.project);
+        self.events
+            .notice(task, &Notice::new(kind, &agent, &project));
+    }
+
+    /// The project's name, or its folder's when it is no longer registered.
+    pub(super) fn project_name(&self, path: &Path) -> String {
+        self.project_at(path).map(|p| p.name).unwrap_or_else(|_| {
+            path.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string())
+        })
     }
 
     fn start_stage(
@@ -453,7 +482,11 @@ impl Hedy {
                             .pending
                             .insert(request_id.clone(), (tool.clone(), input.clone()));
                         drop(live);
+                        let waiting = task.status == TaskStatus::WaitingApproval;
                         self.set_status(&mut task, TaskStatus::WaitingApproval)?;
+                        if !waiting {
+                            self.notify(&task, NoticeKind::PermissionNeeded);
+                        }
                     }
                 }
             }
@@ -463,7 +496,11 @@ impl Hedy {
             } => {
                 task.plan = Some(text.clone());
                 self.store.save_task(&task)?;
+                let waiting = task.status == TaskStatus::WaitingApproval;
                 self.set_status(&mut task, TaskStatus::WaitingApproval)?;
+                if !waiting {
+                    self.notify(&task, NoticeKind::PlanReady);
+                }
             }
             AgentEvent::SessionStarted { session_id, .. } => {
                 task.session_id = Some(session_id.clone());
@@ -491,12 +528,18 @@ impl Hedy {
                     );
                     return self.run_stage(&mut task, next, prompt, None);
                 }
-                let status = if *ok {
-                    TaskStatus::Review
+                let (status, notice) = if *ok {
+                    let changes = task.mode.changes_files();
+                    (TaskStatus::Review, NoticeKind::Finished { changes })
                 } else {
-                    TaskStatus::Failed
+                    (TaskStatus::Failed, NoticeKind::Failed)
                 };
-                return self.set_status(&mut task, status);
+                let changed = task.status != status;
+                self.set_status(&mut task, status)?;
+                if changed {
+                    self.notify(&task, notice);
+                }
+                return Ok(());
             }
             AgentEvent::Usage(_) => {}
             AgentEvent::RateLimit {
@@ -549,7 +592,11 @@ impl Hedy {
                 percent,
                 resets_at,
             },
-        )
+        )?;
+        if level == LimitLevel::Reached {
+            self.notify(task, NoticeKind::LimitReached);
+        }
+        Ok(())
     }
 
     fn with_session<T>(

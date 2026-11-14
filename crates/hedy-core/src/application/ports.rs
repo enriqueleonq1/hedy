@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, LaunchSpec, Note, NoteStatus,
-    Phase, Project, Task, TaskId, TaskMode, UsageSample,
+    Notice, Phase, Project, Task, TaskId, TaskMode, UsageSample,
 };
 
 /// Failure in an adapter. The message is user-facing (Spanish).
@@ -48,6 +48,9 @@ pub trait TaskRepository: Send + Sync {
     fn task(&self, id: &TaskId) -> PortResult<Option<Task>>;
     /// Newest first.
     fn tasks(&self, project: &Path) -> PortResult<Vec<Task>>;
+    /// Every project's tasks that are still running or waiting, plus those
+    /// created or with events since `since` (seconds). Newest first.
+    fn recent_tasks(&self, since: i64) -> PortResult<Vec<Task>>;
     fn append_event(&self, id: &TaskId, at: i64, event: &AgentEvent) -> PortResult<()>;
     fn events(&self, id: &TaskId) -> PortResult<Vec<AgentEvent>>;
     /// Events with the time they were recorded (seconds).
@@ -339,6 +342,10 @@ pub trait AgentSession: Send {
 pub trait TaskEvents: Send + Sync {
     fn event(&self, task: &TaskId, event: &AgentEvent);
     fn task_updated(&self, task: &Task);
+    /// The task needs the user, finished, failed or hit a limit, and the user
+    /// wants to hear about it (`ui.notifications`). The adapter decides how
+    /// (the app: a desktop notification while its window is not focused).
+    fn notice(&self, _task: &Task, _notice: &Notice) {}
 }
 
 pub struct NoTaskEvents;

@@ -8,13 +8,13 @@ use std::sync::{Arc, Mutex};
 use super::ports::{
     AccountRepository, AgentLauncher, AgentRequest, AgentSession, CapturedOutput, Clock, EventSink,
     FileSystem, Git, MemoryRepository, MergeOutcome, NewNote, PortError, PortResult, ProcessRunner,
-    ProjectRepository, RateLimit, SecretStore, SettingsRepository, TaskRepository, UsageRecord,
-    UsageRepository,
+    ProjectRepository, RateLimit, SecretStore, SettingsRepository, TaskEvents, TaskRepository,
+    UsageRecord, UsageRepository,
 };
 use super::{Hedy, NewAccount, Ports};
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, LaunchSpec, Note, NoteStatus,
-    Project, Provider, Task, TaskId, UsageSample,
+    Notice, Project, Provider, Task, TaskId, TaskStatus, UsageSample,
 };
 
 #[derive(Default)]
@@ -167,6 +167,25 @@ impl TaskRepository for MemoryStore {
             .unwrap()
             .iter()
             .filter(|t| t.project == project)
+            .cloned()
+            .collect();
+        tasks.sort_by_key(|t| std::cmp::Reverse(t.created_at));
+        Ok(tasks)
+    }
+    fn recent_tasks(&self, since: i64) -> PortResult<Vec<Task>> {
+        let events = self.events.lock().unwrap();
+        let mut tasks: Vec<_> = self
+            .tasks
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|t| {
+                matches!(t.status, TaskStatus::Running | TaskStatus::WaitingApproval)
+                    || t.created_at >= since
+                    || events
+                        .get(&t.id)
+                        .is_some_and(|e| e.iter().any(|(at, _)| *at >= since))
+            })
             .cloned()
             .collect();
         tasks.sort_by_key(|t| std::cmp::Reverse(t.created_at));
@@ -624,8 +643,35 @@ impl FileSystem for FakeFs {
     }
 }
 
+/// Records the notices the use cases send to the driving adapter.
+#[derive(Default)]
+pub struct RecordedNotices(Mutex<Vec<(TaskId, Notice)>>);
+
+impl RecordedNotices {
+    pub fn titles(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, n)| n.title.clone())
+            .collect()
+    }
+}
+
+impl TaskEvents for RecordedNotices {
+    fn event(&self, _: &TaskId, _: &AgentEvent) {}
+    fn task_updated(&self, _: &Task) {}
+    fn notice(&self, task: &Task, notice: &Notice) {
+        self.0
+            .lock()
+            .unwrap()
+            .push((task.id.clone(), notice.clone()));
+    }
+}
+
 pub struct Fixture {
     pub hedy: Hedy,
+    pub notices: Arc<RecordedNotices>,
     pub store: Arc<MemoryStore>,
     pub secrets: Arc<MemorySecrets>,
     pub runner: Arc<FakeRunner>,
@@ -651,8 +697,11 @@ impl Fixture {
             agents: agents.clone(),
             clock: Arc::new(FakeClock(AtomicI64::new(1_700_000_000_000))),
         });
+        let notices = Arc::new(RecordedNotices::default());
+        let hedy = hedy.with_task_events(notices.clone());
         Self {
             hedy,
+            notices,
             store,
             secrets,
             runner,
