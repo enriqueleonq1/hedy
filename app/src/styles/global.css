@@ -491,6 +491,9 @@ select:disabled { opacity: 0.65; }
 .usage { display: grid; gap: 14px; }
 .usage__row { display: grid; gap: 9px; }
 .usage__value { font-weight: 700; color: var(--muted); }
+/* Near (≥ 80 %) or at (≥ 95 %) a plan limit. */
+.usage__value--warning, .level--warning { color: var(--warning); }
+.usage__value--danger, .level--danger { color: var(--danger); }
 
 /* ---------------------------------------------------------------- cards */
 

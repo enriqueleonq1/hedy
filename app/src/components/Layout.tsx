@@ -8,6 +8,7 @@ import { MODE_LABEL } from "../tasks/timeline";
 import { DEFAULT_ACCOUNT_COLOR, TIP_MASCOT_COLOR } from "../theme/tokens";
 import { shortAccountLabel } from "./accounts";
 import { Mascot } from "./Mascot/Mascot";
+import { barColor, headlineWindow, usageLevel, usePlanUsageRefresh } from "./planUsage";
 import { projectColor } from "./projects";
 import { PROVIDER_NAMES } from "./providers";
 import { useTerminals } from "./Terminal/TerminalProvider";
@@ -34,10 +35,26 @@ export function defaultAccount(overview: Overview): Account | undefined {
   return overview.accounts.find((a) => a.id === overview.defaultAccount) ?? overview.accounts[0];
 }
 
-/** "34%" from a reported limit, "$2,10" for API spend, tokens otherwise. */
+/**
+ * The plan's percentage for compact labels: the shared window closest to its
+ * limit (see `headlineWindow`), or what a task reported; `null` when unknown.
+ */
+export function planPercent(account: Account): number | null {
+  return headlineWindow(account)?.percent ?? account.usage.limit?.percent ?? null;
+}
+
+/** CSS class that colors a percentage near (or at) the limit. */
+export function levelClass(percent: number | null): string | undefined {
+  if (percent === null) return undefined;
+  const level = usageLevel(percent);
+  return level === "ok" ? undefined : `level--${level}`;
+}
+
+/** "34%" of the plan, "$2,10" for API spend, tokens otherwise. */
 export function usageLabel(account: Account, language: Language): string {
   const { usage } = account;
-  if (usage.limit?.percent != null) return `${Math.round(usage.limit.percent)}%`;
+  const percent = planPercent(account);
+  if (percent !== null) return `${Math.round(percent)}%`;
   if (account.kind === "apiKey" && usage.weekCostUsd != null) return formatUsd(usage.weekCostUsd, language);
   if (usage.weekTokens > 0) return `${formatTokens(usage.weekTokens)} tok`;
   return "—";
@@ -136,7 +153,7 @@ export function Topbar({ overview, view, openProjects, mode, onNavigate, onClose
             return (
               <span key={label} className="usage-pill__item">
                 <span className="dot" style={{ background: account.color }} aria-hidden />
-                {label} <span className={usage === "—" ? "muted" : undefined}>{usage}</span>
+                {label} <span className={usage === "—" ? "muted" : levelClass(planPercent(account))}>{usage}</span>
               </span>
             );
           })}
@@ -167,6 +184,8 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
   const active = viewProject(view);
   const used = overview.accounts.some((a) => a.usage.weekTokens > 0);
   const needsYou = useNeedsYouCount();
+  // The sidebar shows every account's plan usage: keep it fresh while it is on screen.
+  usePlanUsageRefresh(overview.accounts, view.screen);
 
   return (
     <aside className="sidebar" aria-label={t("common.projectsAndAccounts")}>
@@ -232,13 +251,13 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
         )}
         <ul className="sidebar__list">
           {overview.accounts.map((a) => {
-            const percent = a.usage.limit?.percent ?? 0;
+            const percent = planPercent(a) ?? 0;
             const usage = usageLabel(a, language);
             return (
               <li key={a.id} className="sidebar__account">
                 <div className="row row--between">
                   <span className="sidebar__account-name">{a.name}</span>
-                  <span className="muted small">{usage}</span>
+                  <span className={`small ${levelClass(planPercent(a)) ?? "muted"}`}>{usage}</span>
                 </div>
                 <div
                   className="bar bar--thin"
@@ -248,7 +267,7 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
                   aria-valuemax={100}
                   aria-valuenow={percent}
                 >
-                  <div className="bar__fill" style={{ width: `${Math.min(percent, 100)}%`, background: a.color }} />
+                  <div className="bar__fill" style={{ width: `${Math.min(percent, 100)}%`, background: barColor(percent, a.color) }} />
                 </div>
               </li>
             );

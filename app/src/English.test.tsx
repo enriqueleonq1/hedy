@@ -165,7 +165,13 @@ describe("English", () => {
     expect(within(card).getByText(/Connected · team/)).toBeInTheDocument();
     expect(within(card).getByText(/CLI's default folder/)).toBeInTheDocument();
     const personal = screen.getByRole("article", { name: "Claude personal" });
-    expect(within(personal).getByRole("meter", { name: "Plan limit: 34%" })).toBeInTheDocument();
+    expect(within(personal).getByRole("meter", { name: "Current session (5 h): 58%" })).toBeInTheDocument();
+    expect(within(personal).getByRole("meter", { name: "This week: 83%" })).toBeInTheDocument();
+    expect(within(personal).getByText("Per model: Opus 12%")).toBeInTheDocument();
+    expect(within(personal).getByText("from Claude Code's /usage · 2 min ago")).toBeInTheDocument();
+    expect(within(personal).getByText("Tokens in Hedy this week")).toBeInTheDocument();
+    expect(within(personal).getAllByText(/^Resets (today|tomorrow|on .+) at .+$/)).toHaveLength(2);
+    expect(within(screen.getByRole("article", { name: "ChatGPT" })).getByText("could not refresh")).toBeInTheDocument();
     expect(within(screen.getByRole("article", { name: "ChatGPT" })).getByRole("button", { name: "Sign in" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "This week's usage by client" })).toBeInTheDocument();
     expect(screen.getByLabelText("Client for hedy")).toBeInTheDocument();
