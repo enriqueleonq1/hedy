@@ -20,6 +20,11 @@ import type {
   PhasePlan,
   Project,
   ProjectStatus,
+  Skill,
+  SkillChange,
+  SkillDraft,
+  SkillFiles,
+  SkillsView,
   UsagePoint,
   UsageSummary,
   Task,
@@ -200,6 +205,52 @@ export class MockApi implements HedyApi {
     // A new note similar to an approved one.
     note("Los precios se guardan en USD", "decision", { ...proposal, author: "Codex" });
     api.usedLast = [3, 5];
+    const skill = (name: string, description: string, body: string, extra: Partial<Skill> = {}) =>
+      api.skillList.push({
+        id: api.skillList.length + 1,
+        name,
+        description,
+        body,
+        project: "/code/hedy",
+        status: "approved",
+        author: "Claude",
+        createdAt: now - 12 * day,
+        updatedAt: null,
+        sourceTask: "t-demo",
+        ...extra,
+      });
+    skill(
+      "correr-tests",
+      "Correr los tests del backend y del frontend antes de entregar una tarea.",
+      "1. `pytest -q` en la raíz.\n2. `npm test` en `web/`.\n3. Si falla un test de fechas, revisa la zona horaria del salón.",
+    );
+    skill(
+      "publicar-version",
+      "Lista de pasos para publicar una versión nueva.",
+      "1. Sube la versión en `pyproject.toml`.\n2. Actualiza `CHANGELOG.md`.\n3. `git tag vX.Y.Z` y `git push --tags`.",
+      { author: "user", sourceTask: null, createdAt: now - 40 * day },
+    );
+    skill(
+      "commits-en-ingles",
+      "Cómo escribir los mensajes de commit en todos los proyectos.",
+      "Mensajes cortos, en inglés y en imperativo: «Add reminders by WhatsApp».",
+      { project: null, author: "user", sourceTask: null },
+    );
+    const proposedSkill = { status: "proposed", createdAt: now - 1800 } as const;
+    // A new procedure an agent worked out.
+    skill(
+      "agregar-endpoint",
+      "Cómo agregar un endpoint nuevo a la API de citas.",
+      "1. Crea la ruta en `api/routes/`.\n2. Valida la entrada con un esquema de pydantic.\n3. Agrega un test en `tests/api/` y corre `pytest -q tests/api`.",
+      { ...proposedSkill, author: "Codex" },
+    );
+    // An update of an approved skill (same name).
+    skill(
+      "correr-tests",
+      "Correr los tests del backend, del frontend y los e2e antes de entregar una tarea.",
+      "1. `pytest -q` en la raíz.\n2. `npm test` en `web/`.\n3. `npm run test:e2e` en `web/` (necesita `npm run build` antes).\n4. Si falla un test de fechas, revisa la zona horaria del salón.",
+      { ...proposedSkill, author: "Claude" },
+    );
     // A week of usage: one record per day and project, busiest on the 4th day.
     const today = new Date();
     today.setHours(12, 0, 0, 0);
@@ -411,6 +462,128 @@ export class MockApi implements HedyApi {
     if (reads) off.delete(account);
     else off.add(account);
     this.memoryOff.set(path, off);
+  }
+
+  // --------------------------------------------------------------- skills
+
+  private skillList: Skill[] = [];
+
+  private skillInScope(path: string, s: Skill): boolean {
+    return s.project === path || (s.project === null && !this.project(path).protected);
+  }
+
+  private skillTarget(skill: Skill): Skill | null {
+    return (
+      this.skillList.find(
+        (s) => s.id !== skill.id && s.status === "approved" && s.project === skill.project && s.name === skill.name,
+      ) ?? null
+    );
+  }
+
+  private skillById(id: number): Skill {
+    const skill = this.skillList.find((s) => s.id === id);
+    if (!skill) throw `no existe la habilidad «${id}» en este proyecto`;
+    return skill;
+  }
+
+  /** Writes or removes the mock's skill files: two per project skill. */
+  private skillFiles(skill: Skill, kind: "written" | "removed"): SkillFiles {
+    const files: SkillFiles = { written: [], removed: [], skipped: [] };
+    if (skill.project) {
+      files[kind] = [".claude/skills", ".agents/skills"].map((dir) => `${skill.project}/${dir}/${skill.name}/SKILL.md`);
+    }
+    return files;
+  }
+
+  private checkDraft(draft: SkillDraft): string {
+    const name = draft.name
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    if (!name || name.length > 64) throw `nombre de habilidad no válido: «${draft.name.trim()}»`;
+    if (!draft.description.trim()) throw "la descripción de la habilidad debe ser una línea";
+    if (!draft.body.trim()) throw "el contenido de la habilidad no puede estar vacío";
+    return name;
+  }
+
+  async skills(path: string): Promise<SkillsView> {
+    const project = this.project(path);
+    const scoped = this.skillList
+      .filter((s) => this.skillInScope(path, s))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
+    return structuredClone({
+      approved: scoped.filter((s) => s.status === "approved"),
+      proposed: scoped.filter((s) => s.status === "proposed").map((skill) => ({ skill, replaces: this.skillTarget(skill) })),
+      protected: project.protected,
+    });
+  }
+
+  async addSkill(path: string, draft: SkillDraft): Promise<SkillChange> {
+    const name = this.checkDraft(draft);
+    const skill: Skill = {
+      id: Math.max(0, ...this.skillList.map((s) => s.id)) + 1,
+      name,
+      description: draft.description.trim(),
+      body: draft.body.trim(),
+      project: draft.global ? null : path,
+      status: "approved",
+      author: "user",
+      createdAt: Math.floor(Date.now() / 1000),
+      updatedAt: null,
+      sourceTask: null,
+    };
+    if (this.skillTarget(skill)) throw `ya hay otra habilidad aprobada llamada «${name}»`;
+    this.skillList.push(skill);
+    return { skill: structuredClone(skill), files: this.skillFiles(skill, "written") };
+  }
+
+  async editSkill(id: number, path: string, draft: SkillDraft): Promise<SkillChange> {
+    const skill = this.skillById(id);
+    const name = this.checkDraft(draft);
+    const before = structuredClone(skill);
+    Object.assign(skill, {
+      name,
+      description: draft.description.trim(),
+      body: draft.body.trim(),
+      project: draft.global ? null : path,
+      updatedAt: Math.floor(Date.now() / 1000),
+    });
+    if (skill.status !== "approved") return { skill: structuredClone(skill), files: { written: [], removed: [], skipped: [] } };
+    const removed = this.skillFiles(before, "removed").removed;
+    return { skill: structuredClone(skill), files: { ...this.skillFiles(skill, "written"), removed } };
+  }
+
+  async approveSkill(id: number): Promise<SkillChange> {
+    const proposal = this.skillById(id);
+    let approved = proposal;
+    const target = proposal.status === "proposed" ? this.skillTarget(proposal) : null;
+    if (target) {
+      Object.assign(target, {
+        description: proposal.description,
+        body: proposal.body,
+        author: proposal.author,
+        updatedAt: Math.floor(Date.now() / 1000),
+      });
+      this.skillList = this.skillList.filter((s) => s.id !== id);
+      approved = target;
+    } else {
+      proposal.status = "approved";
+    }
+    return { skill: structuredClone(approved), files: this.skillFiles(approved, "written") };
+  }
+
+  async rejectSkill(id: number): Promise<void> {
+    if (this.skillById(id).status !== "proposed") throw `la habilidad ${id} no es una propuesta: ya está aprobada`;
+    this.skillList = this.skillList.filter((s) => s.id !== id);
+  }
+
+  async removeSkill(id: number): Promise<SkillFiles> {
+    const skill = this.skillById(id);
+    this.skillList = this.skillList.filter((s) => s.id !== id);
+    return skill.status === "approved" ? this.skillFiles(skill, "removed") : { written: [], removed: [], skipped: [] };
   }
 
   async overview(): Promise<Overview> {

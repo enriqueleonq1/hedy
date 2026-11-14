@@ -7,6 +7,10 @@ import type {
   DoctorReport,
   FileDiff,
   MemoryView,
+  SkillChange,
+  SkillDraft,
+  SkillFiles,
+  SkillsView,
   Note,
   NoteCategory,
   PhasePlan,
@@ -102,6 +106,16 @@ export interface HedyApi {
   keepNote(keep: number, forget: number): Promise<void>;
   dismissContradiction(a: number, b: number): Promise<void>;
   setMemoryReader(project: string, account: string, reads: boolean): Promise<void>;
+  skills(project: string): Promise<SkillsView>;
+  /** A skill written by the user: approved right away. */
+  addSkill(project: string, draft: SkillDraft): Promise<SkillChange>;
+  /** Edits a proposal (before approving it) or an approved skill seen from `project`. */
+  editSkill(id: number, project: string, draft: SkillDraft): Promise<SkillChange>;
+  /** Approves a proposal; with the name of an approved skill, it updates that one. */
+  approveSkill(id: number): Promise<SkillChange>;
+  rejectSkill(id: number): Promise<void>;
+  /** Deletes a skill and the files Hedy wrote for it. */
+  removeSkill(id: number): Promise<SkillFiles>;
 
   /** Live events of every task. */
   onTaskEvent(listener: (taskId: string, event: AgentEvent) => void): Unsubscribe;
