@@ -84,6 +84,25 @@ pub fn load_suite(suite: &Path) -> Result<Vec<Case>> {
     Ok(cases)
 }
 
+/// The cases named in `wanted` (all of them when it is empty), each once even
+/// when named twice. Fails naming the ones not in `cases`.
+pub fn select_cases(mut cases: Vec<Case>, wanted: &[String]) -> Result<Vec<Case>> {
+    if wanted.is_empty() {
+        return Ok(cases);
+    }
+    let mut missing: Vec<&str> = Vec::new();
+    for name in wanted {
+        if !cases.iter().any(|c| &c.name == name) && !missing.contains(&name.as_str()) {
+            missing.push(name);
+        }
+    }
+    if !missing.is_empty() {
+        bail!("no encontré estos casos: {}", missing.join(", "));
+    }
+    cases.retain(|c| wanted.contains(&c.name));
+    Ok(cases)
+}
+
 /// Which of Hedy's layers a run gets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -158,6 +177,30 @@ mod tests {
 
         std::fs::write(case.join("case.json"), r#"{"title": "x"}"#).unwrap();
         assert!(load_suite(tmp.path()).is_err());
+    }
+
+    #[test]
+    fn selects_cases_once_and_names_the_missing_ones() {
+        let case = |name: &str| Case {
+            name: name.into(),
+            dir: PathBuf::from(name),
+            spec: CaseSpec {
+                title: name.into(),
+                prompt: String::new(),
+                check: "true".into(),
+                notes: Vec::new(),
+                measures: None,
+                timeout_secs: 1,
+            },
+        };
+        let names = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let all = vec![case("a"), case("b")];
+
+        assert_eq!(select_cases(all.clone(), &[]).unwrap().len(), 2);
+        let picked = select_cases(all.clone(), &names(&["a", "a"])).unwrap();
+        assert_eq!(picked, vec![case("a")]);
+        let error = select_cases(all, &names(&["a", "x", "y", "x"])).unwrap_err();
+        assert_eq!(error.to_string(), "no encontré estos casos: x, y");
     }
 
     #[test]

@@ -10,6 +10,6 @@ pub mod case;
 pub mod report;
 pub mod runner;
 
-pub use case::{Case, CaseSpec, Layer, NoteSpec, load_suite};
+pub use case::{Case, CaseSpec, Layer, NoteSpec, load_suite, select_cases};
 pub use report::{RunResult, Summary, summarize};
-pub use runner::{Runner, RunnerOptions};
+pub use runner::{RemoveOnDrop, Runner, RunnerOptions};
