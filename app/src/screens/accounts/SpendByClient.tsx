@@ -2,11 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { useApi } from "../../api/context";
 import type { Spend } from "../../api/types";
-import { formatTokens } from "../../tasks/timeline";
-
-export function formatUsd(cost: number | null): string {
-  return cost === null ? "—" : `$${cost.toFixed(2).replace(".", ",")}`;
-}
+import { formatTokens, formatUsd } from "../../format";
 
 function Cells({ spend }: { spend: Spend }) {
   return (

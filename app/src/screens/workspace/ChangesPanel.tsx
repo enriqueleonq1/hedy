@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { errorMessage, useAction, useApi } from "../../api/context";
 import type { Task } from "../../api/types";
+import { useProjectActions } from "../../components/projects";
 import { TerminalView } from "../../components/Terminal/TerminalView";
 import { Button, ConfirmButton } from "../../components/ui/Button";
 import { useToast } from "../../components/ui/Toast";
@@ -20,6 +21,9 @@ const TABS: { id: Tab; label: string }[] = [
 
 export function ChangesPanel({ project, task }: { project: string; task: Task | null }) {
   const [tab, setTab] = useState<Tab>("changes");
+  // Once opened, the terminal stays alive behind the other tabs: unmounting it
+  // would kill what runs there (like the dev server of the preview).
+  const [terminalOpened, setTerminalOpened] = useState(false);
   const dir = task?.workspace?.worktree ?? project;
 
   return (
@@ -31,7 +35,10 @@ export function ChangesPanel({ project, task }: { project: string; task: Task | 
             role="tab"
             aria-selected={tab === t.id}
             className="side-tab"
-            onClick={() => setTab(t.id)}
+            onClick={() => {
+              setTab(t.id);
+              if (t.id === "terminal") setTerminalOpened(true);
+            }}
           >
             {t.label}
           </button>
@@ -39,10 +46,10 @@ export function ChangesPanel({ project, task }: { project: string; task: Task | 
       </div>
       <div className="side-panel__body">
         {tab === "changes" && <Changes project={project} task={task} />}
-        {tab === "terminal" && (
+        {terminalOpened && (
           // One terminal per folder; it opens in the task's worktree.
-          <div className="side-terminal">
-            <TerminalView key={dir} request={{ kind: "shell", path: dir }} active onExit={() => {}} />
+          <div className="side-terminal" hidden={tab !== "terminal"}>
+            <TerminalView key={dir} request={{ kind: "shell", path: dir }} active={tab === "terminal"} onExit={() => {}} />
           </div>
         )}
         {tab === "preview" && <Preview project={project} />}
@@ -107,15 +114,22 @@ function Preview({ project }: { project: string }) {
 function Changes({ project, task }: { project: string; task: Task | null }) {
   const api = useApi();
   const toast = useToast();
+  const actions = useProjectActions();
   const editable = !!task?.workspace && isOpen(task);
   const diff = useTaskDiff(task?.id ?? null, editable);
   const [selected, setSelected] = useState<string | null>(null);
   const commits = useQuery({ queryKey: ["commits", project], queryFn: () => api.recentCommits(project) });
 
+  // Both change the project's branch: its commits and uncommitted files.
+  const changed = [
+    ["commits", project],
+    ["status", project],
+  ];
   const accept = useAction((a, id: string) => a.acceptTask(id), {
+    invalidate: changed,
     onSuccess: () => toast.info(`Cambios unidos a ${task?.workspace?.baseBranch ?? "la rama base"}.`),
   });
-  const discard = useAction((a, id: string) => a.discardTask(id));
+  const discard = useAction((a, id: string) => a.discardTask(id), { invalidate: changed });
 
   if (!task) return <p className="empty">Cuando pidas algo en modo Proyecto, aquí verás los cambios.</p>;
   if (!task.workspace) return <p className="empty">Las preguntas y la investigación no cambian archivos.</p>;
@@ -166,9 +180,7 @@ function Changes({ project, task }: { project: string; task: Task | null }) {
         >
           Aceptar cambios
         </Button>
-        <Button onClick={() => api.openInEditor(task.workspace?.worktree ?? project).catch((e: unknown) => toast.error(errorMessage(e)))}>
-          Abrir en VS Code
-        </Button>
+        <Button onClick={() => actions.openEditor({ path: task.workspace?.worktree ?? project })}>Abrir en VS Code</Button>
         <ConfirmButton confirmLabel="¿Descartar todo?" onConfirm={() => discard.mutate(task.id)}>
           Descartar
         </ConfirmButton>

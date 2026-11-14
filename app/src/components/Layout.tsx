@@ -1,10 +1,13 @@
 import type { ReactNode } from "react";
 
 import type { Account, Overview, TaskMode } from "../api/types";
-import { formatTokens } from "../tasks/timeline";
+import { formatTokens, formatUsd } from "../format";
+import { MODE_LABEL } from "../tasks/timeline";
+import { DEFAULT_ACCOUNT_COLOR, TIP_MASCOT_COLOR } from "../theme/tokens";
 import { shortAccountLabel } from "./accounts";
-import { Mascot, type MascotState } from "./Mascot/Mascot";
+import { Mascot } from "./Mascot/Mascot";
 import { projectColor } from "./projects";
+import { PROVIDER_NAMES } from "./providers";
 import { useTerminals } from "./Terminal/TerminalProvider";
 import { Button } from "./ui/Button";
 import { Segmented } from "./ui/controls";
@@ -17,7 +20,7 @@ export type View =
   | { screen: "memory"; project: string }
   | { screen: "status"; project: string };
 
-/** The project a view belongs to (its workspace or its memory). */
+/** The project a view belongs to (its workspace, memory or status). */
 export function viewProject(view: View): string | null {
   return view.screen === "workspace" || view.screen === "memory" || view.screen === "status" ? view.project : null;
 }
@@ -26,18 +29,11 @@ export function defaultAccount(overview: Overview): Account | undefined {
   return overview.accounts.find((a) => a.id === overview.defaultAccount) ?? overview.accounts[0];
 }
 
-const PROVIDER_LABEL: Record<Account["provider"], string> = {
-  claude: "Claude",
-  codex: "ChatGPT",
-  gemini: "Gemini",
-  kimi: "Kimi",
-};
-
 /** "34%" from a reported limit, "$2,10" for API spend, tokens otherwise. */
 export function usageLabel(account: Account): string {
   const { usage } = account;
   if (usage.limit?.percent != null) return `${Math.round(usage.limit.percent)}%`;
-  if (account.kind === "apiKey" && usage.weekCostUsd != null) return `$${usage.weekCostUsd.toFixed(2).replace(".", ",")}`;
+  if (account.kind === "apiKey" && usage.weekCostUsd != null) return formatUsd(usage.weekCostUsd);
   if (usage.weekTokens > 0) return `${formatTokens(usage.weekTokens)} tok`;
   return "—";
 }
@@ -45,34 +41,30 @@ export function usageLabel(account: Account): string {
 /** One entry per provider, from its default (or first) account. */
 function providerSummary(overview: Overview): { label: string; account: Account }[] {
   const seen = new Map<string, Account>();
-  const preferred = [...overview.accounts].sort((a) => (a.id === overview.defaultAccount ? -1 : 0));
+  const def = overview.defaultAccount;
+  const preferred = [...overview.accounts].sort((a, b) => Number(b.id === def) - Number(a.id === def));
   for (const a of preferred) {
-    const label = PROVIDER_LABEL[a.provider];
+    const label = PROVIDER_NAMES[a.provider].plan;
     if (!seen.has(label)) seen.set(label, a);
   }
   return [...seen].map(([label, account]) => ({ label, account }));
 }
 
-const MODES: { value: TaskMode; label: string }[] = [
-  { value: "project", label: "Proyecto" },
-  { value: "ask", label: "Pregunta" },
-  { value: "research", label: "Research" },
-];
+const MODES = (Object.keys(MODE_LABEL) as TaskMode[]).map((value) => ({ value, label: MODE_LABEL[value] }));
 
 interface TopbarProps {
   overview: Overview;
   view: View;
   openProjects: string[];
   mode: TaskMode;
-  mascot: MascotState;
   onNavigate: (view: View) => void;
   onCloseProject: (path: string) => void;
   onMode: (mode: TaskMode) => void;
 }
 
-export function Topbar({ overview, view, openProjects, mode, mascot, onNavigate, onCloseProject, onMode }: TopbarProps) {
+export function Topbar({ overview, view, openProjects, mode, onNavigate, onCloseProject, onMode }: TopbarProps) {
   const terminals = useTerminals();
-  const color = defaultAccount(overview)?.color ?? "#7AA2F7";
+  const color = defaultAccount(overview)?.color ?? DEFAULT_ACCOUNT_COLOR;
   const active = viewProject(view);
 
   return (
@@ -83,7 +75,7 @@ export function Topbar({ overview, view, openProjects, mode, mascot, onNavigate,
         aria-current={view.screen === "welcome" ? "page" : undefined}
         onClick={() => onNavigate({ screen: "welcome" })}
       >
-        <Mascot color={color} state={terminals.sessions.some((s) => s.running) ? "working" : mascot} size={30} label="" />
+        <Mascot color={color} state={terminals.sessions.some((s) => s.running) ? "working" : "idle"} size={30} label="" />
         <span className="brand__name">Hedy</span>
       </button>
 
@@ -142,7 +134,7 @@ export function Topbar({ overview, view, openProjects, mode, mascot, onNavigate,
 
 export function Sidebar({ overview, view, onNavigate }: { overview: Overview; view: View; onNavigate: (v: View) => void }) {
   const accountById = new Map(overview.accounts.map((a) => [a.id, a]));
-  const tipColor = defaultAccount(overview)?.color ?? "#BB9AF7";
+  const tipColor = defaultAccount(overview)?.color ?? TIP_MASCOT_COLOR;
   const active = viewProject(view);
   const used = overview.accounts.some((a) => a.usage.weekTokens > 0);
 

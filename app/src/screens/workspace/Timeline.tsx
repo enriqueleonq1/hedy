@@ -5,7 +5,10 @@ import { useAction, useApi } from "../../api/context";
 import type { Account, Decision, Task } from "../../api/types";
 import { Mascot, type MascotState } from "../../components/Mascot/Mascot";
 import { Button } from "../../components/ui/Button";
-import { formatDuration, isOpen, PHASE_VERB, type Resolution, type TimelineItem } from "../../tasks/timeline";
+import { formatDuration } from "../../format";
+import { tasksKey } from "../../tasks/hooks";
+import { isOpen, PHASE_VERB, type Resolution, type TimelineItem } from "../../tasks/timeline";
+import { DEFAULT_ACCOUNT_COLOR, WARNING_MASCOT_COLOR } from "../../theme/tokens";
 
 interface TimelineProps {
   task: Task;
@@ -22,7 +25,7 @@ export function Timeline({ task, items, agent, account, accounts, mascot }: Time
     end.current?.scrollIntoView?.({ block: "end" });
   }, [items.length]);
 
-  const color = account?.color ?? "#7AA2F7";
+  const color = account?.color ?? DEFAULT_ACCOUNT_COLOR;
   const lastAgent = items.findLastIndex((i) => i.type !== "user");
 
   return (
@@ -260,7 +263,9 @@ function LimitCard({
     queryFn: () => api.handoffOptions(task.id),
     enabled: actionable,
   });
-  const handoff = useAction((a, account: string) => a.handoffTask(task.id, account, null));
+  const handoff = useAction((a, account: string) => a.handoffTask(task.id, account, null), {
+    invalidate: [tasksKey(task.project)],
+  });
   const account = accounts.find((a) => a.id === item.account);
   const name = account?.name ?? item.account;
   const title =
@@ -275,7 +280,7 @@ function LimitCard({
 
   return (
     <section className="limit-card" aria-label={title}>
-      <Mascot color={account?.color ?? "#E0AF68"} state="sleeping" size={36} label="" />
+      <Mascot color={account?.color ?? WARNING_MASCOT_COLOR} state="sleeping" size={36} label="" />
       <div className="limit-card__body">
         <h3>{title}</h3>
         <p>

@@ -1,6 +1,6 @@
 // Pure helpers that turn a task's events into what the chat shows.
 
-import type { AgentEvent, Decision, Phase, StepStatus, Task } from "../api/types";
+import type { AgentEvent, Decision, Phase, StepStatus, Task, TaskMode } from "../api/types";
 import type { MascotState } from "../components/Mascot/Mascot";
 
 export type Resolution = { decision: Decision; automatic: boolean; reason: string | null };
@@ -212,17 +212,7 @@ export function mascotState(task: Task | null | undefined, events: AgentEvent[])
   }
 }
 
-export function formatTokens(tokens: number): string {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
-  if (tokens >= 1000) return `${Math.round(tokens / 1000)}k`;
-  return `${tokens}`;
-}
-
-export function formatDuration(ms: number | null): string {
-  if (ms === null) return "";
-  const s = Math.round(ms / 1000);
-  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
-}
+export const MODE_LABEL: Record<TaskMode, string> = { project: "Proyecto", ask: "Pregunta", research: "Research" };
 
 export const STATUS_LABEL: Record<Task["status"], string> = {
   running: "Trabajando",
