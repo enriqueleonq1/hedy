@@ -1,22 +1,22 @@
 //! Command-line definition. English commands with Spanish aliases.
+//!
+//! The help is in the current language, so its texts are not doc comments
+//! (clap's derive makes those static): they live in [`help_texts`] and are put
+//! in the command at runtime by [`Cli::full_command`].
 
 use std::path::PathBuf;
 
-use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{Args, Command as ClapCommand, CommandFactory, FromArgMatches, Parser, Subcommand};
 use clap_complete::Shell;
 use hedy_core::application::Setting;
 use hedy_core::domain::{Color, Provider};
+use hedy_core::i18n::{self, Language};
+use hedy_core::tr;
 
 #[derive(Debug, Parser)]
-#[command(
-    name = "hedy",
-    version,
-    about = "Trabaja con varias IAs de programación y varias cuentas desde un solo lugar",
-    after_help = "Sin subcomando muestra el estado del proyecto actual."
-)]
+#[command(name = "hedy", version)]
 pub struct Cli {
-    /// Carpeta desde la que se resuelve el proyecto (por defecto, la actual).
-    #[arg(long, short = 'C', global = true, value_name = "CARPETA")]
+    #[arg(long, short = 'C', global = true)]
     pub dir: Option<PathBuf>,
 
     #[command(subcommand)]
@@ -24,21 +24,36 @@ pub struct Cli {
 }
 
 impl Cli {
-    /// The command line, with every setting key listed in `hedy config --help`
-    /// (they depend on the providers, so they are added at runtime).
-    pub fn full_command() -> clap::Command {
+    /// The command line with its help in the current language, and every
+    /// setting key listed in `hedy config --help` (they depend on the
+    /// providers, so they are added at runtime).
+    pub fn full_command() -> ClapCommand {
+        let mut texts = help_texts();
+        let command = localize(Self::command(), "", &mut texts, &value_names());
+        debug_assert!(texts.is_empty(), "help texts for nothing: {texts:?}");
+
         let keys: Vec<String> = Setting::all()
             .into_iter()
             .map(|s| format!("  {}", s.key()))
             .collect();
-        let keys = format!("Claves:\n{}", keys.join("\n"));
-        Self::command().mut_subcommand("config", |config| {
-            ["get", "set", "unset"]
-                .into_iter()
-                .fold(config.after_help(&keys), |config, name| {
-                    config.mut_subcommand(name, |sub| sub.after_help(&keys))
-                })
-        })
+        let keys = keys.join("\n");
+        let keys = tr!("Claves:\n{keys}", "Keys:\n{keys}");
+        let command = command
+            .after_help(tr!(
+                "Sin subcomando muestra el estado del proyecto actual.",
+                "Without a subcommand, shows the status of the current project."
+            ))
+            .mut_subcommand("config", |config| {
+                ["get", "set", "unset"]
+                    .into_iter()
+                    .fold(config.after_help(&keys), |config, name| {
+                        config.mut_subcommand(name, |sub| sub.after_help(&keys))
+                    })
+            });
+        match i18n::language() {
+            Language::Spanish => spanish_builtins(command),
+            Language::English => command,
+        }
     }
 
     pub fn parse_args() -> Self {
@@ -46,86 +61,444 @@ impl Cli {
     }
 }
 
+/// Every help text: `(command path, argument id, text)`, where an empty id is
+/// the command's own description.
+fn help_texts() -> Vec<(&'static str, &'static str, String)> {
+    vec![
+        (
+            "",
+            "",
+            tr!(
+                "Trabaja con varias IAs de programación y varias cuentas desde un solo lugar",
+                "Work with several coding AIs and several accounts from one place"
+            ),
+        ),
+        (
+            "",
+            "dir",
+            tr!(
+                "Carpeta desde la que se resuelve el proyecto (por defecto, la actual)",
+                "Folder the project is resolved from (by default, the current one)"
+            ),
+        ),
+        (
+            "status",
+            "",
+            tr!(
+                "Cuentas, su sesión y el proyecto actual",
+                "Show the accounts, their login and the current project"
+            ),
+        ),
+        (
+            "use",
+            "",
+            tr!(
+                "Asigna una cuenta al proyecto actual (lo registra si es nuevo)",
+                "Assign an account to the current project (registering it if new)"
+            ),
+        ),
+        (
+            "use",
+            "account",
+            tr!(
+                "Identificador de la cuenta (mira `hedy account list`)",
+                "Account id (see `hedy account list`)"
+            ),
+        ),
+        (
+            "use",
+            "protect",
+            tr!(
+                "Reserva la cuenta solo para este proyecto",
+                "Reserve the account for this project only"
+            ),
+        ),
+        (
+            "use",
+            "unprotect",
+            tr!("Quita la reserva", "Remove the reservation"),
+        ),
+        (
+            "summary",
+            "",
+            tr!(
+                "Uso y costo estimado por cliente y por proyecto",
+                "Show usage and estimated cost by client and by project"
+            ),
+        ),
+        (
+            "summary",
+            "week",
+            tr!(
+                "Los últimos 7 días (por defecto)",
+                "The last 7 days (default)"
+            ),
+        ),
+        (
+            "summary",
+            "days",
+            tr!("Los últimos N días", "The last N days"),
+        ),
+        (
+            "client",
+            "",
+            tr!(
+                "Para quién es el proyecto actual, para sumar el costo por cliente",
+                "Set who the current project is for, to add up the cost by client"
+            ),
+        ),
+        (
+            "client",
+            "clear",
+            tr!("Quita el cliente", "Remove the client"),
+        ),
+        (
+            "run",
+            "",
+            tr!(
+                "Abre la CLI oficial con la cuenta del proyecto",
+                "Open the official CLI with the project's account"
+            ),
+        ),
+        (
+            "run",
+            "account",
+            tr!(
+                "Usa esta cuenta en vez de la del proyecto",
+                "Use this account instead of the project's"
+            ),
+        ),
+        (
+            "run",
+            "args",
+            tr!(
+                "Argumentos para la CLI (después de `--`)",
+                "Arguments for the CLI (after `--`)"
+            ),
+        ),
+        ("account", "", tr!("Gestiona cuentas", "Manage accounts")),
+        (
+            "account add",
+            "",
+            tr!(
+                "Registra una cuenta y abre el login oficial",
+                "Register an account and open the official login"
+            ),
+        ),
+        (
+            "account add",
+            "name",
+            tr!(
+                "Nombre visible, por ejemplo \"Claude personal\"",
+                "Display name, for example \"Personal Claude\""
+            ),
+        ),
+        (
+            "account add",
+            "claude",
+            tr!("Suscripción de Claude Code", "Claude Code subscription"),
+        ),
+        (
+            "account add",
+            "codex",
+            tr!(
+                "Suscripción de ChatGPT con Codex",
+                "ChatGPT subscription with Codex"
+            ),
+        ),
+        (
+            "account add",
+            "gemini",
+            tr!(
+                "Gemini CLI (Code Assist Standard/Enterprise)",
+                "Gemini CLI (Code Assist Standard/Enterprise)"
+            ),
+        ),
+        (
+            "account add",
+            "kimi",
+            tr!("Suscripción de Kimi Code", "Kimi Code subscription"),
+        ),
+        (
+            "account add",
+            "antigravity",
+            tr!(
+                "Antigravity CLI con tu cuenta personal de Google (una por equipo)",
+                "Antigravity CLI with your personal Google account (one per computer)"
+            ),
+        ),
+        (
+            "account add",
+            "api",
+            tr!(
+                "Proveedor por API key: kimi o gemini",
+                "API-key provider: kimi or gemini"
+            ),
+        ),
+        (
+            "account add",
+            "default_folder",
+            tr!(
+                "Usa la carpeta que la CLI ya usa por defecto (p. ej. ~/.claude) en vez de crear una",
+                "Use the folder the CLI already uses by default (e.g. ~/.claude) instead of creating one"
+            ),
+        ),
+        (
+            "account add",
+            "color",
+            tr!(
+                "Color: azul, morado, verde, naranja, cian, rosa, amarillo, turquesa o #RRGGBB",
+                "Color: blue, purple, green, orange, cyan, pink, yellow, teal or #RRGGBB"
+            ),
+        ),
+        (
+            "account add",
+            "no_login",
+            tr!(
+                "No abre el login al terminar",
+                "Do not open the login at the end"
+            ),
+        ),
+        (
+            "account list",
+            "",
+            tr!("Lista las cuentas", "List the accounts"),
+        ),
+        (
+            "account login",
+            "",
+            tr!(
+                "Abre el login oficial de una cuenta de suscripción, o pide la API key",
+                "Open the official login of a subscription account, or ask for the API key"
+            ),
+        ),
+        (
+            "account remove",
+            "",
+            tr!(
+                "Deja de usar una cuenta en Hedy (su carpeta no se borra)",
+                "Stop using an account in Hedy (its folder is not deleted)"
+            ),
+        ),
+        (
+            "account default",
+            "",
+            tr!(
+                "Cuenta para los proyectos que no tienen una asignada",
+                "Set the account for projects that have none assigned"
+            ),
+        ),
+        (
+            "account default",
+            "clear",
+            tr!("Quita la cuenta por defecto", "Remove the default account"),
+        ),
+        (
+            "config",
+            "",
+            tr!(
+                "Ajustes (las claves están en `hedy config --help`)",
+                "Settings (the keys are in `hedy config --help`)"
+            ),
+        ),
+        (
+            "config get",
+            "",
+            tr!("Muestra el valor de un ajuste", "Show a setting's value"),
+        ),
+        (
+            "config set",
+            "",
+            tr!("Cambia un ajuste", "Change a setting"),
+        ),
+        (
+            "config unset",
+            "",
+            tr!("Borra un ajuste", "Clear a setting"),
+        ),
+        (
+            "completions",
+            "",
+            tr!(
+                "Genera el autocompletado para tu shell (bash, zsh o fish)",
+                "Generate completions for your shell (bash, zsh or fish)"
+            ),
+        ),
+        (
+            "completions",
+            "shell",
+            tr!(
+                "bash, zsh, fish, elvish o powershell",
+                "bash, zsh, fish, elvish or powershell"
+            ),
+        ),
+    ]
+}
+
+/// Placeholder names (`<CUENTA>`), by argument id, wherever the argument is.
+fn value_names() -> Vec<(&'static str, String)> {
+    vec![
+        ("dir", tr!("CARPETA", "FOLDER")),
+        ("account", tr!("CUENTA", "ACCOUNT")),
+        ("name", tr!("NOMBRE", "NAME")),
+        ("api", tr!("PROVEEDOR", "PROVIDER")),
+        ("args", tr!("ARGUMENTOS", "ARGS")),
+        ("key", tr!("CLAVE", "KEY")),
+        ("value", tr!("VALOR", "VALUE")),
+    ]
+}
+
+/// Puts the texts of `command` (at `path`) and of its subcommands, taking
+/// each one from `texts`. Arguments are changed in place: moving them would
+/// reorder the positional ones.
+fn localize(
+    command: ClapCommand,
+    path: &str,
+    texts: &mut Vec<(&'static str, &'static str, String)>,
+    values: &[(&'static str, String)],
+) -> ClapCommand {
+    let mut take = |id: &str| {
+        let i = texts.iter().position(|(p, a, _)| *p == path && *a == id)?;
+        Some(texts.swap_remove(i).2)
+    };
+    let mut command = match take("") {
+        Some(about) => command.about(about),
+        None => command,
+    };
+    command = command.mut_args(|arg| {
+        let arg = match take(arg.get_id().as_str()) {
+            Some(help) => arg.help(help),
+            None => arg,
+        };
+        match values.iter().find(|(id, _)| arg.get_id() == id) {
+            Some((_, name)) => arg.value_name(name.clone()),
+            None => arg,
+        }
+    });
+    command.mut_subcommands(|sub| {
+        let path = format!("{path} {}", sub.get_name());
+        localize(sub, path.trim_start(), texts, values)
+    })
+}
+
+/// clap writes its own texts (section titles, `Usage`, `[OPTIONS]`, `--help`,
+/// `--version`, the `help` command) in English. In Spanish they are replaced
+/// on the built command, where those arguments and the `help` command exist.
+fn spanish_builtins(mut command: ClapCommand) -> ClapCommand {
+    command.build();
+    translate_builtins(command)
+}
+
+fn translate_builtins(mut command: ClapCommand) -> ClapCommand {
+    let help_command = command.get_name() == "help";
+    if help_command {
+        command = command.about("Muestra esta ayuda o la de los subcomandos indicados");
+    }
+    if command.has_subcommands() {
+        command = command
+            .subcommand_help_heading("Comandos")
+            .subcommand_value_name("COMANDO");
+    }
+    command = command.mut_args(|arg| {
+        let heading = if arg.is_positional() {
+            "Argumentos"
+        } else {
+            "Opciones"
+        };
+        let arg = arg.help_heading(heading);
+        match arg.get_id().as_str() {
+            "help" => arg.help("Muestra la ayuda"),
+            "version" => arg.help("Muestra la versión"),
+            "subcommand" if help_command => arg
+                .help("Los subcomandos de los que mostrar la ayuda")
+                .value_name("COMANDO"),
+            _ => arg,
+        }
+    });
+
+    // The usage comes as "<style>Usage:<reset> hedy …": keep what follows.
+    let usage = command.render_usage().ansi().to_string();
+    if let Some((_, rest)) = usage.split_once("Usage:") {
+        let usage = rest.split_once(' ').map_or(rest, |(_, usage)| usage);
+        command = command.override_usage(usage.replace("[OPTIONS]", "[OPCIONES]"));
+    }
+    let style = command.get_styles().get_usage();
+    let (on, off) = (style.render(), style.render_reset());
+    let has_args = command.has_subcommands() || command.get_arguments().any(|a| !a.is_hide_set());
+    let sections = if has_args { "\n\n{all-args}" } else { "" };
+    command = command.help_template(format!(
+        "{{before-help}}{{about-with-newline}}\n{on}Uso:{off} {{usage}}{sections}{{after-help}}"
+    ));
+
+    command.mut_subcommands(translate_builtins)
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Cuentas, su sesión y el proyecto actual.
     #[command(visible_alias = "estado")]
     Status,
 
-    /// Asigna una cuenta al proyecto actual (lo registra si es nuevo).
     #[command(visible_alias = "usar")]
     Use {
-        /// Identificador de la cuenta (mira `hedy account list`).
         account: String,
-        /// Reserva la cuenta solo para este proyecto.
         #[arg(long, conflicts_with = "unprotect")]
         protect: bool,
-        /// Quita la reserva.
         #[arg(long)]
         unprotect: bool,
     },
 
-    /// Uso y costo estimado por cliente y por proyecto.
     #[command(visible_alias = "resumen")]
     Summary {
-        /// Los últimos 7 días (por defecto).
         #[arg(long, visible_alias = "semana", conflicts_with = "days")]
         week: bool,
-        /// Los últimos N días.
         #[arg(long, visible_alias = "dias", value_name = "N")]
         days: Option<u32>,
     },
 
-    /// Para quién es el proyecto actual, para sumar el costo por cliente.
     #[command(visible_alias = "cliente")]
     Client {
         #[arg(required_unless_present = "clear", conflicts_with = "clear")]
         name: Option<String>,
-        /// Quita el cliente.
         #[arg(long)]
         clear: bool,
     },
 
-    /// Abre la CLI oficial con la cuenta del proyecto.
     Run {
-        /// Usa esta cuenta en vez de la del proyecto.
         #[arg(long, short)]
         account: Option<String>,
-        /// Argumentos para la CLI (después de `--`).
         #[arg(last = true)]
         args: Vec<String>,
     },
 
-    /// Gestiona cuentas.
     #[command(visible_alias = "cuenta", subcommand)]
     Account(AccountCommand),
 
-    /// Ajustes (las claves están en `hedy config --help`).
     #[command(subcommand)]
     Config(ConfigCommand),
 
-    /// Genera el autocompletado para tu shell (bash, zsh o fish).
-    Completions { shell: Shell },
+    Completions {
+        #[arg(hide_possible_values = true)]
+        shell: Shell,
+    },
 }
 
 #[derive(Debug, Subcommand)]
 pub enum AccountCommand {
-    /// Registra una cuenta y abre el login oficial.
     #[command(visible_alias = "agregar")]
     Add(AddAccount),
 
-    /// Lista las cuentas.
     #[command(visible_alias = "listar")]
     List,
 
-    /// Abre el login oficial de una cuenta de suscripción, o pide la API key.
-    Login { account: String },
+    Login {
+        account: String,
+    },
 
-    /// Deja de usar una cuenta en Hedy (su carpeta no se borra).
     #[command(visible_alias = "quitar")]
-    Remove { account: String },
+    Remove {
+        account: String,
+    },
 
-    /// Cuenta para los proyectos que no tienen una asignada.
     #[command(visible_alias = "predeterminada")]
     Default {
         #[arg(required_unless_present = "clear", conflicts_with = "clear")]
@@ -137,44 +510,31 @@ pub enum AccountCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
-    /// Muestra el valor de un ajuste.
     Get { key: String },
-    /// Cambia un ajuste.
     Set { key: String, value: String },
-    /// Borra un ajuste.
     Unset { key: String },
 }
 
 #[derive(Debug, Args)]
 #[command(group(clap::ArgGroup::new("kind").required(true).args(["claude", "codex", "gemini", "kimi", "antigravity", "api"])))]
 pub struct AddAccount {
-    /// Nombre visible, por ejemplo "Claude personal".
     pub name: String,
-    /// Suscripción de Claude Code.
     #[arg(long)]
     pub claude: bool,
-    /// Suscripción de ChatGPT con Codex.
     #[arg(long)]
     pub codex: bool,
-    /// Gemini CLI (Code Assist Standard/Enterprise).
     #[arg(long)]
     pub gemini: bool,
-    /// Suscripción de Kimi Code.
     #[arg(long)]
     pub kimi: bool,
-    /// Antigravity CLI con tu cuenta personal de Google (una por equipo).
     #[arg(long)]
     pub antigravity: bool,
-    /// Proveedor por API key: kimi o gemini.
-    #[arg(long, value_name = "PROVEEDOR")]
+    #[arg(long)]
     pub api: Option<Provider>,
-    /// Usa la carpeta que la CLI ya usa por defecto (p. ej. ~/.claude) en vez de crear una.
     #[arg(long, conflicts_with = "api")]
     pub default_folder: bool,
-    /// Color: azul, morado, verde, naranja, cian, rosa, amarillo, turquesa o #RRGGBB.
     #[arg(long)]
     pub color: Option<Color>,
-    /// No abre el login al terminar.
     #[arg(long)]
     pub no_login: bool,
 }
@@ -203,6 +563,51 @@ mod tests {
     #[test]
     fn definition_is_valid() {
         Cli::full_command().debug_assert();
+    }
+
+    /// Every help page, in one language. Other tests do not depend on it, so
+    /// switching the process-wide language here is safe.
+    fn all_help(language: Language) -> String {
+        fn walk(command: &mut ClapCommand, out: &mut String) {
+            out.push_str(&command.render_help().to_string());
+            for sub in command.get_subcommands_mut() {
+                walk(sub, out);
+            }
+        }
+        i18n::set_language(language);
+        let mut command = Cli::full_command();
+        command.build();
+        let mut out = String::new();
+        walk(&mut command, &mut out);
+        out
+    }
+
+    #[test]
+    fn help_is_all_in_one_language() {
+        let spanish = all_help(Language::Spanish);
+        let english = all_help(Language::English);
+        i18n::set_language(Language::Spanish);
+        for clap_text in [
+            "Usage",
+            "Options",
+            "Arguments",
+            "Commands",
+            "Print",
+            "OPTIONS",
+        ] {
+            assert!(!spanish.contains(clap_text), "{clap_text} in Spanish help");
+        }
+        assert!(spanish.contains("Uso:") && spanish.contains("[OPCIONES]"));
+        assert!(spanish.contains("Muestra la ayuda") && spanish.contains("<CUENTA>"));
+        for spanish_text in ["Cuenta", "Muestra", "Opciones", "proyecto", "Claves"] {
+            assert!(
+                !english.contains(spanish_text),
+                "{spanish_text} in English help"
+            );
+        }
+        assert!(english.contains("Usage:") && english.contains("<ACCOUNT>"));
+        // Spanish aliases are shown in both.
+        assert!(english.contains("estado") && spanish.contains("estado"));
     }
 
     #[test]

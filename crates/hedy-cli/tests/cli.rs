@@ -50,11 +50,16 @@ impl Env {
         dir.canonicalize().unwrap()
     }
 
+    /// `hedy` in Spanish (the language most tests check).
     fn hedy(&self, args: &[&str]) -> Command {
+        self.hedy_lang("es", args)
+    }
+
+    fn hedy_lang(&self, language: &str, args: &[&str]) -> Command {
         let mut cmd = Command::cargo_bin("hedy").unwrap();
         cmd.env("HEDY_DATA_DIR", self.path("data"))
             .env("NO_COLOR", "1")
-            .env("HEDY_LANGUAGE", "es")
+            .env("HEDY_LANGUAGE", language)
             .env_remove("CLAUDE_CONFIG_DIR")
             .args(args);
         cmd
@@ -243,4 +248,87 @@ fn client_and_summary() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Sin uso registrado esta semana."));
+}
+
+#[test]
+fn speaks_english_when_asked() {
+    let env = Env::new();
+    let en = |args: &[&str]| env.hedy_lang("en", args).assert().success();
+    en(&["account", "list"])
+        .stdout(predicate::str::contains("No accounts yet"))
+        .stdout(predicate::str::contains("\"Personal Claude\" --claude"));
+    en(&[
+        "account",
+        "add",
+        "Claude personal",
+        "--claude",
+        "--no-login",
+    ])
+    .stdout(predicate::str::contains("Account created"))
+    .stdout(predicate::str::contains("Claude Code · subscription"))
+    .stdout(predicate::str::contains("It is the default account"));
+    en(&["account", "add", "Kimi", "--api", "kimi", "--no-login"])
+        .stdout(predicate::str::contains(" · API key"));
+    en(&["account", "list"])
+        .stdout(predicate::str::contains("system keyring"))
+        .stdout(predicate::str::contains(" · default"));
+    let repo = env.repo("code/moira");
+    en(&["-C", repo.to_str().unwrap(), "use", "claude-personal"])
+        .stdout(predicate::str::contains("moira"))
+        .stdout(predicate::str::contains(" uses "));
+    en(&["-C", repo.to_str().unwrap(), "status"])
+        .stdout(predicate::str::contains("Project moira"))
+        .stdout(predicate::str::contains("signed in · max"))
+        .stdout(predicate::str::contains("Accounts"));
+    en(&["resumen", "--semana"]).stdout(predicate::str::contains("No usage recorded this week."));
+    en(&["summary", "--days", "3"]).stdout(predicate::str::contains(
+        "No usage recorded in the last 3 days.",
+    ));
+}
+
+#[test]
+fn the_language_setting_wins_over_the_environment() {
+    let env = Env::new();
+    env.hedy(&["config", "set", "ui.language", "en"])
+        .assert()
+        .success();
+    env.hedy(&["account", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No accounts yet"));
+}
+
+#[test]
+fn help_follows_the_language() {
+    let env = Env::new();
+    for args in [&["--help"][..], &["account", "add", "--help"]] {
+        env.hedy_lang("en", args)
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Usage: hedy"))
+            .stdout(predicate::str::contains("Print help"))
+            .stdout(predicate::str::contains("Options:"))
+            .stdout(predicate::str::contains("Opciones").not())
+            .stdout(predicate::str::contains("Muestra").not());
+        env.hedy_lang("es", args)
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Uso: hedy"))
+            .stdout(predicate::str::contains("[OPCIONES]"))
+            .stdout(predicate::str::contains("Muestra la ayuda"))
+            .stdout(predicate::str::contains("Usage").not())
+            .stdout(predicate::str::contains("Print").not());
+    }
+    env.hedy_lang("en", &["--help"])
+        .assert()
+        .stdout(predicate::str::contains("Manage accounts [alias: cuenta]"));
+    env.hedy_lang("es", &["--help"])
+        .assert()
+        .stdout(predicate::str::contains("Gestiona cuentas [alias: cuenta]"));
+    env.hedy_lang("en", &["account", "add", "--help"])
+        .assert()
+        .stdout(predicate::str::contains("<NAME>  Display name"));
+    env.hedy_lang("es", &["cuenta", "agregar", "--help"])
+        .assert()
+        .stdout(predicate::str::contains("<NOMBRE>  Nombre visible"));
 }

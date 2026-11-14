@@ -6,20 +6,32 @@ use std::path::Path;
 use anyhow::{Result, bail};
 use hedy_core::application::{AccountStatus, Hedy, NewAccount, Setting};
 use hedy_core::domain::{Account, ConfigFolder, Credentials, LoginState, Provider};
+use hedy_core::i18n::{self, Language};
+use hedy_core::tr;
 
 use crate::cli::AddAccount;
 use crate::style::{Style, pad, tilde};
 
 /// What to do when there are no accounts yet.
 fn print_no_accounts(s: &Style) {
-    println!("Todavía no hay cuentas. Agrega la primera, por ejemplo:");
+    println!(
+        "{}",
+        tr!(
+            "Todavía no hay cuentas. Agrega la primera, por ejemplo:",
+            "No accounts yet. Add the first one, for example:"
+        )
+    );
+    let personal = tr!("Claude personal", "Personal Claude");
+    let work = tr!("Claude trabajo", "Work Claude");
     println!(
         "  {}",
-        s.accent("hedy account add \"Claude personal\" --claude")
+        s.accent(format!("hedy account add \"{personal}\" --claude"))
     );
     println!(
         "  {}",
-        s.accent("hedy account add \"Claude trabajo\" --claude --default-folder")
+        s.accent(format!(
+            "hedy account add \"{work}\" --claude --default-folder"
+        ))
     );
 }
 
@@ -37,47 +49,63 @@ pub fn status(hedy: &Hedy, dir: &Path) -> Result<()> {
     match &status.current_project {
         Some(project) => {
             let lock = if project.protected {
-                " (protegido)"
+                tr!(" (protegido)", " (protected)")
             } else {
-                ""
+                String::new()
             };
+            // The two titles are aligned.
+            let titles = [tr!("Proyecto", "Project"), tr!("Cuenta", "Account")];
+            let width = titles.iter().map(|t| t.chars().count()).max().unwrap_or(0);
+            let [project_title, account_title] =
+                titles.map(|t| pad(&s.bold(&t), t.chars().count(), width));
             println!(
-                "{} {}  {}{}",
-                s.bold("Proyecto"),
+                "{project_title} {}  {}{}",
                 s.bold(&project.name),
                 s.muted(tilde(&project.path)),
                 s.warn(lock)
             );
-            match project.account.as_ref().and_then(find) {
-                Some(a) => println!("{}   {}", s.bold("Cuenta"), account_label(&s, &a.account)),
-                None => println!(
-                    "{}   {}",
-                    s.bold("Cuenta"),
-                    s.muted("ninguna (usa `hedy use <cuenta>`)")
-                ),
-            }
+            let account = match project.account.as_ref().and_then(find) {
+                Some(a) => account_label(&s, &a.account),
+                None => s.muted(tr!(
+                    "ninguna (usa `hedy use <cuenta>`)",
+                    "none (use `hedy use <account>`)"
+                )),
+            };
+            println!("{account_title} {account}");
         }
         None => {
-            println!("{}", s.muted("Esta carpeta no es un proyecto de Hedy."));
+            println!(
+                "{}",
+                s.muted(tr!(
+                    "Esta carpeta no es un proyecto de Hedy.",
+                    "This folder is not a Hedy project."
+                ))
+            );
             match status.default_account.as_ref().and_then(find) {
                 Some(a) => println!(
                     "{}  {}",
-                    s.bold("Cuenta por defecto"),
+                    s.bold(tr!("Cuenta por defecto", "Default account")),
                     account_label(&s, &a.account)
                 ),
                 None => println!(
                     "{}",
-                    s.muted("Sin cuenta por defecto (usa `hedy account default <cuenta>`).")
+                    s.muted(tr!(
+                        "Sin cuenta por defecto (usa `hedy account default <cuenta>`).",
+                        "No default account (use `hedy account default <account>`)."
+                    ))
                 ),
             }
         }
     }
 
-    println!("\n{}", s.bold("Cuentas"));
+    println!("\n{}", s.bold(tr!("Cuentas", "Accounts")));
     print_accounts(&s, &status.accounts, status.default_account.as_ref());
     println!(
         "\n{}",
-        s.muted("Uso por proyecto y cliente: `hedy resumen`.")
+        s.muted(tr!(
+            "Uso por proyecto y cliente: `hedy resumen`.",
+            "Usage by project and client: `hedy summary`."
+        ))
     );
     Ok(())
 }
@@ -85,14 +113,41 @@ pub fn status(hedy: &Hedy, dir: &Path) -> Result<()> {
 pub fn set_client(hedy: &Hedy, dir: &Path, client: Option<&str>) -> Result<()> {
     let s = Style::for_stdout();
     let Some(project) = hedy.project_for(dir)? else {
-        bail!("esta carpeta no es un proyecto de Hedy; usa `hedy use <cuenta>` primero");
+        bail!(
+            "{}",
+            tr!(
+                "esta carpeta no es un proyecto de Hedy; usa `hedy use <cuenta>` primero",
+                "this folder is not a Hedy project; use `hedy use <account>` first"
+            )
+        );
     };
     let project = hedy.set_project_client(&project.path, client)?;
+    let name = s.bold(&project.name);
     match &project.client {
-        Some(client) => println!("{} es para {}", s.bold(&project.name), s.bold(client)),
-        None => println!("{} ya no tiene cliente", s.bold(&project.name)),
+        Some(client) => {
+            let client = s.bold(client);
+            println!(
+                "{}",
+                tr!("{name} es para {client}", "{name} is for {client}")
+            );
+        }
+        None => println!(
+            "{}",
+            tr!(
+                "{name} ya no tiene cliente",
+                "{name} no longer has a client"
+            )
+        ),
     }
     Ok(())
+}
+
+/// Spanish writes decimals with a comma.
+fn decimals(number: String) -> String {
+    match i18n::language() {
+        Language::Spanish => number.replace('.', ","),
+        Language::English => number,
+    }
 }
 
 /// "182 k" / "1,2 M" tokens.
@@ -100,36 +155,46 @@ fn tokens(n: u64) -> String {
     match n {
         0..1_000 => n.to_string(),
         1_000..1_000_000 => format!("{} k", n / 1_000),
-        _ => format!("{:.1} M", n as f64 / 1_000_000.0).replace('.', ","),
+        _ => decimals(format!("{:.1} M", n as f64 / 1_000_000.0)),
     }
 }
 
 fn usd(cost: Option<f64>) -> String {
-    cost.map_or_else(|| "—".into(), |c| format!("${c:.2}").replace('.', ","))
+    cost.map_or_else(|| "—".into(), |c| decimals(format!("${c:.2}")))
 }
 
 pub fn summary(hedy: &Hedy, days: u32) -> Result<()> {
     let s = Style::for_stdout();
     let summary = hedy.usage_summary(days)?;
     let period = if days == 7 {
-        "esta semana".to_owned()
+        tr!("esta semana", "this week")
     } else {
-        format!("los últimos {days} días")
+        tr!("los últimos {days} días", "in the last {days} days")
     };
     if summary.projects.is_empty() {
-        println!("{}", s.muted(format!("Sin uso registrado {period}.")));
+        println!(
+            "{}",
+            s.muted(tr!(
+                "Sin uso registrado {period}.",
+                "No usage recorded {period}."
+            ))
+        );
         return Ok(());
     }
     let row = |name: &str, tokens_text: String, cost: String| {
         let len = name.chars().count();
         println!("  {} {:>9}  {:>8}", pad(name, len, 28), tokens_text, cost);
     };
-    println!("{} {period}", s.bold("Uso por cliente"));
+    println!(
+        "{} {period}",
+        s.bold(tr!("Uso por cliente", "Usage by client"))
+    );
+    let no_client = tr!("Sin cliente", "No client");
     for c in &summary.clients {
-        let name = c.client.as_deref().unwrap_or("Sin cliente");
+        let name = c.client.as_deref().unwrap_or(&no_client);
         row(name, tokens(c.usage.total_tokens()), usd(c.usage.cost_usd));
     }
-    println!("\n{}", s.bold("Por proyecto"));
+    println!("\n{}", s.bold(tr!("Por proyecto", "By project")));
     for p in &summary.projects {
         row(
             &p.name,
@@ -139,10 +204,12 @@ pub fn summary(hedy: &Hedy, days: u32) -> Result<()> {
     }
     println!(
         "\n{}",
-        s.muted(
+        s.muted(tr!(
             "Tokens que Hedy registró en sus tareas. El costo es una estimación: en suscripciones, \
-             lo que calcula la CLI (no lo que se cobra); en API keys, según el precio de `api_price.<proveedor>`."
-        )
+             lo que calcula la CLI (no lo que se cobra); en API keys, según el precio de `api_price.<proveedor>`.",
+            "Tokens Hedy recorded in its tasks. The cost is an estimate: for subscriptions, \
+             what the CLI calculates (not what you are charged); for API keys, from the `api_price.<provider>` price."
+        ))
     );
     Ok(())
 }
@@ -158,21 +225,28 @@ fn account_label(s: &Style, account: &Account) -> String {
 
 fn kind_label(account: &Account) -> String {
     let kind = match &account.credentials {
-        Credentials::ApiKey => "API key",
-        Credentials::Subscription(ConfigFolder::Default) => "suscripción · carpeta por defecto",
-        Credentials::Subscription(ConfigFolder::Managed(_)) => "suscripción",
+        Credentials::ApiKey => "API key".to_owned(),
+        Credentials::Subscription(ConfigFolder::Default) => tr!(
+            "suscripción · carpeta por defecto",
+            "subscription · default folder"
+        ),
+        Credentials::Subscription(ConfigFolder::Managed(_)) => {
+            tr!("suscripción", "subscription")
+        }
     };
     format!("{} · {kind}", account.provider)
 }
 
 fn login_label(s: &Style, account: &Account, login: &LoginState) -> (String, usize) {
     let text = match (login, account.is_subscription()) {
-        (LoginState::LoggedIn { plan: Some(plan) }, _) => format!("✔ conectada · {plan}"),
-        (LoginState::LoggedIn { plan: None }, true) => "✔ conectada".to_owned(),
-        (LoginState::LoggedIn { plan: None }, false) => "✔ key guardada".to_owned(),
-        (LoginState::LoggedOut, true) => "✗ sin sesión".to_owned(),
-        (LoginState::LoggedOut, false) => "✗ sin key".to_owned(),
-        (LoginState::Unknown, _) => "? desconocido".to_owned(),
+        (LoginState::LoggedIn { plan: Some(plan) }, _) => {
+            tr!("✔ conectada · {plan}", "✔ signed in · {plan}")
+        }
+        (LoginState::LoggedIn { plan: None }, true) => tr!("✔ conectada", "✔ signed in"),
+        (LoginState::LoggedIn { plan: None }, false) => tr!("✔ key guardada", "✔ key saved"),
+        (LoginState::LoggedOut, true) => tr!("✗ sin sesión", "✗ signed out"),
+        (LoginState::LoggedOut, false) => tr!("✗ sin key", "✗ no key"),
+        (LoginState::Unknown, _) => tr!("? desconocido", "? unknown"),
     };
     let len = text.chars().count();
     let painted = match login {
@@ -216,17 +290,18 @@ fn print_accounts(
             .iter()
             .map(|p| {
                 if p.protected {
-                    format!("{} (protegido)", p.name)
+                    let name = &p.name;
+                    tr!("{name} (protegido)", "{name} (protected)")
                 } else {
                     p.name.clone()
                 }
             })
             .collect();
         if default == Some(&a.id) {
-            notes.insert(0, "por defecto".into());
+            notes.insert(0, tr!("por defecto", "default"));
         }
         if !status.available {
-            notes.push("no disponible aquí".into());
+            notes.push(tr!("no disponible aquí", "not available here"));
         }
         let name = if status.available {
             a.name.clone()
@@ -257,14 +332,14 @@ pub fn list_accounts(hedy: &Hedy) -> Result<()> {
         let folder = match &a.credentials {
             Credentials::Subscription(ConfigFolder::Managed(p)) => tilde(p),
             Credentials::Subscription(ConfigFolder::Default) => {
-                "carpeta por defecto de la CLI".into()
+                tr!("carpeta por defecto de la CLI", "the CLI's default folder")
             }
-            Credentials::ApiKey => "llavero del sistema".into(),
+            Credentials::ApiKey => tr!("llavero del sistema", "system keyring"),
         };
         let mark = if default.as_deref() == Some(a.id.as_str()) {
-            " · por defecto"
+            tr!(" · por defecto", " · default")
         } else {
-            ""
+            String::new()
         };
         println!(
             "{}  {}  {}{}",
@@ -288,23 +363,32 @@ pub fn add_account(hedy: &Hedy, args: AddAccount) -> Result<()> {
         default_folder: args.default_folder,
         color: args.color,
     })?;
+    let (label, kind) = (account_label(&s, &account), kind_label(&account));
     println!(
-        "Cuenta creada: {} · {}",
-        account_label(&s, &account),
-        kind_label(&account)
+        "{}",
+        tr!(
+            "Cuenta creada: {label} · {kind}",
+            "Account created: {label} · {kind}"
+        )
     );
 
     if hedy.setting(Setting::DefaultAccount)?.is_none() {
         hedy.set_setting(Setting::DefaultAccount, Some(account.id.as_str()))?;
         println!(
             "{}",
-            s.muted("Es la cuenta por defecto para los proyectos sin cuenta.")
+            s.muted(tr!(
+                "Es la cuenta por defecto para los proyectos sin cuenta.",
+                "It is the default account for projects without one."
+            ))
         );
     }
     if provider == Provider::Gemini && !api_key {
         println!(
             "{}",
-            s.warn("Aviso: Gemini CLI ya no acepta cuentas personales de Google (solo Code Assist Standard/Enterprise). Para una cuenta personal usa `--antigravity` o `--api gemini`.")
+            s.warn(tr!(
+                "Aviso: Gemini CLI ya no acepta cuentas personales de Google (solo Code Assist Standard/Enterprise). Para una cuenta personal usa `--antigravity` o `--api gemini`.",
+                "Warning: Gemini CLI no longer accepts personal Google accounts (only Code Assist Standard/Enterprise). For a personal account use `--antigravity` or `--api gemini`."
+            ))
         );
     }
     if !args.no_login {
@@ -320,16 +404,23 @@ pub fn login(hedy: &Hedy, id: &str) -> Result<()> {
     if !account.is_subscription() {
         let key = read_api_key(&account)?;
         hedy.set_api_key(id, &key)?;
-        println!("{}", s.ok("✔ API key guardada en el llavero del sistema."));
+        println!(
+            "{}",
+            s.ok(tr!(
+                "✔ API key guardada en el llavero del sistema.",
+                "✔ API key saved in the system keyring."
+            ))
+        );
         return Ok(());
     }
     if let LoginState::LoggedIn { plan } = hedy.login_state(&account)? {
         let plan = plan.map(|p| format!(" ({p})")).unwrap_or_default();
+        let name = &account.name;
         println!(
             "{}",
-            s.ok(format!(
-                "✔ {} ya tiene sesión iniciada{plan}.",
-                account.name
+            s.ok(tr!(
+                "✔ {name} ya tiene sesión iniciada{plan}.",
+                "✔ {name} is already signed in{plan}."
             ))
         );
         return Ok(());
@@ -337,36 +428,53 @@ pub fn login(hedy: &Hedy, id: &str) -> Result<()> {
     println!("{}", s.muted(login_hint(account.provider)));
     let code = hedy.login(id)?;
     if code != Some(0) {
-        bail!("el login terminó con error (código {code:?})");
+        bail!(
+            "{}",
+            tr!(
+                "el login terminó con error (código {code:?})",
+                "the login ended with an error (code {code:?})"
+            )
+        );
     }
+    let name = &account.name;
     match hedy.login_state(&account)? {
-        LoginState::LoggedOut => bail!("la cuenta sigue sin sesión"),
-        _ => println!("{}", s.ok(format!("✔ {} lista.", account.name))),
+        LoginState::LoggedOut => bail!(
+            "{}",
+            tr!(
+                "la cuenta sigue sin sesión",
+                "the account is still signed out"
+            )
+        ),
+        _ => println!("{}", s.ok(tr!("✔ {name} lista.", "✔ {name} is ready."))),
     }
     Ok(())
 }
 
 /// What the user does in the official login of each CLI.
-fn login_hint(provider: Provider) -> &'static str {
+fn login_hint(provider: Provider) -> String {
     match provider {
-        Provider::Gemini => {
-            "Gemini pide el login al abrirse: elige «Log in with Google» y sal con /quit."
-        }
-        Provider::Kimi => {
-            "Kimi Code se abre: escribe /login, elige «Kimi Code (OAuth)» y sal con /exit."
-        }
-        Provider::Antigravity => {
-            "Antigravity abre el login de Google: inicia sesión y pega el código que te muestra."
-        }
-        _ => "Abriendo el login oficial…",
+        Provider::Gemini => tr!(
+            "Gemini pide el login al abrirse: elige «Log in with Google» y sal con /quit.",
+            "Gemini asks you to log in when it opens: choose \"Log in with Google\" and exit with /quit."
+        ),
+        Provider::Kimi => tr!(
+            "Kimi Code se abre: escribe /login, elige «Kimi Code (OAuth)» y sal con /exit.",
+            "Kimi Code opens: type /login, choose \"Kimi Code (OAuth)\" and exit with /exit."
+        ),
+        Provider::Antigravity => tr!(
+            "Antigravity abre el login de Google: inicia sesión y pega el código que te muestra.",
+            "Antigravity opens the Google login: sign in and paste the code it shows you."
+        ),
+        _ => tr!("Abriendo el login oficial…", "Opening the official login…"),
     }
 }
 
 fn read_api_key(account: &Account) -> Result<String> {
     if std::io::stdin().is_terminal() {
-        Ok(rpassword::prompt_password(format!(
-            "API key de {} (no se muestra): ",
-            account.name
+        let name = &account.name;
+        Ok(rpassword::prompt_password(tr!(
+            "API key de {name} (no se muestra): ",
+            "API key for {name} (hidden): "
         ))?)
     } else {
         let mut line = String::new();
@@ -378,13 +486,18 @@ fn read_api_key(account: &Account) -> Result<String> {
 pub fn remove_account(hedy: &Hedy, id: &str) -> Result<()> {
     let s = Style::for_stdout();
     let account = hedy.remove_account(id)?;
-    println!("Cuenta quitada: {}", account_label(&s, &account));
+    let label = account_label(&s, &account);
+    println!(
+        "{}",
+        tr!("Cuenta quitada: {label}", "Account removed: {label}")
+    );
     if let Credentials::Subscription(ConfigFolder::Managed(folder)) = &account.credentials {
+        let folder = tilde(folder);
         println!(
             "{}",
-            s.muted(format!(
-                "Su carpeta (con el login) sigue en {}. Bórrala tú si ya no la necesitas.",
-                tilde(folder)
+            s.muted(tr!(
+                "Su carpeta (con el login) sigue en {folder}. Bórrala tú si ya no la necesitas.",
+                "Its folder (with the login) is still at {folder}. Delete it yourself if you no longer need it."
             ))
         );
     }
@@ -395,11 +508,14 @@ pub fn set_default(hedy: &Hedy, id: Option<&str>) -> Result<()> {
     let s = Style::for_stdout();
     hedy.set_setting(Setting::DefaultAccount, id)?;
     match id {
-        Some(id) => println!(
-            "Cuenta por defecto: {}",
-            account_label(&s, &hedy.account(id)?)
-        ),
-        None => println!("Sin cuenta por defecto."),
+        Some(id) => {
+            let label = account_label(&s, &hedy.account(id)?);
+            println!(
+                "{}",
+                tr!("Cuenta por defecto: {label}", "Default account: {label}")
+            );
+        }
+        None => println!("{}", tr!("Sin cuenta por defecto.", "No default account.")),
     }
     Ok(())
 }
@@ -408,16 +524,20 @@ pub fn use_account(hedy: &Hedy, dir: &Path, id: &str, protect: Option<bool>) -> 
     let s = Style::for_stdout();
     let project = hedy.use_account(dir, id, protect)?;
     let account = hedy.account(id)?;
+    let name = s.bold(&project.name);
+    let path = s.muted(tilde(&project.path));
+    let label = account_label(&s, &account);
+    let lock = if project.protected {
+        s.warn(tr!(" · protegido", " · protected"))
+    } else {
+        String::new()
+    };
     println!(
-        "{} {} usa {}{}",
-        s.bold(&project.name),
-        s.muted(tilde(&project.path)),
-        account_label(&s, &account),
-        if project.protected {
-            s.warn(" · protegido")
-        } else {
-            String::new()
-        }
+        "{}",
+        tr!(
+            "{name} {path} usa {label}{lock}",
+            "{name} {path} uses {label}{lock}"
+        )
     );
     Ok(())
 }
@@ -428,7 +548,10 @@ pub fn run(hedy: &Hedy, dir: &Path, account: Option<&str>, args: Vec<String>) ->
     let place = resolved
         .project
         .as_ref()
-        .map(|p| format!(" en {}", p.name))
+        .map(|p| {
+            let name = &p.name;
+            tr!(" en {name}", " in {name}")
+        })
         .unwrap_or_default();
     eprintln!(
         "{} {} {}",
@@ -442,7 +565,10 @@ pub fn run(hedy: &Hedy, dir: &Path, account: Option<&str>, args: Vec<String>) ->
 pub fn config_get(hedy: &Hedy, key: &str) -> Result<()> {
     match hedy.setting(key.parse()?)? {
         Some(v) => println!("{v}"),
-        None => println!("{}", Style::for_stdout().muted("(sin valor)")),
+        None => println!(
+            "{}",
+            Style::for_stdout().muted(tr!("(sin valor)", "(no value)"))
+        ),
     }
     Ok(())
 }

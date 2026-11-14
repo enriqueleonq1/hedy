@@ -13,6 +13,10 @@ use cli::{AccountCommand, Cli, Command, ConfigCommand};
 use style::Style;
 
 fn main() -> ExitCode {
+    // The help is shown while parsing, before the database is open: it follows
+    // `HEDY_LANGUAGE` or the system locale. Once `adapters::system` opens the
+    // database, the `ui.language` setting (if any) applies to everything else.
+    hedy_core::i18n::init(None);
     match run(Cli::parse_args()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
