@@ -18,7 +18,7 @@ use super::paths::relative;
 use super::process::command;
 use crate::application::ports::{
     AgentBackend, AgentLauncher, AgentRequest, AgentSession, EventSink, MemoryTools, PortError,
-    PortResult, Secret,
+    PortResult, Secret, SkillTools,
 };
 use crate::domain::agent::looks_like_tests;
 use crate::domain::permissions::{normalize, protected_file_reason};
@@ -110,6 +110,7 @@ impl AgentLauncher for ApiAgentLauncher {
             queued: VecDeque::new(),
             stopped: Arc::clone(&stopped),
             memory: request.memory.as_ref().map(|m| Arc::clone(&m.tools)),
+            skills: request.memory.as_ref().and_then(|m| m.skills.clone()),
         };
         let prompt = request.prompt.clone();
         let mode = request.mode;
@@ -180,6 +181,8 @@ struct Agent {
     stopped: Arc<AtomicBool>,
     /// The project's memory, when this account reads it.
     memory: Option<Arc<dyn MemoryTools>>,
+    /// The learned skills, next to the memory.
+    skills: Option<Arc<dyn SkillTools>>,
 }
 
 fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> Value {
@@ -217,6 +220,31 @@ fn memory_tools() -> [Value; 4] {
                    "category": {"type": "string", "enum": ["decision", "convention", "rule", "preference"]},
                    "topic": {"type": "string", "description": "Tema estable en minúsculas, p. ej. arquitectura/pagos (opcional)"}}),
             &["text", "category"],
+        ),
+    ]
+}
+
+fn skill_tools() -> [Value; 3] {
+    [
+        tool(
+            "skill_list",
+            "Lista las habilidades aprobadas del proyecto (procedimientos reutilizables): nombre y cuándo usar cada una.",
+            json!({}),
+            &[],
+        ),
+        tool(
+            "skill_get",
+            "Lee una habilidad aprobada completa, por nombre.",
+            json!({"name": {"type": "string"}}),
+            &["name"],
+        ),
+        tool(
+            "skill_propose",
+            "Propone una habilidad (un procedimiento reutilizable que no es obvio); el usuario decide si se aprueba. Con el nombre de una existente, propone su actualización. Sin secretos.",
+            json!({"name": {"type": "string", "description": "Nombre corto en minúsculas con guiones, p. ej. correr-tests-e2e"},
+                   "description": {"type": "string", "description": "Una línea: cuándo usarla"},
+                   "body": {"type": "string", "description": "Los pasos, en Markdown"}}),
+            &["name", "description", "body"],
         ),
     ]
 }
@@ -303,6 +331,11 @@ impl Agent {
             && let Value::Array(list) = &mut list
         {
             list.extend(memory_tools());
+        }
+        if self.skills.is_some()
+            && let Value::Array(list) = &mut list
+        {
+            list.extend(skill_tools());
         }
         list
     }
@@ -607,6 +640,19 @@ impl Agent {
                     "memory_get" => memory.get(args["id"].as_i64(), topic),
                     "memory_topics" => memory.topics(),
                     _ => memory.propose(&arg("text"), &arg("category"), topic),
+                }
+            }
+            "skill_list" | "skill_get" | "skill_propose" => {
+                let Some(skills) = &self.skills else {
+                    return Ok(tr!(
+                        "Herramienta desconocida: {name}",
+                        "Unknown tool: {name}"
+                    ));
+                };
+                match name {
+                    "skill_list" => skills.list(),
+                    "skill_get" => skills.get(&arg("name")),
+                    _ => skills.propose(&arg("name"), &arg("description"), &arg("body")),
                 }
             }
             "write_file" | "edit_file" => {
@@ -1072,7 +1118,72 @@ mod tests {
             queued: VecDeque::new(),
             stopped: Arc::new(AtomicBool::new(false)),
             memory: None,
+            skills: None,
         }
+    }
+
+    /// Records what the agent asks the skills for.
+    #[derive(Default)]
+    struct SkillRecorder(Mutex<Vec<String>>);
+
+    impl SkillTools for SkillRecorder {
+        fn list(&self) -> String {
+            self.0.lock().unwrap().push("list".into());
+            "- run-tests [proyecto]: Antes de entregar".into()
+        }
+        fn get(&self, name: &str) -> String {
+            self.0.lock().unwrap().push(format!("get {name}"));
+            "# run-tests".into()
+        }
+        fn propose(&self, name: &str, description: &str, body: &str) -> String {
+            self.0
+                .lock()
+                .unwrap()
+                .push(format!("propose {name} | {description} | {body}"));
+            "ok".into()
+        }
+    }
+
+    #[test]
+    fn skill_tools_reach_the_skills() {
+        let tmp = tempfile::tempdir().unwrap();
+        let recorder = Arc::new(SkillRecorder::default());
+        let mut agent = local_agent(tmp.path());
+        let names = |agent: &Agent| -> Vec<String> {
+            agent
+                .tools()
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| t["function"]["name"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        assert!(!names(&agent).contains(&"skill_list".to_owned()));
+        agent.skills = Some(recorder.clone());
+        let names = names(&agent);
+        for tool in ["skill_list", "skill_get", "skill_propose"] {
+            assert!(names.contains(&tool.to_owned()), "{tool}");
+        }
+        let (_tx, rx) = mpsc::channel();
+        let mut run = |name: &str, args: Value| {
+            agent
+                .run_tool(&call("s", name, args), &rx)
+                .unwrap_or_else(|_| panic!("{name} ended the agent"))
+        };
+        assert!(run("skill_list", json!({})).contains("run-tests"));
+        run("skill_get", json!({"name": "run-tests"}));
+        run(
+            "skill_propose",
+            json!({"name": "lint", "description": "Antes de commit", "body": "npm run lint"}),
+        );
+        assert_eq!(
+            *recorder.0.lock().unwrap(),
+            [
+                "list",
+                "get run-tests",
+                "propose lint | Antes de commit | npm run lint"
+            ]
+        );
     }
 
     #[test]
