@@ -4,7 +4,7 @@
 const es = {
   "workspace.mode.project": "Proyecto",
   "workspace.mode.ask": "Pregunta",
-  "workspace.mode.research": "Research",
+  "workspace.mode.research": "Investigar",
   "workspace.status.running": "Trabajando",
   "workspace.status.waitingApproval": "Espera tu respuesta",
   "workspace.status.review": "Lista para revisar",
