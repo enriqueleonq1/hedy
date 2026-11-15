@@ -55,13 +55,14 @@ describe("English", () => {
     const api = MockApi.withSampleData();
     render(<App api={api} queryClient={new QueryClient()} />);
     expect(await screen.findByRole("heading", { name: /¡Hola, Enrique!/ })).toBeInTheDocument();
-    expect(spanishLeftovers()).toEqual(expect.arrayContaining(["Cuentas y modelos", "¿En qué trabajamos hoy?"]));
+    expect(spanishLeftovers()).toEqual(expect.arrayContaining(["Cuentas y modelos", "Tus planes"]));
   });
 
   it("greets on the home screen and frames it in English", async () => {
     setup();
     expect(await screen.findByRole("heading", { name: /Hi, Enrique!/ })).toBeInTheDocument();
-    expect(screen.getByText("What are we working on today?")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your plans" })).toBeInTheDocument();
+    expect(screen.getByText(/has room to spare\./)).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Hedy says hi" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Accounts and models" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
@@ -69,7 +70,7 @@ describe("English", () => {
     const homming = screen.getByRole("heading", { name: "homming" }).closest("article")!;
     expect(within(homming).getByText("Protected")).toBeInTheDocument();
     expect(
-      await screen.findByText(/^216k tokens so far \(about \$4\.1\d\); hedy was the busiest project\.$/),
+      await screen.findByText(/^In Hedy: 216k tokens this week \(about \$4\.1\d\); hedy was the busiest project\.$/),
     ).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
   });

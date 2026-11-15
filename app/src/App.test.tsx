@@ -15,30 +15,31 @@ describe("Welcome", () => {
   it("greets the user and lists projects with their accounts", async () => {
     renderApp();
     expect(await screen.findByRole("heading", { name: /¡Hola, Enrique!/ })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Hedy te saluda" })).toHaveAttribute("data-state", "done");
+    expect(screen.getByRole("img", { name: "Hedy te saluda" })).toHaveAttribute("data-state", "idle");
     const homming = screen.getByRole("heading", { name: "homming" }).closest("article")!;
     expect(within(homming).getByText("Claude trabajo")).toBeInTheDocument();
     expect(within(homming).getByText("Protegido")).toBeInTheDocument();
     // The week of sample usage: 166k tokens in hedy and 50k in homming.
-    expect(await screen.findByText(/^Llevamos 216k tokens \(unos \$4,1\d\); hedy fue el proyecto más activo\.$/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/^En Hedy: 216k tokens esta semana \(unos \$4,1\d\); hedy fue el proyecto más activo\.$/),
+    ).toBeInTheDocument();
   });
 
-  it("shows the week's figures, what needs a look and every account's usage", async () => {
+  it("shows each plan as rings, what needs a look and the latest tasks", async () => {
     renderApp(MockApi.withSampleData().withSampleActivity());
-    const stats = (await screen.findByRole("heading", { name: "Esta semana" })).closest("section")!;
-    expect(within(stats).getByText("Plan más usado")).toBeInTheDocument();
-    expect(within(stats).getByText("Cuentas conectadas")).toBeInTheDocument();
-    expect(await within(stats).findByText(/tareas? esperan? tu respuesta/)).toBeInTheDocument();
-    const byAccount = within(stats).getAllByRole("article");
-    expect(byAccount.map((a) => a.getAttribute("aria-label"))).toContain("Claude trabajo");
-    expect(await within(stats).findByRole("heading", { name: "Últimas tareas" })).toBeInTheDocument();
+    const plans = (await screen.findByRole("heading", { name: "Tus planes" })).closest("section")!;
+    expect(within(plans).getByRole("button", { name: /^Claude trabajo: Sesión actual \(5 h\) 34%, Esta semana 29%$/ })).toBeInTheDocument();
+    expect(within(plans).getByRole("button", { name: /^ChatGPT: / })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /tareas esperan tu respuesta/ })).toBeInTheDocument();
+    const recent = (await screen.findByRole("heading", { name: "Últimas tareas" })).closest("section")!;
+    expect(within(recent).getAllByRole("button").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /^Seguir en / })).toBeInTheDocument();
   });
 
   it("invites to add an account when there are none", async () => {
     renderApp(new MockApi());
     expect(await screen.findByRole("button", { name: "Agregar mi primera cuenta" })).toBeInTheDocument();
-    expect(await screen.findByText(/Todavía no tengo datos de tus cuentas/)).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Esta semana" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Tus planes" })).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Hedy te saluda" })).toHaveAttribute("data-state", "sleeping");
   });
 });

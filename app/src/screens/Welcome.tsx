@@ -1,9 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { errorMessage, useApi } from "../api/context";
-import type { Account, Overview, Project, UsageSummary } from "../api/types";
-import { AccountChip, UsageBars } from "../components/accounts";
-import { headlineWindow, resetLabel, sharedWindows, windowLabel } from "../components/planUsage";
+import { useApi } from "../api/context";
+import type { Account, Overview, Project, UsageSummary, UsageWindow } from "../api/types";
+import { AccountChip } from "../components/accounts";
+import {
+  barColor,
+  formatBalance,
+  headlineWindow,
+  resetLabel,
+  sharedWindows,
+  usageLevel,
+  windowLabel,
+} from "../components/planUsage";
 import type { View } from "../components/Layout";
 import { Mascot } from "../components/Mascot/Mascot";
 import { projectColor, shortPath, useProjectActions } from "../components/projects";
@@ -17,9 +25,9 @@ import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 import { AddProjectDialog, useAddProject } from "./accounts/AddProjectDialog";
 
 /** Hedy's one-liner about the week: tokens, estimated cost and the busiest project. */
-function weekUsageText(summary: UsageSummary, t: Translate, language: Language): string {
+function weekUsageText(summary: UsageSummary, t: Translate, language: Language): string | null {
   const tokens = summary.projects.reduce((sum, p) => sum + p.tokens, 0);
-  if (tokens === 0) return t("welcome.usage.empty");
+  if (tokens === 0) return null;
   const costs = summary.projects.map((p) => p.costUsd).filter((c): c is number => c !== null);
   const cost =
     costs.length > 0
@@ -30,53 +38,116 @@ function weekUsageText(summary: UsageSummary, t: Translate, language: Language):
   return t("welcome.usage.total", { tokens: formatTokens(tokens), cost, busiest: where });
 }
 
-/** "Claude trabajo: 39% de la sesión (5 h) · 30% de esta semana", from the provider's own reading. */
-function planLine(account: Account, t: Translate): string | null {
-  const usage = account.usage.plan.usage;
-  if (!usage) return null;
-  const windows = sharedWindows(usage);
-  if (windows.length === 0) return null;
-  const parts = windows.map((w) => t("welcome.plan.window", { percent: Math.round(w.percent), label: windowLabel(w, t).toLowerCase() }));
-  return t("welcome.plan.line", { name: account.name, windows: parts.join(" · ") });
-}
-
-function useWeekSummary() {
-  const api = useApi();
-  return useQuery({ queryKey: ["usageSummary", 7], queryFn: () => api.usageSummary(7) });
-}
-
-/** The plan's real figures first (they include what is done outside Hedy), then Hedy's own count. */
-function WeekUsage({ accounts }: { accounts: Account[] }) {
-  const t = useT();
-  const language = useLanguage();
-  const summary = useWeekSummary();
-  const lines = accounts.map((a) => planLine(a, t)).filter((l): l is string => l !== null);
-  const hedyTokens = summary.data?.projects.reduce((sum, p) => sum + p.tokens, 0) ?? 0;
-
-  if (summary.isError && lines.length === 0) return <p className="error-text">{errorMessage(summary.error, t)}</p>;
-  if (lines.length === 0) {
-    if (!summary.data) return <p>{t("welcome.usage.loading")}</p>;
-    return <p>{hedyTokens > 0 ? weekUsageText(summary.data, t, language) : t("welcome.usage.empty")}</p>;
+/** One sentence under the greeting: where there is room, and what is close to its limit. */
+function planSummary(accounts: Account[], t: Translate): string {
+  const read = accounts
+    .map((account) => ({ account, w: headlineWindow(account) }))
+    .filter((x): x is { account: Account; w: UsageWindow } => x.w !== null);
+  if (read.length === 0) return t("welcome.question");
+  const high = read.filter((x) => x.w.percent >= 80).sort((a, b) => b.w.percent - a.w.percent)[0];
+  const room = read.filter((x) => x.w.percent < 60).sort((a, b) => a.w.percent - b.w.percent)[0];
+  const parts: string[] = [];
+  if (room) parts.push(t("welcome.summary.room", { name: room.account.name }));
+  if (high) {
+    parts.push(
+      t("welcome.summary.high", {
+        name: high.account.name,
+        percent: Math.round(high.w.percent),
+        label: windowLabel(high.w, t).toLowerCase(),
+      }),
+    );
   }
-  return (
+  return parts.length > 0 ? parts.join(" ") : t("welcome.summary.steady");
+}
+
+const OUTER = 40;
+const INNER = 26;
+const dash = (r: number, percent: number) => {
+  const length = 2 * Math.PI * r;
+  return `${((length * Math.min(percent, 100)) / 100).toFixed(1)} ${length.toFixed(1)}`;
+};
+
+/** Two rings like the Activity app: the week outside, the 5-hour session inside. */
+function PlanRings({ account, outer, inner }: { account: Account; outer?: UsageWindow; inner?: UsageWindow }) {
+  const ring = (r: number, w: UsageWindow | undefined, opacity: number) => (
     <>
-      {lines.map((line) => (
-        <p key={line}>{line}</p>
-      ))}
-      {summary.data && hedyTokens > 0 && <p className="small">{weekUsageText(summary.data, t, language)}</p>}
+      <circle cx="48" cy="48" r={r} className="rings__track" />
+      {w && w.percent > 0 && (
+        <circle
+          cx="48"
+          cy="48"
+          r={r}
+          className="rings__fill"
+          stroke={barColor(w.percent, account.color)}
+          strokeDasharray={dash(r, w.percent)}
+          opacity={opacity}
+          transform="rotate(-90 48 48)"
+        />
+      )}
     </>
+  );
+  return (
+    <svg className="rings" width="96" height="96" viewBox="0 0 96 96" aria-hidden="true">
+      {ring(OUTER, outer, 1)}
+      {ring(INNER, inner, 0.75)}
+    </svg>
   );
 }
 
-type Notice = { key: string; tone: "warn" | "danger" | "info"; text: string; action?: { label: string; go: () => void }; fix?: string };
+function PlanCard({ account, onOpen }: { account: Account; onOpen: () => void }) {
+  const t = useT();
+  const language = useLanguage();
+  const usage = account.usage.plan.usage;
+  const windows = usage ? sharedWindows(usage) : [];
+  const inner = windows.find((w) => w.kind === "session") ?? (windows.length > 1 ? windows[0] : undefined);
+  const outer = windows.find((w) => w !== inner);
+  const top = headlineWindow(account);
 
-/** What deserves a look right away: tasks waiting for the user, plans near their limit, setup problems. */
+  let headline = "—";
+  let detail: string;
+  let tone = "muted";
+  if (top) {
+    headline = `${Math.round(top.percent)}%`;
+    const level = usageLevel(top.percent);
+    tone = level === "ok" ? "ink" : level;
+    const resets = resetLabel(top, t, language);
+    detail = `${windowLabel(top, t)}${resets ? ` · ${resets}` : ""}`;
+  } else if (usage?.balance) {
+    headline = formatBalance(usage.balance, language);
+    detail = t("accounts.plan.balance");
+  } else if (account.kind === "apiKey") {
+    detail = t("welcome.plans.apiKey");
+  } else {
+    detail = account.usage.plan.supported
+      ? t("accounts.plan.checking")
+      : t("accounts.plan.notReported", { provider: account.providerName });
+  }
+  const label = windows.length
+    ? windows.map((w) => `${windowLabel(w, t)} ${Math.round(w.percent)}%`).join(", ")
+    : detail;
+
+  return (
+    <button type="button" className="plan-card" onClick={onOpen} aria-label={`${account.name}: ${label}`}>
+      <PlanRings account={account} outer={outer} inner={inner} />
+      <span className="plan-card__text">
+        <AccountChip account={account} />
+        <strong className={`plan-card__value plan-card__value--${tone}`}>{headline}</strong>
+        <span className="muted small">{detail}</span>
+      </span>
+    </button>
+  );
+}
+
+type Notice = { key: string; tone: "warn" | "danger" | "info"; text: string; go?: () => void };
+
+/** What deserves a look right away, as pills: tasks waiting, plans near their limit, setup problems. */
 function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: View) => void }) {
   const api = useApi();
   const t = useT();
   const language = useLanguage();
   const board = useActivity().data ?? [];
   const doctor = useQuery({ queryKey: ["doctor"], queryFn: () => api.doctor(), staleTime: 10 * 60_000 }).data;
+  const toBoard = () => onNavigate({ screen: "activity" });
 
   const notices: Notice[] = [];
   const waiting = board.filter((item) => needsYou(item.state)).length;
@@ -85,7 +156,7 @@ function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: 
       key: "waiting",
       tone: "warn",
       text: waiting === 1 ? t("welcome.forYou.waiting.one") : t("welcome.forYou.waiting.other", { n: waiting }),
-      action: { label: t("welcome.forYou.open"), go: () => onNavigate({ screen: "activity" }) },
+      go: toBoard,
     });
   }
   const review = board.filter((item) => item.state === "review").length;
@@ -94,7 +165,7 @@ function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: 
       key: "review",
       tone: "info",
       text: review === 1 ? t("welcome.forYou.review.one") : t("welcome.forYou.review.other", { n: review }),
-      action: { label: t("welcome.forYou.open"), go: () => onNavigate({ screen: "activity" }) },
+      go: toBoard,
     });
   }
   for (const account of overview.accounts) {
@@ -110,46 +181,35 @@ function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: 
         label: windowLabel(w, t).toLowerCase(),
         resets: resets ? ` · ${resets}` : "",
       }),
+      go: () => onNavigate({ screen: "accounts" }),
     });
   }
   if (doctor && doctor.errors + doctor.warnings > 0) {
     const first = doctor.checks.find((c) => c.level === "error") ?? doctor.checks.find((c) => c.level === "warning");
     notices.push({
       key: "doctor",
-      tone: doctor.errors > 0 ? "danger" : "warn",
-      text: t("welcome.forYou.doctor", {
-        problems:
-          doctor.errors + doctor.warnings === 1
-            ? t("welcome.forYou.problems.one")
-            : t("welcome.forYou.problems.other", { n: doctor.errors + doctor.warnings }),
-        first: first ? `${first.subject}: ${first.message}` : "",
-      }),
-      fix: first?.fix ?? undefined,
+      tone: doctor.errors > 0 ? "danger" : "info",
+      text: first
+        ? t("welcome.forYou.doctorOne", { subject: first.subject, message: first.message })
+        : t("welcome.forYou.doctor", { n: doctor.errors + doctor.warnings }),
     });
   }
 
+  if (notices.length === 0) return <p className="for-you__calm">{t("welcome.forYou.calm")}</p>;
   return (
-    <div className="for-you" aria-label={t("welcome.forYou.title")}>
-      {notices.length === 0 ? (
-        <p className="for-you__calm">{t("welcome.forYou.calm")}</p>
-      ) : (
-        <ul className="for-you__list">
-          {notices.map((n) => (
-            <li key={n.key} className={`for-you__item for-you__item--${n.tone}`}>
-              <span className="for-you__text">
-                {n.text}
-                {n.fix && <code className="for-you__fix">{n.fix}</code>}
-              </span>
-              {n.action && (
-                <Button small variant="ghost" onClick={n.action.go}>
-                  {n.action.label}
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <ul className="pills-row" aria-label={t("welcome.forYou.title")}>
+      {notices.map((n) => (
+        <li key={n.key}>
+          {n.go ? (
+            <button type="button" className={`notice-pill notice-pill--${n.tone}`} onClick={n.go}>
+              {n.text}
+            </button>
+          ) : (
+            <span className={`notice-pill notice-pill--${n.tone}`}>{n.text}</span>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -157,166 +217,118 @@ function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: 
 function RecentTasks({ onNavigate }: { onNavigate: (v: View) => void }) {
   const t = useT();
   const items = (useActivity().data ?? []).slice().sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
-  if (items.length === 0) return null;
+  if (items.length === 0) return <p className="empty">{t("welcome.recent.empty")}</p>;
   return (
-    <>
-      <h3 className="week-stats__sub">{t("welcome.recent.title")}</h3>
-      <ul className="recent-tasks">
-        {items.map((item) => (
-          <li key={item.task.id}>
-            <button
-              type="button"
-              className="recent-tasks__row"
-              onClick={() => onNavigate({ screen: "workspace", project: item.task.project, task: item.task.id })}
-            >
-              <span className="recent-tasks__title">{item.task.title}</span>
-              <span className="muted small">
-                {item.projectName} · {t(STATE_LABEL[item.state])} · {timeAgo(item.updatedAt, t)}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </>
-  );
-}
-
-/** General figures for the week and one card per account; shown on the home screen. */
-function WeekStats({ overview, onNavigate }: { overview: Overview; onNavigate: (v: View) => void }) {
-  const t = useT();
-  const language = useLanguage();
-  const summary = useWeekSummary().data;
-  const { accounts } = overview;
-
-  const top = accounts
-    .map((a) => ({ account: a, window: headlineWindow(a) }))
-    .filter((x) => x.window !== null)
-    .sort((a, b) => (b.window?.percent ?? 0) - (a.window?.percent ?? 0))[0];
-  const tokens = summary?.projects.reduce((sum, p) => sum + p.tokens, 0) ?? 0;
-  const costs = summary?.projects.map((p) => p.costUsd).filter((c): c is number => c !== null) ?? [];
-  const busiest = summary?.projects.find((p) => p.tokens > 0);
-  const connected = accounts.filter((a) => a.login.state === "loggedIn").length;
-  const dash = "—";
-
-  const tiles = [
-    {
-      label: t("welcome.stats.topPlan"),
-      value: top?.window ? `${Math.round(top.window.percent)}%` : dash,
-      note: top?.window
-        ? `${top.account.name} · ${windowLabel(top.window, t).toLowerCase()}${
-            resetLabel(top.window, t, language) ? ` · ${resetLabel(top.window, t, language)}` : ""
-          }`
-        : t("welcome.stats.topPlanNone"),
-    },
-    {
-      label: t("welcome.stats.accounts"),
-      value: `${connected}/${accounts.length}`,
-      note: t("welcome.stats.accountsNote"),
-    },
-    {
-      label: t("welcome.stats.hedyTokens"),
-      value: tokens > 0 ? formatTokens(tokens) : dash,
-      note:
-        costs.length > 0
-          ? t("welcome.stats.cost", { cost: formatUsd(costs.reduce((sum, c) => sum + c, 0), language) })
-          : t("welcome.stats.hedyTokensNote"),
-    },
-    {
-      label: t("welcome.stats.busiest"),
-      value: busiest?.name ?? dash,
-      note: busiest ? t("welcome.stats.busiestNote", { tokens: formatTokens(busiest.tokens) }) : t("welcome.stats.busiestNone"),
-    },
-  ];
-
-  return (
-    <section className="week-stats" aria-labelledby="week-stats-title">
-      <h2 id="week-stats-title">{t("welcome.stats.title")}</h2>
-      <ForYou overview={overview} onNavigate={onNavigate} />
-      <div className="stat-tiles">
-        {tiles.map((tile) => (
-          <div key={tile.label} className="stat-tile">
-            <span className="stat-tile__label">{tile.label}</span>
-            <strong className="stat-tile__value">{tile.value}</strong>
-            <span className="muted small">{tile.note}</span>
-          </div>
-        ))}
-      </div>
-      <h3 className="week-stats__sub">{t("welcome.stats.byAccount")}</h3>
-      <div className="account-usage-grid">
-        {accounts.map((account) => (
-          <article key={account.id} className="card account-usage" aria-label={account.name}>
-            <header className="row row--between">
-              <AccountChip account={account} />
-              <span className="muted small">{account.providerName}</span>
-            </header>
-            <UsageBars account={account} />
-            <footer className="row row--between">
-              <span className="muted small">
-                {account.projects.length === 1
-                  ? t("welcome.stats.projects.one")
-                  : t("welcome.stats.projects.other", { n: account.projects.length })}
-              </span>
-              <Button small variant="ghost" onClick={() => onNavigate({ screen: "accounts" })}>
-                {t("welcome.stats.seeAccount")}
-              </Button>
-            </footer>
-          </article>
-        ))}
-      </div>
-      <RecentTasks onNavigate={onNavigate} />
-      {summary?.clients.some((c) => c.client !== null) && <SpendByClient />}
-    </section>
+    <ul className="recent-tasks">
+      {items.map((item) => (
+        <li key={item.task.id}>
+          <button
+            type="button"
+            className="recent-tasks__row"
+            onClick={() => onNavigate({ screen: "workspace", project: item.task.project, task: item.task.id })}
+          >
+            <span className="recent-tasks__title">{item.task.title}</span>
+            <span className={`small recent-tasks__meta recent-tasks__meta--${needsYou(item.state) ? "needs" : item.state}`}>
+              {item.projectName} · {t(STATE_LABEL[item.state])} · {timeAgo(item.updatedAt, t)}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 
 export function Welcome({ overview, onNavigate }: { overview: Overview; onNavigate: (v: View) => void }) {
+  const api = useApi();
   const t = useT();
+  const language = useLanguage();
   const adding = useAddProject();
+  const board = useActivity().data ?? [];
+  const summary = useQuery({ queryKey: ["usageSummary", 7], queryFn: () => api.usageSummary(7) }).data;
   const color = overview.accounts.find((a) => a.id === overview.defaultAccount)?.color ?? DEFAULT_ACCOUNT_COLOR;
   const hasAccounts = overview.accounts.length > 0;
   const greeting = overview.userName ? t("welcome.greetingNamed", { name: overview.userName }) : t("welcome.greeting");
+  const today = new Intl.DateTimeFormat(language, { weekday: "long", day: "numeric", month: "long" }).format(new Date());
+
+  // The project of the latest task, else the first one.
+  const latest = board.slice().sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  const current = overview.projects.find((p) => p.path === latest?.task.project) ?? overview.projects[0];
+  const hedyWeek = summary ? weekUsageText(summary, t, language) : null;
 
   return (
     <div className="screen welcome">
-      <section className="hero">
-        <Mascot color={color} state={hasAccounts ? "done" : "sleeping"} size={300} label={t("welcome.mascot")} />
-        <div className="hero__text">
-          <h1>
-            {greeting}
-            <br />
-            <span className="hero__question">{t("welcome.question")}</span>
-          </h1>
-          <div className="balloon">
-            <strong>{t("welcome.weekUsage")}</strong>
-            <WeekUsage accounts={overview.accounts} />
-          </div>
-          {!hasAccounts && (
+      <header className="today">
+        <Mascot color={color} state={hasAccounts ? "idle" : "sleeping"} size={112} label={t("welcome.mascot")} />
+        <div className="today__text">
+          <p className="today__date">{today}</p>
+          <h1>{greeting}</h1>
+          <p className="today__summary">
+            {hasAccounts ? planSummary(overview.accounts, t) : t("welcome.empty.noAccounts")}
+          </p>
+        </div>
+        <div className="today__actions">
+          {!hasAccounts ? (
             <Button variant="primary" onClick={() => onNavigate({ screen: "accounts" })}>
               {t("welcome.addFirstAccount")}
             </Button>
-          )}
+          ) : current ? (
+            <Button variant="primary" onClick={() => onNavigate({ screen: "workspace", project: current.path })}>
+              {t("welcome.continueIn", { name: current.name })}
+            </Button>
+          ) : null}
+          {hasAccounts && <Button onClick={adding.start}>{t("common.addProjectButton")}</Button>}
         </div>
-      </section>
+      </header>
 
-      {hasAccounts && <WeekStats overview={overview} onNavigate={onNavigate} />}
-
-      <section aria-labelledby="projects-title">
-        <div className="section-head">
-          <h2 id="projects-title">{t("common.projects")}</h2>
-          <Button variant="primary" onClick={adding.start} disabled={!hasAccounts}>
-            {t("common.addProjectButton")}
-          </Button>
-        </div>
-        {overview.projects.length === 0 ? (
-          <p className="empty">{hasAccounts ? t("welcome.empty.hasAccounts") : t("welcome.empty.noAccounts")}</p>
-        ) : (
-          <div className="project-grid">
-            {overview.projects.map((p) => (
-              <ProjectCard key={p.path} project={p} overview={overview} onOpen={() => onNavigate({ screen: "workspace", project: p.path })} />
+      {hasAccounts && (
+        <section className="today__section" aria-labelledby="plans-title">
+          <div className="section-head">
+            <h2 id="plans-title">{t("welcome.plans.title")}</h2>
+            <span className="muted small">{t("welcome.plans.legend")}</span>
+          </div>
+          <div className="plan-cards">
+            {overview.accounts.map((account) => (
+              <PlanCard key={account.id} account={account} onOpen={() => onNavigate({ screen: "accounts" })} />
             ))}
           </div>
+          {hedyWeek && <p className="muted small">{hedyWeek}</p>}
+        </section>
+      )}
+
+      {hasAccounts && (
+        <section className="today__section" aria-labelledby="for-you-title">
+          <h2 id="for-you-title">{t("welcome.forYou.title")}</h2>
+          <ForYou overview={overview} onNavigate={onNavigate} />
+        </section>
+      )}
+
+      <div className="today__columns">
+        <section className="today__section today__projects" aria-labelledby="projects-title">
+          <h2 id="projects-title">{t("common.projects")}</h2>
+          {overview.projects.length === 0 ? (
+            <p className="empty">{hasAccounts ? t("welcome.empty.hasAccounts") : t("welcome.empty.noAccounts")}</p>
+          ) : (
+            <div className="project-grid">
+              {overview.projects.map((p) => (
+                <ProjectCard
+                  key={p.path}
+                  project={p}
+                  overview={overview}
+                  onOpen={() => onNavigate({ screen: "workspace", project: p.path })}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+        {hasAccounts && (
+          <section className="today__section today__recent" aria-labelledby="recent-title">
+            <h2 id="recent-title">{t("welcome.recent.title")}</h2>
+            <RecentTasks onNavigate={onNavigate} />
+          </section>
         )}
-      </section>
+      </div>
+
+      {summary?.clients.some((c) => c.client !== null) && <SpendByClient />}
       {adding.path && <AddProjectDialog overview={overview} path={adding.path} onClose={adding.close} />}
     </div>
   );
