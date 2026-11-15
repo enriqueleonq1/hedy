@@ -773,7 +773,7 @@ button.popover__item:focus-visible { background: var(--selection); outline: none
 .account-card__name-input { font-size: 17px; width: 100%; }
 .account-card__title p { font-size: 13.5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .account-card__title .pill { padding: 1px 9px; font-size: var(--text-caption); font-weight: 600; }
-.account-card__foot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; border-top: 1px solid var(--line); margin-top: 2px; padding-top: 12px; }
+.account-card__foot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin-top: 2px; padding-top: 6px; }
 .account-card__foot .badge { flex-basis: 100%; margin-bottom: 4px; }
 .account-card__foot .btn--small { padding: 0 10px; }
 
@@ -912,9 +912,9 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 
 .dialog__header,
 .dialog__footer { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-4) var(--space-5); }
-.dialog__header { justify-content: space-between; padding-right: var(--space-3); border-bottom: 1px solid var(--line); }
+.dialog__header { justify-content: space-between; padding-right: var(--space-3); padding-bottom: 0; }
 .dialog__header h2 { font-size: var(--text-headline); }
-.dialog__footer { justify-content: flex-end; border-top: 1px solid var(--line); }
+.dialog__footer { justify-content: flex-end; padding-top: 0; }
 .dialog__body { padding: var(--space-5); display: grid; gap: var(--space-4); }
 
 /* "Nuevo proyecto": name and where first, the rest behind "Más opciones". */
@@ -1011,7 +1011,6 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
   gap: var(--space-1);
   padding: var(--space-3);
   border-radius: var(--radius-lg);
-  border: 1px solid var(--line);
   background: var(--panel-2);
   text-align: center;
 }
@@ -1504,7 +1503,6 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
   padding: 12px 14px;
   border-radius: var(--radius-control);
   background: var(--panel-2);
-  border: 1px solid var(--line);
 }
 
 .template-fill__title { margin: 0; font-weight: 700; }
@@ -1519,7 +1517,7 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
   align-items: flex-start;
   padding: 12px 14px;
   border-radius: var(--radius-control);
-  border: 1px solid var(--line);
+  background: var(--panel-2);
 }
 
 .template-row__main { flex: 1; min-width: 0; display: grid; gap: 4px; }
@@ -1729,7 +1727,7 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
   padding: 14px 16px;
   border-radius: var(--radius-card);
   background: var(--panel-2);
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   display: grid;
   gap: 10px;
   min-width: 0;
@@ -1752,7 +1750,6 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
   padding: 10px 12px;
   border-radius: var(--radius-control);
   background: var(--panel);
-  border: 1px solid var(--line);
   font: 12.5px/1.6 var(--font-mono);
   color: var(--ink);
   white-space: pre-wrap;
@@ -1787,7 +1784,7 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
   padding: 14px 16px;
   border-radius: var(--radius-card);
   background: var(--panel-2);
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   display: grid;
   gap: 10px;
 }
@@ -1808,7 +1805,6 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
   padding: 2px 8px;
   border-radius: var(--radius-pill);
   background: var(--panel);
-  border: 1px solid var(--line);
   color: var(--muted);
   font: 500 var(--text-caption) var(--font-mono);
 }
@@ -1829,7 +1825,6 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
   padding: 1px 9px;
   border-radius: var(--radius-pill);
   background: var(--panel);
-  border: 1px solid var(--line);
   font-size: var(--text-caption);
   font-weight: 600;
 }
@@ -1896,7 +1891,7 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 }
 .status__task-text { display: grid; gap: 2px; min-width: 0; }
 .status__task-text strong { overflow-wrap: anywhere; }
-.status__badge { padding: 1px 9px; border-radius: var(--radius-pill); background: var(--panel); border: 1px solid var(--line); font-size: var(--text-caption); font-weight: 600; white-space: nowrap; }
+.status__badge { padding: 1px 9px; border-radius: var(--radius-pill); background: var(--panel); font-size: var(--text-caption); font-weight: 600; white-space: nowrap; }
 .status__badge--warn { color: var(--warning); }
 .status__badge--info { color: var(--activity); }
 .status__badge--ok { color: var(--success); }
@@ -2017,7 +2012,7 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 .onboarding__icon { flex: none; width: 44px; height: 44px; border-radius: var(--radius-md); background: var(--selection); color: var(--activity); display: flex; align-items: center; justify-content: center; }
 
 .onboarding__clis { gap: 10px; }
-.onboarding__clis li { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: var(--radius-card); background: var(--panel-2); border: 1px solid var(--line); }
+.onboarding__clis li { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: var(--radius-card); background: var(--panel-2); }
 .onboarding__cli-dot { width: 12px; height: 12px; }
 .onboarding__cli-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
 
