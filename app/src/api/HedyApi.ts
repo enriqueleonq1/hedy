@@ -12,6 +12,7 @@ import type {
   Rev,
   SearchOptions,
   SearchResults,
+  WriteResult,
 } from "./codeTypes";
 import type {
   AcceptMode,
@@ -251,6 +252,27 @@ export interface HedyApi {
   openFileInEditor(copy: CodeCopy, path: string, line?: number): Promise<void>;
   /** Opens the file's folder in the system file manager (selects it on macOS). */
   revealInFileManager(copy: CodeCopy, path: string): Promise<void>;
+
+  // ------------------------------------------------ light editing
+  // Only live copies (the folder, an open task's worktree), never while the
+  // task's agent works on it, never protected files or `.git`.
+
+  /** Saves `text` when the file is still the `expected` version (else a conflict, nothing written). */
+  writeFile(copy: CodeCopy, path: string, text: string, expected: string): Promise<WriteResult>;
+  /** Creates an empty file (and the folders above it); rejects when something is there. */
+  createFile(copy: CodeCopy, path: string): Promise<{ version: string; size: number }>;
+  createFolder(copy: CodeCopy, path: string): Promise<void>;
+  /** Renames or moves a file or folder; rejects when `to` exists. */
+  renamePath(copy: CodeCopy, from: string, to: string): Promise<void>;
+  /** Moves a file or folder to the system's trash. */
+  deletePath(copy: CodeCopy, path: string): Promise<void>;
+  /** Copies a file next to itself (`x copia.py`); resolves to the new path. */
+  duplicateFile(copy: CodeCopy, path: string): Promise<string>;
+  /**
+   * The window is about to close: `confirm` decides (e.g. after asking about
+   * unsaved changes); resolving `false` keeps it open.
+   */
+  onCloseRequested(confirm: () => Promise<boolean>): Unsubscribe;
 
   /** Live events of every task. */
   onTaskEvent(listener: (taskId: string, event: AgentEvent) => void): Unsubscribe;

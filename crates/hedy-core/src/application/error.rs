@@ -112,6 +112,24 @@ pub enum AppError {
     /// Commit, push, pull or pull request (see [`ShipError`]).
     #[error("{}", self.message())]
     Ship(ShipError),
+    /// An accepted task's snapshot: its files are read from a commit.
+    #[error("{}", self.message())]
+    CopyReadOnly,
+    /// The task's agent is working on that copy: editing waits for it.
+    #[error("{}", self.message())]
+    CopyBusy(TaskId),
+    /// A new file or folder, or a rename, would replace something.
+    #[error("{}", self.message())]
+    PathExists(String),
+    /// Nothing at that path of the copy.
+    #[error("{}", self.message())]
+    PathMissing(String),
+    /// Not a text file Hedy can edit (binary, too large, not UTF-8).
+    #[error("{}", self.message())]
+    FileNotEditable(String),
+    /// Not a valid name for a file or folder.
+    #[error("{}", self.message())]
+    InvalidFileName(String),
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -360,6 +378,24 @@ impl AppError {
             Self::FileLocked(path) => tr!(
                 "{path} está protegido: Hedy no lo lee; ábrelo en tu editor",
                 "{path} is protected: Hedy does not read it; open it in your editor"
+            ),
+            Self::CopyReadOnly => tr!(
+                "es una instantánea de solo lectura (la tarea ya se integró): edita en tu carpeta",
+                "this is a read-only snapshot (the task was already accepted): edit in your folder"
+            ),
+            Self::CopyBusy(id) => tr!(
+                "la IA está trabajando en la copia de la tarea {id}; podrás editar cuando termine",
+                "the AI is working on task {id}'s copy; you can edit when it finishes"
+            ),
+            Self::PathExists(path) => tr!("«{path}» ya existe", "«{path}» already exists"),
+            Self::PathMissing(path) => tr!("«{path}» no existe", "«{path}» does not exist"),
+            Self::FileNotEditable(path) => tr!(
+                "{path} no se puede editar en Hedy (binario, muy grande o no es UTF-8): ábrelo en tu editor",
+                "{path} cannot be edited in Hedy (binary, too large or not UTF-8): open it in your editor"
+            ),
+            Self::InvalidFileName(name) => tr!(
+                "«{name}» no es un nombre válido para un archivo o carpeta",
+                "«{name}» is not a valid name for a file or folder"
             ),
         }
     }

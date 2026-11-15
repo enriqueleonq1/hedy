@@ -12,7 +12,6 @@ import type {
   CodeSymbol,
   CodeTree,
   CopyInfo,
-  DiffHunk,
   DiffOptions,
   FileContent,
   FileHistory,
@@ -24,9 +23,14 @@ import type {
   SymbolKind,
   TaskTouch,
   TreeEntry,
+  WriteResult,
 } from "./codeTypes";
+import { MISSING_VERSION } from "./codeTypes";
+import { diffOps, lines, textDiff } from "./lineDiff";
+
+export { textDiff };
 import { SAMPLE_REPOS, type SampleFile, type SampleRepo } from "./mockCodeSamples";
-import type { DiffLine, FileDiff, Task } from "./types";
+import type { FileDiff, Task } from "./types";
 
 /** Same as `permissions::DEFAULT_BLOCKED` in the backend. */
 const BLOCKED = [".env", ".env.*", "*.pem", "*.key", "id_rsa*", "id_ed25519*", ".npmrc", ".pypirc", "credentials*"];
@@ -74,88 +78,25 @@ function isSafeRev(rev: string): boolean {
   return rev.length > 0 && rev.length <= 200 && !rev.startsWith("-") && !rev.includes("..") && /^[A-Za-z0-9._/~^-]+$/.test(rev);
 }
 
-/** Splits text into lines like git (a final newline does not start a line). */
-function lines(text: string): string[] {
-  if (text === "") return [];
-  const all = text.split("\n");
-  if (all[all.length - 1] === "") all.pop();
-  return all;
-}
-
-type Op = { kind: DiffLine["kind"]; oldLine: number | null; newLine: number | null; text: string };
-
-/** Line diff by longest common subsequence (the sample files are small). */
-function diffOps(a: string[], b: string[]): Op[] {
-  const n = a.length;
-  const m = b.length;
-  // lcs[i * (m + 1) + j]: common lines of a[i..] and b[j..].
-  const lcs = new Uint32Array((n + 1) * (m + 1));
-  const at = (i: number, j: number) => lcs[i * (m + 1) + j] ?? 0;
-  for (let i = n - 1; i >= 0; i--) {
-    for (let j = m - 1; j >= 0; j--) {
-      lcs[i * (m + 1) + j] = a[i] === b[j] ? at(i + 1, j + 1) + 1 : Math.max(at(i + 1, j), at(i, j + 1));
-    }
-  }
-  const ops: Op[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < n || j < m) {
-    if (i < n && j < m && a[i] === b[j]) {
-      ops.push({ kind: "context", oldLine: i + 1, newLine: j + 1, text: a[i] ?? "" });
-      i++;
-      j++;
-    } else if (i < n && (j === m || at(i + 1, j) >= at(i, j + 1))) {
-      // Removed lines come first within a change, like git.
-      ops.push({ kind: "removed", oldLine: i + 1, newLine: null, text: a[i] ?? "" });
-      i++;
-    } else {
-      ops.push({ kind: "added", oldLine: null, newLine: j + 1, text: b[j] ?? "" });
-      j++;
-    }
-  }
-  return ops;
-}
-
-function hunks(ops: Op[], context: number): DiffHunk[] {
-  const changed = ops.map((op, i) => (op.kind === "context" ? -1 : i)).filter((i) => i >= 0);
-  const out: DiffHunk[] = [];
-  let k = 0;
-  while (k < changed.length) {
-    let end = changed[k] ?? 0;
-    const start = Math.max(0, end - context);
-    while (k + 1 < changed.length && (changed[k + 1] ?? 0) - end <= 2 * context + 1) end = changed[++k] ?? end;
-    end = Math.min(ops.length - 1, end + context);
-    k++;
-    const slice = ops.slice(start, end + 1);
-    const oldLines = slice.filter((o) => o.kind !== "added");
-    const newLines = slice.filter((o) => o.kind !== "removed");
-    const firstOld = oldLines[0]?.oldLine ?? (ops.slice(0, start).filter((o) => o.kind !== "added").length);
-    const firstNew = newLines[0]?.newLine ?? (ops.slice(0, start).filter((o) => o.kind !== "removed").length);
-    out.push({
-      header: `@@ -${firstOld},${oldLines.length} +${firstNew},${newLines.length} @@`,
-      lines: slice.map(({ kind, oldLine, newLine, text }) => ({ kind, oldLine, newLine, text })),
-    });
-  }
-  return out;
-}
-
-/** A unified diff of two texts (`null` = the file does not exist on that side). */
-export function textDiff(path: string, before: string | null, after: string | null, context = 3): FileDiff | null {
-  if (before === after) return null;
-  const ops = diffOps(lines(before ?? ""), lines(after ?? ""));
-  return {
-    path,
-    oldPath: null,
-    status: before === null ? "added" : after === null ? "deleted" : "modified",
-    additions: ops.filter((o) => o.kind === "added").length,
-    deletions: ops.filter((o) => o.kind === "removed").length,
-    binary: false,
-    hunks: hunks(ops, context),
-  };
-}
-
 function byteLength(text: string): number {
   return new TextEncoder().encode(text).length;
+}
+
+/** A file's version like the backend's (`content_version`): a hash of its text and its length. */
+export function textVersion(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${hash.toString(16).padStart(8, "0")}-${byteLength(text)}`;
+}
+
+/** Like the backend's `is_valid_file_name`. */
+function validName(name: string): boolean {
+  if (!name || name === "." || name === ".." || /[. ]$/.test(name) || name.startsWith(" ")) return false;
+  // eslint-disable-next-line no-control-regex
+  return !/[\u0000-\u001f/\\:*?"<>|]/.test(name);
 }
 
 /** A file of a copy: the sample's kind, or text that replaced it. */
@@ -185,8 +126,17 @@ export class MockCode {
 
   constructor(
     private host: MockCodeHost,
-    private repos: Record<string, SampleRepo> = SAMPLE_REPOS,
-  ) {}
+    repos: Record<string, SampleRepo> = SAMPLE_REPOS,
+  ) {
+    // Edits change the repositories: each instance gets its own.
+    this.repos = structuredClone(repos);
+  }
+
+  private repos: Record<string, SampleRepo>;
+  /** Folders created in each copy (git lists no empty folders). */
+  private folders = new Map<string, Set<string>>();
+  /** Tests: what was moved to the trash (`<root>/<path>`). */
+  trashed: string[] = [];
 
   private folder(project: string, task: Task | null): Resolved {
     const repo = this.repos[project] ?? null;
@@ -323,7 +273,9 @@ export class MockCode {
     switch (entry.kind) {
       case "text": {
         const size = byteLength(entry.text);
-        return size > MAX_TEXT_BYTES ? { kind: "tooLarge", size } : { kind: "text", text: entry.text, size };
+        return size > MAX_TEXT_BYTES
+          ? { kind: "tooLarge", size }
+          : { kind: "text", text: entry.text, size, version: textVersion(entry.text) };
       }
       case "image": {
         const size = Math.floor((entry.base64.length * 3) / 4) - (entry.base64.match(/=+$/)?.[0].length ?? 0);
@@ -523,6 +475,182 @@ export class MockCode {
     const resolved = this.resolve(copy);
     const file = `${resolved.info.root}/${this.checked(path)}`;
     this.revealed.push(file.slice(0, file.lastIndexOf("/")));
+  }
+
+  // ---------------------------------------------------------------- editing
+
+  private copyKey(info: CopyInfo): string {
+    return info.task ? `task:${info.task}` : `folder:${info.project}`;
+  }
+
+  /** A copy that can be written now (like the backend's `writable_copy`). */
+  private writable(copy: CodeCopy): Resolved {
+    const resolved = this.resolve(copy);
+    if (!resolved.info.live) throw "es una instantánea de solo lectura (la tarea ya se integró): edita en tu carpeta";
+    if (resolved.info.agentWorking) {
+      throw `la IA está trabajando en la copia de la tarea ${resolved.info.task ?? ""}; podrás editar cuando termine`;
+    }
+    return resolved;
+  }
+
+  private writablePath(path: string): string {
+    const clean = this.checked(path);
+    if (clean === ".hedy" || clean.startsWith(".hedy/")) throw `«${path}» no es un archivo dentro de esta copia`;
+    if (isProtectedPath(clean)) throw `${clean} está protegido: Hedy no lo lee; ábrelo en tu editor`;
+    return clean;
+  }
+
+  /** Where a copy's own changes live in the sample repository. */
+  private changeSet(resolved: Resolved): { repo: SampleRepo; changes: Record<string, string | null> } {
+    const project = resolved.info.project;
+    const repo = (this.repos[project] ??= {
+      branch: "main",
+      commits: [],
+      files: {},
+      folderChanges: {},
+      untracked: {},
+      ignored: [],
+      tasks: {},
+    });
+    if (resolved.task && resolved.info.task) return { repo, changes: (repo.tasks[resolved.info.task] ??= {}) };
+    return { repo, changes: repo.folderChanges };
+  }
+
+  /** Sets (or, with `null`, deletes) a working file of the copy. */
+  private put(resolved: Resolved, path: string, text: string | null): void {
+    const { repo, changes } = this.changeSet(resolved);
+    const base = repo.files[path];
+    const folderCopy = !resolved.task;
+    if (folderCopy) Reflect.deleteProperty(repo.untracked, path);
+    if (text === null) {
+      if (base) changes[path] = null;
+      else Reflect.deleteProperty(changes, path);
+    } else if (folderCopy && !base) {
+      repo.untracked[path] = text;
+      Reflect.deleteProperty(changes, path);
+    } else if (base?.kind === "text" && base.text === text) {
+      Reflect.deleteProperty(changes, path);
+    } else {
+      changes[path] = text;
+    }
+  }
+
+  private kindAt(resolved: Resolved, path: string): "file" | "folder" | null {
+    const files = this.files(resolved);
+    if (files.has(path)) return "file";
+    const prefix = `${path}/`;
+    if ([...files.keys()].some((p) => p.startsWith(prefix))) return "folder";
+    return this.folders.get(this.copyKey(resolved.info))?.has(path) ? "folder" : null;
+  }
+
+  private checkNewName(path: string): void {
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    if (!validName(name)) throw `«${name}» no es un nombre válido para un archivo o carpeta`;
+  }
+
+  /** Tests: someone else (an agent) changed a file of the copy (`null` deletes it). */
+  setText(copy: CodeCopy, path: string, text: string | null): void {
+    this.put(this.resolve(copy), this.checked(path), text);
+  }
+
+  writeFile(copy: CodeCopy, path: string, text: string, expected: string): WriteResult {
+    const resolved = this.writable(copy);
+    const clean = this.writablePath(path);
+    const entry = this.files(resolved).get(clean);
+    if (!entry) {
+      if (expected !== MISSING_VERSION) return { kind: "conflict", text: null, version: MISSING_VERSION };
+      this.put(resolved, clean, text);
+      return { kind: "saved", version: textVersion(text), size: byteLength(text) };
+    }
+    if (entry.kind !== "text") throw `${clean} no se puede editar en Hedy (binario, muy grande o no es UTF-8): ábrelo en tu editor`;
+    const version = textVersion(entry.text);
+    if (version !== expected) return { kind: "conflict", text: entry.text, version };
+    const next = entry.text.endsWith("\n") && text !== "" && !text.endsWith("\n") ? `${text}\n` : text;
+    this.put(resolved, clean, next);
+    return { kind: "saved", version: textVersion(next), size: byteLength(next) };
+  }
+
+  createFile(copy: CodeCopy, path: string): { version: string; size: number } {
+    const resolved = this.writable(copy);
+    const clean = this.writablePath(path);
+    this.checkNewName(clean);
+    if (this.kindAt(resolved, clean)) throw `«${clean}» ya existe`;
+    this.put(resolved, clean, "");
+    return { version: textVersion(""), size: 0 };
+  }
+
+  createFolder(copy: CodeCopy, path: string): void {
+    const resolved = this.writable(copy);
+    const clean = this.writablePath(path);
+    this.checkNewName(clean);
+    if (this.kindAt(resolved, clean)) throw `«${clean}» ya existe`;
+    const key = this.copyKey(resolved.info);
+    const set = this.folders.get(key) ?? new Set<string>();
+    set.add(clean);
+    this.folders.set(key, set);
+  }
+
+  /** The files under a path (itself when it is a file), refusing protected ones inside a folder. */
+  private movable(resolved: Resolved, path: string): string[] {
+    const kind = this.kindAt(resolved, path);
+    if (!kind) throw `«${path}» no existe`;
+    if (kind === "file") return [path];
+    const inside = [...this.files(resolved).keys()].filter((p) => p.startsWith(`${path}/`));
+    const locked = inside.find((p) => isProtectedPath(p));
+    if (locked) throw `${locked} está protegido: Hedy no lo lee; ábrelo en tu editor`;
+    return inside;
+  }
+
+  renamePath(copy: CodeCopy, from: string, to: string): void {
+    const resolved = this.writable(copy);
+    const source = this.writablePath(from);
+    const target = this.writablePath(to);
+    if (source === target) return;
+    this.checkNewName(target);
+    const moved = this.movable(resolved, source);
+    if (source.toLowerCase() !== target.toLowerCase() && this.kindAt(resolved, target)) throw `«${target}» ya existe`;
+    const files = this.files(resolved);
+    for (const path of moved) {
+      const entry = files.get(path);
+      const text = entry?.kind === "text" ? entry.text : "";
+      this.put(resolved, path, null);
+      this.put(resolved, `${target}${path.slice(source.length)}`, text);
+    }
+    const set = this.folders.get(this.copyKey(resolved.info));
+    if (set?.delete(source)) set.add(target);
+  }
+
+  deletePath(copy: CodeCopy, path: string): void {
+    const resolved = this.writable(copy);
+    const clean = this.writablePath(path);
+    for (const file of this.movable(resolved, clean)) this.put(resolved, file, null);
+    this.folders.get(this.copyKey(resolved.info))?.delete(clean);
+    this.trashed.push(`${resolved.info.root}/${clean}`);
+  }
+
+  duplicateFile(copy: CodeCopy, path: string): string {
+    const resolved = this.writable(copy);
+    const clean = this.writablePath(path);
+    const entry = this.files(resolved).get(clean);
+    if (!entry) throw `«${clean}» no existe`;
+    if (entry.kind !== "text") throw `${clean} no se puede editar en Hedy (binario, muy grande o no es UTF-8): ábrelo en tu editor`;
+    const name = clean.slice(clean.lastIndexOf("/") + 1);
+    const dot = name.lastIndexOf(".");
+    const cut = dot > 0 ? clean.length - (name.length - dot) : clean.length;
+    const [stem, ext] = [clean.slice(0, cut), clean.slice(cut)];
+    for (let n = 1; n <= 100; n++) {
+      const candidate = n === 1 ? `${stem} copia${ext}` : `${stem} copia ${n}${ext}`;
+      if (!this.kindAt(resolved, candidate)) {
+        this.put(resolved, candidate, entry.text);
+        return candidate;
+      }
+    }
+    throw `«${stem} copia${ext}» ya existe`;
+  }
+
+  /** Whether a task's changes come from the sample repository (its diff is computed from them). */
+  hasTaskChanges(project: string, task: string): boolean {
+    return !!this.repos[project]?.tasks[task];
   }
 
   /** A task's changes as the review panel shows them, from the sample repository. */

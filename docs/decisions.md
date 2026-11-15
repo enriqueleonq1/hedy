@@ -1263,3 +1263,98 @@ status` is the only automatic network call, cached, and only when the folder has
 **Not verified live:** a push to a real GitHub remote and `gh pr create` against GitHub
 (tested against a bare local remote and a fake `gh` script; the AI suggestion against
 the agent double).
+
+## 27. Light editing (Nov 15, 2026)
+
+Hedy is still not an IDE (§25): editing is for one-line fixes during a review. Everything
+else goes to VS Code ("Abrir en VS Code en esta línea").
+
+### Core
+
+- **Port `CodeWriter`** (`adapters::LocalCodeWriter`), separate from `CodeReader`, which
+  stays read-only: replace a file, create a file or folder, rename, copy, walk a folder,
+  move to the trash. It never touches git (not even the index). Every path is joined to
+  the copy's folder and its deepest existing parent must resolve inside it, so a link to
+  a folder elsewhere cannot be used to write outside. Use cases in
+  `application/code_edit.rs`: `save_code_file`, `create_code_file`,
+  `create_code_folder`, `rename_code_path`, `delete_code_path`, `duplicate_code_file`.
+- **Only live copies:** the user's folder or an open task's worktree. An accepted task's
+  snapshot is refused (`CopyReadOnly`), and so is a copy whose task's agent is working
+  or waiting for an answer (`CopyBusy`); the check is made at write time.
+- **Never protected files or `.git`:** paths go through `normalize_code_path` like the
+  readers, `.hedy/` is refused, a protected name (`DEFAULT_BLOCKED`) is refused as source
+  or target, a save through a link to a protected file is refused (the link's target
+  decides), and a folder is renamed or deleted only when nothing inside it is protected
+  or a nested `.git` (checked with a walk of at most 100,000 entries; a bigger folder is
+  refused).
+- **Optimistic concurrency:** `read_file` returns a `version` with every text
+  (`content_version`: FNV-1a 64 of the bytes plus their length, a fingerprint, not a
+  security measure). A save carries the version the editor loaded; if the file on disk
+  is another one, nothing is written and the current text comes back as
+  `WriteOutcome::Conflict` (data, not an error, so the UI can offer
+  recargar / comparar / sobrescribir). "Sobrescribir" is a save with the conflict's
+  version. A file deleted meanwhile is a conflict with `text: null` and version
+  `missing`; saving with `missing` writes it again. The check and the write are not
+  atomic (a write in the gap of a few milliseconds is lost); acceptable for a
+  hand-made fix.
+- **What a save keeps:** line endings (CRLF when at least half of the file's lines used
+  them; the editor always holds `\n`), a UTF-8 byte-order mark, the final newline when
+  the file had one, and the file's permissions (written to a temporary sibling, then
+  renamed over it). Only valid UTF-8 text up to 2 MB is editable (`FileNotEditable`
+  otherwise); a save that would not change the bytes writes nothing.
+- **Deleting goes to the system's trash** (the `trash` crate, freedesktop backend on
+  Linux, the platform's own on macOS/Windows), so a mistake is recoverable outside Hedy.
+  The confirmation says so. Adapter tests use their own trash folder, never the user's.
+- **Duplicate** names the copy `nombre copia.ext` (`copy` in English), then `copia 2`…
+- **A task's review follows:** its diff (`Git::diff`) and the code views read the
+  worktree, so a saved edit is part of the task's changes on the next read: the review
+  shows it (with the agent's) and accepting commits it with them. That is intended: the
+  user corrects the task's work in place. The UI invalidates the copy's code queries, the
+  task's diff and, for the folder, its git status after every write.
+
+### UI
+
+- **Edit mode** in the viewer: the pencil in the toolbar, Ctrl/⌘ E (free in the app;
+  Ctrl/⌘ ⇧ E stays the explorer), a double click in the code, "Editar aquí" in the line
+  menu. It flips CodeMirror's `readOnly` compartment and an `editing` compartment
+  (history, indentation on input, bracket closing, Tab to indent with Esc-Tab to leave,
+  Alt/⌥ click for another cursor, Ctrl/⌘ D for the next occurrence, Alt/⌥ ⇧ drag for a
+  column, Ctrl/⌘ H for find and replace). A bar under the header shows the state
+  (editing, unsaved, saved, locked and why), undo/redo, "Descartar cambios" (one
+  undoable change back to the saved text) and "Guardar" (Ctrl/⌘ S).
+- **Locks are explained, not hidden:** an accepted task ("Instantánea de solo lectura"),
+  another revision or a comparison on screen, a protected file, a binary or too large
+  file. The pencil looks disabled but a click says why. While the agent works, editing
+  can be turned on and the bar says "La IA está trabajando en esta copia; podrás editar
+  cuando termine"; the panel takes the agent's state from the live task, so the editor
+  unlocks as soon as it finishes (an unsaved buffer stays, and its save is checked
+  against the agent's changes).
+- **Unsaved changes** (`code/editor/unsaved.tsx`, mounted once in `App`): the viewer
+  registers its buffer while it differs from the file; opening another file, switching
+  the copy, closing the file, moving to another task or screen (Back included) and
+  closing the window (Tauri's close-requested, with `core:window:allow-destroy`) ask
+  Guardar / Descartar / Cancelar. A buffer is never replaced by a refetch while it has
+  changes. Hiding the side panel does not ask: the panel stays mounted and nothing is
+  lost. The dot for unsaved changes shows on the breadcrumb and the explorer's row (one
+  viewer, no tabs).
+- **Conflict:** a bar with Recargar (take the disk's version), Comparar (an inline diff,
+  disk vs mine, over the editor, which stays mounted) and Sobrescribir.
+- **Explorer:** Nuevo archivo / Nueva carpeta (toolbar and folder menu; an inline name
+  in the tree, checked as it is typed; a new file's name may hold folders,
+  `api/v2/x.py`), Renombrar (F2, inline), Duplicar, Eliminar (Supr, a confirmation naming
+  it). New files open in edit mode. On a snapshot or a working copy the buttons look
+  disabled and say why. Git lists no empty folders, so a folder created in Hedy shows
+  (for the session) until a file lands in it.
+- **From the review:** "Editar aquí" in the diff's line menu, the file header (pencil)
+  and the file menu opens the task's copy in edit mode at that line: a one-line fix is
+  two clicks plus the typing.
+- **Blame gutter** is reconfigured in its own compartment, present only while blame is
+  on: a hidden blame takes no width (it used to keep its column). Narrow panels tighten
+  the gutters' padding.
+- The palette's sectioned listbox (`components/palette/VirtualList.tsx`) stays apart from
+  `components/ui/VirtualList.tsx`: it lays out titled groups of two row heights with
+  `role="group"` and keeps the active option rendered; merging would mean variable
+  heights in the shared list, not worth the risk now.
+
+**Not verified live:** the trash on macOS and Windows, and Tauri's close-requested in the
+packaged app (the flow is tested against `MockApi.requestClose`).

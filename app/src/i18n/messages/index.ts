@@ -8,6 +8,7 @@ import code from "./code";
 import common from "./common";
 import composer from "./composer";
 import create from "./create";
+import edit from "./edit";
 import mascot from "./mascot";
 import memory from "./memory";
 import onboarding from "./onboarding";
@@ -52,6 +53,7 @@ const es = {
   ...ship.es,
   ...code.es,
   ...statusbar.es,
+  ...edit.es,
 };
 const en: Record<keyof typeof es, string> = {
   ...common.en,
@@ -77,6 +79,7 @@ const en: Record<keyof typeof es, string> = {
   ...ship.en,
   ...code.en,
   ...statusbar.en,
+  ...edit.en,
 };
 
 export type MessageKey = keyof typeof es;

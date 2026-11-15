@@ -27,6 +27,8 @@ export interface NavigatorTarget {
   rev?: Rev;
   /** `"file"` (default): the contents; `"diff"`: against the copy's base (or `rev`). */
   view?: NavigatorView;
+  /** Open it in edit mode ("Editar aquí"), when the copy and the file allow it. */
+  edit?: boolean;
 }
 
 export interface FileNavigator {

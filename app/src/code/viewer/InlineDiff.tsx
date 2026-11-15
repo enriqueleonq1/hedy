@@ -11,7 +11,16 @@ const ROW = 20;
 
 type Row = { kind: "hunk"; header: string } | { kind: "line"; line: DiffLine };
 
-export function InlineDiff({ diff, onOpenLine }: { diff: CodeDiff; onOpenLine?: (line: number) => void }) {
+export function InlineDiff({
+  diff,
+  onOpenLine,
+  caption,
+}: {
+  diff: CodeDiff;
+  onOpenLine?: (line: number) => void;
+  /** What the two sides are, next to the counts. */
+  caption?: string;
+}) {
   const t = useT();
   const body = diff.body;
   if (body.kind === "binary") return <CodeState title={t("code.viewer.binary")} text={t("code.diff.binary")} />;
@@ -29,6 +38,7 @@ export function InlineDiff({ diff, onOpenLine }: { diff: CodeDiff; onOpenLine?: 
     <div className="inline-diff">
       <p className="inline-diff__stats">
         <span className="plus">+{body.additions}</span> <span className="minus">-{body.deletions}</span>
+        {caption && <span className="inline-diff__caption">{caption}</span>}
       </p>
       <VirtualList
         className="inline-diff__lines"

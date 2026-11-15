@@ -8,6 +8,7 @@ import { ApiProvider } from "../api/context";
 import { MockApi } from "../api/MockApi";
 import { ToastProvider } from "../components/ui/Toast";
 import { FileNavigatorProvider } from "../files/navigator";
+import { UnsavedChangesProvider } from "./editor/unsaved";
 
 export function sampleApi(): MockApi {
   const api = MockApi.withSampleData().withSampleActivity();
@@ -21,7 +22,9 @@ export function renderCode(ui: ReactElement, api: MockApi = sampleApi()) {
     <QueryClientProvider client={client}>
       <ApiProvider api={api}>
         <ToastProvider>
-          <FileNavigatorProvider>{children}</FileNavigatorProvider>
+          <FileNavigatorProvider>
+            <UnsavedChangesProvider>{children}</UnsavedChangesProvider>
+          </FileNavigatorProvider>
         </ToastProvider>
       </ApiProvider>
     </QueryClientProvider>

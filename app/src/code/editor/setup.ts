@@ -1,9 +1,18 @@
-// The one place that sets up a CodeMirror editor for Hedy. Read-only for now:
-// turning editing on later means flipping `readOnly` (its compartment) and adding
-// `history()` with the editing keymaps here, nothing else.
+// The one place that sets up a CodeMirror editor for Hedy. It starts read-only;
+// editing flips two compartments: `readOnly`, and `editing` (history, bracket
+// closing, indentation on input, multiple cursors and their keys).
 
-import { defaultKeymap } from "@codemirror/commands";
-import { bracketMatching, codeFolding, foldGutter, foldKeymap, indentUnit, syntaxHighlighting } from "@codemirror/language";
+import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import {
+  bracketMatching,
+  codeFolding,
+  foldGutter,
+  foldKeymap,
+  indentOnInput,
+  indentUnit,
+  syntaxHighlighting,
+} from "@codemirror/language";
 import { gotoLine, highlightSelectionMatches, openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
@@ -13,9 +22,10 @@ import {
   highlightActiveLineGutter,
   keymap,
   lineNumbers,
+  rectangularSelection,
 } from "@codemirror/view";
 
-import { blameGutter, changeMarkers, targetLineHighlight } from "./extensions";
+import { changeMarkers, targetLineHighlight } from "./extensions";
 import { hedyEditorTheme, hedyHighlightStyle } from "./theme";
 
 /** Per-editor switches that change after creation. */
@@ -23,10 +33,20 @@ export interface EditorCompartments {
   language: Compartment;
   readOnly: Compartment;
   phrases: Compartment;
+  /** The blame gutter: present only while blame is on, so it takes no width otherwise. */
+  blame: Compartment;
+  /** What only editing needs (history, bracket closing, multiple cursors). */
+  editing: Compartment;
 }
 
 export function createCompartments(): EditorCompartments {
-  return { language: new Compartment(), readOnly: new Compartment(), phrases: new Compartment() };
+  return {
+    language: new Compartment(),
+    readOnly: new Compartment(),
+    phrases: new Compartment(),
+    blame: new Compartment(),
+    editing: new Compartment(),
+  };
 }
 
 function foldMarker(open: boolean): HTMLElement {
@@ -37,19 +57,43 @@ function foldMarker(open: boolean): HTMLElement {
   return el;
 }
 
-/** Ctrl/⌘ G: go to line (Ctrl/⌘ Alt G too, CodeMirror's own). */
+/** Ctrl/⌘ G: go to line (Ctrl/⌘ Alt G too, CodeMirror's own); Ctrl/⌘ H: find and replace. */
 const viewerKeymap = [
   { key: "Mod-g", run: gotoLine, preventDefault: true },
   { key: "Mod-f", run: openSearchPanel, scope: "editor search-panel", preventDefault: true },
+  { key: "Mod-h", run: openSearchPanel, scope: "editor search-panel", preventDefault: true },
 ];
+
+/** Read-only, but still focusable with a caret: find, select, copy, go to line. */
+export function readOnlyExtensions(readOnly: boolean): Extension {
+  return [EditorState.readOnly.of(readOnly), EditorView.contentAttributes.of({ "aria-readonly": String(readOnly) })];
+}
+
+/**
+ * Editing: undo/redo, indentation as you type, closing brackets and quotes,
+ * Tab to indent (Esc then Tab leaves the editor), several cursors (Alt/⌥ click
+ * adds one, Ctrl/⌘ D the next occurrence) and column selection (Alt/⌥ ⇧ drag).
+ */
+export function editingExtensions(on: boolean): Extension {
+  if (!on) return [];
+  return [
+    history(),
+    indentOnInput(),
+    closeBrackets(),
+    EditorState.allowMultipleSelections.of(true),
+    EditorView.clickAddsSelectionRange.of((e) => e.altKey),
+    rectangularSelection({ eventFilter: (e) => e.altKey && e.shiftKey }),
+    keymap.of([...closeBracketsKeymap, ...historyKeymap, indentWithTab]),
+  ];
+}
 
 /** Everything an editor needs, given its compartments and starting values. */
 export function editorExtensions(
   compartments: EditorCompartments,
-  options: { readOnly: boolean; language: Extension; phrases: Record<string, string> },
+  options: { readOnly: boolean; language: Extension; phrases: Record<string, string>; blame?: Extension },
 ): Extension[] {
   return [
-    blameGutter(),
+    compartments.blame.of(options.blame ?? []),
     lineNumbers(),
     changeMarkers(),
     foldGutter({ markerDOM: foldMarker }),
@@ -61,15 +105,14 @@ export function editorExtensions(
     bracketMatching(),
     targetLineHighlight(),
     search({ top: true }),
+    compartments.editing.of(editingExtensions(!options.readOnly)),
     keymap.of([...viewerKeymap, ...searchKeymap, ...foldKeymap, ...defaultKeymap]),
     syntaxHighlighting(hedyHighlightStyle, { fallback: true }),
     hedyEditorTheme,
     EditorState.tabSize.of(4),
     indentUnit.of("    "),
-    // Read-only, but still focusable with a caret: find, select, copy, go to line.
-    compartments.readOnly.of(EditorState.readOnly.of(options.readOnly)),
+    compartments.readOnly.of(readOnlyExtensions(options.readOnly)),
     compartments.language.of(options.language),
     compartments.phrases.of(EditorState.phrases.of(options.phrases)),
-    EditorView.contentAttributes.of({ "aria-readonly": String(options.readOnly) }),
   ];
 }

@@ -19,6 +19,7 @@ import { useReviewed } from "../screens/workspace/reviewed";
 import { ShipPanel } from "../screens/workspace/ship/ShipPanel";
 import { useReviewComments } from "./comments";
 import { HistoryDialog } from "./HistoryDialog";
+import { PencilIcon } from "../code/icons";
 import { CheckIcon, CommentIcon, DisclosureIcon, ExternalIcon, FileIcon, SplitIcon, UnifiedIcon } from "./icons";
 import "../styles/reviewer.css";
 
@@ -230,6 +231,11 @@ export function Changes({ project, task }: { project: string; task: Task | null 
         ),
     },
     {
+      label: t("edit.here"),
+      disabled: f.status === "deleted",
+      onSelect: () => nav.open({ copy, path: f.path, line: firstLine(f), view: "file", edit: true }),
+    },
+    {
       label: t("common.openInVsCode"),
       disabled: f.status === "deleted",
       onSelect: () => void api.openFileInEditor(copy, f.path, firstLine(f)).catch((e: unknown) => toast.error(errorMessage(e, t))),
@@ -388,6 +394,16 @@ export function Changes({ project, task }: { project: string; task: Task | null 
                       onClick={() => fileMenu(current)[0]?.onSelect()}
                     >
                       <FileIcon />
+                    </button>
+                    <button
+                      type="button"
+                      className="rv-icon-btn"
+                      aria-label={t("edit.here")}
+                      title={t("edit.here")}
+                      disabled={current.status === "deleted"}
+                      onClick={() => nav.open({ copy, path: current.path, line: firstLine(current), view: "file", edit: true })}
+                    >
+                      <PencilIcon />
                     </button>
                     <label className="rv-viewed">
                       <input type="checkbox" checked={reviewed.isReviewed(current)} onChange={() => reviewed.toggle(current)} />

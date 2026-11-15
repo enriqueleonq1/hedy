@@ -191,3 +191,60 @@ export const LineIcon = () => (
     <path d="M2.5 4h2M2.5 8h2M2.5 12h2M7 4h6.5M7 8h6.5M7 12h4" />
   </Icon>
 );
+
+/** Editing: a pencil. */
+export const PencilIcon = () => (
+  <Icon>
+    <path d="M10.6 3.1a1.5 1.5 0 0 1 2.1 0l.2.2a1.5 1.5 0 0 1 0 2.1L6 12.3l-3 .7.7-3Z" />
+    <path d="m9.5 4.2 2.3 2.3" />
+  </Icon>
+);
+
+export const UndoIcon = () => (
+  <Icon>
+    <path d="M5.5 4 3 6.5 5.5 9" />
+    <path d="M3 6.5h6.5a3.5 3.5 0 0 1 0 7H7" />
+  </Icon>
+);
+
+export const RedoIcon = () => (
+  <Icon>
+    <path d="M10.5 4 13 6.5 10.5 9" />
+    <path d="M13 6.5H6.5a3.5 3.5 0 0 0 0 7H9" />
+  </Icon>
+);
+
+export const NewFileIcon = () => (
+  <Icon>
+    <path d="M9 2.5H4.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V6Z" />
+    <path d="M9 2.5V6h3.5M8 8.5v3M6.5 10h3" />
+  </Icon>
+);
+
+export const NewFolderIcon = () => (
+  <Icon>
+    <path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1Z" />
+    <path d="M8 7.5v3.5M6.25 9.25h3.5" />
+  </Icon>
+);
+
+export const TrashIcon = () => (
+  <Icon>
+    <path d="M3 4.5h10M6.5 4.5v-1a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1" />
+    <path d="M4.5 4.5l.6 8.1a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8.1" />
+  </Icon>
+);
+
+export const RenameIcon = () => (
+  <Icon>
+    <path d="M2.5 5.5h7v5h-7Z" />
+    <path d="M12 3.5v9M10.75 3.5h2.5M10.75 12.5h2.5" />
+  </Icon>
+);
+
+export const DuplicateIcon = () => (
+  <Icon>
+    <rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1" />
+    <path d="M3.5 10.5h-.25a.75.75 0 0 1-.75-.75v-6.5a.75.75 0 0 1 .75-.75h6.5a.75.75 0 0 1 .75.75v.25" />
+  </Icon>
+);

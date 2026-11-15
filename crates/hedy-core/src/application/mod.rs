@@ -4,6 +4,7 @@ mod accounts;
 mod activity;
 mod attachments;
 mod code;
+mod code_edit;
 mod conversations;
 mod detect;
 mod doctor;
@@ -40,6 +41,7 @@ pub use code::{
     BASE_REV, CodeCopy, CodeDiff, CodeTree, CopyInfo, FileContent, FileHistory, HistoryCommit,
     MAX_DIFF_CONTEXT, TaskTouch,
 };
+pub use code_edit::{Saved, WriteOutcome};
 pub use conversations::NewConversation;
 pub use detect::DetectedCli;
 pub use doctor::{Check, CheckArea, CheckLevel, DoctorReport};
@@ -66,8 +68,8 @@ pub use templates::{NewTemplate, TemplateScope};
 
 use crate::domain::TaskId;
 use ports::{
-    AgentLauncher, Clock, CodeHost, CodeReader, FileSystem, Git, NoTaskEvents, ProcessRunner,
-    SecretStore, SourceControl, Store, TaskEvents, UsageProbe,
+    AgentLauncher, Clock, CodeHost, CodeReader, CodeWriter, FileSystem, Git, NoTaskEvents,
+    ProcessRunner, SecretStore, SourceControl, Store, TaskEvents, UsageProbe,
 };
 
 /// Everything the use cases need from the outside world.
@@ -78,6 +80,7 @@ pub struct Ports {
     pub fs: Arc<dyn FileSystem>,
     pub git: Arc<dyn Git>,
     pub code: Arc<dyn CodeReader>,
+    pub writer: Arc<dyn CodeWriter>,
     pub agents: Arc<dyn AgentLauncher>,
     pub clock: Arc<dyn Clock>,
     pub usage: Arc<dyn UsageProbe>,
@@ -94,6 +97,7 @@ pub struct Hedy {
     fs: Arc<dyn FileSystem>,
     git: Arc<dyn Git>,
     code: Arc<dyn CodeReader>,
+    writer: Arc<dyn CodeWriter>,
     agents: Arc<dyn AgentLauncher>,
     clock: Arc<dyn Clock>,
     usage: Arc<dyn UsageProbe>,
@@ -119,6 +123,7 @@ impl Hedy {
             fs: ports.fs,
             git: ports.git,
             code: ports.code,
+            writer: ports.writer,
             agents: ports.agents,
             clock: ports.clock,
             usage: ports.usage,

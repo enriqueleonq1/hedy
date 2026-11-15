@@ -3,8 +3,8 @@
 // Revisión, Terminal, Vista previa. The code views say which copy they show
 // ("Tu carpeta" / "Tarea: …") and share one file viewer.
 
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../api/context";
 import type { CodeCopy, CopyInfo, MatchRange } from "../api/codeTypes";
@@ -13,13 +13,15 @@ import { TerminalView } from "../components/Terminal/TerminalView";
 import { clampSize, ResizeHandle } from "../components/ui/ResizeHandle";
 import { Select } from "../components/ui/Select";
 import { TabBar, type TabItem } from "../components/ui/TabBar";
-import { codeKeys, copyKey, sameCopy, useFileNavigator } from "../files/navigator";
+import { codeKeys, copyKey, sameCopy, useFileNavigator, type NavigatorTarget } from "../files/navigator";
 import { useT } from "../i18n";
 import { useReviewComments } from "../review/comments";
 import { useTaskDiff } from "../tasks/hooks";
 import { isOpen } from "../tasks/timeline";
 import "../styles/code.css";
+import "../styles/edit.css";
 import { defaultCopy, taskHasCopy } from "./copies";
+import { useUnsavedChanges } from "./editor/unsaved";
 import { Explorer } from "./explorer/Explorer";
 import { FilesIcon, LockIcon, PreviewIcon, ReviewIcon, SearchIcon, TerminalIcon } from "./icons";
 import { panelShortcut, shortcutAria, shortcutLabel, type PanelShortcut } from "./keys";
@@ -143,6 +145,31 @@ export function SidePanel({ project, task, hidden = false, onRequestOpen, review
   );
 
   const info = useQuery({ queryKey: codeKeys.info(copy), queryFn: () => api.codeCopy(copy), retry: false });
+  // The open task's agent state is live (task events); the copy's info only when fetched.
+  const working = !!task && (task.status === "running" || task.status === "waitingApproval");
+  const ownTask = copy.kind === "task" && copy.task === taskId;
+  const copyInfo = useMemo(
+    () => (info.data && ownTask ? { ...info.data, agentWorking: working } : info.data),
+    [info.data, ownTask, working],
+  );
+  // The agent stopped: its files may have changed (a clean viewer reloads; an edit is checked on save).
+  const client = useQueryClient();
+  const wasWorking = useRef(working);
+  useEffect(() => {
+    if (wasWorking.current && !working && taskId) {
+      void client.invalidateQueries({ queryKey: codeKeys.copy({ kind: "task", task: taskId }) });
+    }
+    wasWorking.current = working;
+  }, [working, taskId, client]);
+
+  // Unsaved edits in the viewer: leaving the file asks first (Guardar / Descartar / Cancelar).
+  const unsaved = useUnsavedChanges();
+  const [dirtyFile, setDirtyFile] = useState<string | null>(null);
+  const dirty = !!file && dirtyFile === file.path;
+  const guard = (go: () => void) => {
+    if (!dirty) return go();
+    void unsaved.confirmLeave().then((ok) => ok && go());
+  };
 
   // --- tabs
   const editable = !!task?.workspace && isOpen(task);
@@ -200,6 +227,38 @@ export function SidePanel({ project, task, hidden = false, onRequestOpen, review
     nav.open({ copy: inCopy, path, line: more.line, rev: more.rev });
   };
 
+  const applyTarget = (target: NavigatorTarget & { view: string }, more: Partial<OpenFile>) => {
+    openFile(
+      {
+        ...more,
+        path: target.path,
+        line: target.line,
+        rev: target.rev,
+        compare: target.view === "diff" ? (target.rev ?? "base") : more.compare,
+        edit: target.edit || more.edit,
+      },
+      { copy: target.copy, tab: tab === "search" ? "search" : "explorer" },
+    );
+    if (tab !== "search") revealIn(target.path, false);
+  };
+
+  // A request for another file while this one has unsaved changes: held until answered.
+  const [held, setHeld] = useState<{ target: NavigatorTarget & { view: string }; more: Partial<OpenFile> } | null>(null);
+  useEffect(() => {
+    if (!held) return;
+    let live = true;
+    void unsaved.confirmLeave().then((ok) => {
+      if (!live) return;
+      setHeld(null);
+      if (ok) applyTarget(held.target, held.more);
+    });
+    return () => {
+      live = false;
+    };
+    // Only a new held request asks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [held]);
+
   // Requests from here and from elsewhere (a link in the timeline, the palette, a diff line).
   const [navSeen, setNavSeen] = useState(nav.seq);
   if (nav.seq !== navSeen) {
@@ -211,17 +270,9 @@ export function SidePanel({ project, task, hidden = false, onRequestOpen, review
       // The review store selects the file itself (it listens to the navigator too).
       show("review");
     } else if (target) {
-      openFile(
-        {
-          ...more,
-          path: target.path,
-          line: target.line,
-          rev: target.rev,
-          compare: target.view === "diff" ? (target.rev ?? "base") : more.compare,
-        },
-        { copy: target.copy, tab: tab === "search" ? "search" : "explorer" },
-      );
-      if (tab !== "search") revealIn(target.path, false);
+      const sameFile = !!file && sameCopy(target.copy, copy) && target.path === file.path;
+      if (dirty && !sameFile) setHeld({ target, more });
+      else applyTarget(target, more);
     }
   }
 
@@ -286,7 +337,7 @@ export function SidePanel({ project, task, hidden = false, onRequestOpen, review
     <FileViewer
       key={`${copyKey(copy)}:${file.path}`}
       copy={copy}
-      info={info.data}
+      info={copyInfo}
       file={file}
       onChange={(next) => update({ file: next })}
       onRevealFolder={(folder) => {
@@ -296,7 +347,8 @@ export function SidePanel({ project, task, hidden = false, onRequestOpen, review
       onShowDiff={(path) => showDiff(path, copy)}
       onOpenTask={(touch, path) => navigate(path, {}, { kind: "task", task: touch.task })}
       onBack={() => update({ viewing: false })}
-      onClose={() => update({ file: null, viewing: false })}
+      onClose={() => guard(() => update({ file: null, viewing: false }))}
+      onDirtyChange={(on) => setDirtyFile(on ? file.path : null)}
     />
   ) : null;
 
@@ -333,9 +385,9 @@ export function SidePanel({ project, task, hidden = false, onRequestOpen, review
               copies={copies}
               copy={copy}
               label={copyLabel}
-              info={info.data}
+              info={copyInfo}
               error={info.isError}
-              onChange={(c) => update({ copy: c })}
+              onChange={(c) => guard(() => update({ copy: c }))}
             />
             <Browse viewing={!!file && current.viewing} viewer={viewer}>
               <div
@@ -347,8 +399,15 @@ export function SidePanel({ project, task, hidden = false, onRequestOpen, review
               >
                 <Explorer
                   copy={copy}
-                  info={info.data}
+                  info={copyInfo}
                   openPath={file?.path ?? null}
+                  dirtyPath={dirty ? (file?.path ?? null) : null}
+                  onCreated={(path) => navigate(path, { edit: true })}
+                  onMoved={(from, to) => {
+                    const open = file?.path;
+                    if (!open || !(open === from || open.startsWith(`${from}/`))) return;
+                    update({ file: to === null ? null : { ...file, path: `${to}${open.slice(from.length)}`, seq: file.seq + 1 } });
+                  }}
                   onOpen={(path) => navigate(path)}
                   onShowDiff={(path) => showDiff(path, copy)}
                   onHistory={(path) => navigate(path, { history: true })}
@@ -365,7 +424,7 @@ export function SidePanel({ project, task, hidden = false, onRequestOpen, review
               >
                 <SearchView
                   copy={copy}
-                  info={info.data}
+                  info={copyInfo}
                   openKey={file?.select ?? null}
                   onOpen={(path: string, line: number, ranges: MatchRange[], key: string) =>
                     navigate(path, { line, ranges, select: key })

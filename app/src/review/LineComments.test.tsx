@@ -111,6 +111,7 @@ describe("Line comments in the review", () => {
       "Comentar la línea 17C",
       "Copiar la línea",
       "Abrir el archivo en esta línea",
+      "Editar aquí",
       "Abrir en VS Code en esta línea",
     ]);
     await user.click(within(menu).getByRole("menuitem", { name: /Comentar la línea 17/ }));
@@ -200,6 +201,7 @@ describe("Line comments in the review", () => {
     const menu = screen.getByRole("menu", { name: "Acciones de facturas/totales.py" });
     expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
       "Abrir archivo",
+      "Editar aquí",
       "Abrir en VS Code",
       "Copiar ruta",
       "Marcar como revisado",

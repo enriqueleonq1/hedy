@@ -14,6 +14,7 @@ rusqlite = { version = "0.42.0", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
+trash = { version = "5.3.0", default-features = false, features = ["freedesktop"] }
 jiff = "0.2.43"
 regex = "1.13.1"
 ureq = { version = "3.5.2", features = ["json"] }

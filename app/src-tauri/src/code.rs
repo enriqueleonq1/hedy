@@ -1,13 +1,15 @@
-//! Code navigation and review commands (read-only), with their DTOs: the
-//! file tree of a copy, file contents, one file's diff, text search,
-//! history, blame, a file's outline, and opening a file outside Hedy.
+//! Code navigation and review commands, with their DTOs: the file tree of a
+//! copy, file contents, one file's diff, text search, history, blame, a
+//! file's outline, opening a file outside Hedy, and light editing (save,
+//! create, rename, duplicate, delete).
 //! Mirrored by `app/src/api/codeTypes.ts`.
 
 use std::path::PathBuf;
 
 use base64::Engine as _;
 use hedy_core::application::{
-    CodeCopy, CodeDiff, CodeTree, CopyInfo, FileContent, FileHistory, MAX_DIFF_CONTEXT,
+    CodeCopy, CodeDiff, CodeTree, CopyInfo, FileContent, FileHistory, MAX_DIFF_CONTEXT, Saved,
+    WriteOutcome,
 };
 use hedy_core::domain::TaskId;
 use hedy_core::domain::TaskStatus;
@@ -128,6 +130,7 @@ pub enum FileContentDto {
     Text {
         text: String,
         size: u64,
+        version: String,
     },
     #[serde(rename_all = "camelCase")]
     Image {
@@ -148,7 +151,15 @@ pub enum FileContentDto {
 impl From<FileContent> for FileContentDto {
     fn from(c: FileContent) -> Self {
         match c {
-            FileContent::Text { text, size } => Self::Text { text, size },
+            FileContent::Text {
+                text,
+                size,
+                version,
+            } => Self::Text {
+                text,
+                size,
+                version,
+            },
             FileContent::Image {
                 media_type,
                 bytes,
@@ -241,6 +252,49 @@ impl From<FileHistory> for FileHistoryDto {
                     open: t.open,
                 })
                 .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedDto {
+    pub version: String,
+    pub size: u64,
+}
+
+impl From<Saved> for SavedDto {
+    fn from(s: Saved) -> Self {
+        Self {
+            version: s.version,
+            size: s.size,
+        }
+    }
+}
+
+/// What a save did: `saved`, or `conflict` with the file's current text
+/// (`null` when it was deleted) and the version that overwrites it.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum WriteResultDto {
+    Saved {
+        version: String,
+        size: u64,
+    },
+    Conflict {
+        text: Option<String>,
+        version: String,
+    },
+}
+
+impl From<WriteOutcome> for WriteResultDto {
+    fn from(o: WriteOutcome) -> Self {
+        match o {
+            WriteOutcome::Saved(s) => Self::Saved {
+                version: s.version,
+                size: s.size,
+            },
+            WriteOutcome::Conflict { text, version } => Self::Conflict { text, version },
         }
     }
 }
@@ -379,6 +433,76 @@ pub async fn reveal_in_file_manager(
     blocking(&state, move |h| h.reveal_code_file(&copy.into(), &path)).await
 }
 
+/// Saves the editor's text when the file is still the version it loaded.
+#[tauri::command]
+pub async fn write_file(
+    state: State<'_, AppState>,
+    copy: CodeCopyInput,
+    path: String,
+    text: String,
+    expected: String,
+) -> CommandResult<WriteResultDto> {
+    blocking(&state, move |h| {
+        Ok(h.save_code_file(&copy.into(), &path, &text, &expected)?
+            .into())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn create_file(
+    state: State<'_, AppState>,
+    copy: CodeCopyInput,
+    path: String,
+) -> CommandResult<SavedDto> {
+    blocking(&state, move |h| {
+        Ok(h.create_code_file(&copy.into(), &path)?.into())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn create_folder(
+    state: State<'_, AppState>,
+    copy: CodeCopyInput,
+    path: String,
+) -> CommandResult<()> {
+    blocking(&state, move |h| h.create_code_folder(&copy.into(), &path)).await
+}
+
+#[tauri::command]
+pub async fn rename_path(
+    state: State<'_, AppState>,
+    copy: CodeCopyInput,
+    from: String,
+    to: String,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.rename_code_path(&copy.into(), &from, &to)
+    })
+    .await
+}
+
+/// Moves a file or folder to the system's trash.
+#[tauri::command]
+pub async fn delete_path(
+    state: State<'_, AppState>,
+    copy: CodeCopyInput,
+    path: String,
+) -> CommandResult<()> {
+    blocking(&state, move |h| h.delete_code_path(&copy.into(), &path)).await
+}
+
+/// Copies a file next to itself; returns the new path.
+#[tauri::command]
+pub async fn duplicate_file(
+    state: State<'_, AppState>,
+    copy: CodeCopyInput,
+    path: String,
+) -> CommandResult<String> {
+    blocking(&state, move |h| h.duplicate_code_file(&copy.into(), &path)).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -417,6 +541,15 @@ mod tests {
         assert_eq!(
             serde_json::to_value(FileContentDto::Locked).unwrap(),
             serde_json::json!({ "kind": "locked" })
+        );
+        let saved = serde_json::to_value(WriteResultDto::from(WriteOutcome::Conflict {
+            text: None,
+            version: "missing".into(),
+        }))
+        .unwrap();
+        assert_eq!(
+            saved,
+            serde_json::json!({ "kind": "conflict", "text": null, "version": "missing" })
         );
         let body = serde_json::to_value(DiffBody::TooLarge { size: 1 }).unwrap();
         assert_eq!(body, serde_json::json!({ "kind": "tooLarge", "size": 1 }));

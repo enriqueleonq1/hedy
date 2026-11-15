@@ -687,6 +687,44 @@ pub trait CodeReader: Send + Sync {
     ) -> PortResult<Blame>;
 }
 
+/// What is at a path of a copy's working files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathKind {
+    File,
+    Folder,
+    /// A symbolic link (to anything); renamed or deleted as the link itself.
+    Link,
+}
+
+/// Light editing of a copy's working files (the user's folder or a task's
+/// worktree), kept apart from [`CodeReader`], which never writes. Paths are
+/// relative to `dir`, already checked by the use case; the adapter still
+/// refuses anything whose parent folder resolves outside `dir`. Nothing here
+/// touches git (not even the index).
+pub trait CodeWriter: Send + Sync {
+    /// What is at `path`, without following a final symbolic link; `None`
+    /// when nothing is there.
+    fn kind(&self, dir: &Path, path: &str) -> PortResult<Option<PathKind>>;
+    /// Replaces an existing regular file's contents, keeping its
+    /// permissions (through a temporary file renamed over it).
+    fn replace_file(&self, dir: &Path, path: &str, bytes: &[u8]) -> PortResult<()>;
+    /// Creates a file (and missing parent folders); fails when anything is
+    /// already there: nothing is overwritten.
+    fn create_file(&self, dir: &Path, path: &str, bytes: &[u8]) -> PortResult<()>;
+    /// Creates a folder (and missing parents); fails when it exists.
+    fn create_folder(&self, dir: &Path, path: &str) -> PortResult<()>;
+    /// Moves `from` to `to` (missing parent folders created); fails when
+    /// `to` exists, unless it is `from` itself (a change of case).
+    fn rename(&self, dir: &Path, from: &str, to: &str) -> PortResult<()>;
+    /// Copies a regular file with its permissions; fails when `to` exists.
+    fn copy_file(&self, dir: &Path, from: &str, to: &str) -> PortResult<()>;
+    /// Every path inside a folder (files, folders and links, not followed),
+    /// relative to `dir`, at most `max`; `true` when there were more.
+    fn walk(&self, dir: &Path, folder: &str, max: usize) -> PortResult<(Vec<String>, bool)>;
+    /// Moves a file or folder to the system's trash (recoverable there).
+    fn trash(&self, dir: &Path, path: &str) -> PortResult<()>;
+}
+
 /// A branch's remote-tracking branch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Upstream {

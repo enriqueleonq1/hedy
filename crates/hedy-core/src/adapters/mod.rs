@@ -3,6 +3,7 @@
 mod acp;
 mod api_agent;
 mod claude;
+mod code_writer;
 mod codex;
 mod fs;
 mod git;
@@ -21,6 +22,7 @@ use std::sync::Arc;
 pub use acp::AcpLauncher;
 pub use api_agent::ApiAgentLauncher;
 pub use claude::{ClaudeCodeLauncher, hook};
+pub use code_writer::LocalCodeWriter;
 pub use codex::CodexLauncher;
 pub use fs::LocalFileSystem;
 pub use git::GitCli;
@@ -161,6 +163,7 @@ fn build(paths: &HedyPaths, claude: ClaudeCodeLauncher) -> PortResult<Hedy> {
         )),
         git: Arc::new(GitCli),
         code: Arc::new(GitCli),
+        writer: Arc::new(LocalCodeWriter::default()),
         agents: Arc::new(AgentRouter {
             claude,
             codex: CodexLauncher,

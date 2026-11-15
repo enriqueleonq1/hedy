@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import type { HedyApi } from "./HedyApi";
@@ -101,6 +102,29 @@ export const tauriApi: HedyApi = {
   fileSymbols: (copy, path) => invoke("file_symbols", { copy, path }),
   openFileInEditor: (copy, path, line) => invoke("open_file_in_editor", { copy, path, line: line ?? null }),
   revealInFileManager: (copy, path) => invoke("reveal_in_file_manager", { copy, path }),
+  writeFile: (copy, path, text, expected) => invoke("write_file", { copy, path, text, expected }),
+  createFile: (copy, path) => invoke("create_file", { copy, path }),
+  createFolder: (copy, path) => invoke("create_folder", { copy, path }),
+  renamePath: (copy, from, to) => invoke("rename_path", { copy, from, to }),
+  deletePath: (copy, path) => invoke("delete_path", { copy, path }),
+  duplicateFile: (copy, path) => invoke("duplicate_file", { copy, path }),
+  onCloseRequested: (confirm) => {
+    // Tauri closes the window after the handler unless it prevents it.
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    void getCurrentWindow()
+      .onCloseRequested(async (event) => {
+        if (!(await confirm())) event.preventDefault();
+      })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  },
   sendMessage: (id, text) => invoke("send_message", { id, text }),
   queued: (id) => invoke("queued", { id }),
   queueMessage: (id, text, images) => invoke("queue_message", { id, text, images: images ?? null }),

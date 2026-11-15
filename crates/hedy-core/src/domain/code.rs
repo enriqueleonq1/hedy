@@ -1,8 +1,9 @@
-//! Read-only code navigation and review: what changed in a copy of the code
-//! (the user's folder or a task's worktree), file contents, text search,
-//! history, blame and a light outline of a file. The rules here are pure:
-//! which paths and revisions are acceptable, what counts as binary, and how
-//! an outline is read from a file's text.
+//! Code navigation and review: what changed in a copy of the code (the
+//! user's folder or a task's worktree), file contents, text search, history,
+//! blame and a light outline of a file, plus what light editing needs. The
+//! rules here are pure: which paths, names and revisions are acceptable,
+//! what counts as binary, how an outline is read from a file's text, a
+//! file's version, and the bytes a save writes.
 
 use serde::{Deserialize, Serialize};
 
@@ -109,6 +110,64 @@ pub fn normalize_code_path(path: &str) -> Option<String> {
         }
     }
     (!parts.is_empty()).then(|| parts.join("/"))
+}
+
+/// The version of a file a missing file has: an editor that saves with it
+/// expects the file not to exist (it was deleted meanwhile and is written again).
+pub const MISSING_VERSION: &str = "missing";
+
+/// A file's version for optimistic concurrency: a hash of its bytes and their
+/// length. An editor saves with the version it loaded; a different one on
+/// disk means someone else (an agent, another editor) changed the file.
+/// FNV-1a, 64 bits: not cryptographic, only a fingerprint.
+pub fn content_version(bytes: &[u8]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{hash:016x}-{}", bytes.len())
+}
+
+const BOM: &str = "\u{feff}";
+
+/// The bytes to write for `text` (as an editor holds it, lines joined by
+/// `\n`) over a file that held `original`: its line endings (CRLF when most
+/// of its lines used them), its byte-order mark and its final newline are
+/// kept, so saving a one-line fix does not rewrite every line.
+pub fn text_for_disk(original: Option<&[u8]>, text: &str) -> Vec<u8> {
+    let text = text.strip_prefix(BOM).unwrap_or(text);
+    let mut text = text.replace("\r\n", "\n");
+    let original = original.unwrap_or_default();
+    let crlf = original.windows(2).filter(|w| w == b"\r\n").count();
+    let lf = original.iter().filter(|&&b| b == b'\n').count();
+    if original.ends_with(b"\n") && !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    if crlf > 0 && crlf * 2 >= lf {
+        text = text.replace('\n', "\r\n");
+    }
+    let mut bytes = Vec::with_capacity(text.len() + 3);
+    if original.starts_with(BOM.as_bytes()) {
+        bytes.extend_from_slice(BOM.as_bytes());
+    }
+    bytes.extend_from_slice(text.as_bytes());
+    bytes
+}
+
+/// Whether `name` can be the last part of a new file or folder: not empty,
+/// no separators or control characters, not `.`/`..`, no trailing dot or
+/// space (Windows drops them) and not too long.
+pub fn is_valid_file_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 255
+        && name != "."
+        && name != ".."
+        && !name.ends_with(['.', ' '])
+        && !name.starts_with(' ')
+        && !name.chars().any(|c| {
+            c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
+        })
 }
 
 /// Whether `rev` can be handed to git as a revision: a commit hash, a
@@ -667,6 +726,45 @@ mod tests {
             "$(x)",
         ] {
             assert!(!is_safe_rev(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn versions_change_with_any_byte() {
+        let a = content_version(b"IVA = 0.19\n");
+        assert_eq!(a, content_version(b"IVA = 0.19\n"));
+        assert_ne!(a, content_version(b"IVA = 0.21\n"));
+        assert!(a.ends_with("-11"));
+        assert_ne!(content_version(b""), MISSING_VERSION);
+    }
+
+    #[test]
+    fn saving_keeps_line_endings_bom_and_final_newline() {
+        let crlf = b"a\r\nb\r\n";
+        assert_eq!(text_for_disk(Some(crlf), "a\nB"), b"a\r\nB\r\n");
+        assert_eq!(text_for_disk(Some(b"a\nb\n"), "a\nb\nc\n"), b"a\nb\nc\n");
+        // No final newline before: none added.
+        assert_eq!(text_for_disk(Some(b"a\nb"), "a\nc"), b"a\nc");
+        // Mostly LF with a stray CRLF: LF.
+        assert_eq!(text_for_disk(Some(b"a\nb\nc\r\nd\n"), "x\ny\n"), b"x\ny\n");
+        let bom = "\u{feff}hola\n".as_bytes();
+        assert_eq!(
+            text_for_disk(Some(bom), "\u{feff}adiós"),
+            "\u{feff}adiós\n".as_bytes()
+        );
+        assert_eq!(text_for_disk(None, "nuevo"), b"nuevo");
+        assert_eq!(text_for_disk(Some(b"x\n"), ""), b"");
+    }
+
+    #[test]
+    fn new_names_are_plain_file_names() {
+        for good in ["app.py", ".gitignore", "Leeme ñ.md", "a b"] {
+            assert!(is_valid_file_name(good), "{good}");
+        }
+        for bad in [
+            "", ".", "..", "a/b", "a\\b", "x.", "x ", " x", "a:b", "a\nb", "q?",
+        ] {
+            assert!(!is_valid_file_name(bad), "{bad:?}");
         }
     }
 
