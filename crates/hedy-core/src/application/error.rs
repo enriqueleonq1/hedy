@@ -79,6 +79,27 @@ pub enum AppError {
     TemplateNotFound(String),
     #[error("{}", self.message())]
     TemplateExists(String),
+    #[error("{}", self.message())]
+    UndoBlocked(UndoBlocked),
+}
+
+/// Why accepting a task cannot be undone safely. Hedy only moves the base
+/// branch back while nothing else happened on it; otherwise the user decides
+/// (for example with `git revert`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UndoBlocked {
+    /// The task is not accepted.
+    NotAccepted,
+    /// Accepted before Hedy kept what the merge did.
+    NoRecord,
+    /// The main checkout is on another branch now.
+    NotOnBase { current: String },
+    /// New commits landed on the base branch after the merge.
+    MovedOn,
+    /// The merge is already on a remote branch.
+    Published { remotes: Vec<String> },
+    /// Git refused: files the merge changed have local changes.
+    LocalChanges(String),
 }
 
 pub type AppResult<T> = Result<T, AppError>;
@@ -228,6 +249,40 @@ impl AppError {
                 "ya hay una plantilla llamada «{name}» en ese alcance",
                 "there is already a template called «{name}» in that scope"
             ),
+            Self::UndoBlocked(why) => {
+                let why = match why {
+                    UndoBlocked::NotAccepted => {
+                        tr!("la tarea no está integrada", "the task is not merged")
+                    }
+                    UndoBlocked::NoRecord => tr!(
+                        "se integró antes de que Hedy guardara cómo deshacerlo",
+                        "it was merged before Hedy kept how to undo it"
+                    ),
+                    UndoBlocked::NotOnBase { current } => tr!(
+                        "tu carpeta principal está ahora en la rama «{current}»",
+                        "your main folder is now on branch «{current}»"
+                    ),
+                    UndoBlocked::MovedOn => tr!(
+                        "ya hay commits nuevos después de la integración",
+                        "there are new commits after the merge"
+                    ),
+                    UndoBlocked::Published { remotes } => {
+                        let remotes = remotes.join(", ");
+                        tr!(
+                            "los cambios ya se subieron a {remotes}",
+                            "the changes were already pushed to {remotes}"
+                        )
+                    }
+                    UndoBlocked::LocalChanges(git) => tr!(
+                        "hay cambios sin guardar en archivos que tocó la integración ({git})",
+                        "files the merge touched have uncommitted changes ({git})"
+                    ),
+                };
+                tr!(
+                    "No se puede deshacer sin riesgo: {why}. Si quieres quitar los cambios, usa git revert.",
+                    "It cannot be undone safely: {why}. To take the changes out, use git revert."
+                )
+            }
         }
     }
 }

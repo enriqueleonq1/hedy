@@ -56,6 +56,8 @@ pub trait TaskRepository: Send + Sync {
     fn events(&self, id: &TaskId) -> PortResult<Vec<AgentEvent>>;
     /// Events with the time they were recorded (seconds).
     fn timed_events(&self, id: &TaskId) -> PortResult<Vec<(i64, AgentEvent)>>;
+    /// Tasks whose user chose to wait for a limit to renew (any age).
+    fn waiting_tasks(&self) -> PortResult<Vec<Task>>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -364,6 +366,14 @@ pub trait Git: Send + Sync {
     fn recent_commits(&self, repo: &Path, limit: usize) -> PortResult<Vec<Commit>>;
     /// Files with uncommitted changes in the main checkout (untracked included).
     fn uncommitted_changes(&self, repo: &Path) -> PortResult<usize>;
+    /// The commit `rev` (a branch, `HEAD`...) points to.
+    fn rev_parse(&self, repo: &Path, rev: &str) -> PortResult<String>;
+    /// Remote-tracking branches that contain `commit`: it was pushed.
+    fn remote_branches_containing(&self, repo: &Path, commit: &str) -> PortResult<Vec<String>>;
+    /// Moves the current branch back to `commit` like `git reset --keep`:
+    /// files with local changes it would overwrite make it fail and nothing
+    /// changes; other local changes and untracked files stay as they are.
+    fn reset_keep(&self, repo: &Path, commit: &str) -> PortResult<()>;
 }
 
 /// Receives the agent's events, on the adapter's own thread.

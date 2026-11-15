@@ -1,0 +1,54 @@
+// Reviewing a task's changes and accepting them: the review sheet before the
+// merge, undoing it, and marking files as reviewed in the diff.
+
+const es = {
+  "review.title": "Revisar antes de integrar",
+  "review.loading": "Preparando el resumen…",
+  "review.into": "Se integra en {target} desde {branch}.",
+  "review.files": "Archivos: {n}",
+  "review.lines": "{added} líneas añadidas y {removed} eliminadas",
+  "review.message": "Mensaje del commit",
+  "review.messageHint": "Se propone a partir del título y del resumen de la tarea.",
+  "review.tests.passed": "Los últimos tests pasaron: {command}",
+  "review.tests.failed": "Los últimos tests fallaron: {command}. Puedes integrar igual.",
+  "review.tests.none": "La tarea no corrió tests. Puedes integrar igual.",
+  "review.checkout": "Tu carpeta principal está en la rama {current}: cámbiala a {target} o la integración no se podrá hacer.",
+  "review.confirm": "Aceptar e integrar",
+  "review.merged": "Cambios integrados en {branch}.",
+  "review.undo": "Deshacer",
+  "review.undone": "Integración deshecha: la tarea vuelve a revisión con su rama.",
+  "review.undoMerge": "Deshacer la integración",
+  "review.undoHint": "Solo es posible si nada más cambió en {branch} y no se subió a un remoto.",
+  "review.progress": "{n} de {total} revisados",
+  "review.mark": "Revisado",
+  "review.markNamed": "Marcar {path} como revisado",
+  "review.reviewed": "revisado",
+  "review.keys": "j / k: archivo siguiente o anterior",
+};
+
+const en: Record<keyof typeof es, string> = {
+  "review.title": "Review before merging",
+  "review.loading": "Preparing the summary…",
+  "review.into": "Merges into {target} from {branch}.",
+  "review.files": "Files: {n}",
+  "review.lines": "{added} lines added and {removed} removed",
+  "review.message": "Commit message",
+  "review.messageHint": "Proposed from the task's title and summary.",
+  "review.tests.passed": "The last tests passed: {command}",
+  "review.tests.failed": "The last tests failed: {command}. You can still merge.",
+  "review.tests.none": "The task ran no tests. You can still merge.",
+  "review.checkout": "Your main folder is on branch {current}: switch it to {target} or the merge cannot be done.",
+  "review.confirm": "Accept and merge",
+  "review.merged": "Changes merged into {branch}.",
+  "review.undo": "Undo",
+  "review.undone": "Merge undone: the task is back in review with its branch.",
+  "review.undoMerge": "Undo the merge",
+  "review.undoHint": "Only possible if nothing else changed on {branch} and it was not pushed.",
+  "review.progress": "{n} of {total} reviewed",
+  "review.mark": "Reviewed",
+  "review.markNamed": "Mark {path} as reviewed",
+  "review.reviewed": "reviewed",
+  "review.keys": "j / k: next or previous file",
+};
+
+export default { es, en };

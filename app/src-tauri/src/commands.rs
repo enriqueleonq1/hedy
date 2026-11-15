@@ -16,9 +16,9 @@ use tauri::ipc::Channel;
 
 use crate::AppState;
 use crate::dto::{
-    self, ActivityDto, MemoryDto, NewAccountInput, NewTaskInput, NewTemplateInput, OverviewDto,
-    PlanDto, ProjectStatusDto, SkillChangeDto, SkillDraftInput, SkillFilesDto, SkillsDto, TaskDto,
-    TemplateDto, UsagePointDto, UsageSummaryDto,
+    self, AcceptPreviewDto, ActivityDto, MemoryDto, NewAccountInput, NewTaskInput,
+    NewTemplateInput, OverviewDto, PlanDto, ProjectStatusDto, SkillChangeDto, SkillDraftInput,
+    SkillFilesDto, SkillsDto, TaskDto, TemplateDto, UsagePointDto, UsageSummaryDto,
 };
 use crate::terminal::{TerminalEvent, TerminalRequest, Terminals};
 
@@ -379,9 +379,55 @@ pub async fn task_diff(state: State<'_, AppState>, id: String) -> CommandResult<
     blocking(&state, move |h| h.task_diff(&task_id(id))).await
 }
 
+/// What accepting would do: shown in the review sheet before anything changes.
 #[tauri::command]
-pub async fn accept_task(state: State<'_, AppState>, id: String) -> CommandResult<()> {
-    blocking(&state, move |h| h.accept_task(&task_id(id)).map(drop)).await
+pub async fn accept_preview(
+    state: State<'_, AppState>,
+    id: String,
+) -> CommandResult<AcceptPreviewDto> {
+    blocking(&state, move |h| Ok(h.accept_preview(&task_id(id))?.into())).await
+}
+
+/// "Aceptar e integrar", with the commit message from the sheet (the proposed
+/// one when empty).
+#[tauri::command]
+pub async fn accept_task(
+    state: State<'_, AppState>,
+    id: String,
+    message: Option<String>,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.accept_task_with(&task_id(id), message.as_deref())
+            .map(drop)
+    })
+    .await
+}
+
+/// "Deshacer": only when it is safe; otherwise the error says why.
+#[tauri::command]
+pub async fn undo_accept(state: State<'_, AppState>, id: String) -> CommandResult<()> {
+    blocking(&state, move |h| h.undo_accept(&task_id(id)).map(drop)).await
+}
+
+/// "Esperar" on a limit card: Hedy resumes the task on the same account when
+/// the limit renews.
+#[tauri::command]
+pub async fn wait_for_limit(state: State<'_, AppState>, id: String) -> CommandResult<()> {
+    blocking(&state, move |h| h.wait_for_limit(&task_id(id)).map(drop)).await
+}
+
+#[tauri::command]
+pub async fn cancel_wait(state: State<'_, AppState>, id: String) -> CommandResult<()> {
+    blocking(&state, move |h| h.cancel_wait(&task_id(id)).map(drop)).await
+}
+
+/// "Continuar": the user resumes a task that waited for its limit.
+#[tauri::command]
+pub async fn resume_after_limit(state: State<'_, AppState>, id: String) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.resume_after_limit(&task_id(id)).map(drop)
+    })
+    .await
 }
 
 #[tauri::command]

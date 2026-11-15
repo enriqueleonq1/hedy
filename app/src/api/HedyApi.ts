@@ -1,4 +1,5 @@
 import type {
+  AcceptPreview,
   ActivityItem,
   AgentEvent,
   Commit,
@@ -117,7 +118,17 @@ export interface HedyApi {
   restoreBuiltinTemplates(): Promise<void>;
   stopTask(id: string): Promise<void>;
   taskDiff(id: string): Promise<FileDiff[]>;
-  acceptTask(id: string): Promise<void>;
+  /** What accepting would do (branch, files, lines, message, tests); changes nothing. */
+  acceptPreview(id: string): Promise<AcceptPreview>;
+  /** Commits with `message` (the proposed one when empty) and merges into the base branch. */
+  acceptTask(id: string, message?: string | null): Promise<void>;
+  /** Takes the merge back out only when that is safe; otherwise rejects with why. */
+  undoAccept(id: string): Promise<void>;
+  /** "Esperar": Hedy resumes the task on the same account when its limit renews. */
+  waitForLimit(id: string): Promise<void>;
+  cancelWait(id: string): Promise<void>;
+  /** "Continuar": resume a task that waited for its limit, on the same account. */
+  resumeAfterLimit(id: string): Promise<void>;
   discardTask(id: string): Promise<void>;
   recentCommits(project: string): Promise<Commit[]>;
   /** Accounts the task may move to: another provider or an API key. */

@@ -4,6 +4,7 @@ mod commands;
 mod dto;
 mod events;
 mod terminal;
+mod waits;
 
 use std::sync::Arc;
 
@@ -31,8 +32,10 @@ pub fn run() {
         .setup(move |app| {
             events::open_tasks_from_notifications(app.handle());
             let events = Arc::new(events::UiEvents(app.handle().clone()));
+            let hedy = hedy.with_task_events(events);
+            waits::start(&hedy);
             app.manage(AppState {
-                hedy: hedy.with_task_events(events),
+                hedy,
                 paths,
                 terminals: Arc::default(),
             });
@@ -76,7 +79,12 @@ pub fn run() {
             commands::restore_builtin_templates,
             commands::stop_task,
             commands::task_diff,
+            commands::accept_preview,
             commands::accept_task,
+            commands::undo_accept,
+            commands::wait_for_limit,
+            commands::cancel_wait,
+            commands::resume_after_limit,
             commands::discard_task,
             commands::recent_commits,
             commands::set_project_phases,

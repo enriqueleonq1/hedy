@@ -16,8 +16,8 @@ use super::ports::{
 use super::{Hedy, NewAccount, Ports};
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, LaunchSpec, Note,
-    NoteStatus, Notice, Project, Provider, QueuedMessage, Skill, SkillStatus, Task, TaskId,
-    TaskStatus, UsageSample,
+    NoteStatus, Notice, NoticeKind, Project, Provider, QueuedMessage, Skill, SkillStatus, Task,
+    TaskId, TaskStatus, UsageSample,
 };
 
 #[derive(Default)]
@@ -318,6 +318,16 @@ impl TaskRepository for MemoryStore {
             .cloned()
             .unwrap_or_default())
     }
+    fn waiting_tasks(&self) -> PortResult<Vec<Task>> {
+        Ok(self
+            .tasks
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|t| t.wait.is_some())
+            .cloned()
+            .collect())
+    }
 }
 
 impl UsageRepository for MemoryStore {
@@ -458,6 +468,13 @@ pub struct FakeGit {
     excluded: Mutex<Vec<String>>,
     ignored: Mutex<Vec<String>>,
     merge: Mutex<MergeOutcome>,
+    /// The main checkout's branch and HEAD; a merge moves HEAD to `merged`.
+    branch: Mutex<String>,
+    head: Mutex<String>,
+    remotes: Mutex<Vec<String>>,
+    reset_error: Mutex<Option<String>>,
+    diff: Mutex<Vec<FileDiff>>,
+    worktrees: Mutex<Vec<String>>,
 }
 
 impl Default for FakeGit {
@@ -467,6 +484,12 @@ impl Default for FakeGit {
             excluded: Mutex::default(),
             ignored: Mutex::default(),
             merge: Mutex::new(MergeOutcome::Merged),
+            branch: Mutex::new("main".into()),
+            head: Mutex::new("abc123".into()),
+            remotes: Mutex::default(),
+            reset_error: Mutex::default(),
+            diff: Mutex::default(),
+            worktrees: Mutex::default(),
         }
     }
 }
@@ -484,6 +507,32 @@ impl FakeGit {
     pub fn set_merge_outcome(&self, outcome: MergeOutcome) {
         *self.merge.lock().unwrap() = outcome;
     }
+    /// The user switches branch in the main checkout.
+    pub fn set_branch(&self, branch: &str) {
+        *self.branch.lock().unwrap() = branch.into();
+    }
+    /// A new commit lands on the main checkout's branch.
+    pub fn set_head(&self, commit: &str) {
+        *self.head.lock().unwrap() = commit.into();
+    }
+    pub fn head(&self) -> String {
+        self.head.lock().unwrap().clone()
+    }
+    /// Remote branches that contain any commit (it was pushed).
+    pub fn set_remotes(&self, remotes: &[&str]) {
+        *self.remotes.lock().unwrap() = remotes.iter().map(|r| r.to_string()).collect();
+    }
+    /// The next `reset_keep` fails with git's message.
+    pub fn fail_reset(&self, message: &str) {
+        *self.reset_error.lock().unwrap() = Some(message.into());
+    }
+    pub fn set_diff(&self, diff: Vec<FileDiff>) {
+        *self.diff.lock().unwrap() = diff;
+    }
+    /// Worktrees added: "<branch> at <commit>".
+    pub fn worktrees(&self) -> Vec<String> {
+        self.worktrees.lock().unwrap().clone()
+    }
 }
 
 impl Git for FakeGit {
@@ -491,23 +540,27 @@ impl Git for FakeGit {
         Ok(3)
     }
     fn current_branch(&self, _: &Path) -> PortResult<String> {
-        Ok("main".into())
+        Ok(self.branch.lock().unwrap().clone())
     }
     fn head_commit(&self, _: &Path) -> PortResult<String> {
-        Ok("abc123".into())
+        Ok(self.head())
     }
     fn ensure_excluded(&self, _: &Path, pattern: &str) -> PortResult<()> {
         self.excluded.lock().unwrap().push(pattern.into());
         Ok(())
     }
-    fn add_worktree(&self, _: &Path, _: &Path, _: &str, _: &str) -> PortResult<()> {
+    fn add_worktree(&self, _: &Path, _: &Path, branch: &str, base: &str) -> PortResult<()> {
+        self.worktrees
+            .lock()
+            .unwrap()
+            .push(format!("{branch} at {base}"));
         Ok(())
     }
     fn is_ignored(&self, _: &Path, path: &str) -> bool {
         self.ignored.lock().unwrap().iter().any(|p| p == path)
     }
     fn diff(&self, _: &Path, _: &str) -> PortResult<Vec<FileDiff>> {
-        Ok(vec![])
+        Ok(self.diff.lock().unwrap().clone())
     }
     fn commit_all(&self, worktree: &Path, message: &str) -> PortResult<bool> {
         self.log
@@ -521,7 +574,11 @@ impl Git for FakeGit {
             .lock()
             .unwrap()
             .push(format!("merge {base} <- {branch}"));
-        Ok(self.merge.lock().unwrap().clone())
+        let outcome = self.merge.lock().unwrap().clone();
+        if outcome == MergeOutcome::Merged {
+            self.set_head("merged");
+        }
+        Ok(outcome)
     }
     fn remove_worktree(&self, _: &Path, _: &Path, branch: &str) -> PortResult<()> {
         self.log.lock().unwrap().push(format!("remove {branch}"));
@@ -529,6 +586,27 @@ impl Git for FakeGit {
     }
     fn recent_commits(&self, _: &Path, _: usize) -> PortResult<Vec<Commit>> {
         Ok(vec![])
+    }
+    fn rev_parse(&self, _: &Path, rev: &str) -> PortResult<String> {
+        Ok(if rev == "HEAD" {
+            "tip".into()
+        } else {
+            rev.into()
+        })
+    }
+    fn remote_branches_containing(&self, _: &Path, _: &str) -> PortResult<Vec<String>> {
+        Ok(self.remotes.lock().unwrap().clone())
+    }
+    fn reset_keep(&self, _: &Path, commit: &str) -> PortResult<()> {
+        if let Some(message) = self.reset_error.lock().unwrap().take() {
+            return Err(PortError::new(message));
+        }
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("reset --keep {commit}"));
+        self.set_head(commit);
+        Ok(())
     }
 }
 
@@ -929,12 +1007,25 @@ impl FileSystem for FakeFs {
 
 /// Records the notices the use cases send to the driving adapter.
 #[derive(Default)]
-pub struct RecordedNotices(Mutex<Vec<(TaskId, Notice)>>, Mutex<Vec<usize>>);
+pub struct RecordedNotices(
+    Mutex<Vec<(TaskId, Notice)>>,
+    Mutex<Vec<usize>>,
+    Mutex<Vec<Task>>,
+);
 
 impl RecordedNotices {
     /// The length of the queue after each change the UI heard about.
     pub fn queue_lengths(&self) -> Vec<usize> {
         self.1.lock().unwrap().clone()
+    }
+
+    pub fn kinds(&self) -> Vec<NoticeKind> {
+        self.0.lock().unwrap().iter().map(|(_, n)| n.kind).collect()
+    }
+
+    /// Every `task_updated` the UI heard, in order.
+    pub fn updated(&self) -> Vec<Task> {
+        self.2.lock().unwrap().clone()
     }
 
     pub fn titles(&self) -> Vec<String> {
@@ -949,7 +1040,9 @@ impl RecordedNotices {
 
 impl TaskEvents for RecordedNotices {
     fn event(&self, _: &TaskId, _: &AgentEvent) {}
-    fn task_updated(&self, _: &Task) {}
+    fn task_updated(&self, task: &Task) {
+        self.2.lock().unwrap().push(task.clone());
+    }
     fn notice(&self, task: &Task, notice: &Notice) {
         self.0
             .lock()

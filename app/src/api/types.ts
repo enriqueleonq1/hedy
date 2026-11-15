@@ -311,6 +311,48 @@ export interface Task {
   stage: number;
   /** Whether its agent process is running right now. */
   live: boolean;
+  /** What accepting did to the base branch, to undo it. */
+  merge?: MergeRecord | null;
+  /** The user chose to wait for the account's limit to renew. */
+  wait?: LimitWait | null;
+}
+
+/** What "Aceptar" changed in the main checkout (commits), kept to undo it. */
+export interface MergeRecord {
+  before: string;
+  after: string;
+  tip: string;
+  /** Unix seconds. */
+  at: number;
+}
+
+/**
+ * "Esperar" on a limit card: Hedy resumes the task on the same account when
+ * the limit renews (never another account).
+ */
+export interface LimitWait {
+  account: string;
+  /** Unix seconds when the limit renews; `null` when unknown. */
+  until: number | null;
+  /** Unix seconds when the user chose to wait. */
+  since: number;
+  /** The reset passed while Hedy was closed: the user resumes ("Continuar"). */
+  ready: boolean;
+}
+
+/** What "Aceptar e integrar" is about to do, before anything changes. */
+export interface AcceptPreview {
+  branch: string;
+  targetBranch: string;
+  /** The branch the project's folder is on now; the merge needs the target. */
+  checkoutBranch: string | null;
+  files: number;
+  additions: number;
+  deletions: number;
+  /** The proposed commit message. */
+  message: string;
+  /** The task's latest test run; `null` when it never ran tests. */
+  tests: { command: string; passed: boolean; at: number } | null;
 }
 
 export interface NewTaskInput {

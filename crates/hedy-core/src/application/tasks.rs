@@ -9,9 +9,7 @@ use std::sync::atomic::Ordering;
 
 use serde_json::Value;
 
-use super::ports::{
-    AgentBackend, AgentRequest, AgentSession, MergeOutcome, RateLimit, Secret, UsageRecord,
-};
+use super::ports::{AgentBackend, AgentRequest, AgentSession, RateLimit, Secret, UsageRecord};
 use super::{AppError, AppResult, Hedy, Setting};
 use crate::domain::permissions::{self, AllowRule, Verdict};
 use crate::domain::phase::pipeline;
@@ -181,6 +179,8 @@ impl Hedy {
             stages,
             stage: 0,
             plan: None,
+            merge: None,
+            wait: None,
         };
         self.store.save_task(&task)?;
         self.record(
@@ -213,7 +213,7 @@ impl Hedy {
     }
 
     /// Links ignored dependency folders (node_modules, .venv...) into the worktree.
-    fn share_dependencies(&self, repo: &Path, worktree: &Path) -> AppResult<()> {
+    pub(super) fn share_dependencies(&self, repo: &Path, worktree: &Path) -> AppResult<()> {
         for name in SHARED_DEPENDENCY_DIRS {
             if self.fs.exists(&repo.join(name)) && self.git.is_ignored(repo, name) {
                 // A symlink is not a directory to git: exclude it explicitly.
@@ -260,7 +260,7 @@ impl Hedy {
     /// Tells the driving adapter about something the user may want to hear
     /// about, unless notifications are off. Only names the agent and the
     /// project: never file contents, commands or the prompt.
-    fn notify(&self, task: &Task, kind: NoticeKind) {
+    pub(super) fn notify(&self, task: &Task, kind: NoticeKind) {
         if !self.notifications_on().unwrap_or(true) {
             return;
         }
@@ -371,7 +371,7 @@ impl Hedy {
         Ok(())
     }
 
-    fn record(&self, id: &TaskId, event: AgentEvent) -> AppResult<()> {
+    pub(super) fn record(&self, id: &TaskId, event: AgentEvent) -> AppResult<()> {
         if !matches!(event, AgentEvent::ToolStarted { .. }) {
             self.store.append_event(id, self.now_secs(), &event)?;
         }
@@ -379,7 +379,7 @@ impl Hedy {
         Ok(())
     }
 
-    fn set_status(&self, task: &mut Task, status: TaskStatus) -> AppResult<()> {
+    pub(super) fn set_status(&self, task: &mut Task, status: TaskStatus) -> AppResult<()> {
         if task.status != status {
             task.status = status;
             self.store.save_task(task)?;
@@ -388,7 +388,7 @@ impl Hedy {
         Ok(())
     }
 
-    fn stop_session(&self, id: &TaskId) {
+    pub(super) fn stop_session(&self, id: &TaskId) {
         if let Some(mut running) = self.live.lock().unwrap().remove(id) {
             running.session.stop();
         }
@@ -775,6 +775,11 @@ impl Hedy {
     /// Sends a user turn now. Restarts the agent (resuming its session) if needed.
     pub(super) fn deliver(&self, task: &mut Task, text: &str) -> AppResult<()> {
         let id = &task.id.clone();
+        // The user (or the renewed limit) sets the task going: no more waiting.
+        if task.wait.take().is_some() {
+            self.store.save_task(task)?;
+            self.events.task_updated(task);
+        }
         self.record(
             id,
             AgentEvent::UserMessage {
@@ -867,6 +872,8 @@ impl Hedy {
             &changed,
         );
         let index = task.stage;
+        // Waiting for the old account's limit makes no sense any more.
+        task.wait = None;
         self.run_stage(&mut task, index, prompt, None)?;
         self.set_status(&mut task, TaskStatus::Running)?;
         Ok(task)
@@ -883,7 +890,7 @@ impl Hedy {
         Ok(())
     }
 
-    fn workspace(task: &Task) -> AppResult<&Workspace> {
+    pub(super) fn workspace(task: &Task) -> AppResult<&Workspace> {
         task.workspace
             .as_ref()
             .ok_or_else(|| AppError::TaskWithoutChanges(task.id.clone()))
@@ -899,33 +906,10 @@ impl Hedy {
         Ok(self.git.diff(&ws.worktree, &ws.base_commit)?)
     }
 
-    /// "Aceptar cambios": commit in the worktree and merge into the base branch.
+    /// "Aceptar cambios" with the proposed commit message (see
+    /// [`Hedy::accept_task_with`]).
     pub fn accept_task(&self, id: &TaskId) -> AppResult<Task> {
-        let mut task = self.task(id)?;
-        let ws = Self::workspace(&task)?.clone();
-        if task.status.is_closed() {
-            return Err(AppError::TaskClosed(id.clone()));
-        }
-        if !task.mode.changes_files() {
-            return Err(AppError::TaskWithoutChanges(id.clone()));
-        }
-        self.stop_session(id);
-        self.git.commit_all(&ws.worktree, &task.title)?;
-        match self.git.merge(&task.project, &ws.base_branch, &ws.branch)? {
-            MergeOutcome::Merged => {}
-            blocked => {
-                self.set_status(&mut task, TaskStatus::Review)?;
-                return Err(AppError::MergeBlocked {
-                    branch: ws.branch.clone(),
-                    reason: blocked,
-                });
-            }
-        }
-        self.git
-            .remove_worktree(&task.project, &ws.worktree, &ws.branch)?;
-        self.set_status(&mut task, TaskStatus::Accepted)?;
-        self.clear_queue(id)?;
-        Ok(task)
+        self.accept_task_with(id, None)
     }
 
     /// "Descartar": stops the agent and deletes the worktree and its branch.
@@ -955,6 +939,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::application::ports::MergeOutcome;
     use crate::application::testing::{AgentCall, Fixture};
 
     fn new_task(f: &Fixture, prompt: &str, plan_first: bool) -> Task {

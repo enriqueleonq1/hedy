@@ -53,7 +53,9 @@ describe("Workspace", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
-    expect(await screen.findByText("Cambios unidos a main.")).toBeInTheDocument();
+    const sheet = await screen.findByRole("dialog", { name: "Revisar antes de integrar" });
+    await user.click(await within(sheet).findByRole("button", { name: "Aceptar e integrar" }));
+    expect(await screen.findByText("Cambios integrados en main.")).toBeInTheDocument();
     expect(await screen.findByText(/ya se aceptó/)).toBeInTheDocument();
     // Many steps: well over the default 5 s on a busy machine.
   }, 20_000);
@@ -174,12 +176,13 @@ describe("Workspace", () => {
     const user = userEvent.setup();
     await openProject(user, /^hedy/);
     const panel = await screen.findByRole("complementary", { name: "Cambios, terminal y vista previa" });
-    // A project task whose plan waits (s1), one that works (s3), one done (s5), a question (s6).
+    // A project task whose plan waits (s1), one that works (s3), one with changes (s5), a question (s6).
     expect(await within(panel).findByText("Aún no hay cambios: se crearán al aprobar el plan.")).toBeInTheDocument();
     await user.keyboard("{Control>}2{/Control}");
     expect(await within(panel).findByText("Aún no hay cambios: se crearán cuando la IA empiece a trabajar.")).toBeInTheDocument();
+    // s5 has a worktree with changes to review: no empty message at all.
     await user.keyboard("{Control>}3{/Control}");
-    expect(await within(panel).findByText("Esta tarea terminó sin cambiar archivos.")).toBeInTheDocument();
+    expect(await within(panel).findByRole("button", { name: /Aceptar cambios/ })).toBeInTheDocument();
     await user.keyboard("{Control>}4{/Control}");
     expect(await within(panel).findByText("Las preguntas y la investigación no cambian archivos.")).toBeInTheDocument();
     expect(within(panel).queryByText(/Aún no hay cambios/)).not.toBeInTheDocument();

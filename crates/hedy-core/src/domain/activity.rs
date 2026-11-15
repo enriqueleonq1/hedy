@@ -154,6 +154,11 @@ pub enum NoticeKind {
     },
     Failed,
     LimitReached,
+    /// The limit the user waited for renewed: Hedy resumed the task on the
+    /// same account (`resumed`), or the user can now ("Ya puedes continuar").
+    LimitRenewed {
+        resumed: bool,
+    },
 }
 
 /// A desktop notification. Short, and never with file contents, commands or
@@ -215,6 +220,26 @@ impl Notice {
                     "You can wait or hand the task to another AI."
                 ),
             ),
+            NoticeKind::LimitRenewed { resumed: true } => (
+                tr!(
+                    "{agent} sigue con la tarea · {project}",
+                    "{agent} is back on the task · {project}"
+                ),
+                tr!(
+                    "Su límite se renovó y Hedy retomó la tarea con la misma cuenta.",
+                    "Its limit renewed and Hedy resumed the task with the same account."
+                ),
+            ),
+            NoticeKind::LimitRenewed { resumed: false } => (
+                tr!(
+                    "Ya puedes continuar · {project}",
+                    "You can continue now · {project}"
+                ),
+                tr!(
+                    "El límite de {agent} se renovó. Abre la tarea para seguir.",
+                    "{agent}'s limit renewed. Open the task to go on."
+                ),
+            ),
         };
         Self { kind, title, body }
     }
@@ -244,6 +269,8 @@ mod tests {
             stages: Vec::new(),
             stage: 0,
             plan: None,
+            merge: None,
+            wait: None,
         }
     }
 
@@ -382,5 +409,21 @@ mod tests {
         });
         assert_eq!(english.title, "Codex finished · moira");
         assert_eq!(english.body, "There are changes to review.");
+        let renewed = with_language(Language::Spanish, || {
+            Notice::new(
+                NoticeKind::LimitRenewed { resumed: false },
+                "Claude",
+                "moira",
+            )
+        });
+        assert_eq!(renewed.title, "Ya puedes continuar · moira");
+        let resumed = with_language(Language::English, || {
+            Notice::new(
+                NoticeKind::LimitRenewed { resumed: true },
+                "Claude",
+                "moira",
+            )
+        });
+        assert_eq!(resumed.title, "Claude is back on the task · moira");
     }
 }

@@ -537,6 +537,21 @@ impl TaskRepository for SqliteStore {
             .map(|(at, d)| Ok((at, serde_json::from_str(&d).map_err(json_error)?)))
             .collect()
     }
+
+    fn waiting_tasks(&self) -> PortResult<Vec<Task>> {
+        // The wait lives in the task's JSON: no column, no migration.
+        let rows: Vec<String> = self.with(|c| {
+            c.prepare(
+                "SELECT data FROM tasks WHERE json_extract(data, '$.wait') IS NOT NULL
+                 ORDER BY created_at DESC, id DESC",
+            )?
+            .query_map([], |r| r.get(0))?
+            .collect()
+        })?;
+        rows.iter()
+            .map(|d| serde_json::from_str(d).map_err(json_error))
+            .collect()
+    }
 }
 
 const USAGE_SUMS: &str = "COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
@@ -1172,6 +1187,8 @@ mod tests {
             stages: vec![],
             stage: 0,
             plan: None,
+            merge: None,
+            wait: None,
         };
         // Old but still running; old with a recent event; recent; old and done.
         let running = task("t1", "/code/a", 10, TaskStatus::Running);
@@ -1191,6 +1208,62 @@ mod tests {
             .map(|t| t.id.to_string())
             .collect();
         assert_eq!(ids, vec!["t3", "t2", "t1"]);
+    }
+
+    #[test]
+    fn waits_and_merges_live_in_the_task_and_old_rows_still_load() {
+        use crate::domain::{LimitWait, MergeRecord, TaskMode, TaskStatus};
+        let store = SqliteStore::in_memory().unwrap();
+        let mut task = Task {
+            id: TaskId::new("t1"),
+            project: "/code/moira".into(),
+            mode: TaskMode::Project,
+            title: "Recordatorios".into(),
+            prompt: "Recordatorios".into(),
+            account: AccountId::new("personal").unwrap(),
+            model: None,
+            workspace: None,
+            session_id: None,
+            status: TaskStatus::Failed,
+            created_at: 10,
+            stages: vec![],
+            stage: 0,
+            plan: None,
+            merge: None,
+            wait: None,
+        };
+        store.save_task(&task).unwrap();
+        assert!(store.waiting_tasks().unwrap().is_empty());
+
+        task.wait = Some(LimitWait {
+            account: task.account.clone(),
+            until: Some(1_800_000_000),
+            since: 100,
+            ready: false,
+        });
+        task.merge = Some(MergeRecord {
+            before: "a".into(),
+            after: "b".into(),
+            tip: "c".into(),
+            at: 5,
+        });
+        store.save_task(&task).unwrap();
+        assert_eq!(store.waiting_tasks().unwrap(), vec![task.clone()]);
+        assert_eq!(store.task(&task.id).unwrap(), Some(task.clone()));
+
+        // A row written before these fields existed.
+        store
+            .with(|c| {
+                c.execute(
+                    "INSERT INTO tasks (id, project, created_at, data) VALUES ('t0', '/code/moira', 1, ?1)",
+                    [r#"{"id":"t0","project":"/code/moira","mode":"project","title":"x","prompt":"x","account":"personal","model":null,"workspace":null,"sessionId":null,"status":"review","createdAt":1}"#],
+                )
+                .map(drop)
+            })
+            .unwrap();
+        let old = store.task(&TaskId::new("t0")).unwrap().unwrap();
+        assert_eq!((old.merge, old.wait), (None, None));
+        assert_eq!(store.waiting_tasks().unwrap().len(), 1);
     }
 
     #[test]
@@ -1217,6 +1290,8 @@ mod tests {
             stages: vec![],
             stage: 0,
             plan: None,
+            merge: None,
+            wait: None,
         };
         let (old, new) = (task("t1", 10), task("t2", 20));
         store.save_task(&old).unwrap();

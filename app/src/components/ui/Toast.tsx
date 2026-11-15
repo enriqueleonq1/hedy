@@ -3,14 +3,28 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { useT } from "../../i18n";
 
 type ToastKind = "info" | "error";
+
+/** A button in the toast ("Deshacer"); pressing it closes the toast. */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
+export interface ToastOptions {
+  action?: ToastAction;
+  /** How long it stays; 6 s by default. */
+  durationMs?: number;
+}
+
 interface ToastItem {
   id: number;
   kind: ToastKind;
   text: string;
+  action?: ToastAction;
 }
 
 interface ToastApi {
-  info(text: string): void;
+  info(text: string, options?: ToastOptions): void;
   error(text: string): void;
 }
 
@@ -26,16 +40,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const push = useCallback(
-    (kind: ToastKind, text: string) => {
+    (kind: ToastKind, text: string, options?: ToastOptions) => {
       const id = Date.now() + Math.random();
-      setItems((all) => [...all, { id, kind, text }]);
-      setTimeout(() => dismiss(id), DURATION_MS);
+      setItems((all) => [...all, { id, kind, text, action: options?.action }]);
+      setTimeout(() => dismiss(id), options?.durationMs ?? DURATION_MS);
     },
     [dismiss],
   );
 
   const api = useMemo<ToastApi>(
-    () => ({ info: (text) => push("info", text), error: (text) => push("error", text) }),
+    () => ({ info: (text, options) => push("info", text, options), error: (text) => push("error", text) }),
     [push],
   );
 
@@ -46,6 +60,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {items.map((item) => (
           <div key={item.id} className={`toast toast--${item.kind}`}>
             <span>{item.text}</span>
+            {item.action && (
+              <button
+                className="toast__action"
+                onClick={() => {
+                  dismiss(item.id);
+                  item.action?.onClick();
+                }}
+              >
+                {item.action.label}
+              </button>
+            )}
             <button className="toast__close" aria-label={t("shell.dismiss")} onClick={() => dismiss(item.id)}>
               ×
             </button>

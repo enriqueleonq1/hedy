@@ -101,6 +101,75 @@ pub struct Task {
     /// The latest proposed (and then approved) plan.
     #[serde(default)]
     pub plan: Option<String>,
+    /// What accepting did to the base branch, to undo it ("Deshacer").
+    #[serde(default)]
+    pub merge: Option<MergeRecord>,
+    /// The user chose to wait for the account's limit to renew.
+    #[serde(default)]
+    pub wait: Option<LimitWait>,
+}
+
+/// What "Aceptar" changed in the main checkout, kept so it can be undone
+/// while nothing else happened on the base branch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeRecord {
+    /// The base branch's commit before the merge.
+    pub before: String,
+    /// The base branch's commit right after it (a merge commit, or the
+    /// task's own commit after a fast-forward).
+    pub after: String,
+    /// The task branch's last commit, to bring the branch back on undo.
+    pub tip: String,
+    /// Unix seconds.
+    pub at: i64,
+}
+
+/// "Esperar": the task waits for its account's limit to renew, then Hedy
+/// resumes it on the same account (never another one: rule 3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LimitWait {
+    /// The account whose limit was reached; the task resumes only on it.
+    pub account: AccountId,
+    /// When the limit renews (Unix seconds), when known.
+    pub until: Option<i64>,
+    /// When the user chose to wait (Unix seconds).
+    pub since: i64,
+    /// The reset passed while Hedy was closed (or resuming failed): the user
+    /// resumes with "Continuar"; nothing is sent by itself.
+    #[serde(default)]
+    pub ready: bool,
+}
+
+impl LimitWait {
+    /// Hedy may resume the task by itself now.
+    pub fn due(&self, now: i64) -> bool {
+        !self.ready && self.until.is_some_and(|until| until <= now)
+    }
+}
+
+/// The commit message "Aceptar" proposes: the task's title and, when the agent
+/// left a summary, its first paragraph (shortened).
+pub fn default_commit_message(title: &str, summary: Option<&str>) -> String {
+    const MAX: usize = 300;
+    let paragraph = summary
+        .unwrap_or("")
+        .split("\n\n")
+        .map(str::trim)
+        .find(|p| !p.is_empty())
+        .unwrap_or("");
+    if paragraph.is_empty() || paragraph == title.trim() {
+        return title.to_owned();
+    }
+    let body = if paragraph.chars().count() <= MAX {
+        paragraph.to_owned()
+    } else {
+        let cut: String = paragraph.chars().take(MAX).collect();
+        let cut = cut.rsplit_once(' ').map_or(cut.as_str(), |(head, _)| head);
+        format!("{cut}…")
+    };
+    format!("{title}\n\n{body}")
 }
 
 impl Task {
@@ -185,6 +254,55 @@ mod tests {
             "hedy/anade-recordatorios-24-h-antes-abcdef"
         );
         assert_eq!(branch_name("¿¿??", &id), "hedy/tarea-abcdef");
+    }
+
+    #[test]
+    fn commit_messages_take_the_summary_s_first_paragraph() {
+        assert_eq!(
+            default_commit_message("Recordatorios", None),
+            "Recordatorios"
+        );
+        assert_eq!(
+            default_commit_message(
+                "Recordatorios",
+                Some("  \n\nListo: se programan 24 h antes.\n\nDetalles…")
+            ),
+            "Recordatorios\n\nListo: se programan 24 h antes."
+        );
+        assert_eq!(
+            default_commit_message("Recordatorios", Some("Recordatorios")),
+            "Recordatorios"
+        );
+        let long = "palabra ".repeat(80);
+        let message = default_commit_message("T", Some(&long));
+        assert!(message.ends_with('…'));
+        assert!(message.chars().count() < 310);
+    }
+
+    #[test]
+    fn a_wait_is_due_only_when_its_time_passed_and_nobody_must_confirm() {
+        let wait = LimitWait {
+            account: AccountId::new("personal").unwrap(),
+            until: Some(100),
+            since: 0,
+            ready: false,
+        };
+        assert!(!wait.due(99));
+        assert!(wait.due(100));
+        assert!(
+            !LimitWait {
+                ready: true,
+                ..wait.clone()
+            }
+            .due(200)
+        );
+        assert!(
+            !LimitWait {
+                until: None,
+                ..wait
+            }
+            .due(200)
+        );
     }
 
     #[test]
