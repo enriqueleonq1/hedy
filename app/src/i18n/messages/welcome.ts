@@ -31,6 +31,12 @@ const es = {
   "welcome.empty.noAccounts": "Primero agrega una cuenta; luego asígnala a tus proyectos.",
   "welcome.card.workHere": "Trabajar aquí",
   "welcome.card.cliInTerminal": "{cli} en terminal",
+  "welcome.card.more": "Más acciones para {name}",
+  "welcome.card.waiting.one": "1 tarea te espera",
+  "welcome.card.waiting.other": "{n} tareas te esperan",
+  "welcome.card.working": "trabajando",
+  "welcome.card.lastActivity": "Última actividad {when}",
+  "welcome.card.quiet": "Sin actividad en las últimas 24 h",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -64,6 +70,12 @@ const en: Record<keyof typeof es, string> = {
   "welcome.empty.noAccounts": "Add an account first, then assign it to your projects.",
   "welcome.card.workHere": "Work here",
   "welcome.card.cliInTerminal": "{cli} in terminal",
+  "welcome.card.more": "More actions for {name}",
+  "welcome.card.waiting.one": "1 task is waiting for you",
+  "welcome.card.waiting.other": "{n} tasks are waiting for you",
+  "welcome.card.working": "working",
+  "welcome.card.lastActivity": "Last activity {when}",
+  "welcome.card.quiet": "No activity in the last 24 h",
 };
 
 export default { es, en };

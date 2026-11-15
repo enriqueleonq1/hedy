@@ -69,6 +69,11 @@ describe("English", () => {
     expect(screen.getByRole("navigation", { name: "Open projects" })).toBeInTheDocument();
     const homming = screen.getByRole("heading", { name: "homming" }).closest("article")!;
     expect(within(homming).getByText("Protected")).toBeInTheDocument();
+    expect(await within(homming).findByText("No activity in the last 24 h")).toBeInTheDocument();
+    expect(within(homming).getByRole("button", { name: "More actions for homming" })).toBeInTheDocument();
+    expect(within(homming).getByRole("button", { name: "Work here" })).toBeInTheDocument();
+    const plans = screen.getByRole("heading", { name: "Your plans" }).closest("section")!;
+    expect(within(plans).getByRole("button", { name: "Claude trabajo: 5-hour session · 34%, Week · 29%" })).toBeInTheDocument();
     expect(
       await screen.findByText(/^In Hedy: 216k tokens this week \(about \$4\.1\d\); hedy was the busiest project\.$/),
     ).toBeInTheDocument();

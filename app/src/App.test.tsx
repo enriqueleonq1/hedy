@@ -40,6 +40,45 @@ describe("Welcome", () => {
     expect(screen.getByRole("button", { name: /^Seguir en / })).toBeInTheDocument();
   });
 
+  it("shows each project's live state and keeps its secondary actions in a menu", async () => {
+    const { user } = renderApp(MockApi.withSampleData().withSampleActivity());
+    const hedy = (await screen.findByRole("article", { name: "hedy" }));
+    const homming = screen.getByRole("article", { name: "homming" });
+    expect(await within(hedy).findByText("2 tareas te esperan")).toHaveClass("project-card__live--needs");
+    expect(within(homming).getByText("1 tarea te espera · trabajando")).toBeInTheDocument();
+    // One primary action; the rest behind "⋯".
+    expect(within(hedy).getByRole("button", { name: "Trabajar aquí" })).toBeInTheDocument();
+    expect(within(hedy).queryByRole("button", { name: "Abrir en VS Code" })).not.toBeInTheDocument();
+
+    const more = within(hedy).getByRole("button", { name: "Más acciones para hedy" });
+    expect(more).toHaveAttribute("aria-haspopup", "menu");
+    await user.click(more);
+    const menu = within(hedy).getByRole("menu", { name: "Más acciones para hedy" });
+    expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
+      "Claude Code en terminal",
+      "Terminal",
+      "Abrir en VS Code",
+      "Estado",
+      "Memoria",
+    ]);
+    expect(within(menu).getByRole("menuitem", { name: "Claude Code en terminal" })).toHaveFocus();
+    await user.keyboard("{ArrowUp}");
+    expect(within(menu).getByRole("menuitem", { name: "Memoria" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(within(hedy).queryByRole("menu")).not.toBeInTheDocument();
+    expect(more).toHaveFocus();
+
+    await user.click(more);
+    await user.click(within(hedy).getByRole("menuitem", { name: "Memoria" }));
+    expect(await screen.findByRole("heading", { name: "Memoria de hedy" })).toBeInTheDocument();
+  });
+
+  it("says when a project had no recent activity", async () => {
+    renderApp();
+    const hedy = await screen.findByRole("article", { name: "hedy" });
+    expect(await within(hedy).findByText("Sin actividad en las últimas 24 h")).toBeInTheDocument();
+  });
+
   it("invites to add an account when there are none", async () => {
     renderApp(new MockApi());
     expect(await screen.findByRole("button", { name: "Agregar mi primera cuenta" })).toBeInTheDocument();

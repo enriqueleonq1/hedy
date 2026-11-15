@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { useApi } from "../api/context";
-import type { Account, Overview, Project, UsageSummary, UsageWindow } from "../api/types";
+import type { Account, ActivityItem, Overview, Project, UsageSummary, UsageWindow } from "../api/types";
 import { AccountChip } from "../components/accounts";
 import {
   barColor,
@@ -18,6 +18,7 @@ import type { View } from "../components/Layout";
 import { Mascot } from "../components/Mascot/Mascot";
 import { projectColor, shortPath, useProjectActions } from "../components/projects";
 import { Button } from "../components/ui/Button";
+import { MenuButton } from "../components/ui/Menu";
 import { formatTokens, formatUsd, timeAgo } from "../format";
 import { needsYou, useActivity } from "../tasks/hooks";
 import { STATE_LABEL } from "./activity/ActivityScreen";
@@ -320,12 +321,7 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
           ) : (
             <div className="project-grid">
               {overview.projects.map((p) => (
-                <ProjectCard
-                  key={p.path}
-                  project={p}
-                  overview={overview}
-                  onOpen={() => onNavigate({ screen: "workspace", project: p.path })}
-                />
+                <ProjectCard key={p.path} project={p} overview={overview} board={board} onNavigate={onNavigate} />
               ))}
             </div>
           )}
@@ -344,32 +340,78 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
   );
 }
 
-function ProjectCard({ project, overview, onOpen }: { project: Project; overview: Overview; onOpen: () => void }) {
+/** What a project's tasks are up to, from the task board: "1 tarea te espera · trabajando". */
+export function projectLive(
+  path: string,
+  board: ActivityItem[],
+  t: Translate,
+  now = Date.now() / 1000,
+): { text: string; tone: "needs" | "working" | "calm" } {
+  const items = board.filter((item) => item.task.project === path);
+  const waiting = items.filter((item) => needsYou(item.state)).length;
+  const working = items.some((item) => item.state === "working");
+  const parts: string[] = [];
+  if (waiting > 0) {
+    parts.push(waiting === 1 ? t("welcome.card.waiting.one") : t("welcome.card.waiting.other", { n: waiting }));
+  }
+  if (working) parts.push(t("welcome.card.working"));
+  if (parts.length > 0) return { text: parts.join(" · "), tone: waiting > 0 ? "needs" : "working" };
+  const last = items.reduce((max, item) => Math.max(max, item.updatedAt), 0);
+  return {
+    text: last > 0 ? t("welcome.card.lastActivity", { when: timeAgo(last, t, now) }) : t("welcome.card.quiet"),
+    tone: "calm",
+  };
+}
+
+function ProjectCard({
+  project,
+  overview,
+  board,
+  onNavigate,
+}: {
+  project: Project;
+  overview: Overview;
+  board: ActivityItem[];
+  onNavigate: (v: View) => void;
+}) {
   const t = useT();
   const actions = useProjectActions();
   const account = overview.accounts.find((a) => a.id === project.account);
   const runnable = account?.kind === "subscription";
+  const live = projectLive(project.path, board, t);
 
   return (
-    <article className="card project-card" style={{ borderTopColor: projectColor(project, overview.accounts) }}>
+    <article
+      className="card project-card"
+      aria-labelledby={`project-${project.path}`}
+      style={{ borderTopColor: projectColor(project, overview.accounts) }}
+    >
       <header>
-        <h3>{project.name}</h3>
-        {project.protected && <span className="badge badge--warn">{t("common.protected")}</span>}
+        <h3 id={`project-${project.path}`}>{project.name}</h3>
+        <span className="project-card__badges">
+          {project.protected && <span className="badge badge--warn">{t("common.protected")}</span>}
+          <MenuButton
+            label={t("welcome.card.more", { name: project.name })}
+            items={[
+              {
+                label: t("welcome.card.cliInTerminal", { cli: account?.providerName ?? "CLI" }),
+                disabled: !runnable,
+                onSelect: () => actions.openCli(project),
+              },
+              { label: t("common.terminal"), onSelect: () => actions.openShell(project) },
+              { label: t("common.openInVsCode"), onSelect: () => void actions.openEditor(project) },
+              { label: t("workspace.status"), onSelect: () => onNavigate({ screen: "status", project: project.path }) },
+              { label: t("common.memory"), onSelect: () => onNavigate({ screen: "memory", project: project.path }) },
+            ]}
+          />
+        </span>
       </header>
       <p className="mono muted">{shortPath(project.path)}</p>
       {account ? <AccountChip account={account} /> : <span className="muted">{t("common.noAccount")}</span>}
+      <p className={`small project-card__live project-card__live--${live.tone}`}>{live.text}</p>
       <div className="actions">
-        <Button small variant="primary" onClick={onOpen}>
+        <Button small variant="primary" onClick={() => onNavigate({ screen: "workspace", project: project.path })}>
           {t("welcome.card.workHere")}
-        </Button>
-        <Button small disabled={!runnable} onClick={() => actions.openCli(project)}>
-          {t("welcome.card.cliInTerminal", { cli: account?.providerName ?? "CLI" })}
-        </Button>
-        <Button small onClick={() => actions.openShell(project)}>
-          {t("common.terminal")}
-        </Button>
-        <Button small variant="ghost" onClick={() => actions.openEditor(project)}>
-          {t("common.openInVsCode")}
         </Button>
       </div>
     </article>

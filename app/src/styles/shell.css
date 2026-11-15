@@ -153,6 +153,64 @@
 .palette__empty { padding: 16px 12px; color: var(--muted); }
 .palette__foot { padding: 8px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 
+/* ---------------------------------------------------------------- menu button, project cards */
+
+.menu { position: relative; display: inline-flex; }
+
+.menu-button {
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.menu-button:hover,
+.menu-button[aria-expanded="true"] { border-color: var(--line); background: var(--selection); color: var(--ink); }
+
+.menu__list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 200px;
+  display: grid;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.menu__item {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.menu__item:hover:not(:disabled),
+.menu__item:focus-visible { background: var(--selection); outline: none; }
+.menu__item:disabled { color: var(--muted); cursor: default; }
+
+.project-card__badges { display: inline-flex; align-items: center; gap: 6px; }
+.project-card__live { font-weight: 600; }
+.project-card__live--needs { color: var(--warning); }
+.project-card__live--working { color: var(--activity); }
+.project-card__live--calm { color: var(--muted); font-weight: 500; }
+
 /* ---------------------------------------------------------------- inbox rows ("Te necesitan") */
 
 .board-item {
