@@ -18,7 +18,7 @@ use crate::domain::attachment::ImageType;
 use crate::domain::code::{
     Blame, ChangeKind, CommitInfo, DiffBody, MAX_HISTORY_COMMITS, MAX_PREVIEW_IMAGE_BYTES,
     MAX_SEARCH_MATCHES, MAX_TEXT_BYTES, MAX_TREE_ENTRIES, PathChange, SearchResults, Symbol,
-    TextQuery, TreeEntry, looks_binary, normalize_code_path, outline,
+    TextQuery, TreeEntry, content_version, looks_binary, normalize_code_path, outline,
 };
 use crate::domain::diff::FileStatus;
 use crate::domain::permissions::{DEFAULT_BLOCKED, is_protected_path};
@@ -86,6 +86,8 @@ pub enum FileContent {
     Text {
         text: String,
         size: u64,
+        /// What an editor saves against ([`content_version`]).
+        version: String,
     },
     /// An image small enough to preview (PNG, JPEG, GIF, WebP).
     Image {
@@ -149,24 +151,24 @@ pub struct FileHistory {
 }
 
 /// A copy resolved to where git runs and what it reads.
-struct Resolved {
-    info: CopyInfo,
+pub(super) struct Resolved {
+    pub(super) info: CopyInfo,
     /// Where git runs.
-    dir: PathBuf,
+    pub(super) dir: PathBuf,
     /// The commit holding the files when the copy is not live.
-    at: Option<String>,
+    pub(super) at: Option<String>,
     /// The revision "base" stands for.
     base: String,
     /// A task copy: new files are `Added`, never `Untracked`.
     task: bool,
 }
 
-fn checked_path(path: &str) -> AppResult<String> {
+pub(super) fn checked_path(path: &str) -> AppResult<String> {
     normalize_code_path(path).ok_or_else(|| AppError::InvalidCodePath(path.to_owned()))
 }
 
 /// Folders a copy never shows (other tasks' worktrees live there).
-fn hidden(path: &str) -> bool {
+pub(super) fn hidden(path: &str) -> bool {
     path == ".hedy" || path.starts_with(".hedy/")
 }
 
@@ -185,7 +187,7 @@ fn change_of(status: FileStatus) -> ChangeKind {
 }
 
 impl Hedy {
-    fn resolve_copy(&self, copy: &CodeCopy) -> AppResult<Resolved> {
+    pub(super) fn resolve_copy(&self, copy: &CodeCopy) -> AppResult<Resolved> {
         match copy {
             CodeCopy::Folder(path) => {
                 let project = self.project_at(path)?;
@@ -403,6 +405,7 @@ impl Hedy {
         }
         Ok(FileContent::Text {
             text: String::from_utf8_lossy(&file.bytes).into_owned(),
+            version: content_version(&file.bytes),
             size,
         })
     }
@@ -864,7 +867,8 @@ mod tests {
                 .unwrap(),
             FileContent::Text {
                 text: "IVA = 0.19\n".into(),
-                size: 11
+                size: 11,
+                version: content_version(b"IVA = 0.19\n"),
             }
         );
 
@@ -898,7 +902,8 @@ mod tests {
             read("./src/app.py", None).unwrap(),
             FileContent::Text {
                 text: "print(1)\n".into(),
-                size: 9
+                size: 9,
+                version: content_version(b"print(1)\n"),
             }
         );
         assert!(matches!(

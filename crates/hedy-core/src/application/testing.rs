@@ -1249,6 +1249,7 @@ impl Fixture {
             fs: fs.clone(),
             git: git.clone(),
             code: code.clone(),
+            writer: code.clone(),
             agents: agents.clone(),
             clock: clock.clone(),
             usage: probe.clone(),
