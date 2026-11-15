@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { createContext, Fragment, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 
 import { useAction } from "../../api/context";
 import type { Account, Decision, Task } from "../../api/types";
@@ -6,6 +6,8 @@ import { Mascot } from "../../components/Mascot/Mascot";
 import { WorkingWord } from "../../components/Mascot/WorkingWord";
 import { Button } from "../../components/ui/Button";
 import { ChevronIcon } from "../../components/ui/icons";
+import { relativeToCopy, taskHasCopy } from "../../code/copies";
+import { useFileNavigator } from "../../files/navigator";
 import { formatDuration } from "../../format";
 import { Markdown } from "../../components/Markdown";
 import { keyLabels } from "../../platform";
@@ -60,8 +62,19 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
     </div>
   );
 
+  // "editó facturas/impuestos.py" opens the file in the task's copy.
+  const nav = useFileNavigator();
+  const openFile = useMemo(() => {
+    if (!taskHasCopy(task)) return null;
+    return (reported: string) => {
+      const path = relativeToCopy(reported, [task.workspace?.worktree, task.project]);
+      if (path) nav.open({ copy: { kind: "task", task: task.id }, path });
+    };
+  }, [task, nav]);
+
   return (
     // Not a live region: the workspace announces only what needs the user or ends the task.
+    <OpenFileContext.Provider value={openFile}>
     <div className="timeline">
       {entries.map((entry) => {
         if (entry.type === "group") {
@@ -107,6 +120,7 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
       {footer}
       <div ref={end} />
     </div>
+    </OpenFileContext.Provider>
   );
 }
 
@@ -173,14 +187,35 @@ function Item({ task, item }: { task: Task; item: TimelineItem }) {
   }
 }
 
-/** One tool step as a light line: a mark and what it did. */
+/** Opens a file an agent edited in the viewer; `null` when the task has no files of its own. */
+const OpenFileContext = createContext<((path: string) => void) | null>(null);
+
+/** One tool step as a light line: a mark and what it did (an edited file links to it). */
 function StepRow({ step, live = false }: { step: StepItem; live?: boolean }) {
+  const t = useT();
+  const openFile = useContext(OpenFileContext);
+  const at = step.step === "edit" && openFile && step.detail ? step.text.lastIndexOf(step.detail) : -1;
   return (
     <p className={`step-row step-row--${step.tone}${live ? " step-row--live" : ""}`}>
       <span className="step-row__mark" aria-hidden>
         {step.tone === "done" ? "✓" : step.tone === "failed" ? "✗" : "●"}
       </span>
-      <span>{step.text}</span>
+      {at >= 0 && openFile ? (
+        <span>
+          {step.text.slice(0, at)}
+          <button
+            type="button"
+            className="step-row__file"
+            title={t("code.timeline.open", { path: step.detail })}
+            onClick={() => openFile(step.detail)}
+          >
+            {step.detail}
+          </button>
+          {step.text.slice(at + step.detail.length)}
+        </span>
+      ) : (
+        <span>{step.text}</span>
+      )}
     </p>
   );
 }
