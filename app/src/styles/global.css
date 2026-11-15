@@ -1333,20 +1333,20 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 .phase-divider {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   color: var(--muted);
-  font-size: 13px;
-  margin: 6px 0 2px;
+  font-size: var(--text-caption);
+  margin: 8px 0 0;
 }
 
-.phase-divider::before,
+/* One hairline after the label: who works now, without a banner. */
 .phase-divider::after {
   content: "";
   flex: 1;
-  border-top: 1px dashed var(--line);
+  border-top: 1px solid var(--line);
 }
 
-.phase-divider strong { color: var(--activity); }
+.phase-divider strong { color: var(--ink); font-weight: 600; }
 
 .limit-card {
   display: flex;
