@@ -7,7 +7,7 @@ import { codeKeys } from "../files/navigator";
 
 export const tasksKey = (project: string) => ["tasks", project] as const;
 const eventsKey = (taskId: string) => ["taskEvents", taskId] as const;
-const diffKey = (taskId: string) => ["diff", taskId] as const;
+export const diffKey = (taskId: string) => ["diff", taskId] as const;
 const queueKey = (taskId: string) => ["queue", taskId] as const;
 
 /** Every template list (the composer's per project, and the management one). */

@@ -4,6 +4,7 @@ import code from "./messages/code";
 import common from "./messages/common";
 import composer from "./messages/composer";
 import create from "./messages/create";
+import edit from "./messages/edit";
 import mascot from "./messages/mascot";
 import memory from "./messages/memory";
 import onboarding from "./messages/onboarding";
@@ -30,6 +31,7 @@ const AREAS = {
   common,
   composer,
   create,
+  edit,
   mascot,
   memory,
   onboarding,

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ApiProvider, errorMessage, useApi, useOverview } from "./api/context";
 import type { HedyApi } from "./api/HedyApi";
 import { FocusModeProvider } from "./components/focusMode";
+import { UnsavedChangesProvider, useUnsavedChanges } from "./code/editor/unsaved";
 import { FileNavigatorProvider } from "./files/navigator";
 import { ReviewCommentsProvider } from "./review/comments";
 import { Shell, Sidebar, taskView, Topbar, viewProject, type View } from "./components/Layout";
@@ -42,7 +43,9 @@ export function App({ api, queryClient }: { api: HedyApi; queryClient?: QueryCli
             <TaskEventsBridge />
             <FileNavigatorProvider>
               <ReviewCommentsProvider>
-                <Root />
+                <UnsavedChangesProvider>
+                  <Root />
+                </UnsavedChangesProvider>
               </ReviewCommentsProvider>
             </FileNavigatorProvider>
           </ToastProvider>
@@ -105,23 +108,45 @@ function Root() {
   const [view, setView] = useState<View>(viewFromHash);
   const [palette, setPalette] = useState(false);
   const api = useApi();
+  const unsaved = useUnsavedChanges();
 
   // Each screen and task is a step of the history: Back and Forward walk them.
+  // Leaving a screen with an unsaved edit asks first (Guardar / Descartar / Cancelar).
   const navigate = useCallback(
     (next: View, options?: { replace?: boolean }) => {
-      setView(next);
-      const hash = hashFor(next);
-      if (options?.replace) history.replaceState(null, "", hash);
-      else if (hash !== window.location.hash) history.pushState(null, "", hash);
+      const go = () => {
+        setView(next);
+        const hash = hashFor(next);
+        if (options?.replace) history.replaceState(null, "", hash);
+        else if (hash !== window.location.hash) history.pushState(null, "", hash);
+      };
+      if (!unsaved.dirty) return go();
+      void unsaved.confirmLeave().then((ok) => ok && go());
     },
-    [],
+    [unsaved],
   );
 
+  // The view on screen, to step back to when Back is answered with "Cancelar".
+  const shown = useRef(view);
   useEffect(() => {
-    const onPop = () => setView(viewFromHash());
+    shown.current = view;
+  }, [view]);
+  useEffect(() => {
+    const onPop = () => {
+      const next = viewFromHash();
+      if (!unsaved.dirty) return setView(next);
+      // The URL already moved: put it back while asking.
+      const target = window.location.hash;
+      history.pushState(null, "", hashFor(shown.current));
+      void unsaved.confirmLeave().then((ok) => {
+        if (!ok) return;
+        history.replaceState(null, "", target);
+        setView(next);
+      });
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [unsaved]);
 
   // A task opens in its project or, outside any project, as a conversation.
   const projects = overview.data?.projects;
