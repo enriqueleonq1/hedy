@@ -28,7 +28,11 @@ describe("Welcome", () => {
   it("shows each plan as rings, what needs a look and the latest tasks", async () => {
     renderApp(MockApi.withSampleData().withSampleActivity());
     const plans = (await screen.findByRole("heading", { name: "Tus planes" })).closest("section")!;
-    expect(within(plans).getByRole("button", { name: /^Claude trabajo: Sesión actual \(5 h\) 34%, Esta semana 29%$/ })).toBeInTheDocument();
+    const work = within(plans).getByRole("button", { name: "Claude trabajo: Sesión 5 h · 34%, Semana · 29%" });
+    // Every card's headline says which window it is.
+    expect(work.querySelector(".plan-usage__value")).toHaveTextContent("Sesión 5 h · 34%");
+    const personal = within(plans).getByRole("button", { name: /^Claude personal: / });
+    expect(personal.querySelector(".plan-usage__value")).toHaveTextContent("Semana · 83%");
     expect(within(plans).getByRole("button", { name: /^ChatGPT: / })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /tareas esperan tu respuesta/ })).toBeInTheDocument();
     const recent = (await screen.findByRole("heading", { name: "Últimas tareas" })).closest("section")!;
@@ -86,9 +90,13 @@ describe("Accounts", () => {
 
     // The sidebar and the header use the window closest to its limit.
     const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
-    expect(within(sidebar).getByRole("meter", { name: "Claude personal: 83%" })).toBeInTheDocument();
-    expect(within(sidebar).getByText("83%")).toHaveClass("level--warning");
-    expect(within(sidebar).getByRole("meter", { name: "Claude trabajo: 34%" })).toBeInTheDocument();
+    // The sidebar shows a name and a thin bar; the window and figure are in its name.
+    const personalRow = within(sidebar).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" });
+    expect(personalRow.querySelector<HTMLElement>(".bar__fill")?.style.background).toBe("var(--warning)");
+    expect(within(sidebar).getByRole("button", { name: "Claude trabajo: Sesión 5 h · 34%. Abrir la cuenta" })).toBeInTheDocument();
+    // The top bar names the account closest to its limit, the same way.
+    const indicator = screen.getByRole("button", { name: /^Uso de los planes: Claude personal: Semana · 83%/ });
+    expect(within(indicator).getByText("Semana · 83%")).toHaveClass("level--warning");
   });
 
   it("asks for fresh readings while the sidebar is on screen and says which providers do not report", async () => {

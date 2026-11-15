@@ -9,8 +9,10 @@ import {
   headlineWindow,
   resetLabel,
   sharedWindows,
+  shortWindowLabel,
   usageLevel,
   windowLabel,
+  windowText,
 } from "../components/planUsage";
 import type { View } from "../components/Layout";
 import { Mascot } from "../components/Mascot/Mascot";
@@ -103,15 +105,18 @@ function PlanCard({ account, onOpen }: { account: Account; onOpen: () => void })
   const outer = windows.find((w) => w !== inner);
   const top = headlineWindow(account);
 
+  // The headline names its window ("Semana · 83%"), like the top bar and the sidebar.
+  let kind: string | null = null;
   let headline = "—";
   let detail: string;
   let tone = "muted";
   if (top) {
+    kind = shortWindowLabel(top, t);
     headline = `${Math.round(top.percent)}%`;
     const level = usageLevel(top.percent);
     tone = level === "ok" ? "ink" : level;
-    const resets = resetLabel(top, t, language);
-    detail = `${windowLabel(top, t)}${resets ? ` · ${resets}` : ""}`;
+    const others = windows.filter((w) => w !== top).map((w) => windowText(w, t));
+    detail = [resetLabel(top, t, language), ...others].filter(Boolean).join(" · ");
   } else if (usage?.balance) {
     headline = formatBalance(usage.balance, language);
     detail = t("accounts.plan.balance");
@@ -122,16 +127,17 @@ function PlanCard({ account, onOpen }: { account: Account; onOpen: () => void })
       ? t("accounts.plan.checking")
       : t("accounts.plan.notReported", { provider: account.providerName });
   }
-  const label = windows.length
-    ? windows.map((w) => `${windowLabel(w, t)} ${Math.round(w.percent)}%`).join(", ")
-    : detail;
+  const label = windows.length ? windows.map((w) => windowText(w, t)).join(", ") : detail;
 
   return (
     <button type="button" className="plan-usage" onClick={onOpen} aria-label={`${account.name}: ${label}`}>
       <PlanRings account={account} outer={outer} inner={inner} />
       <span className="plan-usage__text">
         <AccountChip account={account} />
-        <strong className={`plan-usage__value plan-usage__value--${tone}`}>{headline}</strong>
+        <strong className={`plan-usage__value plan-usage__value--${tone}`}>
+          {kind && <span className="plan-usage__kind">{kind} · </span>}
+          {headline}
+        </strong>
         <span className="muted small">{detail}</span>
       </span>
     </button>

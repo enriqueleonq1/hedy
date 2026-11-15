@@ -1,6 +1,16 @@
 import type { Account, UsageWindow } from "../api/types";
 import { translator } from "../i18n";
-import { barColor, formatBalance, headlineWindow, resetLabel, usageLevel, windowLabel } from "./planUsage";
+import {
+  barColor,
+  formatBalance,
+  headlineText,
+  headlineWindow,
+  resetLabel,
+  shortWindowLabel,
+  usageLevel,
+  windowLabel,
+  windowText,
+} from "./planUsage";
 
 const window = (extra: Partial<UsageWindow>): UsageWindow => ({
   kind: "session",
@@ -55,6 +65,20 @@ describe("plan usage", () => {
     expect(windowLabel(window({ kind: "day" }), t)).toBe("Today");
     expect(windowLabel(window({ kind: "other", minutes: 60 }), t)).toBe("1 h limit");
     expect(windowLabel(window({ kind: "other", minutes: 15 }), t)).toBe("15 min limit");
+  });
+
+  it("sums up an account in one line with the same pattern everywhere", () => {
+    const es = translator("es");
+    const en = translator("en");
+    const withWindows = (windows: UsageWindow[]) =>
+      ({ usage: { limit: null, plan: { usage: { windows } } } }) as unknown as Account;
+    const account = withWindows([window({ percent: 34.4 }), window({ kind: "week", percent: 83 })]);
+    expect(headlineText(account, es)).toBe("Semana · 83%");
+    expect(headlineText(withWindows([window({ percent: 34.4 })]), es)).toBe("Sesión 5 h · 34%");
+    expect(windowText(window({ percent: 12 }), en)).toBe("5-hour session · 12%");
+    expect(shortWindowLabel(window({ kind: "other", minutes: 120 }), en)).toBe("2 h");
+    expect(shortWindowLabel(window({ kind: "other", minutes: null }), es)).toBe("Límite");
+    expect(headlineText(withWindows([]), es)).toBeNull();
   });
 
   it("formats a balance in its currency", () => {

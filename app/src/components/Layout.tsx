@@ -1,19 +1,18 @@
 import type { ReactNode } from "react";
 
 import type { Account, Overview, TaskMode } from "../api/types";
-import { formatTokens, formatUsd } from "../format";
-import { useLanguage, useT, type Language } from "../i18n";
+import { useLanguage, useT } from "../i18n";
 import { useNeedsYouCount } from "../tasks/hooks";
 import { MODE_LABEL } from "../tasks/timeline";
 import { DEFAULT_ACCOUNT_COLOR, TIP_MASCOT_COLOR } from "../theme/tokens";
 import { shortAccountLabel } from "./accounts";
 import { Mascot } from "./Mascot/Mascot";
-import { barColor, headlineWindow, usageLevel, usePlanUsageRefresh } from "./planUsage";
+import { barColor, headlineText, planPercent, usageLabel, usePlanUsageRefresh } from "./planUsage";
 import { projectColor } from "./projects";
-import { PROVIDER_NAMES } from "./providers";
 import { useTerminals } from "./Terminal/TerminalProvider";
 import { Button } from "./ui/Button";
 import { Segmented } from "./ui/controls";
+import { UsageIndicator } from "./UsageIndicator";
 
 export type View =
   | { screen: "welcome" }
@@ -36,43 +35,6 @@ export function defaultAccount(overview: Overview): Account | undefined {
   return overview.accounts.find((a) => a.id === overview.defaultAccount) ?? overview.accounts[0];
 }
 
-/**
- * The plan's percentage for compact labels: the shared window closest to its
- * limit (see `headlineWindow`), or what a task reported; `null` when unknown.
- */
-export function planPercent(account: Account): number | null {
-  return headlineWindow(account)?.percent ?? account.usage.limit?.percent ?? null;
-}
-
-/** CSS class that colors a percentage near (or at) the limit. */
-export function levelClass(percent: number | null): string | undefined {
-  if (percent === null) return undefined;
-  const level = usageLevel(percent);
-  return level === "ok" ? undefined : `level--${level}`;
-}
-
-/** "34%" of the plan, "$2,10" for API spend, tokens otherwise. */
-export function usageLabel(account: Account, language: Language): string {
-  const { usage } = account;
-  const percent = planPercent(account);
-  if (percent !== null) return `${Math.round(percent)}%`;
-  if (account.kind === "apiKey" && usage.weekCostUsd != null) return formatUsd(usage.weekCostUsd, language);
-  if (usage.weekTokens > 0) return `${formatTokens(usage.weekTokens)} tok`;
-  return "—";
-}
-
-/** One entry per provider, from its default (or first) account. */
-function providerSummary(overview: Overview): { label: string; account: Account }[] {
-  const seen = new Map<string, Account>();
-  const def = overview.defaultAccount;
-  const preferred = [...overview.accounts].sort((a, b) => Number(b.id === def) - Number(a.id === def));
-  for (const a of preferred) {
-    const label = PROVIDER_NAMES[a.provider].plan;
-    if (!seen.has(label)) seen.set(label, a);
-  }
-  return [...seen].map(([label, account]) => ({ label, account }));
-}
-
 const MODES = Object.keys(MODE_LABEL) as TaskMode[];
 
 interface TopbarProps {
@@ -88,7 +50,6 @@ interface TopbarProps {
 export function Topbar({ overview, view, openProjects, mode, onNavigate, onCloseProject, onMode }: TopbarProps) {
   const terminals = useTerminals();
   const t = useT();
-  const language = useLanguage();
   const color = defaultAccount(overview)?.color ?? DEFAULT_ACCOUNT_COLOR;
   const active = viewProject(view);
 
@@ -147,25 +108,7 @@ export function Topbar({ overview, view, openProjects, mode, onNavigate, onClose
           onChange={onMode}
         />
       )}
-      {overview.accounts.length > 0 && (
-        <div className="usage-pill" role="group" aria-label={t("shell.weekUsageByProvider")}>
-          {providerSummary(overview).map(({ label, account }) => {
-            const usage = usageLabel(account, language);
-            return (
-              <button
-                type="button"
-                key={label}
-                className="usage-pill__item"
-                aria-label={t("shell.openAccount", { name: account.name, usage })}
-                onClick={() => onNavigate({ screen: "accounts", account: account.id })}
-              >
-                <span className="dot" style={{ background: account.color }} aria-hidden />
-                {label} <span className={usage === "—" ? "muted" : levelClass(planPercent(account))}>{usage}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <UsageIndicator overview={overview} onNavigate={onNavigate} />
       <Button
         variant="secondary"
         small
@@ -258,31 +201,26 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
         )}
         <ul className="sidebar__list">
           {overview.accounts.map((a) => {
+            // The same headline window as the top bar and the home rings; the figure is in the label.
             const percent = planPercent(a) ?? 0;
-            const usage = usageLabel(a, language);
+            const usage = headlineText(a, t) ?? usageLabel(a, language);
             return (
               <li key={a.id}>
                 <button
                   type="button"
                   className="sidebar__account"
+                  title={`${a.name}: ${usage}`}
                   aria-label={t("shell.openAccount", { name: a.name, usage })}
                   aria-current={view.screen === "accounts" && view.account === a.id ? "true" : undefined}
                   onClick={() => onNavigate({ screen: "accounts", account: a.id })}
                 >
-                <div className="row row--between">
                   <span className="sidebar__account-name">{a.name}</span>
-                  <span className={`small ${levelClass(planPercent(a)) ?? "muted"}`}>{usage}</span>
-                </div>
-                <div
-                  className="bar bar--thin"
-                  role="meter"
-                  aria-label={`${a.name}: ${usage}`}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={percent}
-                >
-                  <div className="bar__fill" style={{ width: `${Math.min(percent, 100)}%`, background: barColor(percent, a.color) }} />
-                </div>
+                  <span className="bar bar--thin" aria-hidden>
+                    <span
+                      className="bar__fill"
+                      style={{ width: `${Math.min(percent, 100)}%`, background: barColor(percent, a.color) }}
+                    />
+                  </span>
                 </button>
               </li>
             );

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { errorMessage, useApi } from "../../api/context";
 import type { Account, Overview, Phase, Task, UsagePoint } from "../../api/types";
-import { usageLabel } from "../../components/Layout";
+import { usageLabel } from "../../components/planUsage";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { WorkingWord } from "../../components/Mascot/WorkingWord";
 import { projectColor, shortPath } from "../../components/projects";
