@@ -1,8 +1,9 @@
-//! Read-only code navigation and review: what changed in a copy of the code
-//! (the user's folder or a task's worktree), file contents, text search,
-//! history, blame and a light outline of a file. The rules here are pure:
-//! which paths and revisions are acceptable, what counts as binary, and how
-//! an outline is read from a file's text.
+//! Code navigation and review: what changed in a copy of the code (the
+//! user's folder or a task's worktree), file contents, text search, history,
+//! blame and a light outline of a file, plus what light editing needs. The
+//! rules here are pure: which paths, names and revisions are acceptable,
+//! what counts as binary, how an outline is read from a file's text, a
+//! file's version, and the bytes a save writes.
 
 use serde::{Deserialize, Serialize};
 
