@@ -31,6 +31,7 @@ const es = {
   "reviewer.expand.all": "Mostrar todo ({n})",
   "reviewer.outdated": "Comentarios en líneas que ya no están en el diff",
   "reviewer.line.add": "Comentar la línea {n}",
+  "reviewer.line.addOld": "Comentar la línea {n} de antes del cambio",
   "reviewer.line.menu": "Acciones de la línea",
   "reviewer.line.comment": "Comentar la línea {n}",
   "reviewer.line.commentRange": "Comentar las líneas {from}–{to}",
@@ -66,6 +67,13 @@ const es = {
   "reviewer.history.loading": "Cargando historial…",
   "reviewer.history.empty": "Este archivo aún no tiene commits.",
   "reviewer.history.openAt": "Ver el archivo en {rev}",
+  "reviewer.shortcuts.title": "Revisión de cambios",
+  "reviewer.shortcuts.files": "Archivo siguiente o anterior",
+  "reviewer.shortcuts.lines": "Línea siguiente o anterior del diff",
+  "reviewer.shortcuts.select": "Seleccionar varias líneas",
+  "reviewer.shortcuts.comment": "Comentar la línea o la selección",
+  "reviewer.shortcuts.add": "Agregar el comentario",
+  "reviewer.shortcuts.menu": "Acciones de la línea o del archivo",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -98,6 +106,7 @@ const en: Record<keyof typeof es, string> = {
   "reviewer.expand.all": "Show all ({n})",
   "reviewer.outdated": "Comments on lines no longer in the diff",
   "reviewer.line.add": "Comment on line {n}",
+  "reviewer.line.addOld": "Comment on line {n} from before the change",
   "reviewer.line.menu": "Line actions",
   "reviewer.line.comment": "Comment on line {n}",
   "reviewer.line.commentRange": "Comment on lines {from}–{to}",
@@ -133,6 +142,13 @@ const en: Record<keyof typeof es, string> = {
   "reviewer.history.loading": "Loading history…",
   "reviewer.history.empty": "This file has no commits yet.",
   "reviewer.history.openAt": "See the file at {rev}",
+  "reviewer.shortcuts.title": "Reviewing changes",
+  "reviewer.shortcuts.files": "Next or previous file",
+  "reviewer.shortcuts.lines": "Next or previous line of the diff",
+  "reviewer.shortcuts.select": "Select several lines",
+  "reviewer.shortcuts.comment": "Comment on the line or the selection",
+  "reviewer.shortcuts.add": "Add the comment",
+  "reviewer.shortcuts.menu": "Line or file actions",
 };
 
 export default { es, en };

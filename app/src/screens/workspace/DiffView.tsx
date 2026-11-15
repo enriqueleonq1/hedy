@@ -275,9 +275,11 @@ export function DiffView({
   const tabbable = cursor ?? (firstRow ? cellOf(firstRow, "new") : null);
 
   const focusRow = (index: number, side: Side) => {
-    requestAnimationFrame(() => {
-      table.current?.querySelector<HTMLElement>(`[data-row="${split ? `${side}-${index}` : index}"]`)?.focus();
-    });
+    const find = () => table.current?.querySelector<HTMLElement>(`[data-row="${split ? `${side}-${index}` : index}"]`);
+    const row = find();
+    // Not rendered yet (a line just revealed): once it is.
+    if (row) row.focus();
+    else requestAnimationFrame(() => find()?.focus());
   };
 
   // `selectFile(path, line)`: show that line and move there.
@@ -473,7 +475,7 @@ export function DiffView({
   /** The gutter, numbers, sign and code of one line on one side (or both, unified). */
   const lineCells = (line: DiffLine, index: number, side: Side, cellSide: Side | null) => {
     const n = lineNumber(line, side);
-    const label = n !== null ? t("reviewer.line.add", { n }) : undefined;
+    const label = n === null ? undefined : side === "old" ? t("reviewer.line.addOld", { n }) : t("reviewer.line.add", { n });
     return (
       <>
         <span role="cell" className="rd-gutter">

@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { errorMessage, useAction, useApi } from "../api/context";
 import type { CodeCopy } from "../api/codeTypes";
 import type { FileDiff, Task } from "../api/types";
-import { ContextMenu, type MenuPoint } from "../components/ui/ContextMenu";
+import { ContextMenu, pointFor, type MenuPoint } from "../components/ui/ContextMenu";
 import { Button, ConfirmButton } from "../components/ui/Button";
 import { MenuButton, type MenuItem } from "../components/ui/Menu";
 import { useProjectActions } from "../components/projects";
@@ -325,7 +325,9 @@ export function Changes({ project, task }: { project: string; task: Task | null 
                     className={`rv-file${f === current ? " rv-file--current" : ""}${done ? " rv-file--reviewed" : ""}`}
                     onContextMenu={(e) => {
                       e.preventDefault();
-                      setMenu({ at: { x: e.clientX, y: e.clientY }, file: f });
+                      // From the keyboard (the menu key) there is no pointer: open by the row.
+                      const keyboard = e.clientX === 0 && e.clientY === 0;
+                      setMenu({ at: keyboard ? pointFor(e.currentTarget) : { x: e.clientX, y: e.clientY }, file: f });
                     }}
                   >
                     <input
