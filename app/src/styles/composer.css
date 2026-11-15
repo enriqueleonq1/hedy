@@ -55,7 +55,7 @@
 }
 
 /* The images of a message in the timeline. */
-.message-images { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin: 2px 0 8px; padding: 0; list-style: none; }
+.message-images { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; padding: 0; list-style: none; white-space: normal; }
 .message-images__item {
   display: inline-grid;
   place-items: center;
@@ -69,11 +69,12 @@
 .message-images__item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .message-images__item--missing { box-shadow: inset 0 0 0 1px var(--line); }
 
-/* The @file picker uses the template picker's look; paths in mono. */
-.file-option { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; padding: 6px 12px; }
+/* The @file picker uses the template picker's look, one line per file; folders in mono.
+   (Doubled classes: this sheet may load before global.css.) */
+.template-option.file-option { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; padding: 6px 12px; }
 .file-option__name { flex: none; font-weight: 600; }
 .file-option__dir { min-width: 0; color: var(--muted); font-family: var(--font-mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.template-option--active .file-option__name { color: var(--action-text); }
+.template-option--active.file-option .file-option__name { color: var(--action-text); }
 
 /* Suggestions under the mascot of an empty task: quiet, ghost chips. */
 .suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); margin: var(--space-2) 0 0; padding: 0; list-style: none; }

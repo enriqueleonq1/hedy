@@ -53,6 +53,7 @@ import { ChangesPanel } from "./ChangesPanel";
 import { AttachButton, draggingFiles, ImageTray, transferFiles, useComposerImages } from "./ComposerImages";
 import { FilePicker } from "./FilePicker";
 import { insertMention, mentionAt, rankFiles } from "./mentions";
+import { Suggestions, useSuggestions, type Suggestion } from "./Suggestions";
 import { QueuedMessages } from "./QueuedMessages";
 import { PanelIcon, PlusIcon, StopIcon } from "./icons";
 import { jumpDigit, TaskSwitcher } from "./TaskSwitcher";
@@ -182,6 +183,9 @@ export function Workspace({
   }, [list, taskId, onSelectTask]);
 
   const title = task ? task.title : name;
+  const suggestions = useSuggestions(project, account?.provider);
+  // A suggestion fills the composer of a new task; `n` tells the same one apart.
+  const [fill, setFill] = useState<(Suggestion & { n: number; scope: string | null }) | null>(null);
   const panel = useSidePanel(solo ? null : task);
   // The one switch for the side panel: focus mode puts it away too.
   const focusMode = useFocusMode();
@@ -271,6 +275,12 @@ export function Workspace({
                   ? t("workspace.empty", { name, account: account.name })
                   : t("workspace.noAccount")}
             </p>
+            {account && (
+              <Suggestions
+                items={suggestions}
+                onPick={(s) => setFill({ ...s, n: (fill?.n ?? 0) + 1, scope: project })}
+              />
+            )}
           </div>
         )}
 
@@ -292,6 +302,7 @@ export function Workspace({
           disabled={!account}
           imageAccount={isOpen(task) && task ? task.account : (account?.id ?? null)}
           initialText={task ? "" : draft}
+          fill={!task && fill?.scope === project ? fill : null}
           autoFocus={chosen === null || (solo && !task)}
           start={
             solo
@@ -320,7 +331,10 @@ export function Workspace({
               />
             ) : null
           }
-          onStarted={(created) => onSelectTask(created.id, { replace: true })}
+          onStarted={(created) => {
+            setFill(null);
+            onSelectTask(created.id, { replace: true });
+          }}
         />
       </section>
       {/* Kept mounted while hidden: a terminal opened there keeps running. */}
@@ -458,6 +472,7 @@ function Composer({
   disabled,
   imageAccount,
   initialText,
+  fill,
   autoFocus,
   start: startNew,
   accountPicker,
@@ -476,6 +491,8 @@ function Composer({
   /** Who gets the message, to know whether it takes images. */
   imageAccount: string | null;
   initialText?: string;
+  /** A suggestion picked in the empty task: its text (and mode) go in, the caret where it says. */
+  fill?: (Suggestion & { n: number }) | null;
   /** Takes the focus when it appears (a new task or question). */
   autoFocus?: boolean;
   start: StartTask;
@@ -524,6 +541,25 @@ function Composer({
     });
     return () => cancelAnimationFrame(frame);
   }, [autoFocus, disabled]);
+
+  // A picked suggestion fills the composer; it is never sent by itself.
+  const [filled, setFilled] = useState(0);
+  if (fill && fill.n !== filled) {
+    setFilled(fill.n);
+    setText(fill.text);
+    setCaret(fill.caret);
+    if (fill.mode && !followUp && (solo ? CONVERSATION_MODES : MODES).includes(fill.mode)) setNewMode(fill.mode);
+  }
+  useEffect(() => {
+    if (!fill) return;
+    const frame = requestAnimationFrame(() => {
+      const el = input.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(fill.caret, fill.caret);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [fill]);
 
   const query = slashQuery(text);
   const matches = query === null ? [] : filterTemplates(templates.data ?? [], query);

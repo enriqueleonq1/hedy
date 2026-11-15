@@ -1074,3 +1074,14 @@ claude -p /usage --output-format json --no-session-persistence --safe-mode
   `@relative/path `, Esc closes it. The mention is plain text in the prompt: each agent
   reads the file with its own tools, under Hedy's rules. A quick question has no project,
   so `@` is just text there.
+
+### Suggestions in an empty task
+
+- Under the mascot of a new project task: three ghost chips from what Hedy already knows
+  locally (`project_status`, no agent and no network): failing tests from the last run
+  any task saw, then a review of uncommitted changes, then always "explain how this repo
+  is organized", then "add tests" and "find dead code" as fillers. The review is offered
+  only with Claude Code, and switches the composer to Pregunta: Codex, ACP and API agents
+  always work in a worktree forked from `HEAD`, where uncommitted changes do not exist.
+- In a quick question: three generic starters with the caret placed where the user types.
+- A chip fills the composer (and its mode); it never sends. They go once the task exists.
