@@ -334,4 +334,40 @@ describe("English", () => {
     expect(screen.getByRole("dialog", { name: "New skill" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
   });
+
+  it("starts a new project in English", async () => {
+    const { user } = setup();
+    await screen.findByRole("heading", { name: /Hi, Enrique!/ });
+    await user.click(screen.getByRole("button", { name: "Start something new" }));
+    expect(screen.getByRole("menuitem", { name: /Quick question.*No project: just ask or research/ })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+    await user.click(screen.getByRole("menuitem", { name: /New project/ }));
+    const dialog = screen.getByRole("dialog", { name: "New project" });
+    await user.type(within(dialog).getByRole("textbox", { name: "Name" }), "Notes app");
+    expect(await within(dialog).findByText("/code/notes-app")).toBeInTheDocument();
+    expect(within(dialog).getByText(/^Creates/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: /More options/ }));
+    expect(within(dialog).getByRole("switch", { name: /./ })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+    await user.click(within(dialog).getByRole("button", { name: "Create project" }));
+    expect(await screen.findByText("Notes app is ready. Write its first task.")).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+  });
+
+  it("asks a quick question in English", async () => {
+    const { user } = setup(MockApi.withSampleData().withSampleActivity());
+    await screen.findByRole("heading", { name: /Hi, Enrique!/ });
+    await user.click(screen.getByRole("button", { name: "Quick question" }));
+    expect(await screen.findByRole("heading", { name: "Quick question" })).toBeInTheDocument();
+    expect(screen.getByText("No project · never touches your files")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "What do you want to know?" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Conversations (1)" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+    await user.type(screen.getByRole("textbox", { name: "What do you want to know?" }), "What is a monad?{Enter}");
+    expect(await screen.findByRole("heading", { name: "What is a monad?" })).toBeInTheDocument();
+    expect(await screen.findByText(/^Short answer/)).toBeInTheDocument();
+    expect(screen.getByText(/is answering/)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Delete" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+  });
 });

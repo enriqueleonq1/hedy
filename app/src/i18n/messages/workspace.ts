@@ -15,6 +15,7 @@ const es = {
   "workspace.phase.implement": "implementa",
   "workspace.phase.tests": "escribe los tests",
   "workspace.phase.review": "revisa",
+  "workspace.phase.answer": "responde",
 
   "workspace.tool.Read": "leyó",
   "workspace.tool.Grep": "buscó",
@@ -156,6 +157,7 @@ const en: Record<keyof typeof es, string> = {
   "workspace.phase.implement": "is implementing",
   "workspace.phase.tests": "is writing the tests",
   "workspace.phase.review": "is reviewing",
+  "workspace.phase.answer": "is answering",
 
   "workspace.tool.Read": "read",
   "workspace.tool.Grep": "searched",

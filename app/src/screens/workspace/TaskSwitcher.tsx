@@ -47,11 +47,14 @@ export function TaskSwitcher({
   current,
   accounts,
   onSelect,
+  conversations = false,
 }: {
   tasks: Task[];
   current: string | null;
   accounts: Account[];
   onSelect: (task: string | null) => void;
+  /** The list holds conversations outside any project, not a project's tasks. */
+  conversations?: boolean;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -115,15 +118,15 @@ export function TaskSwitcher({
         aria-controls={open ? panelId : undefined}
         onClick={() => setOpen((o) => !o)}
       >
-        {t("workspace.tasks", { n: tasks.length })}
+        {conversations ? t("conversation.count", { n: tasks.length }) : t("workspace.tasks", { n: tasks.length })}
         <span className={`task-switcher__chevron${open ? " task-switcher__chevron--open" : ""}`} aria-hidden>
           ▾
         </span>
       </button>
       {open && (
-        <div className="task-switcher__panel" id={panelId} role="group" aria-label={t("workspace.taskList")}>
+        <div className="task-switcher__panel" id={panelId} role="group" aria-label={conversations ? t("conversation.list") : t("workspace.taskList")}>
           <button type="button" className="btn btn--primary btn--small task-switcher__new" onClick={() => choose(null)}>
-            {t("workspace.newTask")}
+            {conversations ? t("conversation.newLabel") : t("workspace.newTask")}
           </button>
           <ul className="task-switcher__list">
             {tasks.map((task, index) => {

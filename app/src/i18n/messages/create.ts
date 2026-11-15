@@ -25,10 +25,11 @@ const es = {
   "newProject.clientPlaceholder": "Opcional, para sumar el costo",
   "newProject.create": "Crear proyecto",
   "newProject.creating": "Creando…",
-  "newProject.created": "{name} está listo. Escribe la primera tarea.",
+  "newProject.created": "Listo: {name}. Escribe la primera tarea.",
 
   "conversation.place": "Conversación",
   "conversation.list": "Conversaciones",
+  "conversation.count": "Conversaciones ({n})",
   "conversation.title": "Pregunta rápida",
   "conversation.subtitle": "Sin proyecto · no toca ningún archivo tuyo",
   "conversation.empty": "Pregunta lo que quieras. Esta conversación no pertenece a ningún proyecto: no ve tu código ni tus notas, y no cambia archivos.",
@@ -44,6 +45,7 @@ const es = {
   "conversation.more": "Ver las {n}",
   "conversation.fewer": "Ver menos",
   "conversation.account": "Cuenta de la pregunta",
+  "conversation.defaultModel": "Modelo de la cuenta",
   "conversation.enterHint": "Enter para enviar · Mayús + Enter para otra línea",
 };
 
@@ -75,6 +77,7 @@ const en: Record<keyof typeof es, string> = {
 
   "conversation.place": "Conversation",
   "conversation.list": "Conversations",
+  "conversation.count": "Conversations ({n})",
   "conversation.title": "Quick question",
   "conversation.subtitle": "No project · never touches your files",
   "conversation.empty": "Ask anything. This conversation belongs to no project: it does not see your code or your notes, and it changes no files.",
@@ -90,6 +93,7 @@ const en: Record<keyof typeof es, string> = {
   "conversation.more": "See all {n}",
   "conversation.fewer": "See fewer",
   "conversation.account": "Account for the question",
+  "conversation.defaultModel": "Account's model",
   "conversation.enterHint": "Enter to send · Shift + Enter for a new line",
 };
 

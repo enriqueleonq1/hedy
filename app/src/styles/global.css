@@ -266,7 +266,8 @@ ul { list-style: none; margin: 0; padding: 0; }
 .sidebar__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
 .sidebar__head .sidebar__title { margin: 0; }
 .sidebar__add { width: 28px; height: 28px; font-size: 17px; }
-.sidebar__item--conversation { min-height: 36px; }
+.sidebar__item--conversation { min-height: 36px; min-width: 0; }
+.sidebar__list > li { min-width: 0; }
 .sidebar__item--conversation .sidebar__name { font-size: 14px; }
 .sidebar__bullet { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); opacity: 0.55; }
 .sidebar__bullet--live { background: var(--accent); opacity: 1; }
@@ -778,6 +779,39 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 .dialog__header h2 { font-size: var(--text-headline); }
 .dialog__footer { justify-content: flex-end; border-top: 1px solid var(--line); }
 .dialog__body { padding: var(--space-5); display: grid; gap: var(--space-4); }
+
+/* "Nuevo proyecto": name and where first, the rest behind "Más opciones". */
+.new-project { display: grid; gap: var(--space-4); }
+.new-project__where { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.new-project__parent { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.new-project__preview { display: grid; gap: 4px; min-height: 40px; }
+.new-project__preview p { margin: 0; }
+.new-project__more { display: grid; gap: var(--space-4); }
+.new-project__more[hidden] { display: none; }
+.disclosure {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  margin-left: -8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+.disclosure:hover { background: var(--selection); }
+.disclosure:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.disclosure__mark { display: inline-block; transition: transform 0.15s var(--ease-out); }
+.disclosure[aria-expanded="true"] .disclosure__mark { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) {
+  .disclosure__mark { transition: none; }
+}
 
 .dialog__close {
   width: var(--target);

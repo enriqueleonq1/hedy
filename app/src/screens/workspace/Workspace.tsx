@@ -183,7 +183,13 @@ export function Workspace({
           </div>
           <div className="chat__tools">
             {list.length > 0 && (
-              <TaskSwitcher tasks={list} current={task?.id ?? null} accounts={overview.accounts} onSelect={onSelectTask} />
+              <TaskSwitcher
+                tasks={list}
+                current={task?.id ?? null}
+                accounts={overview.accounts}
+                onSelect={onSelectTask}
+                conversations={solo}
+              />
             )}
             {task && (
               <Button small variant="primary" onClick={() => onSelectTask(null)}>
@@ -191,7 +197,7 @@ export function Workspace({
               </Button>
             )}
             {task?.live && <StopButton task={task} />}
-            {solo && task && !task.live && <DeleteConversation task={task} onDeleted={() => onSelectTask(null)} />}
+            {solo && task && !isBusy(task) && <DeleteConversation task={task} onDeleted={() => onSelectTask(null)} />}
             {onOpenStatus && (
               <Button small variant="ghost" onClick={onOpenStatus}>
                 {t("workspace.status")}
@@ -313,7 +319,6 @@ function DeleteConversation({ task, onDeleted }: { task: Task; onDeleted: () => 
   return (
     <ConfirmButton
       small
-      aria-label={t("conversation.deleteLabel")}
       title={t("conversation.deleteLabel")}
       confirmLabel={t("conversation.deleteConfirm")}
       disabled={remove.isPending}
@@ -615,7 +620,7 @@ function Composer({
             />
             {accountPicker}
             <select className="pill-select" aria-label={t("common.models")} value={model} onChange={(e) => setModel(e.target.value)}>
-              <option value="">{t("workspace.composer.autoModels")}</option>
+              <option value="">{solo ? t("conversation.defaultModel") : t("workspace.composer.autoModels")}</option>
               {models.map((m) => (
                 <option key={m} value={m}>
                   {t("workspace.composer.onlyModel", { model: m })}
