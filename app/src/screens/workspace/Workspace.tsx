@@ -133,6 +133,11 @@ export function Workspace({
             {list.length > 0 && (
               <TaskSwitcher tasks={list} current={task?.id ?? null} accounts={overview.accounts} onSelect={onSelectTask} />
             )}
+            {task && (
+              <Button small variant="primary" onClick={() => onSelectTask(null)}>
+                {t("workspace.newTask")}
+              </Button>
+            )}
             {task?.live && <StopButton task={task} />}
             {onOpenStatus && (
               <Button small variant="ghost" onClick={onOpenStatus}>

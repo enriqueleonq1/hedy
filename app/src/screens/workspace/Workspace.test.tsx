@@ -131,6 +131,10 @@ describe("Workspace", () => {
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     expect(await screen.findByLabelText("Responde o pide algo más")).toBeInTheDocument();
     expect(screen.queryByRole("radiogroup", { name: "Modo" })).not.toBeInTheDocument();
+
+    // "+ Nueva tarea" in the header brings the selector back.
+    await user.click(screen.getByRole("button", { name: "+ Nueva tarea" }));
+    expect(await screen.findByRole("radiogroup", { name: "Modo" })).toBeInTheDocument();
   });
 
   it("answers the plan and permission cards with the keyboard", async () => {
@@ -247,7 +251,7 @@ describe("Workspace", () => {
     expect(await screen.findByRole("heading", { name: taxesTitle })).toBeInTheDocument();
 
     await user.click(toggle);
-    await user.click(screen.getByRole("button", { name: "+ Nueva tarea" }));
+    await user.click(within(screen.getByRole("group", { name: /^Tareas/ })).getByRole("button", { name: "+ Nueva tarea" }));
     expect(await screen.findByText(/¿Qué hacemos en hedy\?/)).toBeInTheDocument();
     expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/hedy")}&new`);
   });
