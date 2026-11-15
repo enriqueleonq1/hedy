@@ -322,6 +322,114 @@ export interface Task {
   conversation?: boolean;
   /** Images attached to the request itself. */
   images?: Attachment[];
+  /** Where accepting put the work and what Hedy published of it. */
+  ship?: Shipment | null;
+}
+
+// ---------------------------------------------------------------- shipping
+
+/** How "Aceptar" lands the work: merged into the base branch, or kept on the task's branch for a PR. */
+export type AcceptMode = "merge" | "branch";
+
+/** Whether GitHub CLI can open pull requests for the folder's remote. */
+export type GhState = "missing" | "loggedOut" | "ready";
+
+/** The main folder's git state, for its header. */
+export interface FolderStatus {
+  /** `null` on a detached HEAD. */
+  branch: string | null;
+  /** "origin/main"; `null` when the branch tracks nothing. */
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  staged: number;
+  unstaged: number;
+  untracked: number;
+  conflicted: number;
+  /** Files with any uncommitted change. */
+  changes: number;
+  remote: string | null;
+  /** Only the host ("github.com"), never the URL. */
+  remoteHost: string | null;
+  /** `null` without a remote. */
+  gh: GhState | null;
+}
+
+export type ShipFailureKind =
+  | "auth"
+  | "rejected"
+  | "protected"
+  | "offline"
+  | "diverged"
+  | "noUpstream"
+  | "localChanges"
+  | "noRemote"
+  | "detached"
+  | "other";
+
+/** Why a push or pull failed; the message is already in the user's language. */
+export interface ShipFailure {
+  kind: ShipFailureKind;
+  message: string;
+}
+
+export interface PushOutcome {
+  pushed: { branch: string; upstream: string; upstreamSet: boolean } | null;
+  failure: ShipFailure | null;
+}
+
+export interface PullOutcome {
+  /** `false`: already up to date. */
+  updated: boolean | null;
+  failure: ShipFailure | null;
+}
+
+export interface PullRequest {
+  /** Always https. */
+  url: string;
+  number: number | null;
+  draft: boolean;
+}
+
+export interface Shipment {
+  /** The base branch after a merge, or the task's own branch when kept. */
+  branch: string;
+  kept: boolean;
+  message: string;
+  files: { path: string; additions: number; deletions: number }[];
+  pushedTo: string | null;
+  pullRequest: PullRequest | null;
+}
+
+/** Where an accepted task stands on the way to its remote. */
+export interface ShipState {
+  branch: string;
+  kept: boolean;
+  remote: string | null;
+  remoteHost: string | null;
+  /** `null`: a push sets it (`-u`). */
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  pushed: boolean;
+  gh: GhState | null;
+  defaultBranch: string | null;
+  pullRequest: PullRequest | null;
+  canOpenPr: boolean;
+}
+
+export interface PullRequestDraft {
+  title: string;
+  body: string;
+  base: string;
+  head: string;
+}
+
+export interface NewPullRequestInput {
+  title: string;
+  body: string;
+  base: string;
+  draft: boolean;
 }
 
 /** What "Aceptar" changed in the main checkout (commits), kept to undo it. */

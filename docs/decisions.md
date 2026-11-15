@@ -1134,5 +1134,109 @@ claude -p /usage --output-format json --no-session-persistence --safe-mode
   in `App`; `useFileNavigator().open({ copy, path, line?, rev?, view? })`) and
   `codeKeys` for shared query keys. `MockApi` serves `/code/hedy` and `/code/homming`
   from `mockCodeSamples.ts`; task s5's review diff is computed from the same sample.
+- **Review comments** (`app/src/review/comments.tsx`, `ReviewCommentsProvider` in `App`,
+  the workspace names its task with `useReviewTask`) live only in the browser storage,
+  per copy (`hedy.review.comments.task:<id>`): a convenience, never sent anywhere but
+  to the task. `sendToAi` sends the pending ones as ONE follow-up through
+  `queueMessage` (queued while the agent works, like the composer), each as
+  `path:line(-end)`, the quoted lines and the text; then they stay as "sent" history.
+  The review diff reads `fileDiff(task, path, { full: true })` and hides context
+  beyond 3 lines in the UI, so expanding never asks again; it falls back to the
+  task diff's hunks when the full diff shows no change (a file not in the copy).
+- **Palette (quick open):** one palette, modes read from the field's first character as
+  in VS Code: `>` commands, `:` line, `@` symbol, `#` text, `?` modes; without a prefix,
+  files (Ctrl/⌘ P) or everything (Ctrl/⌘ K, files after the commands); F1 and
+  Ctrl/⌘ ⇧ P open it on `>`. It searches the copy on screen (open task, else the
+  project's folder; none outside a project) and opens files only through the navigator.
+  The side panel's views are reached by pressing their shortcuts (Ctrl/⌘ ⇧ E/F/G), with
+  a fallback through the navigator. Recent files live in `localStorage` per project.
 - **Not verified live** against a 50k-file repository (adapter tests run on small
   temporary repositories with a worktree).
+
+## 26. Shipping: commit, push, pull request and the folder's status (Nov 15, 2026)
+
+Hedy is not a source-control panel: it ships what the agents did. Two ports, so git's
+remote side and GitHub stay apart from the task's own git: `SourceControl`
+(`adapters::GitSourceControl`, the system's git) and `CodeHost` (`adapters::GhCli`).
+
+### Two ways to accept (`AcceptMode`, `Hedy::accept_task_as`)
+
+- **Merge** (default, as in §10/§22): commit in the worktree, merge into the base branch
+  in the main folder, remove the worktree and the branch. Undo works as in §22.
+- **Branch** ("Dejar en su rama (PR)", offered only when the folder has a remote): commit
+  on the task's branch, remove the worktree **but keep the branch**
+  (`remove_worktree_keep_branch`); the main folder is not touched, so it has no checkout
+  or clean-tree conditions. Its "undo" is **"Reabrir la tarea"**: the worktree comes back
+  on the same branch (`attach_worktree`) and the task returns to review. Nothing was
+  merged, so nothing moves back, and nothing on the remote is touched: a later push
+  updates the same PR. If the branch was deleted meanwhile, Hedy says so (`BranchGone`).
+- Either way the task stores a `Shipment` (JSON field, `#[serde(default)]`, no
+  migration): the branch carrying the work (base branch after a merge, the task's branch
+  when kept), the commit message, the files changed (+/−), where Hedy pushed it and the PR.
+- Why both: merging is what a solo developer wants; a team wants the work on a branch and
+  a PR, and the user's own branch untouched. Pushing a merged base branch is allowed too
+  (with a note that undo stops working, which §22's `Published` check enforces).
+
+### Commit message
+
+- Without AI (deterministic): §22's proposal, but when most of the repo's last 10 commit
+  subjects follow Conventional Commits, the subject becomes `type: title` with the type
+  guessed from the title's first word (arregla/fix → `fix`, tests → `test`, …).
+- **"Sugerir con IA"** (`Hedy::suggest_commit_message`): the task's **current account and
+  model** get a read-only one-shot request (`TaskMode::Ask`, review phase, no memory, no
+  MCP, no resume, cwd the worktree) with the title, the last 5 subjects (for language and
+  style) and the diff without context lines, cut at 12,000 characters. The answer's
+  first line is cleaned (fences, quotes, labels; ≤ 100 chars). Rule 3: if that account is
+  known to be at its limit (the task waits for it, its last report was `rejected`/100 %
+  with a future reset, or a plan window is full), Hedy refuses and says to write it by
+  hand; a limit reported mid-answer stops it too. Never another account. Tool requests
+  are denied. Its tokens are recorded as the task's usage; nothing goes to the timeline.
+  Times out after 120 s. The button's tooltip says it spends tokens of that account.
+
+### Push and pull
+
+- System git with the user's credential helpers and SSH keys; Hedy stores nothing.
+  `GIT_TERMINAL_PROMPT=0` (a missing credential fails instead of hanging), 180 s timeout,
+  `LC_ALL=C` so messages can be classified. **Never `--force`.**
+- Push: to the branch's upstream; with none, `--set-upstream` to `origin` (or the only
+  remote), and the UI says so before ("se crea origin/x y la rama la sigue").
+- Pull: `git pull --no-rebase --ff-only` only. A divergence is explained and points to VS
+  Code; Hedy never merges or rebases there.
+- Failures are classified from git's message (`PushProblem`, `PullProblem`) into a human
+  hint: auth (check access, e.g. `gh auth setup-git` or the SSH key), rejected (pull
+  first, never forced), protected branch (open a PR), offline, local changes, no
+  upstream. The Tauri commands return them as data (`failure.kind`) so the UI can offer
+  the next step ("Traer cambios", "Abrir en VS Code").
+
+### Pull requests (`gh`)
+
+- Offered only when `gh` is installed and `gh auth status --hostname <host>` succeeds
+  (its exit code only; Hedy never asks for or reads the token). That call contacts the
+  host, so the adapter caches it (10 min when logged in, 1 min when not).
+- Title: the commit subject. Body, built locally (`pull_request_body`): what was asked
+  (quoted), the agent's final message, files with +/−, and each test command the task
+  ran with its last result. Base: the remote's default branch (`refs/remotes/<r>/HEAD`,
+  else its `main`/`master`, else `gh repo view`), editable. Draft toggle.
+- `gh pr create --title … --body-file - --base … --head …`; the link is taken from its
+  output (https only, opened with `open_link`). "Already exists" returns that PR. A PR is
+  offered only after the branch is pushed and when it is not the default branch.
+
+### The folder's status
+
+- `Hedy::folder_status`: `git status --porcelain=v2 --branch` (branch, upstream,
+  ahead/behind, staged/unstaged/untracked/conflicted in one call, with
+  `GIT_OPTIONAL_LOCKS=0`), the remote's **host** only (never the URL: it may carry a
+  token), and `gh` (cached as above). The UI refreshes it on window focus and after
+  every git action.
+- In the workspace header: `⎇ branch` (a menu: Pull, Push, Abrir en VS Code, Copiar
+  nombre de rama; also on right-click), `● N` uncommitted, and `↓b` / `↑a` buttons that
+  pull or push when clicked. It is always "Tu carpeta", never a task's copy.
+
+### Everything local
+
+Only a user-initiated push or PR talks to the user's own remote (rule 8); `gh auth
+status` is the only automatic network call, cached, and only when the folder has a remote.
+
+**Not verified live:** a push to a real GitHub remote and `gh pr create` against GitHub
+(tested against a bare local remote and a fake `gh` script; the AI suggestion against
+the agent double).

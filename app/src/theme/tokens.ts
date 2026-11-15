@@ -43,6 +43,9 @@ export const themes: Record<ThemeName, Record<string, string>> = {
     diffAddInk: "#9ECE6A",
     diffDelBg: "#37222C",
     diffDelInk: "#F7768E",
+    // The changed words inside a changed line (a stronger tint of the same hue).
+    diffAddEmph: "#2A4640",
+    diffDelEmph: "#4D2836",
     warnBg: "#2E2A1F",
     warnInk: "#E0AF68",
     warnLine: "#5C4A2B",
@@ -85,6 +88,8 @@ export const themes: Record<ThemeName, Record<string, string>> = {
     diffAddInk: "#116A43",
     diffDelBg: "#FFE9EE",
     diffDelInk: "#A1213F",
+    diffAddEmph: "#BDEBD3",
+    diffDelEmph: "#FFCCD6",
     warnBg: "#FFF4D6",
     warnInk: "#8A5200",
     warnLine: "#F2D58A",

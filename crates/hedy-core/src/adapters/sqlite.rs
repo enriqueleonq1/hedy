@@ -1214,6 +1214,7 @@ mod tests {
             merge: None,
             wait: None,
             conversation: false,
+            ship: None,
         };
         // Old but still running; old with a recent event; recent; old and done.
         let running = task("t1", "/code/a", 10, TaskStatus::Running);
@@ -1258,6 +1259,7 @@ mod tests {
             merge: None,
             wait: None,
             conversation: false,
+            ship: None,
         };
         store.save_task(&task).unwrap();
         assert!(store.waiting_tasks().unwrap().is_empty());
@@ -1315,6 +1317,7 @@ mod tests {
             merge: None,
             wait: None,
             conversation,
+            ship: None,
         };
         let (chat, other) = (task("c1", true), task("t1", false));
         store.save_task(&chat).unwrap();
@@ -1365,6 +1368,7 @@ mod tests {
             merge: None,
             wait: None,
             conversation: false,
+            ship: None,
         };
         let (old, new) = (task("t1", 10), task("t2", 20));
         store.save_task(&old).unwrap();

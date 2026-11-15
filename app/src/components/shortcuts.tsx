@@ -4,7 +4,7 @@
 import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { useT, type MessageKey } from "../i18n";
-import { altKey, modKey } from "./palette/keys";
+import { altKey, modKey, shiftKey } from "./palette/keys";
 import { Dialog } from "./ui/Dialog";
 
 /** Typing there means text, not a shortcut (a terminal included). */
@@ -90,12 +90,14 @@ interface Row {
   joiner?: "range" | "or";
 }
 
-function groups(mod: string, alt: string): { title: MessageKey; rows: Row[] }[] {
+function groups(mod: string, alt: string, shift: string): { title: MessageKey; rows: Row[] }[] {
   return [
     {
       title: "shell.shortcuts.general",
       rows: [
         { label: "shell.shortcuts.palette", combos: [[mod, "K"]] },
+        { label: "shell.shortcuts.quickOpen", combos: [[mod, "P"]] },
+        { label: "shell.shortcuts.commands", combos: [["F1"], [mod, shift, "P"]], joiner: "or" },
         { label: "shell.shortcuts.projects", combos: [[alt, "1"], [alt, "9"]], joiner: "range" },
         { label: "shell.shortcuts.tasks", combos: [[mod, "1"], [mod, "9"]], joiner: "range" },
         { label: "shell.shortcuts.focus", combos: [[mod, "\\"]] },
@@ -131,6 +133,21 @@ function groups(mod: string, alt: string): { title: MessageKey; rows: Row[] }[] 
         { label: "shell.shortcuts.open", combos: [["Enter"]] },
       ],
     },
+    {
+      title: "reviewer.shortcuts.title",
+      rows: [
+        { label: "reviewer.shortcuts.files", combos: [["j"], ["k"]], joiner: "or" },
+        { label: "reviewer.shortcuts.lines", combos: [["↑"], ["↓"]], joiner: "or" },
+        { label: "reviewer.shortcuts.select", combos: [["Shift", "↑"], ["Shift", "↓"]], joiner: "or" },
+        { label: "reviewer.shortcuts.comment", combos: [["C"], ["Enter"]], joiner: "or" },
+        { label: "reviewer.shortcuts.add", combos: [[mod, "Enter"]] },
+        { label: "reviewer.shortcuts.menu", combos: [["Shift", "F10"]] },
+      ],
+    },
+    {
+      title: "ship.shortcuts.title",
+      rows: [{ label: "ship.shortcuts.confirm", combos: [[mod, "Enter"]] }],
+    },
   ];
 }
 
@@ -139,7 +156,7 @@ function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title={t("shell.shortcuts.title")} onClose={onClose}>
       <div className="shortcuts">
-        {groups(modKey(), altKey()).map((group) => (
+        {groups(modKey(), altKey(), shiftKey()).map((group) => (
           <section key={group.title} className="shortcuts__group">
             <h3 className="shortcuts__title">{t(group.title)}</h3>
             <dl className="shortcuts__list">

@@ -4,6 +4,7 @@ mod code;
 mod commands;
 mod dto;
 mod events;
+mod ship;
 mod terminal;
 mod waits;
 
@@ -135,6 +136,14 @@ pub fn run() {
             code::file_symbols,
             code::open_file_in_editor,
             code::reveal_in_file_manager,
+            ship::folder_status,
+            ship::push_folder,
+            ship::pull_folder,
+            ship::ship_state,
+            ship::push_task,
+            ship::pull_request_draft,
+            ship::create_pull_request,
+            ship::suggest_commit_message,
         ])
         .run(tauri::generate_context!())
         .expect("error al ejecutar Hedy");

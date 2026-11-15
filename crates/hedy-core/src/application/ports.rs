@@ -686,3 +686,78 @@ pub trait CodeReader: Send + Sync {
         lines: Option<(u32, u32)>,
     ) -> PortResult<Blame>;
 }
+
+/// A branch's remote-tracking branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Upstream {
+    /// The remote ("origin").
+    pub remote: String,
+    /// The branch on the remote ("main").
+    pub branch: String,
+    /// Commits the local branch has that the upstream does not.
+    pub ahead: u32,
+    /// Commits the upstream has that the local branch does not.
+    pub behind: u32,
+}
+
+impl Upstream {
+    /// "origin/main".
+    pub fn name(&self) -> String {
+        format!("{}/{}", self.remote, self.branch)
+    }
+}
+
+/// The main folder's state and its remote, through the system's git with
+/// the user's own credential helpers: Hedy stores nothing. Never forces.
+pub trait SourceControl: Send + Sync {
+    /// Branch, upstream, ahead/behind and uncommitted files of the folder.
+    fn folder(&self, repo: &Path) -> PortResult<crate::domain::ship::GitFolder>;
+    /// What `branch` tracks, if anything.
+    fn upstream(&self, repo: &Path, branch: &str) -> PortResult<Option<Upstream>>;
+    fn remotes(&self, repo: &Path) -> PortResult<Vec<String>>;
+    /// The remote's URL (only its host is ever shown).
+    fn remote_url(&self, repo: &Path, remote: &str) -> PortResult<Option<String>>;
+    /// The remote's default branch as git knows it locally
+    /// (`refs/remotes/<remote>/HEAD`, else its `main` or `master`).
+    fn default_branch(&self, repo: &Path, remote: &str) -> Option<String>;
+    /// `git push [-u] <remote> <branch>:<remote_branch>`, never forced. The
+    /// error carries git's own message.
+    fn push(
+        &self,
+        repo: &Path,
+        remote: &str,
+        branch: &str,
+        remote_branch: &str,
+        set_upstream: bool,
+    ) -> PortResult<()>;
+    /// `git pull --ff-only` on the current branch. The error carries git's
+    /// own message.
+    fn pull_ff_only(&self, repo: &Path) -> PortResult<()>;
+    /// Removes a task's worktree but keeps its branch (and its commits).
+    fn remove_worktree_keep_branch(&self, repo: &Path, path: &Path) -> PortResult<()>;
+    /// A worktree on an existing branch.
+    fn attach_worktree(&self, repo: &Path, path: &Path, branch: &str) -> PortResult<()>;
+}
+
+/// What GitHub CLI is asked to open.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullRequestSpec {
+    pub title: String,
+    pub body: String,
+    pub base: String,
+    pub head: String,
+    pub draft: bool,
+}
+
+/// Pull requests through GitHub CLI (`gh`), with the user's own login.
+/// Hedy never reads its token.
+pub trait CodeHost: Send + Sync {
+    fn installed(&self) -> bool;
+    /// Whether `gh auth status --hostname <host>` succeeds.
+    fn logged_in(&self, repo: &Path, host: &str) -> bool;
+    /// The repository's default branch as the host tells it.
+    fn default_branch(&self, repo: &Path) -> Option<String>;
+    /// `gh pr create`; returns what it printed (the link). The error
+    /// carries gh's own message.
+    fn create_pull_request(&self, repo: &Path, spec: &PullRequestSpec) -> PortResult<String>;
+}

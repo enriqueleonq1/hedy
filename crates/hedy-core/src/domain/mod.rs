@@ -21,6 +21,7 @@ pub mod project;
 pub mod prompts;
 pub mod provider;
 pub mod queue;
+pub mod ship;
 pub mod skill;
 pub mod task;
 pub mod template;
@@ -41,6 +42,7 @@ pub use plan_usage::{PlanUsage, UsageProblem, UsageSource, UsageWindow, WindowKi
 pub use project::Project;
 pub use provider::Provider;
 pub use queue::{HoldReason, QueuedMessage};
+pub use ship::{AcceptMode, GhState, PullRequest, Shipment};
 pub use skill::{Skill, SkillStatus};
 pub use task::{LimitWait, MergeRecord, Task, TaskId, TaskMode, TaskStatus, Workspace};
 pub use template::{PromptTemplate, TemplateId};

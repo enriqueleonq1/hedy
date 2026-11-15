@@ -1,21 +1,14 @@
-import { useRef, useState, type KeyboardEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
-import { errorMessage, useAction, useApi } from "../../api/context";
 import type { Task } from "../../api/types";
-import { useProjectActions } from "../../components/projects";
-import { Button, ConfirmButton } from "../../components/ui/Button";
-import { useT } from "../../i18n";
-import { useTaskDiff, useTaskEvents } from "../../tasks/hooks";
-import { isOpen, pendingCard } from "../../tasks/timeline";
 import { SidePanel } from "../../code/SidePanel";
-import { AcceptSheet, useAcceptedToast } from "./AcceptSheet";
-import { DiffView } from "./DiffView";
-import { useReviewed } from "./reviewed";
+import { Button } from "../../components/ui/Button";
+import { useT } from "../../i18n";
+import { Changes } from "../../review/Review";
 
 /**
  * The side panel of a project's workspace: the code views, the review of the
- * task's changes (this file's `Changes`), a terminal and the preview.
+ * task's changes (`Changes`), a terminal and the preview.
  */
 export function ChangesPanel({
   project,
@@ -90,173 +83,6 @@ function Preview({ project }: { project: string }) {
         />
       ) : (
         <p className="empty">{t("workspace.preview.empty")}</p>
-      )}
-    </div>
-  );
-}
-
-/** No worktree: a question or research never gets one; a project task gets it once the agent starts. */
-function NoWorktree({ task }: { task: Task }) {
-  const t = useT();
-  const events = useTaskEvents(task.mode === "project" ? task.id : null);
-  if (task.mode !== "project") return <p className="empty">{t("workspace.changes.noWorkspace")}</p>;
-  if (!isOpen(task) || task.status === "review" || task.status === "failed") {
-    return <p className="empty">{t("workspace.changes.noneMade")}</p>;
-  }
-  const planWaits = pendingCard(events.data ?? []) === "plan";
-  return <p className="empty">{planWaits ? t("workspace.changes.afterPlan") : t("workspace.changes.notYet")}</p>;
-}
-
-function Changes({ project, task }: { project: string; task: Task | null }) {
-  const api = useApi();
-  const t = useT();
-  const actions = useProjectActions();
-  const editable = !!task?.workspace && isOpen(task);
-  const diff = useTaskDiff(task?.id ?? null, editable);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [reviewing, setReviewing] = useState(false);
-  const commits = useQuery({ queryKey: ["commits", project], queryFn: () => api.recentCommits(project) });
-  const accepted = useAcceptedToast(task);
-  const reviewed = useReviewed(task?.id ?? "");
-  const fileButtons = useRef(new Map<string, HTMLButtonElement>());
-
-  // Both change the project's branch: its commits and uncommitted files.
-  const changed = [
-    ["commits", project],
-    ["status", project],
-  ];
-  const discard = useAction((a, id: string) => a.discardTask(id), { invalidate: changed });
-
-  if (!task) return <p className="empty">{t("workspace.changes.noTask")}</p>;
-  if (!task.workspace) return <NoWorktree task={task} />;
-  if (!isOpen(task)) {
-    const branch = task.workspace.baseBranch;
-    return (
-      <div className="changes">
-        <p className="empty">
-          {task.status === "accepted" ? t("workspace.changes.accepted") : t("workspace.changes.discarded")}
-        </p>
-        {task.status === "accepted" && task.merge && (
-          <div className="undo-merge">
-            <Button disabled={accepted.undo.isPending} onClick={() => accepted.undo.mutate(task.id)}>
-              {t("review.undoMerge")}
-            </Button>
-            <p className="muted small">{t("review.undoHint", { branch })}</p>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  const files = diff.data ?? [];
-  const current = files.find((f) => f.path === selected) ?? files[0];
-  const reviewedCount = files.filter((f) => reviewed.isReviewed(f)).length;
-
-  // j / k move through the files, like in a code review.
-  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.key !== "j" && e.key !== "k") return;
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
-    const target = e.target as HTMLElement;
-    if (target.closest("input, textarea, select, [contenteditable='true']")) return;
-    if (files.length === 0) return;
-    e.preventDefault();
-    const index = current ? files.indexOf(current) : -1;
-    const next = files[Math.min(files.length - 1, Math.max(0, index + (e.key === "j" ? 1 : -1)))];
-    if (!next) return;
-    setSelected(next.path);
-    fileButtons.current.get(next.path)?.focus();
-  }
-
-  return (
-    <div className="changes" onKeyDown={onKeyDown}>
-      {diff.isError && <p className="error-text">{errorMessage(diff.error, t)}</p>}
-      {files.length === 0 ? (
-        <p className="empty">{diff.isPending ? t("workspace.changes.loading") : t("workspace.changes.none")}</p>
-      ) : (
-        <>
-          <p className="review-progress">
-            <span>{t("review.progress", { n: reviewedCount, total: files.length })}</span>
-            <span className="muted small">{t("review.keys")}</span>
-          </p>
-          <ul className="file-list" aria-label={t("workspace.changes.files")}>
-            {files.map((f) => {
-              const done = reviewed.isReviewed(f);
-              return (
-                <li key={f.path} className="file-row">
-                  <input
-                    type="checkbox"
-                    className="file-row__check"
-                    checked={done}
-                    aria-label={t("review.markNamed", { path: f.path })}
-                    onChange={() => reviewed.toggle(f)}
-                  />
-                  <button
-                    ref={(el) => {
-                      if (el) fileButtons.current.set(f.path, el);
-                      else fileButtons.current.delete(f.path);
-                    }}
-                    className={`file-item${done ? " file-item--reviewed" : ""}`}
-                    aria-current={f === current ? "true" : undefined}
-                    onClick={() => setSelected(f.path)}
-                  >
-                    <span className="file-item__path">{f.path}</span>
-                    {done && <span className="sr-only">, {t("review.reviewed")}</span>}
-                    <span className="file-item__stats">
-                      <span className="plus">+{f.additions}</span> <span className="minus">-{f.deletions}</span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          {current && (
-            <>
-              <label className="check review-mark">
-                <input type="checkbox" checked={reviewed.isReviewed(current)} onChange={() => reviewed.toggle(current)} />
-                {t("review.mark")} · <span className="mono">{current.path}</span>
-              </label>
-              <DiffView file={current} />
-            </>
-          )}
-        </>
-      )}
-
-      <p className="muted small">
-        {t("workspace.changes.branch")} <span className="mono">{task.workspace.branch}</span> {t("workspace.changes.from")}{" "}
-        <span className="mono">{task.workspace.baseBranch}</span>
-      </p>
-      {commits.data && commits.data.length > 0 && (
-        <p className="muted small">
-          {t("common.recentCommits")} · {commits.data.map((c) => `${c.hash} ${c.subject}`).join(" · ")}
-        </p>
-      )}
-      {/* Always in reach, however long the diff: the decision on these changes. */}
-      <div className="changes__footer">
-        <Button
-          small
-          variant="primary"
-          disabled={files.length === 0 || task.status === "running"}
-          title={task.status === "running" ? t("workspace.changes.waitForAgent") : undefined}
-          onClick={() => setReviewing(true)}
-        >
-          {t("workspace.changes.accept")}
-        </Button>
-        <Button small onClick={() => actions.openEditor({ path: task.workspace?.worktree ?? project })}>{t("common.openInVsCode")}</Button>
-        <ConfirmButton
-          small
-          className="changes__discard"
-          confirmLabel={t("workspace.changes.discardConfirm")}
-          onConfirm={() => discard.mutate(task.id)}
-        >
-          {t("workspace.changes.discard")}
-        </ConfirmButton>
-      </div>
-      {reviewing && (
-        <AcceptSheet
-          task={task}
-          onClose={() => setReviewing(false)}
-          onAccepted={(branch) => accepted.show(task.id, branch)}
-        />
       )}
     </div>
   );

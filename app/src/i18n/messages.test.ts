@@ -10,7 +10,9 @@ import onboarding from "./messages/onboarding";
 import palette from "./messages/palette";
 import queue from "./messages/queue";
 import review from "./messages/review";
+import reviewer from "./messages/reviewer";
 import settings from "./messages/settings";
+import ship from "./messages/ship";
 import shell from "./messages/shell";
 import skills from "./messages/skills";
 import status from "./messages/status";
@@ -34,7 +36,9 @@ const AREAS = {
   palette,
   queue,
   review,
+  reviewer,
   settings,
+  ship,
   shell,
   skills,
   status,

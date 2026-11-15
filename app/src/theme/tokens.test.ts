@@ -35,9 +35,26 @@ const textPairs: [string, string][] = [
   ["ink", "diffAddBg"],
   ["muted", "diffAddBg"],
   ["muted", "diffDelBg"],
+  // Changed words inside a changed line of a diff.
+  ["ink", "diffAddEmph"],
+  ["diffAddInk", "diffAddEmph"],
+  ["ink", "diffDelEmph"],
+  ["diffDelInk", "diffDelEmph"],
+  // A changed file's status letter, also on the selected row.
+  ["success", "selection"],
+  ["danger", "selection"],
+  ["activity", "selection"],
+  ["accent", "selection"],
   ["accent", "panel2"],
   // A ghost button inside a nested surface.
   ["actionText", "panel2"],
+  // The palette's active row: matched letters and a changed file's status letter.
+  ["accent", "selection"],
+  ["success", "selection"],
+  ["warnInk", "selection"],
+  ["warnInk", "panel"],
+  ["danger", "selection"],
+  ["activity", "selection"],
 ];
 
 describe.each(Object.keys(themes) as ThemeName[])("%s theme", (name) => {

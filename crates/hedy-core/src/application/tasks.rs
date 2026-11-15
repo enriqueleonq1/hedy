@@ -187,6 +187,7 @@ impl Hedy {
             merge: None,
             wait: None,
             conversation: false,
+            ship: None,
             images: Vec::new(),
         };
         task.images = self.store_images(&task.id, &request.images)?;
@@ -469,7 +470,7 @@ impl Hedy {
         }
     }
 
-    fn handle_usage(
+    pub(super) fn handle_usage(
         &self,
         id: &TaskId,
         spender: &AccountId,
