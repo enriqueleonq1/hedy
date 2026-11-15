@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ApiProvider, errorMessage, useApi, useOverview } from "./api/context";
 import type { HedyApi } from "./api/HedyApi";
+import { FocusModeProvider } from "./components/focusMode";
 import { Shell, Sidebar, taskView, Topbar, viewProject, type View } from "./components/Layout";
 import { Mascot } from "./components/Mascot/Mascot";
 import { CommandPalette } from "./components/palette/CommandPalette";
+import { ShortcutsProvider, useProjectShortcuts } from "./components/shortcuts";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import { TerminalProvider } from "./components/Terminal/TerminalProvider";
 import { Button } from "./components/ui/Button";
@@ -95,35 +97,25 @@ function Root() {
   const overview = useOverview();
   const t = useT();
   const [view, setView] = useState<View>(viewFromHash);
-  const [openProjects, setOpenProjects] = useState<string[]>(() => {
-    const project = viewProject(view);
-    return project ? [project] : [];
-  });
   const [palette, setPalette] = useState(false);
   const api = useApi();
-
-  const show = useCallback((next: View) => {
-    setView(next);
-    const project = viewProject(next);
-    if (project) setOpenProjects((open) => (open.includes(project) ? open : [...open, project]));
-  }, []);
 
   // Each screen and task is a step of the history: Back and Forward walk them.
   const navigate = useCallback(
     (next: View, options?: { replace?: boolean }) => {
-      show(next);
+      setView(next);
       const hash = hashFor(next);
       if (options?.replace) history.replaceState(null, "", hash);
       else if (hash !== window.location.hash) history.pushState(null, "", hash);
     },
-    [show],
+    [],
   );
 
   useEffect(() => {
-    const onPop = () => show(viewFromHash());
+    const onPop = () => setView(viewFromHash());
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, [show]);
+  }, []);
 
   // A task opens in its project or, outside any project, as a conversation.
   const projects = overview.data?.projects;
@@ -135,14 +127,13 @@ function Root() {
   // A click on a desktop notification opens that task.
   useEffect(() => api.onOpenTask(({ taskId, project }) => openTask(project, taskId)), [api, openTask]);
 
-  const closeProject = (path: string) => {
-    const rest = openProjects.filter((p) => p !== path);
-    setOpenProjects(rest);
-    if (viewProject(view) === path) {
-      const last = rest.at(-1);
-      navigate(last ? { screen: "workspace", project: last } : { screen: "welcome" });
-    }
-  };
+  // Alt/⌥ 1…9: the Nth project of the sidebar (once onboarded).
+  const shortcutProjects = useMemo(
+    () => (overview.data?.onboarded ? (projects ?? []) : []),
+    [overview.data?.onboarded, projects],
+  );
+  const goToProject = useCallback((path: string) => navigate({ screen: "workspace", project: path }), [navigate]);
+  useProjectShortcuts(shortcutProjects, goToProject);
 
   if (overview.isPending) {
     return (
@@ -183,14 +174,14 @@ function Root() {
     <ThemeProvider setting={data.theme}>
       <TerminalProvider>
         <CreateProvider overview={data} onNavigate={navigate}>
+        <FocusModeProvider>
+        <ShortcutsProvider>
         <Shell
           topbar={
             <Topbar
               overview={data}
               view={current}
-              openProjects={openProjects}
               onNavigate={navigate}
-              onCloseProject={closeProject}
               onOpenPalette={() => setPalette(true)}
             />
           }
@@ -252,6 +243,8 @@ function Root() {
           )}
         </Shell>
         <CommandPalette open={palette} onOpenChange={setPalette} overview={data} onNavigate={navigate} />
+        </ShortcutsProvider>
+        </FocusModeProvider>
         </CreateProvider>
       </TerminalProvider>
     </ThemeProvider>

@@ -13,10 +13,13 @@ import { useInbox } from "../../tasks/inbox";
 import { STATUS_LABEL } from "../../tasks/timeline";
 import { STATE_LABEL } from "../../screens/activity/ActivityScreen";
 import { accountSubtitle } from "../accounts";
+import { useFocusMode } from "../focusMode";
 import { taskView, type View } from "../Layout";
 import { headlineText } from "../planUsage";
 import { projectColor, useProjectActions } from "../projects";
+import { useShortcuts } from "../shortcuts";
 import { useToast } from "../ui/Toast";
+import { modKey } from "./keys";
 
 export type GroupKey = "pending" | "nav" | "projects" | "tasks" | "accounts" | "actions";
 
@@ -62,6 +65,8 @@ export function usePaletteCommands({
   const actions = useProjectActions();
   const inbox = useInbox();
   const create = useCreate();
+  const focusMode = useFocusMode();
+  const shortcuts = useShortcuts();
   const assign = useAction(
     (a, vars: { project: Project; account: string }) => a.useAccount(vars.project.path, vars.account),
     {
@@ -126,6 +131,20 @@ export function usePaletteCommands({
       run: () => onNavigate({ screen: "accounts" }),
     },
     { id: "nav:settings", group: "nav", label: t("common.settings"), run: () => onNavigate({ screen: "settings" }) },
+    {
+      id: "view:focus",
+      group: "actions",
+      label: focusMode.focus ? t("shell.focus.exit") : t("shell.focus.enter"),
+      detail: `${modKey()} \\`,
+      run: focusMode.toggle,
+    },
+    {
+      id: "help:shortcuts",
+      group: "actions",
+      label: t("shell.shortcuts.title"),
+      detail: "?",
+      run: shortcuts.show,
+    },
   );
 
   if (overview.accounts.length > 0) {

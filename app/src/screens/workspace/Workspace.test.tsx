@@ -135,7 +135,7 @@ describe("Workspace", () => {
     // Another project keeps its own mode; coming back finds the one chosen here.
     await openProject(user, /^homming/);
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Proyecto"));
-    await user.click(within(screen.getByRole("navigation", { name: "Proyectos abiertos" })).getByRole("button", { name: "hedy" }));
+    await openProject(user, /^hedy/);
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Investigar"));
 
     // Inside a task, follow-ups keep its mode: no selector.
@@ -340,15 +340,6 @@ describe("Workspace", () => {
     expect(screen.getByTitle("Vista previa")).toHaveAttribute("src", "http://localhost:5173");
   });
 
-  it("keeps project tabs open and closes them", async () => {
-    const { user } = setup();
-    await openProject(user, /^hedy/);
-    await openProject(user, /^homming/);
-    const tabs = screen.getByRole("navigation", { name: "Proyectos abiertos" });
-    expect(within(tabs).getByRole("button", { name: "homming" })).toHaveAttribute("aria-current", "page");
-    await user.click(within(tabs).getByRole("button", { name: "Cerrar homming" }));
-    expect(within(tabs).getByRole("button", { name: "hedy" })).toHaveAttribute("aria-current", "page");
-  });
 });
 
 describe("Composer", () => {

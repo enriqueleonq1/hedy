@@ -57,8 +57,14 @@
 .usage-row__window { display: grid; gap: 4px; }
 .usage-row__line { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
 
-.sidebar__account { gap: 6px; }
-.sidebar__account-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The explanation of where the figures come from, said once, where usage is read. */
+.usage-popover__note { display: flex; align-items: flex-start; gap: var(--space-2); margin: 0; padding: var(--space-1) var(--space-2) 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.usage-popover__info { flex: none; margin-top: 2px; }
+
+/* Accounts in the sidebar are navigation rows: the figure stays quiet until it nears the limit. */
+.sidebar__percent { font-variant-numeric: tabular-nums; }
+.sidebar__item[aria-current="true"] { background: var(--selection); }
+.sidebar--rail .sidebar__percent { display: none; }
 
 .plan-usage__kind { font-size: 15px; font-weight: 600; }
 
@@ -81,8 +87,42 @@
 }
 
 .palette-hint:hover { border-color: var(--line-strong); color: var(--ink); }
+
+/* Secondary top-bar actions (Terminal, leaving focus mode): as quiet as the search box. */
+.topbar__quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  min-height: var(--target);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.topbar__quiet:hover { border-color: var(--line-strong); color: var(--ink); }
+.topbar__quiet[aria-pressed="true"] { background: var(--selection); color: var(--ink); }
+
+/* The "?" list of shortcuts. */
+.shortcuts { display: grid; gap: var(--space-5); }
+.shortcuts__group { display: grid; gap: var(--space-1); }
+.shortcuts__title { font: 700 var(--text-eyebrow) var(--font-ui); letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--muted); }
+.shortcuts__list { display: grid; margin: 0; }
+.shortcuts__row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); min-height: 34px; }
+.shortcuts__row + .shortcuts__row { border-top: 1px solid var(--line); }
+.shortcuts__keys { display: inline-flex; align-items: center; gap: 6px; flex: none; margin: 0; }
+.shortcuts__combo { display: inline-flex; gap: 3px; font: inherit; }
+.shortcuts__joiner { color: var(--muted); font-size: 12px; }
 .palette-hint kbd,
-.palette__foot kbd {
+.palette__foot kbd,
+.topbar__quiet kbd,
+.shortcuts__combo kbd {
   display: inline-flex;
   align-items: center;
   min-width: 20px;
@@ -267,7 +307,6 @@
 }
 
 .sidebar--rail .sidebar__accounts { margin: 0 auto 6px; }
-.sidebar--rail .sidebar__account { width: 44px; margin: 0; padding: 4px 0; justify-items: center; box-sizing: border-box; }
 
 .sidebar__avatar {
   width: 30px;
@@ -280,17 +319,15 @@
   font: 700 13px var(--font-title);
 }
 
-.mini-ring__track { fill: none; stroke: var(--selection); stroke-width: 4; }
-.mini-ring__fill { fill: none; stroke-width: 4; stroke-linecap: round; }
+/* Focus mode (Ctrl/⌘ \): the sidebar steps aside for a while. */
+.app.app--focus { grid-template-columns: minmax(0, 1fr); }
+.app--focus > .sidebar { display: none; }
+.app--focus > .terminal-panel { grid-column: 1; }
 
 /* ---------------------------------------------------------------- narrow windows */
 
 /* Its visually hidden cells must not stick out of the page while it scrolls sideways. */
 .table-wrap { position: relative; }
-.tabs { min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.tabs::-webkit-scrollbar { display: none; }
-.tab-wrap, .tab--add { flex: none; }
-.topbar > .btn { flex: none; }
 
 @media (max-width: 1100px) {
   .topbar { gap: 10px; padding: 0 10px 0 12px; }

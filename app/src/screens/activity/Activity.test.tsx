@@ -90,7 +90,7 @@ describe("Activity", () => {
     const needs = await screen.findByRole("region", { name: "Te necesitan (8)" });
     await user.click(within(needs).getByRole("button", { name: /Migra el reporte de comisiones/ }));
     expect(await screen.findByRole("heading", { name: "Migra el reporte de comisiones a la API nueva" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "homming" })).toHaveAttribute("aria-current", "page");
+    expect(within(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).getByRole("button", { name: /^homming/ })).toHaveAttribute("aria-current", "page");
     expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/homming")}&t=s2`);
   });
 

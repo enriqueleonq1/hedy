@@ -25,9 +25,11 @@ export function Dialog({ title, onClose, children, footer }: DialogProps) {
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    panel.current
-      ?.querySelector<HTMLElement>("input, select, textarea, button:not(.dialog__close)")
-      ?.focus();
+    // The first field or action; the close button when there is nothing else.
+    (
+      panel.current?.querySelector<HTMLElement>("input, select, textarea, button:not(.dialog__close)") ??
+      panel.current?.querySelector<HTMLElement>(".dialog__close")
+    )?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         onCloseRef.current();

@@ -122,6 +122,10 @@ export function UsageIndicator({ overview, onNavigate }: { overview: Overview; o
               </li>
             ))}
           </ul>
+          <p className="usage-popover__note">
+            <InfoIcon />
+            <span>{t("shell.usage.note")}</span>
+          </p>
           <button
             type="button"
             className="link-button usage-popover__all"
@@ -135,6 +139,16 @@ export function UsageIndicator({ overview, onNavigate }: { overview: Overview; o
         </div>
       )}
     </div>
+  );
+}
+
+/** Decorative: the note next to it says it all. */
+function InfoIcon() {
+  return (
+    <svg className="usage-popover__info" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="9.5" />
+      <path d="M12 11v6M12 7.5v.01" />
+    </svg>
   );
 }
 
