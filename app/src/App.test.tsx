@@ -23,10 +23,22 @@ describe("Welcome", () => {
     expect(await screen.findByText(/^Llevamos 216k tokens \(unos \$4,1\d\); hedy fue el proyecto más activo\.$/)).toBeInTheDocument();
   });
 
+  it("shows the week's figures, what needs a look and every account's usage", async () => {
+    renderApp(MockApi.withSampleData().withSampleActivity());
+    const stats = (await screen.findByRole("heading", { name: "Esta semana" })).closest("section")!;
+    expect(within(stats).getByText("Plan más usado")).toBeInTheDocument();
+    expect(within(stats).getByText("Cuentas conectadas")).toBeInTheDocument();
+    expect(await within(stats).findByText(/tareas? esperan? tu respuesta/)).toBeInTheDocument();
+    const byAccount = within(stats).getAllByRole("article");
+    expect(byAccount.map((a) => a.getAttribute("aria-label"))).toContain("Claude trabajo");
+    expect(await within(stats).findByRole("heading", { name: "Últimas tareas" })).toBeInTheDocument();
+  });
+
   it("invites to add an account when there are none", async () => {
     renderApp(new MockApi());
     expect(await screen.findByRole("button", { name: "Agregar mi primera cuenta" })).toBeInTheDocument();
-    expect(await screen.findByText(/Aún no hay datos/)).toBeInTheDocument();
+    expect(await screen.findByText(/Todavía no tengo datos de tus cuentas/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Esta semana" })).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Hedy te saluda" })).toHaveAttribute("data-state", "sleeping");
   });
 });

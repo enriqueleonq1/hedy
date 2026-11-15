@@ -563,6 +563,32 @@ select:disabled { opacity: 0.65; }
 }
 
 .balloon p { color: var(--muted); }
+.balloon p + p { margin-top: 4px; }
+
+/* Home: the week's figures and one usage card per account */
+.week-stats { display: grid; gap: 14px; }
+.week-stats__sub { font: 700 15px var(--font-title); margin-top: 6px; }
+.stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.stat-tile { display: grid; gap: 4px; align-content: start; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel2); min-width: 0; }
+.stat-tile__label { font-size: 12.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.stat-tile__value { font: 700 26px var(--font-title); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-usage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.account-usage { display: grid; gap: 12px; align-content: start; }
+.account-usage footer { border-top: 1px solid var(--line); padding-top: 8px; }
+.account-usage header { flex-wrap: wrap; gap: 4px 8px; }
+.account-usage header .chip { white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.for-you__calm { color: var(--muted); }
+.for-you__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.for-you__item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); }
+.for-you__item--warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-ink); }
+.for-you__item--danger { background: var(--diff-del-bg); border-color: var(--danger); color: var(--diff-del-ink); }
+.for-you__text { display: grid; gap: 4px; min-width: 0; }
+.for-you__fix { font: 500 12.5px var(--font-mono, monospace); overflow-wrap: anywhere; }
+.recent-tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.recent-tasks__row { width: 100%; text-align: left; display: grid; gap: 2px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel2); color: inherit; font: inherit; cursor: pointer; }
+.recent-tasks__row:hover { border-color: var(--action); }
+.recent-tasks__row:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.recent-tasks__title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .project-grid {
   display: grid;
