@@ -1,4 +1,5 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { EditorView } from "@codemirror/view";
 import userEvent from "@testing-library/user-event";
 import { QueryClient } from "@tanstack/react-query";
 
@@ -27,6 +28,26 @@ describe("side panel in the app", () => {
     await user.keyboard("{Enter}");
     await waitFor(() => expect(screen.getByRole("tab", { name: "Explorador" })).toHaveAttribute("aria-selected", "true"), SLOW);
     await waitFor(() => expect(screen.getByRole("tree", { name: "Archivos" })).toHaveFocus(), SLOW);
+  });
+
+  it("fixes a line from the review in two clicks and shows the edit in the review", async () => {
+    const { api, user } = setup("#p=%2Fcode%2Fhedy&t=s5");
+    await screen.findByRole("heading", { name: /Arregla el cálculo de impuestos/ }, SLOW);
+    const review = await screen.findByRole("region", { name: "facturas/impuestos.py" }, SLOW);
+    await user.click(within(review).getByRole("button", { name: "Editar aquí" }));
+    const editor = await screen.findByRole("textbox", { name: "Contenido de impuestos.py" }, SLOW);
+    await waitFor(() => expect(editor).toHaveAttribute("aria-readonly", "false"), SLOW);
+    expect(screen.getByRole("tab", { name: "Explorador" })).toHaveAttribute("aria-selected", "true");
+
+    const view = EditorView.findFromDOM(document.querySelector(".cm-editor") as HTMLElement);
+    act(() => view?.dispatch({ changes: { from: 0, insert: "# corregido por mí\n" } }));
+    await user.click(await screen.findByRole("button", { name: "Guardar" }));
+    await screen.findByText("Guardado", undefined, SLOW);
+
+    await user.click(screen.getByRole("tab", { name: "Revisión" }));
+    const updated = await screen.findByRole("region", { name: "facturas/impuestos.py" }, SLOW);
+    expect(await within(updated).findByText("# corregido por mí", undefined, SLOW)).toBeInTheDocument();
+    expect((await api.taskDiff("s5")).find((f) => f.path === "facturas/impuestos.py")?.additions).toBeGreaterThan(1);
   });
 
   it("opens a file the agent edited from the timeline, in the task's copy", async () => {

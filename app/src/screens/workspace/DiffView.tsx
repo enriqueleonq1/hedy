@@ -442,6 +442,11 @@ export function DiffView({
           ),
       },
       {
+        label: t("edit.here"),
+        disabled: file.status === "deleted",
+        onSelect: () => nav.open({ copy, path: file.path, line: newLine ?? target.line, view: "file", edit: true }),
+      },
+      {
         label: t("reviewer.line.openEditor"),
         onSelect: () => void api.openFileInEditor(copy, file.path, newLine ?? target.line).catch(() => {}),
       },
