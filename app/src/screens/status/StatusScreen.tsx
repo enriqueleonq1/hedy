@@ -89,11 +89,14 @@ export function StatusScreen({
   project,
   onOpenChat,
   onOpenMemory,
+  onOpenSettings,
 }: {
   overview: Overview;
   project: string;
   onOpenChat: () => void;
   onOpenMemory: () => void;
+  /** Where the code map is turned on; offered while it is off. */
+  onOpenSettings?: () => void;
 }) {
   const api = useApi();
   const t = useT();
@@ -140,17 +143,12 @@ export function StatusScreen({
               {a.name}
             </span>
           ))}
-          {status.data?.branch && (
-            <span className="chip chip--muted">
-              {t("common.branch", { branch: status.data.branch })}
-              {status.data.uncommitted
-                ? t(status.data.uncommitted === 1 ? "status.uncommitted.one" : "status.uncommitted.other", {
-                    n: status.data.uncommitted,
-                  })
-                : t("status.clean")}
-            </span>
-          )}
           {info?.client && <span className="chip chip--muted">{t("status.client", { client: info.client })}</span>}
+          {status.data && !status.data.codeMap && onOpenSettings && (
+            <Button small variant="ghost" className="status__hint" onClick={onOpenSettings}>
+              {t("status.codeMap.enable")}
+            </Button>
+          )}
         </div>
       </section>
 
@@ -177,19 +175,14 @@ export function StatusScreen({
           />
           <Stat
             label={t("common.models")}
-            tone="info"
+            tone={agents.length > 0 ? "ok" : "warn"}
             value={t(agents.length === 1 ? "status.models.active.one" : "status.models.active.other", { n: agents.length })}
             detail={agents.map((a) => `${a.name} ${usageLabel(a, language)}`).join(" · ") || t("status.models.none")}
           />
-          <Stat
-            label={t("common.codeMap")}
-            tone={status.data.codeMap ? "accent" : "muted"}
-            value={status.data.codeMap ? t("status.codeMap.on") : t("status.codeMap.off")}
-            detail={status.data.codeMap ? t("status.codeMap.onDetail") : t("status.codeMap.offDetail")}
-          />
+          <ChangesStat branch={status.data.branch} uncommitted={status.data.uncommitted} />
           <Stat
             label={t("common.memory")}
-            tone="warn"
+            tone={status.data.memoryStale + status.data.memoryProposed > 0 ? "warn" : "ok"}
             value={t(status.data.memoryNotes === 1 ? "status.memory.notes.one" : "status.memory.notes.other", {
               n: status.data.memoryNotes,
             })}
@@ -242,13 +235,47 @@ export function StatusScreen({
   );
 }
 
-function Stat({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: string }) {
+/** What a stat's dot says: fine, broken, worth a look, or nothing to judge. */
+type StatTone = "ok" | "danger" | "warn" | "muted";
+
+/** One indicator: the value in ink, its meaning in a small colored dot. */
+function Stat({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: StatTone }) {
   return (
     <section className="card stat" aria-label={label}>
-      <h2 className="stat__label">{label}</h2>
-      <p className={`stat__value stat__value--${tone}`}>{value}</p>
+      <h2 className="stat__label">
+        <span className={`stat__dot stat__dot--${tone}`} aria-hidden />
+        {label}
+      </h2>
+      <p className="stat__value">{value}</p>
       <p className="small muted">{detail}</p>
     </section>
+  );
+}
+
+/** Work not yet committed on the project's branch. */
+function ChangesStat({ branch, uncommitted }: { branch: string | null; uncommitted: number | null }) {
+  const t = useT();
+  if (branch === null || uncommitted === null) {
+    return (
+      <Stat
+        label={t("status.changes")}
+        tone="muted"
+        value={t("status.changes.noRepo")}
+        detail={t("status.changes.noRepoDetail")}
+      />
+    );
+  }
+  return (
+    <Stat
+      label={t("status.changes")}
+      tone={uncommitted > 0 ? "warn" : "ok"}
+      value={
+        uncommitted > 0
+          ? t(uncommitted === 1 ? "status.changes.pending.one" : "status.changes.pending.other", { n: uncommitted })
+          : t("status.changes.clean")
+      }
+      detail={t("common.branch", { branch })}
+    />
   );
 }
 

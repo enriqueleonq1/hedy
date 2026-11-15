@@ -237,6 +237,7 @@ function Root() {
               project={current.project}
               onOpenChat={() => navigate({ screen: "workspace", project: current.project })}
               onOpenMemory={() => navigate({ screen: "memory", project: current.project })}
+              onOpenSettings={() => navigate({ screen: "settings" })}
             />
           )}
           {current.screen === "memory" && (

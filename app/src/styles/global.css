@@ -1853,28 +1853,28 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 
 /* ---------------------------------------------------------------- status */
 
-.status__hero { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 28px; padding: 28px 32px; }
+.status__hero { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-6); padding: var(--space-5) var(--space-6); }
 @media (max-width: 860px) { .status__hero { grid-template-columns: minmax(0, 1fr); } }
 .status__hero-text { display: grid; gap: 6px; }
 .status__hero-text h1 { font-size: var(--text-display); }
 .working-word--status { font: 600 14px var(--font-ui); color: var(--accent); }
 .status__eyebrow {
-  font: 700 var(--text-caption) var(--font-ui);
+  font: 700 var(--text-eyebrow) var(--font-ui);
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
-  color: var(--activity);
+  color: var(--muted);
 }
 .status__chips { display: grid; gap: 8px; justify-items: end; }
 .status__stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
-.stat { gap: 6px; }
-.status .stat__label { font: 500 13.5px var(--font-ui); color: var(--muted); }
-.stat__value { font: 700 30px var(--font-title); }
-.stat__value--ok { color: var(--success); }
-.stat__value--danger { color: var(--danger); }
-.stat__value--info { color: var(--action-text); }
-.stat__value--accent { color: var(--accent); }
-.stat__value--warn { color: var(--warning); }
-.stat__value--muted { color: var(--muted); }
+/* Values in ink; a small dot carries the meaning (ok, failed, needs a look). */
+.stat { gap: 4px; padding: var(--space-4) var(--space-5); }
+.status .stat__label { display: flex; align-items: center; gap: var(--space-2); font: 500 var(--text-callout) var(--font-ui); color: var(--muted); }
+.stat__value { font: 600 22px/1.25 var(--font-title); letter-spacing: var(--tracking-title); color: var(--ink); overflow-wrap: anywhere; }
+.stat__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
+.stat__dot--ok { background: var(--success); }
+.stat__dot--danger { background: var(--danger); }
+.stat__dot--warn { background: var(--warning); }
+.status__hint { justify-self: end; font-size: var(--text-caption); }
 .status__layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 22px; align-items: start; }
 @media (max-width: 960px) { .status__layout { grid-template-columns: minmax(0, 1fr); } }
 .status__side { display: grid; gap: 16px; }

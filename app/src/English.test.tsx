@@ -303,7 +303,10 @@ describe("English", () => {
     await user.click(await screen.findByRole("button", { name: "Status" }));
     expect(await screen.findByText("Project status")).toBeInTheDocument();
     expect(within(await screen.findByRole("region", { name: "Tests" })).getByText("Passed")).toBeInTheDocument();
-    expect(screen.getByText(/^branch main · 3 uncommitted changes$/)).toBeInTheDocument();
+    const changes = screen.getByRole("region", { name: "Changes" });
+    expect(within(changes).getByText("3 uncommitted")).toBeInTheDocument();
+    expect(within(changes).getByText("branch main")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Turn on the code map" })).toBeInTheDocument();
     expect(await screen.findByText(/was the busiest day/)).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
 
