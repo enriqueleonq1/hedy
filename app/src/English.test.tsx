@@ -94,7 +94,7 @@ describe("English", () => {
     expect(spanishLeftovers()).toEqual([]);
     await user.click(screen.getByRole("combobox", { name: "Model" }));
     expect(screen.getByRole("option", { name: "Auto per phase", description: "Each phase uses the model you assigned it" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "opus", description: "The most capable, spends more" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Opus", description: "The most capable, spends more" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Templates" }));

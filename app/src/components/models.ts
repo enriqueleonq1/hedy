@@ -14,6 +14,11 @@ export const MODEL_SUGGESTIONS: Record<ProviderId, string[]> = {
   antigravity: [],
 };
 
+/** How a model name reads in menus: Claude's aliases capitalized ("Opus"); other ids as the CLI takes them. */
+export function modelLabel(model: string): string {
+  return /^[a-z]+$/.test(model) ? model.charAt(0).toUpperCase() + model.slice(1) : model;
+}
+
 /** A few words on the suggested models we know; any other shows none. */
 export const MODEL_HINTS: Record<string, MessageKey> = {
   opus: "workspace.model.capable",

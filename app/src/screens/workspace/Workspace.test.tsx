@@ -362,10 +362,10 @@ describe("Composer", () => {
     const model = screen.getByRole("combobox", { name: "Modelo" });
     expect(model).toHaveTextContent("Auto por fase");
     await user.click(model);
-    expect(optionLabels()).toEqual(["Auto por fase", "opus", "sonnet", "haiku"]);
-    expect(screen.getByRole("option", { name: "haiku" })).toHaveAccessibleDescription("El más rápido");
-    await user.click(screen.getByRole("option", { name: "sonnet" }));
-    expect(model).toHaveTextContent("sonnet");
+    expect(optionLabels()).toEqual(["Auto por fase", "Opus", "Sonnet", "Haiku"]);
+    expect(screen.getByRole("option", { name: "Haiku" })).toHaveAccessibleDescription("El más rápido");
+    await user.click(screen.getByRole("option", { name: "Sonnet" }));
+    expect(model).toHaveTextContent("Sonnet");
 
     const plan = screen.getByRole("button", { name: "Planificar primero" });
     expect(plan).toHaveAttribute("aria-pressed", "true");

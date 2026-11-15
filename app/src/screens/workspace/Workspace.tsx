@@ -39,7 +39,7 @@ import {
   type TimelineItem,
 } from "../../tasks/timeline";
 import { useMascot } from "../../tasks/useMascot";
-import { MODEL_HINTS, MODEL_SUGGESTIONS } from "../../components/models";
+import { MODEL_HINTS, MODEL_SUGGESTIONS, modelLabel } from "../../components/models";
 import { useT, type MessageKey } from "../../i18n";
 import { keyLabels } from "../../platform";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
@@ -659,7 +659,7 @@ function Composer({
                     },
                     ...models.map((m) => {
                       const hint = MODEL_HINTS[m];
-                      return { value: m, label: m, detail: hint ? t(hint) : undefined };
+                      return { value: m, label: modelLabel(m), detail: hint ? t(hint) : undefined };
                     }),
                   ]}
                   onChange={setModel}
