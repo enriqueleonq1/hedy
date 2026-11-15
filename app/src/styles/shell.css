@@ -311,18 +311,32 @@
 
 /* ---------------------------------------------------------------- inbox rows ("Te necesitan") */
 
+/* A row with its own actions: the bar spans the whole item, not only the row. */
 .board-item {
+  --state: var(--line-strong);
+  position: relative;
   display: grid;
   border: 1px solid var(--line);
-  border-left: 4px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--panel);
 }
 
-.board-item:hover { border-color: var(--action); }
-.board-item--needs { border-left-color: var(--warning); }
+.board-item::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: var(--space-3);
+  bottom: var(--space-3);
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--state);
+}
+
+.board-item:hover { border-color: var(--line-strong); }
+.board-item--needs { --state: var(--warning); }
 .board-item > .board-row { border: 0; border-radius: var(--radius-card); background: none; }
-.board-item__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 18px 14px; }
+.board-item > .board-row::before { content: none; }
+.board-item__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: 0 var(--space-5) 14px 22px; }
 /* A proposal's two buttons sit at the end of its meta line on wide enough rows. */
 @media (min-width: 700px) {
   .board-item--proposal .board-row__meta { padding-right: 220px; }
@@ -332,7 +346,7 @@
     justify-self: end;
     width: max-content;
     margin-top: -56px;
-    padding: 0 18px 12px;
+    padding: 0 var(--space-5) var(--space-3);
   }
 }
 
