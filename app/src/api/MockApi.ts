@@ -1,4 +1,20 @@
 import type { HedyApi, Unsubscribe } from "./HedyApi";
+import type {
+  Blame,
+  CodeCopy,
+  CodeDiff,
+  CodeSymbol,
+  CodeTree,
+  CopyInfo,
+  DiffOptions,
+  FileContent,
+  FileHistory,
+  LineRange,
+  Rev,
+  SearchOptions,
+  SearchResults,
+} from "./codeTypes";
+import { MockCode } from "./mockCode";
 import { resolveLanguage } from "../i18n";
 import { placeholders } from "../templates/placeholders";
 import type {
@@ -1573,7 +1589,8 @@ export class MockApi implements HedyApi {
         { kind: "finished", ok: true, summary: "El IVA se redondea por línea y no al total.", durationMs: 1_200_000 },
       ],
     );
-    this.diffs.set("s5", ["facturas/impuestos.py", "facturas/totales.py", "tests/test_facturas.py"].map(sampleDiff));
+    // The same changes the code views read from the sample repository.
+    this.diffs.set("s5", this.code.taskDiff("/code/hedy", "s5"));
     // A question outside any project, already answered.
     add(
       "c1",
@@ -1937,6 +1954,55 @@ export class MockApi implements HedyApi {
   async projectFiles(project: string): Promise<string[]> {
     this.project(project);
     return [...(this.files.get(project) ?? [])];
+  }
+
+  // ---------------------------------------------------------------- code
+
+  /** Code navigation over the sample repositories (`mockCodeSamples.ts`). */
+  code = new MockCode({
+    task: (id) => this.tasksById.get(id),
+    tasks: (project) => [...this.tasksById.values()].filter((t) => t.project === project),
+    checkProject: (path) => void this.project(path),
+  });
+
+  async codeCopy(copy: CodeCopy): Promise<CopyInfo> {
+    return this.code.copy(copy);
+  }
+
+  async codeTree(copy: CodeCopy, options?: { ignored?: boolean }): Promise<CodeTree> {
+    return this.code.tree(copy, options?.ignored ?? false);
+  }
+
+  async readFile(copy: CodeCopy, path: string, rev?: Rev): Promise<FileContent> {
+    return this.code.readFile(copy, path, rev);
+  }
+
+  async fileDiff(copy: CodeCopy, path: string, options?: DiffOptions): Promise<CodeDiff> {
+    return this.code.fileDiff(copy, path, options);
+  }
+
+  async searchText(copy: CodeCopy, query: string, options?: SearchOptions): Promise<SearchResults> {
+    return this.code.searchText(copy, query, options);
+  }
+
+  async fileHistory(copy: CodeCopy, path: string, lines?: LineRange): Promise<FileHistory> {
+    return this.code.fileHistory(copy, path, lines);
+  }
+
+  async blame(copy: CodeCopy, path: string, options?: { rev?: Rev; lines?: LineRange }): Promise<Blame> {
+    return this.code.blame(copy, path, options);
+  }
+
+  async fileSymbols(copy: CodeCopy, path: string): Promise<CodeSymbol[]> {
+    return this.code.fileSymbols(copy, path);
+  }
+
+  async openFileInEditor(copy: CodeCopy, path: string, line?: number): Promise<void> {
+    this.code.openFileInEditor(copy, path, line);
+  }
+
+  async revealInFileManager(copy: CodeCopy, path: string): Promise<void> {
+    this.code.revealInFileManager(copy, path);
   }
 
   // ---------------------------------------------------------------- images

@@ -1,4 +1,19 @@
 import type {
+  Blame,
+  CodeCopy,
+  CodeDiff,
+  CodeSymbol,
+  CodeTree,
+  CopyInfo,
+  DiffOptions,
+  FileContent,
+  FileHistory,
+  LineRange,
+  Rev,
+  SearchOptions,
+  SearchResults,
+} from "./codeTypes";
+import type {
   AcceptPreview,
   ImageInput,
   ImageSupport,
@@ -183,6 +198,31 @@ export interface HedyApi {
   rejectSkill(id: number): Promise<void>;
   /** Deletes a skill and the files Hedy wrote for it. */
   removeSkill(id: number): Promise<SkillFiles>;
+
+  // ------------------------------------------------ code navigation (read-only)
+  // Every call names its copy (`CodeCopy`); paths are relative to the copy and
+  // rejected when they would leave it (absolute, `..`, `.git`). See codeTypes.ts.
+
+  /** What a copy is (for the header of a code view), without reading files. */
+  codeCopy(copy: CodeCopy): Promise<CopyInfo>;
+  /** Every file with its status against the copy's base; `ignored` adds git-ignored ones. */
+  codeTree(copy: CodeCopy, options?: { ignored?: boolean }): Promise<CodeTree>;
+  /** A file of the copy, or of `rev` (`"base"` = before the AI / `HEAD`). */
+  readFile(copy: CodeCopy, path: string, rev?: Rev): Promise<FileContent>;
+  /** One file's diff from `against` (default `"base"`) to the copy. */
+  fileDiff(copy: CodeCopy, path: string, options?: DiffOptions): Promise<CodeDiff>;
+  /** Text search (`git grep`) over the copy, untracked files included; empty query → no results. */
+  searchText(copy: CodeCopy, query: string, options?: SearchOptions): Promise<SearchResults>;
+  /** Commits (following renames) and the project's tasks that touched the file; `lines` narrows to a range. */
+  fileHistory(copy: CodeCopy, path: string, lines?: LineRange): Promise<FileHistory>;
+  /** Who wrote each line, of the copy's file or of `rev`; `lines` narrows to a range. Rejects for locked files. */
+  blame(copy: CodeCopy, path: string, options?: { rev?: Rev; lines?: LineRange }): Promise<Blame>;
+  /** Functions, types and headings of a file (for `@` in the palette); empty when not readable text. */
+  fileSymbols(copy: CodeCopy, path: string): Promise<CodeSymbol[]>;
+  /** Opens the file in VS Code at `line` (`code -g`), or with the system's default app. */
+  openFileInEditor(copy: CodeCopy, path: string, line?: number): Promise<void>;
+  /** Opens the file's folder in the system file manager (selects it on macOS). */
+  revealInFileManager(copy: CodeCopy, path: string): Promise<void>;
 
   /** Live events of every task. */
   onTaskEvent(listener: (taskId: string, event: AgentEvent) => void): Unsubscribe;
