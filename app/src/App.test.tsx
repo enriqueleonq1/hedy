@@ -199,9 +199,10 @@ describe("Accounts", () => {
     expect(personalRow.querySelector(".bar")).toBeNull();
     const workRow = within(sidebar).getByRole("button", { name: "Claude trabajo: Sesión 5 h · 34%. Abrir la cuenta" });
     expect(within(workRow).getByText("34%")).not.toHaveClass("level--warning");
-    // The top bar names the account closest to its limit, the same way.
-    const indicator = screen.getByRole("button", { name: /^Uso de los planes: Claude personal: Semana · 83%/ });
-    expect(within(indicator).getByText("Semana · 83%")).toHaveClass("level--warning");
+    // Outside a project, the status bar names the account closest to its limit, the same way.
+    const bar = screen.getByRole("contentinfo", { name: "Barra de estado" });
+    const indicator = within(bar).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" });
+    expect(within(indicator).getByText("83%")).toHaveClass("level--warning");
   });
 
   it("asks for fresh readings while the sidebar is on screen and says which providers do not report", async () => {

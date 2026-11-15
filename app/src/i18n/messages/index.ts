@@ -19,6 +19,7 @@ import settings from "./settings";
 import ship from "./ship";
 import shell from "./shell";
 import skills from "./skills";
+import statusbar from "./statusbar";
 import status from "./status";
 import templates from "./templates";
 import waits from "./waits";
@@ -50,6 +51,7 @@ const es = {
   ...composer.es,
   ...ship.es,
   ...code.es,
+  ...statusbar.es,
 };
 const en: Record<keyof typeof es, string> = {
   ...common.en,
@@ -74,6 +76,7 @@ const en: Record<keyof typeof es, string> = {
   ...composer.en,
   ...ship.en,
   ...code.en,
+  ...statusbar.en,
 };
 
 export type MessageKey = keyof typeof es;

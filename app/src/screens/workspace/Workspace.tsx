@@ -51,7 +51,6 @@ import { TemplateDialog } from "../templates/TemplateDialog";
 import "../../styles/composer.css";
 import { ChangesPanel } from "./ChangesPanel";
 import { useReviewTask } from "../../review/comments";
-import { FolderStatus } from "./ship/FolderStatus";
 import { AttachButton, draggingFiles, ImageTray, transferFiles, useComposerImages } from "./ComposerImages";
 import { insertAt, useComposerInsert } from "./composerBridge";
 import { FilePicker } from "./FilePicker";
@@ -215,7 +214,6 @@ export function Workspace({
             </p>
           </div>
           <div className="chat__tools">
-            {!solo && <FolderStatus project={project} />}
             {list.length > 0 && (
               <TaskSwitcher
                 tasks={list}

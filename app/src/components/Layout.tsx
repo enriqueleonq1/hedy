@@ -18,7 +18,6 @@ import { headlineText, levelClass, planPercent, usageLabel, usePlanUsageRefresh 
 import { projectColor } from "./projects";
 import { useTerminals } from "./Terminal/TerminalProvider";
 import { Button } from "./ui/Button";
-import { UsageIndicator } from "./UsageIndicator";
 
 export type View =
   | { screen: "welcome" }
@@ -111,7 +110,6 @@ export function Topbar({ overview, view, onNavigate, onOpenPalette }: TopbarProp
           <kbd>{keys}</kbd>
         </button>
       )}
-      <UsageIndicator overview={overview} onNavigate={onNavigate} />
       <button
         type="button"
         className="topbar__quiet"
@@ -346,37 +344,24 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
   );
 }
 
-export function Shell({
-  topbar,
-  sidebar,
-  children,
-  terminal,
-}: {
+interface ShellParts {
   topbar: ReactNode;
   sidebar: ReactNode;
   children: ReactNode;
   terminal: ReactNode;
-}) {
+  /** The status bar along the bottom of the window (`StatusBar`). */
+  statusbar?: ReactNode;
+}
+
+export function Shell(parts: ShellParts) {
   return (
     <SidebarRailProvider>
-      <ShellFrame topbar={topbar} sidebar={sidebar} terminal={terminal}>
-        {children}
-      </ShellFrame>
+      <ShellFrame {...parts} />
     </SidebarRailProvider>
   );
 }
 
-function ShellFrame({
-  topbar,
-  sidebar,
-  children,
-  terminal,
-}: {
-  topbar: ReactNode;
-  sidebar: ReactNode;
-  children: ReactNode;
-  terminal: ReactNode;
-}) {
+function ShellFrame({ topbar, sidebar, children, terminal, statusbar }: ShellParts) {
   const { rail } = useSidebarRail();
   const { focus } = useFocusMode();
   return (
@@ -387,6 +372,7 @@ function ShellFrame({
         {children}
       </main>
       {terminal}
+      {statusbar}
     </div>
   );
 }

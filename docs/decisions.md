@@ -1228,9 +1228,32 @@ remote side and GitHub stay apart from the task's own git: `SourceControl`
   `GIT_OPTIONAL_LOCKS=0`), the remote's **host** only (never the URL: it may carry a
   token), and `gh` (cached as above). The UI refreshes it on window focus and after
   every git action.
-- In the workspace header: `⎇ branch` (a menu: Pull, Push, Abrir en VS Code, Copiar
-  nombre de rama; also on right-click), `● N` uncommitted, and `↓b` / `↑a` buttons that
-  pull or push when clicked. It is always "Tu carpeta", never a task's copy.
+- In the window's status bar (every project screen): `⎇ branch` (a menu: Pull, Push,
+  Abrir en VS Code, Copiar nombre de rama; also on right-click) and `↓b` / `↑a` buttons
+  that pull or push when clicked. It is always "Tu carpeta", never a task's copy, so it
+  left the task header (which says the task's own branch); the header shows it only
+  when a screen is rendered without the shell's bar. The bar's `● N` counts the copy on
+  screen (the folder's uncommitted changes, or the open task's changed files) and opens
+  the review (it presses Ctrl/⌘ ⇧ G, like the palette; without a panel to take it, the
+  first changed file's diff opens through the navigator).
+
+### The status bar (Nov 15, 2026)
+
+- Left: which copy the code views show ("Tu carpeta" / "Tarea: <title>", resolved as
+  the palette does, `resolveCopy`); its menu lists the folder and the project's open
+  tasks. There is no copy selection apart from the open task: picking the folder opens
+  the workspace without a task (`&new`), picking a task opens it. Then the folder's
+  branch, the changes, the project's last tests (`projectStatus.lastTests`, the status
+  screen's query; it has no failure count) and the open task's agent ("trabajando…",
+  or "Te espera" when the board says it needs the user).
+- Right: the file open in the viewer (`useFileNavigator().current`; a click copies its
+  relative path), the account at work (the open task's, else the project's, else the
+  one closest to its limit; a click opens `#a=<id>`) and "?" for the shortcuts.
+- Plan usage left the top bar: the sidebar already lists every account with its figure,
+  and the bar names the one that matters on screen. The note on where the figures come
+  from is in the bar's account tooltip.
+- Focus mode keeps the bar, dimmed until hovered or focused. Narrow windows drop the
+  tests and the file first, then labels; it never wraps.
 
 ### Everything local
 

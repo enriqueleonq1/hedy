@@ -168,17 +168,22 @@ describe("Ship: commit, push and pull request", () => {
   });
 });
 
-describe("Folder status in the workspace header", () => {
+describe("Folder status in the status bar", () => {
   afterEach(() => {
     history.replaceState(null, "", "#");
   });
 
-  it("shows the branch, changes and counters, and pulls or pushes on click", async () => {
+  it("shows the branch and counters once, in the status bar, and pulls or pushes on click", async () => {
     const { api, user } = setup();
     await openReviewTask(user);
     const folder = await screen.findByRole("group", { name: "Tu carpeta" });
+    expect(screen.getAllByRole("group", { name: "Tu carpeta" })).toHaveLength(1);
+    expect(folder.closest(".statusbar")).not.toBeNull();
     expect(within(folder).getByRole("button", { name: "Tu carpeta: rama main" })).toBeInTheDocument();
-    expect(within(folder).getByText(/Cambios sin commit: 3 · preparados: 1/)).toBeInTheDocument();
+    // The changes item next to it counts the copy on screen: here, the task's files.
+    expect(within(folder).queryByText(/Cambios sin commit/)).toBeNull();
+    const bar = screen.getByRole("contentinfo", { name: "Barra de estado" });
+    expect(within(bar).getByRole("button", { name: /^\d+ archivos? cambiados? por la tarea\. Revisar/ })).toBeInTheDocument();
 
     await user.click(within(folder).getByRole("button", { name: /Commits por traer: 2/ }));
     expect(await screen.findByText("Cambios traídos a main.", undefined, SLOW)).toBeInTheDocument();

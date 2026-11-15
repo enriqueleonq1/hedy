@@ -63,13 +63,21 @@ export function useFolderGit(project: string) {
   return { status, pull, push, busy: pull.isPending || push.isPending };
 }
 
+/** Where the folder's status sits: the window's status bar, or (without one) the workspace header. */
+export type FolderStatusPlacement = "header" | "bar";
+
 /**
- * The user's folder in the workspace header, quiet: its branch (a menu with
- * Pull, Push, VS Code and copying the name; also on right-click), the
- * uncommitted changes, and ↓ / ↑ counters that pull or push when clicked.
- * Always the folder, never a task's copy.
+ * The user's folder, quiet: its branch (a menu with Pull, Push, VS Code and
+ * copying the name; also on right-click), the uncommitted changes, and ↓ / ↑
+ * counters that pull or push when clicked. Always the folder, never a task's
+ * copy. It lives in the status bar; there the uncommitted changes are the
+ * bar's own "changes" item, which opens the review.
  */
-export function FolderStatus({ project }: { project: string }) {
+export function FolderStatus({ project, placement = "bar" }: { project: string; placement?: FolderStatusPlacement }) {
+  return <FolderGitStatus project={project} placement={placement} />;
+}
+
+function FolderGitStatus({ project, placement }: { project: string; placement: FolderStatusPlacement }) {
   const t = useT();
   const toast = useToast();
   const actions = useProjectActions();
@@ -126,9 +134,12 @@ export function FolderStatus({ project }: { project: string }) {
     untracked: s.untracked,
   });
 
+  const bar = placement === "bar";
+  const button = bar ? "statusbar__item" : "tool-btn";
+
   return (
     <div
-      className="folder-status"
+      className={bar ? "folder-status folder-status--bar" : "folder-status"}
       role="group"
       aria-label={t("ship.folder.menuTitle")}
       aria-busy={busy || undefined}
@@ -138,12 +149,12 @@ export function FolderStatus({ project }: { project: string }) {
         label={t("ship.folder.menu", { branch })}
         title={t("ship.folder.menuTitle")}
         items={items}
-        className="tool-btn folder-status__branch"
+        className={`${button} folder-status__branch`}
       >
         <BranchIcon />
         <span className="folder-status__name">{branch}</span>
       </MenuButton>
-      {s.changes > 0 && (
+      {!bar && s.changes > 0 && (
         <span className="folder-status__changes" title={changes}>
           <span className="folder-status__dot" aria-hidden />
           <span aria-hidden>{s.changes}</span>
@@ -153,7 +164,7 @@ export function FolderStatus({ project }: { project: string }) {
       {s.behind > 0 && (
         <button
           type="button"
-          className="tool-btn folder-status__count"
+          className={`${button} folder-status__count`}
           title={t("ship.folder.behind", { n: s.behind, upstream })}
           aria-label={t("ship.folder.behind", { n: s.behind, upstream })}
           disabled={busy}
@@ -166,7 +177,7 @@ export function FolderStatus({ project }: { project: string }) {
       {(s.ahead > 0 || unpublished) && (
         <button
           type="button"
-          className="tool-btn folder-status__count"
+          className={`${button} folder-status__count`}
           title={pushLabel}
           aria-label={pushLabel}
           disabled={!canPush}

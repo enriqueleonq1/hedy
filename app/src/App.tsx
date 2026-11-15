@@ -10,6 +10,7 @@ import { Shell, Sidebar, taskView, Topbar, viewProject, type View } from "./comp
 import { Mascot } from "./components/Mascot/Mascot";
 import { CommandPalette } from "./components/palette/CommandPalette";
 import { ShortcutsProvider, useProjectShortcuts } from "./components/shortcuts";
+import { StatusBar } from "./components/statusbar/StatusBar";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import { TerminalProvider } from "./components/Terminal/TerminalProvider";
 import { Button } from "./components/ui/Button";
@@ -193,6 +194,7 @@ function Root() {
           }
           sidebar={<Sidebar overview={data} view={current} onNavigate={navigate} />}
           terminal={<TerminalPanel />}
+          statusbar={<StatusBar overview={data} view={current} onNavigate={navigate} />}
         >
           {current.screen === "welcome" && <Welcome overview={data} onNavigate={navigate} />}
           {current.screen === "accounts" && <AccountsScreen overview={data} focus={current.account} />}
