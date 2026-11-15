@@ -38,6 +38,10 @@ const es = {
   "activity.empty": "No hay tareas en curso ni de las últimas {hours} h.",
   "activity.emptyHint": "Abre un proyecto y pídele algo a una IA: aquí verás cómo va, aunque estés en otra pantalla.",
   "activity.limitHint": "Hedy nunca cambia de cuenta solo: abre la tarea para esperar o pasarla a otra IA.",
+  "activity.keys.move": "para moverte",
+  "activity.keys.open": "abrir",
+  "activity.keys.approve": "aprobar",
+  "activity.keys.reject": "rechazar",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -78,6 +82,10 @@ const en: Record<keyof typeof es, string> = {
   "activity.empty": "No running tasks, and none in the last {hours} h.",
   "activity.emptyHint": "Open a project and ask an AI for something: you'll see how it goes here, even from another screen.",
   "activity.limitHint": "Hedy never switches accounts on its own: open the task to wait or hand it to another AI.",
+  "activity.keys.move": "to move",
+  "activity.keys.open": "open",
+  "activity.keys.approve": "approve",
+  "activity.keys.reject": "reject",
 };
 
 export default { es, en };

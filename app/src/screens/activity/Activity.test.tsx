@@ -127,6 +127,76 @@ describe("Activity", () => {
     expect(within(change).getByRole("button", { name: "Aprobar cambio" })).toBeInTheDocument();
   });
 
+  it("tells the waiting kinds apart by color", async () => {
+    const { user } = setup();
+    await user.click(await screen.findByRole("button", { name: "Actividad: 8 pendientes te esperan" }, SLOW));
+    const needs = await screen.findByRole("region", { name: "Te necesitan (8)" }, SLOW);
+    expect(within(needs).getByText("Plan por aprobar")).toHaveClass("board-state--needs");
+    expect(within(needs).getByText("Pide permiso")).toHaveClass("board-state--needs");
+    expect(within(needs).getByText("Bloqueada por el límite")).toHaveClass("board-state--blocked");
+    expect(within(needs).getByText("Los formularios validan con zod").closest(".board-row")).toHaveClass("board-row--proposal");
+  });
+
+  it("moves through the rows with j/k and the arrows, opens with Enter and decides with a and r", async () => {
+    const { api, user } = setup();
+    const answer = vi.spyOn(api, "answerPermission");
+    const approve = vi.spyOn(api, "approveNote");
+    const reject = vi.spyOn(api, "rejectSkill");
+    await user.click(await screen.findByRole("button", { name: "Actividad: 8 pendientes te esperan" }, SLOW));
+    const needs = await screen.findByRole("region", { name: "Te necesitan (8)" }, SLOW);
+    await screen.findByRole("group", { name: /^Responder el permiso de/ }, SLOW);
+    expect(screen.getByText("para moverte")).toBeInTheDocument();
+    const rows = () => within(needs).getAllByRole("listitem");
+    const selectedTitle = () =>
+      document.querySelector(".board-entry--selected .board-row__title")?.textContent ?? null;
+
+    // The first key selects the first row and gives it the focus.
+    await user.keyboard("j");
+    expect(selectedTitle()).toBe("Agrega recordatorios por WhatsApp antes de cada cita");
+    expect(rows()[0]!.querySelector(".board-row")).toHaveFocus();
+    // A plan has nothing to approve from the board: `a` does nothing.
+    await user.keyboard("a");
+    expect(answer).not.toHaveBeenCalled();
+
+    await user.keyboard("{ArrowDown}");
+    expect(selectedTitle()).toBe("Migra el reporte de comisiones a la API nueva");
+    await user.keyboard("a");
+    expect(answer).toHaveBeenCalledWith("s2", "req-s2", "allow");
+    // Answered, the task leaves the list and the row now in its place is selected.
+    await waitFor(() => expect(selectedTitle()).toBe("Traduce los correos de confirmación"));
+
+    // Down to the first note, approved with `a`; again, the next row takes over.
+    await user.keyboard("jjj");
+    expect(selectedTitle()).toBe("Los formularios validan con zod");
+    await user.keyboard("a");
+    expect(approve).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(selectedTitle()).toBe("Las citas usan la zona horaria del salón; el servidor guarda las fechas en UTC"));
+
+    // Up to a skill, rejected with `r`.
+    await user.keyboard("kk");
+    expect(selectedTitle()).toMatch(/^agregar-endpoint/);
+    await user.keyboard("r");
+    expect(reject).toHaveBeenCalledTimes(1);
+
+    // Enter opens the selected task.
+    await waitFor(() => expect(selectedTitle()).not.toBeNull());
+    await user.keyboard("kkkkkkkk");
+    expect(selectedTitle()).toBe("Agrega recordatorios por WhatsApp antes de cada cita");
+    (document.activeElement as HTMLElement).blur();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("heading", { name: "Agrega recordatorios por WhatsApp antes de cada cita" })).toBeInTheDocument();
+  });
+
+  it("leaves the board's keys alone while a dialog is open", async () => {
+    const { user } = setup();
+    await user.click(await screen.findByRole("button", { name: "Actividad: 8 pendientes te esperan" }, SLOW));
+    await screen.findByRole("region", { name: "Te necesitan (8)" }, SLOW);
+    await user.keyboard("{Control>}k{/Control}");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await user.keyboard("j");
+    expect(document.querySelector(".board-entry--selected")).toBeNull();
+  });
+
   it("opens a proposal in its project's memory", async () => {
     const { user } = setup();
     await user.click(await screen.findByRole("button", { name: "Actividad: 8 pendientes te esperan" }, SLOW));

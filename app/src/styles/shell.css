@@ -255,6 +255,8 @@
 .menu__item--shortcut { display: flex; align-items: center; gap: var(--space-3); }
 .menu__item--shortcut .menu__label { flex: 1; font-weight: inherit; }
 .menu__shortcut { font-size: var(--text-caption); color: var(--muted); }
+.menu__item--danger:not(:disabled) { color: var(--danger); }
+.menu__separator { height: 1px; margin: var(--space-1) var(--space-2); background: var(--line); }
 .menu__list[data-side="top"] { transform-origin: bottom right; animation-name: pop-up; }
 
 .project-card__badges { display: inline-flex; align-items: center; gap: 6px; }
@@ -371,27 +373,24 @@
   left: 8px;
   top: var(--space-3);
   bottom: var(--space-3);
-  width: 3px;
+  width: 2px;
   border-radius: var(--radius-pill);
   background: var(--state);
 }
 
 .board-item:hover { border-color: var(--line-strong); }
 .board-item--needs { --state: var(--warning); }
+.board-item--blocked { --state: var(--danger); }
+.board-item--proposal { --state: var(--accent); }
 .board-item > .board-row { border: 0; border-radius: var(--radius-card); background: none; }
 .board-item > .board-row::before { content: none; }
-.board-item__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: 0 var(--space-5) 14px 22px; }
-/* A proposal's two buttons sit at the end of its meta line on wide enough rows. */
+.board-item__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: 0 var(--space-5) 11px 20px; }
+/* On wide enough rows the buttons sit at the row's end, next to its two lines. */
 @media (min-width: 700px) {
-  .board-item--proposal .board-row__meta { padding-right: 220px; }
-  .board-item--proposal > .board-row { min-height: 104px; align-content: start; }
-  .board-item--proposal .board-item__actions {
-    position: relative;
-    justify-self: end;
-    width: max-content;
-    margin-top: -56px;
-    padding: 0 var(--space-5) var(--space-3);
-  }
+  .board-item { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .board-item > .board-row { padding-right: var(--space-3); }
+  .board-item__actions { flex-wrap: nowrap; padding: 8px var(--space-4) 8px 0; }
+  .board-item__actions .board-item__what { flex: 0 1 auto; max-width: 220px; }
 }
 
 .board-item__what { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); }

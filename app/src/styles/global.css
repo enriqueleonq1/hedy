@@ -656,7 +656,9 @@ button.popover__item:focus-visible { background: var(--selection); outline: none
 
 .usage { display: grid; gap: 14px; }
 .usage__row { display: grid; gap: 9px; }
-.usage__value { font-weight: 700; color: var(--muted); }
+.usage__value { font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* A line under a figure (when it renews, per model): quieter than the figure. */
+.usage__note { font-size: var(--text-caption); color: var(--muted); }
 /* Near (≥ 80 %) or at (≥ 95 %) a plan limit. */
 .usage__value--warning, .level--warning { color: var(--warning); }
 .usage__value--danger, .level--danger { color: var(--danger); }
@@ -694,19 +696,35 @@ button.popover__item:focus-visible { background: var(--selection); outline: none
 .account-card:focus { outline: none; }
 .account-card--wide { grid-column: 1 / -1; }
 .account-card__head { display: flex; align-items: center; gap: 12px; }
+.account-card { position: relative; }
+/* The menu sits in the corner so the name and its line get the whole width. */
+.account-card__head .menu { position: absolute; top: 12px; right: 12px; }
 .account-card__title { flex: 1; min-width: 0; }
 .account-card__title h3 { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.account-card__name { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.account-card__name { display: flex; align-items: center; gap: 2px; min-width: 0; padding-right: 28px; }
+/* The pencil shows on the name's hover or keyboard focus; a double-click on the name does the same. */
 .account-card__rename { opacity: 0; transition: opacity 0.15s ease; }
-.account-card:hover .account-card__rename,
-.account-card__rename:focus-visible { opacity: 1; }
+.account-card__name:hover .account-card__rename,
+.account-card__name:focus-within .account-card__rename { opacity: 1; }
 @media (hover: none) { .account-card__rename { opacity: 1; } }
 .account-card__name-input { font-size: 17px; width: 100%; }
-.account-card__title p { font-size: 13.5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.account-card__sub { margin-top: 2px; font-size: 13.5px; color: var(--muted); display: flex; align-items: center; gap: 4px 10px; flex-wrap: wrap; }
 .account-card__title .pill { padding: 1px 9px; font-size: var(--text-caption); font-weight: 600; }
-.account-card__foot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin-top: 2px; padding-top: 6px; }
-.account-card__foot .badge { flex-basis: 100%; margin-bottom: 4px; }
-.account-card__foot .btn--small { padding: 0 10px; }
+.account-card__action { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.account-card__action .btn { margin-left: auto; flex: none; }
+/* Where the figures come from, and how fresh they are: a footnote, not a section. */
+.account-card__foot { display: grid; gap: 2px; font-size: var(--text-caption); color: var(--muted); }
+
+/* "● Conectada": the state's color only on the dot; the word stays quiet. */
+.login-status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.login-status__dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--muted); }
+.login-status--loggedIn .login-status__dot { background: var(--success); }
+.login-status--loggedOut .login-status__dot { background: var(--danger); }
+.login-status--unknown .login-status__dot { background: var(--warning); }
+
+/* The accounts page says once what every card's figures mean. */
+.page-head__note { color: var(--muted); }
+.page-head p.page-head__note { margin-top: var(--space-1); font-size: var(--text-callout); }
 
 /* Welcome: "Today", with the plans as rings (Activity-style) */
 .welcome { gap: 32px; }
@@ -2075,18 +2093,23 @@ button.popover__item:focus-visible { background: var(--selection); outline: none
 .board { max-width: 980px; }
 .board__group { display: grid; gap: 10px; }
 .board__group-title { font: 600 var(--text-title) var(--font-title); }
-.board__list { display: grid; gap: 8px; }
+.board__list { display: grid; gap: 6px; }
 
-/* Rows carry their state as a short inset bar on the leading edge. */
+/* The board's keys, said once above the lists. */
+.board__keys { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--space-4); margin-top: calc(-1 * var(--space-2)); font-size: var(--text-caption); color: var(--muted); }
+.board__keys > span { display: inline-flex; align-items: center; gap: 4px; }
+.board__keys .kbd { min-width: 18px; height: 18px; font-size: 10.5px; }
+
+/* Rows carry their state as a thin inset bar on the leading edge; title, then state and meta on one line. */
 .board-row {
   --state: var(--line-strong);
   position: relative;
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px var(--space-4);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
   align-items: center;
-  padding: 14px var(--space-5) 14px 22px;
+  padding: 11px var(--space-5) 11px 20px;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--panel);
@@ -2101,13 +2124,15 @@ button.popover__item:focus-visible { background: var(--selection); outline: none
   left: 8px;
   top: var(--space-3);
   bottom: var(--space-3);
-  width: 3px;
+  width: 2px;
   border-radius: var(--radius-pill);
   background: var(--state);
 }
 
 .board-row:hover { border-color: var(--line-strong); }
 .board-row--needs { --state: var(--warning); }
+.board-row--blocked { --state: var(--danger); }
+.board-row--proposal { --state: var(--accent); }
 .board-row--working { --state: var(--activity); }
 .board-row--done { --state: var(--success); }
 .board-row--failed { --state: var(--danger); }
@@ -2121,7 +2146,6 @@ button.popover__item:focus-visible { background: var(--selection); outline: none
 }
 
 .board-row__meta {
-  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2145,10 +2169,19 @@ button.popover__item:focus-visible { background: var(--selection); outline: none
 }
 
 .board-state--needs { color: var(--warning); }
+.board-state--blocked { color: var(--danger); }
+.board-state--proposal { color: var(--accent); }
 .board-state--working { color: var(--activity); }
 .board-state--done { color: var(--success); }
 .board-state--failed { color: var(--danger); }
 .board-state--closed { color: var(--muted); }
+
+/* The keyboard's selection: a tinted row, and the focus color on its edge while focused. */
+.board-entry--selected > .board-row,
+.board-entry--selected > .board-item { background: var(--selection); }
+.board-entry:focus-within > .board-row,
+.board-entry:focus-within > .board-item { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.board-entry .board-row:focus-visible { outline: none; }
 
 .board__empty {
   display: grid;

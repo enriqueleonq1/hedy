@@ -162,7 +162,7 @@ describe("Accounts", () => {
     await openAccounts();
     const card = screen.getByRole("article", { name: "Claude trabajo" });
     expect(within(card).getByText("Anthropic · Team")).toBeInTheDocument();
-    expect(within(card).getByText(/Conectada · team/)).toBeInTheDocument();
+    expect(within(card).getByText("Conectada")).toBeInTheDocument();
     expect(within(card).getByText(/carpeta por defecto de la CLI/)).toBeInTheDocument();
     expect(within(card).getByRole("listitem")).toHaveTextContent("homming");
     const personal = screen.getByRole("article", { name: "Claude personal" });

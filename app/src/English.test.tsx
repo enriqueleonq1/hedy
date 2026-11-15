@@ -193,7 +193,9 @@ describe("English", () => {
     await user.click(await screen.findByRole("button", { name: "Accounts and models" }));
     expect(await screen.findByRole("heading", { name: "Your accounts and models" })).toBeInTheDocument();
     const card = screen.getByRole("article", { name: "Claude trabajo" });
-    expect(within(card).getByText(/Connected · team/)).toBeInTheDocument();
+    expect(within(card).getByText("Connected")).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Actions for Claude trabajo" })).toBeInTheDocument();
+    expect(screen.getByText(/Each plan.s limit is reported by its CLI/)).toBeInTheDocument();
     expect(within(card).getByText(/CLI's default folder/)).toBeInTheDocument();
     const personal = screen.getByRole("article", { name: "Claude personal" });
     expect(within(personal).getByRole("meter", { name: "Current session (5 h): 58%" })).toBeInTheDocument();

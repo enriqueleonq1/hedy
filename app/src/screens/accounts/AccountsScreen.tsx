@@ -3,10 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import { LOGIN_HINT } from "../../components/providers";
 import { useAction } from "../../api/context";
 import type { Account, Overview } from "../../api/types";
-import { accountSubtitle, LoginBadge, UsageBars } from "../../components/accounts";
+import { accountSubtitle, LoginStatus, UsageBars, usageSource } from "../../components/accounts";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { useTerminals } from "../../components/Terminal/TerminalProvider";
-import { Button, ConfirmButton } from "../../components/ui/Button";
+import { Button } from "../../components/ui/Button";
+import { Dialog } from "../../components/ui/Dialog";
+import { MenuButton, type MenuItem } from "../../components/ui/Menu";
 import { useT } from "../../i18n";
 import { AddAccountDialog } from "./AddAccountDialog";
 import { ApiKeyDialog } from "./ApiKeyDialog";
@@ -26,6 +28,8 @@ export function AccountsScreen({ overview, focus }: { overview: Overview; focus?
         <div>
           <h1>{t("accounts.title")}</h1>
           <p className="muted">{t("accounts.subtitle")}</p>
+          {/* Said once for every card: where the figures come from. */}
+          <p className="page-head__note">{t("accounts.note")}</p>
         </div>
         <Button variant="primary" onClick={() => setAdding(true)}>
           {t("common.addAccountButton")}
@@ -60,16 +64,36 @@ export function AccountsScreen({ overview, focus }: { overview: Overview; focus?
   );
 }
 
-/** The name, and a pencil to rename it in place: Enter or leaving saves, Escape cancels. */
-function AccountName({ account }: { account: Account }) {
+/**
+ * The name, renamed in place: from the pencil (shown on hover or focus), a
+ * double-click on the name or the card's menu. Enter or leaving saves, Escape
+ * cancels; Enter and Escape give the focus back to the pencil.
+ */
+function AccountName({
+  account,
+  editing,
+  setEditing,
+}: {
+  account: Account;
+  editing: boolean;
+  setEditing: (editing: boolean) => void;
+}) {
   const t = useT();
   const rename = useAction((api, name: string) => api.renameAccount(account.id, name));
-  const [editing, setEditing] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (editing || !refocus.current) return;
+    refocus.current = false;
+    wrap.current?.querySelector<HTMLButtonElement>(".account-card__rename")?.focus();
+  }, [editing]);
 
   if (!editing) {
     return (
-      <div className="account-card__name">
-        <h3>{account.name}</h3>
+      <div ref={wrap} className="account-card__name">
+        <h3 title={t("accounts.card.renameHint")} onDoubleClick={() => setEditing(true)}>
+          {account.name}
+        </h3>
         <Button
           small
           variant="ghost"
@@ -99,10 +123,51 @@ function AccountName({ account }: { account: Account }) {
       onFocus={(e) => e.target.select()}
       onBlur={(e) => save(e.target.value)}
       onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur();
-        if (e.key === "Escape") setEditing(false);
+        if (e.key === "Enter") {
+          refocus.current = true;
+          e.currentTarget.blur();
+        }
+        if (e.key === "Escape") {
+          refocus.current = true;
+          setEditing(false);
+        }
       }}
     />
+  );
+}
+
+/** Asks before deleting: Hedy stops using the account, its login folder stays. */
+function RemoveAccountDialog({
+  account,
+  onConfirm,
+  onClose,
+}: {
+  account: Account;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  return (
+    <Dialog
+      title={t("accounts.card.removeTitle", { name: account.name })}
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>{t("common.cancel")}</Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              onClose();
+              onConfirm();
+            }}
+          >
+            {t("accounts.card.remove")}
+          </Button>
+        </>
+      }
+    >
+      <p>{t("accounts.card.removeHint")}.</p>
+    </Dialog>
   );
 }
 
@@ -130,7 +195,10 @@ function AccountCard({
   const terminals = useTerminals();
   const makeDefault = useAction((api) => api.setDefaultAccount(account.id));
   const remove = useAction((api) => api.removeAccount(account.id));
+  const [editing, setEditing] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const loggedIn = account.login.state === "loggedIn";
+  const subscription = account.kind === "subscription";
   const classes = [
     "card",
     "account-card",
@@ -139,6 +207,21 @@ function AccountCard({
     focused && "account-card--focus",
   ];
   const loginHint = LOGIN_HINT[account.provider];
+  const login = () => terminals.open({ kind: "login", account: account.id }, `Login · ${account.name}`);
+  const source = usageSource(account, t);
+
+  // The one action the card needs stays visible (signing in, saving the key);
+  // the rest live in the menu, with deleting set apart at the end.
+  const items: MenuItem[] = [
+    { label: t("accounts.card.renameItem"), onSelect: () => setEditing(true) },
+    ...(isDefault ? [] : [{ label: t("accounts.card.makeDefault"), onSelect: () => makeDefault.mutate(undefined) }]),
+    ...(!loggedIn
+      ? []
+      : subscription
+        ? [{ label: t("accounts.card.reconnect"), onSelect: login }]
+        : [{ label: t("accounts.card.changeKey"), onSelect: onApiKey }]),
+    { label: t("accounts.card.remove"), onSelect: () => setRemoving(true), danger: true, separatorBefore: true },
+  ];
 
   return (
     <article ref={card} tabIndex={-1} className={classes.filter(Boolean).join(" ")} aria-label={account.name}>
@@ -150,20 +233,17 @@ function AccountCard({
           label={t("accounts.card.mascot", { name: account.name })}
         />
         <div className="account-card__title">
-          <AccountName account={account} />
-          <p className="muted">
-            {accountSubtitle(account, t)}
+          <AccountName account={account} editing={editing} setEditing={setEditing} />
+          <p className="account-card__sub">
+            <span>{accountSubtitle(account, t)}</span>
+            <LoginStatus account={account} />
             {isDefault && <span className="pill pill--current">{t("accounts.card.default")}</span>}
           </p>
         </div>
+        <MenuButton label={t("accounts.card.actions", { name: account.name })} items={items} />
       </header>
 
       <UsageBars account={account} />
-      <p className="muted small">
-        {account.kind === "apiKey" ? t("accounts.card.apiNote") : t("accounts.card.subscriptionNote")}
-        {account.defaultFolder && t("accounts.card.defaultFolderNote")}
-      </p>
-      {account.kind === "subscription" && !loggedIn && loginHint && <p className="small muted">{t(loginHint)}</p>}
 
       {projects.length > 0 && (
         <ul className="pills" aria-label={t("common.projects")}>
@@ -175,35 +255,35 @@ function AccountCard({
         </ul>
       )}
 
-      <footer className="account-card__foot">
-        <LoginBadge account={account} />
-        {account.kind === "subscription" ? (
-          <Button
-            small
-            variant={loggedIn ? "ghost" : "primary"}
-            onClick={() => terminals.open({ kind: "login", account: account.id }, `Login · ${account.name}`)}
-          >
-            {loggedIn ? t("accounts.card.reconnect") : t("accounts.card.signIn")}
-          </Button>
-        ) : (
-          <Button small variant={loggedIn ? "ghost" : "primary"} onClick={onApiKey}>
-            {loggedIn ? t("accounts.card.changeKey") : t("accounts.card.saveKey")}
-          </Button>
-        )}
-        {!isDefault && (
-          <Button small variant="ghost" onClick={() => makeDefault.mutate(undefined)}>
-            {t("accounts.card.makeDefault")}
-          </Button>
-        )}
-        <ConfirmButton
-          small
-          title={t("accounts.card.removeHint")}
-          confirmLabel={t("accounts.card.removeConfirm")}
+      {!loggedIn && (
+        <div className="account-card__action">
+          {subscription && loginHint && <p className="small muted">{t(loginHint)}</p>}
+          {subscription ? (
+            <Button small variant="primary" onClick={login}>
+              {t("accounts.card.signIn")}
+            </Button>
+          ) : (
+            <Button small variant="primary" onClick={onApiKey}>
+              {t("accounts.card.saveKey")}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {(source || account.defaultFolder) && (
+        <footer className="account-card__foot">
+          {source && <p>{source}</p>}
+          {account.defaultFolder && <p>{t("accounts.card.defaultFolderNote")}</p>}
+        </footer>
+      )}
+
+      {removing && (
+        <RemoveAccountDialog
+          account={account}
           onConfirm={() => remove.mutate(undefined)}
-        >
-          {t("accounts.card.remove")}
-        </ConfirmButton>
-      </footer>
+          onClose={() => setRemoving(false)}
+        />
+      )}
     </article>
   );
 }
