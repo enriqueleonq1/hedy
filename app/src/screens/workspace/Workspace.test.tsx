@@ -53,7 +53,9 @@ describe("Workspace", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
-    expect(await screen.findByText("Cambios unidos a main.")).toBeInTheDocument();
+    const sheet = await screen.findByRole("dialog", { name: "Revisar antes de integrar" });
+    await user.click(await within(sheet).findByRole("button", { name: "Aceptar e integrar" }));
+    expect(await screen.findByText("Cambios integrados en main.")).toBeInTheDocument();
     expect(await screen.findByText(/ya se aceptó/)).toBeInTheDocument();
     // Many steps: well over the default 5 s on a busy machine.
   }, 20_000);
