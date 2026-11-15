@@ -39,5 +39,5 @@ pub use project::Project;
 pub use provider::Provider;
 pub use queue::{HoldReason, QueuedMessage};
 pub use skill::{Skill, SkillStatus};
-pub use task::{Task, TaskId, TaskMode, TaskStatus, Workspace};
+pub use task::{LimitWait, MergeRecord, Task, TaskId, TaskMode, TaskStatus, Workspace};
 pub use template::{PromptTemplate, TemplateId};

@@ -935,6 +935,8 @@ fn seed_tasks(env: &Env, repo: &Path) {
         stages: vec![],
         stage: 0,
         plan: None,
+        merge: None,
+        wait: None,
     };
     let mut plan = task(
         "t1",

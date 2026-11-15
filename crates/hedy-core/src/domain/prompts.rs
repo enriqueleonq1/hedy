@@ -117,6 +117,15 @@ pub fn stage_prompt(
     out
 }
 
+/// The turn Hedy sends when an account's limit renews and the user had
+/// chosen to wait (same account, same session) with nothing else queued.
+pub fn continue_after_limit() -> String {
+    tr!(
+        "Tu límite se renovó. Continúa con la tarea donde la dejaste.",
+        "Your limit renewed. Continue the task where you left off."
+    )
+}
+
 /// When the user moves a task to another agent (for example, at a limit).
 pub fn handoff_prompt(
     request: &str,

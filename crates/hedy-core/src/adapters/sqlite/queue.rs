@@ -123,6 +123,8 @@ mod tests {
                 stages: vec![],
                 stage: 0,
                 plan: None,
+                merge: None,
+                wait: None,
             })
             .unwrap();
         store

@@ -166,6 +166,34 @@ impl Git for GitCli {
         Ok(git(repo, &["status", "--porcelain"])?.lines().count())
     }
 
+    fn rev_parse(&self, repo: &Path, rev: &str) -> PortResult<String> {
+        let spec = format!("{rev}^{{commit}}");
+        git(repo, &["rev-parse", "--verify", "--quiet", &spec]).map(|s| s.trim().to_owned())
+    }
+
+    fn remote_branches_containing(&self, repo: &Path, commit: &str) -> PortResult<Vec<String>> {
+        let out = git(
+            repo,
+            &[
+                "branch",
+                "--remotes",
+                "--contains",
+                commit,
+                "--format=%(refname:short)",
+            ],
+        )?;
+        Ok(out
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_owned)
+            .collect())
+    }
+
+    fn reset_keep(&self, repo: &Path, commit: &str) -> PortResult<()> {
+        git(repo, &["reset", "--quiet", "--keep", commit]).map(drop)
+    }
+
     fn recent_commits(&self, repo: &Path, limit: usize) -> PortResult<Vec<Commit>> {
         let out =
             git(repo, &["log", &format!("-n{limit}"), "--format=%h%x1f%s"]).unwrap_or_default();
@@ -334,6 +362,146 @@ mod tests {
         let error = g.merge(&repo, "main", "hedy/t3").unwrap_err();
         assert!(error.message.contains("nuevo.py"), "{}", error.message);
         assert_eq!(fs::read_to_string(repo.join("nuevo.py")).unwrap(), "mío\n");
+    }
+
+    /// A task branch with one commit, merged into `main` like "Aceptar" does.
+    /// Returns (before, after, tip).
+    fn accept(repo: &Path, id: &str, file: &str) -> (String, String, String) {
+        let g = GitCli;
+        let base = g.head_commit(repo).unwrap();
+        let wt = repo.join(format!(".hedy/worktrees/{id}"));
+        let branch = format!("hedy/{id}");
+        g.add_worktree(repo, &wt, &branch, &base).unwrap();
+        fs::write(wt.join(file), "nuevo\n").unwrap();
+        fs::write(wt.join("app.py"), format!("def crear():\n    {id}()\n")).unwrap();
+        g.commit_all(&wt, "Tarea\n\nCon cuerpo.").unwrap();
+        let tip = g.rev_parse(&wt, "HEAD").unwrap();
+        let before = g.head_commit(repo).unwrap();
+        assert_eq!(
+            g.merge(repo, "main", &branch).unwrap(),
+            MergeOutcome::Merged
+        );
+        let after = g.head_commit(repo).unwrap();
+        g.remove_worktree(repo, &wt, &branch).unwrap();
+        (before, after, tip)
+    }
+
+    #[test]
+    fn undo_moves_main_back_and_the_branch_returns_from_its_tip() {
+        let (_tmp, repo) = repo();
+        let g = GitCli;
+        g.ensure_excluded(&repo, "/.hedy/").unwrap();
+        // Unrelated local work: an untracked file and a change to a file the
+        // merge does not touch.
+        fs::write(repo.join("README.md"), "hola\n").unwrap();
+        git(&repo, &["add", "README.md"]).unwrap();
+        git(&repo, &["commit", "-qm", "readme"]).unwrap();
+        let (before, after, tip) = accept(&repo, "t1", "nuevo.py");
+        assert_eq!(
+            git(&repo, &["log", "-1", "--format=%B"]).unwrap().trim(),
+            "Tarea\n\nCon cuerpo."
+        );
+        fs::write(repo.join("notas.txt"), "mías\n").unwrap();
+        fs::write(repo.join("README.md"), "hola, cambio local\n").unwrap();
+
+        assert!(
+            g.remote_branches_containing(&repo, &after)
+                .unwrap()
+                .is_empty()
+        );
+        let wt = repo.join(".hedy/worktrees/t1");
+        g.add_worktree(&repo, &wt, "hedy/t1", &tip).unwrap();
+        g.reset_keep(&repo, &before).unwrap();
+
+        assert_eq!(g.head_commit(&repo).unwrap(), before);
+        assert!(!repo.join("nuevo.py").exists());
+        assert!(
+            !fs::read_to_string(repo.join("app.py"))
+                .unwrap()
+                .contains("t1")
+        );
+        // The unrelated work is untouched.
+        assert_eq!(
+            fs::read_to_string(repo.join("notas.txt")).unwrap(),
+            "mías\n"
+        );
+        assert_eq!(
+            fs::read_to_string(repo.join("README.md")).unwrap(),
+            "hola, cambio local\n"
+        );
+        // The task's work is back on its branch, and can be merged again.
+        assert_eq!(fs::read_to_string(wt.join("nuevo.py")).unwrap(), "nuevo\n");
+        assert_eq!(g.diff(&wt, &before).unwrap().len(), 2);
+        git(&repo, &["checkout", "-q", "--", "README.md"]).unwrap();
+        assert_eq!(
+            g.merge(&repo, "main", "hedy/t1").unwrap(),
+            MergeOutcome::Merged
+        );
+        assert!(repo.join("nuevo.py").exists());
+    }
+
+    #[test]
+    fn a_true_merge_commit_is_undone_too() {
+        let (_tmp, repo) = repo();
+        let g = GitCli;
+        let base = g.head_commit(&repo).unwrap();
+        let wt = repo.join(".hedy/worktrees/t2");
+        g.add_worktree(&repo, &wt, "hedy/t2", &base).unwrap();
+        fs::write(wt.join("tarea.py"), "x = 1\n").unwrap();
+        g.commit_all(&wt, "Tarea").unwrap();
+        // main moved meanwhile: the merge makes a merge commit.
+        fs::write(repo.join("otro.py"), "y = 2\n").unwrap();
+        git(&repo, &["add", "otro.py"]).unwrap();
+        git(&repo, &["commit", "-qm", "otro"]).unwrap();
+        let before = g.head_commit(&repo).unwrap();
+        assert_eq!(
+            g.merge(&repo, "main", "hedy/t2").unwrap(),
+            MergeOutcome::Merged
+        );
+        let after = g.head_commit(&repo).unwrap();
+        assert_eq!(g.rev_parse(&repo, &format!("{after}^1")).unwrap(), before);
+        g.reset_keep(&repo, &before).unwrap();
+        assert!(!repo.join("tarea.py").exists());
+        assert!(repo.join("otro.py").exists());
+    }
+
+    #[test]
+    fn reset_keep_refuses_to_overwrite_local_changes_and_changes_nothing() {
+        let (_tmp, repo) = repo();
+        let g = GitCli;
+        let (before, after, _) = accept(&repo, "t3", "nuevo.py");
+        fs::write(repo.join("app.py"), "a mano\n").unwrap();
+        let error = g.reset_keep(&repo, &before).unwrap_err();
+        assert!(error.message.contains("app.py"), "{}", error.message);
+        assert_eq!(g.head_commit(&repo).unwrap(), after);
+        assert_eq!(fs::read_to_string(repo.join("app.py")).unwrap(), "a mano\n");
+        assert!(repo.join("nuevo.py").exists());
+    }
+
+    #[test]
+    fn pushed_merges_are_reported_by_their_remote_branch() {
+        let (tmp, repo) = repo();
+        let g = GitCli;
+        let remote = tmp.path().join("remoto.git");
+        git(tmp.path(), &["init", "-q", "--bare", "remoto.git"]).unwrap();
+        git(
+            &repo,
+            &["remote", "add", "origin", &remote.to_string_lossy()],
+        )
+        .unwrap();
+        git(&repo, &["push", "-q", "origin", "main"]).unwrap();
+        let (_, after, _) = accept(&repo, "t4", "nuevo.py");
+        assert!(
+            g.remote_branches_containing(&repo, &after)
+                .unwrap()
+                .is_empty()
+        );
+        git(&repo, &["push", "-q", "origin", "main"]).unwrap();
+        assert_eq!(
+            g.remote_branches_containing(&repo, &after).unwrap(),
+            vec!["origin/main".to_owned()]
+        );
+        assert!(g.rev_parse(&repo, "no-existe").is_err());
     }
 
     #[test]

@@ -12,6 +12,7 @@ mod plan_usage;
 pub mod ports;
 mod projects;
 mod queue;
+mod review;
 mod settings;
 mod skills;
 mod status;
@@ -19,6 +20,7 @@ mod tasks;
 mod templates;
 #[cfg(test)]
 mod testing;
+mod waits;
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
@@ -28,13 +30,14 @@ pub use accounts::NewAccount;
 pub use activity::{MAX_FINISHED, RECENT_HOURS, TaskActivity};
 pub use detect::DetectedCli;
 pub use doctor::{Check, CheckArea, CheckLevel, DoctorReport};
-pub use error::{AppError, AppResult};
+pub use error::{AppError, AppResult, UndoBlocked};
 pub use launch::Resolved;
 pub use memory::{
     MemoryServerCommand, MemoryView, Proposal, format_note, format_notes, format_topics,
 };
 pub use metrics::{ProjectStatus, TestRun, UsageSummary};
 pub use plan_usage::{PLAN_USAGE_MIN_INTERVAL_SECS, PlanUsageState};
+pub use review::AcceptPreview;
 pub use settings::{Setting, THEMES};
 pub use skills::{
     SkillChange, SkillDraft, SkillFiles, SkillProposal, SkillsView, format_skill, format_skills,
