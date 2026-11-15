@@ -251,15 +251,14 @@ describe("English", () => {
     expect(await screen.findByRole("heading", { name: "Traduce los correos de confirmación" })).toBeInTheDocument();
   });
 
-  it("shows the command palette and the plan usage popover in English", async () => {
+  it("shows the command palette and the status bar in English", async () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity());
     await screen.findByRole("heading", { name: /Hi, Enrique!/ });
-    await user.click(screen.getByRole("button", { name: /^Plan usage: Claude personal: Week · 83%/ }));
-    const popover = screen.getByRole("dialog", { name: "Plan usage" });
-    expect(within(popover).getByRole("button", { name: "Claude trabajo: 5-hour session · 34%, Week · 29%. Open the account" })).toBeInTheDocument();
-    expect(within(popover).getByRole("button", { name: "See accounts and models" })).toBeInTheDocument();
+    const bar = screen.getByRole("contentinfo", { name: "Status bar" });
+    const account = within(bar).getByRole("button", { name: "Claude personal: Week · 83%. Open the account" });
+    expect(account.title).toMatch(/^Claude personal: Week · 83%\. Open the account\n/);
+    expect(within(bar).getByRole("button", { name: "Keyboard shortcuts (?)" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
-    await user.keyboard("{Escape}");
 
     await user.keyboard("{Control>}k{/Control}");
     expect(screen.getByRole("dialog", { name: "Command palette" })).toBeInTheDocument();

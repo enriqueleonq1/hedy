@@ -34,11 +34,14 @@ describe("Shell", () => {
     expect(within(row).getByText("34%")).toHaveClass("sidebar__meta");
   });
 
-  it("explains where the figures come from once, in the usage popover", async () => {
-    const { user } = setup();
-    await user.click(await screen.findByRole("button", { name: /^Uso de los planes:/ }));
-    const popover = screen.getByRole("dialog", { name: "Uso de los planes" });
-    expect(within(popover).getByText(/El % de cada plan lo leo de su CLI/)).toBeInTheDocument();
+  it("keeps plan usage out of the top bar and explains the figure once, in the status bar's tooltip", async () => {
+    setup();
+    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    expect(within(document.querySelector(".topbar") as HTMLElement).queryByText(/%/)).toBeNull();
+    const bar = screen.getByRole("contentinfo", { name: "Barra de estado" });
+    const account = within(bar).getByRole("button", { name: /Abrir la cuenta$/ });
+    expect(account.title).toMatch(/El % de cada plan lo leo de su CLI/);
+    expect(screen.queryByText(/El % de cada plan lo leo de su CLI/)).not.toBeInTheDocument();
   });
 
   it("jumps to the Nth sidebar project with Alt+digit, and the palette still switches projects", async () => {

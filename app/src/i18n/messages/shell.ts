@@ -4,9 +4,6 @@
 const es = {
   "shell.home": "Inicio",
   "shell.weekUsageByProvider": "Consumo de la semana por proveedor",
-  "shell.usage.trigger": "Uso de los planes: {summary}. Ver todas las cuentas",
-  "shell.usage.title": "Uso de los planes",
-  "shell.usage.all": "Ver cuentas y modelos",
   "shell.openAccount": "{name}: {usage}. Abrir la cuenta",
   "shell.noProjects": "Sin proyectos todavía.",
   "shell.terminals": "Terminales",
@@ -45,9 +42,6 @@ const es = {
 const en: Record<keyof typeof es, string> = {
   "shell.home": "Home",
   "shell.weekUsageByProvider": "This week's usage by provider",
-  "shell.usage.trigger": "Plan usage: {summary}. See every account",
-  "shell.usage.title": "Plan usage",
-  "shell.usage.all": "See accounts and models",
   "shell.openAccount": "{name}: {usage}. Open the account",
   "shell.noProjects": "No projects yet.",
   "shell.terminals": "Terminals",
