@@ -328,6 +328,24 @@ impl TaskRepository for MemoryStore {
             .cloned()
             .collect())
     }
+    fn conversations(&self) -> PortResult<Vec<Task>> {
+        let mut tasks: Vec<_> = self
+            .tasks
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|t| t.conversation)
+            .cloned()
+            .collect();
+        tasks.sort_by_key(|t| std::cmp::Reverse(t.created_at));
+        Ok(tasks)
+    }
+    fn delete_task(&self, id: &TaskId) -> PortResult<()> {
+        self.tasks.lock().unwrap().retain(|t| &t.id != id);
+        self.events.lock().unwrap().remove(id);
+        self.queue.lock().unwrap().retain(|m| &m.task != id);
+        Ok(())
+    }
 }
 
 impl UsageRepository for MemoryStore {
@@ -475,6 +493,7 @@ pub struct FakeGit {
     reset_error: Mutex<Option<String>>,
     diff: Mutex<Vec<FileDiff>>,
     worktrees: Mutex<Vec<String>>,
+    init_error: Mutex<Option<String>>,
 }
 
 impl Default for FakeGit {
@@ -490,6 +509,7 @@ impl Default for FakeGit {
             reset_error: Mutex::default(),
             diff: Mutex::default(),
             worktrees: Mutex::default(),
+            init_error: Mutex::default(),
         }
     }
 }
@@ -528,6 +548,10 @@ impl FakeGit {
     }
     pub fn set_diff(&self, diff: Vec<FileDiff>) {
         *self.diff.lock().unwrap() = diff;
+    }
+    /// The next `init_repo` fails with git's message.
+    pub fn fail_init(&self, message: &str) {
+        *self.init_error.lock().unwrap() = Some(message.into());
     }
     /// Worktrees added: "<branch> at <commit>".
     pub fn worktrees(&self) -> Vec<String> {
@@ -596,6 +620,16 @@ impl Git for FakeGit {
     }
     fn remote_branches_containing(&self, _: &Path, _: &str) -> PortResult<Vec<String>> {
         Ok(self.remotes.lock().unwrap().clone())
+    }
+    fn init_repo(&self, dir: &Path, message: &str) -> PortResult<()> {
+        if let Some(error) = self.init_error.lock().unwrap().take() {
+            return Err(PortError::new(error));
+        }
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("init {} {message}", dir.display()));
+        Ok(())
     }
     fn reset_keep(&self, _: &Path, commit: &str) -> PortResult<()> {
         if let Some(message) = self.reset_error.lock().unwrap().take() {
@@ -900,6 +934,9 @@ pub struct FakeFs {
     git_roots: Mutex<Vec<PathBuf>>,
     read_only: Mutex<HashSet<PathBuf>>,
     removed_dirs: Mutex<Vec<PathBuf>>,
+    /// Folders created by `create_new_dir`, then gone with `remove_dir_all`.
+    created: Mutex<Vec<PathBuf>>,
+    deleted_trees: Mutex<Vec<PathBuf>>,
 }
 
 impl FakeFs {
@@ -931,11 +968,42 @@ impl FakeFs {
     pub fn add_git_root(&self, path: &str) {
         self.git_roots.lock().unwrap().push(path.into());
     }
+    pub fn created(&self) -> Vec<PathBuf> {
+        self.created.lock().unwrap().clone()
+    }
+    pub fn deleted_trees(&self) -> Vec<PathBuf> {
+        self.deleted_trees.lock().unwrap().clone()
+    }
 }
 
 impl FileSystem for FakeFs {
     fn account_folder(&self, id: &AccountId) -> PathBuf {
         Path::new("/data/accounts").join(id.as_str())
+    }
+    fn chats_dir(&self) -> PathBuf {
+        PathBuf::from("/data/chats")
+    }
+    fn home_dir(&self) -> Option<PathBuf> {
+        Some(PathBuf::from("/home/e"))
+    }
+    fn create_new_dir(&self, path: &Path) -> PortResult<()> {
+        if self.exists(path) {
+            return Err(PortError::new("File exists"));
+        }
+        if let Some(parent) = path.parent()
+            && self.read_only.lock().unwrap().contains(parent)
+        {
+            return Err(PortError::new("permission denied"));
+        }
+        self.existing.lock().unwrap().insert(path.to_owned());
+        self.created.lock().unwrap().push(path.to_owned());
+        Ok(())
+    }
+    fn remove_dir_all(&self, path: &Path) -> PortResult<()> {
+        self.existing.lock().unwrap().remove(path);
+        self.dirs.lock().unwrap().remove(path);
+        self.deleted_trees.lock().unwrap().push(path.to_owned());
+        Ok(())
     }
     fn create_private_dir(&self, path: &Path) -> PortResult<()> {
         self.dirs.lock().unwrap().insert(path.to_owned());

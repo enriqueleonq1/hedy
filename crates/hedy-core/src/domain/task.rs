@@ -107,6 +107,11 @@ pub struct Task {
     /// The user chose to wait for the account's limit to renew.
     #[serde(default)]
     pub wait: Option<LimitWait>,
+    /// A loose question or research outside any project ("Pregunta rápida"):
+    /// `project` is then its own private, empty scratch folder in Hedy's data
+    /// folder, and it never has a workspace, memory or code map.
+    #[serde(default)]
+    pub conversation: bool,
 }
 
 /// What "Aceptar" changed in the main checkout, kept so it can be undone

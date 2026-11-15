@@ -40,7 +40,7 @@ impl Hedy {
                 state: task_state(&task, &events),
                 phase: current_stage(&task).phase,
                 agent: self.agent_of(&task, &events),
-                project_name: self.project_name(&task.project),
+                project_name: self.place_name(&task),
                 updated_at,
                 queued: self.store.queued(&task.id)?.len(),
                 task,

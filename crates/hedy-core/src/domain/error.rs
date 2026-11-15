@@ -57,6 +57,8 @@ pub enum DomainError {
     InvalidTemplateName(String),
     #[error("{}", self.message())]
     EmptyTemplate,
+    #[error("{}", self.message())]
+    InvalidProjectName(String),
 }
 
 impl DomainError {
@@ -157,6 +159,13 @@ impl DomainError {
             Self::EmptyTemplate => tr!(
                 "la plantilla está vacía (o es demasiado larga)",
                 "the template is empty (or too long)"
+            ),
+            Self::InvalidProjectName(name) if name.is_empty() => {
+                tr!("ponle un nombre al proyecto", "give the project a name")
+            }
+            Self::InvalidProjectName(name) => tr!(
+                "«{name}» no sirve como nombre de carpeta: usa letras o números",
+                "«{name}» does not work as a folder name: use letters or digits"
             ),
         }
     }
