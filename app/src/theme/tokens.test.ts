@@ -35,6 +35,16 @@ const textPairs: [string, string][] = [
   ["ink", "diffAddBg"],
   ["muted", "diffAddBg"],
   ["muted", "diffDelBg"],
+  // Changed words inside a changed line of a diff.
+  ["ink", "diffAddEmph"],
+  ["diffAddInk", "diffAddEmph"],
+  ["ink", "diffDelEmph"],
+  ["diffDelInk", "diffDelEmph"],
+  // A changed file's status letter, also on the selected row.
+  ["success", "selection"],
+  ["danger", "selection"],
+  ["activity", "selection"],
+  ["accent", "selection"],
   ["accent", "panel2"],
   // A ghost button inside a nested surface.
   ["actionText", "panel2"],

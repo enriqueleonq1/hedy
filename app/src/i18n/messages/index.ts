@@ -13,6 +13,7 @@ import onboarding from "./onboarding";
 import palette from "./palette";
 import queue from "./queue";
 import review from "./review";
+import reviewer from "./reviewer";
 import settings from "./settings";
 import ship from "./ship";
 import shell from "./shell";
@@ -41,6 +42,7 @@ const es = {
   ...queue.es,
   ...templates.es,
   ...review.es,
+  ...reviewer.es,
   ...waits.es,
   ...palette.es,
   ...create.es,
@@ -63,6 +65,7 @@ const en: Record<keyof typeof es, string> = {
   ...queue.en,
   ...templates.en,
   ...review.en,
+  ...reviewer.en,
   ...waits.en,
   ...palette.en,
   ...create.en,

@@ -84,7 +84,7 @@ describe("Review before accepting", () => {
     await user.click(within(toast).getByRole("button", { name: "Deshacer" }));
     expect(await screen.findByText(/Integración deshecha/)).toBeInTheDocument();
     const files = await screen.findByRole("list", { name: "Archivos cambiados" });
-    expect(within(files).getByText("facturas/impuestos.py")).toBeInTheDocument();
+    expect(within(files).getByRole("button", { name: /^facturas\/impuestos\.py/ })).toBeInTheDocument();
   });
 
   it("explains why an undo is not safe, from the accepted task", async () => {
@@ -107,24 +107,24 @@ describe("Review before accepting", () => {
     const files = await openReviewTask(user, /^Actividad: /);
     expect(screen.getByText("0 de 3 revisados")).toBeInTheDocument();
 
-    const first = within(files).getByRole("button", { name: /facturas\/impuestos\.py/ });
+    const first = within(files).getByRole("button", { name: /^facturas\/impuestos\.py/ });
     expect(first).toHaveAttribute("aria-current", "true");
     first.focus();
     await user.keyboard("j");
-    const second = within(files).getByRole("button", { name: /facturas\/totales\.py/ });
+    const second = within(files).getByRole("button", { name: /^facturas\/totales\.py/ });
     expect(second).toHaveAttribute("aria-current", "true");
     expect(second).toHaveFocus();
     expect(screen.getByRole("table", { name: "Cambios en facturas/totales.py" })).toBeInTheDocument();
     await user.keyboard("j");
     await user.keyboard("j");
-    expect(within(files).getByRole("button", { name: /tests\/test_facturas\.py/ })).toHaveAttribute("aria-current", "true");
+    expect(within(files).getByRole("button", { name: /^tests\/test_facturas\.py/ })).toHaveAttribute("aria-current", "true");
     await user.keyboard("k");
     expect(second).toHaveAttribute("aria-current", "true");
 
     await user.click(within(files).getByRole("checkbox", { name: "Marcar facturas/impuestos.py como revisado" }));
-    await user.click(screen.getByRole("checkbox", { name: /Revisado · facturas\/totales\.py/ }));
+    await user.click(screen.getByRole("checkbox", { name: "Revisado" }));
     expect(screen.getByText("2 de 3 revisados")).toBeInTheDocument();
-    expect(within(files).getByRole("button", { name: /facturas\/impuestos\.py, revisado/ })).toBeInTheDocument();
+    expect(within(files).getByRole("button", { name: /^facturas\/impuestos\.py.*, revisado/ })).toBeInTheDocument();
 
     // Typing in a field never moves the selection.
     await user.click(screen.getByLabelText("Responde o pide algo más"));

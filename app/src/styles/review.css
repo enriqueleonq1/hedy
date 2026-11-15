@@ -15,16 +15,6 @@
 }
 .accept-sheet__message { width: 100%; resize: vertical; }
 
-.review-progress { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin: 0; font-weight: 600; }
-
-.file-row { display: flex; align-items: center; gap: 4px; }
-.file-row__check { flex: none; width: 18px; height: 18px; margin: 0 4px; accent-color: var(--action); cursor: pointer; }
-.file-row .file-item { flex: 1; min-width: 0; }
-.file-item--reviewed .file-item__path { color: var(--muted); }
-
-.review-mark { min-height: 32px; font-size: 13px; }
-.review-mark .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
 .undo-merge { display: grid; gap: 6px; justify-items: start; }
 
 .limit-wait { display: grid; gap: 4px; }
