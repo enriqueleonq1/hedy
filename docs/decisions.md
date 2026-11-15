@@ -1085,3 +1085,54 @@ claude -p /usage --output-format json --no-session-persistence --safe-mode
   always work in a worktree forked from `HEAD`, where uncommitted changes do not exist.
 - In a quick question: three generic starters with the caret placed where the user types.
 - A chip fills the composer (and its mode); it never sends. They go once the task exists.
+
+## 25. Code navigation and review, read-only (Nov 15, 2026)
+
+- **A copy is always explicit.** Every call takes `{ kind: "folder", project }` (the
+  user's registered folder, as it is on disk) or `{ kind: "task", task }` (the task's
+  worktree). "base" means the task's starting commit ("antes de la IA") or the folder's
+  `HEAD` (git's empty tree in a repository without commits). An accepted task's
+  worktree is gone, so it is read from its last commit (`MergeRecord.tip`) as a
+  read-only snapshot (`CopyInfo.live: false`); a discarded task (branch deleted) or a
+  conversation has no copy (`CopyUnavailable`). A task without a worktree (a question)
+  reads the folder. `CopyInfo.agentWorking` tells editors to stay locked.
+- **Port `CodeReader`**, separate from `Git` (read-only, never touches the index:
+  `Git::diff` stages with `git add --all`, this does not). Implemented by `GitCli` in
+  `adapters/git_code.rs`: `ls-tree -r`, `ls-files --others [--ignored --directory]`,
+  `diff --name-status -z -M <base> [<to>]` plus untracked files, `cat-file` (read with a
+  byte cap, the process is stopped), one file's `diff -U<n> -M <base> [<to>] -- [old] new`
+  (an untracked file: `diff --no-index /dev/null`), `grep -n -z -I [--untracked]`,
+  `log --follow --name-only` / `log -L a,b:path -s`, `blame --porcelain [-L a,b]`.
+- **Paths and revisions** are checked in the domain (`normalize_code_path`,
+  `is_safe_rev`): relative, no `..`, no `.git`, no absolute or `~` paths; revisions
+  never start with `-` and are never ranges. Working files are read through symbolic
+  links only when the target stays inside the copy, and a link to a protected name is
+  locked too.
+- **Protected files** (`permissions::DEFAULT_BLOCKED`) are listed with `locked: true`
+  and never read, diffed, blamed or searched: `git grep` gets
+  `:(exclude,glob)**/<pattern>` pathspecs and the results are filtered again. Opening
+  one in VS Code or the file manager is allowed: that is the user, not Hedy, reading it.
+- **Limits:** text 2 MB and image previews 5 MB (`tooLarge` beyond), binary = a NUL
+  byte in the first 8,000 bytes (git's rule), images sniffed by their bytes (PNG, JPEG,
+  GIF, WebP; SVG is text). Tree 100,000 entries, search 2,000 matching lines (lines cut
+  to 400 characters, ranges in UTF-16 units located by Rust's `regex`, close to git's
+  ERE), history 200 commits, outline 2,000 symbols.
+- **Expand context** in a diff: ask again with `{ full: true }` (the whole file as
+  context), or read the new side and fill gaps (unchanged lines; old numbers by the
+  previous context line's offset).
+- **History and tasks:** accepted tasks are matched by their `tip` (or merge) commit in
+  the file's log; open tasks (up to 20) by their worktree's changes. Line-range history
+  (`git log -L`) numbers lines as in `HEAD`, not the working file.
+- **Outline (`symbols`)**: line-based keywords per language (Rust, Python, JS/TS, Go,
+  Ruby, C-like family, Markdown headings), not a parser; the code map
+  (codebase-memory-mcp) is an MCP server for agents, not something Hedy can query.
+- **Blame is not cached** (one `git blame` per request); the UI caches by query key.
+- **Opening outside Hedy:** `code -g <file>:<line>` when `code` is on `PATH`, else
+  `xdg-open` (`open` on macOS); "reveal" opens the folder (`open -R` selects the file on
+  macOS).
+- **UI contract:** `app/src/files/navigator.tsx` (`FileNavigatorProvider`, mounted once
+  in `App`; `useFileNavigator().open({ copy, path, line?, rev?, view? })`) and
+  `codeKeys` for shared query keys. `MockApi` serves `/code/hedy` and `/code/homming`
+  from `mockCodeSamples.ts`; task s5's review diff is computed from the same sample.
+- **Not verified live** against a 50k-file repository (adapter tests run on small
+  temporary repositories with a worktree).
