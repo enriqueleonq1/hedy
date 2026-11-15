@@ -90,7 +90,7 @@ interface Row {
   joiner?: "range" | "or";
 }
 
-function groups(mod: string, alt: string, shift: string): { title: MessageKey; rows: Row[] }[] {
+function groups(mod: string, alt: string, shift: string, keys: { click: string; del: string }): { title: MessageKey; rows: Row[] }[] {
   return [
     {
       title: "shell.shortcuts.general",
@@ -125,6 +125,19 @@ function groups(mod: string, alt: string, shift: string): { title: MessageKey; r
       ],
     },
     {
+      title: "edit.shortcuts.title",
+      rows: [
+        { label: "edit.shortcuts.toggle", combos: [[mod, "E"]] },
+        { label: "edit.shortcuts.save", combos: [[mod, "S"]] },
+        { label: "edit.shortcuts.undo", combos: [[mod, "Z"], [mod, shift, "Z"]], joiner: "or" },
+        { label: "edit.shortcuts.replace", combos: [[mod, "H"]] },
+        { label: "edit.shortcuts.cursor", combos: [[alt, keys.click]] },
+        { label: "edit.shortcuts.next", combos: [[mod, "D"]] },
+        { label: "edit.shortcuts.rename", combos: [["F2"]] },
+        { label: "edit.shortcuts.delete", combos: [[keys.del]] },
+      ],
+    },
+    {
       title: "shell.shortcuts.activity",
       rows: [
         { label: "shell.shortcuts.move", combos: [["j"], ["k"]], joiner: "or" },
@@ -156,7 +169,7 @@ function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title={t("shell.shortcuts.title")} onClose={onClose}>
       <div className="shortcuts">
-        {groups(modKey(), altKey(), shiftKey()).map((group) => (
+        {groups(modKey(), altKey(), shiftKey(), { click: t("edit.shortcuts.click"), del: t("edit.deleteKey") }).map((group) => (
           <section key={group.title} className="shortcuts__group">
             <h3 className="shortcuts__title">{t(group.title)}</h3>
             <dl className="shortcuts__list">
