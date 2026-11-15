@@ -50,6 +50,10 @@ export interface VirtualTreeProps<T> {
   onActivate: (row: TreeRow<T>) => void;
   /** Right click, Shift+F10 or the menu key. */
   onContextMenu?: (row: TreeRow<T>, at: { x: number; y: number }) => void;
+  /** Any other key on the active row (F2, Delete…); `true` when it was handled. */
+  onRowKey?: (row: TreeRow<T>, key: string) => boolean;
+  /** A click or Enter on a row (folders too): e.g. where a new file goes. */
+  onRowFocus?: (row: TreeRow<T>) => void;
   /** The row's content after its chevron: icon, name, badges, hover actions. */
   renderRow: (row: TreeRow<T>, state: RowState) => ReactNode;
   /** Shown instead of the rows when there are none. */
@@ -68,7 +72,7 @@ export function typeaheadMatch<T>(rows: TreeRow<T>[], from: number, prefix: stri
 }
 
 function TreeInner<T>(
-  { label, rows, expanded, onToggle, selectedPath, onActivate, onContextMenu, renderRow, empty, className }: VirtualTreeProps<T>,
+  { label, rows, expanded, onToggle, selectedPath, onActivate, onContextMenu, onRowKey, onRowFocus, renderRow, empty, className }: VirtualTreeProps<T>,
   ref: React.ForwardedRef<VirtualTreeHandle>,
 ) {
   const baseId = useId();
@@ -110,6 +114,7 @@ function TreeInner<T>(
     const row = rows[Math.max(0, Math.min(rows.length - 1, index))];
     if (!row) return;
     setActivePath(row.node.path);
+    onRowFocus?.(row);
     list.current?.scrollToIndex(rows.indexOf(row));
   };
 
@@ -175,6 +180,10 @@ function TreeInner<T>(
         }
         return;
       default:
+        if (onRowKey?.(active, e.key)) {
+          handled();
+          return;
+        }
         if (e.key.length === 1 && e.key !== " ") {
           const now = Date.now();
           const text = now - typed.current.at < TYPEAHEAD_MS ? typed.current.text + e.key : e.key;
@@ -219,8 +228,9 @@ function TreeInner<T>(
           list.current?.element?.focus({ preventScroll: true });
         }}
         onClick={(e) => {
-          if ((e.target as HTMLElement).closest("button")) return;
+          if ((e.target as HTMLElement).closest("button, input")) return;
           setActivePath(node.path);
+          onRowFocus?.(row);
           if (isFolder) onToggle(node.path, !open);
           else onActivate(row);
         }}

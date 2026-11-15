@@ -1,5 +1,6 @@
 // The explorer: a copy's files as a virtualized tree with git status, filters
-// (only changed files, ignored files), hover actions and a context menu.
+// (only changed files, ignored files), hover actions, a context menu and the
+// file operations of an editable copy (new, rename, duplicate, delete).
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,7 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { errorMessage, useApi } from "../../api/context";
 import type { CodeCopy, CopyInfo, TreeEntry } from "../../api/codeTypes";
 import { useContextMenu, type ContextMenuItem } from "../../components/ui/ContextMenu";
-import { allFolders, ancestorsOf, buildTree, flattenTree, type TreeRow } from "../../components/ui/treeModel";
+import { allFolders, ancestorsOf, buildTree, flattenTree, parentOf, type TreeRow } from "../../components/ui/treeModel";
 import { VirtualTree, type VirtualTreeHandle } from "../../components/ui/VirtualTree";
 import { codeKeys, copyKey } from "../../files/navigator";
 import { useT } from "../../i18n";
@@ -22,13 +23,19 @@ import {
   FilesIcon,
   FolderOpenIcon,
   HistoryIcon,
+  DuplicateIcon,
   IgnoredIcon,
   MoreIcon,
+  NewFileIcon,
+  NewFolderIcon,
   RefreshIcon,
+  RenameIcon,
   SparkIcon,
   TargetIcon,
+  TrashIcon,
 } from "../icons";
 import { changedEntries, countChanged, rollUpStatus, STATUS_LETTER } from "./explorerModel";
+import { DRAFT_PATH, draftProblem, joinPath, NameInput, nameProblem, useFileOps, withDraft } from "./fileOps";
 
 export interface ExplorerProps {
   copy: CodeCopy;
@@ -42,9 +49,27 @@ export interface ExplorerProps {
   revealRequest?: { path: string; folder: boolean; seq: number } | null;
   /** Changes to put the keyboard focus in the tree. */
   focusSeq?: number;
+  /** The open file has unsaved changes (a dot on its row). */
+  dirtyPath?: string | null;
+  /** A file was created or duplicated (open it). */
+  onCreated?: (path: string) => void;
+  /** A file or folder was renamed (`to`) or deleted (`null`). */
+  onMoved?: (from: string, to: string | null) => void;
 }
 
-export function Explorer({ copy, info, openPath, onOpen, onShowDiff, onHistory, revealRequest, focusSeq = 0 }: ExplorerProps) {
+export function Explorer({
+  copy,
+  info,
+  openPath,
+  onOpen,
+  onShowDiff,
+  onHistory,
+  revealRequest,
+  focusSeq = 0,
+  dirtyPath = null,
+  onCreated,
+  onMoved,
+}: ExplorerProps) {
   const api = useApi();
   const t = useT();
   const client = useQueryClient();
@@ -62,9 +87,19 @@ export function Explorer({ copy, info, openPath, onOpen, onShowDiff, onHistory, 
     queryFn: () => api.codeTree(copy, { ignored: showIgnored }),
     placeholderData: (previous) => previous,
   });
-  const entries = useMemo(() => query.data?.entries ?? [], [query.data]);
-  const changed = useMemo(() => countChanged(entries), [entries]);
   const key = copyKey(copy);
+  // Folders created here: git lists no empty folder, so they show until a file lands in them.
+  const [created, setCreated] = useState<{ copy: string; folders: string[] }>({ copy: "", folders: [] });
+  const entries = useMemo(() => {
+    const listed = query.data?.entries ?? [];
+    const extra = (created.copy === key ? created.folders : []).filter(
+      (folder) => !listed.some((e) => e.path === `${folder}/` || e.path.startsWith(`${folder}/`)),
+    );
+    if (!extra.length) return listed;
+    const folders = extra.map((folder) => ({ path: `${folder}/`, status: null, oldPath: null, locked: false, ignored: false }));
+    return [...listed, ...folders].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  }, [query.data, created, key]);
+  const changed = useMemo(() => countChanged(entries), [entries]);
   const changedOnly = changedChoice?.copy === key ? changedChoice.on : copy.kind === "task" && changed > 0;
 
   const shown = useMemo(() => (changedOnly ? changedEntries(entries) : entries), [entries, changedOnly]);
@@ -75,7 +110,7 @@ export function Explorer({ copy, info, openPath, onOpen, onShowDiff, onHistory, 
     // Only changes: every folder open (they are few), unless closed by hand.
     return new Set(allFolders(root).filter((f) => !collapsedChanged.has(f)));
   }, [changedOnly, expanded, key, root, collapsedChanged]);
-  const rows = useMemo(() => flattenTree(root, open), [root, open]);
+  const treeRows = useMemo(() => flattenTree(root, open), [root, open]);
 
   const toggle = (path: string, on: boolean) => {
     if (changedOnly) {
@@ -138,11 +173,88 @@ export function Explorer({ copy, info, openPath, onOpen, onShowDiff, onHistory, 
 
   const refresh = () => void client.invalidateQueries({ queryKey: codeKeys.copy(copy) });
 
+  // Where a new file goes: the folder last clicked, or the folder of the file last opened.
+  const [here, setHere] = useState("");
+  const exists = (path: string) => entries.some((e) => e.path === path || e.path === `${path}/` || e.path.startsWith(`${path}/`));
+  const ops = useFileOps({
+    copy,
+    info,
+    exists,
+    dirtyPath,
+    onCreated: (path, kind) => {
+      setHere(kind === "folder" ? path : parentOf(path));
+      if (kind === "file") onCreated?.(path);
+      reveal(path, kind === "folder", kind === "folder");
+    },
+    onMoved: (from, to) => {
+      setCreated((old) => ({
+        copy: key,
+        folders: (old.copy === key ? old.folders : []).flatMap((f) =>
+          f === from || f.startsWith(`${from}/`) ? (to === null ? [] : [`${to}${f.slice(from.length)}`]) : [f],
+        ),
+      }));
+      onMoved?.(from, to);
+      if (to) reveal(to, true);
+      else tree.current?.focus();
+    },
+    onFolderCreated: (folder) =>
+      setCreated((old) => ({ copy: key, folders: [...(old.copy === key ? old.folders : []), folder] })),
+  });
+  const rows = useMemo(() => withDraft(treeRows, ops.draft), [treeRows, ops.draft]);
+  const create = (kind: "file" | "folder", folder: string) => {
+    // Only changes shown: a new file would not be listed.
+    if (changedOnly) setChangedChoice({ copy: key, on: false });
+    if (folder) {
+      setExpanded((old) => {
+        const next = new Set(old.copy === key ? old.open : []);
+        for (const f of [...ancestorsOf(folder), folder]) next.add(f);
+        return { copy: key, open: next };
+      });
+    }
+    ops.startCreate(kind, folder);
+  };
+  const endInline = () => {
+    ops.cancel();
+    tree.current?.focus();
+  };
+
+  const lockHint = ops.lockReason ?? undefined;
+  const editItems = (path: string, folder: boolean, locked: boolean): ContextMenuItem[] => [
+    ...(folder
+      ? [
+          { label: t("edit.newFile"), icon: <NewFileIcon />, disabled: !!lockHint, hint: lockHint, onSelect: () => create("file", path) },
+          { label: t("edit.newFolder"), icon: <NewFolderIcon />, disabled: !!lockHint, hint: lockHint, onSelect: () => create("folder", path) },
+        ]
+      : []),
+    {
+      label: t("edit.rename"),
+      icon: <RenameIcon />,
+      shortcut: "F2",
+      disabled: !!lockHint || locked,
+      hint: lockHint,
+      separatorBefore: !folder,
+      onSelect: () => ops.startRename(path),
+    },
+    ...(folder
+      ? []
+      : [{ label: t("edit.duplicate"), icon: <DuplicateIcon />, disabled: !!lockHint || locked, hint: lockHint, onSelect: () => ops.duplicate(path) }]),
+    {
+      label: t("edit.delete"),
+      icon: <TrashIcon />,
+      shortcut: t("edit.deleteKey"),
+      danger: true,
+      disabled: !!lockHint || locked,
+      hint: lockHint,
+      onSelect: () => ops.askDelete(path, folder),
+    },
+  ];
+
   const itemsFor = (row: TreeRow<TreeEntry>): ContextMenuItem[] => {
     const path = row.node.path;
     if (row.node.kind === "folder") {
       return [
-        { label: t("code.action.copyPath"), icon: <CopyIcon />, onSelect: () => actions.copyPath(path) },
+        ...editItems(path, true, false),
+        { label: t("code.action.copyPath"), icon: <CopyIcon />, separatorBefore: true, onSelect: () => actions.copyPath(path) },
         { label: t("code.action.copyRelativePath"), onSelect: () => actions.copyRelativePath(path) },
         { label: t("code.action.reveal"), icon: <FolderOpenIcon />, onSelect: () => actions.reveal(path), separatorBefore: true },
         { label: t("code.action.askAi"), icon: <SparkIcon />, onSelect: () => actions.askAi(path), separatorBefore: true },
@@ -163,6 +275,7 @@ export function Explorer({ copy, info, openPath, onOpen, onShowDiff, onHistory, 
       { label: t("code.action.reveal"), icon: <FolderOpenIcon />, onSelect: () => actions.reveal(path), separatorBefore: true },
       { label: t("common.openInVsCode"), icon: <ExternalIcon />, onSelect: () => actions.openInEditor(path) },
       { label: t("code.action.askAi"), icon: <SparkIcon />, onSelect: () => actions.askAi(path), separatorBefore: true },
+      ...editItems(path, false, entry.locked || entry.status === "deleted"),
     ];
   };
 
@@ -174,6 +287,26 @@ export function Explorer({ copy, info, openPath, onOpen, onShowDiff, onHistory, 
       <span className="code-toolbar__title">
         {changedOnly ? t("code.explorer.changedCount", { n: changed }) : t("code.explorer.allFiles")}
       </span>
+      <button
+        type="button"
+        className={`icon-btn${lockHint ? " icon-btn--soft-disabled" : ""}`}
+        aria-label={t("edit.newFile")}
+        aria-disabled={!!lockHint || undefined}
+        title={lockHint ?? t("edit.newFile")}
+        onClick={() => create("file", here)}
+      >
+        <NewFileIcon />
+      </button>
+      <button
+        type="button"
+        className={`icon-btn${lockHint ? " icon-btn--soft-disabled" : ""}`}
+        aria-label={t("edit.newFolder")}
+        aria-disabled={!!lockHint || undefined}
+        title={lockHint ?? t("edit.newFolder")}
+        onClick={() => create("folder", here)}
+      >
+        <NewFolderIcon />
+      </button>
       <button
         type="button"
         className="icon-btn"
@@ -251,7 +384,21 @@ export function Explorer({ copy, info, openPath, onOpen, onShowDiff, onHistory, 
         onToggle={toggle}
         selectedPath={openPath}
         onActivate={(row) => onOpen(row.node.path)}
-        onContextMenu={openMenu}
+        onContextMenu={(row, at) => row.node.path !== DRAFT_PATH && openMenu(row, at)}
+        onRowFocus={(row) => setHere(row.node.kind === "folder" ? row.node.path : parentOf(row.node.path))}
+        onRowKey={(row, key) => {
+          if (row.node.path === DRAFT_PATH) return false;
+          const locked = row.node.kind === "file" && (row.node.item.locked || row.node.item.status === "deleted");
+          if (key === "F2" && !locked) {
+            ops.startRename(row.node.path);
+            return true;
+          }
+          if (key === "Delete" && !locked) {
+            ops.askDelete(row.node.path, row.node.kind === "folder");
+            return true;
+          }
+          return false;
+        }}
         empty={
           <div className="code-state code-state--compact">
             <p className="code-state__title">{changedOnly ? t("code.explorer.noChanges") : t("code.explorer.empty")}</p>
@@ -264,12 +411,42 @@ export function Explorer({ copy, info, openPath, onOpen, onShowDiff, onHistory, 
         }
         renderRow={(row) => {
           const node = row.node;
+          const draft = ops.draft;
+          if (node.path === DRAFT_PATH && draft) {
+            return (
+              <>
+                {draft.kind === "folder" ? <FolderIcon open={false} /> : <FileIcon path={draft.name || "x"} locked={false} />}
+                <NameInput
+                  value={draft.name}
+                  label={draft.kind === "folder" ? t("edit.name.folder") : t("edit.name.file")}
+                  problem={draftProblem(draft.name, draft.folder, exists)}
+                  onChange={ops.setDraftName}
+                  onCommit={() => void ops.commitDraft()}
+                  onCancel={endInline}
+                />
+              </>
+            );
+          }
+          const renaming = ops.renaming?.path === node.path ? ops.renaming : null;
+          const renameInput = renaming && (
+            <NameInput
+              value={renaming.name}
+              label={t("edit.name.rename", { name: node.name })}
+              problem={nameProblem(
+                renaming.name.trim(),
+                (n) => n.toLowerCase() !== node.name.toLowerCase() && exists(joinPath(parentOf(node.path), n)),
+              )}
+              onChange={ops.setRenameName}
+              onCommit={() => void ops.commitRename()}
+              onCancel={endInline}
+            />
+          );
           if (node.kind === "folder") {
             const status = rollUp.get(node.path);
             return (
               <>
                 <FolderIcon open={open.has(node.path)} />
-                <span className="vtree__name">{node.name}</span>
+                {renameInput || <span className="vtree__name">{node.name}</span>}
                 {status && <span className={`tree-dot tree-dot--${status}`} aria-label={t(`code.status.${status}`)} />}
                 <RowActions>
                   <RowAction label={t("code.action.more")} onClick={(e) => openMenu(row, pointBelow(e))}>
@@ -293,9 +470,16 @@ export function Explorer({ copy, info, openPath, onOpen, onShowDiff, onHistory, 
                   .filter(Boolean)
                   .join(" ")}
                 title={entry.oldPath ? t("code.explorer.renamedFrom", { path: entry.oldPath }) : undefined}
+                hidden={!!renameInput}
               >
                 {node.name}
               </span>
+              {renameInput}
+              {dirtyPath === node.path && (
+                <span className="dirty-dot" title={t("edit.dirty")}>
+                  <span className="sr-only">, {t("edit.dirty")}</span>
+                </span>
+              )}
               {entry.locked && <span className="sr-only">, {t("code.locked.short")}</span>}
               <RowActions>
                 {entry.status && !entry.locked && (
@@ -329,6 +513,7 @@ export function Explorer({ copy, info, openPath, onOpen, onShowDiff, onHistory, 
       {query.data?.truncated && <p className="code-notice">{t("code.explorer.truncated")}</p>}
       <div className="explorer__tree">{body}</div>
       {menu.element}
+      {ops.dialog}
     </div>
   );
 }
