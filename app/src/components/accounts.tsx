@@ -53,8 +53,7 @@ export function AccountChip({ account, muted }: { account: Pick<Account, "name" 
 function loginText(login: Login, kind: Account["kind"], t: Translate): string {
   switch (login.state) {
     case "loggedIn":
-      if (kind === "apiKey") return t("accounts.login.keySaved");
-      return login.plan ? t("accounts.login.connectedPlan", { plan: login.plan }) : t("accounts.login.connected");
+      return kind === "apiKey" ? t("accounts.login.keySaved") : t("accounts.login.connected");
     case "loggedOut":
       return kind === "apiKey" ? t("accounts.login.noKey") : t("accounts.login.noSession");
     case "unknown":
@@ -62,12 +61,13 @@ function loginText(login: Login, kind: Account["kind"], t: Translate): string {
   }
 }
 
-export function LoginBadge({ account }: { account: Account }) {
+/** "● Conectada": the login state as a small colored dot and its word (the plan is in the subtitle). */
+export function LoginStatus({ account }: { account: Account }) {
   const t = useT();
-  const icon = { loggedIn: "✔", loggedOut: "✗", unknown: "?" }[account.login.state];
   return (
-    <span className={`badge badge--${account.login.state}`}>
-      <span aria-hidden>{icon}</span> {loginText(account.login, account.kind, t)}
+    <span className={`login-status login-status--${account.login.state}`}>
+      <span className="login-status__dot" aria-hidden />
+      {loginText(account.login, account.kind, t)}
     </span>
   );
 }
@@ -110,7 +110,7 @@ function WindowRow({ window: w, color }: { window: UsageWindow; color: string })
       >
         <div className="bar__fill" style={{ width: `${Math.min(w.percent, 100)}%`, background: barColor(w.percent, color) }} />
       </div>
-      {resets && <span className="muted small">{resets}</span>}
+      {resets && <span className="usage__note">{resets}</span>}
     </div>
   );
 }
@@ -144,23 +144,19 @@ function PlanRows({ account }: { account: Account }) {
           </div>
         )}
         {models.length > 0 && (
-          <span className="muted small">
+          <span className="usage__note">
             {t("accounts.plan.perModel", {
               list: models.map((w) => `${w.model} ${Math.round(w.percent)}%`).join(" · "),
             })}
           </span>
         )}
-        <span className="muted small">
-          {sourceLabel(usage, t)}
-          {failed && ` · ${failed}`}
-        </span>
       </>
     );
   }
 
   if (account.kind === "apiKey") return null;
   if (!plan.supported) {
-    return <span className="muted small">{t("accounts.plan.notReported", { provider: account.providerName })}</span>;
+    return <span className="usage__note">{t("accounts.plan.notReported", { provider: account.providerName })}</span>;
   }
   // No reading yet: what the CLI said during Hedy's tasks, if anything.
   const limitStatus = limit && LIMIT_STATUS[limit.status];
@@ -173,9 +169,27 @@ function PlanRows({ account }: { account: Account }) {
           {limit ? (limitStatus ? t(limitStatus) : limit.status) : (failed ?? t("accounts.plan.checking"))}
         </span>
       </div>
-      {resets && <span className="muted small">{resets}</span>}
+      {resets && <span className="usage__note">{resets}</span>}
     </div>
   );
+}
+
+/**
+ * Where the plan's reading comes from and how fresh it is ("según /usage de
+ * Claude Code · hace 2 min"), and whether the last refresh failed; `null`
+ * without a reading. A quiet footnote under the card's figures.
+ */
+export function usageSource(account: Account, t: Translate): string | null {
+  const usage = account.usage.plan.usage;
+  if (!usage || (usage.windows.length === 0 && !usage.balance)) return null;
+  const { problem } = account.usage.plan;
+  const failed =
+    problem === "spendsTokens"
+      ? t("accounts.plan.spendsTokens")
+      : problem === "unavailable"
+        ? t("accounts.plan.unavailable")
+        : null;
+  return failed ? `${sourceLabel(usage, t)} · ${failed}` : sourceLabel(usage, t);
 }
 
 /**
@@ -200,7 +214,7 @@ export function UsageBars({ account }: { account: Account }) {
             {account.kind === "apiKey" ? (cost ?? t("accounts.usage.none")) : tokens}
           </span>
         </div>
-        {account.kind === "apiKey" && <span className="muted small">{tokens}</span>}
+        {account.kind === "apiKey" && usage.weekTokens > 0 && <span className="usage__note">{tokens}</span>}
       </div>
     </div>
   );
