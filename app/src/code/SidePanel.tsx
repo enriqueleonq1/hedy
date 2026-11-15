@@ -15,6 +15,7 @@ import { Select } from "../components/ui/Select";
 import { TabBar, type TabItem } from "../components/ui/TabBar";
 import { codeKeys, copyKey, sameCopy, useFileNavigator } from "../files/navigator";
 import { useT } from "../i18n";
+import { useReviewComments } from "../review/comments";
 import { useTaskDiff } from "../tasks/hooks";
 import { isOpen } from "../tasks/timeline";
 import "../styles/code.css";
@@ -22,7 +23,7 @@ import { defaultCopy, taskHasCopy } from "./copies";
 import { Explorer } from "./explorer/Explorer";
 import { FilesIcon, LockIcon, PreviewIcon, ReviewIcon, SearchIcon, TerminalIcon } from "./icons";
 import { panelShortcut, shortcutAria, shortcutLabel, type PanelShortcut } from "./keys";
-import { useReviewBridge } from "./reviewBridge";
+
 import { SearchView } from "./search/SearchView";
 import { FileViewer, type OpenFile } from "./viewer/FileViewer";
 
@@ -109,7 +110,7 @@ export function SidePanel({ project, task, hidden = false, onRequestOpen, review
   const api = useApi();
   const idPrefix = useId();
   const nav = useFileNavigator();
-  const reviewBridge = useReviewBridge();
+  const reviewBridge = useReviewComments();
   const aside = useRef<HTMLElement>(null);
   const [container, setContainer] = useState(0);
   const panel = usePanelWidth(container);
@@ -207,7 +208,8 @@ export function SidePanel({ project, task, hidden = false, onRequestOpen, review
     const more = extra && target && extra.path === target.path ? extra.more : {};
     if (extra) setExtra(null);
     if (target?.view === "diff" && target.copy.kind === "task" && target.copy.task === taskId) {
-      show("review", { select: target.path });
+      // The review store selects the file itself (it listens to the navigator too).
+      show("review");
     } else if (target) {
       openFile(
         {

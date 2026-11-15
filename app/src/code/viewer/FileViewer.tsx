@@ -13,6 +13,7 @@ import { MenuButton } from "../../components/ui/Menu";
 import { codeKeys } from "../../files/navigator";
 import { timeAgo } from "../../format";
 import { useT, type Translate } from "../../i18n";
+import { useReviewComments } from "../../review/comments";
 import { baseName, lineReference } from "../copies";
 import { CodeEditor, type CodeEditorHandle, type EditorPoint } from "../editor/CodeEditor";
 import type { BlameMark } from "../editor/extensions";
@@ -34,7 +35,7 @@ import {
   SparkIcon,
 } from "../icons";
 import { modLabel } from "../keys";
-import { useReviewBridge } from "../reviewBridge";
+
 import { Floating } from "./Floating";
 import { HistoryDrawer } from "./HistoryDrawer";
 import { InlineDiff } from "./InlineDiff";
@@ -122,7 +123,7 @@ export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowD
   const t = useT();
   const client = useQueryClient();
   const actions = useFileActions(copy, info);
-  const review = useReviewBridge();
+  const review = useReviewComments();
   const menu = useContextMenu();
   const editor = useRef<CodeEditorHandle>(null);
   const { path, rev } = file;
