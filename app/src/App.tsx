@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ApiProvider, errorMessage, useApi, useOverview } from "./api/context";
 import type { HedyApi } from "./api/HedyApi";
+import { FocusModeProvider } from "./components/focusMode";
 import { Shell, Sidebar, taskView, Topbar, viewProject, type View } from "./components/Layout";
 import { Mascot } from "./components/Mascot/Mascot";
 import { CommandPalette } from "./components/palette/CommandPalette";
+import { ShortcutsProvider, useProjectShortcuts } from "./components/shortcuts";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import { TerminalProvider } from "./components/Terminal/TerminalProvider";
 import { Button } from "./components/ui/Button";
@@ -125,6 +127,13 @@ function Root() {
   // A click on a desktop notification opens that task.
   useEffect(() => api.onOpenTask(({ taskId, project }) => openTask(project, taskId)), [api, openTask]);
 
+  // Alt/⌥ 1…9: the Nth project of the sidebar (once onboarded).
+  const shortcutProjects = useMemo(
+    () => (overview.data?.onboarded ? (projects ?? []) : []),
+    [overview.data?.onboarded, projects],
+  );
+  const goToProject = useCallback((path: string) => navigate({ screen: "workspace", project: path }), [navigate]);
+  useProjectShortcuts(shortcutProjects, goToProject);
 
   if (overview.isPending) {
     return (
@@ -165,6 +174,8 @@ function Root() {
     <ThemeProvider setting={data.theme}>
       <TerminalProvider>
         <CreateProvider overview={data} onNavigate={navigate}>
+        <FocusModeProvider>
+        <ShortcutsProvider>
         <Shell
           topbar={
             <Topbar
@@ -231,6 +242,8 @@ function Root() {
           )}
         </Shell>
         <CommandPalette open={palette} onOpenChange={setPalette} overview={data} onNavigate={navigate} />
+        </ShortcutsProvider>
+        </FocusModeProvider>
         </CreateProvider>
       </TerminalProvider>
     </ThemeProvider>

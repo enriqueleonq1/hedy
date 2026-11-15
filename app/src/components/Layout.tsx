@@ -8,11 +8,12 @@ import { useConversations } from "../tasks/hooks";
 import { useInbox } from "../tasks/inbox";
 import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 import { shortAccountLabel } from "./accounts";
+import { useFocusMode } from "./focusMode";
 import { SidebarRailProvider, useSidebarRail } from "./sidebarRail";
 import { AccountsIcon, ActivityIcon, CollapseIcon, QuestionIcon, SettingsIcon } from "./ui/icons";
 import { MenuButton } from "./ui/Menu";
 import { Mascot } from "./Mascot/Mascot";
-import { paletteKeys } from "./palette/keys";
+import { modKey, paletteKeys } from "./palette/keys";
 import { headlineText, levelClass, planPercent, usageLabel, usePlanUsageRefresh } from "./planUsage";
 import { projectColor } from "./projects";
 import { useTerminals } from "./Terminal/TerminalProvider";
@@ -66,6 +67,7 @@ interface TopbarProps {
 
 export function Topbar({ overview, view, onNavigate, onOpenPalette }: TopbarProps) {
   const terminals = useTerminals();
+  const focusMode = useFocusMode();
   const t = useT();
   const keys = paletteKeys();
   const color = defaultAccount(overview)?.color ?? DEFAULT_ACCOUNT_COLOR;
@@ -83,6 +85,19 @@ export function Topbar({ overview, view, onNavigate, onOpenPalette }: TopbarProp
       </button>
 
       <span className="spacer" />
+      {focusMode.focus && (
+        <button
+          type="button"
+          className="topbar__quiet"
+          aria-label={t("shell.focus.exit")}
+          aria-keyshortcuts="Control+Backslash"
+          title={`${t("shell.focus.exit")} (${modKey()} \\)`}
+          onClick={focusMode.toggle}
+        >
+          {t("shell.focus.on")}
+          <kbd>{`${modKey()} \\`}</kbd>
+        </button>
+      )}
       {onOpenPalette && (
         <button
           type="button"
@@ -363,8 +378,9 @@ function ShellFrame({
   terminal: ReactNode;
 }) {
   const { rail } = useSidebarRail();
+  const { focus } = useFocusMode();
   return (
-    <div className={`app${rail ? " app--rail" : ""}`}>
+    <div className={`app${rail ? " app--rail" : ""}${focus ? " app--focus" : ""}`}>
       {topbar}
       {sidebar}
       <main className="main" id="main">
