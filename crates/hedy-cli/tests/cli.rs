@@ -1062,3 +1062,97 @@ fn tasks_without_tasks_in_english() {
             "No running tasks, and none in the last 24 h.",
         ));
 }
+
+/// `hedy` with its own git identity and a `HOME` inside the test, so `hedy
+/// new` neither depends on nor touches this computer's settings.
+fn hedy_new(env: &Env, language: &str, args: &[&str]) -> Command {
+    let config = env.path("gitconfig");
+    if !config.exists() {
+        fs::write(
+            &config,
+            "[user]\n\tname = Test\n\temail = test@hedy.local\n[commit]\n\tgpgsign = false\n",
+        )
+        .unwrap();
+    }
+    let mut cmd = env.hedy_lang(language, args);
+    cmd.env("GIT_CONFIG_GLOBAL", &config)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("HOME", env.path("home"));
+    cmd
+}
+
+#[test]
+fn new_creates_a_repository_and_registers_the_project() {
+    let env = Env::new();
+    env.hedy(&["account", "add", "Personal", "--claude", "--no-login"])
+        .assert()
+        .success();
+    let parent = env.path("Proyectos");
+    hedy_new(
+        &env,
+        "es",
+        &[
+            "nuevo",
+            "Mi tienda",
+            "--en",
+            parent.to_str().unwrap(),
+            "-a",
+            "personal",
+        ],
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("Mi tienda creado en"))
+    .stdout(predicate::str::contains("usa"));
+
+    let project = parent.join("mi-tienda");
+    assert!(project.join(".git").is_dir());
+    let log = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&project)
+        .args(["log", "--format=%s"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&log.stdout).trim(),
+        "Initial commit"
+    );
+    // Only git's folder: Hedy writes no files the user did not ask for.
+    assert_eq!(fs::read_dir(&project).unwrap().count(), 1);
+
+    env.hedy_in(&project, &["status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Mi tienda"));
+
+    // An existing folder is never reused.
+    hedy_new(
+        &env,
+        "en",
+        &["new", "Mi tienda", "--in", parent.to_str().unwrap()],
+    )
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("already exists"));
+}
+
+#[test]
+fn new_without_a_folder_goes_to_the_usual_place_and_has_help_in_english() {
+    let env = Env::new();
+    hedy_new(&env, "en", &["new", "Notes app"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Notes app created in"))
+        .stdout(predicate::str::contains("no account yet"));
+    assert!(env.path("home/Projects/notes-app/.git").is_dir());
+
+    hedy_new(&env, "en", &["new", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Start a project from scratch"))
+        .stdout(predicate::str::contains("--in <FOLDER>"));
+    hedy_new(&env, "es", &["nuevo", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Empieza un proyecto desde cero"));
+}
