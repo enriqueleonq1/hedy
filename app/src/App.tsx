@@ -95,35 +95,25 @@ function Root() {
   const overview = useOverview();
   const t = useT();
   const [view, setView] = useState<View>(viewFromHash);
-  const [openProjects, setOpenProjects] = useState<string[]>(() => {
-    const project = viewProject(view);
-    return project ? [project] : [];
-  });
   const [palette, setPalette] = useState(false);
   const api = useApi();
-
-  const show = useCallback((next: View) => {
-    setView(next);
-    const project = viewProject(next);
-    if (project) setOpenProjects((open) => (open.includes(project) ? open : [...open, project]));
-  }, []);
 
   // Each screen and task is a step of the history: Back and Forward walk them.
   const navigate = useCallback(
     (next: View, options?: { replace?: boolean }) => {
-      show(next);
+      setView(next);
       const hash = hashFor(next);
       if (options?.replace) history.replaceState(null, "", hash);
       else if (hash !== window.location.hash) history.pushState(null, "", hash);
     },
-    [show],
+    [],
   );
 
   useEffect(() => {
-    const onPop = () => show(viewFromHash());
+    const onPop = () => setView(viewFromHash());
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, [show]);
+  }, []);
 
   // A task opens in its project or, outside any project, as a conversation.
   const projects = overview.data?.projects;
@@ -135,14 +125,6 @@ function Root() {
   // A click on a desktop notification opens that task.
   useEffect(() => api.onOpenTask(({ taskId, project }) => openTask(project, taskId)), [api, openTask]);
 
-  const closeProject = (path: string) => {
-    const rest = openProjects.filter((p) => p !== path);
-    setOpenProjects(rest);
-    if (viewProject(view) === path) {
-      const last = rest.at(-1);
-      navigate(last ? { screen: "workspace", project: last } : { screen: "welcome" });
-    }
-  };
 
   if (overview.isPending) {
     return (
@@ -188,9 +170,7 @@ function Root() {
             <Topbar
               overview={data}
               view={current}
-              openProjects={openProjects}
               onNavigate={navigate}
-              onCloseProject={closeProject}
               onOpenPalette={() => setPalette(true)}
             />
           }

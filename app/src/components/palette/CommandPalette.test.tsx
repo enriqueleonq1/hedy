@@ -39,7 +39,7 @@ describe("Command palette", () => {
     expect(field).toHaveAttribute("aria-activedescendant", screen.getAllByRole("option")[0]!.id);
     await user.keyboard("{Enter}");
     expect(screen.queryByRole("dialog", { name: "Paleta de comandos" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "homming" })).toHaveAttribute("aria-current", "page");
+    expect(within(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).getByRole("button", { name: /^homming/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("moves with the arrows, wraps around and lists the groups with no query", async () => {

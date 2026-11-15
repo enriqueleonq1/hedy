@@ -6,14 +6,14 @@ import { useCreate } from "../screens/create/CreateProvider";
 import { isOpen } from "../tasks/timeline";
 import { useConversations } from "../tasks/hooks";
 import { useInbox } from "../tasks/inbox";
-import { DEFAULT_ACCOUNT_COLOR, TIP_MASCOT_COLOR } from "../theme/tokens";
+import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 import { shortAccountLabel } from "./accounts";
 import { SidebarRailProvider, useSidebarRail } from "./sidebarRail";
 import { AccountsIcon, ActivityIcon, CollapseIcon, QuestionIcon, SettingsIcon } from "./ui/icons";
 import { MenuButton } from "./ui/Menu";
 import { Mascot } from "./Mascot/Mascot";
 import { paletteKeys } from "./palette/keys";
-import { barColor, headlineText, planPercent, usageLabel, usePlanUsageRefresh } from "./planUsage";
+import { headlineText, levelClass, planPercent, usageLabel, usePlanUsageRefresh } from "./planUsage";
 import { projectColor } from "./projects";
 import { useTerminals } from "./Terminal/TerminalProvider";
 import { Button } from "./ui/Button";
@@ -59,19 +59,16 @@ export function defaultAccount(overview: Overview): Account | undefined {
 interface TopbarProps {
   overview: Overview;
   view: View;
-  openProjects: string[];
   onNavigate: (view: View) => void;
-  onCloseProject: (path: string) => void;
   /** Opens the command palette (also Ctrl/⌘ K). */
   onOpenPalette?: () => void;
 }
 
-export function Topbar({ overview, view, openProjects, onNavigate, onCloseProject, onOpenPalette }: TopbarProps) {
+export function Topbar({ overview, view, onNavigate, onOpenPalette }: TopbarProps) {
   const terminals = useTerminals();
   const t = useT();
   const keys = paletteKeys();
   const color = defaultAccount(overview)?.color ?? DEFAULT_ACCOUNT_COLOR;
-  const active = viewProject(view);
 
   return (
     <header className="topbar">
@@ -84,40 +81,6 @@ export function Topbar({ overview, view, openProjects, onNavigate, onCloseProjec
         <Mascot color={color} state={terminals.sessions.some((s) => s.running) ? "working" : "idle"} size={30} label="" />
         <span className="brand__name">Hedy</span>
       </button>
-
-      <nav className="tabs" aria-label={t("shell.openProjects")}>
-        {openProjects.map((path) => {
-          const project = overview.projects.find((p) => p.path === path);
-          if (!project) return null;
-          return (
-            <span key={path} className="tab-wrap">
-              <button
-                className="tab"
-                aria-current={active === path ? "page" : undefined}
-                onClick={() => onNavigate({ screen: "workspace", project: path })}
-              >
-                <span className="dot" style={{ background: projectColor(project, overview.accounts) }} aria-hidden />
-                {project.name}
-              </button>
-              <button
-                className="tab__close"
-                aria-label={t("common.closeNamed", { name: project.name })}
-                onClick={() => onCloseProject(path)}
-              >
-                ×
-              </button>
-            </span>
-          );
-        })}
-        <button
-          className="tab tab--add"
-          aria-label={t("shell.openAnother")}
-          title={t("shell.openAnother")}
-          onClick={() => onNavigate({ screen: "welcome" })}
-        >
-          +
-        </button>
-      </nav>
 
       <span className="spacer" />
       {onOpenPalette && (
@@ -134,9 +97,9 @@ export function Topbar({ overview, view, openProjects, onNavigate, onCloseProjec
         </button>
       )}
       <UsageIndicator overview={overview} onNavigate={onNavigate} />
-      <Button
-        variant="secondary"
-        small
+      <button
+        type="button"
+        className="topbar__quiet"
         onClick={() =>
           terminals.sessions.length === 0
             ? terminals.open({ kind: "shell", path: null }, t("common.terminal"))
@@ -146,31 +109,8 @@ export function Topbar({ overview, view, openProjects, onNavigate, onCloseProjec
       >
         {t("common.terminal")}
         {terminals.sessions.length > 0 ? ` · ${terminals.sessions.length}` : ""}
-      </Button>
+      </button>
     </header>
-  );
-}
-
-/** A small ring for an account in the rail: how much of its headline window is used. */
-function MiniRing({ percent, color }: { percent: number; color: string }) {
-  const r = 10;
-  const length = 2 * Math.PI * r;
-  const filled = (length * Math.min(percent, 100)) / 100;
-  return (
-    <svg className="mini-ring" width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
-      <circle cx="14" cy="14" r={r} className="mini-ring__track" />
-      {percent > 0 && (
-        <circle
-          cx="14"
-          cy="14"
-          r={r}
-          className="mini-ring__fill"
-          stroke={color}
-          strokeDasharray={`${filled.toFixed(1)} ${length.toFixed(1)}`}
-          transform="rotate(-90 14 14)"
-        />
-      )}
-    </svg>
   );
 }
 
@@ -179,9 +119,7 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
   const language = useLanguage();
   const { rail, toggle } = useSidebarRail();
   const accountById = new Map(overview.accounts.map((a) => [a.id, a]));
-  const tipColor = defaultAccount(overview)?.color ?? TIP_MASCOT_COLOR;
   const active = viewProject(view);
-  const used = overview.accounts.some((a) => a.usage.weekTokens > 0);
   const needsYou = useInbox().count;
   const create = useCreate();
   const conversations = useConversations().data ?? [];
@@ -352,31 +290,25 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
         )}
         <ul className="sidebar__list">
           {overview.accounts.map((a) => {
-            // The same headline window as the top bar and the home rings; the figure is in the label.
-            const percent = planPercent(a) ?? 0;
+            // The same headline window as the top bar; quiet unless it gets close to the limit.
+            const percent = planPercent(a);
             const usage = headlineText(a, t) ?? usageLabel(a, language);
             return (
               <li key={a.id}>
                 <button
                   type="button"
-                  className="sidebar__account"
+                  className="sidebar__item sidebar__account"
                   title={`${a.name}: ${usage}`}
                   aria-label={t("shell.openAccount", { name: a.name, usage })}
                   aria-current={view.screen === "accounts" && view.account === a.id ? "true" : undefined}
                   onClick={() => onNavigate({ screen: "accounts", account: a.id })}
                 >
-                  {rail ? (
-                    <MiniRing percent={percent} color={barColor(percent, a.color)} />
-                  ) : (
-                    <>
-                      <span className="sidebar__account-name">{a.name}</span>
-                      <span className="bar bar--thin" aria-hidden>
-                        <span
-                          className="bar__fill"
-                          style={{ width: `${Math.min(percent, 100)}%`, background: barColor(percent, a.color) }}
-                        />
-                      </span>
-                    </>
+                  <span className="dot" style={{ background: a.color }} aria-hidden />
+                  <span className="sidebar__name">{a.name}</span>
+                  {percent !== null && (
+                    <span className={["sidebar__meta sidebar__percent", levelClass(percent)].filter(Boolean).join(" ")}>
+                      {Math.round(percent)}%
+                    </span>
                   )}
                 </button>
               </li>
@@ -395,18 +327,6 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
         <SettingsIcon />
         <span className="sidebar__name">{t("common.settings")}</span>
       </button>
-      {!rail && (
-        <div className="tip" role="note">
-          <Mascot color={tipColor} state="idle" size={18} label="" />
-          <p>
-            {overview.accounts.length === 0
-              ? t("shell.tip.noAccounts")
-              : used
-                ? t("shell.tip.used")
-                : t("shell.tip.idle")}
-          </p>
-        </div>
-      )}
     </aside>
   );
 }

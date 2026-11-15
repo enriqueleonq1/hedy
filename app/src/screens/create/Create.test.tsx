@@ -83,7 +83,7 @@ describe("Starting something new", () => {
     const composer = await screen.findByRole("textbox", { name: "Pídele algo a Mi tienda" });
     await waitFor(() => expect(composer).toHaveFocus());
     expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/mi-tienda")}&new`);
-    expect(screen.getByRole("button", { name: "Mi tienda" })).toHaveAttribute("aria-current", "page");
+    expect(within(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).getByRole("button", { name: /^Mi tienda/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("asks a quick question outside any project: type, Enter, done", async () => {

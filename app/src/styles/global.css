@@ -175,57 +175,6 @@ ul { list-style: none; margin: 0; padding: 0; }
 .brand:hover { background: var(--panel-2); }
 .brand__name { font: 800 21px var(--font-title); letter-spacing: -0.01em; }
 
-.tabs { display: flex; gap: 6px; }
-
-.tab {
-  min-height: var(--target);
-  padding: 0 14px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--muted);
-  font-size: 15px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.tab:hover { color: var(--ink); }
-.tab .dot { width: 8px; height: 8px; margin-right: 8px; }
-.tab-wrap { display: inline-flex; align-items: center; position: relative; }
-.tab-wrap .tab { display: inline-flex; align-items: center; padding-right: 30px; }
-
-.tab__close {
-  position: absolute;
-  right: 4px;
-  width: 24px;
-  height: 24px;
-  border: 0;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  opacity: 0;
-}
-
-.tab-wrap:hover .tab__close,
-.tab__close:focus-visible { opacity: 1; }
-
-.tab--add {
-  width: var(--target);
-  padding: 0;
-  font-size: 18px;
-}
-
-.tab--add:hover,
-.tab-wrap .tab:hover:not([aria-current="page"]) { background: var(--selection); }
-.tab__close:hover { background: var(--selection); color: var(--ink); }
-
-.tab[aria-current="page"] {
-  background: var(--selection);
-  color: var(--ink);
-  font-weight: 700;
-}
-
 .usage-pill {
   display: flex;
   align-items: center;
@@ -322,24 +271,6 @@ ul { list-style: none; margin: 0; padding: 0; }
 .sidebar__name { flex: 1; font-size: 15px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar__meta { font-size: 12.5px; color: var(--muted); }
 .sidebar__meta--protected { color: var(--accent); font-weight: 600; }
-.sidebar__account { display: grid; gap: 7px; width: 100%; padding: 6px 8px 8px; margin: 0 -8px; border: 0; border-radius: var(--radius-md); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; box-sizing: content-box; }
-.sidebar__account:hover, .sidebar__account[aria-current] { background: var(--selection); }
-.sidebar__account:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.sidebar__account-name { font-weight: 700; font-size: 13.5px; }
-
-.tip {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 12px;
-  border-radius: var(--radius-card);
-  background: var(--tip-bg);
-  font-size: 13.5px;
-  line-height: 1.45;
-}
-
-.tip .mascot { margin-top: 2px; }
-
 .main {
   overflow-y: auto;
   min-height: 0;

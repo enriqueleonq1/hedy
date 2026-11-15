@@ -3,17 +3,12 @@
 
 const es = {
   "shell.home": "Inicio",
-  "shell.openProjects": "Proyectos abiertos",
-  "shell.openAnother": "Abrir otro proyecto",
   "shell.weekUsageByProvider": "Consumo de la semana por proveedor",
   "shell.usage.trigger": "Uso de los planes: {summary}. Ver todas las cuentas",
   "shell.usage.title": "Uso de los planes",
   "shell.usage.all": "Ver cuentas y modelos",
   "shell.openAccount": "{name}: {usage}. Abrir la cuenta",
   "shell.noProjects": "Sin proyectos todavía.",
-  "shell.tip.noAccounts": "Agrega una cuenta y te ayudo a repartir el trabajo.",
-  "shell.tip.used": "Los tokens son solo lo que corrí yo; el % de tu plan lo leo de la CLI, también lo que usas fuera de Hedy.",
-  "shell.tip.idle": "Abre un proyecto y pídeme algo: trabajo en una rama aparte hasta que aceptes.",
   "shell.terminals": "Terminales",
   "shell.hide": "Ocultar",
   "shell.hideTerminal": "Ocultar terminal",
@@ -23,21 +18,17 @@ const es = {
   "shell.customColor": "{label}: color personalizado",
   "shell.sidebar.collapse": "Contraer la barra lateral",
   "shell.sidebar.expand": "Expandir la barra lateral",
+  "shell.usage.note": "El % de cada plan lo leo de su CLI, también lo que usas fuera de Hedy. Los tokens son solo lo que corrí yo.",
 };
 
 const en: Record<keyof typeof es, string> = {
   "shell.home": "Home",
-  "shell.openProjects": "Open projects",
-  "shell.openAnother": "Open another project",
   "shell.weekUsageByProvider": "This week's usage by provider",
   "shell.usage.trigger": "Plan usage: {summary}. See every account",
   "shell.usage.title": "Plan usage",
   "shell.usage.all": "See accounts and models",
   "shell.openAccount": "{name}: {usage}. Open the account",
   "shell.noProjects": "No projects yet.",
-  "shell.tip.noAccounts": "Add an account and I'll help you split up the work.",
-  "shell.tip.used": "Token counts are only what I ran; I read your plan's % from the CLI, including what you use outside Hedy.",
-  "shell.tip.idle": "Open a project and ask me for something: I work on a separate branch until you accept.",
   "shell.terminals": "Terminals",
   "shell.hide": "Hide",
   "shell.hideTerminal": "Hide terminal",
@@ -47,6 +38,7 @@ const en: Record<keyof typeof es, string> = {
   "shell.customColor": "{label}: custom color",
   "shell.sidebar.collapse": "Collapse the sidebar",
   "shell.sidebar.expand": "Expand the sidebar",
+  "shell.usage.note": "I read each plan's % from its CLI, including what you use outside Hedy. Token counts are only what I ran.",
 };
 
 export default { es, en };

@@ -66,7 +66,7 @@ describe("English", () => {
     expect(screen.getByRole("img", { name: "Hedy says hi" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Accounts and models" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Open projects" })).toBeInTheDocument();
+    expect(within(screen.getByRole("complementary", { name: "Projects and accounts" })).getByRole("button", { name: /^hedy/ })).toBeInTheDocument();
     const homming = screen.getByRole("heading", { name: "homming" }).closest("article")!;
     expect(within(homming).getByText("Protected")).toBeInTheDocument();
     expect(await within(homming).findByText("No activity in the last 24 h")).toBeInTheDocument();

@@ -132,10 +132,12 @@ describe("Accounts", () => {
 
     // The sidebar and the header use the window closest to its limit.
     const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
-    // The sidebar shows a name and a thin bar; the window and figure are in its name.
+    // The sidebar shows a name and a quiet figure, warning-colored only near the limit; the window is in its name.
     const personalRow = within(sidebar).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" });
-    expect(personalRow.querySelector<HTMLElement>(".bar__fill")?.style.background).toBe("var(--warning)");
-    expect(within(sidebar).getByRole("button", { name: "Claude trabajo: Sesión 5 h · 34%. Abrir la cuenta" })).toBeInTheDocument();
+    expect(within(personalRow).getByText("83%")).toHaveClass("level--warning");
+    expect(personalRow.querySelector(".bar")).toBeNull();
+    const workRow = within(sidebar).getByRole("button", { name: "Claude trabajo: Sesión 5 h · 34%. Abrir la cuenta" });
+    expect(within(workRow).getByText("34%")).not.toHaveClass("level--warning");
     // The top bar names the account closest to its limit, the same way.
     const indicator = screen.getByRole("button", { name: /^Uso de los planes: Claude personal: Semana · 83%/ });
     expect(within(indicator).getByText("Semana · 83%")).toHaveClass("level--warning");
