@@ -110,6 +110,14 @@ describe("English", () => {
     expect(screen.getByRole("button", { name: "Queue" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
 
+    await user.click(screen.getByRole("button", { name: "Tasks (3)" }));
+    const tasks = screen.getByRole("group", { name: "Tasks in this project" });
+    expect(within(tasks).getByRole("button", { name: "+ New task" })).toBeInTheDocument();
+    expect(within(tasks).getByText("Asks for permission")).toBeInTheDocument();
+    expect(within(tasks).getByText("Failed")).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+    await user.keyboard("{Escape}");
+
     await user.type(composer, "/");
     const list = await screen.findByRole("listbox", { name: "Templates" });
     expect(within(list).getByText("Write tests")).toBeInTheDocument();

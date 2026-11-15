@@ -131,6 +131,52 @@ describe("Workspace", () => {
     expect(screen.queryByRole("radiogroup", { name: "Modo" })).not.toBeInTheDocument();
   });
 
+  it("switches tasks from a list with their state, account and time, or with Ctrl+digit", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await openProject(user, /^hedy/);
+    expect(await screen.findByRole("heading", { name: "Agrega recordatorios por WhatsApp antes de cada cita" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Tarea" })).not.toBeInTheDocument();
+
+    const toggle = screen.getByRole("button", { name: "Tareas (5)" });
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const list = screen.getByRole("group", { name: "Tareas de este proyecto" });
+    const current = within(list).getByRole("button", { name: /Agrega recordatorios por WhatsApp/ });
+    expect(current).toHaveAttribute("aria-current", "true");
+    expect(current).toHaveFocus();
+    expect(within(current).getByText("Plan por aprobar")).toHaveClass("board-state--needs");
+    expect(within(current).getByText("Claude personal")).toBeInTheDocument();
+    expect(within(current).getByText("Ctrl+1")).toBeInTheDocument();
+    const taxes = within(list).getByRole("button", { name: /Arregla el cálculo de impuestos/ });
+    expect(within(taxes).getByText("Cambios por revisar")).toHaveClass("board-state--done");
+    expect(within(taxes).getByText("hace 40 min")).toBeInTheDocument();
+
+    // Escape closes it and gives the focus back.
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("group", { name: "Tareas de este proyecto" })).not.toBeInTheDocument();
+    expect(toggle).toHaveFocus();
+
+    await user.click(toggle);
+    await user.click(within(screen.getByRole("group", { name: "Tareas de este proyecto" })).getByRole("button", { name: /Arregla el cálculo/ }));
+    const taxesTitle = "Arregla el cálculo de impuestos en las facturas";
+    expect(await screen.findByRole("heading", { name: taxesTitle })).toHaveAttribute("title", taxesTitle);
+    expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/hedy")}&t=s5`);
+
+    // Ctrl+2: the second task of the list; Back returns to the previous one.
+    await user.keyboard("{Control>}2{/Control}");
+    expect(await screen.findByRole("heading", { name: "Traduce los correos de confirmación" })).toBeInTheDocument();
+    history.back();
+    expect(await screen.findByRole("heading", { name: taxesTitle })).toBeInTheDocument();
+
+    await user.click(toggle);
+    await user.click(screen.getByRole("button", { name: "+ Nueva tarea" }));
+    expect(await screen.findByText(/¿Qué hacemos en hedy\?/)).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/hedy")}&new`);
+  });
+
   it("goes Back and Forward between screens and tasks", async () => {
     const api = MockApi.withSampleData().withSampleActivity();
     api.delayMs = 0;

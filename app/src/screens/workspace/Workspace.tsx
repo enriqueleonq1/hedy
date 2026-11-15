@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { errorMessage, useAction } from "../../api/context";
@@ -28,6 +28,7 @@ import { fillTemplate, filterTemplates, slashQuery } from "../../templates/place
 import { TemplateDialog } from "../templates/TemplateDialog";
 import { ChangesPanel } from "./ChangesPanel";
 import { QueuedMessages } from "./QueuedMessages";
+import { jumpDigit, TaskSwitcher } from "./TaskSwitcher";
 import { Timeline } from "./Timeline";
 
 /** A card waits for the user's answer (which one, when the events say). */
@@ -86,7 +87,7 @@ export function Workspace({
   const account = overview.accounts.find((a) => a.id === info?.account);
 
   // By default, the most recent task that is still open.
-  const list = tasks.data ?? [];
+  const list = useMemo(() => tasks.data ?? [], [tasks.data]);
   const task =
     chosen === null ? null : (list.find((t) => t.id === chosen) ?? (chosen === undefined ? list.find(isOpen) : undefined) ?? null);
 
@@ -101,12 +102,26 @@ export function Workspace({
   // A message written now waits for the card's answer (and the end of the turn).
   const card: CardWaiting = isBusy(task) && task?.status === "waitingApproval" ? (pendingCard(history) ?? "other") : null;
 
+  // Ctrl/Cmd + 1-9 jump to the project's tasks, from anywhere in the workspace.
+  const taskId = task?.id;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const digit = jumpDigit(e);
+      const target = digit ? list[digit - 1] : undefined;
+      if (!target) return;
+      e.preventDefault();
+      if (target.id !== taskId) onSelectTask(target.id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [list, taskId, onSelectTask]);
+
   return (
     <div className="workspace">
       <section className="chat" aria-label={t("workspace.chat")}>
         <header className="chat__head">
           <div className="chat__title">
-            <h1>{task ? task.title : name}</h1>
+            <h1 title={task ? task.title : undefined}>{task ? task.title : name}</h1>
             <p className="muted">
               {name}
               {task?.workspace && <> · {t("common.branch", { branch: task.workspace.branch })}</>}
@@ -115,21 +130,7 @@ export function Workspace({
           </div>
           <div className="chat__tools">
             {list.length > 0 && (
-              <select
-                className="pill-select"
-                aria-label={t("workspace.task")}
-                value={task?.id ?? ""}
-                onChange={(e) => onSelectTask(e.target.value || null)}
-              >
-                <option value="">{t("workspace.newTask")}</option>
-                {list.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.id === task?.id
-                      ? t("workspace.tasks", { n: list.length })
-                      : `${item.title} · ${t(STATUS_LABEL[item.status])}`}
-                  </option>
-                ))}
-              </select>
+              <TaskSwitcher tasks={list} current={task?.id ?? null} accounts={overview.accounts} onSelect={onSelectTask} />
             )}
             {task?.live && <StopButton task={task} />}
             {onOpenStatus && (
@@ -208,6 +209,12 @@ function StopButton({ task }: { task: Task }) {
 
 const MODES = Object.keys(MODE_LABEL) as TaskMode[];
 
+const CARD_LABEL: Record<NonNullable<CardWaiting>, MessageKey> = {
+  plan: "workspace.composer.cardPlan",
+  permission: "workspace.composer.cardPermission",
+  other: "workspace.composer.cardOther",
+};
+
 /** The mode the composer starts new tasks in, remembered per project (a convenience: storage may fail). */
 function useProjectMode(project: string): [TaskMode, (mode: TaskMode) => void] {
   const key = `hedy.mode.${project}`;
@@ -229,12 +236,6 @@ function useProjectMode(project: string): [TaskMode, (mode: TaskMode) => void] {
   };
   return [mode, choose];
 }
-
-const CARD_LABEL: Record<NonNullable<CardWaiting>, MessageKey> = {
-  plan: "workspace.composer.cardPlan",
-  permission: "workspace.composer.cardPermission",
-  other: "workspace.composer.cardOther",
-};
 
 function Composer({
   project,

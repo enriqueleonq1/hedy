@@ -31,9 +31,9 @@ const es = {
   "workspace.activity.testsFailed": "{agent}: fallan los tests · {command}",
 
   "workspace.chat": "Chat",
-  "workspace.task": "Tarea",
   "workspace.newTask": "+ Nueva tarea",
   "workspace.tasks": "Tareas ({n})",
+  "workspace.taskList": "Tareas de este proyecto",
   "workspace.status": "Estado",
   "workspace.stop": "Detener",
   "workspace.empty": "¿Qué hacemos en {name}? Trabajaré con {account} en una rama aparte; nada toca tu carpeta hasta que aceptes.",
@@ -172,9 +172,9 @@ const en: Record<keyof typeof es, string> = {
   "workspace.activity.testsFailed": "{agent}: tests fail · {command}",
 
   "workspace.chat": "Chat",
-  "workspace.task": "Task",
   "workspace.newTask": "+ New task",
   "workspace.tasks": "Tasks ({n})",
+  "workspace.taskList": "Tasks in this project",
   "workspace.status": "Status",
   "workspace.stop": "Stop",
   "workspace.empty":
