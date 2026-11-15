@@ -12,6 +12,7 @@ import { isOpen, pendingCard } from "../../tasks/timeline";
 import { AcceptSheet, useAcceptedToast } from "./AcceptSheet";
 import { DiffView } from "./DiffView";
 import { useReviewed } from "./reviewed";
+import { ShipPanel } from "./ship/ShipPanel";
 
 type Tab = "changes" | "terminal" | "preview";
 
@@ -154,8 +155,11 @@ function Changes({ project, task }: { project: string; task: Task | null }) {
     return (
       <div className="changes">
         <p className="empty">
-          {task.status === "accepted" ? t("workspace.changes.accepted") : t("workspace.changes.discarded")}
+          {task.status === "accepted"
+            ? t(task.ship?.kept ? "ship.keptAccepted" : "workspace.changes.accepted")
+            : t("workspace.changes.discarded")}
         </p>
+        {task.status === "accepted" && <ShipPanel task={task} />}
         {task.status === "accepted" && task.merge && (
           <div className="undo-merge">
             <Button disabled={accepted.undo.isPending} onClick={() => accepted.undo.mutate(task.id)}>
