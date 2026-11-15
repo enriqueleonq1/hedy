@@ -81,13 +81,29 @@ describe("Status", () => {
     expect(await screen.findByRole("heading", { name: "hedy" })).toBeInTheDocument();
     const tests = await screen.findByRole("region", { name: "Tests" });
     expect(within(tests).getByText("Pasaron")).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "Memoria" })).getByText(/notas/)).toBeInTheDocument();
-    expect(screen.getByText(/rama main · 3 cambios sin commit/)).toBeInTheDocument();
+    // The value stays in ink; a dot says what it means.
+    expect(tests.querySelector(".stat__dot--ok")).not.toBeNull();
+    const memory = screen.getByRole("region", { name: "Memoria" });
+    expect(within(memory).getByText(/notas/)).toBeInTheDocument();
+    expect(memory.querySelector(".stat__dot--warn")).not.toBeNull();
+    // Uncommitted work on the branch, instead of a setting.
+    const changes = screen.getByRole("region", { name: "Cambios" });
+    expect(within(changes).getByText("3 sin commit")).toBeInTheDocument();
+    expect(within(changes).getByText("rama main")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Mapa del código" })).not.toBeInTheDocument();
     expect(await screen.findByText(/fue el día más intenso/)).toBeInTheDocument();
     expect(screen.getByText("a3f9c1e")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Memoria" }));
     expect(await screen.findByRole("heading", { name: "Memoria de hedy" })).toBeInTheDocument();
+  });
+
+  it("offers to turn on the code map in Settings while it is off", async () => {
+    const { user } = setup();
+    await user.click(await screen.findByRole("button", { name: /^hedy/ }));
+    await user.click(await screen.findByRole("button", { name: "Estado" }));
+    await user.click(await screen.findByRole("button", { name: "Activar mapa del código" }));
+    expect(await screen.findByRole("heading", { name: "Ajustes" })).toBeInTheDocument();
   });
 
   it("adds up the week per client and edits a project's client", async () => {

@@ -17,6 +17,12 @@ const tokyoNight = {
   teal: "#73DACA",
 };
 
+/**
+ * Blob's violet, the one primary accent of both themes (buttons, switches, the
+ * selected option): a little deeper than the brand's #7C5CFF so white text on it passes AA.
+ */
+const blobViolet = "#6847F5";
+
 export const themes: Record<ThemeName, Record<string, string>> = {
   dark: {
     bg: "#1A1B26",
@@ -29,9 +35,10 @@ export const themes: Record<ThemeName, Record<string, string>> = {
     lineStrong: "#414868",
     shadowColor: "#0000006B",
     scrim: "#0B0C1299",
-    selection: "#283457",
+    // A violet tint: the selected row, tab or option.
+    selection: "#2E2A4F",
     // Selected text (also inside inputs): clearly visible, ink still readable on it.
-    textSelection: "#364A82",
+    textSelection: "#463F80",
     diffAddBg: "#20303B",
     diffAddInk: "#9ECE6A",
     diffDelBg: "#37222C",
@@ -39,20 +46,21 @@ export const themes: Record<ThemeName, Record<string, string>> = {
     warnBg: "#2E2A1F",
     warnInk: "#E0AF68",
     warnLine: "#5C4A2B",
-    // Semantic roles shared by both themes.
-    action: tokyoNight.blue,
-    actionInk: "#1A1B26",
-    actionText: tokyoNight.blue,
-    accent: tokyoNight.magenta,
+    // Semantic roles shared by both themes. Blue stays for information (`activity`).
+    action: blobViolet,
+    actionInk: "#FFFFFF",
+    // Violet text on dark surfaces: links, the active tab, a meaningful ghost action.
+    actionText: "#B4A0FF",
+    accent: "#B4A0FF",
     accentSoft: "#2D2640",
-    modeBg: tokyoNight.magenta,
-    modeInk: "#1A1B26",
+    modeBg: blobViolet,
+    modeInk: "#FFFFFF",
     tipBg: "#2A2440",
     success: tokyoNight.green,
     activity: tokyoNight.cyan,
     warning: tokyoNight.yellow,
     danger: tokyoNight.red,
-    focus: tokyoNight.cyan,
+    focus: "#9D85FF",
     // The mascot's eyes and mouth: dark ink in both themes, as in the identity.
     face: "#1A1B26",
     cheek: "#F7768E",
@@ -63,7 +71,8 @@ export const themes: Record<ThemeName, Record<string, string>> = {
     // "Burbuja": warm cream, violet and pink.
     bg: "#FFF8F1",
     panel: "#FFFFFF",
-    panel2: "#FFFCF8",
+    // Nested surfaces (a note inside a card): set apart by tone, not by a border.
+    panel2: "#F9F3EB",
     ink: "#2B2340",
     muted: "#625A76",
     line: "#EFE3D6",
@@ -77,20 +86,20 @@ export const themes: Record<ThemeName, Record<string, string>> = {
     diffDelBg: "#FFE9EE",
     diffDelInk: "#A1213F",
     warnBg: "#FFF4D6",
-    warnInk: "#7A5300",
+    warnInk: "#8A5200",
     warnLine: "#F2D58A",
-    // A slightly deeper violet than the brand's #7C5CFF so white text on buttons passes AA.
-    action: "#6847F5",
+    action: blobViolet,
     actionInk: "#FFFFFF",
     actionText: "#4B32C8",
     accent: "#4B32C8",
     accentSoft: "#EDE7FF",
-    modeBg: "#6847F5",
+    modeBg: blobViolet,
     modeInk: "#FFFFFF",
     tipBg: "#FFE3EC",
     success: "#116A43",
     activity: "#0B6A80",
-    warning: "#7A5300",
+    // A clear amber (not olive brown) that still reads as text on white and cream.
+    warning: "#A15F00",
     danger: "#A1213F",
     focus: "#7C5CFF",
     face: "#2B2340",

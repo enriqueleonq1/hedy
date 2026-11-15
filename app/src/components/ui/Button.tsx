@@ -17,6 +17,7 @@ export function ConfirmButton({
   children,
   confirmLabel,
   onConfirm,
+  className,
   ...rest
 }: Omit<ButtonProps, "onClick"> & { confirmLabel: string; onConfirm: () => void }) {
   const [armed, setArmed] = useState(false);
@@ -27,9 +28,12 @@ export function ConfirmButton({
     return () => clearTimeout(timer);
   }, [armed]);
 
+  // Quiet until armed; hovering it already hints that it destroys something.
+  const classes = [!armed && "btn--destructive", className].filter(Boolean).join(" ") || undefined;
   return (
     <Button
       variant={armed ? "danger" : "ghost"}
+      className={classes}
       onClick={() => (armed ? (setArmed(false), onConfirm()) : setArmed(true))}
       {...rest}
     >
