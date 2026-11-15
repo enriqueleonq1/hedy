@@ -1,9 +1,15 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, type KeyboardEvent } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import type { MenuItem } from "./Menu";
 
 const ENABLED_ITEM = "[role=menuitem]:not(:disabled)";
 const MARGIN = 8;
+
+/** A menu item with an optional icon before its label (decorative). */
+export interface ContextMenuItem extends MenuItem {
+  icon?: ReactNode;
+}
 
 /** Where a context menu opens: the pointer, or the element it was opened for from the keyboard. */
 export interface MenuPoint {
@@ -34,12 +40,13 @@ export function ContextMenu({
   onClose,
 }: {
   at: MenuPoint;
-  items: MenuItem[];
+  items: ContextMenuItem[];
   /** Accessible name of the menu. */
   label: string;
   onClose: () => void;
 }) {
   const menu = useRef<HTMLDivElement>(null);
+  const withIcons = items.some((item) => item.icon);
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -111,7 +118,12 @@ export function ContextMenu({
             type="button"
             role="menuitem"
             tabIndex={-1}
-            className={["menu__item", item.shortcut && "menu__item--shortcut", item.danger && "menu__item--danger"]
+            className={[
+              "menu__item",
+              (item.shortcut || withIcons) && "menu__item--shortcut",
+              withIcons && "context-menu__item",
+              item.danger && "menu__item--danger",
+            ]
               .filter(Boolean)
               .join(" ")}
             disabled={item.disabled}
@@ -120,12 +132,19 @@ export function ContextMenu({
               item.onSelect();
             }}
           >
-            {item.shortcut ? (
+            {withIcons && (
+              <span className="context-menu__icon" aria-hidden>
+                {item.icon}
+              </span>
+            )}
+            {item.shortcut || withIcons ? (
               <>
                 <span className="menu__label">{item.label}</span>
-                <kbd className="kbd menu__shortcut" aria-hidden>
-                  {item.shortcut}
-                </kbd>
+                {item.shortcut && (
+                  <kbd className="kbd menu__shortcut" aria-hidden>
+                    {item.shortcut}
+                  </kbd>
+                )}
               </>
             ) : (
               item.label
@@ -135,4 +154,25 @@ export function ContextMenu({
       ))}
     </div>
   );
+}
+
+/**
+ * A context menu opened from anywhere, rendered over everything:
+ * `const menu = useContextMenu(); … onContextMenu={(e) => menu.open(e, items, label)} … {menu.element}`.
+ * It accepts a mouse event (its pointer) or a point (`pointFor(row)` from the keyboard).
+ */
+export function useContextMenu() {
+  const [opened, setOpened] = useState<{ at: MenuPoint; items: ContextMenuItem[]; label: string } | null>(null);
+  const open = useCallback(
+    (at: { clientX: number; clientY: number } | MenuPoint, items: ContextMenuItem[], label: string) => {
+      const point = "clientX" in at ? { x: at.clientX, y: at.clientY } : { x: at.x, y: at.y };
+      setOpened({ at: point, items, label });
+    },
+    [],
+  );
+  const close = useCallback(() => setOpened(null), []);
+  const element = opened
+    ? createPortal(<ContextMenu at={opened.at} items={opened.items} label={opened.label} onClose={close} />, document.body)
+    : null;
+  return { open, close, element, isOpen: opened !== null };
 }

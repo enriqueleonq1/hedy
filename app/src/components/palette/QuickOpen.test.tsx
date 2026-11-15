@@ -81,7 +81,7 @@ describe("Quick open (Ctrl P)", () => {
     ]);
     expect(within(rows[0]!).getByLabelText("Modificado")).toHaveTextContent("M");
     expect(screen.getByRole("group", { name: "Todos los archivos" })).toBeInTheDocument();
-    expect(await screen.findByText("Tarea: Arregla el cálculo de impuestos en las facturas")).toBeInTheDocument();
+    expect(await within(screen.getByRole("dialog")).findByText("Tarea: Arregla el cálculo de impuestos en las facturas")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Archivos" })).toHaveAttribute("aria-pressed", "true");
   });
 

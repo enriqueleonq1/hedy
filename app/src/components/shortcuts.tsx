@@ -113,6 +113,18 @@ function groups(mod: string, alt: string, shift: string): { title: MessageKey; r
       ],
     },
     {
+      title: "code.shortcuts.title",
+      rows: [
+        { label: "code.shortcuts.explorer", combos: [[mod, "Shift", "E"]] },
+        { label: "code.shortcuts.search", combos: [[mod, "Shift", "F"]] },
+        { label: "code.shortcuts.review", combos: [[mod, "Shift", "G"]] },
+        { label: "code.shortcuts.find", combos: [[mod, "F"]] },
+        { label: "code.shortcuts.gotoLine", combos: [[mod, "G"]] },
+        { label: "code.shortcuts.menu", combos: [["Shift", "F10"]] },
+        { label: "code.shortcuts.typeahead", combos: [["a"], ["z"]], joiner: "range" },
+      ],
+    },
+    {
       title: "shell.shortcuts.activity",
       rows: [
         { label: "shell.shortcuts.move", combos: [["j"], ["k"]], joiner: "or" },

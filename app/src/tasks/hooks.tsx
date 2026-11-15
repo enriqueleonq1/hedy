@@ -3,6 +3,7 @@ import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 
 import { OVERVIEW_KEY, useApi } from "../api/context";
 import type { AgentEvent, BoardState, QueuedMessage, Task } from "../api/types";
+import { codeKeys } from "../files/navigator";
 
 export const tasksKey = (project: string) => ["tasks", project] as const;
 const eventsKey = (taskId: string) => ["taskEvents", taskId] as const;
@@ -138,7 +139,11 @@ export function TaskEventsBridge() {
         void client.invalidateQueries({ queryKey: key });
       }
       const refresh = (queryKey: QueryKey) => void client.invalidateQueries({ queryKey });
-      if (CHANGES_FILES.includes(event.kind)) refresh(diffKey(taskId));
+      if (CHANGES_FILES.includes(event.kind)) {
+        refresh(diffKey(taskId));
+        // The task's files changed: its tree, open file and markers (code views).
+        refresh(codeKeys.copy({ kind: "task", task: taskId }));
+      }
       if (CHANGES_ACCOUNTS.includes(event.kind)) refresh(OVERVIEW_KEY);
       if (CHANGES_TASK.includes(event.kind)) refresh(ALL_TASKS_KEY);
       if (CHANGES_BOARD.includes(event.kind)) refresh(ACTIVITY_KEY);
@@ -155,6 +160,7 @@ export function TaskEventsBridge() {
     const offTask = api.onTaskUpdated((task) => {
       void client.invalidateQueries({ queryKey: listKeyFor(task) });
       void client.invalidateQueries({ queryKey: diffKey(task.id) });
+      void client.invalidateQueries({ queryKey: codeKeys.copy({ kind: "task", task: task.id }) });
       void client.invalidateQueries({ queryKey: ACTIVITY_KEY });
     });
     const offQueue = api.onTaskQueue((taskId, queue) => {

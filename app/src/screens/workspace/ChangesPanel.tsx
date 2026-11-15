@@ -1,56 +1,36 @@
 import { useState } from "react";
 
 import type { Task } from "../../api/types";
-import { TerminalView } from "../../components/Terminal/TerminalView";
+import { SidePanel } from "../../code/SidePanel";
 import { Button } from "../../components/ui/Button";
-import { useT, type MessageKey } from "../../i18n";
+import { useT } from "../../i18n";
 import { Changes } from "../../review/Review";
 
-type Tab = "changes" | "terminal" | "preview";
-
-const TABS: { id: Tab; label: MessageKey }[] = [
-  { id: "changes", label: "workspace.tab.changes" },
-  { id: "terminal", label: "common.terminal" },
-  { id: "preview", label: "workspace.tab.preview" },
-];
-
-export function ChangesPanel({ project, task, hidden = false }: { project: string; task: Task | null; hidden?: boolean }) {
-  const t = useT();
-  const [tab, setTab] = useState<Tab>("changes");
-  // Once opened, the terminal stays alive behind the other tabs: unmounting it
-  // would kill what runs there (like the dev server of the preview).
-  const [terminalOpened, setTerminalOpened] = useState(false);
-  const dir = task?.workspace?.worktree ?? project;
-
+/**
+ * The side panel of a project's workspace: the code views, the review of the
+ * task's changes (`Changes`), a terminal and the preview.
+ */
+export function ChangesPanel({
+  project,
+  task,
+  hidden = false,
+  onRequestOpen,
+}: {
+  project: string;
+  task: Task | null;
+  hidden?: boolean;
+  /** A file was opened (or a shortcut asked for a view) while the panel was hidden. */
+  onRequestOpen?: () => void;
+}) {
   return (
-    <aside className="side-panel" aria-label={t("workspace.panel")} hidden={hidden}>
-      <div className="side-panel__tabs" role="tablist">
-        {TABS.map((item) => (
-          <button
-            key={item.id}
-            role="tab"
-            aria-selected={tab === item.id}
-            className="side-tab"
-            onClick={() => {
-              setTab(item.id);
-              if (item.id === "terminal") setTerminalOpened(true);
-            }}
-          >
-            {t(item.label)}
-          </button>
-        ))}
-      </div>
-      <div className="side-panel__body">
-        {tab === "changes" && <Changes project={project} task={task} />}
-        {terminalOpened && (
-          // One terminal per folder; it opens in the task's worktree.
-          <div className="side-terminal" hidden={tab !== "terminal"}>
-            <TerminalView key={dir} request={{ kind: "shell", path: dir }} active={tab === "terminal"} onExit={() => {}} />
-          </div>
-        )}
-        {tab === "preview" && <Preview project={project} />}
-      </div>
-    </aside>
+    <SidePanel
+      project={project}
+      task={task}
+      hidden={hidden}
+      onRequestOpen={onRequestOpen}
+      review={<Changes project={project} task={task} />}
+      preview={<Preview project={project} />}
+    />
   );
 }
 

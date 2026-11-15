@@ -38,7 +38,7 @@ const es = {
   "workspace.status": "Estado",
   "workspace.stop": "Detener",
   "workspace.more": "Más acciones",
-  "workspace.panelToggle": "Panel lateral: cambios, terminal y vista previa",
+  "workspace.panelToggle": "Panel lateral: código, revisión, terminal y vista previa",
   "workspace.panelHasChanges": "hay cambios por revisar",
   "workspace.empty": "¿Qué hacemos en {name}? Trabajaré con {account} en una rama aparte; nada toca tu carpeta hasta que aceptes.",
   "workspace.noAccount": "Este proyecto no tiene cuenta. Asígnale una en Cuentas y modelos.",
@@ -137,7 +137,7 @@ const es = {
     "No hay otro proveedor disponible aquí (o el proyecto está protegido). Puedes agregar Codex o una API key en Cuentas y modelos.",
   "workspace.limit.waiting": "De acuerdo, esperamos. La tarea sigue con esta cuenta.",
 
-  "workspace.panel": "Cambios, terminal y vista previa",
+  "workspace.panel": "Código, revisión, terminal y vista previa",
   "workspace.tab.changes": "Cambios",
   "workspace.tab.preview": "Vista previa",
   "workspace.preview.address": "Dirección del servidor local",
@@ -210,7 +210,7 @@ const en: Record<keyof typeof es, string> = {
   "workspace.status": "Status",
   "workspace.stop": "Stop",
   "workspace.more": "More actions",
-  "workspace.panelToggle": "Side panel: changes, terminal and preview",
+  "workspace.panelToggle": "Side panel: code, review, terminal and preview",
   "workspace.panelHasChanges": "there are changes to review",
   "workspace.empty":
     "What should we do in {name}? I'll work with {account} on a separate branch; nothing touches your folder until you accept.",
@@ -309,7 +309,7 @@ const en: Record<keyof typeof es, string> = {
     "No other provider is available here (or the project is protected). You can add Codex or an API key in Accounts and models.",
   "workspace.limit.waiting": "OK, we'll wait. The task stays on this account.",
 
-  "workspace.panel": "Changes, terminal and preview",
+  "workspace.panel": "Code, review, terminal and preview",
   "workspace.tab.changes": "Changes",
   "workspace.tab.preview": "Preview",
   "workspace.preview.address": "Local server address",
