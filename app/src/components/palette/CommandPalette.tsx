@@ -643,6 +643,7 @@ function PalettePanel({
                     type="button"
                     tabIndex={-1}
                     className="palette__legend-item"
+                    aria-label={`${PREFIX[m]} ${t(`palette.legend.${m}`)}`}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => switchTo(m, false)}
                   >
