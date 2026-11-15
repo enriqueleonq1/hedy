@@ -51,6 +51,7 @@ import { TemplateDialog } from "../templates/TemplateDialog";
 import "../../styles/composer.css";
 import { ChangesPanel } from "./ChangesPanel";
 import { AttachButton, draggingFiles, ImageTray, transferFiles, useComposerImages } from "./ComposerImages";
+import { insertAt, useComposerInsert } from "./composerBridge";
 import { FilePicker } from "./FilePicker";
 import { insertMention, mentionAt, rankFiles } from "./mentions";
 import { Suggestions, useSuggestions, type Suggestion } from "./Suggestions";
@@ -338,7 +339,18 @@ export function Workspace({
         />
       </section>
       {/* Kept mounted while hidden: a terminal opened there keeps running. */}
-      {!solo && <ChangesPanel project={project} task={task} hidden={!panelShown} />}
+      {!solo && (
+        <ChangesPanel
+          project={project}
+          task={task}
+          hidden={!panelShown}
+          onRequestOpen={() => {
+            // Opening a file shows the panel, out of focus mode too.
+            if (focusMode.focus) focusMode.toggle();
+            if (!panel.shown) panel.open();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -363,18 +375,20 @@ function useSidePanel(task: Task | null) {
     }
   });
   const shown = chosen ?? hasContent;
+  const remember = (on: boolean) => {
+    setChosen(on);
+    try {
+      sessionStorage.setItem(PANEL_KEY, on ? "shown" : "hidden");
+    } catch {
+      // Remembering the choice is only a convenience.
+    }
+  };
   return {
     shown,
+    open: () => remember(true),
     /** Hidden by the user while there are changes to look at. */
     waiting: !shown && hasContent,
-    toggle: () => {
-      setChosen(!shown);
-      try {
-        sessionStorage.setItem(PANEL_KEY, shown ? "hidden" : "shown");
-      } catch {
-        // Remembering the choice is only a convenience.
-      }
-    },
+    toggle: () => remember(!shown),
   };
 }
 
@@ -653,6 +667,19 @@ function Composer({
       el.setSelectionRange(el.value.length, el.value.length);
     });
   }
+
+  // Another view ("Preguntar a la IA sobre este archivo") puts a reference here.
+  useComposerInsert((snippet) => {
+    if (disabled) return;
+    const next = insertAt(text, caret, snippet);
+    edit(next.text, next.caret);
+    requestAnimationFrame(() => {
+      const el = input.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(next.caret, next.caret);
+    });
+  });
 
   function choose(template: PromptTemplate) {
     if (template.placeholders.length > 0) {
