@@ -4,7 +4,9 @@
 
 /* ---------------------------------------------------------------- the panel */
 
-.workspace:not(.workspace--no-panel) { grid-template-columns: minmax(0, 1fr) auto; }
+@media (min-width: 1001px) {
+  .workspace:not(.workspace--no-panel) { grid-template-columns: minmax(0, 1fr) auto; }
+}
 
 .side-panel {
   position: relative;
