@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use super::ports::{MergeOutcome, PortError};
+use super::ship::ShipError;
 use crate::domain::{AccountId, DomainError, Provider, TaskId};
 use crate::tr;
 
@@ -95,6 +96,9 @@ pub enum AppError {
     /// Images cannot wait in the queue: they go only with a message sent now.
     #[error("{}", self.message())]
     ImagesWhileQueued,
+    /// Commit, push, pull or pull request (see [`ShipError`]).
+    #[error("{}", self.message())]
+    Ship(ShipError),
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -129,6 +133,7 @@ impl AppError {
     fn message(&self) -> String {
         match self {
             Self::Domain(e) => e.to_string(),
+            Self::Ship(e) => e.message(),
             Self::Port(e) => e.to_string(),
             Self::AccountNotFound(id) => tr!(
                 "no existe la cuenta «{id}» (mira `hedy account list`)",

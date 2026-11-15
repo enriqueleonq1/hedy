@@ -11,6 +11,7 @@ mod keyring;
 mod paths;
 mod process;
 mod pty;
+mod ship;
 mod sqlite;
 mod usage_probe;
 
@@ -27,6 +28,7 @@ pub use paths::HedyPaths;
 pub use process::SystemProcessRunner;
 pub use process::find_program;
 pub use pty::{PtyOutput, PtySession};
+pub use ship::{GhCli, GitSourceControl};
 pub use sqlite::SqliteStore;
 pub use usage_probe::SystemUsageProbe;
 
@@ -165,6 +167,8 @@ fn build(paths: &HedyPaths, claude: ClaudeCodeLauncher) -> PortResult<Hedy> {
         }),
         clock: Arc::new(SystemClock),
         usage: Arc::new(SystemUsageProbe),
+        source: Arc::new(GitSourceControl),
+        host: Arc::new(GhCli::default()),
     });
     // The setting is read from the store: a failure keeps the system language.
     if hedy.apply_language().is_err() {
