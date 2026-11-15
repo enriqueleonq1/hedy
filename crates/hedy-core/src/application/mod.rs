@@ -2,10 +2,12 @@
 
 mod accounts;
 mod activity;
+mod attachments;
 mod conversations;
 mod detect;
 mod doctor;
 mod error;
+mod files;
 mod launch;
 mod memory;
 mod metrics;
@@ -29,10 +31,12 @@ use std::sync::{Arc, Mutex};
 
 pub use accounts::NewAccount;
 pub use activity::{MAX_FINISHED, RECENT_HOURS, TaskActivity};
+pub use attachments::NewImage;
 pub use conversations::NewConversation;
 pub use detect::DetectedCli;
 pub use doctor::{Check, CheckArea, CheckLevel, DoctorReport};
 pub use error::{AppError, AppResult, UndoBlocked};
+pub use files::MAX_PROJECT_FILES;
 pub use launch::Resolved;
 pub use memory::{
     MemoryServerCommand, MemoryView, Proposal, format_note, format_notes, format_topics,

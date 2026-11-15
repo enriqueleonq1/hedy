@@ -1023,3 +1023,65 @@ claude -p /usage --output-format json --no-session-persistence --safe-mode
   be asked ("Preguntar «…»", which opens the question with that text, ready to send).
 - **Not verified live:** a real conversation with each provider in an empty folder
   (tested with the agent double, temp folders and `MockApi`).
+
+## 24. Images, file mentions and suggestions in the composer (Nov 15, 2026)
+
+### Images with a prompt
+
+- **What the user attaches.** PNG, JPEG, GIF or WebP, at most 5 MB each and 4 per message
+  (`domain::attachment`). The type comes from the file's first bytes, never from its name
+  or what the webview says; SVG is refused (Kimi refuses it too). The composer takes them
+  from the paperclip button, a paste (Ctrl+V) or a drop.
+- **Where they live.** The UI sends them base64 in the command; the backend checks them
+  before anything is created and writes them to `<data dir>/attachments/<task id>/`
+  (folder 0700, files 0600, never overwritten), never into the repository. The
+  `UserMessage` event and the task (`Task::images`, for later phases and handoffs) keep
+  only the name, the stored file name and the type. The timeline loads each thumbnail
+  with `attachment(task, file)`, which only reads a name Hedy gave inside a real task's
+  folder; a deleted file shows a placeholder and the history still loads. Deleting a
+  conversation deletes its images.
+- **How each agent gets them** (official input only; `AgentLauncher::image_support`):
+
+  | Agent | Format | Source |
+  |---|---|---|
+  | Claude Code (`-p --input-format stream-json`) | the user message's `content` becomes `[{"type":"text"}, {"type":"image","source":{"type":"base64","media_type","data"}}]` | Agent SDK "Streaming Input" (code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode): image uploads are a streaming-input feature |
+  | Codex app-server | `turn/start` `input: [{"type":"text"}, {"type":"localImage","path"}]` (the app-server reads the file) | learn.chatgpt.com/docs/app-server.md (input items `text`, `image` with `url`, `localImage` with `path`) |
+  | ACP agents | `session/prompt` blocks `{"type":"image","mimeType","data"}`, only when `initialize` answered `agentCapabilities.promptCapabilities.image: true` (omitted = unsupported); otherwise only the text goes and the chat says so | agentclientprotocol.com/protocol/content and /initialization |
+  | Kimi / Gemini by API key | a user message with `[{"type":"text"}, {"type":"image_url","image_url":{"url":"data:<type>;base64,…"}}]` | platform.kimi.ai K3 quickstart (base64 or `ms://`, no public URLs); Gemini's OpenAI compatibility ("image understanding") |
+
+- **When an agent takes none.** An account whose adapter says no (today only an API account
+  without its key, since it cannot work at all) gets the attach control disabled with the
+  reason; the use cases refuse images for it (`ImagesNotAccepted`). A later phase or a
+  handoff to such an agent gets a line saying the user attached N images it cannot see.
+- **Queue.** Images never wait in the queue (`ImagesWhileQueued`): the queue is plain text
+  in SQLite and joins messages into one turn. While the agent works, attaching is disabled
+  with the reason.
+- **Not verified live** (no tokens spent): the shapes are tested against fakes of each
+  protocol (a recording `claude` stdin, a fake app-server, a fake ACP agent with and
+  without the capability, a local HTTP server). Which ACP CLIs advertise images
+  (Gemini CLI, Kimi Code, Antigravity) is not checked: none is installed here.
+
+### `@file` mentions
+
+- Typing `@` in a project's composer lists the project's files (`Hedy::project_files`, the
+  `Git::list_files` port): `git ls-files -z --cached --others --exclude-standard` in the
+  main checkout, so tracked files plus untracked ones git does not ignore, never
+  `.hedy/`. Protected names (`permissions::DEFAULT_BLOCKED`: `.env`, `.env.*`, keys,
+  credentials…) are never offered, the same rule that keeps agents away from them.
+  Sorted and cut at 5,000 paths (`MAX_PROJECT_FILES`).
+- The picker ranks file names that start with the query, then names that contain it, then
+  paths that contain it (no case), shorter paths first; ↑/↓, Enter or Tab insert
+  `@relative/path `, Esc closes it. The mention is plain text in the prompt: each agent
+  reads the file with its own tools, under Hedy's rules. A quick question has no project,
+  so `@` is just text there.
+
+### Suggestions in an empty task
+
+- Under the mascot of a new project task: three ghost chips from what Hedy already knows
+  locally (`project_status`, no agent and no network): failing tests from the last run
+  any task saw, then a review of uncommitted changes, then always "explain how this repo
+  is organized", then "add tests" and "find dead code" as fillers. The review is offered
+  only with Claude Code, and switches the composer to Pregunta: Codex, ACP and API agents
+  always work in a worktree forked from `HEAD`, where uncommitted changes do not exist.
+- In a quick question: three generic starters with the caret placed where the user types.
+- A chip fills the composer (and its mode); it never sends. They go once the task exists.

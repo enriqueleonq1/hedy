@@ -6,18 +6,18 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use super::ports::{
-    AccountRepository, AgentLauncher, AgentRequest, AgentSession, CapturedOutput, Clock, EventSink,
-    FileSystem, Git, MemoryRepository, MergeOutcome, NewNote, NewSkill, NoteRevision,
-    PlanUsageRecord, PortError, PortResult, ProcessRunner, ProjectRepository, QueueRepository,
-    RateLimit, SecretStore, SettingsRepository, SkillRepository, SkillRevision, StoreHealth,
-    TaskEvents, TaskRepository, TemplateRecord, TemplateRepository, UsageProbe, UsageRecord,
-    UsageRepository,
+    AccountRepository, AgentBackend, AgentLauncher, AgentRequest, AgentSession, CapturedOutput,
+    Clock, EventSink, FileSystem, Git, MemoryRepository, MergeOutcome, NewNote, NewSkill,
+    NoteRevision, PlanUsageRecord, PortError, PortResult, ProcessRunner, ProjectRepository,
+    QueueRepository, RateLimit, SecretStore, SettingsRepository, SkillRepository, SkillRevision,
+    StoreHealth, TaskEvents, TaskRepository, TemplateRecord, TemplateRepository, UsageProbe,
+    UsageRecord, UsageRepository,
 };
 use super::{Hedy, NewAccount, Ports};
 use crate::domain::{
-    Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, LaunchSpec, Note,
-    NoteStatus, Notice, NoticeKind, Project, Provider, QueuedMessage, Skill, SkillStatus, Task,
-    TaskId, TaskStatus, UsageSample,
+    Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, ImageSupport,
+    LaunchSpec, Note, NoteStatus, Notice, NoticeKind, Project, PromptImage, Provider,
+    QueuedMessage, Skill, SkillStatus, Task, TaskId, TaskStatus, UsageSample,
 };
 
 #[derive(Default)]
@@ -494,6 +494,7 @@ pub struct FakeGit {
     diff: Mutex<Vec<FileDiff>>,
     worktrees: Mutex<Vec<String>>,
     init_error: Mutex<Option<String>>,
+    files: Mutex<Vec<String>>,
 }
 
 impl Default for FakeGit {
@@ -510,11 +511,16 @@ impl Default for FakeGit {
             diff: Mutex::default(),
             worktrees: Mutex::default(),
             init_error: Mutex::default(),
+            files: Mutex::default(),
         }
     }
 }
 
 impl FakeGit {
+    /// What `list_files` answers.
+    pub fn set_files(&self, files: &[&str]) {
+        *self.files.lock().unwrap() = files.iter().map(|f| f.to_string()).collect();
+    }
     pub fn log(&self) -> Vec<String> {
         self.log.lock().unwrap().clone()
     }
@@ -621,6 +627,9 @@ impl Git for FakeGit {
     fn remote_branches_containing(&self, _: &Path, _: &str) -> PortResult<Vec<String>> {
         Ok(self.remotes.lock().unwrap().clone())
     }
+    fn list_files(&self, _repo: &Path) -> PortResult<Vec<String>> {
+        Ok(self.files.lock().unwrap().clone())
+    }
     fn init_repo(&self, dir: &Path, message: &str) -> PortResult<()> {
         if let Some(error) = self.init_error.lock().unwrap().take() {
             return Err(PortError::new(error));
@@ -659,9 +668,21 @@ pub struct FakeAgents {
     calls: Arc<Mutex<Vec<AgentCall>>>,
     messages: Arc<Mutex<Vec<Option<String>>>>,
     fail_next: Mutex<bool>,
+    /// Images sent with each follow-up, in order.
+    sent_images: Arc<Mutex<Vec<Vec<PromptImage>>>>,
+    /// Overrides what every backend says about images.
+    image_support: Mutex<Option<ImageSupport>>,
 }
 
 impl FakeAgents {
+    /// Every backend answers `support` about images.
+    pub fn set_image_support(&self, support: ImageSupport) {
+        *self.image_support.lock().unwrap() = Some(support);
+    }
+    /// Images sent with each follow-up, in order.
+    pub fn sent_images(&self) -> Vec<Vec<PromptImage>> {
+        self.sent_images.lock().unwrap().clone()
+    }
     /// The next `start` fails, as when the CLI is missing.
     pub fn fail_next_start(&self) {
         *self.fail_next.lock().unwrap() = true;
@@ -706,14 +727,16 @@ impl FakeAgents {
 struct FakeSession {
     calls: Arc<Mutex<Vec<AgentCall>>>,
     messages: Arc<Mutex<Vec<Option<String>>>>,
+    sent_images: Arc<Mutex<Vec<Vec<PromptImage>>>>,
 }
 
 impl AgentSession for FakeSession {
-    fn send(&mut self, text: &str) -> PortResult<()> {
+    fn send(&mut self, text: &str, images: &[PromptImage]) -> PortResult<()> {
         self.calls
             .lock()
             .unwrap()
             .push(AgentCall::Send(text.into()));
+        self.sent_images.lock().unwrap().push(images.to_vec());
         Ok(())
     }
     fn answer(&mut self, request_id: &str, allow: bool, message: Option<&str>) -> PortResult<()> {
@@ -742,7 +765,19 @@ impl AgentLauncher for FakeAgents {
         Ok(Box::new(FakeSession {
             calls: Arc::clone(&self.calls),
             messages: Arc::clone(&self.messages),
+            sent_images: Arc::clone(&self.sent_images),
         }))
+    }
+
+    /// Like the real router, unless a test says otherwise.
+    fn image_support(&self, backend: &AgentBackend) -> ImageSupport {
+        if let Some(support) = *self.image_support.lock().unwrap() {
+            return support;
+        }
+        match backend {
+            AgentBackend::Acp { .. } => ImageSupport::IfAgentAllows,
+            _ => ImageSupport::Yes,
+        }
     }
 }
 
@@ -931,6 +966,8 @@ pub struct FakeFs {
     links: Mutex<Vec<(PathBuf, PathBuf)>>,
     dirs: Mutex<HashSet<PathBuf>>,
     files: Mutex<Vec<(PathBuf, String)>>,
+    /// Binary files (attachments).
+    blobs: Mutex<Vec<(PathBuf, Vec<u8>)>>,
     git_roots: Mutex<Vec<PathBuf>>,
     read_only: Mutex<HashSet<PathBuf>>,
     removed_dirs: Mutex<Vec<PathBuf>>,
@@ -974,6 +1011,22 @@ impl FakeFs {
     pub fn deleted_trees(&self) -> Vec<PathBuf> {
         self.deleted_trees.lock().unwrap().clone()
     }
+    /// Paths of the binary files written (attachments).
+    pub fn blob_paths(&self) -> Vec<PathBuf> {
+        self.blobs
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(p, _)| p.clone())
+            .collect()
+    }
+    /// Removes a binary file, as when the user deletes it by hand.
+    pub fn delete_blob(&self, path: &str) {
+        self.blobs
+            .lock()
+            .unwrap()
+            .retain(|(p, _)| p != Path::new(path));
+    }
 }
 
 impl FileSystem for FakeFs {
@@ -982,6 +1035,9 @@ impl FileSystem for FakeFs {
     }
     fn chats_dir(&self) -> PathBuf {
         PathBuf::from("/data/chats")
+    }
+    fn attachments_dir(&self) -> PathBuf {
+        PathBuf::from("/data/attachments")
     }
     fn home_dir(&self) -> Option<PathBuf> {
         Some(PathBuf::from("/home/e"))
@@ -1051,6 +1107,26 @@ impl FileSystem for FakeFs {
         files.retain(|(p, _)| p != path);
         files.push((path.to_owned(), contents.to_owned()));
         Ok(())
+    }
+    fn write_private_file(&self, path: &Path, contents: &[u8]) -> PortResult<()> {
+        let mut blobs = self.blobs.lock().unwrap();
+        if blobs.iter().any(|(p, _)| p == path) {
+            return Err(PortError::new("File exists"));
+        }
+        if let Some(dir) = path.parent() {
+            self.dirs.lock().unwrap().insert(dir.to_owned());
+        }
+        blobs.push((path.to_owned(), contents.to_owned()));
+        Ok(())
+    }
+    fn read_bytes(&self, path: &Path) -> PortResult<Option<Vec<u8>>> {
+        Ok(self
+            .blobs
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(p, _)| p == path)
+            .map(|(_, bytes)| bytes.clone()))
     }
     fn remove_file(&self, path: &Path) -> PortResult<()> {
         self.files.lock().unwrap().retain(|(p, _)| p != path);

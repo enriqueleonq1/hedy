@@ -74,6 +74,12 @@ fn is_blocked_name(name: &str) -> bool {
     DEFAULT_BLOCKED.iter().any(|p| matches(p, name))
 }
 
+/// Whether the file at `path` (relative or absolute) is one agents never
+/// touch (`.env`, keys...): Hedy does not offer it either.
+pub fn is_protected_path(path: &str) -> bool {
+    is_blocked_name(path.rsplit(['/', '\\']).next().unwrap_or(path))
+}
+
 /// Whether a glob written by the agent (`.en*`, `*.pem`) could pick a blocked
 /// file: it is tried against sample names of every blocked pattern. As in the
 /// shell, a glob only picks hidden files (`.env`) when it starts with a dot.

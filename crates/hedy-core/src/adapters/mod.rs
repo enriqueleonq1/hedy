@@ -6,6 +6,7 @@ mod claude;
 mod codex;
 mod fs;
 mod git;
+mod images;
 mod keyring;
 mod paths;
 mod process;
@@ -33,6 +34,7 @@ use crate::application::ports::{
     AgentBackend, AgentLauncher, AgentRequest, AgentSession, Clock, EventSink, PortResult,
 };
 use crate::application::{Hedy, MemoryServerCommand, Ports};
+use crate::domain::ImageSupport;
 use crate::domain::plan_usage::WallTime;
 
 /// Sends each request to the adapter of its backend.
@@ -50,6 +52,17 @@ impl AgentLauncher for AgentRouter {
             AgentBackend::Codex => self.codex.start(request, events),
             AgentBackend::OpenAiCompatible { .. } => self.api.start(request, events),
             AgentBackend::Acp { .. } => self.acp.start(request, events),
+        }
+    }
+
+    /// Claude Code's stream-json input takes image content blocks, Codex's
+    /// app-server `localImage` items and the chat-completions APIs (Kimi
+    /// K3, Gemini) `image_url` parts. ACP agents say so in `initialize`.
+    fn image_support(&self, backend: &AgentBackend) -> ImageSupport {
+        match backend {
+            AgentBackend::ClaudeCode | AgentBackend::Codex => ImageSupport::Yes,
+            AgentBackend::OpenAiCompatible { .. } => ImageSupport::Yes,
+            AgentBackend::Acp { .. } => ImageSupport::IfAgentAllows,
         }
     }
 }

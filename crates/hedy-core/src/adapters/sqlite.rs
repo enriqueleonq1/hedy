@@ -1196,6 +1196,7 @@ mod tests {
         use crate::domain::{TaskMode, TaskStatus};
         let store = SqliteStore::in_memory().unwrap();
         let task = |id: &str, project: &str, at: i64, status: TaskStatus| Task {
+            images: Vec::new(),
             id: TaskId::new(id),
             project: project.into(),
             mode: TaskMode::Project,
@@ -1239,6 +1240,7 @@ mod tests {
         use crate::domain::{LimitWait, MergeRecord, TaskMode, TaskStatus};
         let store = SqliteStore::in_memory().unwrap();
         let mut task = Task {
+            images: Vec::new(),
             id: TaskId::new("t1"),
             project: "/code/moira".into(),
             mode: TaskMode::Project,
@@ -1295,6 +1297,7 @@ mod tests {
     fn conversations_are_listed_apart_and_deleted_with_their_events() {
         let store = SqliteStore::in_memory().unwrap();
         let task = |id: &str, conversation: bool| Task {
+            images: Vec::new(),
             id: TaskId::new(id),
             project: format!("/data/chats/{id}").into(),
             mode: crate::domain::TaskMode::Ask,
@@ -1339,6 +1342,7 @@ mod tests {
         use crate::domain::{TaskMode, TaskStatus, Workspace};
         let store = SqliteStore::in_memory().unwrap();
         let task = |id: &str, at: i64| Task {
+            images: Vec::new(),
             id: TaskId::new(id),
             project: "/code/moira".into(),
             mode: TaskMode::Project,
@@ -1376,6 +1380,7 @@ mod tests {
 
         let events = [
             AgentEvent::UserMessage {
+                images: Vec::new(),
                 text: "hola".into(),
             },
             AgentEvent::FileEdited {

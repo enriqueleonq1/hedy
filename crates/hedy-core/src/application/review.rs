@@ -194,6 +194,7 @@ mod tests {
             .unwrap();
         f.hedy
             .start_task(NewTask {
+                images: Vec::new(),
                 project: f.dir("/code/moira"),
                 prompt: "Recordatorios por WhatsApp".into(),
                 mode: TaskMode::Project,

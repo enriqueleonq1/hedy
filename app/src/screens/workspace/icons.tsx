@@ -59,3 +59,23 @@ export function CloseIcon() {
     </svg>
   );
 }
+
+/** A paperclip: attach images. */
+export function PaperclipIcon() {
+  return (
+    <svg {...common} className="icon">
+      <path d="m20.5 11.5-8.3 8.3a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9" />
+    </svg>
+  );
+}
+
+/** A picture: an image that is gone. */
+export function ImageIcon() {
+  return (
+    <svg {...common} className="icon">
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+      <circle cx="9" cy="10" r="1.6" />
+      <path d="m20.5 16-5-5-8.5 8.5" />
+    </svg>
+  );
+}

@@ -275,6 +275,7 @@ mod tests {
         // Tasks start right away: the empty commit is their base.
         f.hedy
             .start_task(NewTask {
+                images: Vec::new(),
                 project: path,
                 prompt: "Una página de inicio".into(),
                 mode: TaskMode::Project,

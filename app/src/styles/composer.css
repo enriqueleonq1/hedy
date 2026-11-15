@@ -1,0 +1,96 @@
+/* The composer's extras: attached images, the @file picker and the
+   suggestions of an empty task. Colors only from the theme's tokens. */
+
+/* Attached images: small thumbnails above the text, each with its × in the corner. */
+.image-tray { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.image-tray__item {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--panel-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.image-tray__item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.image-tray__remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--panel);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.image-tray__remove .icon { width: 11px; height: 11px; }
+.image-tray__item:hover .image-tray__remove,
+.image-tray__item:focus-within .image-tray__remove { opacity: 1; }
+@media (hover: none) {
+  .image-tray__remove { opacity: 1; }
+}
+
+/* A drag with files over the composer. */
+.composer--dropping { border-color: var(--action); box-shadow: 0 0 0 4px var(--selection); }
+.composer__drop {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  border-radius: inherit;
+  background: var(--panel);
+  color: var(--action-text);
+  font-weight: 600;
+  pointer-events: none;
+  animation: fade-in 0.12s ease;
+}
+
+/* The images of a message in the timeline. */
+.message-images { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; padding: 0; list-style: none; white-space: normal; }
+.message-images__item {
+  display: inline-grid;
+  place-items: center;
+  width: 96px;
+  height: 72px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.message-images__item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.message-images__item--missing { box-shadow: inset 0 0 0 1px var(--line); }
+
+/* The @file picker uses the template picker's look, one line per file; folders in mono.
+   (Doubled classes: this sheet may load before global.css.) */
+.template-option.file-option { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; padding: 6px 12px; }
+.file-option__name { flex: none; font-weight: 600; }
+.file-option__dir { min-width: 0; color: var(--muted); font-family: var(--font-mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.template-option--active.file-option .file-option__name { color: var(--action-text); }
+
+/* Suggestions under the mascot of an empty task: quiet, ghost chips. */
+.suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); margin: var(--space-2) 0 0; padding: 0; list-style: none; }
+.suggestion {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--text-callout);
+  cursor: pointer;
+}
+.suggestion:hover { color: var(--ink); border-color: var(--line-strong); }
+
+@media (prefers-reduced-motion: reduce) {
+  .image-tray__remove { transition: none; }
+  .composer__drop { animation: none; }
+}

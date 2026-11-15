@@ -23,7 +23,7 @@ use crate::application::ports::{
 use crate::domain::agent::looks_like_tests;
 use crate::domain::permissions::{normalize, protected_file_reason};
 use crate::domain::task::SHARED_DEPENDENCY_DIRS;
-use crate::domain::{AgentEvent, LaunchSpec, Phase, TaskMode, UsageSample, prompts};
+use crate::domain::{AgentEvent, LaunchSpec, Phase, PromptImage, TaskMode, UsageSample, prompts};
 use crate::tr;
 
 pub struct ApiAgentLauncher;
@@ -46,7 +46,7 @@ const SKIPPED_DIRS: &[&str] = &[
 ];
 
 enum Command {
-    Message(String),
+    Message(String, Vec<PromptImage>),
     Answer {
         id: String,
         allow: bool,
@@ -113,8 +113,9 @@ impl AgentLauncher for ApiAgentLauncher {
             skills: request.memory.as_ref().and_then(|m| m.skills.clone()),
         };
         let prompt = request.prompt.clone();
+        let images = request.images.clone();
         let mode = request.mode;
-        std::thread::spawn(move || agent.run(rx, mode, prompt));
+        std::thread::spawn(move || agent.run(rx, mode, prompt, images));
         Ok(Box::new(ApiSession {
             commands: tx,
             stopped,
@@ -123,9 +124,9 @@ impl AgentLauncher for ApiAgentLauncher {
 }
 
 impl AgentSession for ApiSession {
-    fn send(&mut self, text: &str) -> PortResult<()> {
+    fn send(&mut self, text: &str, images: &[PromptImage]) -> PortResult<()> {
         self.commands
-            .send(Command::Message(text.to_owned()))
+            .send(Command::Message(text.to_owned(), images.to_vec()))
             .map_err(|_| {
                 PortError::new(tr!(
                     "el agente por API ya terminó",
@@ -177,7 +178,7 @@ struct Agent {
     plans: u32,
     messages: Vec<Value>,
     /// User messages that arrived while a tool waited for an answer.
-    queued: VecDeque<String>,
+    queued: VecDeque<(String, Vec<PromptImage>)>,
     stopped: Arc<AtomicBool>,
     /// The project's memory, when this account reads it.
     memory: Option<Arc<dyn MemoryTools>>,
@@ -368,7 +369,21 @@ impl Agent {
         prompt
     }
 
-    fn run(&mut self, rx: mpsc::Receiver<Command>, mode: TaskMode, prompt: String) {
+    /// A user message, with its images as content parts.
+    fn push_user(&mut self, text: &str, images: &[PromptImage]) -> Result<(), String> {
+        let content = super::images::openai_content(text, images).map_err(|e| e.message)?;
+        self.messages
+            .push(json!({"role": "user", "content": content}));
+        Ok(())
+    }
+
+    fn run(
+        &mut self,
+        rx: mpsc::Receiver<Command>,
+        mode: TaskMode,
+        prompt: String,
+        images: Vec<PromptImage>,
+    ) {
         self.emit(AgentEvent::SessionStarted {
             session_id: format!(
                 "api-{}",
@@ -380,9 +395,19 @@ impl Agent {
         });
         self.messages
             .push(json!({"role": "system", "content": self.system_prompt(mode)}));
-        self.messages
-            .push(json!({"role": "user", "content": prompt}));
+        let mut pushed = self.push_user(&prompt, &images);
         loop {
+            if let Err(message) = pushed {
+                self.emit(AgentEvent::Error {
+                    message: message.clone(),
+                });
+                self.emit(AgentEvent::Finished {
+                    ok: false,
+                    summary: message,
+                    duration_ms: None,
+                });
+                return;
+            }
             let started = Instant::now();
             match self.turn(&rx) {
                 Ok(text) if self.planning => {
@@ -425,17 +450,17 @@ impl Agent {
                 }
             }
             // Wait for the next user message.
-            let next = match self.queued.pop_front() {
-                Some(text) => text,
+            let (text, images) = match self.queued.pop_front() {
+                Some(next) => next,
                 None => loop {
                     match rx.recv() {
-                        Ok(Command::Message(text)) => break text,
+                        Ok(Command::Message(text, images)) => break (text, images),
                         Ok(Command::Answer { .. }) => continue,
                         Ok(Command::Stop) | Err(_) => return,
                     }
                 },
             };
-            self.messages.push(json!({"role": "user", "content": next}));
+            pushed = self.push_user(&text, &images);
         }
     }
 
@@ -554,7 +579,7 @@ impl Agent {
                     return Ok((allow, message));
                 }
                 Ok(Command::Answer { .. }) => {}
-                Ok(Command::Message(text)) => self.queued.push_back(text),
+                Ok(Command::Message(text, images)) => self.queued.push_back((text, images)),
                 Ok(Command::Stop) | Err(_) => return Err(End::Stopped),
             }
         }
@@ -1003,6 +1028,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let tx = Mutex::new(tx);
         let request = AgentRequest {
+            images: Vec::new(),
             backend: AgentBackend::OpenAiCompatible {
                 base_url: url,
                 api_key: Secret::new("sk-test"),
@@ -1276,5 +1302,50 @@ mod tests {
         assert!(results[2].contains("app.py:1: def crear_cita(): pass"));
         assert!(results[3].contains("no puedes cambiar"));
         assert!(!dir.join("x.py").exists());
+    }
+
+    #[test]
+    fn images_go_as_image_url_parts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().canonicalize().unwrap();
+        let image = crate::adapters::images::tests::png(&dir);
+        let (url, seen) = serve(vec![reply("Veo un gato.", json!(null))]);
+        let (tx, rx) = mpsc::channel();
+        let tx = Mutex::new(tx);
+        let request = AgentRequest {
+            backend: AgentBackend::OpenAiCompatible {
+                base_url: url,
+                api_key: Secret::new("sk-test"),
+            },
+            launch: LaunchSpec::program("", vec![]).in_dir(dir.clone()),
+            mode: TaskMode::Ask,
+            phase: Phase::Implement,
+            plan_first: false,
+            model: Some("kimi-k3".into()),
+            prompt: "¿Qué ves?".into(),
+            images: vec![image],
+            resume: None,
+            memory: None,
+            mcp: vec![],
+        };
+        let mut session = ApiAgentLauncher
+            .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
+            .unwrap();
+        until(&rx, |e| matches!(e, AgentEvent::Finished { .. }));
+        session.stop();
+        let requests = seen.lock().unwrap();
+        let user = &requests[0].1["messages"][1];
+        assert_eq!(user["role"], "user");
+        assert_eq!(
+            user["content"][0],
+            json!({"type": "text", "text": "¿Qué ves?"})
+        );
+        assert_eq!(user["content"][1]["type"], "image_url");
+        assert!(
+            user["content"][1]["image_url"]["url"]
+                .as_str()
+                .unwrap()
+                .starts_with("data:image/png;base64,iVBORw0KGgp4eA==")
+        );
     }
 }

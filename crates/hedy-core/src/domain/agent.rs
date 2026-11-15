@@ -10,9 +10,12 @@ use serde::{Deserialize, Serialize};
     rename_all_fields = "camelCase"
 )]
 pub enum AgentEvent {
-    /// What the user asked (first prompt or a follow-up).
+    /// What the user asked (first prompt or a follow-up), with the images
+    /// attached to it.
     UserMessage {
         text: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        images: Vec<super::Attachment>,
     },
     SessionStarted {
         session_id: String,
@@ -100,6 +103,16 @@ pub enum AgentEvent {
     Error {
         message: String,
     },
+}
+
+impl AgentEvent {
+    /// A user message without images.
+    pub fn user(text: impl Into<String>) -> Self {
+        Self::UserMessage {
+            text: text.into(),
+            images: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,5 +1,7 @@
 import type {
   AcceptPreview,
+  ImageInput,
+  ImageSupport,
   ActivityItem,
   AgentEvent,
   Commit,
@@ -117,7 +119,13 @@ export interface HedyApi {
    * A follow-up: queued while the agent's turn runs (or a card waits), sent
    * now when it is idle. Returns what is left in the queue.
    */
-  queueMessage(id: string, text: string): Promise<QueuedMessage[]>;
+  queueMessage(id: string, text: string, images?: ImageInput[]): Promise<QueuedMessage[]>;
+  /** The project's files for `@` mentions, relative and sorted (never `.env` or keys). */
+  projectFiles(project: string): Promise<string[]>;
+  /** Whether the agent of `account` takes images with a prompt. */
+  imageSupport(account: string): Promise<ImageSupport>;
+  /** An image of a task's history as a data URL; `null` when it was deleted. */
+  attachment(taskId: string, file: string): Promise<string | null>;
   editQueued(message: number, text: string): Promise<QueuedMessage[]>;
   removeQueued(message: number): Promise<QueuedMessage[]>;
   /** Releases a queue on hold and sends it now, unless the agent is mid-turn. */

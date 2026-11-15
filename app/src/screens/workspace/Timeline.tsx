@@ -14,6 +14,7 @@ import type { TaskMascot } from "../../tasks/useMascot";
 import { useT, type MessageKey, type Translate } from "../../i18n";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { LimitCard } from "./LimitCard";
+import { MessageImages } from "./MessageImages";
 import { groupSteps, summarize, summaryFacts, type StepItem } from "./stepGroups";
 
 interface TimelineProps {
@@ -72,6 +73,7 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
         if (item.type === "user") {
           return (
             <div key={item.key} className="bubble">
+              <MessageImages taskId={task.id} images={item.images} />
               {item.text}
             </div>
           );

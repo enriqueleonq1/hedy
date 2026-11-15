@@ -109,6 +109,7 @@ mod tests {
         let store = SqliteStore::in_memory().unwrap();
         store
             .save_task(&Task {
+                images: Vec::new(),
                 id: TaskId::new(id),
                 project: PathBuf::from("/code/x"),
                 mode: TaskMode::Project,

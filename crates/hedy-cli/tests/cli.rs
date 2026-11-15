@@ -917,6 +917,7 @@ fn seed_tasks(env: &Env, repo: &Path) {
         .unwrap()
         .as_secs() as i64;
     let task = |id: &str, title: &str, status: TaskStatus, ago: i64| Task {
+        images: Vec::new(),
         id: TaskId::new(id),
         project: repo.to_owned(),
         mode: TaskMode::Project,

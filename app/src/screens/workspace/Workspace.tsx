@@ -3,7 +3,7 @@ import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 
 import { errorMessage, useAction, useApi } from "../../api/context";
 import type { HedyApi } from "../../api/HedyApi";
-import type { Account, Overview, PromptTemplate, Task, TaskMode } from "../../api/types";
+import type { Account, ImageInput, Overview, PromptTemplate, Task, TaskMode } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { accountOption } from "../../components/accounts";
 import { useFocusMode } from "../../components/focusMode";
@@ -48,7 +48,12 @@ import { keyLabels } from "../../platform";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { fillTemplate, filterTemplates, slashQuery } from "../../templates/placeholders";
 import { TemplateDialog } from "../templates/TemplateDialog";
+import "../../styles/composer.css";
 import { ChangesPanel } from "./ChangesPanel";
+import { AttachButton, draggingFiles, ImageTray, transferFiles, useComposerImages } from "./ComposerImages";
+import { FilePicker } from "./FilePicker";
+import { insertMention, mentionAt, rankFiles } from "./mentions";
+import { Suggestions, useSuggestions, type Suggestion } from "./Suggestions";
 import { QueuedMessages } from "./QueuedMessages";
 import { PanelIcon, PlusIcon, StopIcon } from "./icons";
 import { jumpDigit, TaskSwitcher } from "./TaskSwitcher";
@@ -178,6 +183,9 @@ export function Workspace({
   }, [list, taskId, onSelectTask]);
 
   const title = task ? task.title : name;
+  const suggestions = useSuggestions(project, account?.provider);
+  // A suggestion fills the composer of a new task; `n` tells the same one apart.
+  const [fill, setFill] = useState<(Suggestion & { n: number; scope: string | null }) | null>(null);
   const panel = useSidePanel(solo ? null : task);
   // The one switch for the side panel: focus mode puts it away too.
   const focusMode = useFocusMode();
@@ -267,6 +275,12 @@ export function Workspace({
                   ? t("workspace.empty", { name, account: account.name })
                   : t("workspace.noAccount")}
             </p>
+            {account && (
+              <Suggestions
+                items={suggestions}
+                onPick={(s) => setFill({ ...s, n: (fill?.n ?? 0) + 1, scope: project })}
+              />
+            )}
           </div>
         )}
 
@@ -286,7 +300,9 @@ export function Workspace({
           models={account ? MODEL_SUGGESTIONS[account.provider] : []}
           agent={agent}
           disabled={!account}
+          imageAccount={isOpen(task) && task ? task.account : (account?.id ?? null)}
           initialText={task ? "" : draft}
+          fill={!task && fill?.scope === project ? fill : null}
           autoFocus={chosen === null || (solo && !task)}
           start={
             solo
@@ -296,6 +312,7 @@ export function Workspace({
                     mode: input.mode,
                     account: account?.id ?? null,
                     model: input.model,
+                    ...(input.images ? { images: input.images } : {}),
                   })
               : (api, input) => api.startTask({ project, ...input })
           }
@@ -314,7 +331,10 @@ export function Workspace({
               />
             ) : null
           }
-          onStarted={(created) => onSelectTask(created.id, { replace: true })}
+          onStarted={(created) => {
+            setFill(null);
+            onSelectTask(created.id, { replace: true });
+          }}
         />
       </section>
       {/* Kept mounted while hidden: a terminal opened there keeps running. */}
@@ -407,7 +427,7 @@ const MODE_DETAIL: Record<TaskMode, MessageKey> = {
 /** What starts a new task from the composer: in a project, or as a conversation. */
 type StartTask = (
   api: HedyApi,
-  input: { prompt: string; mode: TaskMode; model: string | null; planFirst: boolean },
+  input: { prompt: string; mode: TaskMode; model: string | null; planFirst: boolean; images?: ImageInput[] },
 ) => Promise<Task>;
 
 const CARD_LABEL: Record<NonNullable<CardWaiting>, MessageKey> = {
@@ -450,7 +470,9 @@ function Composer({
   models,
   agent,
   disabled,
+  imageAccount,
   initialText,
+  fill,
   autoFocus,
   start: startNew,
   accountPicker,
@@ -466,7 +488,11 @@ function Composer({
   /** Who works on the task now, for the queue's label. */
   agent: string;
   disabled: boolean;
+  /** Who gets the message, to know whether it takes images. */
+  imageAccount: string | null;
   initialText?: string;
+  /** A suggestion picked in the empty task: its text (and mode) go in, the caret where it says. */
+  fill?: (Suggestion & { n: number }) | null;
   /** Takes the focus when it appears (a new task or question). */
   autoFocus?: boolean;
   start: StartTask;
@@ -496,6 +522,13 @@ function Composer({
   const mode = followUp && task ? task.mode : newMode;
   const keys = keyLabels();
   const templates = useTemplates(scope);
+  const images = useComposerImages({ account: disabled ? null : imageAccount, queueing });
+  const [dropping, setDropping] = useState(false);
+  const api = useApi();
+  // `@file` mentions: only in a project (a quick question has no files).
+  const [caret, setCaret] = useState(0);
+  const [fileActive, setFileActive] = useState(0);
+  const [mentionClosed, setMentionClosed] = useState<number | null>(null);
 
   // After the dialogs that led here closed (they give the focus back first).
   useEffect(() => {
@@ -509,27 +542,91 @@ function Composer({
     return () => cancelAnimationFrame(frame);
   }, [autoFocus, disabled]);
 
+  // A picked suggestion fills the composer; it is never sent by itself.
+  const [filled, setFilled] = useState(0);
+  if (fill && fill.n !== filled) {
+    setFilled(fill.n);
+    setText(fill.text);
+    setCaret(fill.caret);
+    if (fill.mode && !followUp && (solo ? CONVERSATION_MODES : MODES).includes(fill.mode)) setNewMode(fill.mode);
+  }
+  useEffect(() => {
+    if (!fill) return;
+    const frame = requestAnimationFrame(() => {
+      const el = input.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(fill.caret, fill.caret);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [fill]);
+
   const query = slashQuery(text);
   const matches = query === null ? [] : filterTemplates(templates.data ?? [], query);
   const pickerOpen = query !== null && !pickerClosed && !filling;
   const current = pickerOpen ? matches[Math.min(active, matches.length - 1)] : undefined;
   const optionId = (index: number) => `${listId}-option-${index}`;
 
-  const start = useAction((api, prompt: string) => startNew(api, { prompt, mode, model: model || null, planFirst }), {
-    onSuccess: (created) => {
-      setText("");
-      client.setQueryData<Task[]>(listKey, (old) => [created, ...(old ?? [])]);
-      void client.invalidateQueries({ queryKey: ACTIVITY_KEY });
-      onStarted(created);
-    },
+  const mention = solo || pickerOpen || filling ? null : mentionAt(text, caret);
+  const mentionOpen = !!mention && mentionClosed !== mention.start;
+  const projectFiles = useQuery({
+    queryKey: ["projectFiles", scope],
+    queryFn: () => api.projectFiles(scope ?? ""),
+    enabled: mentionOpen,
+    staleTime: 30_000,
   });
-  const send = useAction((api, message: string) => api.queueMessage(task?.id ?? "", message), {
-    invalidate: [listKey],
-    onSuccess: (left) => {
-      setText("");
-      if (task) setQueue(task.id, left);
+  const fileMatches = mentionOpen && mention ? rankFiles(projectFiles.data ?? [], mention.query) : [];
+  const currentFile = fileMatches.length > 0 ? Math.min(fileActive, fileMatches.length - 1) : -1;
+  const fileListId = `${listId}-files`;
+  const fileOptionId = (index: number) => `${fileListId}-${index}`;
+
+  function pickFile(path: string) {
+    if (!mention) return;
+    const next = insertMention(text, mention.start, caret, path);
+    setText(next.text);
+    setCaret(next.caret);
+    setFileActive(0);
+    requestAnimationFrame(() => {
+      const el = input.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(next.caret, next.caret);
+    });
+  }
+
+  const start = useAction(
+    (api, message: { text: string; images: ImageInput[] }) =>
+      startNew(api, {
+        prompt: message.text,
+        mode,
+        model: model || null,
+        planFirst,
+        ...(message.images.length ? { images: message.images } : {}),
+      }),
+    {
+      onSuccess: (created) => {
+        setText("");
+        images.clear();
+        client.setQueryData<Task[]>(listKey, (old) => [created, ...(old ?? [])]);
+        void client.invalidateQueries({ queryKey: ACTIVITY_KEY });
+        onStarted(created);
+      },
     },
-  });
+  );
+  const send = useAction(
+    (api, message: { text: string; images: ImageInput[] }) =>
+      message.images.length
+        ? api.queueMessage(task?.id ?? "", message.text, message.images)
+        : api.queueMessage(task?.id ?? "", message.text),
+    {
+      invalidate: [listKey],
+      onSuccess: (left) => {
+        setText("");
+        images.clear();
+        if (task) setQueue(task.id, left);
+      },
+    },
+  );
   const stop = useAction((api, id: string) => api.stopTask(id), { invalidate: task ? [listKeyFor(task)] : [] });
   const busy = start.isPending || send.isPending;
   // While the agent runs, an empty composer offers to stop it (Esc does too).
@@ -539,9 +636,12 @@ function Composer({
     if (task?.live && !stop.isPending) stop.mutate(task.id);
   }
 
-  function edit(value: string) {
+  function edit(value: string, at?: number | null) {
     setText(value);
     setActive(0);
+    setFileActive(0);
+    setCaret(at ?? value.length);
+    if (!mentionAt(value, at ?? value.length)) setMentionClosed(null);
     if (slashQuery(value) === null) setPickerClosed(false);
   }
 
@@ -569,19 +669,51 @@ function Composer({
   function submit() {
     const value = text.trim();
     if (!value || busy || disabled) return;
-    if (followUp) send.mutate(value);
-    else start.mutate(value);
+    const message = { text: value, images: images.inputs() };
+    if (followUp) send.mutate(message);
+    else start.mutate(message);
   }
 
   return (
     <form
-      className="composer"
+      className={dropping ? "composer composer--dropping" : "composer"}
       onSubmit={(e) => {
         e.preventDefault();
         if (current) choose(current);
         else submit();
       }}
+      onDragOver={(e) => {
+        if (disabled || !draggingFiles(e.dataTransfer)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = images.blocked ? "none" : "copy";
+        setDropping(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false);
+      }}
+      onDrop={(e) => {
+        if (disabled || !draggingFiles(e.dataTransfer)) return;
+        e.preventDefault();
+        setDropping(false);
+        void images.add(transferFiles(e.dataTransfer));
+      }}
     >
+      {dropping && (
+        <p className="composer__drop" aria-hidden>
+          {images.blocked ?? t("composer.images.drop")}
+        </p>
+      )}
+      {mentionOpen && (
+        <FilePicker
+          id={fileListId}
+          files={fileMatches}
+          active={currentFile}
+          loading={projectFiles.isPending}
+          optionId={fileOptionId}
+          onPick={pickFile}
+          onHover={setFileActive}
+        />
+      )}
       {pickerOpen && (
         <div className="template-picker">
           {matches.length > 0 ? (
@@ -628,6 +760,7 @@ function Composer({
           }}
         />
       )}
+      <ImageTray images={images.images} onRemove={images.remove} onEmptied={focusInput} />
       {/* The placeholder says what sending does now; the label says it in full. */}
       <label className="sr-only" htmlFor="composer-input">
         {followUp && card
@@ -649,8 +782,12 @@ function Composer({
         disabled={disabled}
         aria-autocomplete="list"
         aria-haspopup="listbox"
-        aria-controls={pickerOpen && matches.length > 0 ? listId : undefined}
-        aria-activedescendant={current ? optionId(matches.indexOf(current)) : undefined}
+        aria-controls={
+          pickerOpen && matches.length > 0 ? listId : mentionOpen && fileMatches.length > 0 ? fileListId : undefined
+        }
+        aria-activedescendant={
+          current ? optionId(matches.indexOf(current)) : currentFile >= 0 ? fileOptionId(currentFile) : undefined
+        }
         aria-keyshortcuts="Enter"
         aria-describedby={`${listId}-enter`}
         placeholder={
@@ -666,8 +803,35 @@ function Composer({
                     ? t("workspace.composer.placeholderProject")
                     : t("workspace.composer.placeholderAsk")
         }
-        onChange={(e) => edit(e.target.value)}
+        onChange={(e) => edit(e.target.value, e.target.selectionStart)}
+        onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+        onPaste={(e) => {
+          const files = transferFiles(e.clipboardData);
+          if (files.length === 0) return;
+          // A copied picture comes as a file; text copied with it still pastes.
+          if (!e.clipboardData.getData("text/plain")) e.preventDefault();
+          void images.add(files);
+        }}
         onKeyDown={(e) => {
+          if (mentionOpen && mention) {
+            if (fileMatches.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+              e.preventDefault();
+              const step = e.key === "ArrowDown" ? 1 : -1;
+              setFileActive((i) => (Math.min(i, fileMatches.length - 1) + step + fileMatches.length) % fileMatches.length);
+              return;
+            }
+            const picked = fileMatches[currentFile];
+            if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey && picked) {
+              e.preventDefault();
+              pickFile(picked);
+              return;
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              setMentionClosed(mention.start);
+              return;
+            }
+          }
           if (pickerOpen && matches.length > 0) {
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault();
@@ -772,6 +936,12 @@ function Composer({
           >
             <TemplateIcon />
           </MenuButton>
+          <AttachButton
+            blocked={images.blocked}
+            supported={images.supported}
+            disabled={disabled}
+            onFiles={(files) => void images.add(files)}
+          />
         </div>
         <span className="composer__hint" aria-hidden>
           {stoppable

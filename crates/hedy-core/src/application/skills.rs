@@ -889,6 +889,7 @@ mod tests {
         let task = f
             .hedy
             .start_task(NewTask {
+                images: Vec::new(),
                 project: moira.clone(),
                 prompt: "Arregla el login".into(),
                 mode: TaskMode::Project,

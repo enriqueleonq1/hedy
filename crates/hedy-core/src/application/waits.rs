@@ -202,7 +202,7 @@ impl Hedy {
         if !messages.is_empty() {
             self.events.queue_changed(&id, &[]);
         }
-        if let Err(error) = self.deliver(task, &text) {
+        if let Err(error) = self.deliver(task, &text, Vec::new()) {
             // Not lost: back in the queue, on hold.
             let _queue = self.queue_lock.lock().unwrap();
             for m in &messages {
@@ -243,6 +243,7 @@ mod tests {
         let task = f
             .hedy
             .start_task(NewTask {
+                images: Vec::new(),
                 project: f.dir("/code/moira"),
                 prompt: "Recordatorios".into(),
                 mode: TaskMode::Project,
@@ -400,6 +401,7 @@ mod tests {
         with_language(Language::Spanish, || f.hedy.resume_due_waits().unwrap());
         let events = f.hedy.task_events(&task.id).unwrap();
         assert!(events.contains(&AgentEvent::UserMessage {
+            images: Vec::new(),
             text: "Tu límite se renovó. Continúa con la tarea donde la dejaste.".into()
         }));
     }

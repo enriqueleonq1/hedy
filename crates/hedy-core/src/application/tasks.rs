@@ -10,15 +10,15 @@ use std::sync::atomic::Ordering;
 use serde_json::Value;
 
 use super::ports::{AgentBackend, AgentRequest, AgentSession, RateLimit, Secret, UsageRecord};
-use super::{AppError, AppResult, Hedy, Setting};
+use super::{AppError, AppResult, Hedy, NewImage, Setting};
 use crate::domain::permissions::{self, AllowRule, Verdict};
 use crate::domain::phase::pipeline;
 use crate::domain::prompts;
 use crate::domain::task::{SHARED_DEPENDENCY_DIRS, branch_name, title_from_prompt};
 use crate::domain::{
-    Account, AccountId, AgentEvent, Commit, Credentials, Decision, FileDiff, HoldReason,
-    LaunchPurpose, LaunchSpec, LimitLevel, Notice, NoticeKind, Phase, Provider, Stage, Task,
-    TaskId, TaskMode, TaskStatus, UsageSample, Workspace, policy,
+    Account, AccountId, AgentEvent, Attachment, Commit, Credentials, Decision, FileDiff,
+    HoldReason, LaunchPurpose, LaunchSpec, LimitLevel, Notice, NoticeKind, Phase, PromptImage,
+    Provider, Stage, Task, TaskId, TaskMode, TaskStatus, UsageSample, Workspace, policy,
 };
 use crate::tr;
 
@@ -35,6 +35,8 @@ pub struct NewTask {
     pub model: Option<String>,
     /// Propose a plan and wait for approval before changing anything.
     pub plan_first: bool,
+    /// Images attached to the request.
+    pub images: Vec<NewImage>,
 }
 
 /// A task whose agent process is running.
@@ -144,11 +146,16 @@ impl Hedy {
         let projects = self.projects()?;
         // Agents that read without asking work in a worktree, without `.env`.
         let mut isolated = false;
-        for stage in &stages {
+        for (index, stage) in stages.iter().enumerate() {
             policy::check_launch(Some(&project), &stage.account, &projects)?;
             let account = self.account(stage.account.as_str())?;
             self.backend(&account)?;
             isolated |= account.provider.always_in_worktree();
+            // The images go to whoever starts; later phases get them when
+            // their agent takes them.
+            if index == 0 {
+                self.check_images(&request.images, &account)?;
+            }
         }
 
         let now = self.clock.now_ms();
@@ -180,12 +187,15 @@ impl Hedy {
             merge: None,
             wait: None,
             conversation: false,
+            images: Vec::new(),
         };
+        task.images = self.store_images(&task.id, &request.images)?;
         self.store.save_task(&task)?;
         self.record(
             &task.id,
             AgentEvent::UserMessage {
                 text: request.prompt.clone(),
+                images: task.images.clone(),
             },
         )?;
         self.run_stage(&mut task, 0, request.prompt, None)?;
@@ -323,7 +333,9 @@ impl Hedy {
                 account: account.name.clone(),
             },
         )?;
-        self.spawn(task, &account, &stage, prompt, resume)
+        // Every phase sees the images of the request.
+        let images = self.prompt_images(&task.id, &task.images);
+        self.spawn(task, &account, &stage, prompt, images, resume)
     }
 
     fn spawn(
@@ -331,10 +343,22 @@ impl Hedy {
         task: &Task,
         account: &Account,
         stage: &Stage,
-        prompt: String,
+        mut prompt: String,
+        mut images: Vec<PromptImage>,
         resume: Option<String>,
     ) -> AppResult<()> {
         let (backend, launch) = self.backend(account)?;
+        // An agent that takes no images (a later phase, a handoff) is told
+        // they exist instead of getting them.
+        if !images.is_empty() && !self.agents.image_support(&backend).accepts() {
+            let count = images.len();
+            prompt.push_str("\n\n");
+            prompt.push_str(&tr!(
+                "(El usuario adjuntó {count} imagen(es) que este agente no puede ver.)",
+                "(The user attached {count} image(s) this agent cannot see.)"
+            ));
+            images.clear();
+        }
         // APIs need an explicit model; CLIs pick their own when none is set.
         let model = match backend {
             AgentBackend::OpenAiCompatible { .. } => stage
@@ -377,6 +401,7 @@ impl Hedy {
                 plan_first: stage.phase == Phase::Plan,
                 model,
                 prompt,
+                images,
                 resume,
                 memory,
                 mcp,
@@ -797,23 +822,32 @@ impl Hedy {
         self.queue_message(id, text).map(drop)
     }
 
-    /// Sends a user turn now. Restarts the agent (resuming its session) if needed.
-    pub(super) fn deliver(&self, task: &mut Task, text: &str) -> AppResult<()> {
+    /// Sends a user turn now, with the images already stored for it.
+    /// Restarts the agent (resuming its session) if needed.
+    pub(super) fn deliver(
+        &self,
+        task: &mut Task,
+        text: &str,
+        attachments: Vec<Attachment>,
+    ) -> AppResult<()> {
         let id = &task.id.clone();
         // The user (or the renewed limit) sets the task going: no more waiting.
         if task.wait.take().is_some() {
             self.store.save_task(task)?;
             self.events.task_updated(task);
         }
+        let images = self.prompt_images(id, &attachments);
         self.record(
             id,
             AgentEvent::UserMessage {
                 text: text.to_owned(),
+                images: attachments,
             },
         )?;
         let sent = {
             let mut live = self.live.lock().unwrap();
-            live.get_mut(id).map(|running| running.session.send(text))
+            live.get_mut(id)
+                .map(|running| running.session.send(text, &images))
         };
         match sent {
             Some(Ok(())) => {}
@@ -827,6 +861,7 @@ impl Hedy {
                     &account,
                     &stage,
                     text.to_owned(),
+                    images,
                     task.session_id.clone(),
                 )?;
             }
@@ -975,6 +1010,7 @@ mod tests {
             .unwrap();
         f.hedy
             .start_task(NewTask {
+                images: Vec::new(),
                 project: f.dir("/code/moira"),
                 prompt: prompt.into(),
                 mode: TaskMode::Project,
@@ -1016,6 +1052,7 @@ mod tests {
         assert_eq!(
             f.hedy.task_events(&task.id).unwrap()[0],
             AgentEvent::UserMessage {
+                images: Vec::new(),
                 text: task.prompt.clone()
             }
         );
@@ -1254,6 +1291,7 @@ mod tests {
         let task = f
             .hedy
             .start_task(NewTask {
+                images: Vec::new(),
                 project: f.dir("/code/moira"),
                 prompt: "¿Dónde se crean las citas?".into(),
                 mode: TaskMode::Ask,
@@ -1298,6 +1336,7 @@ mod tests {
             .unwrap();
         f.hedy
             .start_task(NewTask {
+                images: Vec::new(),
                 project: f.dir("/code/moira"),
                 prompt: "Recordatorios".into(),
                 mode: TaskMode::Project,
@@ -1613,6 +1652,7 @@ mod tests {
             .unwrap();
         f.hedy
             .start_task(NewTask {
+                images: Vec::new(),
                 project: f.dir("/code/x"),
                 prompt: "hola".into(),
                 mode: TaskMode::Ask,
@@ -1636,6 +1676,7 @@ mod tests {
         f.hedy.use_account(&f.dir("/code/x"), "kimi", None).unwrap();
         let start = || {
             f.hedy.start_task(NewTask {
+                images: Vec::new(),
                 project: f.dir("/code/x"),
                 prompt: "hola".into(),
                 mode: TaskMode::Project,
@@ -1694,6 +1735,7 @@ mod tests {
             let task = f
                 .hedy
                 .start_task(NewTask {
+                    images: Vec::new(),
                     project: dir,
                     prompt: "¿Qué hace esto?".into(),
                     mode: TaskMode::Ask,

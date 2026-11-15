@@ -1,6 +1,6 @@
 // Pure helpers that turn a task's events into what the chat shows.
 
-import type { AgentEvent, Decision, Phase, StepStatus, Task, TaskMode } from "../api/types";
+import type { AgentEvent, Attachment, Decision, Phase, StepStatus, Task, TaskMode } from "../api/types";
 import type { MascotState } from "../components/Mascot/Mascot";
 import type { MessageKey, Translate } from "../i18n";
 
@@ -10,7 +10,7 @@ export type StepKind = "tool" | "edit" | "command" | "tests" | "blocked";
 export type Resolution = { decision: Decision; automatic: boolean; reason: string | null };
 
 export type TimelineItem =
-  | { type: "user"; key: string; text: string }
+  | { type: "user"; key: string; text: string; images: Attachment[] }
   | { type: "agent"; key: string; text: string }
   | {
       type: "plan";
@@ -109,7 +109,7 @@ export function buildTimeline(events: AgentEvent[], t: Translate): TimelineItem[
     const key = `${i}`;
     switch (e.kind) {
       case "userMessage":
-        items.push({ type: "user", key, text: e.text });
+        items.push({ type: "user", key, text: e.text, images: e.images ?? [] });
         break;
       case "message":
         items.push({ type: "agent", key, text: e.text });

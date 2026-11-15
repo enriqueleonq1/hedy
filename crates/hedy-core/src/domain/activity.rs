@@ -255,6 +255,7 @@ mod tests {
 
     fn task(status: TaskStatus, mode: TaskMode) -> Task {
         Task {
+            images: Vec::new(),
             id: crate::domain::TaskId::new("t1"),
             project: PathBuf::from("/code/moira"),
             mode,

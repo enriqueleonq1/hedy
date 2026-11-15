@@ -89,6 +89,12 @@ pub enum AppError {
     ConversationChangesFiles,
     #[error("{}", self.message())]
     NotAConversation(TaskId),
+    /// The agent that would get the message takes no images.
+    #[error("{}", self.message())]
+    ImagesNotAccepted(String),
+    /// Images cannot wait in the queue: they go only with a message sent now.
+    #[error("{}", self.message())]
+    ImagesWhileQueued,
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -312,6 +318,14 @@ impl AppError {
             Self::NotAConversation(id) => tr!(
                 "la tarea {id} es de un proyecto, no una conversación",
                 "task {id} belongs to a project, it is not a conversation"
+            ),
+            Self::ImagesNotAccepted(agent) => tr!(
+                "{agent} no acepta imágenes con esta cuenta: quítalas o usa otra cuenta",
+                "{agent} does not take images with this account: remove them or use another account"
+            ),
+            Self::ImagesWhileQueued => tr!(
+                "las imágenes no pueden esperar en la cola: envíalas cuando el agente termine su turno",
+                "images cannot wait in the queue: send them when the agent finishes its turn"
             ),
         }
     }

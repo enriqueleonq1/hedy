@@ -112,6 +112,10 @@ pub struct Task {
     /// folder, and it never has a workspace, memory or code map.
     #[serde(default)]
     pub conversation: bool,
+    /// Images attached to the request itself, so every phase (and a
+    /// handoff) gets them too.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<super::Attachment>,
 }
 
 /// What "Aceptar" changed in the main checkout, kept so it can be undone
