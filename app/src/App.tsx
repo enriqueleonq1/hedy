@@ -5,6 +5,7 @@ import { ApiProvider, errorMessage, useApi, useOverview } from "./api/context";
 import type { HedyApi } from "./api/HedyApi";
 import { FocusModeProvider } from "./components/focusMode";
 import { FileNavigatorProvider } from "./files/navigator";
+import { ReviewCommentsProvider } from "./review/comments";
 import { Shell, Sidebar, taskView, Topbar, viewProject, type View } from "./components/Layout";
 import { Mascot } from "./components/Mascot/Mascot";
 import { CommandPalette } from "./components/palette/CommandPalette";
@@ -40,7 +41,9 @@ export function App({ api, queryClient }: { api: HedyApi; queryClient?: QueryCli
           <ToastProvider>
             <TaskEventsBridge />
             <FileNavigatorProvider>
-              <Root />
+              <ReviewCommentsProvider>
+                <Root />
+              </ReviewCommentsProvider>
             </FileNavigatorProvider>
           </ToastProvider>
         </Localized>

@@ -50,6 +50,7 @@ import { fillTemplate, filterTemplates, slashQuery } from "../../templates/place
 import { TemplateDialog } from "../templates/TemplateDialog";
 import "../../styles/composer.css";
 import { ChangesPanel } from "./ChangesPanel";
+import { useReviewTask } from "../../review/comments";
 import { AttachButton, draggingFiles, ImageTray, transferFiles, useComposerImages } from "./ComposerImages";
 import { FilePicker } from "./FilePicker";
 import { insertMention, mentionAt, rankFiles } from "./mentions";
@@ -156,6 +157,8 @@ export function Workspace({
   const account: Account | undefined = solo
     ? (overview.accounts.find((a) => a.id === task?.account) ?? (task ? undefined : asking.chosen))
     : overview.accounts.find((a) => a.id === info?.account);
+
+  useReviewTask(task);
 
   const events = useTaskEvents(task?.id ?? null);
   const history = useMemo(() => events.data ?? [], [events.data]);
