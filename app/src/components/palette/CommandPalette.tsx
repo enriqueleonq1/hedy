@@ -90,9 +90,10 @@ export function CommandPalette({
   overview: Overview;
   onNavigate: (view: View) => void;
 }) {
-  // Ctrl/⌘ K anywhere opens (or closes) it.
+  // Ctrl/⌘ K anywhere opens (or closes) it, except in a terminal, where it belongs to the shell.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof Element && e.target.closest(".xterm")) return;
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
         onOpenChange(!open);

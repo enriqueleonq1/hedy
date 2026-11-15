@@ -4,6 +4,7 @@ import common from "./messages/common";
 import mascot from "./messages/mascot";
 import memory from "./messages/memory";
 import onboarding from "./messages/onboarding";
+import palette from "./messages/palette";
 import queue from "./messages/queue";
 import settings from "./messages/settings";
 import shell from "./messages/shell";
@@ -22,6 +23,7 @@ const AREAS = {
   mascot,
   memory,
   onboarding,
+  palette,
   queue,
   settings,
   shell,
