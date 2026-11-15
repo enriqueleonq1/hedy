@@ -3,10 +3,11 @@ import { useState } from "react";
 import { OVERVIEW_KEY, useAction } from "../../api/context";
 import { phaseSummary } from "../../components/models";
 import type { Overview, Project } from "../../api/types";
-import { shortAccountLabel } from "../../components/accounts";
+import { accountOption, shortAccountLabel } from "../../components/accounts";
 import { projectColor, shortPath, useProjectActions } from "../../components/projects";
 import { Button, ConfirmButton } from "../../components/ui/Button";
 import { Switch } from "../../components/ui/controls";
+import { ColorDot, Select } from "../../components/ui/Select";
 import { useT } from "../../i18n";
 import { accountPalette } from "../../theme/tokens";
 import { AddProjectDialog, useAddProject } from "./AddProjectDialog";
@@ -89,21 +90,20 @@ function ProjectRow({ project, overview }: { project: Project; overview: Overvie
         />
       </td>
       <td>
-        <select
-          className="pill-select pill-select--account"
-          aria-label={t("accounts.table.accountOf", { name: project.name })}
+        <Select
+          variant="pill"
+          className="select--account"
+          label={t("accounts.table.accountOf", { name: project.name })}
+          title={t("common.account")}
           value={project.account ?? ""}
           disabled={project.protected}
-          title={project.protected ? t("accounts.table.unprotectToChange") : undefined}
-          onChange={(e) => assign.mutate({ account: e.target.value })}
-        >
-          {!project.account && <option value="">{t("common.noAccount")}</option>}
-          {offered.map((a) => (
-            <option key={a.id} value={a.id}>
-              {shortAccountLabel(a)}
-            </option>
-          ))}
-        </select>
+          tooltip={project.protected ? t("accounts.table.unprotectToChange") : undefined}
+          onChange={(account) => assign.mutate({ account })}
+          options={[
+            ...(project.account ? [] : [{ value: "", label: t("common.noAccount") }]),
+            ...offered.map((a) => ({ ...accountOption(a), label: shortAccountLabel(a) })),
+          ]}
+        />
       </td>
       <td>
         <button className="link-button" aria-label={t("accounts.table.phasesOf", { name: project.name })} onClick={() => setEditingPhases(true)}>
@@ -121,19 +121,21 @@ function ProjectRow({ project, overview }: { project: Project; overview: Overvie
         />
       </td>
       <td>
-        <select
-          className="pill-select"
-          aria-label={t("common.colorOf", { name: project.name })}
+        <Select
+          variant="pill"
+          label={t("common.colorOf", { name: project.name })}
+          title={t("common.color")}
           value={project.color ?? ""}
-          onChange={(e) => setColor.mutate(e.target.value || null)}
-        >
-          <option value="">{t("accounts.table.fromAccount")}</option>
-          {accountPalette.map((c) => (
-            <option key={c.hex} value={c.hex}>
-              {t(c.label)}
-            </option>
-          ))}
-        </select>
+          onChange={(color) => setColor.mutate(color || null)}
+          options={[
+            {
+              value: "",
+              label: t("accounts.table.fromAccount"),
+              icon: <ColorDot color={projectColor({ ...project, color: null }, overview.accounts)} />,
+            },
+            ...accountPalette.map((c) => ({ value: c.hex, label: t(c.label), icon: <ColorDot color={c.hex} /> })),
+          ]}
+        />
       </td>
       <td className="row-actions">
         <Button small variant="ghost" onClick={() => actions.openEditor(project)}>

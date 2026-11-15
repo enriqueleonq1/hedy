@@ -2,9 +2,11 @@ import { useState } from "react";
 
 import { OVERVIEW_KEY, useAction } from "../../api/context";
 import type { Assignment, Overview, Phase, PhasePlan, Project } from "../../api/types";
+import { accountOption } from "../../components/accounts";
 import { MODEL_SUGGESTIONS, PHASES } from "../../components/models";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
+import { Select } from "../../components/ui/Select";
 import { useT } from "../../i18n";
 
 /** Who plans, implements, writes tests and reviews in a project. */
@@ -65,24 +67,23 @@ export function PhasesDialog({ project, overview, onClose }: { project: Project;
           return (
             <div key={phase} className="phase-row">
               <span className="phase-row__label">{label}</span>
-              <select
-                aria-label={t("accounts.phases.accountFor", { phase: label })}
+              <Select
+                label={t("accounts.phases.accountFor", { phase: label })}
+                title={label}
                 value={assigned?.account ?? ""}
-                onChange={(e) => update(phase, optional, { account: e.target.value })}
-              >
-                <option value="">
-                  {optional
-                    ? t("accounts.phases.skip")
-                    : main
-                      ? t("accounts.phases.projectAccountNamed", { name: main.name })
-                      : t("accounts.phases.projectAccount")}
-                </option>
-                {offered.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} · {a.providerName}
-                  </option>
-                ))}
-              </select>
+                onChange={(account) => update(phase, optional, { account })}
+                options={[
+                  {
+                    value: "",
+                    label: optional
+                      ? t("accounts.phases.skip")
+                      : main
+                        ? t("accounts.phases.projectAccountNamed", { name: main.name })
+                        : t("accounts.phases.projectAccount"),
+                  },
+                  ...offered.map((a) => accountOption(a)),
+                ]}
+              />
               <input
                 aria-label={t("accounts.phases.modelFor", { phase: label })}
                 list={listId}

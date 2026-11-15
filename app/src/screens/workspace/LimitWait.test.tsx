@@ -4,6 +4,7 @@ import { QueryClient } from "@tanstack/react-query";
 
 import { App } from "../../App";
 import { MockApi } from "../../api/MockApi";
+import { chooseMode } from "../../test/select";
 
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
 
@@ -76,7 +77,7 @@ describe("Waiting for a limit", () => {
     const api = MockApi.withSampleData();
     const { user } = setup("es", api);
     await user.click(await screen.findByRole("button", { name: /^hedy/ }, SLOW));
-    await user.click(await screen.findByRole("radio", { name: "Pregunta" }));
+    await chooseMode(user, "Pregunta");
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     expect((await screen.findAllByText(/Terminó/)).length).toBeGreaterThan(0);

@@ -3,10 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 
 import { errorMessage, useAction, useApi } from "../../api/context";
 import type { Overview } from "../../api/types";
+import { accountOption } from "../../components/accounts";
 import { shortPath } from "../../components/projects";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { Field, Switch } from "../../components/ui/controls";
+import { Select } from "../../components/ui/Select";
 import { useToast } from "../../components/ui/Toast";
 import { useT } from "../../i18n";
 
@@ -86,13 +88,14 @@ export function AddProjectDialog({
       </div>
       <Field label={t("common.account")}>
         {(id) => (
-          <select id={id} value={account} onChange={(e) => setChosen(e.target.value)} disabled={offered.isPending}>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name} · {a.providerName}
-              </option>
-            ))}
-          </select>
+          <Select
+            id={id}
+            title={t("common.account")}
+            value={account}
+            onChange={setChosen}
+            disabled={offered.isPending}
+            options={accounts.map((a) => accountOption(a))}
+          />
         )}
       </Field>
       {offered.isSuccess && accounts.length === 0 && (

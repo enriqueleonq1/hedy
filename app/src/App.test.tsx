@@ -4,6 +4,7 @@ import { QueryClient } from "@tanstack/react-query";
 
 import { App } from "./App";
 import { MockApi } from "./api/MockApi";
+import { chooseOption, optionLabels } from "./test/select";
 
 function renderApp(api = MockApi.withSampleData()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -182,10 +183,11 @@ describe("Accounts", () => {
     const { user } = renderApp(api);
     await user.click(await screen.findByRole("button", { name: "Cuentas y modelos" }));
 
-    const select = await screen.findByRole("combobox", { name: "Cuenta de hobby" });
-    const options = within(select).getAllByRole("option").map((o) => o.textContent);
+    await user.click(await screen.findByRole("combobox", { name: "Cuenta de hobby" }));
+    const options = optionLabels();
     expect(options).not.toContain("trabajo");
     expect(options).toContain("personal");
+    await user.keyboard("{Escape}");
     expect(screen.getByRole("combobox", { name: "Cuenta de homming" })).toBeDisabled();
   });
 });
@@ -199,8 +201,8 @@ describe("Models per phase", () => {
     await user.click(edit);
 
     const dialog = screen.getByRole("dialog", { name: "Modelos por fase · hedy" });
-    await user.selectOptions(within(dialog).getByLabelText("Cuenta para Implementar"), "chatgpt");
-    await user.selectOptions(within(dialog).getByLabelText("Cuenta para Escribir tests"), "kimi");
+    await chooseOption(user, within(dialog).getByLabelText("Cuenta para Implementar"), "ChatGPT");
+    await chooseOption(user, within(dialog).getByLabelText("Cuenta para Escribir tests"), "Kimi");
     await user.type(within(dialog).getByLabelText("Modelo para Escribir tests"), "kimi-k3");
     await user.click(within(dialog).getByRole("button", { name: "Guardar" }));
 
@@ -217,9 +219,9 @@ describe("Models per phase", () => {
     await user.click(screen.getByRole("button", { name: "Modelos por fase de hedy" }));
 
     const dialog = screen.getByRole("dialog", { name: "Modelos por fase · hedy" });
-    await user.selectOptions(within(dialog).getByLabelText("Cuenta para Revisar"), "kimi");
+    await chooseOption(user, within(dialog).getByLabelText("Cuenta para Revisar"), "Kimi");
     await user.type(within(dialog).getByLabelText("Modelo para Revisar"), "kimi-k3");
-    await user.selectOptions(within(dialog).getByLabelText("Cuenta para Revisar"), "");
+    await chooseOption(user, within(dialog).getByLabelText("Cuenta para Revisar"), "No usar esta fase");
     expect(within(dialog).getByLabelText("Modelo para Revisar")).toHaveValue("");
     await user.click(within(dialog).getByRole("button", { name: "Guardar" }));
 

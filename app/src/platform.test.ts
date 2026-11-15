@@ -4,9 +4,9 @@ describe("platform", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("shows ⌘ on macOS and Ctrl elsewhere", () => {
-    expect(keyLabels(true)).toMatchObject({ enter: "⏎", submit: "⌘⏎" });
+    expect(keyLabels(true)).toMatchObject({ enter: "⏎", newline: "⇧⏎", submit: "⌘⏎" });
     expect(keyLabels(true).jump(3)).toBe("⌘3");
-    expect(keyLabels(false)).toMatchObject({ enter: "Enter", submit: "Ctrl+Enter" });
+    expect(keyLabels(false)).toMatchObject({ enter: "Enter", newline: "Shift+Enter", submit: "Ctrl+Enter" });
     expect(keyLabels(false).jump(3)).toBe("Ctrl+3");
   });
 

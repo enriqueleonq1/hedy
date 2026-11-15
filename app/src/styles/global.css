@@ -23,6 +23,8 @@
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 18px;
+  /* The composer: a large, soft field. */
+  --radius-field: 22px;
   --radius-pill: 999px;
   --radius-card: var(--radius-lg);
   --radius-control: var(--radius-md);
@@ -437,15 +439,138 @@ select:hover:not(:disabled, :focus),
 textarea:hover:not(:disabled, :focus) { border-color: var(--line-strong); }
 select:disabled { opacity: 0.65; }
 
-.pill-select {
-  width: auto !important;
-  min-width: 120px;
-  font-weight: 700;
+/* Our own select (components/ui/Select.tsx): a button that opens a list. */
+.select { position: relative; display: inline-flex; min-width: 0; max-width: 100%; }
+.select--field { display: flex; width: 100%; }
+
+.select__control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--target);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
   background: var(--panel-2);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
 }
 
-/* Account colors are not used as text: they fail contrast on the light theme. */
-.pill-select--account { color: var(--action-text); }
+.select__control:hover:not(:disabled) { border-color: var(--line-strong); }
+.select__control[aria-expanded="true"] { border-color: var(--action); }
+.select__control:disabled { opacity: 0.65; cursor: not-allowed; }
+.select__value { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: var(--space-2); }
+.select__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select__icon { flex: none; display: inline-flex; }
+.select__chevron { flex: none; display: inline-flex; color: var(--muted); transition: transform 0.15s var(--ease-out); }
+.select__control[aria-expanded="true"] .select__chevron { transform: rotate(180deg); }
+
+/* In tables: compact, bold. Account colors are never text (they fail contrast on light). */
+.select--pill .select__control { width: auto; min-width: 120px; min-height: 34px; font-weight: 700; }
+.select--account .select__text { color: var(--action-text); }
+
+/* Small rounded pills (the composer's mode, account and model) and toggles that look alike. */
+.select--chip .select__control,
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: auto;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--panel-2);
+  color: var(--ink);
+  font-size: var(--text-callout);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.select--chip .select__text { max-width: 16em; }
+.select--chip .select__icon { color: var(--accent); }
+.chip:hover:not(:disabled) { border-color: var(--line-strong); }
+.select--chip .select__control[aria-expanded="true"],
+.chip[aria-expanded="true"] { border-color: var(--action); background: var(--selection); }
+.chip[aria-pressed="true"] { border-color: var(--action); background: var(--selection); }
+.chip[aria-pressed="true"] .icon { color: var(--action-text); }
+.chip:disabled { opacity: 0.5; cursor: not-allowed; }
+.chip--icon { width: 32px; padding: 0; justify-content: center; color: var(--muted); }
+.chip--icon:hover:not(:disabled) { color: var(--ink); }
+.chip__mark { display: inline-flex; color: var(--muted); }
+
+.color-dot { flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+
+/* Floating lists: a select's options, a menu's actions. Placed by components/ui/popover.ts. */
+.popover {
+  position: fixed;
+  z-index: 60;
+  min-width: 220px;
+  max-width: min(380px, calc(100vw - 16px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-pop);
+  transform-origin: top left;
+  animation: pop-in 0.12s var(--ease-out);
+}
+
+.popover[data-side="top"] { transform-origin: bottom left; animation-name: pop-up; }
+@keyframes pop-up { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
+
+.popover__title {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font: 700 var(--text-eyebrow) var(--font-ui);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.select__group + .select__group { margin-top: var(--space-1); padding-top: var(--space-1); border-top: 1px solid var(--line); }
+
+.popover__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--target);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.popover__item--active,
+button.popover__item:hover:not(:disabled),
+button.popover__item:focus-visible { background: var(--selection); outline: none; }
+.popover__item[aria-disabled="true"],
+.popover__item:disabled { color: var(--muted); cursor: default; }
+.popover__check { flex: none; width: 18px; display: inline-flex; justify-content: center; color: var(--action-text); }
+.popover__icon { flex: none; display: inline-flex; color: var(--accent); }
+.popover__text { flex: 1; min-width: 0; display: grid; line-height: 1.3; }
+.popover__label { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popover__detail { font-size: var(--text-caption); color: var(--muted); }
+.popover__hint { flex: none; padding-left: var(--space-3); font-size: var(--text-caption); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.popover__footnote {
+  margin-top: var(--space-1);
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  border-top: 1px solid var(--line);
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
 
 .field { display: grid; gap: 6px; }
 .field > label,
@@ -969,7 +1094,6 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 }
 .chat__title p { margin-top: 4px; }
 .chat__tools { display: flex; gap: 8px; align-items: center; flex: none; }
-.chat__tools .pill-select { max-width: 190px; }
 
 /* The task switcher: a popover with every task of the project. */
 .task-switcher { position: relative; }
@@ -1205,31 +1329,83 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 .permission-card:focus { outline: 2px solid var(--focus); outline-offset: 0; }
 .permission-card__what { font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; }
 
+/* The composer ("Spotlight"): one large rounded field, the text on top and one
+   row inside it: chips, a key hint and the round Send button, which never wraps. */
 .composer {
   position: relative;
   display: grid;
-  gap: 8px;
-  padding: 14px 16px;
-  border-radius: var(--radius-card);
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-radius: var(--radius-field);
   border: 1px solid var(--line);
   background: var(--panel);
 }
 
+.composer:focus-within { border-color: var(--action); box-shadow: 0 0 0 4px var(--selection); }
 .composer__label { font-size: var(--text-callout); color: var(--muted); }
 
 .composer__input {
+  min-height: calc(3em + 4px);
+  max-height: 40vh;
   border: 0;
   background: transparent;
-  padding: 4px 0;
+  padding: 2px 0;
   resize: none;
-  font-size: 15px;
+  font-size: var(--text-headline);
+  line-height: 1.5;
+  field-sizing: content;
 }
 
 .composer__input:focus-visible { outline: none; }
-.composer:focus-within { border-color: var(--action); }
-.composer__bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.composer__bar .segmented__option { min-height: 32px; padding: 0 12px; }
-.composer__hint { color: var(--muted); }
+.composer__input:hover:not(:disabled, :focus) { border-color: transparent; }
+
+.composer__bar { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+
+/* The chips shrink and then scroll sideways; the hint and Send stay put. The
+   padding keeps room for the focus ring that the scrolling box would clip. */
+.composer__chips {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: var(--space-1);
+  margin: calc(-1 * var(--space-1));
+}
+
+.composer__chips::-webkit-scrollbar { display: none; }
+.composer__chips > * { flex: none; }
+.composer__hint { flex: none; margin-left: auto; padding-left: var(--space-2); font-size: var(--text-caption); color: var(--muted); white-space: nowrap; }
+
+.composer__send {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-left: auto;
+  border: 0;
+  border-radius: 50%;
+  background: var(--action);
+  color: var(--action-ink);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.composer__hint + .composer__send { margin-left: 0; }
+.composer__send:hover:not(:disabled) { filter: brightness(1.08); }
+.composer__send:active:not(:disabled) { transform: scale(0.94); }
+.composer__send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+@media (max-width: 1080px) {
+  .workspace:not(.workspace--solo) .composer__hint { display: none; }
+}
+
+@media (max-width: 760px) {
+  .composer__hint { display: none; }
+}
 
 /* Queued messages ("En cola"): a user bubble with a dashed edge until it goes. */
 .queue { display: grid; gap: 8px; }

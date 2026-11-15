@@ -4,6 +4,7 @@ import { QueryClient } from "@tanstack/react-query";
 
 import { App } from "../../App";
 import { MockApi } from "../../api/MockApi";
+import { chooseMode, chooseOption, optionLabels } from "../../test/select";
 
 // xterm needs a real canvas; the Terminal tab is not exercised here.
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
@@ -25,7 +26,7 @@ describe("Workspace", () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
     expect(await screen.findByText(/¿Qué hacemos en hedy\?/)).toBeInTheDocument();
-    expect(screen.getByRole("radiogroup", { name: "Modo" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Proyecto");
 
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "Agrega un recordatorio 24 horas antes");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
@@ -99,8 +100,8 @@ describe("Workspace", () => {
   it("asks without a worktree in Pregunta mode", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
-    await user.click(await screen.findByRole("radio", { name: "Pregunta" }));
-    expect(screen.queryByLabelText("Planificar primero")).not.toBeInTheDocument();
+    await chooseMode(user, "Pregunta");
+    expect(screen.queryByRole("button", { name: "Planificar primero" })).not.toBeInTheDocument();
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     expect(await screen.findByText(/no cambian archivos/)).toBeInTheDocument();
@@ -110,38 +111,43 @@ describe("Workspace", () => {
   it("picks the mode in the composer, only for new tasks, remembered per project", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
-    const modes = await screen.findByRole("radiogroup", { name: "Modo" });
+    const modes = await screen.findByRole("combobox", { name: "Modo" });
     expect(modes.closest(".composer")).not.toBeNull();
-    expect(document.querySelector(".topbar [role=radiogroup]")).toBeNull();
-    expect(within(modes).getByRole("radio", { name: "Investigar" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Planificar primero")).toBeInTheDocument();
+    expect(document.querySelector(".topbar [role=combobox]")).toBeNull();
+    expect(screen.getByRole("button", { name: "Planificar primero" })).toHaveAttribute("aria-pressed", "true");
 
-    await user.click(within(modes).getByRole("radio", { name: "Investigar" }));
-    expect(screen.queryByLabelText("Planificar primero")).not.toBeInTheDocument();
+    await user.click(modes);
+    expect(screen.getByRole("listbox", { name: "Modo" })).toBeInTheDocument();
+    expect(optionLabels()).toEqual(["Proyecto", "Pregunta", "Investigar"]);
+    expect(screen.getByRole("option", { name: "Proyecto" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("option", { name: "Pregunta" })).toHaveAccessibleDescription("Responde sin tocar archivos");
+    await user.click(screen.getByRole("option", { name: "Investigar" }));
+    expect(modes).toHaveTextContent("Investigar");
+    expect(screen.queryByRole("button", { name: "Planificar primero" })).not.toBeInTheDocument();
     expect(localStorage.getItem("hedy.mode./code/hedy")).toBe("research");
 
     // Another project keeps its own mode; coming back finds the one chosen here.
     await openProject(user, /^homming/);
-    expect(await screen.findByRole("radio", { name: "Proyecto" })).toHaveAttribute("aria-checked", "true");
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Proyecto"));
     await user.click(within(screen.getByRole("navigation", { name: "Proyectos abiertos" })).getByRole("button", { name: "hedy" }));
-    expect(await screen.findByRole("radio", { name: "Investigar" })).toHaveAttribute("aria-checked", "true");
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Investigar"));
 
     // Inside a task, follow-ups keep its mode: no selector.
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Qué librerías hay para recordatorios?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     expect(await screen.findByLabelText("Responde o pide algo más")).toBeInTheDocument();
-    expect(screen.queryByRole("radiogroup", { name: "Modo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Modo" })).not.toBeInTheDocument();
 
     // "+ Nueva tarea" in the header brings the selector back.
     await user.click(screen.getByRole("button", { name: "+ Nueva tarea" }));
-    expect(await screen.findByRole("radiogroup", { name: "Modo" })).toBeInTheDocument();
+    expect(await screen.findByRole("combobox", { name: "Modo" })).toBeInTheDocument();
   });
 
   it("answers the plan and permission cards with the keyboard", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
     await user.type(await screen.findByLabelText("Pídele algo a hedy"), "Recordatorios");
-    expect(screen.getByText("Ctrl+Enter")).toHaveClass("kbd");
+    expect(screen.getByText("Ctrl+Enter enviar")).toHaveClass("composer__hint");
     await user.keyboard("{Control>}{Enter}{/Control}");
 
     // The card takes the focus (nothing else had it) and shows its keys.
@@ -282,7 +288,7 @@ describe("Workspace", () => {
   it("refreshes a stopped task even when its status stays the same", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
-    await user.click(await screen.findByRole("radio", { name: "Pregunta" }));
+    await chooseMode(user, "Pregunta");
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     expect(await screen.findByText(/Terminó/, { selector: ".activity" })).toBeInTheDocument();
@@ -296,7 +302,7 @@ describe("Workspace", () => {
     const { api, user } = setup();
     await openProject(user, /^hedy/);
     await user.type(await screen.findByLabelText("Pídele algo a hedy"), "Recordatorios");
-    await user.click(screen.getByLabelText("Planificar primero"));
+    await user.click(screen.getByRole("button", { name: "Planificar primero" }));
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     await screen.findByRole("region", { name: "Claude quiere correr un comando" });
 
@@ -338,3 +344,99 @@ describe("Workspace", () => {
     expect(within(tabs).getByRole("button", { name: "hedy" })).toHaveAttribute("aria-current", "page");
   });
 });
+
+describe("Composer", () => {
+  it("keeps the chips and the round Send button in one row, and sends with Ctrl+Enter in a project", async () => {
+    const { api, user } = setup();
+    const start = vi.spyOn(api, "startTask");
+    await openProject(user, /^hedy/);
+    const composer = await screen.findByLabelText("Pídele algo a hedy");
+    const send = screen.getByRole("button", { name: "Enviar" });
+    const bar = send.closest(".composer__bar");
+    // Send sits in the bar itself, never among the chips that scroll.
+    expect(send.parentElement).toBe(bar);
+    expect(bar?.querySelector(".composer__chips")).toContainElement(screen.getByRole("combobox", { name: "Modo" }));
+    expect(send).toBeDisabled();
+    expect(screen.getByText("Ctrl+Enter enviar")).toBeInTheDocument();
+
+    const model = screen.getByRole("combobox", { name: "Modelo" });
+    expect(model).toHaveTextContent("Auto por fase");
+    await user.click(model);
+    expect(optionLabels()).toEqual(["Auto por fase", "opus", "sonnet", "haiku"]);
+    expect(screen.getByRole("option", { name: "haiku" })).toHaveAccessibleDescription("El más rápido");
+    await user.click(screen.getByRole("option", { name: "sonnet" }));
+    expect(model).toHaveTextContent("sonnet");
+
+    const plan = screen.getByRole("button", { name: "Planificar primero" });
+    expect(plan).toHaveAttribute("aria-pressed", "true");
+    await user.click(plan);
+    expect(plan).toHaveAttribute("aria-pressed", "false");
+
+    // Enter is a new line here; Ctrl+Enter sends.
+    await user.type(composer, "Primera línea{Enter}segunda");
+    expect(start).not.toHaveBeenCalled();
+    expect(composer).toHaveValue("Primera línea\nsegunda");
+    expect(send).toBeEnabled();
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    expect(start).toHaveBeenCalledWith({
+      project: "/code/hedy",
+      prompt: "Primera línea\nsegunda",
+      mode: "project",
+      model: "sonnet",
+      planFirst: false,
+    });
+  });
+
+  it("asks with Enter in a conversation, on the account and model of its chips", async () => {
+    window.history.replaceState(null, "", "#c");
+    const { api, user } = setup();
+    const start = vi.spyOn(api, "startConversation");
+    const composer = await screen.findByRole("textbox", { name: "¿Qué quieres saber?" });
+    expect(screen.getByText("Enter enviar · Shift+Enter salto")).toBeInTheDocument();
+
+    const account = await screen.findByRole("combobox", { name: "Cuenta de la pregunta" });
+    expect(account).toHaveTextContent("Claude personal");
+    await user.click(account);
+    expect(screen.getByRole("listbox", { name: "Cuenta" })).toBeInTheDocument();
+    // Each account says how much of its plan is used; Hedy never switches by itself.
+    expect(screen.getByRole("option", { name: "Claude personal" })).toHaveAccessibleDescription("Claude Code · Semana · 83%");
+    expect(screen.getByText("Hedy nunca cambia de cuenta por su cuenta")).toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: "Kimi" }));
+    expect(account).toHaveTextContent("Kimi");
+
+    await chooseOption(user, screen.getByRole("combobox", { name: "Modelo" }), "kimi-k3");
+    await chooseMode(user, "Investigar");
+    expect(screen.queryByRole("button", { name: "Planificar primero" })).not.toBeInTheDocument();
+
+    // Shift+Enter is a new line; Enter sends.
+    await user.type(composer, "Uno{Shift>}{Enter}{/Shift}dos");
+    expect(start).not.toHaveBeenCalled();
+    await user.keyboard("{Enter}");
+    expect(start).toHaveBeenCalledWith({ prompt: "Uno\ndos", mode: "research", account: "kimi", model: "kimi-k3" });
+  });
+
+  it("keeps templates one quiet button away: use one, or save the message as one", async () => {
+    const api = MockApi.withSampleData().withSampleTemplates();
+    api.delayMs = 0;
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await openProject(user, /^hedy/);
+    const composer = await screen.findByLabelText("Pídele algo a hedy");
+    const templates = screen.getByRole("button", { name: "Plantillas" });
+
+    await user.click(templates);
+    expect(screen.getByRole("menuitem", { name: "Guardar como plantilla" })).toBeDisabled();
+    await user.click(screen.getByRole("menuitem", { name: "Usar una plantilla" }));
+    expect(await screen.findByRole("listbox", { name: "Plantillas" })).toBeInTheDocument();
+    expect(composer).toHaveValue("/");
+    await waitFor(() => expect(composer).toHaveFocus());
+
+    await user.clear(composer);
+    await user.type(composer, "Algo que repito");
+    await user.click(templates);
+    expect(screen.getByRole("menuitem", { name: "Usar una plantilla" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(templates).toHaveFocus();
+  });
+});
+

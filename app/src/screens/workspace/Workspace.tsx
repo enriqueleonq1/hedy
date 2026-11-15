@@ -5,9 +5,13 @@ import { errorMessage, useAction, useApi } from "../../api/context";
 import type { HedyApi } from "../../api/HedyApi";
 import type { Account, Overview, PromptTemplate, Task, TaskMode } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
+import { accountOption } from "../../components/accounts";
 import { shortPath } from "../../components/projects";
+import { headlineText } from "../../components/planUsage";
 import { Button, ConfirmButton } from "../../components/ui/Button";
-import { Segmented } from "../../components/ui/controls";
+import { AskIcon, CodeIcon, PlanIcon, ResearchIcon, SendIcon, TemplateIcon } from "../../components/ui/icons";
+import { MenuButton } from "../../components/ui/Menu";
+import { Select } from "../../components/ui/Select";
 import { useToast } from "../../components/ui/Toast";
 import {
   ACTIVITY_KEY,
@@ -35,7 +39,7 @@ import {
   type TimelineItem,
 } from "../../tasks/timeline";
 import { useMascot } from "../../tasks/useMascot";
-import { MODEL_SUGGESTIONS } from "../../components/models";
+import { MODEL_HINTS, MODEL_SUGGESTIONS } from "../../components/models";
 import { useT, type MessageKey } from "../../i18n";
 import { keyLabels } from "../../platform";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
@@ -273,18 +277,17 @@ export function Workspace({
           }
           accountPicker={
             solo && !task && asking.accounts.length > 1 && account ? (
-              <select
-                className="pill-select"
-                aria-label={t("conversation.account")}
+              <Select
+                variant="chip"
+                label={t("conversation.account")}
+                title={t("common.account")}
                 value={account.id}
-                onChange={(e) => asking.pick(e.target.value)}
-              >
-                {asking.accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
+                onChange={asking.pick}
+                options={asking.accounts.map((a) =>
+                  accountOption(a, [a.providerName, headlineText(a, t)].filter(Boolean).join(" · ")),
+                )}
+                footnote={t("workspace.composer.accountFootnote")}
+              />
             ) : null
           }
           onStarted={(created) => onSelectTask(created.id, { replace: true })}
@@ -330,6 +333,18 @@ function DeleteConversation({ task, onDeleted }: { task: Task; onDeleted: () => 
 }
 
 const MODES = Object.keys(MODE_LABEL) as TaskMode[];
+
+const MODE_ICON: Record<TaskMode, ReactNode> = {
+  project: <CodeIcon />,
+  ask: <AskIcon />,
+  research: <ResearchIcon />,
+};
+
+const MODE_DETAIL: Record<TaskMode, MessageKey> = {
+  project: "workspace.composer.modeProjectDetail",
+  ask: "workspace.composer.modeAskDetail",
+  research: "workspace.composer.modeResearchDetail",
+};
 
 /** What starts a new task from the composer: in a project, or as a conversation. */
 type StartTask = (
@@ -485,6 +500,9 @@ function Composer({
     focusInput();
   }
 
+  const sendLabel =
+    followUp && card ? t("workspace.composer.sendAfterCard") : queueing ? t("queue.add") : t("workspace.composer.send");
+
   function submit() {
     const value = text.trim();
     if (!value || busy || disabled) return;
@@ -547,7 +565,7 @@ function Composer({
           }}
         />
       )}
-      <label className="composer__label" htmlFor="composer-input">
+      <label className={followUp ? "composer__label" : "sr-only"} htmlFor="composer-input">
         {followUp && card
           ? t(CARD_LABEL[card])
           : queueing
@@ -562,7 +580,7 @@ function Composer({
         ref={input}
         id="composer-input"
         className="composer__input"
-        rows={3}
+        rows={2}
         value={text}
         disabled={disabled}
         aria-autocomplete="list"
@@ -610,46 +628,91 @@ function Composer({
         </p>
       )}
       <div className="composer__bar">
-        {!followUp && (
-          <>
-            <Segmented<TaskMode>
-              label={t("workspace.composer.mode")}
-              value={mode}
-              options={(solo ? CONVERSATION_MODES : MODES).map((value) => ({ value, label: t(MODE_LABEL[value]) }))}
-              onChange={setNewMode}
-            />
-            {accountPicker}
-            <select className="pill-select" aria-label={t("common.models")} value={model} onChange={(e) => setModel(e.target.value)}>
-              <option value="">{solo ? t("conversation.defaultModel") : t("workspace.composer.autoModels")}</option>
-              {models.map((m) => (
-                <option key={m} value={m}>
-                  {t("workspace.composer.onlyModel", { model: m })}
-                </option>
-              ))}
-            </select>
-            {mode === "project" && (
-              <label className="check">
-                <input type="checkbox" checked={planFirst} onChange={(e) => setPlanFirst(e.target.checked)} />
-                {t("workspace.composer.planFirst")}
-              </label>
-            )}
-          </>
-        )}
-        <Button small variant="ghost" disabled={!text.trim() || query !== null} onClick={() => setSaving(true)}>
-          {t("templates.saveCurrent")}
-        </Button>
-        <span className="spacer" />
-        <kbd className="kbd composer__hint" aria-hidden>
-          {enterSends ? "Enter" : keys.submit}
-        </kbd>
-        <Button
+        <div className="composer__chips">
+          {!followUp && (
+            <>
+              <Select<TaskMode>
+                variant="chip"
+                label={t("workspace.composer.mode")}
+                title={t("workspace.composer.mode")}
+                value={mode}
+                options={(solo ? CONVERSATION_MODES : MODES).map((value) => ({
+                  value,
+                  label: t(MODE_LABEL[value]),
+                  detail: t(MODE_DETAIL[value]),
+                  icon: MODE_ICON[value],
+                }))}
+                onChange={setNewMode}
+              />
+              {accountPicker}
+              {models.length > 0 && (
+                <Select
+                  variant="chip"
+                  label={t("workspace.composer.model")}
+                  title={t("workspace.composer.model")}
+                  value={model}
+                  options={[
+                    {
+                      value: "",
+                      label: solo ? t("conversation.defaultModel") : t("workspace.composer.modelAuto"),
+                      detail: solo ? t("workspace.composer.modelAccountDetail") : t("workspace.composer.modelAutoDetail"),
+                    },
+                    ...models.map((m) => {
+                      const hint = MODEL_HINTS[m];
+                      return { value: m, label: m, detail: hint ? t(hint) : undefined };
+                    }),
+                  ]}
+                  onChange={setModel}
+                />
+              )}
+              {mode === "project" && (
+                <button type="button" className="chip" aria-pressed={planFirst} onClick={() => setPlanFirst((on) => !on)}>
+                  <PlanIcon />
+                  {t("workspace.composer.planFirst")}
+                </button>
+              )}
+            </>
+          )}
+          <MenuButton
+            label={t("templates.picker")}
+            title={t("templates.picker")}
+            className="chip chip--icon"
+            align="start"
+            items={[
+              {
+                label: t("templates.use"),
+                shortcut: "/",
+                disabled: text.trim() !== "" || disabled,
+                onSelect: () => {
+                  edit("/");
+                  focusInput();
+                },
+              },
+              {
+                label: t("templates.saveCurrent"),
+                disabled: !text.trim() || query !== null,
+                onSelect: () => setSaving(true),
+              },
+            ]}
+          >
+            <TemplateIcon />
+          </MenuButton>
+        </div>
+        <span className="composer__hint" aria-hidden>
+          {enterSends
+            ? t("workspace.composer.hintEnter", { enter: keys.enter, newline: keys.newline })
+            : t("workspace.composer.hintSubmit", { submit: keys.submit })}
+        </span>
+        <button
           type="submit"
-          variant="primary"
+          className="composer__send"
+          aria-label={sendLabel}
+          title={sendLabel}
           aria-keyshortcuts={enterSends ? "Enter" : "Control+Enter Meta+Enter"}
           disabled={!text.trim() || busy || disabled}
         >
-          {followUp && card ? t("workspace.composer.sendAfterCard") : queueing ? t("queue.add") : t("workspace.composer.send")}
-        </Button>
+          <SendIcon />
+        </button>
       </div>
       {saving && (
         <TemplateDialog

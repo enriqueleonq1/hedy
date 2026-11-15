@@ -50,6 +50,82 @@ export function QuestionIcon() {
   );
 }
 
+const small = { ...common, width: 14, height: 14 };
+
+/** ⌄: a control that opens a list. */
+export function ChevronIcon() {
+  return (
+    <svg {...small} width={12} height={12} strokeWidth={2.4} className="icon">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+/** ✓: the chosen item of a list. */
+export function CheckIcon() {
+  return (
+    <svg {...small} strokeWidth={2.6} className="icon">
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
+  );
+}
+
+/** ↑: send. */
+export function SendIcon() {
+  return (
+    <svg {...common} strokeWidth={2.6} className="icon">
+      <path d="M12 19V5M5 12l7-7 7 7" />
+    </svg>
+  );
+}
+
+/** </>: a task that changes the project's code. */
+export function CodeIcon() {
+  return (
+    <svg {...small} className="icon">
+      <path d="M8.5 7 3.5 12l5 5M15.5 7l5 5-5 5" />
+    </svg>
+  );
+}
+
+/** A speech bubble, small: a question that changes nothing. */
+export function AskIcon() {
+  return (
+    <svg {...small} className="icon">
+      <path d="M21 12a8 8 0 0 1-11.8 7L4 20l1.1-4.6A8 8 0 1 1 21 12z" />
+    </svg>
+  );
+}
+
+/** A magnifying glass: research, reading before answering. */
+export function ResearchIcon() {
+  return (
+    <svg {...small} className="icon">
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m16 16 4.5 4.5" />
+    </svg>
+  );
+}
+
+/** A checklist: plan before changing anything. */
+export function PlanIcon() {
+  return (
+    <svg {...small} className="icon">
+      <path d="M10 6.5h10M10 12h10M10 17.5h10M3.5 6.5l1.3 1.3 2.2-2.4M3.5 12l1.3 1.3 2.2-2.4M3.5 17.5l1.3 1.3 2.2-2.4" />
+    </svg>
+  );
+}
+
+/** A stack of cards: prompt templates. */
+export function TemplateIcon() {
+  return (
+    <svg {...common} width={16} height={16} className="icon">
+      <rect x="4" y="7" width="13" height="13" rx="2" />
+      <path d="M8 4h10a2 2 0 0 1 2 2v10" />
+    </svg>
+  );
+}
+
 /** « when it collapses, » when it expands. */
 export function CollapseIcon({ collapsed }: { collapsed: boolean }) {
   return (

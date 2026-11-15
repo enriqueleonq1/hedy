@@ -4,6 +4,7 @@ import { QueryClient } from "@tanstack/react-query";
 
 import { App } from "../../App";
 import { MockApi } from "../../api/MockApi";
+import { optionLabels } from "../../test/select";
 
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
 
@@ -68,7 +69,7 @@ describe("Starting something new", () => {
     expect(more).toHaveAttribute("aria-expanded", "false");
     expect(within(dialog).queryByRole("combobox", { name: "Cuenta" })).not.toBeInTheDocument();
     await user.click(more);
-    expect(within(dialog).getByRole("combobox", { name: "Cuenta" })).toHaveValue("claude-personal");
+    expect(within(dialog).getByRole("combobox", { name: "Cuenta" })).toHaveTextContent("Claude personal");
     await user.type(within(dialog).getByRole("textbox", { name: "Cliente" }), "ACME");
 
     await user.click(createButton);
@@ -96,9 +97,12 @@ describe("Starting something new", () => {
     const composer = screen.getByRole("textbox", { name: "¿Qué quieres saber?" });
     await waitFor(() => expect(composer).toHaveFocus());
     // Only the modes that never change files; the default account, preselected.
-    const modes = screen.getByRole("radiogroup", { name: "Modo" });
-    expect(within(modes).getAllByRole("radio").map((r) => r.textContent)).toEqual(["Pregunta", "Investigar"]);
-    expect(screen.getByRole("combobox", { name: "Cuenta de la pregunta" })).toHaveValue("claude-personal");
+    await user.click(screen.getByRole("combobox", { name: "Modo" }));
+    expect(optionLabels()).toEqual(["Pregunta", "Investigar"]);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(composer).not.toHaveFocus());
+    expect(screen.getByRole("combobox", { name: "Cuenta de la pregunta" })).toHaveTextContent("Claude personal");
+    await user.click(composer);
     expect(screen.queryByRole("tab", { name: "Cambios" })).not.toBeInTheDocument();
 
     await user.type(composer, "¿Qué es un monad?{Enter}");

@@ -14,6 +14,15 @@ export const MODEL_SUGGESTIONS: Record<ProviderId, string[]> = {
   antigravity: [],
 };
 
+/** A few words on the suggested models we know; any other shows none. */
+export const MODEL_HINTS: Record<string, MessageKey> = {
+  opus: "workspace.model.capable",
+  sonnet: "workspace.model.balanced",
+  haiku: "workspace.model.fastest",
+  "kimi-k3.1-pro-highspeed": "workspace.model.faster",
+  "gemini-3.8-flash": "workspace.model.fastest",
+};
+
 export const PHASES: { phase: Phase; label: MessageKey; optional: boolean }[] = [
   { phase: "plan", label: "accounts.phase.plan", optional: false },
   { phase: "implement", label: "accounts.phase.implement", optional: false },

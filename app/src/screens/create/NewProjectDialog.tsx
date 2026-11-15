@@ -3,10 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 
 import { errorMessage, OVERVIEW_KEY, useAction, useApi } from "../../api/context";
 import type { NewProjectInput, Overview } from "../../api/types";
+import { accountOption } from "../../components/accounts";
 import { shortPath } from "../../components/projects";
 import { Button } from "../../components/ui/Button";
 import { Field, Switch } from "../../components/ui/controls";
 import { Dialog } from "../../components/ui/Dialog";
+import { Select } from "../../components/ui/Select";
 import { useToast } from "../../components/ui/Toast";
 import { useT } from "../../i18n";
 
@@ -172,13 +174,14 @@ export function NewProjectDialog({
         <div id={moreId} className="new-project__more" hidden={!more}>
           <Field label={t("common.account")} hint={t("newProject.accountHint")}>
             {(id) => (
-              <select id={id} value={account} onChange={(e) => setChosen(e.target.value)} disabled={offered.isPending}>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} · {a.providerName}
-                  </option>
-                ))}
-              </select>
+              <Select
+                id={id}
+                title={t("common.account")}
+                value={account}
+                onChange={setChosen}
+                disabled={offered.isPending}
+                options={accounts.map((a) => accountOption(a))}
+              />
             )}
           </Field>
           {offered.isSuccess && accounts.length === 0 && <p className="warning">{t("accounts.project.noAccounts")}</p>}

@@ -19,7 +19,7 @@ function setup(api = MockApi.withSampleData()) {
 async function taskAtPermission(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole("button", { name: /^hedy/ }));
   await user.type(await screen.findByLabelText("Pídele algo a hedy"), "Recordatorios");
-  await user.click(screen.getByLabelText("Planificar primero"));
+  await user.click(screen.getByRole("button", { name: "Planificar primero" }));
   await user.click(screen.getByRole("button", { name: "Enviar" }));
   return screen.findByRole("region", { name: "Claude quiere correr un comando" });
 }

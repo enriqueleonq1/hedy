@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
+import { useAnchoredPopover } from "./popover";
+
 const ENABLED_ITEM = "[role=menuitem]:not(:disabled)";
 
 export interface MenuItem {
@@ -8,17 +10,22 @@ export interface MenuItem {
   disabled?: boolean;
   /** A short second line: what the action is for. */
   hint?: string;
+  /** Right-aligned: the key that does the same ("/"). */
+  shortcut?: string;
 }
 
 /**
  * A button that opens a menu of actions (the WAI-ARIA menu button): arrows,
- * Home and End move, Escape closes and gives the focus back, Tab leaves.
+ * Home and End move, Escape closes and gives the focus back, Tab leaves. The
+ * menu opens upward when there is no room below.
  */
 export function MenuButton({
   label,
   items,
   children,
   className = "menu-button",
+  title,
+  align = "end",
 }: {
   /** Accessible name of the button. */
   label: string;
@@ -26,12 +33,17 @@ export function MenuButton({
   /** What the button shows (`⋯` by default). */
   children?: ReactNode;
   className?: string;
+  /** A small heading at the top of the menu. */
+  title?: string;
+  /** Which edge of the button the menu lines up with. */
+  align?: "start" | "end";
 }) {
   const [open, setOpen] = useState(false);
   const id = useId();
   const wrap = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  useAnchoredPopover(open, trigger, menu, align);
 
   const enabled = () => [...(menu.current?.querySelectorAll<HTMLButtonElement>(ENABLED_ITEM) ?? [])];
 
@@ -81,7 +93,7 @@ export function MenuButton({
         aria-controls={open ? id : undefined}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={(e) => {
-          if (e.key === "ArrowDown" && !open) {
+          if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !open) {
             e.preventDefault();
             setOpen(true);
           }
@@ -90,14 +102,26 @@ export function MenuButton({
         {children ?? <span aria-hidden>⋯</span>}
       </button>
       {open && (
-        <div ref={menu} id={id} className="menu__list" role="menu" aria-label={label} onKeyDown={onMenuKey}>
+        <div
+          ref={menu}
+          id={id}
+          className="menu__list"
+          role="menu"
+          aria-label={label}
+          onKeyDown={onMenuKey}
+        >
+          {title && (
+            <div className="popover__title" aria-hidden>
+              {title}
+            </div>
+          )}
           {items.map((item) => (
             <button
               key={item.label}
               type="button"
               role="menuitem"
               tabIndex={-1}
-              className={item.hint ? "menu__item menu__item--hinted" : "menu__item"}
+              className={item.hint ? "menu__item menu__item--hinted" : item.shortcut ? "menu__item menu__item--shortcut" : "menu__item"}
               disabled={item.disabled}
               onClick={() => {
                 close();
@@ -108,6 +132,13 @@ export function MenuButton({
                 <>
                   <span className="menu__label">{item.label}</span>
                   <span className="menu__hint">{item.hint}</span>
+                </>
+              ) : item.shortcut ? (
+                <>
+                  <span className="menu__label">{item.label}</span>
+                  <kbd className="kbd menu__shortcut" aria-hidden>
+                    {item.shortcut}
+                  </kbd>
                 </>
               ) : (
                 item.label

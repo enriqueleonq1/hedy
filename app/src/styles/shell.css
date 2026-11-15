@@ -179,11 +179,10 @@
 .menu-button[aria-expanded="true"] { border-color: var(--line); background: var(--selection); color: var(--ink); }
 
 .menu__list {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 30;
+  position: fixed;
+  z-index: 60;
   min-width: 200px;
+  overflow-y: auto;
   display: grid;
   padding: var(--space-1);
   border: 1px solid var(--line);
@@ -213,6 +212,10 @@
 .menu__item--hinted { display: grid; gap: 1px; padding-block: 7px; white-space: normal; min-width: 300px; }
 .menu__label { font-weight: 600; }
 .menu__hint { font-size: 12.5px; color: var(--muted); }
+.menu__item--shortcut { display: flex; align-items: center; gap: var(--space-3); }
+.menu__item--shortcut .menu__label { flex: 1; font-weight: inherit; }
+.menu__shortcut { font-size: var(--text-caption); color: var(--muted); }
+.menu__list[data-side="top"] { transform-origin: bottom right; animation-name: pop-up; }
 
 .project-card__badges { display: inline-flex; align-items: center; gap: 6px; }
 .project-card__live { font-weight: 600; }
