@@ -1,0 +1,442 @@
+/* The Revisión tab: a pull request with the AI on the other side. Summary,
+   files, one file's diff with comments on its lines, and the decision in a
+   sticky bar. Colors only from the theme tokens (CSS variables set by tokens.ts). */
+
+/* The container the layout reads its width from (a wide panel puts the files on the left). */
+.review-host { container-type: inline-size; display: flex; flex-direction: column; min-height: 100%; }
+.review { flex: 1; gap: var(--space-3); }
+
+.rv-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px var(--space-3);
+}
+.rv-summary__counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.rv-summary__lines { font-family: var(--font-mono); font-size: 12.5px; }
+.rv-summary__progress { color: var(--muted); font-weight: 500; }
+.rv-summary__tools { display: flex; align-items: center; gap: 2px; }
+.rv-toggle { display: inline-flex; gap: 2px; padding-right: 6px; margin-right: 4px; border-right: 1px solid var(--line); }
+
+/* A hairline that fills as files are marked reviewed. */
+.rv-progress { grid-column: 1 / -1; height: 2px; border-radius: var(--radius-pill); background: var(--line); overflow: hidden; }
+.rv-progress__fill {
+  display: block;
+  height: 100%;
+  background: var(--action);
+  transform-origin: left;
+  transition: transform 0.2s var(--ease-out);
+}
+
+.rv-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.rv-icon-btn:hover:not(:disabled) { background: var(--panel-2); color: var(--ink); }
+.rv-icon-btn[aria-pressed="true"] { background: var(--selection); color: var(--action-text); }
+.rv-icon-btn:disabled { opacity: 0.4; cursor: default; }
+.rv-icon-btn--danger:hover:not(:disabled) { background: var(--diff-del-bg); color: var(--diff-del-ink); }
+
+/* ---- files */
+
+.rv-files { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.rv-file {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  border-radius: var(--radius-sm);
+}
+.rv-file:hover { background: var(--panel-2); }
+.rv-file--current,
+.rv-file--current:hover { background: var(--selection); }
+.rv-file__check { width: 15px; height: 15px; margin: 0 6px 0 8px; accent-color: var(--action); cursor: pointer; }
+.rv-file__main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 6px 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.rv-file__main:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: var(--radius-sm); }
+.rv-file--reviewed .rv-path__name { color: var(--muted); }
+.rv-file__notes {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  margin-left: auto;
+  color: var(--action-text);
+  font-family: var(--font-ui);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+.rv-file__stats { margin-left: auto; flex: none; font-variant-numeric: tabular-nums; }
+.rv-file__notes + .rv-file__stats { margin-left: 0; }
+/* Quiet until the row is pointed at or focused. */
+.rv-file .rv-file__more { width: 28px; height: 28px; font-size: 16px; opacity: 0; transition: opacity 0.12s var(--ease-out); }
+.rv-file:hover .rv-file__more,
+.rv-file:focus-within .rv-file__more,
+.rv-file .rv-file__more[aria-expanded="true"] { opacity: 1; }
+
+.rv-path { display: flex; min-width: 0; }
+.rv-path__dir { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); flex-shrink: 1; }
+.rv-path__name { flex: none; white-space: nowrap; }
+
+.rv-status {
+  flex: none;
+  width: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+.rv-status--added { color: var(--success); }
+.rv-status--deleted { color: var(--danger); }
+.rv-status--modified { color: var(--activity); }
+.rv-status--renamed { color: var(--accent); }
+
+/* ---- one file */
+
+.rv-file-view { display: grid; min-width: 0; }
+/* Stays on top while its diff scrolls by. */
+.rv-filehead {
+  position: sticky;
+  top: -4px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 4px 0 12px;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
+  background: var(--panel);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.rv-filehead .rv-path { flex: 1; }
+.rv-filehead__stats { flex: none; font-variant-numeric: tabular-nums; }
+.rv-filehead__tools { display: flex; align-items: center; gap: 2px; font-family: var(--font-ui); }
+.rv-viewed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px 0 8px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: var(--text-callout);
+  font-weight: 600;
+  cursor: pointer;
+}
+.rv-viewed:hover { background: var(--panel-2); color: var(--ink); }
+.rv-viewed:has(input:checked) { color: var(--action-text); }
+.rv-viewed input { width: 15px; height: 15px; margin: 0; accent-color: var(--action); cursor: pointer; }
+
+.rv-branch { margin: 0; overflow-wrap: anywhere; }
+
+/* ---------------------------------------------------------------- the diff */
+
+.rd {
+  --no: calc(var(--rd-digits, 3) * 1ch + 16px);
+  border: 1px solid var(--line);
+  border-radius: 0 0 var(--radius-control) var(--radius-control);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  overflow: hidden;
+}
+
+.rd-row { position: relative; display: grid; min-width: 0; }
+.rd--unified .rd-row { grid-template-columns: var(--no) var(--no) 18px minmax(0, 1fr); }
+.rd-half { grid-template-columns: var(--no) 18px minmax(0, 1fr); }
+.rd-row:focus { outline: none; }
+.rd-row:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
+
+.rd-no {
+  padding-right: 8px;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  cursor: pointer;
+}
+.rd-sign { color: var(--muted); user-select: none; text-align: center; }
+.rd-code { min-width: 0; padding-right: 12px; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.rd-row--added { background: var(--diff-add-bg); }
+.rd-row--added .rd-sign { color: var(--diff-add-ink); }
+.rd-row--removed { background: var(--diff-del-bg); }
+.rd-row--removed .rd-sign { color: var(--diff-del-ink); }
+.rd-emph { border-radius: 2px; color: inherit; }
+.rd-row--added .rd-emph { background: var(--diff-add-emph); }
+.rd-row--removed .rd-emph { background: var(--diff-del-emph); }
+
+/* Lines picked for a comment: a violet wash and a rule on the left edge. */
+.rd-row--selected { background: var(--selection); box-shadow: inset 3px 0 0 var(--action); }
+.rd-row--selected .rd-emph { background: transparent; }
+
+/* The "+" that starts a comment: over the gutter, shown on hover or focus. */
+.rd-gutter { position: absolute; top: 0; bottom: 0; left: calc(2 * var(--no) - 1px); z-index: 1; display: flex; align-items: center; }
+.rd-half .rd-gutter { left: calc(var(--no) - 1px); }
+.rd-add {
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: var(--action);
+  color: var(--action-ink);
+  font: 700 14px/1 var(--font-ui);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.12s var(--ease-out), transform 0.12s var(--ease-out);
+}
+.rd-row:hover .rd-add,
+.rd-row:focus-visible .rd-add { opacity: 1; transform: scale(1); }
+.rd-add:hover { transform: scale(1.08); }
+
+/* A line asked for from elsewhere: a brief wash that fades. */
+.rd-row--flash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--selection);
+  pointer-events: none;
+  animation: rd-flash 1.2s var(--ease-out) forwards;
+}
+@keyframes rd-flash {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Between changes: what is hidden, and how to show it. */
+.rd-gap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 6px;
+  border-block: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+.rd-gap:first-child { border-top: 0; }
+.rd-gap:last-child { border-bottom: 0; }
+.rd-gap__actions { display: flex; flex: none; gap: 2px; }
+.rd-gap__btn {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--action-text);
+  font: 600 12px var(--font-ui);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rd-gap__btn:hover { background: var(--selection); }
+.rd-gap__header { min-width: 0; padding-left: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Side by side: old on the left, new on the right. */
+.rd-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.rd-half--new { border-left: 1px solid var(--line); }
+.rd-half--empty { background: var(--panel-2); }
+
+.rd-state { display: grid; gap: 8px; justify-items: start; }
+.rd-outdated { display: grid; gap: 6px; margin-bottom: 8px; }
+.rd-outdated p { margin: 0; }
+
+/* ---- comments on lines */
+
+.rd-thread {
+  padding: 8px 12px 10px calc(2 * var(--no) + 18px);
+  border-block: 1px solid var(--line);
+  background: var(--panel);
+  font-family: var(--font-ui);
+  line-height: 1.5;
+}
+.rd--split .rd-thread { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 24px; padding: 8px 12px 10px; }
+.rd--split .rd-thread--old .rd-thread__cell { grid-column: 1; }
+.rd--split .rd-thread--new .rd-thread__cell { grid-column: 2; }
+.rd-thread__cell { min-width: 0; }
+/* A narrow panel: comments take the full width instead of lining up with the code. */
+@container (max-width: 560px) {
+  .rd--unified .rd-thread { padding-left: 12px; }
+}
+
+.rv-thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-width: 720px; }
+.rv-comment {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  gap: 4px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  font-size: var(--text-callout);
+  animation: rv-in 0.16s var(--ease-out);
+}
+@keyframes rv-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+.rv-comment--editing { padding: 8px; }
+.rv-comment__head { display: flex; align-items: center; gap: 8px; min-height: 26px; }
+.rv-comment__author { font-weight: 600; }
+.rv-comment__where { color: var(--muted); font-size: 12px; }
+.rv-comment__actions { display: inline-flex; gap: 2px; margin-left: auto; opacity: 0; transition: opacity 0.12s var(--ease-out); }
+.rv-comment:hover .rv-comment__actions,
+.rv-comment:focus-within .rv-comment__actions { opacity: 1; }
+.rv-comment__body { overflow-wrap: anywhere; }
+.rv-comment__body > :first-child { margin-top: 0; }
+.rv-comment__body > :last-child { margin-bottom: 0; }
+
+/* Sent: history, folded and quiet. */
+.rv-comment--sent { border-style: dashed; background: transparent; color: var(--muted); }
+.rv-comment--sent:not(.rv-comment--open) { padding: 0; }
+.rv-comment__fold {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rv-comment__fold:hover { color: var(--ink); }
+.rv-comment__sent { display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--success); font-weight: 600; font-size: 12px; }
+.rv-comment__sent--toggle { padding: 0 4px; border: 0; border-radius: var(--radius-xs); background: transparent; font-family: inherit; cursor: pointer; }
+.rv-comment__summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.rv-composer { display: grid; gap: 8px; max-width: 720px; }
+.rv-composer__field {
+  width: 100%;
+  min-height: 76px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--ink);
+  font: var(--text-callout) / 1.5 var(--font-ui);
+  resize: vertical;
+}
+.rv-composer__field:focus { outline: 2px solid var(--focus); outline-offset: -1px; border-color: transparent; }
+.rv-composer__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.rv-composer__hint { margin-right: auto; color: var(--muted); font-size: var(--text-caption); }
+
+/* ---- the decision */
+
+.rv-bar { flex-direction: column; align-items: stretch; gap: var(--space-2); }
+.rv-bar__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.rv-bar__status { display: flex; align-items: center; gap: var(--space-2); }
+.rv-bar__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--selection);
+  color: var(--action-text);
+  font: 600 var(--text-callout) var(--font-ui);
+  cursor: pointer;
+}
+.rv-bar__preview {
+  max-height: 240px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--ink);
+  font: 12px/1.55 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  animation: rv-in 0.16s var(--ease-out);
+}
+.rv-bar__done { display: inline-flex; align-items: center; gap: 6px; color: var(--success); font-weight: 600; font-size: var(--text-callout); }
+.rv-disclosure { transition: transform 0.16s var(--ease-out); }
+.rv-disclosure--open { transform: rotate(180deg); }
+
+/* ---- history */
+
+.rv-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 60vh; overflow: auto; }
+.rv-history__item {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+button.rv-history__item { cursor: pointer; }
+button.rv-history__item:hover { background: var(--panel-2); }
+.rv-history__subject { font-weight: 600; }
+.rv-history__meta { color: var(--muted); font-size: var(--text-caption); }
+
+/* ---- a wide panel: the files on the left of the diff */
+
+@container (min-width: 880px) {
+  .review { display: grid; grid-template-columns: 248px minmax(0, 1fr); align-content: start; column-gap: var(--space-4); }
+  .review > .rv-summary,
+  .review > .rv-branch,
+  .review > .changes__footer,
+  .review > .error-text,
+  .review > .empty { grid-column: 1 / -1; }
+  .review > .rv-files { position: sticky; top: 0; align-self: start; max-height: calc(100vh - 220px); overflow-y: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv-progress__fill,
+  .rd-add,
+  .rv-file .rv-file__more,
+  .rv-comment__actions,
+  .rv-disclosure { transition: none; }
+  .rv-comment,
+  .rv-bar__preview { animation: none; }
+  .rd-row--flash::after { animation: none; opacity: 0; }
+}

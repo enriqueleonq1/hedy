@@ -97,3 +97,16 @@ export async function highlightLines(
   // One line at a time: diff hunks are not complete programs.
   return lines.map((line) => h.codeToTokensBase(line, { lang, theme: CODE_THEME[theme] })[0] ?? []);
 }
+
+/**
+ * Tokens per line of a whole text (one side of a file), so strings and comments
+ * that span lines are colored right; null when the language is unknown.
+ */
+export async function highlightText(text: string, path: string, theme: ThemeName): Promise<ThemedToken[][] | null> {
+  const lang = languageFor(path);
+  if (!lang) return null;
+  const h = await getHighlighter();
+  await ensureLoaded(h, lang, CODE_THEME[theme]);
+  if (!h.getLoadedLanguages().includes(lang)) return null;
+  return h.codeToTokensBase(text, { lang, theme: CODE_THEME[theme] });
+}

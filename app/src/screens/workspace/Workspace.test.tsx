@@ -56,7 +56,7 @@ describe("Workspace", () => {
     expect(within(steps).getAllByText(/\(hecho\)/)).toHaveLength(3);
 
     const files = await screen.findByRole("list", { name: "Archivos cambiados" });
-    expect(within(files).getByText("citas/servicio.py")).toBeInTheDocument();
+    expect(within(files).getByRole("button", { name: /^citas\/servicio\.py/ })).toBeInTheDocument();
     expect(screen.getByRole("table", { name: "Cambios en citas/servicio.py" })).toHaveTextContent(
       "programar_recordatorio(cita, horas=24)",
     );
