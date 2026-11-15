@@ -953,3 +953,73 @@ claude -p /usage --output-format json --no-session-persistence --safe-mode
   "ya puede continuar".
 - **Not verified live**: a real reset with a real account (tested with the agent double,
   the fake clock and `MockApi`).
+
+## 23. Projects from scratch and quick questions outside any project (Nov 14, 2026)
+
+### New project ("Nuevo proyecto", `hedy new <name> [--in <parent>] [--account <id>] [--protect]`)
+
+- `Hedy::new_project` checks everything **before** creating anything: the name gives a
+  safe folder (`domain::project::folder_name`: accents folded, lowercase letters, digits,
+  `-`, `_`, `.`, at most 64 chars, at least one letter or digit: "Mi tienda online" →
+  `mi-tienda-online`); the parent is an absolute path; the folder does not exist; the
+  parent is writable (when it exists; a missing parent such as `~/Proyectos` is created);
+  the account (given, else the default one) passes the protection rules (a reserved
+  account is refused; a protected project cannot use the default account).
+- Then `FileSystem::create_new_dir` (`create_dir`, which fails on an existing path: never
+  overwrites), and `Git::init_repo`: `git init` (the user's own default branch name and
+  identity) plus **one empty commit**, "Initial commit". Tasks fork worktrees from
+  `HEAD`, which needs a commit; an empty one writes no file the user did not ask for (no
+  README). If git fails (typically no `user.name`/`user.email`: the message says how to set
+  them), the folder just created is removed again. Then the project is registered with
+  the name as typed, its account, protection and client.
+- The default parent (`default_project_parent`): where most registered projects live;
+  else the first existing of `~/Proyectos`, `~/Projects`, `~/projects`, `~/code`, `~/Code`,
+  `~/dev`, `~/src`; else `~/Proyectos` (`~/Projects` in English).
+- In the app, the dialog asks only for the name and shows the folder ("Cambiar…" uses the
+  folder picker) and the final path, checked live (`new_project_path`, which creates
+  nothing). Account (preselected: the default one if allowed), protection and client are
+  under "Más opciones". There is no "first request" field: after creating, the app opens
+  the project's composer for a new task, focused, with Proyecto mode and "Planificar
+  primero" as usual — one composer, not a second one in a dialog.
+- "Agregar proyecto" (an existing folder) is now worded "Abrir carpeta…".
+
+### Quick questions ("Pregunta rápida"): conversations
+
+- **Model:** a conversation is a normal `Task` with `conversation: true` (a JSON field
+  with `#[serde(default)]`: no migration; `conversations()` filters on
+  `json_extract(data, '$.conversation')`). Its `project` is its own scratch folder,
+  `<data dir>/chats/<task id>/`, created private (0700, like account folders). So
+  everything that works on tasks works unchanged: the cwd is `Task::work_dir()`, the
+  permission rules deny writes outside it, follow-ups resume the same session, the queue,
+  limits, waits and handoffs work, events and usage are recorded per account. Rejected
+  alternatives: `project: Option<PathBuf>` (touches every use of a task, the store and the
+  UI for one case) and a built-in "Conversaciones" project (it would be offered in every
+  project list, have an account, phases and protection, and share one folder).
+- Only `Ask` and `Research` (`ConversationChangesFiles` otherwise), one stage, no plan,
+  **no workspace** (even for Codex and ACP agents, which always get a worktree in a
+  project: the scratch folder is already empty, so there is nothing of the user's to
+  read). The CLI's edit tools stay disabled as in any read-only task.
+- **Account:** the one the user picks, else the default one; never another by itself
+  (rule 3). Accounts reserved by a protected project are not offered nor accepted
+  (`conversation_accounts`, `check_launch(None, …)`). Handoffs use a stand-in project
+  without account or protection, so only the other projects' rules apply.
+- **Memory and code map:** none. No memory MCP server (its tools are scoped to a project;
+  a conversation would read nothing and propose notes with no project to belong to) and
+  no code map (nothing to map). Global notes are not served either; to change that, the
+  memory server would need a global-only mode.
+- **Where they show:** the Activity board, "Últimas tareas", notifications and the palette
+  name them "Conversación" instead of a project; the usage summary adds them up as one
+  "Conversaciones" row with no client (the tokens also count in each account's usage as
+  always). Deleting one (`delete_conversation`) stops its session, deletes the task with
+  its events and queue, and removes its scratch folder — only when the task is a
+  conversation and the folder is its own `chats/<id>`. Usage records stay.
+- **UI:** one mental model, "a task belongs to a project or to no project": the same
+  workspace screen with no project (`#c`, `#c=<id>`), without the changes panel, with the
+  modes Pregunta/Investigar and an account picker in the composer bar (preselected), and
+  Enter sends (Shift+Enter for a new line; in projects it stays Ctrl/⌘+Enter, as prompts
+  there are longer). Entry points: home's single "Nuevo…" menu (Nuevo proyecto, Abrir
+  carpeta…, Pregunta rápida), the sidebar's "+" next to "Proyectos" and "Conversaciones"
+  (the last five, "Ver las N" for the rest), and the palette, where whatever was typed can
+  be asked ("Preguntar «…»", which opens the question with that text, ready to send).
+- **Not verified live:** a real conversation with each provider in an empty folder
+  (tested with the agent double, temp folders and `MockApi`).
