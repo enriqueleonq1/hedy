@@ -1,0 +1,110 @@
+/* Light editing in the side panel: the viewer's edit bar, the save conflict,
+   the unsaved-changes dot and the explorer's inline names. */
+
+/* A control that looks unavailable but still answers a click (to say why). */
+.icon-btn--soft-disabled { opacity: 0.45; }
+.icon-btn--soft-disabled:hover { opacity: 0.7; }
+
+/* Unsaved changes: a small dot next to the file's name (row, breadcrumb, bar). */
+.dirty-dot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--ink);
+  opacity: 0.7;
+  vertical-align: middle;
+}
+.vtree__row .dirty-dot { margin-left: 4px; }
+
+/* The viewer's body: the file, with a diff shown over it when asked. */
+.viewer__content { display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); min-height: 0; min-width: 0; }
+.viewer__content[hidden] { display: none; }
+
+/* Editing: the caret's line a touch stronger, so the mode is obvious without chrome. */
+.code-editor--editing .cm-activeLine { background-color: color-mix(in srgb, var(--selection) 70%, transparent); }
+
+.edit-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 34px;
+  padding: 3px var(--space-2) 3px var(--space-3);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-caption);
+}
+.edit-bar__state { display: inline-flex; align-items: center; gap: 6px; flex: 1; min-width: 0; color: var(--ink); }
+.edit-bar__state .dirty-dot { margin-left: 0; }
+.edit-bar__state--quiet { color: var(--muted); }
+.edit-bar__state--locked { color: var(--muted); }
+.edit-bar__state--locked .icon { flex: none; }
+.edit-bar__state--working { color: var(--ink); }
+.edit-bar__hint { color: var(--muted); }
+.edit-bar__tools { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.edit-bar__tools .btn,
+.conflict-bar__actions .btn { height: 26px; min-height: 26px; margin-left: 4px; padding: 0 10px; font-size: var(--text-caption); }
+.edit-bar--locked { background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
+
+.viewer__banner--lock .viewer__banner-text .icon { color: var(--muted); }
+
+/* The file changed on disk while it was being edited. */
+.conflict-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: 8px var(--space-3);
+  border-bottom: 1px solid var(--warn-line);
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font-size: var(--text-caption);
+}
+.conflict-bar__text { flex: 1 1 240px; margin: 0; min-width: 0; }
+.conflict-bar__actions { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+
+.inline-diff__caption { margin-left: var(--space-3); color: var(--muted); font-weight: 400; font-family: var(--font-ui); }
+
+/* An inline name in the explorer (new file, rename). */
+.name-input { position: relative; display: inline-flex; flex: 1; min-width: 0; }
+input.name-input__field {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 20px;
+  padding: 0 4px;
+  line-height: 18px;
+  border: 1px solid var(--focus);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+input.name-input__field--invalid { border-color: var(--danger); }
+input.name-input__field:not(.name-input__field--invalid):hover { border-color: var(--focus); }
+.name-input__problem {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 2;
+  padding: 4px 6px;
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 11.5px;
+  line-height: 1.35;
+  white-space: normal;
+  box-shadow: var(--shadow-pop);
+}
+.vtree__row:has(.name-input) { overflow: visible; }
+
+/* Narrow panels: the gutters give the code the room. */
+@container browse (max-width: 420px) {
+  .code-editor .cm-lineNumbers .cm-gutterElement { padding: 0 4px 0 6px; }
+  .code-editor .cm-blameGutter .cm-gutterElement { padding: 0 6px 0 4px; }
+  .code-editor .cm-blame { width: 14ch; }
+}

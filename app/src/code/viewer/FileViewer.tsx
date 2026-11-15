@@ -1,23 +1,28 @@
-// The file viewer: one file of a copy on CodeMirror (read-only for now), with
-// breadcrumbs, change markers against the base, find in file, go to line,
-// history, blame, "antes de la IA" and an inline comparison with any commit.
+// The file viewer: one file of a copy on CodeMirror, with breadcrumbs, change
+// markers against the base, find in file, go to line, history, blame, "antes de
+// la IA", an inline comparison with any commit, and light editing (save with
+// Ctrl/⌘ S, a conflict when the file changed on disk meanwhile).
 
-import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { errorMessage, useApi } from "../../api/context";
-import type { Blame, CodeCopy, CopyInfo, HistoryCommit, MatchRange, Rev, TaskTouch } from "../../api/codeTypes";
+import { MISSING_VERSION, type Blame, type CodeCopy, type CopyInfo, type HistoryCommit, type MatchRange, type Rev, type TaskTouch } from "../../api/codeTypes";
+import { textDiff } from "../../api/lineDiff";
 import { Button } from "../../components/ui/Button";
 import { useContextMenu, type ContextMenuItem } from "../../components/ui/ContextMenu";
 import { MenuButton } from "../../components/ui/Menu";
+import { useToast } from "../../components/ui/Toast";
 import { codeKeys } from "../../files/navigator";
 import { timeAgo } from "../../format";
 import { useT, type Translate } from "../../i18n";
 import { useReviewComments } from "../../review/comments";
 import { baseName, lineReference } from "../copies";
 import { CodeEditor, type CodeEditorHandle, type EditorPoint } from "../editor/CodeEditor";
+import { fileLock, LOCK_MESSAGE, useAfterEdit, type FileLock } from "../editor/editability";
 import type { BlameMark } from "../editor/extensions";
 import { lineMarksFromHunks } from "../editor/lineMarks";
+import { useUnsavedChanges } from "../editor/unsaved";
 import { useFileActions } from "../fileActions";
 import {
   BackIcon,
@@ -31,8 +36,11 @@ import {
   LineIcon,
   LockIcon,
   MoreIcon,
+  PencilIcon,
+  RedoIcon,
   RewindIcon,
   SparkIcon,
+  UndoIcon,
 } from "../icons";
 import { modLabel } from "../keys";
 
@@ -56,6 +64,8 @@ export interface OpenFile {
   compare?: Rev;
   /** The search result it was opened from (its row stays selected). */
   select?: string;
+  /** Opens editing (when the copy and the file allow it), e.g. "Editar aquí" from the review. */
+  edit?: boolean;
   /** Changes on every request, so asking again for the same line reveals it again. */
   seq: number;
 }
@@ -75,6 +85,8 @@ export interface FileViewerProps {
   /** Back to the list (narrow panels). */
   onBack: () => void;
   onClose: () => void;
+  /** The text started or stopped differing from the file (a dot in the explorer). */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 type Popover =
@@ -101,6 +113,11 @@ function editorPhrases(t: Translate): Record<string, string> {
     "Unfold line": t("code.find.unfold"),
     "folded code": t("code.find.folded"),
     unfold: t("code.find.unfold"),
+    Replace: t("edit.find.replaceField"),
+    replace: t("edit.find.replace"),
+    "replace all": t("edit.find.replaceAll"),
+    "replaced $ matches": t("edit.find.replacedMany"),
+    "replaced match on line $": t("edit.find.replacedOne"),
   };
 }
 
@@ -118,13 +135,25 @@ export function blameMarks(blame: Blame, t: Translate): BlameMark[] {
   });
 }
 
-export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowDiff, onOpenTask, onBack, onClose }: FileViewerProps) {
+export function FileViewer({
+  copy,
+  info,
+  file,
+  onChange,
+  onRevealFolder,
+  onShowDiff,
+  onOpenTask,
+  onBack,
+  onClose,
+  onDirtyChange,
+}: FileViewerProps) {
   const api = useApi();
   const t = useT();
   const client = useQueryClient();
   const actions = useFileActions(copy, info);
   const review = useReviewComments();
   const menu = useContextMenu();
+  const toast = useToast();
   const editor = useRef<CodeEditorHandle>(null);
   const { path, rev } = file;
   const [blameOn, setBlameOn] = useState(false);
@@ -133,10 +162,14 @@ export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowD
   const [compare, setCompare] = useState<{ rev: string; label: string } | null>(() => compareOf(file.compare));
   // A new request for the same file can ask for the history or a comparison again.
   const [seenSeq, setSeenSeq] = useState(file.seq);
+  // Editing: asked for (the pencil, Ctrl/⌘ E, a double click, "Editar aquí"); it
+  // only types while nothing locks the file (a working agent unlocks it live).
+  const [editing, setEditing] = useState(!!file.edit);
   if (file.seq !== seenSeq) {
     setSeenSeq(file.seq);
     if (file.history) setHistoryOpen(true);
     if (file.compare) setCompare(compareOf(file.compare));
+    if (file.edit) setEditing(true);
   }
   const [popover, setPopover] = useState<Popover | null>(null);
   const hoverTimer = useRef<number | undefined>(undefined);
@@ -170,16 +203,124 @@ export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowD
   const phrases = useMemo(() => editorPhrases(t), [t]);
   const closePopover = useCallback(() => setPopover(null), []);
 
+  // ---------------------------------------------------------------- editing
+  const unsaved = useUnsavedChanges();
+  const afterEdit = useAfterEdit();
+  const owner = useId();
+  const lock = fileLock(info, content.data, { rev, comparing: !!compare });
+  const editable = editing && lock === null;
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const [conflict, setConflict] = useState<{ text: string | null; version: string } | null>(null);
+  // "Comparar" in a conflict: the text being edited when it was asked for (the editor stays hidden meanwhile).
+  const [conflictDiff, setConflictDiff] = useState<string | null>(null);
+  // Why the pencil cannot edit, shown after a click on it (a tooltip says it too).
+  const [lockNote, setLockNote] = useState<FileLock | null>(null);
+  // The version the buffer is based on: what a save expects on disk.
+  const version = useRef<string | null>(null);
+  const dirtyNow = useRef(false);
+  useEffect(() => {
+    const data = content.data;
+    if (data?.kind === "text" && !dirtyNow.current && !rev) version.current = data.version;
+  }, [content.data, rev]);
+  const onEditorDirty = (next: boolean) => {
+    dirtyNow.current = next;
+    setDirty(next);
+    if (next) setJustSaved(false);
+    onDirtyChange?.(next);
+  };
+
+  const save = useCallback(
+    async (expected?: string): Promise<boolean> => {
+      const ed = editor.current;
+      if (!ed) return false;
+      const text = ed.text();
+      setSaving(true);
+      try {
+        const result = await api.writeFile(copy, path, text, expected ?? version.current ?? MISSING_VERSION);
+        if (result.kind === "conflict") {
+          setConflict(result);
+          return false;
+        }
+        version.current = result.version;
+        ed.markSaved();
+        setConflict(null);
+        setConflictDiff(null);
+        client.setQueryData(codeKeys.file(copy, path), { kind: "text", text, size: result.size, version: result.version });
+        afterEdit(copy);
+        setJustSaved(true);
+        return true;
+      } catch (error) {
+        toast.error(errorMessage(error, t));
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [api, copy, path, client, afterEdit, toast, t],
+  );
+
+  const discard = useCallback(() => {
+    editor.current?.revert();
+    setConflict(null);
+    setConflictDiff(null);
+  }, []);
+
+  // While the buffer differs from the file, leaving it asks first (app-wide).
+  const saveRef = useRef(save);
+  useLayoutEffect(() => {
+    saveRef.current = save;
+  });
+  useEffect(() => {
+    unsaved.set(owner, dirty ? { name, save: () => saveRef.current(), discard: () => editor.current?.revert() } : null);
+  }, [dirty, name, owner, unsaved]);
+  useEffect(() => () => unsaved.set(owner, null), [owner, unsaved]);
+
+  useEffect(() => {
+    if (!justSaved) return;
+    const timer = window.setTimeout(() => setJustSaved(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [justSaved]);
+
+  const requestEdit = () => {
+    if (lock === null || lock === "working" || lock === "loading") {
+      setEditing(true);
+      setLockNote(null);
+      // The caret goes in once the editor is editable.
+      window.setTimeout(() => editor.current?.focus(), 0);
+    } else {
+      setLockNote(lock);
+    }
+  };
+  const toggleEdit = () => {
+    if (!editing) return requestEdit();
+    if (!dirtyNow.current) return setEditing(false);
+    void unsaved.confirmLeave().then((ok) => ok && setEditing(false));
+  };
+  /** Runs `go` (another revision, a comparison) once unsaved changes are saved or dropped. */
+  const leaving = (go: () => void) => {
+    if (!dirtyNow.current) return go();
+    void unsaved.confirmLeave().then((ok) => ok && go());
+  };
+
   const beforeLabel = isTask ? t("code.viewer.beforeAi") : t("code.viewer.atHead");
   const atCurrent = () => onChange({ path, seq: file.seq + 1 });
-  const viewCommit = (commit: { hash: string; short: string; subject?: string; summary?: string }) => {
-    setCompare(null);
-    onChange({ path, rev: commit.hash, revLabel: `${commit.short} · ${commit.subject ?? commit.summary ?? ""}`, seq: file.seq + 1 });
-  };
-  const compareWith = (commit: { hash: string; short: string }) => {
-    if (rev) onChange({ path, seq: file.seq + 1 });
-    setCompare({ rev: commit.hash, label: commit.short });
-  };
+  const viewBase = () =>
+    leaving(() => {
+      setCompare(null);
+      onChange({ path, rev: "base", seq: file.seq + 1 });
+    });
+  const viewCommit = (commit: { hash: string; short: string; subject?: string; summary?: string }) =>
+    leaving(() => {
+      setCompare(null);
+      onChange({ path, rev: commit.hash, revLabel: `${commit.short} · ${commit.subject ?? commit.summary ?? ""}`, seq: file.seq + 1 });
+    });
+  const compareWith = (commit: { hash: string; short: string }) =>
+    leaving(() => {
+      if (rev) onChange({ path, seq: file.seq + 1 });
+      setCompare({ rev: commit.hash, label: commit.short });
+    });
 
   const menuPoint = useRef({ x: 0, y: 0 });
   const cursorLine = () => (isText ? (editor.current?.cursorLine() ?? 1) : undefined);
@@ -214,6 +355,9 @@ export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowD
         onSelect: () => setPopover({ kind: "lineBlame", start: point.start, end: point.end, at: menuPoint.current }),
       },
       { label: t("code.action.openHere"), icon: <ExternalIcon />, onSelect: () => actions.openInEditor(path, point.line) },
+      ...(!editing && lock !== "snapshot"
+        ? [{ label: t("edit.here"), icon: <PencilIcon />, shortcut: modLabel("E"), separatorBefore: true, onSelect: requestEdit }]
+        : []),
     ];
   };
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -224,6 +368,13 @@ export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowD
     } else if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "g" && isText) {
       e.preventDefault();
       editor.current?.gotoLine();
+    } else if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
+      // The browser's "save page" never makes sense here.
+      e.preventDefault();
+      if (editable && dirtyNow.current && !saving) void save();
+    } else if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "e" && isText) {
+      e.preventDefault();
+      toggleEdit();
     }
   };
 
@@ -244,9 +395,24 @@ export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowD
   const segments = path.split("/");
   const locked = content.data?.kind === "locked";
 
-  let body;
-  if (compare) {
-    body = compared.isPending ? (
+  // Shown over the file (which stays mounted, so an edit is never lost).
+  let overlay = null;
+  if (conflict && conflictDiff !== null) {
+    const diff = textDiff(path, conflict.text, conflictDiff);
+    overlay = (
+      <InlineDiff
+        caption={t("edit.conflict.legend")}
+        diff={{
+          path,
+          oldPath: null,
+          status: "modified",
+          against: conflict.version,
+          body: { kind: "text", additions: diff?.additions ?? 0, deletions: diff?.deletions ?? 0, hunks: diff?.hunks ?? [] },
+        }}
+      />
+    );
+  } else if (compare) {
+    overlay = compared.isPending ? (
       <CodeSkeleton />
     ) : compared.isError ? (
       <CodeState tone="error" role="alert" title={t("code.viewer.error")} text={errorMessage(compared.error, t)} />
@@ -259,7 +425,10 @@ export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowD
         }}
       />
     ) : null;
-  } else if (content.isPending) {
+  }
+
+  let body;
+  if (content.isPending) {
     body = <CodeSkeleton />;
   } else if (content.isError) {
     body = (
@@ -296,6 +465,9 @@ export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowD
             target={target}
             seq={file.seq}
             phrases={phrases}
+            editable={editable}
+            onDirtyChange={onEditorDirty}
+            onRequestEdit={lock === null || lock === "working" ? requestEdit : undefined}
             onContextMenu={(point, e) => {
               menuPoint.current = { x: e.clientX, y: e.clientY };
               menu.open(e, lineItems(point), t("code.viewer.lineMenu", { line: point.line }));
@@ -374,7 +546,7 @@ export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowD
                 rev ? (
                   <Button small onClick={atCurrent}>{t("code.viewer.backToCurrent")}</Button>
                 ) : info?.base ? (
-                  <Button small onClick={() => onChange({ path, rev: "base", seq: file.seq + 1 })}>{beforeLabel}</Button>
+                  <Button small onClick={viewBase}>{beforeLabel}</Button>
                 ) : undefined
               }
             />
@@ -399,6 +571,11 @@ export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowD
                   {last ? (
                     <span className="breadcrumbs__file" aria-current="page" title={path}>
                       {segment}
+                      {dirty && (
+                        <span className="dirty-dot" title={t("edit.dirty")}>
+                          <span className="sr-only">, {t("edit.dirty")}</span>
+                        </span>
+                      )}
                     </span>
                   ) : (
                     <button type="button" className="breadcrumbs__part" title={t("code.viewer.revealFolder", { folder })} onClick={() => onRevealFolder(folder)}>
@@ -411,6 +588,22 @@ export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowD
           </ol>
         </nav>
         <div className="viewer__tools" role="toolbar" aria-label={t("code.viewer.tools")}>
+          {isText && (
+            <ToolButton
+              label={
+                editing
+                  ? t("edit.stop", { keys: modLabel("E") })
+                  : lock && lock !== "working" && lock !== "loading"
+                    ? t(LOCK_MESSAGE[lock])
+                    : t("edit.toggle", { keys: modLabel("E") })
+              }
+              pressed={editing}
+              softDisabled={!editing && !!lock && lock !== "working" && lock !== "loading"}
+              onClick={toggleEdit}
+            >
+              <PencilIcon />
+            </ToolButton>
+          )}
           <ToolButton label={t("code.action.showDiff")} disabled={locked} onClick={() => onShowDiff(path)}>
             <DiffIcon />
           </ToolButton>
@@ -425,7 +618,7 @@ export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowD
               label={beforeLabel}
               pressed={rev === "base"}
               disabled={locked}
-              onClick={() => (rev === "base" ? atCurrent() : (setCompare(null), onChange({ path, rev: "base", seq: file.seq + 1 })))}
+              onClick={() => (rev === "base" ? atCurrent() : viewBase())}
             >
               <RewindIcon />
             </ToolButton>
@@ -466,6 +659,52 @@ export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowD
           </button>
         </div>
       )}
+      {editing && (
+        <EditBar
+          lock={lockNote ?? lock}
+          dirty={dirty}
+          saving={saving}
+          justSaved={justSaved}
+          taskCopy={isTask}
+          onSave={() => void save()}
+          onDiscard={discard}
+          onUndo={() => editor.current?.undo()}
+          onRedo={() => editor.current?.redo()}
+          onStop={toggleEdit}
+        />
+      )}
+      {!editing && lockNote && (
+        <div className="viewer__banner viewer__banner--lock" role="status">
+          <span className="viewer__banner-text">
+            <LockIcon size={14} />
+            {t(LOCK_MESSAGE[lockNote])}
+          </span>
+          <button type="button" className="link-btn" onClick={() => setLockNote(null)}>
+            {t("common.close")}
+          </button>
+        </div>
+      )}
+      {conflict && (
+        <ConflictBar
+          deleted={conflict.text === null}
+          comparing={conflictDiff !== null}
+          saving={saving}
+          onReload={() => {
+            if (conflict.text === null) {
+              discard();
+              afterEdit(copy);
+              return;
+            }
+            editor.current?.reset(conflict.text);
+            version.current = conflict.version;
+            setConflict(null);
+            setConflictDiff(null);
+            afterEdit(copy);
+          }}
+          onCompare={() => setConflictDiff((on) => (on === null ? (editor.current?.text() ?? "") : null))}
+          onOverwrite={() => void save(conflict.version)}
+        />
+      )}
       {compare && (
         <div className="viewer__banner" role="status">
           <span className="viewer__banner-text">
@@ -479,7 +718,10 @@ export function FileViewer({ copy, info, file, onChange, onRevealFolder, onShowD
       )}
 
       <div className="viewer__body">
-        {body}
+        {overlay}
+        <div className="viewer__content" hidden={!!overlay}>
+          {body}
+        </div>
         {historyOpen && (
           <HistoryDrawer
             copy={copy}
@@ -553,6 +795,7 @@ function ToolButton({
   pressed,
   expanded,
   disabled,
+  softDisabled,
   children,
 }: {
   label: string;
@@ -560,21 +803,154 @@ function ToolButton({
   pressed?: boolean;
   expanded?: boolean;
   disabled?: boolean;
+  /** Looks unavailable but still answers a click (to say why). */
+  softDisabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
-      className="icon-btn"
+      className={`icon-btn${softDisabled ? " icon-btn--soft-disabled" : ""}`}
       aria-label={label}
       title={label}
       aria-pressed={pressed}
       aria-expanded={expanded}
+      aria-disabled={softDisabled || undefined}
       disabled={disabled}
       onClick={onClick}
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Under the header while editing: what state the buffer is in (unsaved, saved,
+ * locked and why), undo/redo, "Descartar cambios" and "Guardar".
+ */
+function EditBar({
+  lock,
+  dirty,
+  saving,
+  justSaved,
+  taskCopy,
+  onSave,
+  onDiscard,
+  onUndo,
+  onRedo,
+  onStop,
+}: {
+  lock: FileLock | null;
+  dirty: boolean;
+  saving: boolean;
+  justSaved: boolean;
+  taskCopy: boolean;
+  onSave: () => void;
+  onDiscard: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  onStop: () => void;
+}) {
+  const t = useT();
+  const locked = lock !== null && lock !== "loading";
+  let state;
+  if (locked) {
+    state = (
+      <span className={`edit-bar__state edit-bar__state--${lock === "working" ? "working" : "locked"}`}>
+        {lock === "working" ? <span className="copy-bar__pulse" aria-hidden /> : <LockIcon size={13} />}
+        {t(LOCK_MESSAGE[lock])}
+        {lock === "working" && dirty && <span className="edit-bar__hint"> {t("edit.lock.workingDirty")}</span>}
+      </span>
+    );
+  } else if (saving) {
+    state = <span className="edit-bar__state">{t("edit.saving")}</span>;
+  } else if (dirty) {
+    state = (
+      <span className="edit-bar__state">
+        <span className="dirty-dot" aria-hidden />
+        {t("edit.dirty")}
+      </span>
+    );
+  } else {
+    state = (
+      <span className="edit-bar__state edit-bar__state--quiet">
+        {justSaved ? t("edit.saved") : taskCopy ? t("edit.taskNote") : t("edit.editing")}
+      </span>
+    );
+  }
+  return (
+    <div className={`edit-bar${locked ? " edit-bar--locked" : ""}`} role="status" aria-live="polite">
+      {state}
+      <span className="edit-bar__tools">
+        <button type="button" className="icon-btn" aria-label={t("edit.undo", { keys: modLabel("Z") })} title={t("edit.undo", { keys: modLabel("Z") })} disabled={locked} onClick={onUndo}>
+          <UndoIcon />
+        </button>
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label={t("edit.redo", { keys: modLabel("Shift+Z") })}
+          title={t("edit.redo", { keys: modLabel("Shift+Z") })}
+          disabled={locked}
+          onClick={onRedo}
+        >
+          <RedoIcon />
+        </button>
+        {dirty ? (
+          <>
+            <Button small variant="ghost" disabled={saving} onClick={onDiscard}>
+              {t("edit.discardChanges")}
+            </Button>
+            <Button small variant="primary" disabled={saving || locked} title={t("edit.saveHint", { keys: modLabel("S") })} onClick={onSave}>
+              {t("edit.save")}
+            </Button>
+          </>
+        ) : (
+          <Button small variant="ghost" onClick={onStop}>
+            {t("edit.done")}
+          </Button>
+        )}
+      </span>
+    </div>
+  );
+}
+
+/** The file changed on disk while it was being edited: recargar / comparar / sobrescribir. */
+function ConflictBar({
+  deleted,
+  comparing,
+  saving,
+  onReload,
+  onCompare,
+  onOverwrite,
+}: {
+  deleted: boolean;
+  comparing: boolean;
+  saving: boolean;
+  onReload: () => void;
+  onCompare: () => void;
+  onOverwrite: () => void;
+}) {
+  const t = useT();
+  return (
+    <div className="conflict-bar" role="alert">
+      <p className="conflict-bar__text">
+        <strong>{deleted ? t("edit.conflict.deletedTitle") : t("edit.conflict.title")}</strong>{" "}
+        {deleted ? t("edit.conflict.deletedText") : t("edit.conflict.text")}
+      </p>
+      <div className="conflict-bar__actions">
+        <Button small variant="ghost" disabled={saving} title={deleted ? undefined : t("edit.conflict.reloadHint")} onClick={onReload}>
+          {deleted ? t("edit.discardChanges") : t("edit.conflict.reload")}
+        </Button>
+        {!deleted && (
+          <Button small variant="ghost" aria-pressed={comparing} onClick={onCompare}>
+            {comparing ? t("edit.conflict.hideCompare") : t("edit.conflict.compare")}
+          </Button>
+        )}
+        <Button small variant="primary" disabled={saving} title={t("edit.conflict.overwriteHint")} onClick={onOverwrite}>
+          {deleted ? t("edit.conflict.recreate") : t("edit.conflict.overwrite")}
+        </Button>
+      </div>
+    </div>
   );
 }
 
