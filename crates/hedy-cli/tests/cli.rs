@@ -1092,9 +1092,9 @@ fn new_creates_a_repository_and_registers_the_project() {
         &env,
         "es",
         &[
-            "nuevo",
+            "new",
             "Mi tienda",
-            "--en",
+            "--in",
             parent.to_str().unwrap(),
             "-a",
             "personal",
@@ -1151,7 +1151,7 @@ fn new_without_a_folder_goes_to_the_usual_place_and_has_help_in_english() {
         .success()
         .stdout(predicate::str::contains("Start a project from scratch"))
         .stdout(predicate::str::contains("--in <FOLDER>"));
-    hedy_new(&env, "es", &["nuevo", "--help"])
+    hedy_new(&env, "es", &["new", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Empieza un proyecto desde cero"));

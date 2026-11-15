@@ -731,10 +731,9 @@ pub enum Command {
         unprotect: bool,
     },
 
-    #[command(visible_alias = "nuevo")]
     New {
         name: String,
-        #[arg(long = "in", visible_alias = "en", id = "parent")]
+        #[arg(long = "in", id = "parent")]
         parent: Option<PathBuf>,
         #[arg(long, short)]
         account: Option<String>,
