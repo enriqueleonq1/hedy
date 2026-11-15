@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { LOGIN_HINT } from "../../components/providers";
 import { useAction } from "../../api/context";
@@ -13,7 +13,8 @@ import { ApiKeyDialog } from "./ApiKeyDialog";
 import { ProjectsTable } from "./ProjectsTable";
 import { SpendByClient } from "./SpendByClient";
 
-export function AccountsScreen({ overview }: { overview: Overview }) {
+/** `focus`: the account whose card is scrolled to, highlighted and focused (from the sidebar or the top bar). */
+export function AccountsScreen({ overview, focus }: { overview: Overview; focus?: string }) {
   const t = useT();
   const [adding, setAdding] = useState(false);
   const [keyFor, setKeyFor] = useState<Account | null>(null);
@@ -41,6 +42,7 @@ export function AccountsScreen({ overview }: { overview: Overview }) {
               account={a}
               projects={a.projects.map((path) => ({ path, name: projectName(path) }))}
               isDefault={overview.defaultAccount === a.id}
+              focused={focus === a.id}
               onApiKey={() => setKeyFor(a)}
             />
           ))}
@@ -108,23 +110,38 @@ function AccountCard({
   account,
   projects,
   isDefault,
+  focused,
   onApiKey,
 }: {
   account: Account;
   projects: { path: string; name: string }[];
   isDefault: boolean;
+  focused: boolean;
   onApiKey: () => void;
 }) {
+  const card = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!focused || !card.current) return;
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    card.current.scrollIntoView?.({ block: "center", behavior: reduced ? "auto" : "smooth" });
+    card.current.focus({ preventScroll: true });
+  }, [focused]);
   const t = useT();
   const terminals = useTerminals();
   const makeDefault = useAction((api) => api.setDefaultAccount(account.id));
   const remove = useAction((api) => api.removeAccount(account.id));
   const loggedIn = account.login.state === "loggedIn";
-  const classes = ["card", "account-card", isDefault && "account-card--current", account.kind === "apiKey" && "account-card--wide"];
+  const classes = [
+    "card",
+    "account-card",
+    isDefault && "account-card--current",
+    account.kind === "apiKey" && "account-card--wide",
+    focused && "account-card--focus",
+  ];
   const loginHint = LOGIN_HINT[account.provider];
 
   return (
-    <article className={classes.filter(Boolean).join(" ")} aria-label={account.name}>
+    <article ref={card} tabIndex={-1} className={classes.filter(Boolean).join(" ")} aria-label={account.name}>
       <header className="account-card__head">
         <Mascot
           color={account.color}

@@ -17,7 +17,8 @@ import { Segmented } from "./ui/controls";
 
 export type View =
   | { screen: "welcome" }
-  | { screen: "accounts" }
+  /** `account`: scroll to that account's card and highlight it. */
+  | { screen: "accounts"; account?: string }
   | { screen: "settings" }
   | { screen: "activity" }
   /** `task`: open that task instead of the most recent open one. */
@@ -147,14 +148,20 @@ export function Topbar({ overview, view, openProjects, mode, onNavigate, onClose
         />
       )}
       {overview.accounts.length > 0 && (
-        <div className="usage-pill" aria-label={t("shell.weekUsageByProvider")}>
+        <div className="usage-pill" role="group" aria-label={t("shell.weekUsageByProvider")}>
           {providerSummary(overview).map(({ label, account }) => {
             const usage = usageLabel(account, language);
             return (
-              <span key={label} className="usage-pill__item">
+              <button
+                type="button"
+                key={label}
+                className="usage-pill__item"
+                aria-label={t("shell.openAccount", { name: account.name, usage })}
+                onClick={() => onNavigate({ screen: "accounts", account: account.id })}
+              >
                 <span className="dot" style={{ background: account.color }} aria-hidden />
                 {label} <span className={usage === "—" ? "muted" : levelClass(planPercent(account))}>{usage}</span>
-              </span>
+              </button>
             );
           })}
         </div>
@@ -254,7 +261,14 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
             const percent = planPercent(a) ?? 0;
             const usage = usageLabel(a, language);
             return (
-              <li key={a.id} className="sidebar__account">
+              <li key={a.id}>
+                <button
+                  type="button"
+                  className="sidebar__account"
+                  aria-label={t("shell.openAccount", { name: a.name, usage })}
+                  aria-current={view.screen === "accounts" && view.account === a.id ? "true" : undefined}
+                  onClick={() => onNavigate({ screen: "accounts", account: a.id })}
+                >
                 <div className="row row--between">
                   <span className="sidebar__account-name">{a.name}</span>
                   <span className={`small ${levelClass(planPercent(a)) ?? "muted"}`}>{usage}</span>
@@ -269,6 +283,7 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
                 >
                   <div className="bar__fill" style={{ width: `${Math.min(percent, 100)}%`, background: barColor(percent, a.color) }} />
                 </div>
+                </button>
               </li>
             );
           })}

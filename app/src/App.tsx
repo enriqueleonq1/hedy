@@ -53,12 +53,13 @@ function Localized({ children }: { children: ReactNode }) {
 }
 
 /**
- * `#accounts`, `#settings`, `#activity`, `#p=<path>` (workspace), `#m=<path>`
+ * `#accounts`, `#a=<id>` (accounts, that card), `#settings`, `#activity`, `#p=<path>` (workspace), `#m=<path>`
  * (memory), `#k=<path>` (memory, skills tab), `#s=<path>` (status).
  */
 function viewFromHash(): View {
   const hash = decodeURIComponent(window.location.hash.slice(1));
   if (hash === "accounts" || hash === "settings" || hash === "activity") return { screen: hash };
+  if (hash.startsWith("a=")) return { screen: "accounts", account: hash.slice(2) };
   if (hash.startsWith("p=")) return { screen: "workspace", project: hash.slice(2) };
   if (hash.startsWith("m=")) return { screen: "memory", project: hash.slice(2) };
   if (hash.startsWith("k=")) return { screen: "memory", project: hash.slice(2), tab: "skills" };
@@ -70,6 +71,7 @@ function hashFor(view: View): string {
   if (view.screen === "workspace") return `#p=${encodeURIComponent(view.project)}`;
   if (view.screen === "memory") return `#${view.tab === "skills" ? "k" : "m"}=${encodeURIComponent(view.project)}`;
   if (view.screen === "status") return `#s=${encodeURIComponent(view.project)}`;
+  if (view.screen === "accounts" && view.account) return `#a=${encodeURIComponent(view.account)}`;
   return `#${view.screen}`;
 }
 
@@ -160,7 +162,7 @@ function Root() {
           terminal={<TerminalPanel />}
         >
           {current.screen === "welcome" && <Welcome overview={data} onNavigate={navigate} />}
-          {current.screen === "accounts" && <AccountsScreen overview={data} />}
+          {current.screen === "accounts" && <AccountsScreen overview={data} focus={current.account} />}
           {current.screen === "settings" && <Settings overview={data} />}
           {current.screen === "activity" && (
             <ActivityScreen

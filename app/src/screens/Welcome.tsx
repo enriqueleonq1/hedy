@@ -181,7 +181,7 @@ function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: 
         label: windowLabel(w, t).toLowerCase(),
         resets: resets ? ` · ${resets}` : "",
       }),
-      go: () => onNavigate({ screen: "accounts" }),
+      go: () => onNavigate({ screen: "accounts", account: account.id }),
     });
   }
   if (doctor && doctor.errors + doctor.warnings > 0) {
@@ -288,7 +288,11 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
           </div>
           <div className="plan-cards">
             {overview.accounts.map((account) => (
-              <PlanCard key={account.id} account={account} onOpen={() => onNavigate({ screen: "accounts" })} />
+              <PlanCard
+                key={account.id}
+                account={account}
+                onOpen={() => onNavigate({ screen: "accounts", account: account.id })}
+              />
             ))}
           </div>
           {hedyWeek && <p className="muted small">{hedyWeek}</p>}
