@@ -38,11 +38,17 @@ describe("Workspace", () => {
 
     const card = await screen.findByRole("region", { name: "Claude quiere correr un comando" });
     expect(within(card).getByText("pytest tests/test_recordatorios.py")).toBeInTheDocument();
+    // The steps before the card, summed up in one line that opens on demand.
+    const group = screen.getByRole("button", { name: "2 pasos · editó 2 archivos" });
+    expect(group).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Claude editó citas/servicio.py")).toBeNull();
+    await user.click(group);
+    expect(group).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("Claude editó citas/servicio.py")).toBeInTheDocument();
     await user.click(within(card).getByRole("button", { name: "Permitir en este chat" }));
 
     expect(await screen.findByText(/Claude: pasan los tests/)).toBeInTheDocument();
-    expect(await screen.findByText(/Terminó/, { selector: ".activity" })).toBeInTheDocument();
+    expect(await screen.findByText(/Terminó/, { selector: ".turn-end" })).toBeInTheDocument();
     expect(screen.getByText(/Permitido en este chat/)).toBeInTheDocument();
     const steps = screen.getByRole("region", { name: "Pasos" });
     expect(within(steps).getAllByText(/\(hecho\)/)).toHaveLength(3);
@@ -105,7 +111,7 @@ describe("Workspace", () => {
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     expect(await screen.findByText(/no cambian archivos/)).toBeInTheDocument();
-    expect(await screen.findByText(/Terminó/, { selector: ".activity" })).toBeInTheDocument();
+    expect(await screen.findByText(/Terminó/, { selector: ".turn-end" })).toBeInTheDocument();
   });
 
   it("picks the mode in the composer, only for new tasks, remembered per project", async () => {
@@ -291,7 +297,7 @@ describe("Workspace", () => {
     await chooseMode(user, "Pregunta");
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
-    expect(await screen.findByText(/Terminó/, { selector: ".activity" })).toBeInTheDocument();
+    expect(await screen.findByText(/Terminó/, { selector: ".turn-end" })).toBeInTheDocument();
 
     // Already in review: the backend sends no `task-updated` for this stop.
     await user.click(await screen.findByRole("button", { name: "Detener" }));

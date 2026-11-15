@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 
 import { useAction } from "../../api/context";
 import type { Account, Decision, Task } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { WorkingWord } from "../../components/Mascot/WorkingWord";
 import { Button } from "../../components/ui/Button";
+import { ChevronIcon } from "../../components/ui/icons";
 import { formatDuration } from "../../format";
 import { Markdown } from "../../components/Markdown";
 import { keyLabels } from "../../platform";
@@ -13,6 +14,7 @@ import type { TaskMascot } from "../../tasks/useMascot";
 import { useT, type MessageKey, type Translate } from "../../i18n";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { LimitCard } from "./LimitCard";
+import { groupSteps, summarize, summaryFacts, type StepItem } from "./stepGroups";
 
 interface TimelineProps {
   task: Task;
@@ -38,11 +40,35 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
   const color = account?.color ?? DEFAULT_ACCOUNT_COLOR;
   const lastAgent = items.findLastIndex((i) => i.type !== "user");
   const working = mascot.state === "working";
+  const entries = useMemo(() => groupSteps(items), [items]);
+
+  /** An agent row spanning items `first..last`: the mascot opens each turn. */
+  const agentRow = (key: string, first: number, last: number, body: ReactNode) => (
+    <div key={key} className="agent-row">
+      <span className="agent-row__avatar">
+        {(first === 0 || items[first - 1]?.type === "user") && (
+          <Mascot
+            color={color}
+            state={first <= lastAgent && lastAgent <= last && !working ? mascot.state : "idle"}
+            size={30}
+            label={agent}
+          />
+        )}
+      </span>
+      <div className="agent-row__body">{body}</div>
+    </div>
+  );
 
   return (
     // Not a live region: the workspace announces only what needs the user or ends the task.
     <div className="timeline">
-      {items.map((item, index) => {
+      {entries.map((entry) => {
+        if (entry.type === "group") {
+          // The run still going on shows its latest step without opening it.
+          const live = working && entry.last === items.length - 1;
+          return agentRow(entry.key, entry.first, entry.last, <StepGroup steps={entry.steps} live={live} />);
+        }
+        const { item, index } = entry;
         if (item.type === "user") {
           return (
             <div key={item.key} className="bubble">
@@ -65,23 +91,7 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
           const active = !items.slice(index + 1).some((i) => i.type === "user" || i.type === "phase");
           return <LimitCard key={item.key} task={task} item={item} accounts={accounts} active={active} />;
         }
-        return (
-          <div key={item.key} className="agent-row">
-            <span className="agent-row__avatar">
-              {(index === 0 || items[index - 1]?.type === "user") && (
-                <Mascot
-                  color={color}
-                  state={index === lastAgent && !working ? mascot.state : "idle"}
-                  size={30}
-                  label={agent}
-                />
-              )}
-            </span>
-            <div className="agent-row__body">
-              <Item task={task} item={item} />
-            </div>
-          </div>
-        );
+        return agentRow(item.key, index, index, <Item task={task} item={item} />);
       })}
       {working && (
         // What the agent is doing now; decorative: the activity lines say it too.
@@ -133,20 +143,16 @@ function Item({ task, item }: { task: Task; item: TimelineItem }) {
     case "permission":
       return <PermissionCard task={task} item={item} />;
     case "activity":
-      return (
-        <p className={`activity activity--${item.tone}`}>
-          <span className="activity__mark" aria-hidden>
-            {item.tone === "done" ? "✓" : item.tone === "failed" ? "✗" : "●"}
-          </span>
-          {item.text}
-        </p>
-      );
+      return <StepRow step={item} />;
     case "finished":
+      // The quiet end of a turn, not a step of it.
       return (
-        <p className={`activity activity--${item.ok ? "done" : "failed"}`}>
-          <span className="activity__mark" aria-hidden>
-            {item.ok ? "✓" : "✗"}
-          </span>
+        <p className={`turn-end${item.ok ? "" : " turn-end--failed"}`}>
+          {!item.ok && (
+            <span className="turn-end__mark" aria-hidden>
+              ✗
+            </span>
+          )}
           {item.ok ? t("workspace.finished") : t("workspace.finishedWithError")}
           {item.durationMs !== null && ` · ${formatDuration(item.durationMs)}`}
         </p>
@@ -163,6 +169,76 @@ function Item({ task, item }: { task: Task; item: TimelineItem }) {
     default:
       return null;
   }
+}
+
+/** One tool step as a light line: a mark and what it did. */
+function StepRow({ step, live = false }: { step: StepItem; live?: boolean }) {
+  return (
+    <p className={`step-row step-row--${step.tone}${live ? " step-row--live" : ""}`}>
+      <span className="step-row__mark" aria-hidden>
+        {step.tone === "done" ? "✓" : step.tone === "failed" ? "✗" : "●"}
+      </span>
+      <span>{step.text}</span>
+    </p>
+  );
+}
+
+/**
+ * A run of tool steps: one line that sums it up (failures always in sight),
+ * opened on demand into the steps themselves. While the run goes on it also
+ * shows its latest step.
+ */
+function StepGroup({ steps, live }: { steps: StepItem[]; live: boolean }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  const latest = steps.at(-1);
+  if (steps.length === 1 && latest) return <StepRow step={latest} live={live} />;
+
+  const facts = summaryFacts(summarize(steps), t);
+  return (
+    <div className={`step-group${open ? " step-group--open" : ""}`}>
+      <button
+        type="button"
+        className="step-group__summary"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="step-group__chevron">
+          <ChevronIcon />
+        </span>
+        <span className="step-group__facts">
+          {facts.map((fact, i) => (
+            <Fragment key={i}>
+              {i > 0 && " · "}
+              {fact.failed ? (
+                <span className="step-group__fact--failed">
+                  <span className="step-group__mark" aria-hidden>
+                    ✗
+                  </span>
+                  {fact.text}
+                </span>
+              ) : (
+                fact.text
+              )}
+            </Fragment>
+          ))}
+        </span>
+      </button>
+      {open ? (
+        <ul id={listId} className="step-group__list">
+          {steps.map((step) => (
+            <li key={step.key}>
+              <StepRow step={step} live={live && step === latest} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        live && latest && <StepRow step={latest} live />
+      )}
+    </div>
+  );
 }
 
 const RESOLUTION: Record<Decision, MessageKey> = {
@@ -221,11 +297,13 @@ function PermissionCard({ task, item }: { task: Task; item: Extract<TimelineItem
   if (item.resolution) {
     const denied = item.resolution.decision === "deny";
     return (
-      <p className={`activity activity--${denied ? "failed" : "done"}`}>
-        <span className="activity__mark" aria-hidden>
+      <p className={`step-row step-row--${denied ? "failed" : "done"}`}>
+        <span className="step-row__mark" aria-hidden>
           {denied ? "✗" : "✓"}
         </span>
-        {resolutionText(item.resolution, t)} · <code>{item.summary}</code>
+        <span>
+          {resolutionText(item.resolution, t)} · <code>{item.summary}</code>
+        </span>
       </p>
     );
   }

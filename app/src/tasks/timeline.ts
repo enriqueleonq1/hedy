@@ -4,6 +4,9 @@ import type { AgentEvent, Decision, Phase, StepStatus, Task, TaskMode } from "..
 import type { MascotState } from "../components/Mascot/Mascot";
 import type { MessageKey, Translate } from "../i18n";
 
+/** A tool step of the agent: a tool, an edit, a command, a test run or a block by Hedy. */
+export type StepKind = "tool" | "edit" | "command" | "tests" | "blocked";
+
 export type Resolution = { decision: Decision; automatic: boolean; reason: string | null };
 
 export type TimelineItem =
@@ -37,7 +40,16 @@ export type TimelineItem =
       summary: string;
       resolution: Resolution | null;
     }
-  | { type: "activity"; key: string; tone: "done" | "running" | "failed"; text: string }
+  | {
+      type: "activity";
+      key: string;
+      tone: "done" | "running" | "failed";
+      /** What the step was, to sum a run of steps up. */
+      step: StepKind;
+      /** The file, command or tool summary it was about. */
+      detail: string;
+      text: string;
+    }
   | { type: "finished"; key: string; ok: boolean; durationMs: number | null }
   | { type: "error"; key: string; message: string };
 
@@ -151,20 +163,36 @@ export function buildTimeline(events: AgentEvent[], t: Translate): TimelineItem[
         // Blocks without a card (Hedy's hook) still show up in the activity.
         if (!requested.has(e.requestId) && e.decision === "deny") {
           const text = t("workspace.activity.blocked", { reason: e.reason ?? "" });
-          items.push({ type: "activity", key, tone: "failed", text });
+          items.push({ type: "activity", key, tone: "failed", step: "blocked", detail: e.reason ?? "", text });
         }
         break;
       case "fileEdited":
-        items.push({ type: "activity", key, tone: "done", text: t("workspace.activity.edited", { agent: name(), path: e.path }) });
+        items.push({
+          type: "activity",
+          key,
+          tone: "done",
+          step: "edit",
+          detail: e.path,
+          text: t("workspace.activity.edited", { agent: name(), path: e.path }),
+        });
         break;
       case "commandRun":
-        items.push({ type: "activity", key, tone: "done", text: t("workspace.activity.ran", { agent: name(), command: e.command }) });
+        items.push({
+          type: "activity",
+          key,
+          tone: "done",
+          step: "command",
+          detail: e.command,
+          text: t("workspace.activity.ran", { agent: name(), command: e.command }),
+        });
         break;
       case "testsRun":
         items.push({
           type: "activity",
           key,
           tone: e.passed ? "done" : "failed",
+          step: "tests",
+          detail: e.command,
           text: t(e.passed ? "workspace.activity.testsPassed" : "workspace.activity.testsFailed", {
             agent: name(),
             command: e.command,
@@ -177,6 +205,8 @@ export function buildTimeline(events: AgentEvent[], t: Translate): TimelineItem[
           type: "activity",
           key,
           tone: "running",
+          step: "tool",
+          detail: e.summary,
           text: t("workspace.activity.tool", {
             agent: name(),
             verb: verb ? t(verb) : t("workspace.tool.other", { tool: e.tool }),

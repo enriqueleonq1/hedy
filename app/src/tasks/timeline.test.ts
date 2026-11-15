@@ -56,6 +56,7 @@ describe("buildTimeline", () => {
     expect(steps?.type === "steps" && steps.steps[0]?.status).toBe("done");
     const edit = items[4];
     expect(edit?.type === "activity" && edit.text).toBe("Claude editó citas/servicio.py");
+    expect(edit?.type === "activity" && [edit.step, edit.detail]).toEqual(["edit", "citas/servicio.py"]);
     const permission = items[5];
     expect(permission?.type === "permission" && permission.resolution).toBeNull();
   });
@@ -80,7 +81,16 @@ describe("buildTimeline", () => {
     const items = buildTimeline([
       { kind: "permissionResolved", requestId: "hook-1", decision: "deny", automatic: true, reason: "Hedy no permite «.env»" },
     ], t);
-    expect(items).toEqual([{ type: "activity", key: "0", tone: "failed", text: "Bloqueado por Hedy · Hedy no permite «.env»" }]);
+    expect(items).toEqual([
+      {
+        type: "activity",
+        key: "0",
+        tone: "failed",
+        step: "blocked",
+        detail: "Hedy no permite «.env»",
+        text: "Bloqueado por Hedy · Hedy no permite «.env»",
+      },
+    ]);
   });
 
   it("labels models", () => {
