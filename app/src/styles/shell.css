@@ -103,8 +103,8 @@
 .palette {
   width: min(640px, 100%);
   max-height: min(70vh, 620px);
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--panel);
@@ -121,7 +121,8 @@
 .palette__page { display: grid; gap: 4px; padding: 12px 16px 0; }
 .palette__page-title { font-weight: 700; }
 .palette__back { justify-self: start; padding: 2px 0; border: 0; background: none; color: var(--action-text); font: inherit; font-size: 13px; cursor: pointer; }
-.palette__input {
+.palette .palette__input {
+  border-radius: 0;
   width: 100%;
   min-height: 52px;
   padding: 0 18px;
@@ -132,7 +133,7 @@
 }
 
 .palette__input:focus-visible { outline: none; }
-.palette__list { overflow-y: auto; padding: 6px; }
+.palette__list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px; }
 .palette__group { padding: 10px 12px 4px; font: 700 11px var(--font-ui); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 
 .palette__option {
@@ -211,6 +212,98 @@
 .project-card__live--working { color: var(--activity); }
 .project-card__live--calm { color: var(--muted); font-weight: 500; }
 
+/* ---------------------------------------------------------------- sidebar and its rail */
+
+.app--rail { grid-template-columns: 68px minmax(0, 1fr); }
+
+.sidebar { position: relative; }
+.sidebar .icon { flex: none; color: var(--muted); }
+.sidebar__item[aria-current="page"] .icon { color: var(--ink); }
+.sidebar__nav { position: relative; }
+
+.sidebar__toggle {
+  position: absolute;
+  top: 10px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.sidebar__toggle:hover { background: var(--selection); color: var(--ink); }
+.sidebar:not(.sidebar--rail) > .sidebar__nav { margin-right: 34px; width: auto; }
+
+.sidebar--rail { padding: 10px 8px 14px; gap: 14px; align-items: center; overflow-x: hidden; }
+.sidebar--rail .sidebar__toggle { position: static; width: 44px; height: 36px; }
+.sidebar--rail section { width: 100%; }
+.sidebar--rail .sidebar__list { justify-items: center; }
+.sidebar--rail .sidebar__item { width: 44px; min-height: 44px; padding: 0; justify-content: center; }
+.sidebar--rail .sidebar__name { display: none; }
+.sidebar--rail .sidebar__nav .nav-badge {
+  position: absolute;
+  top: 2px;
+  right: -2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+.sidebar--rail .sidebar__accounts { margin: 0 auto 6px; }
+.sidebar--rail .sidebar__account { width: 44px; margin: 0; padding: 4px 0; justify-items: center; box-sizing: border-box; }
+
+.sidebar__avatar {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 3px solid var(--muted);
+  border-radius: 50%;
+  color: var(--ink);
+  font: 700 13px var(--font-title);
+}
+
+.mini-ring__track { fill: none; stroke: var(--selection); stroke-width: 4; }
+.mini-ring__fill { fill: none; stroke-width: 4; stroke-linecap: round; }
+
+/* ---------------------------------------------------------------- narrow windows */
+
+/* Its visually hidden cells must not stick out of the page while it scrolls sideways. */
+.table-wrap { position: relative; }
+.tabs { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab-wrap, .tab--add { flex: none; }
+.topbar > .btn { flex: none; }
+
+@media (max-width: 1100px) {
+  .topbar { gap: 10px; padding: 0 10px 0 12px; }
+  .brand__name,
+  .palette-hint__text { display: none; }
+  .palette-hint { padding: 0 8px; }
+  /* Only the account closest to its limit; the rest are one click away in the popover. */
+  .usage-indicator__chip + .usage-indicator__chip { display: none; }
+  .usage-indicator__trigger { padding: 0 12px; gap: 8px; }
+  .usage-indicator__name { max-width: 110px; }
+  .screen { padding: 24px 20px 40px; }
+}
+
+@media (max-width: 960px) {
+  .usage-indicator__name { display: none; }
+}
+
+/* The workspace's side panel (Changes, Terminal, Preview) becomes a sheet under the chat. */
+@media (max-width: 1000px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(180px, 32%); }
+  .side-panel { border-left: 0; border-top: 1px solid var(--line); }
+  .chat { padding: 18px 18px 14px; }
+}
+
 /* ---------------------------------------------------------------- inbox rows ("Te necesitan") */
 
 .board-item {
@@ -225,4 +318,17 @@
 .board-item--needs { border-left-color: var(--warning); }
 .board-item > .board-row { border: 0; border-radius: var(--radius-card); background: none; }
 .board-item__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 18px 14px; }
+/* A proposal's two buttons sit at the end of its meta line on wide enough rows. */
+@media (min-width: 700px) {
+  .board-item--proposal .board-row__meta { padding-right: 220px; }
+  .board-item--proposal > .board-row { min-height: 104px; align-content: start; }
+  .board-item--proposal .board-item__actions {
+    position: relative;
+    justify-self: end;
+    width: max-content;
+    margin-top: -56px;
+    padding: 0 18px 12px;
+  }
+}
+
 .board-item__what { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); }

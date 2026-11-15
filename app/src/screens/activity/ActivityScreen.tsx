@@ -329,7 +329,7 @@ function ProposalRow({
 
   return (
     <li>
-      <div className="board-item board-item--needs">
+      <div className="board-item board-item--needs board-item--proposal">
         <button className="board-row board-row--needs" onClick={() => onOpen(entry.project, isNote ? "notes" : "skills")}>
           <span className="board-row__title">{title}</span>
           <span className="board-state board-state--needs">

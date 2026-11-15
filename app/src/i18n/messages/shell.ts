@@ -21,6 +21,8 @@ const es = {
   "shell.exitCode": "código {code}",
   "shell.dismiss": "Cerrar aviso",
   "shell.customColor": "{label}: color personalizado",
+  "shell.sidebar.collapse": "Contraer la barra lateral",
+  "shell.sidebar.expand": "Expandir la barra lateral",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -43,6 +45,8 @@ const en: Record<keyof typeof es, string> = {
   "shell.exitCode": "code {code}",
   "shell.dismiss": "Dismiss",
   "shell.customColor": "{label}: custom color",
+  "shell.sidebar.collapse": "Collapse the sidebar",
+  "shell.sidebar.expand": "Expand the sidebar",
 };
 
 export default { es, en };
