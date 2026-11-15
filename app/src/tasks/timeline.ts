@@ -265,7 +265,8 @@ export type Milestone = "plan" | "permission" | "finished" | "failed" | "limit";
  */
 export function latestMilestone(items: TimelineItem[]): { index: number; milestone: Milestone } | null {
   for (let index = items.length - 1; index >= 0; index--) {
-    const item = items[index]!;
+    const item = items[index];
+    if (!item) continue;
     if (item.type === "plan" && item.requestId !== null && item.resolution === null) return { index, milestone: "plan" };
     if (item.type === "permission" && item.resolution === null) return { index, milestone: "permission" };
     if (item.type === "finished") return { index, milestone: item.ok ? "finished" : "failed" };

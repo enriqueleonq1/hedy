@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { errorMessage, useAction } from "../../api/context";
@@ -7,16 +7,60 @@ import { Mascot } from "../../components/Mascot/Mascot";
 import { shortPath } from "../../components/projects";
 import { Button } from "../../components/ui/Button";
 import { isBusy, tasksKey, useQueue, useSetQueue, useTaskEvents, useTasks, useTemplates } from "../../tasks/hooks";
-import { agentName, buildTimeline, isOpen, MODE_LABEL, STATUS_LABEL } from "../../tasks/timeline";
+import {
+  agentName,
+  buildTimeline,
+  isOpen,
+  latestMilestone,
+  MODE_LABEL,
+  pendingCard,
+  STATUS_LABEL,
+  type Milestone,
+  type PendingCard,
+  type TimelineItem,
+} from "../../tasks/timeline";
 import { useMascot } from "../../tasks/useMascot";
 import { MODEL_SUGGESTIONS } from "../../components/models";
-import { useT } from "../../i18n";
+import { useT, type MessageKey } from "../../i18n";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { fillTemplate, filterTemplates, slashQuery } from "../../templates/placeholders";
 import { TemplateDialog } from "../templates/TemplateDialog";
 import { ChangesPanel } from "./ChangesPanel";
 import { QueuedMessages } from "./QueuedMessages";
 import { Timeline } from "./Timeline";
+
+/** A card waits for the user's answer (which one, when the events say). */
+type CardWaiting = PendingCard | "other" | null;
+
+const MILESTONE: Record<Milestone, MessageKey> = {
+  plan: "workspace.announce.plan",
+  permission: "workspace.announce.permission",
+  finished: "workspace.announce.finished",
+  failed: "workspace.announce.failed",
+  limit: "workspace.announce.limit",
+};
+
+type Said = { index: number; milestone: Milestone };
+
+/**
+ * What a screen reader hears about the open task: each new milestone once
+ * (a card to answer, the end, a limit), never the stream of activity, and
+ * nothing for what was already there when the task opened.
+ */
+function useMilestone(taskId: string | null, items: TimelineItem[], ready: boolean): Said | null {
+  const [seen, setSeen] = useState<{ task: string | null; baseline: number; said: Said | null }>({
+    task: null,
+    baseline: -1,
+    said: null,
+  });
+  const latest = ready ? latestMilestone(items) : null;
+  if (ready && taskId && seen.task !== taskId) {
+    setSeen({ task: taskId, baseline: latest?.index ?? -1, said: null });
+  } else if (ready && latest && seen.task === taskId && latest.index > Math.max(seen.baseline, seen.said?.index ?? -1)) {
+    setSeen({ ...seen, said: latest });
+  }
+  return seen.task === taskId ? seen.said : null;
+}
 
 export function Workspace({
   overview,
@@ -46,11 +90,15 @@ export function Workspace({
     chosen === null ? null : (list.find((t) => t.id === chosen) ?? (chosen === undefined ? list.find(isOpen) : undefined) ?? null);
 
   const events = useTaskEvents(task?.id ?? null);
-  const history = events.data ?? [];
+  const history = useMemo(() => events.data ?? [], [events.data]);
+  const items = useMemo(() => buildTimeline(history, t), [history, t]);
   const queue = useQueue(task?.id ?? null).data ?? [];
   const agent = agentName(history);
   const mascot = useMascot(task, history);
   const name = info?.name ?? shortPath(project);
+  const milestone = useMilestone(task?.id ?? null, items, events.isSuccess);
+  // A message written now waits for the card's answer (and the end of the turn).
+  const card: CardWaiting = isBusy(task) && task?.status === "waitingApproval" ? (pendingCard(history) ?? "other") : null;
 
   return (
     <div className="workspace">
@@ -104,7 +152,7 @@ export function Workspace({
         {task ? (
           <Timeline
             task={task}
-            items={buildTimeline(history, t)}
+            items={items}
             agent={agent}
             account={account}
             accounts={overview.accounts}
@@ -125,11 +173,17 @@ export function Workspace({
           </div>
         )}
 
+        {/* The only live region of the chat: milestones, not the stream. */}
+        <p className="sr-only chat__announce" role="status">
+          {milestone && <span key={milestone.index}>{t(MILESTONE[milestone.milestone])}</span>}
+        </p>
+
         <Composer
           key={task?.id ?? "new"}
           project={project}
           name={name}
           task={task}
+          card={card}
           mode={mode}
           models={account ? MODEL_SUGGESTIONS[account.provider] : []}
           agent={agent}
@@ -152,10 +206,17 @@ function StopButton({ task }: { task: Task }) {
   );
 }
 
+const CARD_LABEL: Record<NonNullable<CardWaiting>, MessageKey> = {
+  plan: "workspace.composer.cardPlan",
+  permission: "workspace.composer.cardPermission",
+  other: "workspace.composer.cardOther",
+};
+
 function Composer({
   project,
   name,
   task,
+  card,
   mode,
   models,
   agent,
@@ -165,6 +226,8 @@ function Composer({
   project: string;
   name: string;
   task: Task | null;
+  /** A plan or permission card waits: what is written now goes after its answer. */
+  card: CardWaiting;
   mode: TaskMode;
   models: string[];
   /** Who works on the task now, for the queue's label. */
@@ -301,11 +364,13 @@ function Composer({
         />
       )}
       <label className="composer__label" htmlFor="composer-input">
-        {queueing
-          ? t("queue.composerBusy", { agent })
-          : followUp
-            ? t("workspace.composer.followUp")
-            : t("workspace.composer.ask", { name })}
+        {followUp && card
+          ? t(CARD_LABEL[card])
+          : queueing
+            ? t("queue.composerBusy", { agent })
+            : followUp
+              ? t("workspace.composer.followUp")
+              : t("workspace.composer.ask", { name })}
       </label>
       <textarea
         ref={input}
@@ -372,7 +437,7 @@ function Composer({
         <span className="spacer" />
         <span className="muted small">Ctrl + Enter</span>
         <Button type="submit" variant="primary" disabled={!text.trim() || busy || disabled}>
-          {queueing ? t("queue.add") : t("workspace.composer.send")}
+          {followUp && card ? t("workspace.composer.sendAfterCard") : queueing ? t("queue.add") : t("workspace.composer.send")}
         </Button>
       </div>
       {saving && (

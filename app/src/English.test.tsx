@@ -91,7 +91,7 @@ describe("English", () => {
     expect(screen.getByText("Claude edited citas/servicio.py")).toBeInTheDocument();
     await user.click(within(card).getByRole("button", { name: "Allow in this chat" }));
     expect(await screen.findByText(/Claude: tests pass/)).toBeInTheDocument();
-    expect(await screen.findByText(/^Finished/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Finished/, { selector: ".activity" })).toBeInTheDocument();
     expect(screen.getByText(/Allowed in this chat/)).toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Steps" })).getAllByText(/\(done\)/)).toHaveLength(3);
     expect(await screen.findByRole("list", { name: "Changed files" })).toBeInTheDocument();
@@ -129,8 +129,8 @@ describe("English", () => {
     await user.click(screen.getByLabelText("Plan first"));
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByRole("region", { name: "Claude wants to run a command" });
-    await user.type(screen.getByLabelText(/^Write while Claude Opus works/), "Sigue");
-    await user.click(screen.getByRole("button", { name: "Queue" }));
+    await user.type(screen.getByLabelText(/^Answer the permission request above first/), "Sigue");
+    await user.click(screen.getByRole("button", { name: "Send afterwards" }));
     const queue = await screen.findByRole("region", { name: "Queued messages" });
     expect(within(queue).getByText("Answer the card above first; the queue goes after that.")).toBeInTheDocument();
 

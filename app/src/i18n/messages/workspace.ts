@@ -47,6 +47,18 @@ const es = {
   "workspace.composer.onlyModel": "Solo {model}",
   "workspace.composer.planFirst": "Planificar primero",
   "workspace.composer.send": "Enviar",
+  "workspace.composer.cardPlan":
+    "Primero responde al plan de arriba (para cambiarlo, usa «Pedir cambios»). Lo que escribas aquí queda en cola para después.",
+  "workspace.composer.cardPermission":
+    "Primero responde al permiso de arriba. Lo que escribas aquí queda en cola para después.",
+  "workspace.composer.cardOther": "Primero responde la tarjeta de arriba. Lo que escribas aquí queda en cola para después.",
+  "workspace.composer.sendAfterCard": "Enviar después",
+
+  "workspace.announce.plan": "Plan listo",
+  "workspace.announce.permission": "Pide permiso",
+  "workspace.announce.finished": "Terminó",
+  "workspace.announce.failed": "Falló",
+  "workspace.announce.limit": "Llegó al límite",
 
   "workspace.steps": "Pasos",
   "workspace.step.done": " (hecho)",
@@ -176,6 +188,17 @@ const en: Record<keyof typeof es, string> = {
   "workspace.composer.onlyModel": "Only {model}",
   "workspace.composer.planFirst": "Plan first",
   "workspace.composer.send": "Send",
+  "workspace.composer.cardPlan":
+    "Answer the plan above first (to change it, use “Request changes”). Whatever you write here waits in the queue.",
+  "workspace.composer.cardPermission": "Answer the permission request above first. Whatever you write here waits in the queue.",
+  "workspace.composer.cardOther": "Answer the card above first. Whatever you write here waits in the queue.",
+  "workspace.composer.sendAfterCard": "Send afterwards",
+
+  "workspace.announce.plan": "Plan ready",
+  "workspace.announce.permission": "Asks for permission",
+  "workspace.announce.finished": "Finished",
+  "workspace.announce.failed": "Failed",
+  "workspace.announce.limit": "Hit the limit",
 
   "workspace.steps": "Steps",
   "workspace.step.done": " (done)",

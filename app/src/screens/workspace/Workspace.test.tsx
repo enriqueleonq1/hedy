@@ -41,7 +41,7 @@ describe("Workspace", () => {
     await user.click(within(card).getByRole("button", { name: "Permitir en este chat" }));
 
     expect(await screen.findByText(/Claude: pasan los tests/)).toBeInTheDocument();
-    expect(await screen.findByText(/Terminó/)).toBeInTheDocument();
+    expect(await screen.findByText(/Terminó/, { selector: ".activity" })).toBeInTheDocument();
     expect(screen.getByText(/Permitido en este chat/)).toBeInTheDocument();
     const steps = screen.getByRole("region", { name: "Pasos" });
     expect(within(steps).getAllByText(/\(hecho\)/)).toHaveLength(3);
@@ -102,7 +102,7 @@ describe("Workspace", () => {
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     expect(await screen.findByText(/no cambian archivos/)).toBeInTheDocument();
-    expect(await screen.findByText(/Terminó/)).toBeInTheDocument();
+    expect(await screen.findByText(/Terminó/, { selector: ".activity" })).toBeInTheDocument();
   });
 
   it("refreshes a stopped task even when its status stays the same", async () => {
@@ -111,7 +111,7 @@ describe("Workspace", () => {
     await user.click(await screen.findByRole("radio", { name: "Pregunta" }));
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
-    expect(await screen.findByText(/Terminó/)).toBeInTheDocument();
+    expect(await screen.findByText(/Terminó/, { selector: ".activity" })).toBeInTheDocument();
 
     // Already in review: the backend sends no `task-updated` for this stop.
     await user.click(await screen.findByRole("button", { name: "Detener" }));
