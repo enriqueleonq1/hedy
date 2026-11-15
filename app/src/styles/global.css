@@ -1044,6 +1044,7 @@ button.popover__item:focus-visible { background: var(--selection); outline: none
 .workspace--no-panel .chat { width: 100%; max-width: 960px; margin-inline: auto; }
 
 .chat {
+  container: chat / inline-size;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1062,6 +1063,13 @@ button.popover__item:focus-visible { background: var(--selection); outline: none
 }
 .chat__title p { margin-top: 2px; font-size: var(--text-callout); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat__tools { display: flex; gap: var(--space-1); align-items: center; flex: none; }
+.tool-btn__short { display: none; font-variant-numeric: tabular-nums; }
+/* A narrow conversation (the panel maximized) keeps room for the title: the
+   header's buttons fold to their icon or count; the label stays for screen readers. */
+@container chat (max-width: 640px) {
+  .chat__tools .tool-btn__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .chat__tools .tool-btn__short { display: inline; }
+}
 
 /* The header's quiet buttons: no edge until hovered, like the ⋯ menu beside them. */
 .tool-btn {

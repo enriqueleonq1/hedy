@@ -120,7 +120,12 @@ export function TaskSwitcher({
         aria-controls={open ? panelId : undefined}
         onClick={() => setOpen((o) => !o)}
       >
-        {conversations ? t("conversation.count", { n: tasks.length }) : t("workspace.tasks", { n: tasks.length })}
+        <span className="tool-btn__label">
+          {conversations ? t("conversation.count", { n: tasks.length }) : t("workspace.tasks", { n: tasks.length })}
+        </span>
+        <span className="tool-btn__short" aria-hidden>
+          {tasks.length}
+        </span>
         <span className={`task-switcher__chevron${open ? " task-switcher__chevron--open" : ""}`} aria-hidden>
           <ChevronIcon />
         </span>

@@ -224,9 +224,14 @@ export function Workspace({
               />
             )}
             {task && (
-              <button type="button" className="tool-btn" onClick={() => onSelectTask(null)}>
+              <button
+                type="button"
+                className="tool-btn"
+                title={solo ? t("conversation.newLabel") : t("workspace.newTask")}
+                onClick={() => onSelectTask(null)}
+              >
                 <PlusIcon />
-                {solo ? t("conversation.newLabel") : t("workspace.newTask")}
+                <span className="tool-btn__label">{solo ? t("conversation.newLabel") : t("workspace.newTask")}</span>
               </button>
             )}
             {!solo && (
