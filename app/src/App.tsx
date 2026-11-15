@@ -52,14 +52,22 @@ function Localized({ children }: { children: ReactNode }) {
 }
 
 /**
- * `#accounts`, `#a=<id>` (accounts, that card), `#settings`, `#activity`, `#p=<path>` (workspace), `#m=<path>`
- * (memory), `#k=<path>` (memory, skills tab), `#s=<path>` (status).
+ * `#accounts`, `#a=<id>` (accounts, that card), `#settings`, `#activity`, `#p=<path>` (workspace; `&t=<id>`
+ * that task, `&new` a new one), `#m=<path>` (memory), `#k=<path>` (memory, skills tab), `#s=<path>` (status).
  */
 function viewFromHash(): View {
-  const hash = decodeURIComponent(window.location.hash.slice(1));
+  const raw = window.location.hash.slice(1);
+  if (raw.startsWith("p=")) {
+    // The path is encoded, so a raw `&` starts the task part.
+    const [path = "", extra] = raw.slice(2).split("&");
+    const project = decodeURIComponent(path);
+    if (extra === "new") return { screen: "workspace", project, task: null };
+    if (extra?.startsWith("t=")) return { screen: "workspace", project, task: decodeURIComponent(extra.slice(2)) };
+    return { screen: "workspace", project };
+  }
+  const hash = decodeURIComponent(raw);
   if (hash === "accounts" || hash === "settings" || hash === "activity") return { screen: hash };
   if (hash.startsWith("a=")) return { screen: "accounts", account: hash.slice(2) };
-  if (hash.startsWith("p=")) return { screen: "workspace", project: hash.slice(2) };
   if (hash.startsWith("m=")) return { screen: "memory", project: hash.slice(2) };
   if (hash.startsWith("k=")) return { screen: "memory", project: hash.slice(2), tab: "skills" };
   if (hash.startsWith("s=")) return { screen: "status", project: hash.slice(2) };
@@ -67,7 +75,10 @@ function viewFromHash(): View {
 }
 
 function hashFor(view: View): string {
-  if (view.screen === "workspace") return `#p=${encodeURIComponent(view.project)}`;
+  if (view.screen === "workspace") {
+    const task = view.task === null ? "&new" : view.task ? `&t=${encodeURIComponent(view.task)}` : "";
+    return `#p=${encodeURIComponent(view.project)}${task}`;
+  }
   if (view.screen === "memory") return `#${view.tab === "skills" ? "k" : "m"}=${encodeURIComponent(view.project)}`;
   if (view.screen === "status") return `#s=${encodeURIComponent(view.project)}`;
   if (view.screen === "accounts" && view.account) return `#a=${encodeURIComponent(view.account)}`;
@@ -84,12 +95,28 @@ function Root() {
   });
   const api = useApi();
 
-  const navigate = useCallback((next: View) => {
+  const show = useCallback((next: View) => {
     setView(next);
     const project = viewProject(next);
     if (project) setOpenProjects((open) => (open.includes(project) ? open : [...open, project]));
-    history.replaceState(null, "", hashFor(next));
   }, []);
+
+  // Each screen and task is a step of the history: Back and Forward walk them.
+  const navigate = useCallback(
+    (next: View, options?: { replace?: boolean }) => {
+      show(next);
+      const hash = hashFor(next);
+      if (options?.replace) history.replaceState(null, "", hash);
+      else if (hash !== window.location.hash) history.pushState(null, "", hash);
+    },
+    [show],
+  );
+
+  useEffect(() => {
+    const onPop = () => show(viewFromHash());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [show]);
 
   // A click on a desktop notification opens that task.
   useEffect(
@@ -168,10 +195,11 @@ function Root() {
           )}
           {current.screen === "workspace" && (
             <Workspace
-              key={`${current.project}\n${current.task ?? ""}`}
+              key={current.project}
               overview={data}
               project={current.project}
-              initialTask={current.task}
+              task={current.task}
+              onSelectTask={(task, options) => navigate({ screen: "workspace", project: current.project, task }, options)}
               onOpenMemory={() => navigate({ screen: "memory", project: current.project })}
               onOpenStatus={() => navigate({ screen: "status", project: current.project })}
             />

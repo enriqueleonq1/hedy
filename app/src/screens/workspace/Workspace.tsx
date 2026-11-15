@@ -66,20 +66,22 @@ function useMilestone(taskId: string | null, items: TimelineItem[], ready: boole
 export function Workspace({
   overview,
   project,
-  initialTask,
+  task: chosen,
+  onSelectTask,
   onOpenMemory,
   onOpenStatus,
 }: {
   overview: Overview;
   project: string;
-  /** Open this task (from the task board or a notification). */
-  initialTask?: string;
+  /** The task to show: an id, `null` for a new one, or (unset) the most recent open one. */
+  task?: string | null;
+  /** Shows another task (`null`: a new one); `replace` keeps the step out of Back. */
+  onSelectTask: (task: string | null, options?: { replace?: boolean }) => void;
   onOpenMemory?: () => void;
   onOpenStatus?: () => void;
 }) {
   const t = useT();
   const tasks = useTasks(project);
-  const [chosen, setChosen] = useState<string | null | undefined>(initialTask);
   const info = overview.projects.find((p) => p.path === project);
   const account = overview.accounts.find((a) => a.id === info?.account);
 
@@ -117,7 +119,7 @@ export function Workspace({
                 className="pill-select"
                 aria-label={t("workspace.task")}
                 value={task?.id ?? ""}
-                onChange={(e) => setChosen(e.target.value || null)}
+                onChange={(e) => onSelectTask(e.target.value || null)}
               >
                 <option value="">{t("workspace.newTask")}</option>
                 {list.map((item) => (
@@ -186,7 +188,7 @@ export function Workspace({
           models={account ? MODEL_SUGGESTIONS[account.provider] : []}
           agent={agent}
           disabled={!account}
-          onStarted={(t) => setChosen(t.id)}
+          onStarted={(created) => onSelectTask(created.id, { replace: true })}
         />
       </section>
       <ChangesPanel project={project} task={task} />

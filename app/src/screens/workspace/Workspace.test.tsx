@@ -131,6 +131,29 @@ describe("Workspace", () => {
     expect(screen.queryByRole("radiogroup", { name: "Modo" })).not.toBeInTheDocument();
   });
 
+  it("goes Back and Forward between screens and tasks", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^Actividad/ }, { timeout: 8000 }));
+    const needs = await screen.findByRole("region", { name: "Te necesitan (3)" });
+    await user.click(within(needs).getByRole("button", { name: /Migra el reporte de comisiones/ }));
+    const title = "Migra el reporte de comisiones a la API nueva";
+    expect(await screen.findByRole("heading", { name: title })).toBeInTheDocument();
+
+    history.back();
+    expect(await screen.findByRole("region", { name: "Te necesitan (3)" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#activity");
+    history.back();
+    expect(await screen.findByRole("heading", { name: /¡Hola, Enrique!/ })).toBeInTheDocument();
+    history.forward();
+    expect(await screen.findByRole("region", { name: "Te necesitan (3)" })).toBeInTheDocument();
+    history.forward();
+    expect(await screen.findByRole("heading", { name: title })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/homming")}&t=s2`);
+  });
+
   it("refreshes a stopped task even when its status stays the same", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);

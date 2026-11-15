@@ -78,7 +78,7 @@ describe("Activity", () => {
     await user.click(within(needs).getByRole("button", { name: /Migra el reporte de comisiones/ }));
     expect(await screen.findByRole("heading", { name: "Migra el reporte de comisiones a la API nueva" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "homming" })).toHaveAttribute("aria-current", "page");
-    expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/homming")}`);
+    expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/homming")}&t=s2`);
   });
 
   it("opens the task of a clicked desktop notification", async () => {

@@ -19,8 +19,8 @@ export type View =
   | { screen: "accounts"; account?: string }
   | { screen: "settings" }
   | { screen: "activity" }
-  /** `task`: open that task instead of the most recent open one. */
-  | { screen: "workspace"; project: string; task?: string }
+  /** `task`: open that task instead of the most recent open one; `null`: a new task. */
+  | { screen: "workspace"; project: string; task?: string | null }
   /** `tab`: the skills tab instead of the notes. */
   | { screen: "memory"; project: string; tab?: "notes" | "skills" }
   | { screen: "status"; project: string };
