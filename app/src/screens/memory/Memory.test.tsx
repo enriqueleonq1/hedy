@@ -17,7 +17,8 @@ async function setup() {
   render(<App api={api} queryClient={queryClient} />);
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: /^hedy/ }));
-  await user.click(await screen.findByRole("button", { name: "Memoria" }));
+  await user.click(await screen.findByRole("button", { name: "Más acciones" }));
+  await user.click(screen.getByRole("menuitem", { name: "Memoria" }));
   await screen.findByRole("heading", { name: "Memoria de hedy" });
   return { api, user };
 }

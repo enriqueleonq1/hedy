@@ -5,6 +5,7 @@ import type { HoldReason, QueuedMessage, Task } from "../../api/types";
 import { Button } from "../../components/ui/Button";
 import { isBusy, useSetQueue } from "../../tasks/hooks";
 import { useT, type MessageKey } from "../../i18n";
+import { CloseIcon, PencilIcon } from "./icons";
 
 const HELD: Record<HoldReason, MessageKey> = {
   failed: "queue.held.failed",
@@ -51,7 +52,7 @@ export function QueuedMessages({
     <section className="queue" aria-label={t("queue.list")}>
       <ul className="queue__list">
         {queue.map((message) => (
-          <QueuedBubble key={message.id} message={message} />
+          <QueuedPill key={message.id} message={message} />
         ))}
       </ul>
       <div className={`queue__status${held ? " queue__status--held" : ""}`}>
@@ -66,7 +67,11 @@ export function QueuedMessages({
   );
 }
 
-function QueuedBubble({ message }: { message: QueuedMessage }) {
+/**
+ * One queued message: a single line above the composer (the whole text in
+ * its tooltip), with edit and remove shown on hover or keyboard focus.
+ */
+function QueuedPill({ message }: { message: QueuedMessage }) {
   const t = useT();
   const setQueue = useSetQueue();
   const [editing, setEditing] = useState(false);
@@ -82,16 +87,22 @@ function QueuedBubble({ message }: { message: QueuedMessage }) {
     invalidate: [],
     onSuccess: (left) => setQueue(message.task, left),
   });
+  const save = () => {
+    if (draft.trim() && !edit.isPending) edit.mutate(draft);
+  };
+  const cancel = () => {
+    setEditing(false);
+    setDraft(message.text);
+  };
 
-  return (
-    <li className={`bubble bubble--queued${message.held ? " bubble--held" : ""}`}>
-      <span className="bubble__tag">{message.held ? t("queue.badgeHeld") : t("queue.badge")}</span>
-      {editing ? (
+  if (editing) {
+    return (
+      <li className="queue-pill queue-pill--editing">
         <form
-          className="bubble__edit"
+          className="queue-pill__edit"
           onSubmit={(e) => {
             e.preventDefault();
-            if (draft.trim()) edit.mutate(draft);
+            save();
           }}
         >
           <textarea
@@ -101,14 +112,16 @@ function QueuedBubble({ message }: { message: QueuedMessage }) {
             autoFocus
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
               if (e.key === "Escape") {
                 e.preventDefault();
-                setEditing(false);
-                setDraft(message.text);
+                e.stopPropagation();
+                cancel();
               }
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              // Like the composer: Enter saves, Shift + Enter is a new line.
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                if (draft.trim()) edit.mutate(draft);
+                save();
               }
             }}
           />
@@ -116,39 +129,47 @@ function QueuedBubble({ message }: { message: QueuedMessage }) {
             <Button small type="submit" variant="primary" disabled={!draft.trim() || edit.isPending}>
               {t("queue.save")}
             </Button>
-            <Button
-              small
-              variant="ghost"
-              onClick={() => {
-                setEditing(false);
-                setDraft(message.text);
-              }}
-            >
+            <Button small variant="ghost" onClick={cancel}>
               {t("common.cancel")}
             </Button>
           </div>
         </form>
-      ) : (
-        <>
-          <span className="bubble__text">{message.text}</span>
-          <span className="bubble__actions">
-            <Button
-              small
-              variant="ghost"
-              aria-label={t("queue.editLabel")}
-              onClick={() => {
-                setDraft(message.text);
-                setEditing(true);
-              }}
-            >
-              {t("queue.edit")}
-            </Button>
-            <Button small variant="ghost" aria-label={t("queue.removeLabel")} disabled={remove.isPending} onClick={() => remove.mutate(undefined)}>
-              {t("queue.remove")}
-            </Button>
-          </span>
-        </>
-      )}
+      </li>
+    );
+  }
+
+  return (
+    <li className={`queue-pill${message.held ? " queue-pill--held" : ""}`}>
+      <span className={message.held ? "queue-pill__tag" : "sr-only"}>
+        {message.held ? t("queue.badgeHeld") : t("queue.badge")}
+      </span>
+      <span className="queue-pill__text" title={message.text}>
+        {message.text}
+      </span>
+      <span className="queue-pill__actions">
+        <button
+          type="button"
+          className="queue-pill__action"
+          aria-label={t("queue.editLabel")}
+          title={t("queue.edit")}
+          onClick={() => {
+            setDraft(message.text);
+            setEditing(true);
+          }}
+        >
+          <PencilIcon />
+        </button>
+        <button
+          type="button"
+          className="queue-pill__action"
+          aria-label={t("queue.removeLabel")}
+          title={t("queue.remove")}
+          disabled={remove.isPending}
+          onClick={() => remove.mutate(undefined)}
+        >
+          <CloseIcon />
+        </button>
+      </span>
     </li>
   );
 }

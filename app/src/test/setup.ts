@@ -9,6 +9,7 @@ afterEach(() => {
   // Conveniences remembered per viewer (like each project's composer mode) start fresh.
   try {
     localStorage.clear();
+    sessionStorage.clear();
   } catch {
     // No storage: nothing to clear.
   }

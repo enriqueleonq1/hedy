@@ -127,8 +127,12 @@ describe("Starting something new", () => {
     expect(follow).toHaveBeenCalledWith("c1", "¿Y en móvil?");
     expect(await screen.findByText("Hecho: ¿Y en móvil?")).toBeInTheDocument();
 
-    await user.click(await screen.findByRole("button", { name: "Borrar" }));
-    await user.click(screen.getByRole("button", { name: "¿Borrarla?" }));
+    // In the ⋯ menu, confirmed in a dialog.
+    await user.click(await screen.findByRole("button", { name: "Más acciones" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Borrar esta conversación" }));
+    const confirm = screen.getByRole("dialog", { name: "¿Borrar esta conversación?" });
+    expect(within(confirm).getByText(/No se puede deshacer/)).toBeInTheDocument();
+    await user.click(within(confirm).getByRole("button", { name: "Borrar" }));
     expect(remove).toHaveBeenCalledWith("c1");
     expect(await screen.findByText("Conversación borrada")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Pregunta rápida" })).toBeInTheDocument();

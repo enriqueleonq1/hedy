@@ -21,7 +21,7 @@ const TABS: { id: Tab; label: MessageKey }[] = [
   { id: "preview", label: "workspace.tab.preview" },
 ];
 
-export function ChangesPanel({ project, task }: { project: string; task: Task | null }) {
+export function ChangesPanel({ project, task, hidden = false }: { project: string; task: Task | null; hidden?: boolean }) {
   const t = useT();
   const [tab, setTab] = useState<Tab>("changes");
   // Once opened, the terminal stays alive behind the other tabs: unmounting it
@@ -30,7 +30,7 @@ export function ChangesPanel({ project, task }: { project: string; task: Task | 
   const dir = task?.workspace?.worktree ?? project;
 
   return (
-    <aside className="side-panel" aria-label={t("workspace.panel")}>
+    <aside className="side-panel" aria-label={t("workspace.panel")} hidden={hidden}>
       <div className="side-panel__tabs" role="tablist">
         {TABS.map((item) => (
           <button
@@ -241,20 +241,6 @@ function Changes({ project, task }: { project: string; task: Task | null }) {
         </>
       )}
 
-      <div className="actions">
-        <Button
-          variant="primary"
-          disabled={files.length === 0 || task.status === "running"}
-          title={task.status === "running" ? t("workspace.changes.waitForAgent") : undefined}
-          onClick={() => setReviewing(true)}
-        >
-          {t("workspace.changes.accept")}
-        </Button>
-        <Button onClick={() => actions.openEditor({ path: task.workspace?.worktree ?? project })}>{t("common.openInVsCode")}</Button>
-        <ConfirmButton confirmLabel={t("workspace.changes.discardConfirm")} onConfirm={() => discard.mutate(task.id)}>
-          {t("workspace.changes.discard")}
-        </ConfirmButton>
-      </div>
       <p className="muted small">
         {t("workspace.changes.branch")} <span className="mono">{task.workspace.branch}</span> {t("workspace.changes.from")}{" "}
         <span className="mono">{task.workspace.baseBranch}</span>
@@ -264,6 +250,27 @@ function Changes({ project, task }: { project: string; task: Task | null }) {
           {t("common.recentCommits")} · {commits.data.map((c) => `${c.hash} ${c.subject}`).join(" · ")}
         </p>
       )}
+      {/* Always in reach, however long the diff: the decision on these changes. */}
+      <div className="changes__footer">
+        <Button
+          small
+          variant="primary"
+          disabled={files.length === 0 || task.status === "running"}
+          title={task.status === "running" ? t("workspace.changes.waitForAgent") : undefined}
+          onClick={() => setReviewing(true)}
+        >
+          {t("workspace.changes.accept")}
+        </Button>
+        <Button small onClick={() => actions.openEditor({ path: task.workspace?.worktree ?? project })}>{t("common.openInVsCode")}</Button>
+        <ConfirmButton
+          small
+          className="changes__discard"
+          confirmLabel={t("workspace.changes.discardConfirm")}
+          onConfirm={() => discard.mutate(task.id)}
+        >
+          {t("workspace.changes.discard")}
+        </ConfirmButton>
+      </div>
       {reviewing && (
         <AcceptSheet
           task={task}
