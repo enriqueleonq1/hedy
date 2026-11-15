@@ -20,10 +20,11 @@ import { projectColor, useProjectActions } from "../projects";
 import { useShortcuts } from "../shortcuts";
 import { useToast } from "../ui/Toast";
 import { modKey } from "./keys";
+import type { Mode } from "./modes";
 
-export type GroupKey = "pending" | "nav" | "projects" | "tasks" | "accounts" | "actions";
+export type GroupKey = "pending" | "nav" | "code" | "projects" | "tasks" | "accounts" | "actions";
 
-export const GROUP_ORDER: GroupKey[] = ["pending", "nav", "projects", "accounts", "actions", "tasks"];
+export const GROUP_ORDER: GroupKey[] = ["pending", "nav", "code", "projects", "accounts", "actions", "tasks"];
 
 export interface Page {
   title: string;
@@ -40,10 +41,14 @@ export interface Command {
   detail?: string;
   /** A dot of this color before the label (decorative). */
   color?: string;
+  /** Its shortcut, shown on the right: the keys pressed together (`[modKey(), "P"]`). */
+  keys?: string[];
   /** Runs it and closes the palette… */
   run?: () => void;
-  /** …or opens a page of choices instead. */
+  /** …or opens a page of choices instead… */
   page?: () => Page;
+  /** …or switches the palette to another mode (`files`, `line`, …). */
+  switchTo?: Mode;
 }
 
 /** Most recent tasks offered per project. */
@@ -135,14 +140,14 @@ export function usePaletteCommands({
       id: "view:focus",
       group: "actions",
       label: focusMode.focus ? t("shell.focus.exit") : t("shell.focus.enter"),
-      detail: `${modKey()} \\`,
+      keys: [modKey(), "\\"],
       run: focusMode.toggle,
     },
     {
       id: "help:shortcuts",
       group: "actions",
       label: t("shell.shortcuts.title"),
-      detail: "?",
+      keys: ["?"],
       run: shortcuts.show,
     },
   );

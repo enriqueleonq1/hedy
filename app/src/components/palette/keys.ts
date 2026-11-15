@@ -17,3 +17,8 @@ export function altKey(): string {
 export function paletteKeys(): string {
   return isMac() ? "⌘K" : "Ctrl K";
 }
+
+/** The Shift key as shown: "⇧" on a Mac, "Shift" elsewhere. */
+export function shiftKey(): string {
+  return isMac() ? "⇧" : "Shift";
+}
