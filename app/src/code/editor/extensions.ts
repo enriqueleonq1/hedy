@@ -1,8 +1,9 @@
 // The editor's own extensions: change markers, a blame gutter and the target
-// line (with its search hits). Each is a state field fed by an effect, so React
-// only dispatches data and the editor draws it.
+// line (with its search hits). Markers and the target are state fields fed by an
+// effect, so React only dispatches data; the blame gutter is reconfigured in its
+// own compartment, present only while blame is on.
 
-import { RangeSet, RangeSetBuilder, StateEffect, StateField, type Extension } from "@codemirror/state";
+import { RangeSet, RangeSetBuilder, StateEffect, StateField, type Extension, type Text } from "@codemirror/state";
 import { Decoration, EditorView, gutter, GutterMarker, type DecorationSet } from "@codemirror/view";
 
 import type { LineMark } from "./lineMarks";
@@ -98,40 +99,33 @@ class BlameMarker extends GutterMarker {
 
 const EMPTY_BLAME = new BlameMarker(null);
 
-export const setBlame = StateEffect.define<BlameMark[] | null>();
+function blameSet(doc: Text, marks: BlameMark[]): RangeSet<GutterMarker> {
+  const builder = new RangeSetBuilder<GutterMarker>();
+  for (const mark of [...marks].sort((a, b) => a.start - b.start)) {
+    if (mark.start < 1 || mark.start > doc.lines) continue;
+    const from = doc.line(mark.start).from;
+    builder.add(from, from, new BlameMarker(mark));
+  }
+  return builder.finish();
+}
 
-const blameField = StateField.define<{ on: boolean; set: RangeSet<GutterMarker> }>({
-  create: () => ({ on: false, set: RangeSet.empty }),
-  update(value, tr) {
-    for (const effect of tr.effects) {
-      if (!effect.is(setBlame)) continue;
-      if (!effect.value) return { on: false, set: RangeSet.empty };
-      const builder = new RangeSetBuilder<GutterMarker>();
-      const doc = tr.state.doc;
-      for (const mark of [...effect.value].sort((a, b) => a.start - b.start)) {
-        if (mark.start < 1 || mark.start > doc.lines) continue;
-        const from = doc.line(mark.start).from;
-        builder.add(from, from, new BlameMarker(mark));
-      }
-      return { on: true, set: builder.finish() };
-    }
-    return value;
-  },
-});
-
-/** The blame gutter shows only while blame data is set (`setBlame.of(null)` hides it). */
-export function blameGutter(): Extension {
+/**
+ * The blame gutter for these marks. It lives in a compartment and is there only
+ * while blame is on (`[]` otherwise), so a hidden blame takes no width at all.
+ */
+export function blameGutter(marks: BlameMark[]): Extension {
+  const field = StateField.define<RangeSet<GutterMarker>>({
+    create: (state) => blameSet(state.doc, marks),
+    update: (value, tr) => value.map(tr.changes),
+  });
   return [
-    blameField,
-    // The column is hidden (by the theme) while blame is off.
-    EditorView.editorAttributes.compute([blameField], (state) => ({ class: state.field(blameField).on ? "cm-blame-on" : "" })),
+    field,
     gutter({
       class: "cm-blameGutter",
-      markers: (view) => view.state.field(blameField).set,
-      // While on, every line keeps the column's width (empty rows included).
-      lineMarker: (view) => (view.state.field(blameField).on ? EMPTY_BLAME : null),
+      markers: (view) => view.state.field(field),
+      // Every line keeps the column's width (empty rows included).
+      lineMarker: () => EMPTY_BLAME,
       initialSpacer: () => EMPTY_BLAME,
-      lineMarkerChange: (update) => update.transactions.some((tr) => tr.effects.some((e) => e.is(setBlame))),
     }),
   ];
 }

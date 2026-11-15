@@ -68,7 +68,6 @@ export const hedyEditorTheme = EditorView.theme({
   },
 
   // Blame: who last touched each run of lines.
-  "&:not(.cm-blame-on) .cm-blameGutter": { display: "none !important" },
   ".cm-blameGutter .cm-gutterElement": { padding: "0 10px 0 8px" },
   ".cm-blame": {
     width: "21ch",
