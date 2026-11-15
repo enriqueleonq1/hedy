@@ -406,7 +406,7 @@ function ProjectCard({
       <header>
         <h3 id={`project-${project.path}`}>{project.name}</h3>
         <span className="project-card__badges">
-          {project.protected && <span className="badge badge--warn">{t("common.protected")}</span>}
+          {project.protected && <span className="badge badge--protected">{t("common.protected")}</span>}
           <MenuButton
             label={t("welcome.card.more", { name: project.name })}
             items={[

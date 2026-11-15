@@ -551,6 +551,7 @@ select:disabled { opacity: 0.65; }
 .badge--loggedOut { color: var(--danger); }
 .badge--unknown { color: var(--warning); }
 .badge--warn { color: var(--warning); }
+.badge--protected { color: var(--accent); }
 
 .bar {
   height: 8px;
