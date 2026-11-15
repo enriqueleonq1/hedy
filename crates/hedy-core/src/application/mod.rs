@@ -3,6 +3,7 @@
 mod accounts;
 mod activity;
 mod attachments;
+mod code;
 mod conversations;
 mod detect;
 mod doctor;
@@ -23,6 +24,8 @@ mod tasks;
 mod templates;
 #[cfg(test)]
 mod testing;
+#[cfg(test)]
+mod testing_code;
 mod waits;
 
 use std::collections::HashMap;
@@ -32,6 +35,10 @@ use std::sync::{Arc, Mutex};
 pub use accounts::NewAccount;
 pub use activity::{MAX_FINISHED, RECENT_HOURS, TaskActivity};
 pub use attachments::NewImage;
+pub use code::{
+    BASE_REV, CodeCopy, CodeDiff, CodeTree, CopyInfo, FileContent, FileHistory, HistoryCommit,
+    MAX_DIFF_CONTEXT, TaskTouch,
+};
 pub use conversations::NewConversation;
 pub use detect::DetectedCli;
 pub use doctor::{Check, CheckArea, CheckLevel, DoctorReport};
@@ -55,8 +62,8 @@ pub use templates::{NewTemplate, TemplateScope};
 
 use crate::domain::TaskId;
 use ports::{
-    AgentLauncher, Clock, FileSystem, Git, NoTaskEvents, ProcessRunner, SecretStore, Store,
-    TaskEvents, UsageProbe,
+    AgentLauncher, Clock, CodeReader, FileSystem, Git, NoTaskEvents, ProcessRunner, SecretStore,
+    Store, TaskEvents, UsageProbe,
 };
 
 /// Everything the use cases need from the outside world.
@@ -66,6 +73,7 @@ pub struct Ports {
     pub runner: Arc<dyn ProcessRunner>,
     pub fs: Arc<dyn FileSystem>,
     pub git: Arc<dyn Git>,
+    pub code: Arc<dyn CodeReader>,
     pub agents: Arc<dyn AgentLauncher>,
     pub clock: Arc<dyn Clock>,
     pub usage: Arc<dyn UsageProbe>,
@@ -79,6 +87,7 @@ pub struct Hedy {
     runner: Arc<dyn ProcessRunner>,
     fs: Arc<dyn FileSystem>,
     git: Arc<dyn Git>,
+    code: Arc<dyn CodeReader>,
     agents: Arc<dyn AgentLauncher>,
     clock: Arc<dyn Clock>,
     usage: Arc<dyn UsageProbe>,
@@ -101,6 +110,7 @@ impl Hedy {
             runner: ports.runner,
             fs: ports.fs,
             git: ports.git,
+            code: ports.code,
             agents: ports.agents,
             clock: ports.clock,
             usage: ports.usage,

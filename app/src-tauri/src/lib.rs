@@ -1,5 +1,6 @@
 //! Hedy desktop app: a driving adapter over `hedy-core`, like the CLI.
 
+mod code;
 mod commands;
 mod dto;
 mod events;
@@ -124,6 +125,16 @@ pub fn run() {
             commands::detect_clis,
             commands::doctor,
             commands::open_link,
+            code::code_copy,
+            code::code_tree,
+            code::read_file,
+            code::file_diff,
+            code::search_text,
+            code::file_history,
+            code::blame_file,
+            code::file_symbols,
+            code::open_file_in_editor,
+            code::reveal_in_file_manager,
         ])
         .run(tauri::generate_context!())
         .expect("error al ejecutar Hedy");

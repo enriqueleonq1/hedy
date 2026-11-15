@@ -285,7 +285,7 @@ export interface PlanState {
 // ---------------------------------------------------------------- tasks
 
 export type TaskMode = "project" | "ask" | "research";
-type TaskStatus ="running" | "waitingApproval" | "review" | "accepted" | "discarded" | "failed";
+export type TaskStatus = "running" | "waitingApproval" | "review" | "accepted" | "discarded" | "failed";
 
 export interface Workspace {
   worktree: string;
@@ -575,3 +575,6 @@ export interface DetectedCli {
   /** The Hedy account already using its default folder. */
   account: string | null;
 }
+
+// Code navigation and review: see codeTypes.ts.
+export type * from "./codeTypes";

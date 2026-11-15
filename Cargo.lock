@@ -1843,6 +1843,7 @@ dependencies = [
  "jiff",
  "keyring",
  "portable-pty",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

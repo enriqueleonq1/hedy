@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiProvider, errorMessage, useApi, useOverview } from "./api/context";
 import type { HedyApi } from "./api/HedyApi";
 import { FocusModeProvider } from "./components/focusMode";
+import { FileNavigatorProvider } from "./files/navigator";
 import { Shell, Sidebar, taskView, Topbar, viewProject, type View } from "./components/Layout";
 import { Mascot } from "./components/Mascot/Mascot";
 import { CommandPalette } from "./components/palette/CommandPalette";
@@ -38,7 +39,9 @@ export function App({ api, queryClient }: { api: HedyApi; queryClient?: QueryCli
         <Localized>
           <ToastProvider>
             <TaskEventsBridge />
-            <Root />
+            <FileNavigatorProvider>
+              <Root />
+            </FileNavigatorProvider>
           </ToastProvider>
         </Localized>
       </ApiProvider>

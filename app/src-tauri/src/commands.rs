@@ -25,10 +25,10 @@ use crate::dto::{
 };
 use crate::terminal::{TerminalEvent, TerminalRequest, Terminals};
 
-type CommandResult<T> = Result<T, String>;
+pub(crate) type CommandResult<T> = Result<T, String>;
 
 /// Runs a use case off the main thread and turns its error into a message.
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     state: &State<'_, AppState>,
     f: impl FnOnce(&Hedy) -> AppResult<T> + Send + 'static,
 ) -> CommandResult<T> {
