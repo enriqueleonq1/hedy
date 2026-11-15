@@ -1,0 +1,82 @@
+/* Shipping: the folder's status in the workspace header, the accept modes,
+   "Sugerir con IA" and the publish flow. Colors only from the theme tokens. */
+
+/* The folder, quiet: branch, changes and ↓ / ↑ as one hairline group. */
+.folder-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.folder-status__branch { max-width: 180px; }
+.folder-status__name { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 12.5px; font-weight: 500; }
+.folder-status__changes {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 6px;
+  color: var(--muted);
+  font: 600 var(--text-callout) var(--font-ui);
+  cursor: default;
+}
+.folder-status__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warn-ink); }
+.folder-status__count { gap: 3px; padding: 0 7px; }
+.folder-status__count:disabled { cursor: default; opacity: 0.55; }
+.folder-status[aria-busy="true"] .folder-status__count { opacity: 0.55; }
+@media (max-width: 760px) {
+  .folder-status__changes { display: none; }
+  .folder-status__branch { max-width: 120px; }
+}
+
+/* The accept modes and the commit message head. */
+.accept-mode { display: grid; gap: 6px; }
+.accept-mode .segmented { justify-self: start; }
+.commit-message__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.commit-message__suggest { height: 28px; padding: 0 8px; color: var(--action-text); }
+.commit-message__suggest:disabled { cursor: progress; opacity: 0.7; }
+
+/* The publish flow. */
+.ship-step { display: grid; gap: 12px; }
+.ship-step p { margin: 0; }
+.ship-state { font-weight: 600; }
+.ship-state__mark { color: var(--success); font-weight: 700; }
+.ship-failure {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  color: var(--warn-ink);
+}
+.ship-failure__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ship-failure__actions:empty { display: none; }
+.ship-pr__branches { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.ship-pr__branches .field { flex: 0 1 220px; }
+.ship-pr__head { padding-bottom: 10px; font-family: var(--font-mono); }
+.ship-pr__body { width: 100%; resize: vertical; }
+.ship-pr__draft { display: inline-flex; align-items: center; gap: 8px; justify-self: start; cursor: pointer; }
+
+/* The accepted view: where the work is and the next step. */
+.ship-panel { display: grid; gap: 10px; justify-items: start; margin-bottom: 12px; }
+.ship-panel p { margin: 0; }
+.ship-panel__row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ship-panel__ok { color: var(--ink); }
+.ship-panel__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px;
+  margin-left: -8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--action-text);
+  font: 600 var(--text-callout) var(--font-ui);
+  cursor: pointer;
+}
+.ship-panel__link:hover { background: var(--selection); }
+.ship-panel__link:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }

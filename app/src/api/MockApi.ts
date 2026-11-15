@@ -18,7 +18,18 @@ import { MockCode } from "./mockCode";
 import { resolveLanguage } from "../i18n";
 import { placeholders } from "../templates/placeholders";
 import type {
+  AcceptMode,
   AcceptPreview,
+  FolderStatus,
+  GhState,
+  NewPullRequestInput,
+  PullOutcome,
+  PullRequest,
+  PullRequestDraft,
+  PushOutcome,
+  ShipFailure,
+  Shipment,
+  ShipState,
   Account,
   Attachment,
   ImageInput,
@@ -1730,12 +1741,28 @@ export class MockApi implements HedyApi {
   /** When set, undo is refused with this message, as when the branch moved on. */
   undoRefusal: string | null = null;
 
-  async acceptTask(id: string, message?: string | null): Promise<void> {
+  async acceptTask(id: string, message?: string | null, mode: AcceptMode = "merge"): Promise<void> {
     const task = this.tasksById.get(id);
     if (!task) throw `no existe la tarea ${id}`;
-    this.commitMessages.set(id, message?.trim() || this.proposedMessage(task));
-    this.acceptedDiffs.set(id, this.diffs.get(id) ?? []);
-    task.merge = { before: "a3f9c1e", after: "5d0b7e2", tip: "9c4e1aa", at: Math.floor(Date.now() / 1000) };
+    if (!task.workspace) throw `la tarea ${id} no cambia archivos (es una pregunta)`;
+    const used = message?.trim() || this.proposedMessage(task);
+    this.commitMessages.set(id, used);
+    this.acceptModes.set(id, mode);
+    const files = this.diffs.get(id) ?? [];
+    this.acceptedDiffs.set(id, files);
+    const kept = mode === "branch";
+    const previous = task.ship?.kept && kept ? task.ship : null;
+    task.ship = {
+      branch: kept ? task.workspace.branch : task.workspace.baseBranch,
+      kept,
+      message: used,
+      files: files.map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions })),
+      pushedTo: previous?.pushedTo ?? null,
+      pullRequest: previous?.pullRequest ?? null,
+    };
+    task.merge = kept ? null : { before: "a3f9c1e", after: "5d0b7e2", tip: "9c4e1aa", at: Math.floor(Date.now() / 1000) };
+    // A merge is one more commit on the folder's branch, not published yet.
+    if (!kept) this.folder(task.project).ahead += 1;
     task.wait = null;
     this.close(id, "accepted");
   }
@@ -1743,14 +1770,219 @@ export class MockApi implements HedyApi {
   async undoAccept(id: string): Promise<void> {
     const task = this.tasksById.get(id);
     if (!task) throw `no existe la tarea ${id}`;
+    const english = this.english();
+    if (task.status === "accepted" && task.ship?.kept) {
+      task.status = "review";
+      this.diffs.set(id, this.acceptedDiffs.get(id) ?? []);
+      this.notifyTask(task);
+      return;
+    }
     if (task.status !== "accepted" || !task.merge) {
-      throw "No se puede deshacer sin riesgo: la tarea no está integrada. Si quieres quitar los cambios, usa git revert.";
+      throw english
+        ? "It cannot be undone safely: the task is not merged. To take the changes out, use git revert."
+        : "No se puede deshacer sin riesgo: la tarea no está integrada. Si quieres quitar los cambios, usa git revert.";
     }
     if (this.undoRefusal) throw this.undoRefusal;
+    if (task.ship?.pushedTo) {
+      throw english
+        ? `It cannot be undone safely: the changes were already pushed to ${task.ship.pushedTo}. To take the changes out, use git revert.`
+        : `No se puede deshacer sin riesgo: los cambios ya se subieron a ${task.ship.pushedTo}. Si quieres quitar los cambios, usa git revert.`;
+    }
     task.merge = null;
+    task.ship = null;
     task.status = "review";
+    const folder = this.folder(task.project);
+    folder.ahead = Math.max(0, folder.ahead - 1);
     this.diffs.set(id, this.acceptedDiffs.get(id) ?? []);
     this.notifyTask(task);
+  }
+
+  // ---------------------------------------------------------------- shipping
+  // The folder's git state and its remote, like the backend: push sets an
+  // upstream when missing, pull only fast-forwards, failures come back as data.
+
+  /** How each accepted task was accepted (test helper). */
+  readonly acceptModes = new Map<string, AcceptMode>();
+  private gitFolders = new Map<string, Omit<FolderStatus, "changes" | "remote" | "remoteHost" | "gh">>();
+  /** Folders without a remote (test helper). */
+  readonly noRemote = new Set<string>();
+  /** What `gh` can do for every folder's remote. */
+  gh: GhState = "ready";
+  /** The next push fails like this. */
+  pushFailure: ShipFailure | null = null;
+  /** The next pull fails like this. */
+  pullFailure: ShipFailure | null = null;
+  /** The next `createPullRequest` fails with this message. */
+  prFailure: string | null = null;
+  /** What "Sugerir con IA" answers; `{ error }` makes it fail. */
+  suggestion: string | { error: string } = "fix(facturas): round VAT per line, not on the total";
+  /** Folder pushes and pulls, and task pushes, in order (test helper). */
+  readonly shipLog: string[] = [];
+  readonly pullRequests: { task: string; input: NewPullRequestInput }[] = [];
+
+  private folder(path: string) {
+    let folder = this.gitFolders.get(path);
+    if (!folder) {
+      folder = { branch: "main", upstream: "origin/main", ahead: 0, behind: 2, staged: 1, unstaged: 1, untracked: 1, conflicted: 0 };
+      this.gitFolders.set(path, folder);
+    }
+    return folder;
+  }
+
+  async folderStatus(path: string): Promise<FolderStatus> {
+    const folder = this.folder(path);
+    const remote = !this.noRemote.has(path);
+    return {
+      ...folder,
+      upstream: remote ? folder.upstream : null,
+      changes: folder.staged + folder.unstaged + folder.untracked + folder.conflicted,
+      remote: remote ? "origin" : null,
+      remoteHost: remote ? "github.com" : null,
+      gh: remote ? this.gh : null,
+    };
+  }
+
+  private noRemoteFailure(): ShipFailure {
+    return {
+      kind: "noRemote",
+      message: this.english()
+        ? "this folder has no remote to publish to: add one with `git remote add origin <url>`"
+        : "esta carpeta no tiene un remoto al que publicar: añade uno con `git remote add origin <url>`",
+    };
+  }
+
+  private async pushed(path: string, branch: string, upstream: string | null): Promise<PushOutcome> {
+    await this.pause();
+    if (this.noRemote.has(path)) return { pushed: null, failure: this.noRemoteFailure() };
+    const failure = this.pushFailure;
+    this.pushFailure = null;
+    if (failure) return { pushed: null, failure };
+    return { pushed: { branch, upstream: upstream ?? `origin/${branch}`, upstreamSet: !upstream }, failure: null };
+  }
+
+  async pushFolder(path: string): Promise<PushOutcome> {
+    const folder = this.folder(path);
+    this.shipLog.push(`push ${path}`);
+    const outcome = await this.pushed(path, folder.branch ?? "main", folder.upstream);
+    if (outcome.pushed) {
+      folder.ahead = 0;
+      folder.upstream = outcome.pushed.upstream;
+    }
+    return outcome;
+  }
+
+  async pullFolder(path: string): Promise<PullOutcome> {
+    const folder = this.folder(path);
+    this.shipLog.push(`pull ${path}`);
+    await this.pause();
+    const failure = this.pullFailure;
+    this.pullFailure = null;
+    if (failure) return { updated: null, failure };
+    const updated = folder.behind > 0;
+    folder.behind = 0;
+    return { updated, failure: null };
+  }
+
+  private shipped(taskId: string): { task: Task; ship: Shipment } {
+    const task = this.tasksById.get(taskId);
+    if (!task?.ship || task.status !== "accepted") {
+      throw this.english() ? "accept the task before publishing it" : "acepta la tarea antes de publicarla";
+    }
+    return { task, ship: task.ship };
+  }
+
+  async shipState(taskId: string): Promise<ShipState> {
+    const { task, ship } = this.shipped(taskId);
+    const remote = !this.noRemote.has(task.project);
+    const folder = this.folder(task.project);
+    const upstream = ship.kept ? ship.pushedTo : remote ? folder.upstream : null;
+    const ahead = ship.kept ? (ship.pushedTo ? 0 : 1) : folder.ahead;
+    const gh = remote ? this.gh : null;
+    return {
+      branch: ship.branch,
+      kept: ship.kept,
+      remote: remote ? "origin" : null,
+      remoteHost: remote ? "github.com" : null,
+      upstream,
+      ahead,
+      behind: ship.kept ? 0 : folder.behind,
+      pushed: !!upstream && ahead === 0,
+      gh,
+      defaultBranch: remote ? "main" : null,
+      pullRequest: ship.pullRequest,
+      canOpenPr: gh === "ready" && ship.branch !== "main",
+    };
+  }
+
+  async pushTask(taskId: string): Promise<PushOutcome> {
+    const { task, ship } = this.shipped(taskId);
+    this.shipLog.push(`push task ${taskId}`);
+    const state = await this.shipState(taskId);
+    const outcome = await this.pushed(task.project, ship.branch, state.upstream);
+    if (outcome.pushed) {
+      ship.pushedTo = outcome.pushed.upstream;
+      if (!ship.kept) {
+        const folder = this.folder(task.project);
+        folder.ahead = 0;
+        folder.upstream = outcome.pushed.upstream;
+      }
+      this.notifyTask(task);
+    }
+    return outcome;
+  }
+
+  async pullRequestDraft(taskId: string): Promise<PullRequestDraft> {
+    const { task, ship } = this.shipped(taskId);
+    const english = this.english();
+    const events = this.eventsById.get(taskId) ?? [];
+    const finished = [...events].reverse().find((e) => e.kind === "finished" && e.ok);
+    const summary = finished?.kind === "finished" ? finished.summary.trim() : "";
+    const tests = new Map<string, boolean>();
+    for (const e of events) if (e.kind === "testsRun") tests.set(e.command, e.passed);
+    const lines = [
+      english ? "## What was asked" : "## Qué se pidió",
+      "",
+      ...task.prompt.split("\n").map((l) => `> ${l}`),
+      ...(summary ? ["", english ? "## Summary" : "## Resumen", "", summary] : []),
+      "",
+      english ? `## Files changed (${ship.files.length})` : `## Archivos cambiados (${ship.files.length})`,
+      "",
+      ...ship.files.map((f) => `- \`${f.path}\` (+${f.additions} −${f.deletions})`),
+      "",
+      "## Tests",
+      "",
+      ...(tests.size === 0
+        ? [english ? "No tests were run in this task." : "No se ejecutaron tests en esta tarea."]
+        : [...tests].map(([command, passed]) =>
+            `- ${passed ? "✅" : "❌"} \`${command}\`: ${passed ? (english ? "passed" : "pasaron") : english ? "failed" : "fallaron"}`,
+          )),
+    ];
+    return { title: ship.message.split("\n")[0]?.trim() ?? task.title, body: `${lines.join("\n")}\n`, base: "main", head: ship.branch };
+  }
+
+  async createPullRequest(taskId: string, input: NewPullRequestInput): Promise<PullRequest> {
+    const { task, ship } = this.shipped(taskId);
+    await this.pause();
+    const failure = this.prFailure;
+    this.prFailure = null;
+    if (failure) throw failure;
+    this.pullRequests.push({ task: taskId, input });
+    const pr: PullRequest = { url: "https://github.com/enrique/hedy/pull/42", number: 42, draft: input.draft };
+    ship.pullRequest = pr;
+    this.notifyTask(task);
+    return pr;
+  }
+
+  async suggestCommitMessage(taskId: string): Promise<string> {
+    if (!this.tasksById.has(taskId)) throw `no existe la tarea ${taskId}`;
+    await this.pause();
+    if (typeof this.suggestion !== "string") throw this.suggestion.error;
+    return this.suggestion;
+  }
+
+  /** A short wait so progress shows in the browser (none in tests). */
+  private pause(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, this.delayMs > 0 ? 600 : 0));
   }
 
   // ---------------------------------------------------------------- limit waits

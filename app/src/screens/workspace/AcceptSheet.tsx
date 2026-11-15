@@ -1,25 +1,37 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { errorMessage, useAction, useApi } from "../../api/context";
-import type { AcceptPreview, Task } from "../../api/types";
+import type { AcceptMode, AcceptPreview, Task } from "../../api/types";
+import { modKey } from "../../components/palette/keys";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { useToast } from "../../components/ui/Toast";
 import { useT } from "../../i18n";
 import { ACTIVITY_KEY, tasksKey } from "../../tasks/hooks";
+import { AcceptModeChoice, CommitMessage } from "./ship/CommitMessage";
+import { folderKey, markJustAccepted, shipKey, useFolderStatus } from "./ship/useShip";
 import "../../styles/review.css";
 
 /** How long the "Deshacer" toast stays after accepting. */
 export const UNDO_TOAST_MS = 12_000;
 
 /** What accepting changes in the project: its branch, commits and files. */
-const changedKeys = (task: Task) => [tasksKey(task.project), ["commits", task.project], ["status", task.project], ACTIVITY_KEY];
+const changedKeys = (task: Task) => [
+  tasksKey(task.project),
+  ["commits", task.project],
+  ["status", task.project],
+  folderKey(task.project),
+  shipKey(task.id),
+  ACTIVITY_KEY,
+];
 
 /**
  * The review before "Aceptar": target branch, files and lines, the commit
- * message (editable) and the last test run. Failed or missing tests are a
- * warning, never a block: the user decides.
+ * message (editable, or suggested by the task's AI) and the last test run.
+ * Failed or missing tests are a warning, never a block: the user decides.
+ * With a remote, the work can also stay on the task's branch for a PR; the
+ * publish flow (push, PR) follows from the accepted view.
  */
 export function AcceptSheet({
   task,
@@ -33,12 +45,19 @@ export function AcceptSheet({
 }) {
   const api = useApi();
   const t = useT();
+  const toast = useToast();
   const preview = useQuery({ queryKey: ["acceptPreview", task.id], queryFn: () => api.acceptPreview(task.id), gcTime: 0 });
-  const accept = useAction((a, message: string) => a.acceptTask(task.id, message), {
+  const folder = useFolderStatus(task.project);
+  const remote = !!folder.data?.remote;
+  const [mode, setMode] = useState<AcceptMode>("merge");
+  const accept = useAction((a, vars: { message: string; mode: AcceptMode }) => a.acceptTask(task.id, vars.message, vars.mode), {
     invalidate: changedKeys(task),
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
+      // With a remote, the accepted view opens the publish step next.
+      if (remote) markJustAccepted(task.id);
       onClose();
-      onAccepted(preview.data?.targetBranch ?? task.workspace?.baseBranch ?? "");
+      if (vars.mode === "branch") toast.info(t("ship.committed", { branch: preview.data?.branch ?? task.workspace?.branch ?? "" }));
+      else onAccepted(preview.data?.targetBranch ?? task.workspace?.baseBranch ?? "");
     },
   });
 
@@ -56,8 +75,9 @@ export function AcceptSheet({
             form="accept-sheet"
             type="submit"
             disabled={!preview.data || accept.isPending}
+            title={t("ship.confirmHint", { keys: `${modKey()}+Enter` })}
           >
-            {t("review.confirm")}
+            {mode === "branch" ? t("ship.confirmBranch") : t("review.confirm")}
           </Button>
         </>
       }
@@ -69,17 +89,36 @@ export function AcceptSheet({
         </p>
       )}
       {preview.data && (
-        <PreviewForm key={preview.dataUpdatedAt} preview={preview.data} onSubmit={(message) => accept.mutate(message)} />
+        <PreviewForm
+          key={preview.dataUpdatedAt}
+          task={task}
+          preview={preview.data}
+          mode={remote ? mode : "merge"}
+          onMode={remote ? setMode : null}
+          onSubmit={(message) => accept.mutate({ message, mode: remote ? mode : "merge" })}
+        />
       )}
     </Dialog>
   );
 }
 
-function PreviewForm({ preview, onSubmit }: { preview: AcceptPreview; onSubmit: (message: string) => void }) {
+function PreviewForm({
+  task,
+  preview,
+  mode,
+  onMode,
+  onSubmit,
+}: {
+  task: Task;
+  preview: AcceptPreview;
+  mode: AcceptMode;
+  /** `null` without a remote: only merging makes sense. */
+  onMode: ((mode: AcceptMode) => void) | null;
+  onSubmit: (message: string) => void;
+}) {
   const t = useT();
-  const id = useId();
   const [message, setMessage] = useState(preview.message);
-  const elsewhere = preview.checkoutBranch !== null && preview.checkoutBranch !== preview.targetBranch;
+  const elsewhere = mode === "merge" && preview.checkoutBranch !== null && preview.checkoutBranch !== preview.targetBranch;
   const tests = preview.tests;
 
   return (
@@ -91,9 +130,14 @@ function PreviewForm({ preview, onSubmit }: { preview: AcceptPreview; onSubmit: 
         onSubmit(message);
       }}
     >
-      <p>
-        {t("review.into", { target: preview.targetBranch, branch: preview.branch })}
-      </p>
+      {onMode ? (
+        <AcceptModeChoice mode={mode} onChange={onMode} target={preview.targetBranch} branch={preview.branch} />
+      ) : (
+        <p>{t("review.into", { target: preview.targetBranch, branch: preview.branch })}</p>
+      )}
+      {onMode && mode === "merge" && (
+        <p className="muted small">{t("review.into", { target: preview.targetBranch, branch: preview.branch })}</p>
+      )}
       <p className="accept-sheet__stats">
         <span>{t("review.files", { n: preview.files })}</span>
         <span aria-hidden>·</span>
@@ -120,22 +164,7 @@ function PreviewForm({ preview, onSubmit }: { preview: AcceptPreview; onSubmit: 
             : t("review.tests.failed", { command: tests.command })
           : t("review.tests.none")}
       </p>
-      <div className="field">
-        <label className="field__label" htmlFor={id}>
-          {t("review.message")}
-        </label>
-        <textarea
-          id={id}
-          className="mono accept-sheet__message"
-          rows={4}
-          value={message}
-          aria-describedby={`${id}-hint`}
-          onChange={(e) => setMessage(e.target.value)}
-        />
-        <span id={`${id}-hint`} className="muted small">
-          {t("review.messageHint")}
-        </span>
-      </div>
+      <CommitMessage task={task} value={message} onChange={setMessage} hint={t("review.messageHint")} />
     </form>
   );
 }

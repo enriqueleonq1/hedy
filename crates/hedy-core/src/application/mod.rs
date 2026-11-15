@@ -18,6 +18,7 @@ mod projects;
 mod queue;
 mod review;
 mod settings;
+mod ship;
 mod skills;
 mod status;
 mod tasks;
@@ -53,6 +54,9 @@ pub use plan_usage::{PLAN_USAGE_MIN_INTERVAL_SECS, PlanUsageState};
 pub use projects::NewProject;
 pub use review::AcceptPreview;
 pub use settings::{Setting, THEMES};
+pub use ship::{
+    FolderStatus, NewPullRequest, PullRequestDraft, Pulled, Pushed, ShipError, ShipState,
+};
 pub use skills::{
     SkillChange, SkillDraft, SkillFiles, SkillProposal, SkillsView, format_skill, format_skills,
 };
@@ -62,8 +66,8 @@ pub use templates::{NewTemplate, TemplateScope};
 
 use crate::domain::TaskId;
 use ports::{
-    AgentLauncher, Clock, CodeReader, FileSystem, Git, NoTaskEvents, ProcessRunner, SecretStore,
-    Store, TaskEvents, UsageProbe,
+    AgentLauncher, Clock, CodeHost, CodeReader, FileSystem, Git, NoTaskEvents, ProcessRunner,
+    SecretStore, SourceControl, Store, TaskEvents, UsageProbe,
 };
 
 /// Everything the use cases need from the outside world.
@@ -77,6 +81,8 @@ pub struct Ports {
     pub agents: Arc<dyn AgentLauncher>,
     pub clock: Arc<dyn Clock>,
     pub usage: Arc<dyn UsageProbe>,
+    pub source: Arc<dyn SourceControl>,
+    pub host: Arc<dyn CodeHost>,
 }
 
 /// Application facade used by every driving adapter (the CLI and the app).
@@ -91,6 +97,8 @@ pub struct Hedy {
     agents: Arc<dyn AgentLauncher>,
     clock: Arc<dyn Clock>,
     usage: Arc<dyn UsageProbe>,
+    source: Arc<dyn SourceControl>,
+    host: Arc<dyn CodeHost>,
     events: Arc<dyn TaskEvents>,
     /// Running agent sessions, by task.
     live: Arc<Mutex<HashMap<TaskId, tasks::LiveTask>>>,
@@ -114,6 +122,8 @@ impl Hedy {
             agents: ports.agents,
             clock: ports.clock,
             usage: ports.usage,
+            source: ports.source,
+            host: ports.host,
             events: Arc::new(NoTaskEvents),
             live: Arc::default(),
             sessions: Arc::default(),

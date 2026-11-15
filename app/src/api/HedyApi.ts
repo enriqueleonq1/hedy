@@ -14,7 +14,15 @@ import type {
   SearchResults,
 } from "./codeTypes";
 import type {
+  AcceptMode,
   AcceptPreview,
+  FolderStatus,
+  NewPullRequestInput,
+  PullOutcome,
+  PullRequest,
+  PullRequestDraft,
+  PushOutcome,
+  ShipState,
   ImageInput,
   ImageSupport,
   ActivityItem,
@@ -159,10 +167,30 @@ export interface HedyApi {
   taskDiff(id: string): Promise<FileDiff[]>;
   /** What accepting would do (branch, files, lines, message, tests); changes nothing. */
   acceptPreview(id: string): Promise<AcceptPreview>;
-  /** Commits with `message` (the proposed one when empty) and merges into the base branch. */
-  acceptTask(id: string, message?: string | null): Promise<void>;
-  /** Takes the merge back out only when that is safe; otherwise rejects with why. */
+  /**
+   * Commits with `message` (the proposed one when empty) and merges into the
+   * base branch, or (`branch`) keeps it on the task's branch for a PR.
+   */
+  acceptTask(id: string, message?: string | null, mode?: AcceptMode): Promise<void>;
+  /**
+   * Takes the merge back out only when that is safe; otherwise rejects with
+   * why. A task kept on its branch is reopened on that branch.
+   */
   undoAccept(id: string): Promise<void>;
+  /** Branch, changes, ahead/behind, remote host and `gh` of a folder (local; `gh` cached). */
+  folderStatus(path: string): Promise<FolderStatus>;
+  /** Pushes the folder's branch (sets its upstream when missing). Never forced. */
+  pushFolder(path: string): Promise<PushOutcome>;
+  /** `git pull --ff-only`; a divergence comes back as a failure. */
+  pullFolder(path: string): Promise<PullOutcome>;
+  shipState(taskId: string): Promise<ShipState>;
+  /** Pushes the branch that carries an accepted task's work. */
+  pushTask(taskId: string): Promise<PushOutcome>;
+  /** The PR Hedy proposes, from local facts (request, summary, files, tests). */
+  pullRequestDraft(taskId: string): Promise<PullRequestDraft>;
+  createPullRequest(taskId: string, input: NewPullRequestInput): Promise<PullRequest>;
+  /** A one-line commit message from the task's own account and model (spends a few tokens). */
+  suggestCommitMessage(taskId: string): Promise<string>;
   /** "Esperar": Hedy resumes the task on the same account when its limit renews. */
   waitForLimit(id: string): Promise<void>;
   cancelWait(id: string): Promise<void>;
