@@ -11,9 +11,13 @@
 use super::error::UndoBlocked;
 use super::metrics::TestRun;
 use super::ports::MergeOutcome;
+use super::ship::ShipError;
 use super::{AppError, AppResult, Hedy};
+use crate::domain::ship::{ShippedFile, conventional_subject, uses_conventional_commits};
 use crate::domain::task::default_commit_message;
-use crate::domain::{AgentEvent, MergeRecord, Task, TaskId, TaskStatus};
+use crate::domain::{
+    AcceptMode, AgentEvent, MergeRecord, Shipment, Task, TaskId, TaskStatus, Workspace,
+};
 
 /// What "Aceptar e integrar" is about to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,7 +38,7 @@ pub struct AcceptPreview {
 }
 
 impl Hedy {
-    fn acceptable(&self, id: &TaskId) -> AppResult<Task> {
+    pub(super) fn acceptable(&self, id: &TaskId) -> AppResult<Task> {
         let task = self.task(id)?;
         Self::workspace(&task)?;
         if task.status.is_closed() {
@@ -84,13 +88,36 @@ impl Hedy {
             } => Some(summary.as_str()),
             _ => None,
         });
-        default_commit_message(&task.title, summary)
+        // The repository's own style: Conventional Commits when its recent
+        // subjects follow them.
+        let recent = self
+            .git
+            .recent_commits(&task.project, 10)
+            .unwrap_or_default();
+        let title = if uses_conventional_commits(recent.iter().map(|c| c.subject.as_str())) {
+            conventional_subject(&task.title)
+        } else {
+            task.title.clone()
+        };
+        default_commit_message(&title, summary)
     }
 
     /// "Aceptar e integrar": commits in the worktree with `message` (the
     /// proposed one when empty or `None`), merges into the base branch and
     /// remembers what the merge did, to undo it.
     pub fn accept_task_with(&self, id: &TaskId, message: Option<&str>) -> AppResult<Task> {
+        self.accept_task_as(id, message, AcceptMode::Merge)
+    }
+
+    /// "Aceptar" in either mode: merged into the base branch, or committed
+    /// and kept on the task's own branch (to publish it and open a PR from
+    /// it, without touching the main folder).
+    pub fn accept_task_as(
+        &self,
+        id: &TaskId,
+        message: Option<&str>,
+        mode: AcceptMode,
+    ) -> AppResult<Task> {
         let mut task = self.acceptable(id)?;
         let ws = Self::workspace(&task)?.clone();
         let message = match message.map(str::trim).filter(|m| !m.is_empty()) {
@@ -101,8 +128,34 @@ impl Hedy {
             }
         };
         self.stop_session(id);
+        let files = self
+            .git
+            .diff(&ws.worktree, &ws.base_commit)?
+            .iter()
+            .map(ShippedFile::from)
+            .collect();
         self.git.commit_all(&ws.worktree, &message)?;
         let tip = self.git.rev_parse(&ws.worktree, "HEAD")?;
+        // A PR opened before a reopen stays the task's.
+        let previous = task.ship.take().filter(|s| s.kept && s.branch == ws.branch);
+        if mode == AcceptMode::Branch {
+            self.source
+                .remove_worktree_keep_branch(&task.project, &ws.worktree)?;
+            task.merge = None;
+            task.ship = Some(Shipment {
+                branch: ws.branch.clone(),
+                kept: true,
+                message,
+                files,
+                pushed_to: previous.as_ref().and_then(|p| p.pushed_to.clone()),
+                pull_request: previous.and_then(|p| p.pull_request),
+            });
+            task.wait = None;
+            self.store.save_task(&task)?;
+            self.set_status(&mut task, TaskStatus::Accepted)?;
+            self.clear_queue(id)?;
+            return Ok(task);
+        }
         // Only meaningful when the merge goes ahead (it checks the branch).
         let before = self.git.head_commit(&task.project).unwrap_or_default();
         match self.git.merge(&task.project, &ws.base_branch, &ws.branch)? {
@@ -124,6 +177,14 @@ impl Hedy {
             tip,
             at: self.now_secs(),
         });
+        task.ship = Some(Shipment {
+            branch: ws.base_branch.clone(),
+            kept: false,
+            message,
+            files,
+            pushed_to: None,
+            pull_request: None,
+        });
         task.wait = None;
         self.store.save_task(&task)?;
         self.set_status(&mut task, TaskStatus::Accepted)?;
@@ -139,6 +200,11 @@ impl Hedy {
         let blocked = |why| Err(AppError::UndoBlocked(why));
         if task.status != TaskStatus::Accepted {
             return blocked(UndoBlocked::NotAccepted);
+        }
+        if let (Some(ship), Some(ws)) = (task.ship.clone(), task.workspace.clone())
+            && ship.kept
+        {
+            return self.reopen_kept(task, &ws);
         }
         let (Some(record), Some(ws)) = (task.merge.clone(), task.workspace.clone()) else {
             return blocked(UndoBlocked::NoRecord);
@@ -170,6 +236,27 @@ impl Hedy {
         self.share_dependencies(&repo, &ws.worktree)?;
         self.install_skills_in(&repo, &ws.worktree)?;
         task.merge = None;
+        task.ship = None;
+        self.store.save_task(&task)?;
+        self.set_status(&mut task, TaskStatus::Review)?;
+        Ok(task)
+    }
+
+    /// "Reabrir" a task kept on its branch: its worktree comes back on the
+    /// same branch, so the agent can go on (a later push updates its PR).
+    /// Nothing was merged, so nothing is moved back; the remote is untouched.
+    fn reopen_kept(&self, mut task: Task, ws: &Workspace) -> AppResult<Task> {
+        let repo = task.project.clone();
+        if self.git.rev_parse(&repo, &ws.branch).is_err() {
+            return Err(ShipError::BranchGone {
+                branch: ws.branch.clone(),
+            }
+            .into());
+        }
+        self.source
+            .attach_worktree(&repo, &ws.worktree, &ws.branch)?;
+        self.share_dependencies(&repo, &ws.worktree)?;
+        self.install_skills_in(&repo, &ws.worktree)?;
         self.store.save_task(&task)?;
         self.set_status(&mut task, TaskStatus::Review)?;
         Ok(task)

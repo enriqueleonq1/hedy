@@ -121,6 +121,10 @@ function groups(mod: string, alt: string, shift: string): { title: MessageKey; r
         { label: "shell.shortcuts.open", combos: [["Enter"]] },
       ],
     },
+    {
+      title: "ship.shortcuts.title",
+      rows: [{ label: "ship.shortcuts.confirm", combos: [[mod, "Enter"]] }],
+    },
   ];
 }
 
