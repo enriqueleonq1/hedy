@@ -311,7 +311,7 @@
 /* The workspace's side panel (Changes, Terminal, Preview) becomes a sheet under the chat. */
 @media (max-width: 1000px) {
   .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(180px, 32%); }
-  .workspace--solo { grid-template-rows: minmax(0, 1fr); }
+  .workspace--no-panel { grid-template-rows: minmax(0, 1fr); }
   .side-panel { border-left: 0; border-top: 1px solid var(--line); }
   .chat { padding: 18px 18px 14px; }
 }

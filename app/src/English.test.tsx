@@ -86,7 +86,7 @@ describe("English", () => {
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
     expect(await screen.findByText(/^What should we do in hedy\?/)).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Mode" })).toHaveTextContent("Project");
-    expect(screen.getByText("Ctrl+Enter send")).toBeInTheDocument();
+    expect(screen.getByText("Enter send · Shift+Enter new line")).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
     // Every menu of the composer speaks English too.
     await user.click(screen.getByRole("combobox", { name: "Mode" }));
@@ -128,12 +128,14 @@ describe("English", () => {
     expect(within(queue).getByText(/goes as a single message when Claude Opus finishes its turn/)).toBeInTheDocument();
     expect(within(queue).getAllByRole("button", { name: "Edit the queued message" })).toHaveLength(2);
     const composer = screen.getByLabelText(/^Write while Claude Opus works/);
-    expect(screen.getByRole("button", { name: "Queue" })).toBeInTheDocument();
+    // Empty, the composer offers to stop the agent; with text, to queue.
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    expect(composer).toHaveAttribute("placeholder", "Write; I will pass it on when its turn ends…");
     expect(spanishLeftovers()).toEqual([]);
 
     await user.click(screen.getByRole("button", { name: "Tasks (3)" }));
     const tasks = screen.getByRole("group", { name: "Tasks in this project" });
-    expect(within(tasks).getByRole("button", { name: "+ New task" })).toBeInTheDocument();
+    expect(within(tasks).getByRole("button", { name: "New task" })).toBeInTheDocument();
     expect(within(tasks).getByText("Asks for permission")).toBeInTheDocument();
     expect(within(tasks).getByText("Failed")).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
@@ -300,7 +302,8 @@ describe("English", () => {
   it("shows a project's status and memory in English", async () => {
     const { user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
-    await user.click(await screen.findByRole("button", { name: "Status" }));
+    await user.click(await screen.findByRole("button", { name: "More actions" }));
+    await user.click(screen.getByRole("menuitem", { name: "Status" }));
     expect(await screen.findByText("Project status")).toBeInTheDocument();
     expect(within(await screen.findByRole("region", { name: "Tests" })).getByText("Passed")).toBeInTheDocument();
     expect(screen.getByText(/^branch main · 3 uncommitted changes$/)).toBeInTheDocument();
@@ -326,7 +329,8 @@ describe("English", () => {
   it("shows a project's skills in English", async () => {
     const { user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
-    await user.click(await screen.findByRole("button", { name: "Memory" }));
+    await user.click(await screen.findByRole("button", { name: "More actions" }));
+    await user.click(screen.getByRole("menuitem", { name: "Memory" }));
     await user.click(await screen.findByRole("tab", { name: /^Skills/ }));
     const proposed = await screen.findByRole("region", { name: "Proposed by your AIs · awaiting approval" });
     expect(screen.getByRole("tab", { name: /Skills.*2 to approve/ })).toHaveAttribute("aria-selected", "true");
@@ -392,7 +396,10 @@ describe("English", () => {
     expect(await screen.findByRole("heading", { name: "What is a monad?" })).toBeInTheDocument();
     expect(await screen.findByText(/^Short answer/)).toBeInTheDocument();
     expect(screen.getByText(/is answering/)).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: "Delete" })).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "More actions" }));
+    expect(screen.getByRole("menuitem", { name: "Delete this conversation" })).toBeInTheDocument();
+    await user.click(screen.getByRole("menuitem", { name: "Delete this conversation" }));
+    expect(screen.getByRole("dialog", { name: "Delete this conversation?" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
   });
 });

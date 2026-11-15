@@ -77,7 +77,8 @@ describe("Status", () => {
   it("shows the project's indicators, week and commits", async () => {
     const { user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
-    await user.click(await screen.findByRole("button", { name: "Estado" }));
+    await user.click(await screen.findByRole("button", { name: "Más acciones" }));
+    await user.click(screen.getByRole("menuitem", { name: "Estado" }));
     expect(await screen.findByRole("heading", { name: "hedy" })).toBeInTheDocument();
     const tests = await screen.findByRole("region", { name: "Tests" });
     expect(within(tests).getByText("Pasaron")).toBeInTheDocument();

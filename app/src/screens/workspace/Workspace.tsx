@@ -8,9 +8,10 @@ import { Mascot } from "../../components/Mascot/Mascot";
 import { accountOption } from "../../components/accounts";
 import { shortPath } from "../../components/projects";
 import { headlineText } from "../../components/planUsage";
-import { Button, ConfirmButton } from "../../components/ui/Button";
+import { Button } from "../../components/ui/Button";
+import { Dialog } from "../../components/ui/Dialog";
 import { AskIcon, CodeIcon, PlanIcon, ResearchIcon, SendIcon, TemplateIcon } from "../../components/ui/icons";
-import { MenuButton } from "../../components/ui/Menu";
+import { MenuButton, type MenuItem } from "../../components/ui/Menu";
 import { Select } from "../../components/ui/Select";
 import { useToast } from "../../components/ui/Toast";
 import {
@@ -22,6 +23,7 @@ import {
   useConversations,
   useQueue,
   useSetQueue,
+  useTaskDiff,
   useTaskEvents,
   useTasks,
   useTemplates,
@@ -47,6 +49,7 @@ import { fillTemplate, filterTemplates, slashQuery } from "../../templates/place
 import { TemplateDialog } from "../templates/TemplateDialog";
 import { ChangesPanel } from "./ChangesPanel";
 import { QueuedMessages } from "./QueuedMessages";
+import { PanelIcon, PlusIcon, StopIcon } from "./icons";
 import { jumpDigit, TaskSwitcher } from "./TaskSwitcher";
 import { Timeline } from "./Timeline";
 
@@ -173,12 +176,23 @@ export function Workspace({
     return () => window.removeEventListener("keydown", onKey);
   }, [list, taskId, onSelectTask]);
 
+  const title = task ? task.title : name;
+  const panel = useSidePanel(solo ? null : task);
+  // The one switch for the side panel (a Hedy-wide focus mode can join it here).
+  const panelShown = !solo && panel.shown;
+  const [deleting, setDeleting] = useState(false);
+  const more: MenuItem[] = [
+    ...(onOpenStatus ? [{ label: t("workspace.status"), onSelect: onOpenStatus }] : []),
+    ...(onOpenMemory ? [{ label: t("common.memory"), onSelect: onOpenMemory }] : []),
+    ...(solo && task && !isBusy(task) ? [{ label: t("conversation.deleteLabel"), onSelect: () => setDeleting(true) }] : []),
+  ];
+
   return (
-    <div className={solo ? "workspace workspace--solo" : "workspace"}>
+    <div className={["workspace", solo && "workspace--solo", !panelShown && "workspace--no-panel"].filter(Boolean).join(" ")}>
       <section className="chat" aria-label={t("workspace.chat")}>
         <header className="chat__head">
           <div className="chat__title">
-            <h1 title={task ? task.title : undefined}>{task ? task.title : name}</h1>
+            <h1 title={title}>{title}</h1>
             <p className="muted">
               {solo ? t("conversation.subtitle") : name}
               {task?.workspace && <> · {t("common.branch", { branch: task.workspace.branch })}</>}
@@ -196,24 +210,33 @@ export function Workspace({
               />
             )}
             {task && (
-              <Button small variant="primary" onClick={() => onSelectTask(null)}>
+              <button type="button" className="tool-btn" onClick={() => onSelectTask(null)}>
+                <PlusIcon />
                 {solo ? t("conversation.newLabel") : t("workspace.newTask")}
-              </Button>
+              </button>
             )}
-            {task?.live && <StopButton task={task} />}
-            {solo && task && !isBusy(task) && <DeleteConversation task={task} onDeleted={() => onSelectTask(null)} />}
-            {onOpenStatus && (
-              <Button small variant="ghost" onClick={onOpenStatus}>
-                {t("workspace.status")}
-              </Button>
+            {!solo && (
+              <button
+                type="button"
+                className="tool-btn tool-btn--icon"
+                aria-pressed={panel.shown}
+                title={t("workspace.panelToggle")}
+                onClick={panel.toggle}
+              >
+                <PanelIcon />
+                <span className="sr-only">
+                  {t("workspace.panelToggle")}
+                  {panel.waiting && `, ${t("workspace.panelHasChanges")}`}
+                </span>
+                {panel.waiting && <span className="tool-btn__dot" aria-hidden />}
+              </button>
             )}
-            {onOpenMemory && (
-              <Button small variant="ghost" onClick={onOpenMemory}>
-                {t("common.memory")}
-              </Button>
-            )}
+            {more.length > 0 && <MenuButton label={t("workspace.more")} items={more} />}
           </div>
         </header>
+        {deleting && task && (
+          <DeleteConversation task={task} onClose={() => setDeleting(false)} onDeleted={() => onSelectTask(null)} />
+        )}
 
         {tasks.isError && (
           <p className="error-text" role="alert">
@@ -229,9 +252,6 @@ export function Workspace({
             accounts={overview.accounts}
             mascot={mascot}
             scrollKey={queue.length}
-            footer={
-              <QueuedMessages task={task} queue={queue} agent={agent} cardWaiting={task.status === "waitingApproval"} />
-            }
           />
         ) : (
           <div className="chat__empty">
@@ -252,6 +272,8 @@ export function Workspace({
         <p className="sr-only chat__announce" role="status">
           {milestone && <span key={milestone.index}>{t(MILESTONE[milestone.milestone])}</span>}
         </p>
+
+        {task && <QueuedMessages task={task} queue={queue} agent={agent} cardWaiting={task.status === "waitingApproval"} />}
 
         <Composer
           key={task?.id ?? "new"}
@@ -293,42 +315,76 @@ export function Workspace({
           onStarted={(created) => onSelectTask(created.id, { replace: true })}
         />
       </section>
-      {!solo && <ChangesPanel project={project} task={task} />}
+      {/* Kept mounted while hidden: a terminal opened there keeps running. */}
+      {!solo && <ChangesPanel project={project} task={task} hidden={!panelShown} />}
     </div>
   );
 }
 
-function StopButton({ task }: { task: Task }) {
-  const t = useT();
-  const stop = useAction((api) => api.stopTask(task.id), { invalidate: [listKeyFor(task)] });
-  return (
-    <Button small variant="ghost" onClick={() => stop.mutate(undefined)} disabled={stop.isPending}>
-      {t("workspace.stop")}
-    </Button>
-  );
+const PANEL_KEY = "hedy.sidePanel";
+
+/**
+ * Whether the side panel (changes, terminal, preview) shows: by itself only
+ * while there is something to see (changes to review, a merge to undo); the
+ * user's own choice from the toggle wins for the rest of the session.
+ */
+function useSidePanel(task: Task | null) {
+  const editable = !!task?.workspace && isOpen(task);
+  const diff = useTaskDiff(task?.id ?? null, editable);
+  const hasContent = (editable && (diff.data?.length ?? 0) > 0) || (task?.status === "accepted" && !!task.merge);
+  const [chosen, setChosen] = useState<boolean | null>(() => {
+    try {
+      const saved = sessionStorage.getItem(PANEL_KEY);
+      return saved === null ? null : saved === "shown";
+    } catch {
+      return null;
+    }
+  });
+  const shown = chosen ?? hasContent;
+  return {
+    shown,
+    /** Hidden by the user while there are changes to look at. */
+    waiting: !shown && hasContent,
+    toggle: () => {
+      setChosen(!shown);
+      try {
+        sessionStorage.setItem(PANEL_KEY, shown ? "hidden" : "shown");
+      } catch {
+        // Remembering the choice is only a convenience.
+      }
+    },
+  };
 }
 
-/** Deletes a conversation (history and folder), after a second click. */
-function DeleteConversation({ task, onDeleted }: { task: Task; onDeleted: () => void }) {
+/** Deletes a conversation (history and folder), once confirmed. */
+function DeleteConversation({ task, onClose, onDeleted }: { task: Task; onClose: () => void; onDeleted: () => void }) {
   const t = useT();
   const toast = useToast();
   const remove = useAction((api) => api.deleteConversation(task.id), {
     invalidate: [CONVERSATIONS_KEY, ACTIVITY_KEY, ["usageSummary"]],
     onSuccess: () => {
       toast.info(t("conversation.deleted"));
+      onClose();
       onDeleted();
     },
   });
   return (
-    <ConfirmButton
-      small
-      title={t("conversation.deleteLabel")}
-      confirmLabel={t("conversation.deleteConfirm")}
-      disabled={remove.isPending}
-      onConfirm={() => remove.mutate(undefined)}
+    <Dialog
+      title={t("conversation.deleteTitle")}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="danger" disabled={remove.isPending} onClick={() => remove.mutate(undefined)}>
+            {t("conversation.delete")}
+          </Button>
+        </>
+      }
     >
-      {t("conversation.delete")}
-    </ConfirmButton>
+      <p>{t("conversation.deleteBody")}</p>
+    </Dialog>
   );
 }
 
@@ -422,8 +478,6 @@ function Composer({
   const input = useRef<HTMLTextAreaElement>(null);
   const listId = useId();
   const solo = scope === null;
-  // A question is short: Enter sends it, like a search field.
-  const enterSends = solo;
   const listKey: QueryKey = solo ? CONVERSATIONS_KEY : tasksKey(scope);
   const [text, setText] = useState(initialText ?? "");
   const [model, setModel] = useState("");
@@ -474,7 +528,14 @@ function Composer({
       if (task) setQueue(task.id, left);
     },
   });
+  const stop = useAction((api, id: string) => api.stopTask(id), { invalidate: task ? [listKeyFor(task)] : [] });
   const busy = start.isPending || send.isPending;
+  // While the agent runs, an empty composer offers to stop it (Esc does too).
+  const stoppable = !!task?.live && !text.trim();
+
+  function stopAgent() {
+    if (task?.live && !stop.isPending) stop.mutate(task.id);
+  }
 
   function edit(value: string) {
     setText(value);
@@ -565,7 +626,8 @@ function Composer({
           }}
         />
       )}
-      <label className={followUp ? "composer__label" : "sr-only"} htmlFor="composer-input">
+      {/* The placeholder says what sending does now; the label says it in full. */}
+      <label className="sr-only" htmlFor="composer-input">
         {followUp && card
           ? t(CARD_LABEL[card])
           : queueing
@@ -587,14 +649,20 @@ function Composer({
         aria-haspopup="listbox"
         aria-controls={pickerOpen && matches.length > 0 ? listId : undefined}
         aria-activedescendant={current ? optionId(matches.indexOf(current)) : undefined}
-        aria-keyshortcuts={enterSends ? "Enter" : undefined}
-        aria-describedby={enterSends ? `${listId}-enter` : undefined}
+        aria-keyshortcuts="Enter"
+        aria-describedby={`${listId}-enter`}
         placeholder={
-          solo
-            ? t("conversation.placeholder")
-            : mode === "project"
-              ? t("workspace.composer.placeholderProject")
-              : t("workspace.composer.placeholderAsk")
+          followUp && card
+            ? t("workspace.composer.placeholderCard")
+            : queueing
+              ? t("workspace.composer.placeholderQueue")
+              : followUp
+                ? t("workspace.composer.placeholderFollowUp")
+                : solo
+                  ? t("conversation.placeholder")
+                  : mode === "project"
+                    ? t("workspace.composer.placeholderProject")
+                    : t("workspace.composer.placeholderAsk")
         }
         onChange={(e) => edit(e.target.value)}
         onKeyDown={(e) => {
@@ -616,17 +684,22 @@ function Composer({
             setPickerClosed(true);
             return;
           }
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey || (enterSends && !e.shiftKey && !e.nativeEvent.isComposing))) {
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === "Escape" && task?.live) {
+            e.preventDefault();
+            stopAgent();
+            return;
+          }
+          // Enter sends (Ctrl/⌘ + Enter too); Shift + Enter is a new line.
+          if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             submit();
           }
         }}
       />
-      {enterSends && (
-        <p id={`${listId}-enter`} className="sr-only">
-          {t("conversation.enterHint")}
-        </p>
-      )}
+      <p id={`${listId}-enter`} className="sr-only">
+        {task?.live ? `${t("conversation.enterHint")} · ${t("workspace.composer.escStops")}` : t("conversation.enterHint")}
+      </p>
       <div className="composer__bar">
         <div className="composer__chips">
           {!followUp && (
@@ -699,20 +772,34 @@ function Composer({
           </MenuButton>
         </div>
         <span className="composer__hint" aria-hidden>
-          {enterSends
-            ? t("workspace.composer.hintEnter", { enter: keys.enter, newline: keys.newline })
-            : t("workspace.composer.hintSubmit", { submit: keys.submit })}
+          {stoppable
+            ? t("workspace.composer.hintStop")
+            : t("workspace.composer.hintEnter", { enter: keys.enter, newline: keys.newline })}
         </span>
-        <button
-          type="submit"
-          className="composer__send"
-          aria-label={sendLabel}
-          title={sendLabel}
-          aria-keyshortcuts={enterSends ? "Enter" : "Control+Enter Meta+Enter"}
-          disabled={!text.trim() || busy || disabled}
-        >
-          <SendIcon />
-        </button>
+        {stoppable ? (
+          <button
+            type="button"
+            className="composer__send composer__send--stop"
+            aria-label={t("workspace.stop")}
+            title={t("workspace.stop")}
+            aria-keyshortcuts="Escape"
+            disabled={stop.isPending}
+            onClick={stopAgent}
+          >
+            <StopIcon />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            className="composer__send"
+            aria-label={sendLabel}
+            title={sendLabel}
+            aria-keyshortcuts="Enter Control+Enter Meta+Enter"
+            disabled={!text.trim() || busy || disabled}
+          >
+            <SendIcon />
+          </button>
+        )}
       </div>
       {saving && (
         <TemplateDialog

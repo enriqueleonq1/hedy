@@ -1068,9 +1068,10 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
   min-height: 0;
 }
 
-/* A conversation has no changes panel: the chat takes the width, kept readable. */
-.workspace--solo { grid-template-columns: minmax(0, 1fr); }
-.workspace--solo .chat { width: 100%; max-width: 960px; margin-inline: auto; }
+/* No side panel (a conversation, or nothing to show yet): the chat takes the
+   width, centered and kept readable. */
+.workspace--no-panel { grid-template-columns: minmax(0, 1fr); }
+.workspace--no-panel .chat { width: 100%; max-width: 960px; margin-inline: auto; }
 
 .chat {
   display: flex;
@@ -1080,24 +1081,45 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
   gap: 14px;
 }
 
-.chat__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.chat__title { min-width: 0; }
-/* Long titles wrap to two lines; the full one is in the tooltip and the task list. */
+.chat__head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); }
+.chat__title { flex: 1; min-width: 0; }
+/* One line; the full title is in the tooltip and the task list. */
 .chat__title h1 {
-  font-size: 26px;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  font-size: 22px;
+  white-space: nowrap;
   overflow: hidden;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
 }
-.chat__title p { margin-top: 4px; }
-.chat__tools { display: flex; gap: 8px; align-items: center; flex: none; }
+.chat__title p { margin-top: 2px; font-size: var(--text-callout); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat__tools { display: flex; gap: var(--space-1); align-items: center; flex: none; }
+
+/* The header's quiet buttons: no edge until hovered, like the ⋯ menu beside them. */
+.tool-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+  font: 600 var(--text-callout) var(--font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tool-btn:hover,
+.tool-btn[aria-expanded="true"] { border-color: var(--line); background: var(--selection); color: var(--ink); }
+.tool-btn--icon { width: 32px; padding: 0; justify-content: center; }
+.tool-btn--icon[aria-pressed="true"] { color: var(--action-text); }
+/* Hidden while there are changes to review. */
+.tool-btn__dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--action); box-shadow: 0 0 0 2px var(--bg); }
 
 /* The task switcher: a popover with every task of the project. */
 .task-switcher { position: relative; }
-.task-switcher__chevron { display: inline-block; transition: transform 0.15s ease; }
+.task-switcher__chevron { display: inline-flex; transition: transform 0.15s ease; }
 .task-switcher__chevron--open { transform: rotate(180deg); }
 
 .task-switcher__panel {
@@ -1342,7 +1364,6 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 }
 
 .composer:focus-within { border-color: var(--action); box-shadow: 0 0 0 4px var(--selection); }
-.composer__label { font-size: var(--text-callout); color: var(--muted); }
 
 .composer__input {
   min-height: calc(3em + 4px);
@@ -1398,47 +1419,76 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 .composer__send:hover:not(:disabled) { filter: brightness(1.08); }
 .composer__send:active:not(:disabled) { transform: scale(0.94); }
 .composer__send:disabled { opacity: 0.4; cursor: not-allowed; }
+/* While the agent runs and nothing is written: stop it. */
+.composer__send--stop { background: var(--ink); color: var(--panel); }
 
 @media (max-width: 1080px) {
-  .workspace:not(.workspace--solo) .composer__hint { display: none; }
+  .workspace:not(.workspace--no-panel) .composer__hint { display: none; }
 }
 
 @media (max-width: 760px) {
   .composer__hint { display: none; }
 }
 
-/* Queued messages ("En cola"): a user bubble with a dashed edge until it goes. */
-.queue { display: grid; gap: 8px; }
-.queue__list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+/* Queued messages ("En cola"): one-line pills right above the composer, until they go. */
+.queue { display: grid; gap: 6px; }
+.queue__list { display: grid; gap: 4px; max-height: 30vh; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
 
-.bubble--queued {
-  display: grid;
-  gap: 6px;
-  justify-self: end;
-  background: transparent;
-  border: 1px dashed var(--action);
+.queue-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 34px;
+  padding: 2px 4px 2px var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
 }
 
-.bubble--held { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); }
-.bubble__tag { font-size: 12px; font-weight: 700; color: var(--action-text); }
-.bubble--held .bubble__tag { color: var(--warn-ink); }
-.bubble__text { white-space: pre-wrap; }
-.bubble__actions { display: flex; gap: 4px; justify-content: flex-end; margin: 0 -8px -6px 0; }
-.bubble__edit { display: grid; gap: 8px; min-width: min(420px, 60vw); }
+.queue-pill--held { background: var(--warn-bg); color: var(--warn-ink); }
+.queue-pill__tag { flex: none; font-size: var(--text-caption); font-weight: 700; }
+.queue-pill__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-pill__actions { flex: none; display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s ease; }
+.queue-pill:hover .queue-pill__actions,
+.queue-pill:focus-within .queue-pill__actions { opacity: 1; }
+
+.queue-pill__action {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.queue-pill__action:hover:not(:disabled) { background: var(--selection); color: var(--ink); }
+.queue-pill--held .queue-pill__action { color: inherit; }
+.queue-pill--editing { display: block; padding: var(--space-2); border-radius: var(--radius-lg); background: var(--panel-2); }
+.queue-pill__edit { display: grid; gap: var(--space-2); }
+
+/* Touch screens have no hover: the actions stay in sight. */
+@media (hover: none) {
+  .queue-pill__actions { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .queue-pill__actions { transition: none; }
+}
 
 .queue__status {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 10px;
-  flex-wrap: wrap;
+  padding-inline: var(--space-3);
   color: var(--muted);
-  font-size: 13px;
-  text-align: right;
+  font-size: var(--text-caption);
 }
 
-.queue__status p { margin: 0; }
-.queue__status--held { color: var(--warn-ink); }
+.queue__status p { flex: 1; min-width: 0; margin: 0; }
+.queue__status--held { color: var(--warn-ink); font-size: var(--text-callout); }
 
 /* The "/" template picker, above the composer. */
 .template-picker {
@@ -1540,7 +1590,28 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 .side-tab[aria-selected="true"] { background: var(--selection); color: var(--action-text); }
 .side-panel__body { min-height: 0; overflow-y: auto; padding: 4px 16px 16px; }
 .side-terminal { height: 100%; min-height: 300px; }
-.changes { display: grid; gap: 12px; }
+/* A column whose last item, the footer, sits at the bottom of the panel. */
+.changes { display: flex; flex-direction: column; gap: 12px; min-height: 100%; }
+
+/* The decision on the changes stays at the bottom of the panel however long
+   the diff; it covers the body's bottom padding as it sticks. */
+.changes__footer {
+  position: sticky;
+  bottom: -16px;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: auto -16px -16px;
+  padding: var(--space-3) 16px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+/* Quiet until armed (then ConfirmButton asks again, in full danger). */
+.changes__discard { margin-left: auto; }
+.changes__discard.btn--ghost { color: var(--danger); }
 .preview { display: grid; grid-template-rows: auto auto 1fr; gap: 10px; height: 100%; }
 .preview .row { flex-wrap: nowrap; }
 .preview__url { flex: 1; }

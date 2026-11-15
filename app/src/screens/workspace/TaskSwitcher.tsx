@@ -2,11 +2,13 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboard
 
 import type { Account, ActivityItem, BoardState, Task } from "../../api/types";
 import { timeAgo } from "../../format";
+import { ChevronIcon } from "../../components/ui/icons";
 import { useT } from "../../i18n";
 import { keyLabels } from "../../platform";
 import { useActivity } from "../../tasks/hooks";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { MARK, STATE_LABEL, TONE } from "../activity/ActivityScreen";
+import { PlusIcon } from "./icons";
 
 /** How many tasks have a Ctrl/⌘ + digit shortcut. */
 export const JUMP_KEYS = 9;
@@ -113,19 +115,20 @@ export function TaskSwitcher({
       <button
         ref={toggle}
         type="button"
-        className="btn btn--secondary btn--small task-switcher__toggle"
+        className="tool-btn task-switcher__toggle"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         onClick={() => setOpen((o) => !o)}
       >
         {conversations ? t("conversation.count", { n: tasks.length }) : t("workspace.tasks", { n: tasks.length })}
         <span className={`task-switcher__chevron${open ? " task-switcher__chevron--open" : ""}`} aria-hidden>
-          ▾
+          <ChevronIcon />
         </span>
       </button>
       {open && (
         <div className="task-switcher__panel" id={panelId} role="group" aria-label={conversations ? t("conversation.list") : t("workspace.taskList")}>
-          <button type="button" className="btn btn--primary btn--small task-switcher__new" onClick={() => choose(null)}>
+          <button type="button" className="btn btn--secondary btn--small task-switcher__new" onClick={() => choose(null)}>
+            <PlusIcon />
             {conversations ? t("conversation.newLabel") : t("workspace.newTask")}
           </button>
           <ul className="task-switcher__list">

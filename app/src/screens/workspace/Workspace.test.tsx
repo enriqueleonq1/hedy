@@ -17,6 +17,8 @@ function setup() {
   return { api, user: userEvent.setup() };
 }
 
+const PANEL = "Cambios, terminal y vista previa";
+
 async function openProject(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
   await user.click(await screen.findByRole("button", { name }));
 }
@@ -76,7 +78,8 @@ describe("Workspace", () => {
     // A single working mascot in the chat: the others rest.
     expect(document.querySelectorAll('.timeline .mascot[data-state="working"]')).toHaveLength(1);
 
-    await user.click(screen.getByRole("button", { name: "Estado" }));
+    await user.click(screen.getByRole("button", { name: "Más acciones" }));
+    await user.click(screen.getByRole("menuitem", { name: "Estado" }));
     expect(await screen.findByRole("heading", { name: "homming" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByText("Rastreando").length).toBeGreaterThanOrEqual(2));
   });
@@ -132,14 +135,15 @@ describe("Workspace", () => {
     await user.click(within(screen.getByRole("navigation", { name: "Proyectos abiertos" })).getByRole("button", { name: "hedy" }));
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Investigar"));
 
-    // Inside a task, follow-ups keep its mode: no selector.
+    // Inside a task, follow-ups keep its mode: no selector, and one placeholder (no label line above).
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Qué librerías hay para recordatorios?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
-    expect(await screen.findByLabelText("Responde o pide algo más")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Responde o pide algo más")).toHaveAttribute("placeholder", "Responde o pide algo más…");
+    expect(screen.getByText("Responde o pide algo más")).toHaveClass("sr-only");
     expect(screen.queryByRole("combobox", { name: "Modo" })).not.toBeInTheDocument();
 
-    // "+ Nueva tarea" in the header brings the selector back.
-    await user.click(screen.getByRole("button", { name: "+ Nueva tarea" }));
+    // "Nueva tarea" in the header brings the selector back.
+    await user.click(screen.getByRole("button", { name: "Nueva tarea" }));
     expect(await screen.findByRole("combobox", { name: "Modo" })).toBeInTheDocument();
   });
 
@@ -147,7 +151,8 @@ describe("Workspace", () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
     await user.type(await screen.findByLabelText("Pídele algo a hedy"), "Recordatorios");
-    expect(screen.getByText("Ctrl+Enter enviar")).toHaveClass("composer__hint");
+    expect(screen.getByText("Enter enviar · Shift+Enter salto")).toHaveClass("composer__hint");
+    // Ctrl+Enter still sends, as an alias of Enter.
     await user.keyboard("{Control>}{Enter}{/Control}");
 
     // The card takes the focus (nothing else had it) and shows its keys.
@@ -158,8 +163,12 @@ describe("Workspace", () => {
     expect(within(approve).getByText("Enter")).toHaveClass("kbd");
     expect(within(within(plan).getByRole("button", { name: "Pedir cambios" })).getByText("E")).toHaveClass("kbd");
     // Meanwhile the composer says what a message does now: it waits for the answer.
-    expect(screen.getByLabelText(/^Primero responde al plan de arriba/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Enviar después" })).toBeDisabled();
+    expect(screen.getByLabelText(/^Primero responde al plan de arriba/)).toHaveAttribute(
+      "placeholder",
+      "Responde la tarjeta de arriba; esto espera en cola…",
+    );
+    // Empty while the agent runs: the round button stops it instead.
+    expect(screen.getByRole("button", { name: "Detener" })).toBeEnabled();
 
     await user.keyboard("e");
     const feedback = within(plan).getByLabelText("¿Qué cambiarías?");
@@ -179,13 +188,46 @@ describe("Workspace", () => {
     expect(document.querySelector(".timeline")).not.toHaveAttribute("aria-live");
   }, 20_000);
 
-  it("says why the Changes panel is empty, case by case", async () => {
+  it("shows the side panel only while there are changes, unless the user chooses", async () => {
     const api = MockApi.withSampleData().withSampleActivity();
     api.delayMs = 0;
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
     await openProject(user, /^hedy/);
-    const panel = await screen.findByRole("complementary", { name: "Cambios, terminal y vista previa" });
+    // s1's plan waits: nothing to show, so no panel and the chat takes the width.
+    await screen.findByRole("heading", { name: "Agrega recordatorios por WhatsApp antes de cada cita" });
+    const toggle = screen.getByRole("button", { name: /^Panel lateral/ });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("complementary", { name: PANEL })).not.toBeInTheDocument();
+    expect(document.querySelector(".workspace--no-panel")).not.toBeNull();
+
+    // s5 has changes to review: the panel opens by itself.
+    await user.keyboard("{Control>}3{/Control}");
+    const panel = await screen.findByRole("complementary", { name: PANEL });
+    expect(await within(panel).findByRole("button", { name: /Aceptar cambios/ })).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(document.querySelector(".workspace--no-panel")).toBeNull();
+
+    // Hidden by hand, it stays hidden for the session; the toggle says changes wait.
+    await user.click(toggle);
+    expect(screen.queryByRole("complementary", { name: PANEL })).not.toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(toggle).toHaveAccessibleName("Panel lateral: cambios, terminal y vista previa, hay cambios por revisar");
+    expect(sessionStorage.getItem("hedy.sidePanel")).toBe("hidden");
+    await user.keyboard("{Control>}1{/Control}");
+    await user.keyboard("{Control>}3{/Control}");
+    expect(await screen.findByRole("heading", { name: "Arregla el cálculo de impuestos en las facturas" })).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: PANEL })).not.toBeInTheDocument();
+  });
+
+  it("says why the Changes panel is empty, case by case, once opened", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await openProject(user, /^hedy/);
+    await user.click(await screen.findByRole("button", { name: /^Panel lateral/ }));
+    const panel = await screen.findByRole("complementary", { name: PANEL });
     // A project task whose plan waits (s1), one that works (s3), one with changes (s5), a question (s6).
     expect(await within(panel).findByText("Aún no hay cambios: se crearán al aprobar el plan.")).toBeInTheDocument();
     await user.keyboard("{Control>}2{/Control}");
@@ -257,7 +299,7 @@ describe("Workspace", () => {
     expect(await screen.findByRole("heading", { name: taxesTitle })).toBeInTheDocument();
 
     await user.click(toggle);
-    await user.click(within(screen.getByRole("group", { name: /^Tareas/ })).getByRole("button", { name: "+ Nueva tarea" }));
+    await user.click(within(screen.getByRole("group", { name: /^Tareas/ })).getByRole("button", { name: "Nueva tarea" }));
     expect(await screen.findByText(/¿Qué hacemos en hedy\?/)).toBeInTheDocument();
     expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/hedy")}&new`);
   });
@@ -294,6 +336,8 @@ describe("Workspace", () => {
     expect(await screen.findByText(/Terminó/, { selector: ".activity" })).toBeInTheDocument();
 
     // Already in review: the backend sends no `task-updated` for this stop.
+    // Stop lives in the composer (empty while the agent runs), not in the header.
+    expect(document.querySelector(".chat__head")?.textContent).not.toMatch(/Detener/);
     await user.click(await screen.findByRole("button", { name: "Detener" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Detener" })).toBeNull());
   });
@@ -322,6 +366,7 @@ describe("Workspace", () => {
   it("previews only local addresses", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
+    await user.click(await screen.findByRole("button", { name: /^Panel lateral/ }));
     await user.click(await screen.findByRole("tab", { name: "Vista previa" }));
     const address = screen.getByLabelText("Dirección del servidor local");
     await user.clear(address);
@@ -346,7 +391,7 @@ describe("Workspace", () => {
 });
 
 describe("Composer", () => {
-  it("keeps the chips and the round Send button in one row, and sends with Ctrl+Enter in a project", async () => {
+  it("keeps the chips and the round Send button in one row, and sends with Enter in a project", async () => {
     const { api, user } = setup();
     const start = vi.spyOn(api, "startTask");
     await openProject(user, /^hedy/);
@@ -357,7 +402,7 @@ describe("Composer", () => {
     expect(send.parentElement).toBe(bar);
     expect(bar?.querySelector(".composer__chips")).toContainElement(screen.getByRole("combobox", { name: "Modo" }));
     expect(send).toBeDisabled();
-    expect(screen.getByText("Ctrl+Enter enviar")).toBeInTheDocument();
+    expect(screen.getByText("Enter enviar · Shift+Enter salto")).toBeInTheDocument();
 
     const model = screen.getByRole("combobox", { name: "Modelo" });
     expect(model).toHaveTextContent("Auto por fase");
@@ -372,12 +417,12 @@ describe("Composer", () => {
     await user.click(plan);
     expect(plan).toHaveAttribute("aria-pressed", "false");
 
-    // Enter is a new line here; Ctrl+Enter sends.
-    await user.type(composer, "Primera línea{Enter}segunda");
+    // Shift+Enter is a new line; Enter sends, as everywhere.
+    await user.type(composer, "Primera línea{Shift>}{Enter}{/Shift}segunda");
     expect(start).not.toHaveBeenCalled();
     expect(composer).toHaveValue("Primera línea\nsegunda");
     expect(send).toBeEnabled();
-    await user.keyboard("{Control>}{Enter}{/Control}");
+    await user.keyboard("{Enter}");
     expect(start).toHaveBeenCalledWith({
       project: "/code/hedy",
       prompt: "Primera línea\nsegunda",
@@ -413,6 +458,47 @@ describe("Composer", () => {
     expect(start).not.toHaveBeenCalled();
     await user.keyboard("{Enter}");
     expect(start).toHaveBeenCalledWith({ prompt: "Uno\ndos", mode: "research", account: "kimi", model: "kimi-k3" });
+  });
+
+  it("turns Send into Stop while the agent runs and nothing is written; Esc stops too", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    const stop = vi.spyOn(api, "stopTask");
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await openProject(user, /^homming/);
+    const composer = await screen.findByLabelText(/^Escribe mientras Claude Opus trabaja/);
+    expect(composer).toHaveAttribute("placeholder", "Escribe; se lo paso cuando termine su turno…");
+
+    const stopButton = screen.getByRole("button", { name: "Detener" });
+    expect(stopButton).toHaveAttribute("aria-keyshortcuts", "Escape");
+    expect(stopButton.closest(".composer__bar")).not.toBeNull();
+    expect(screen.getByText("Esc detener")).toHaveClass("composer__hint");
+
+    // With text it queues, as before; empty again, it stops.
+    await user.type(composer, "Una cosa más");
+    expect(screen.queryByRole("button", { name: "Detener" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Poner en cola" })).toBeEnabled();
+    await user.clear(composer);
+    expect(screen.getByRole("button", { name: "Detener" })).toBeInTheDocument();
+
+    // Esc in the composer stops, unless a popover is open there.
+    await user.type(composer, "/");
+    await user.keyboard("{Escape}");
+    expect(stop).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+    expect(stop).toHaveBeenCalledWith("s4");
+  });
+
+  it("keeps the header to one quiet row: Status and Memory in the ⋯ menu", async () => {
+    const { user } = setup();
+    await openProject(user, /^hedy/);
+    await screen.findByText(/¿Qué hacemos en hedy\?/);
+    await user.click(screen.getByRole("button", { name: "Más acciones" }));
+    const menu = screen.getByRole("menu", { name: "Más acciones" });
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Estado", "Memoria"]);
+    await user.click(within(menu).getByRole("menuitem", { name: "Memoria" }));
+    expect(await screen.findByRole("heading", { name: "Memoria de hedy" })).toBeInTheDocument();
   });
 
   it("keeps templates one quiet button away: use one, or save the message as one", async () => {
