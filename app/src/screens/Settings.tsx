@@ -1,11 +1,12 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
-import { useT, type LanguageSetting } from "../i18n";
+import { useT, type LanguageSetting, type MessageKey } from "../i18n";
 
-import { OVERVIEW_KEY, useAction } from "../api/context";
+import { OVERVIEW_KEY, useAction, useApi } from "../api/context";
 import { useTerminals } from "../components/Terminal/TerminalProvider";
 import { Button } from "../components/ui/Button";
-import type { CliProviderId, Overview, SettingKey, ThemeSetting } from "../api/types";
+import type { CheckLevel, CliProviderId, Overview, SettingKey, ThemeSetting } from "../api/types";
 import { Mascot, MASCOT_STATE_LABEL, type MascotState } from "../components/Mascot/Mascot";
 import { ACTIVITY_LABEL, ACTIVITY_WORDS, WORKING_ACTIVITIES } from "../components/Mascot/activity";
 import { ColorPicker, Field, Segmented, Switch } from "../components/ui/controls";
@@ -137,6 +138,8 @@ export function Settings({ overview }: { overview: Overview }) {
         ))}
       </section>
 
+      <Diagnosis />
+
       <section className="card settings__section">
         <h2>APIs</h2>
         <p className="hint">{t("settings.apiUrlHint")}</p>
@@ -216,6 +219,50 @@ export function Settings({ overview }: { overview: Overview }) {
         </div>
       </section>
     </div>
+  );
+}
+
+const LEVEL_LABEL: Record<CheckLevel, MessageKey> = {
+  ok: "settings.doctor.level.ok",
+  info: "settings.doctor.level.info",
+  warning: "settings.doctor.level.warning",
+  error: "settings.doctor.level.error",
+};
+
+/**
+ * The CLIs `hedy doctor` found and their versions (a version that changed
+ * since Hedy was checked with it shows here, not on the home screen), plus
+ * any other warning or problem it found.
+ */
+function Diagnosis() {
+  const api = useApi();
+  const t = useT();
+  const doctor = useQuery({ queryKey: ["doctor"], queryFn: () => api.doctor(), staleTime: 10 * 60_000 }).data;
+  const checks = doctor?.checks.filter((c) => c.area === "cli" || c.level === "warning" || c.level === "error");
+  return (
+    <section className="card settings__section">
+      <h2>{t("settings.doctor")}</h2>
+      <p className="hint">
+        {t("settings.doctor.hintBefore")} <span className="mono">hedy doctor</span>
+        {t("settings.doctor.hintAfter")}
+      </p>
+      {checks ? (
+        <ul className="diagnosis" aria-label={t("settings.doctor.list")}>
+          {checks.map((c) => (
+            <li key={`${c.area}-${c.subject}`} className="diagnosis__row">
+              <span className={`diagnosis__dot diagnosis__dot--${c.level}`} role="img" aria-label={t(LEVEL_LABEL[c.level])} />
+              <span className="diagnosis__subject">{c.subject}</span>
+              <span className={`diagnosis__message${c.level === "ok" || c.level === "info" ? " muted" : ""}`}>
+                {c.message}
+                {c.fix && <span className="mono diagnosis__fix">{c.fix}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="small muted">{t("settings.doctor.checking")}</p>
+      )}
+    </section>
   );
 }
 

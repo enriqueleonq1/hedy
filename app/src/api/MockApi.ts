@@ -757,6 +757,8 @@ export class MockApi implements HedyApi {
 
   /** Plays the backend's cache: the reading stays, only the attempt time moves. */
   async refreshPlanUsage(id: string): Promise<PlanState> {
+    // Like the backend, the answer comes after an overview asked for at the same time.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const account = this.account(id);
     const plan = account.usage.plan;
     if (plan.supported) {

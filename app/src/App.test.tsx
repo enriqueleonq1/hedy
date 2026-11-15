@@ -30,17 +30,78 @@ describe("Welcome", () => {
     renderApp(MockApi.withSampleData().withSampleActivity());
     const plans = (await screen.findByRole("heading", { name: "Tus planes" })).closest("section")!;
     const work = within(plans).getByRole("button", { name: "Claude trabajo: Sesión 5 h · 34%, Semana · 29%" });
-    // Every card's headline says which window it is.
-    expect(work.querySelector(".plan-usage__value")).toHaveTextContent("Sesión 5 h · 34%");
+    // Each figure is labeled next to the ring, the one closest to its limit first: no legend needed.
+    expect(work.querySelector(".plan-usage__value")).toHaveTextContent("Sesión 5 h 34%");
+    expect(work.querySelector(".plan-usage__second")).toHaveTextContent("Semana 29%");
+    expect(work.querySelectorAll(".plan-usage__swatch")).toHaveLength(2);
+    expect(within(plans).queryByText(/Anillo exterior/)).not.toBeInTheDocument();
     const personal = within(plans).getByRole("button", { name: /^Claude personal: / });
-    expect(personal.querySelector(".plan-usage__value")).toHaveTextContent("Semana · 83%");
-    expect(within(plans).getByRole("button", { name: /^ChatGPT: / })).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /tareas esperan tu respuesta/ })).toBeInTheDocument();
+    expect(personal.querySelector(".plan-usage__value")).toHaveTextContent("Semana 83%");
+    expect(personal.querySelector(".plan-usage__second")).toHaveTextContent("Sesión 5 h 58%");
+    // No empty rings: a plan that could not be read says so quietly, and an API key pays as it goes.
+    const chatgpt = within(plans).getByRole("button", { name: "ChatGPT: Sin datos: no se pudo actualizar" });
+    expect(chatgpt.querySelector(".rings")).toBeNull();
+    expect(within(plans).getByRole("button", { name: "Volver a consultar el plan de ChatGPT" })).toBeInTheDocument();
+    // Kimi was never asked: a skeleton first, then "pago por uso" once the backend answers.
+    const kimi = await within(plans).findByRole("button", { name: "Kimi: Pago por uso" });
+    expect(kimi.querySelector(".rings")).toBeNull();
+
+    // "Para ti" is an inbox: each row is a button, warnings marked by their icon, not a colored pill.
+    const forYou = screen.getByRole("list", { name: "Para ti" });
+    const waiting = await within(forYou).findByRole("button", { name: /tareas esperan tu respuesta/ });
+    expect(waiting).toHaveClass("inbox__row--warn");
     // The proposals of the Activity inbox count here too.
-    expect(await screen.findByRole("button", { name: "5 notas o habilidades propuestas por aprobar" })).toBeInTheDocument();
+    expect(await within(forYou).findByRole("button", { name: "5 notas o habilidades propuestas por aprobar" })).toBeInTheDocument();
+    // A plan near its limit, with when it renews on the right.
+    const limit = within(forYou).getByRole("button", { name: /^Claude personal va en 83 % esta semana/ });
+    expect(limit.querySelector(".inbox__meta")).toHaveTextContent(/^Se renueva/);
     const recent = (await screen.findByRole("heading", { name: "Últimas tareas" })).closest("section")!;
     expect(within(recent).getAllByRole("button").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /^Seguir en / })).toBeInTheDocument();
+  });
+
+  it("asks again for a plan that could not be read", async () => {
+    const api = MockApi.withSampleData();
+    const { user } = renderApp(api);
+    const plans = (await screen.findByRole("heading", { name: "Tus planes" })).closest("section")!;
+    const refresh = vi.spyOn(api, "refreshPlanUsage");
+    await user.click(within(plans).getByRole("button", { name: "Volver a consultar el plan de ChatGPT" }));
+    expect(refresh).toHaveBeenCalledWith("chatgpt");
+  });
+
+  it("keeps the CLI version check off home and lists at most five things for you", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    // Two more accounts near their limit: six rows in all.
+    const overview = api.overview.bind(api);
+    vi.spyOn(api, "overview").mockImplementation(async () => {
+      const o = await overview();
+      const personal = o.accounts.find((a) => a.id === "claude-personal")!;
+      const clone = (id: string, name: string) => ({ ...personal, id, name });
+      return { ...o, accounts: [...o.accounts, clone("extra-1", "Extra uno"), clone("extra-2", "Extra dos")] };
+    });
+    const { user } = renderApp(api);
+    const forYou = await screen.findByRole("list", { name: "Para ti" });
+    await within(forYou).findByRole("button", { name: /tareas esperan tu respuesta/ });
+    await within(forYou).findByRole("button", { name: /propuestas por aprobar/ });
+    expect(within(forYou).getAllByRole("button")).toHaveLength(5);
+    // Version drift is a diagnosis for Settings, not something for you.
+    expect(screen.queryByText(/0\.171\.0/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ver todo en Actividad" }));
+    expect(await screen.findByRole("heading", { name: "Actividad" })).toBeInTheDocument();
+  });
+
+  it("points to the diagnosis in Settings when something is broken", async () => {
+    const api = MockApi.withSampleData();
+    const doctor = api.doctor.bind(api);
+    vi.spyOn(api, "doctor").mockImplementation(async () => {
+      const report = await doctor();
+      const broken = { area: "cli" as const, subject: "Codex", level: "error" as const, message: "no arranca", fix: null };
+      return { ...report, checks: [...report.checks, broken], errors: 1 };
+    });
+    const { user } = renderApp(api);
+    await user.click(await screen.findByRole("button", { name: "El diagnóstico encontró problemas (1)" }));
+    const diagnosis = await screen.findByRole("list", { name: "Resultado del diagnóstico" });
+    expect(within(diagnosis).getByText("no arranca")).toBeInTheDocument();
   });
 
   it("shows each project's live state and keeps its secondary actions in a menu", async () => {
@@ -239,6 +300,19 @@ describe("Settings", () => {
     await user.click(screen.getByRole("radio", { name: "Claro" }));
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
     expect(screen.getByRole("radio", { name: "Claro" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("lists the CLI versions in the diagnosis, with a pointer to hedy doctor", async () => {
+    const { user } = renderApp();
+    await user.click(await screen.findByRole("button", { name: "Ajustes" }));
+    expect(screen.getByRole("heading", { name: "Diagnóstico" })).toBeInTheDocument();
+    expect(screen.getByText("hedy doctor")).toBeInTheDocument();
+    const diagnosis = await screen.findByRole("list", { name: "Resultado del diagnóstico" });
+    const codex = within(diagnosis).getByText("Codex").closest("li")!;
+    expect(codex).toHaveTextContent(/0\.169\.0 → 0\.171\.0/);
+    expect(within(codex).getByRole("img", { name: "Aviso" })).toBeInTheDocument();
+    // What is fine and outside the CLIs stays in `hedy doctor`.
+    expect(within(diagnosis).queryByText("git")).not.toBeInTheDocument();
   });
 
   it("turns task notifications off and on", async () => {

@@ -2,7 +2,7 @@
 // quick question that belongs to no project (a "conversation").
 
 const es = {
-  "create.menu": "Nuevo…",
+  "create.menu": "Nuevo",
   "create.menuLabel": "Empezar algo nuevo",
   "create.newProject": "Nuevo proyecto",
   "create.newProjectHint": "Una carpeta nueva, lista para trabajar",
@@ -50,7 +50,7 @@ const es = {
 };
 
 const en: Record<keyof typeof es, string> = {
-  "create.menu": "New…",
+  "create.menu": "New",
   "create.menuLabel": "Start something new",
   "create.newProject": "New project",
   "create.newProjectHint": "A new folder, ready to work in",

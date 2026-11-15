@@ -26,7 +26,7 @@ describe("Starting something new", () => {
     const { user } = setup();
     await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
     const trigger = screen.getByRole("button", { name: "Empezar algo nuevo" });
-    expect(trigger).toHaveTextContent("Nuevo…");
+    expect(trigger).toHaveTextContent("Nuevo");
     await user.click(trigger);
     const menu = screen.getByRole("menu", { name: "Empezar algo nuevo" });
     const items = within(menu).getAllByRole("menuitem");
