@@ -127,11 +127,11 @@ function PlanCard({ account, onOpen }: { account: Account; onOpen: () => void })
     : detail;
 
   return (
-    <button type="button" className="plan-card" onClick={onOpen} aria-label={`${account.name}: ${label}`}>
+    <button type="button" className="plan-usage" onClick={onOpen} aria-label={`${account.name}: ${label}`}>
       <PlanRings account={account} outer={outer} inner={inner} />
-      <span className="plan-card__text">
+      <span className="plan-usage__text">
         <AccountChip account={account} />
-        <strong className={`plan-card__value plan-card__value--${tone}`}>{headline}</strong>
+        <strong className={`plan-usage__value plan-usage__value--${tone}`}>{headline}</strong>
         <span className="muted small">{detail}</span>
       </span>
     </button>
@@ -286,7 +286,7 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
             <h2 id="plans-title">{t("welcome.plans.title")}</h2>
             <span className="muted small">{t("welcome.plans.legend")}</span>
           </div>
-          <div className="plan-cards">
+          <div className="plan-usage-grid">
             {overview.accounts.map((account) => (
               <PlanCard
                 key={account.id}

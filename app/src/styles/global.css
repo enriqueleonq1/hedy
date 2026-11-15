@@ -555,16 +555,16 @@ select:disabled { opacity: 0.65; }
 .today__recent { flex: 2 1 320px; }
 .today__projects .project-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 
-.plan-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
-.plan-card { display: flex; align-items: center; gap: 16px; padding: 16px 18px; border-radius: 20px; border: 1px solid var(--line); background: var(--panel2); color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
-.plan-card:hover { border-color: var(--action); }
-.plan-card:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.plan-card__text { display: grid; gap: 4px; min-width: 0; justify-items: start; }
-.plan-card__text .chip { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.plan-card__value { font: 700 24px var(--font-title); font-variant-numeric: tabular-nums; }
-.plan-card__value--muted { color: var(--muted); }
-.plan-card__value--warning { color: var(--warning); }
-.plan-card__value--danger { color: var(--danger); }
+.plan-usage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
+.plan-usage { display: flex; align-items: center; gap: 16px; padding: 16px 18px; border-radius: 20px; border: 1px solid var(--line); background: var(--panel2); color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.plan-usage:hover { border-color: var(--action); }
+.plan-usage:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.plan-usage__text { display: grid; gap: 4px; min-width: 0; justify-items: start; }
+.plan-usage__text .chip { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plan-usage__value { font: 700 24px var(--font-title); font-variant-numeric: tabular-nums; }
+.plan-usage__value--muted { color: var(--muted); }
+.plan-usage__value--warning { color: var(--warning); }
+.plan-usage__value--danger { color: var(--danger); }
 .rings { flex: none; }
 .rings__track { fill: none; stroke: var(--line); stroke-width: 10; }
 .rings__fill { fill: none; stroke-width: 10; stroke-linecap: round; }
