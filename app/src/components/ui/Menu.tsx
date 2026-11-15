@@ -123,7 +123,6 @@ export function MenuButton({
               tabIndex={-1}
               className={item.hint ? "menu__item menu__item--hinted" : item.shortcut ? "menu__item menu__item--shortcut" : "menu__item"}
               disabled={item.disabled}
-              aria-keyshortcuts={item.shortcut}
               onClick={() => {
                 close();
                 item.onSelect();
