@@ -109,10 +109,11 @@ describe("English", () => {
     await user.click(within(plan).getByRole("button", { name: "Approve plan" }));
 
     const card = await screen.findByRole("region", { name: "Claude wants to run a command" });
+    await user.click(screen.getByRole("button", { name: "2 steps · edited 2 files" }));
     expect(screen.getByText("Claude edited citas/servicio.py")).toBeInTheDocument();
     await user.click(within(card).getByRole("button", { name: "Allow in this chat" }));
     expect(await screen.findByText(/Claude: tests pass/)).toBeInTheDocument();
-    expect(await screen.findByText(/^Finished/, { selector: ".activity" })).toBeInTheDocument();
+    expect(await screen.findByText(/^Finished/, { selector: ".turn-end" })).toBeInTheDocument();
     expect(screen.getByText(/Allowed in this chat/)).toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Steps" })).getAllByText(/\(done\)/)).toHaveLength(3);
     expect(await screen.findByRole("list", { name: "Changed files" })).toBeInTheDocument();
