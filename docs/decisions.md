@@ -1134,6 +1134,15 @@ claude -p /usage --output-format json --no-session-persistence --safe-mode
   in `App`; `useFileNavigator().open({ copy, path, line?, rev?, view? })`) and
   `codeKeys` for shared query keys. `MockApi` serves `/code/hedy` and `/code/homming`
   from `mockCodeSamples.ts`; task s5's review diff is computed from the same sample.
+- **Review comments** (`app/src/review/comments.tsx`, `ReviewCommentsProvider` in `App`,
+  the workspace names its task with `useReviewTask`) live only in the browser storage,
+  per copy (`hedy.review.comments.task:<id>`): a convenience, never sent anywhere but
+  to the task. `sendToAi` sends the pending ones as ONE follow-up through
+  `queueMessage` (queued while the agent works, like the composer), each as
+  `path:line(-end)`, the quoted lines and the text; then they stay as "sent" history.
+  The review diff reads `fileDiff(task, path, { full: true })` and hides context
+  beyond 3 lines in the UI, so expanding never asks again; it falls back to the
+  task diff's hunks when the full diff shows no change (a file not in the copy).
 - **Not verified live** against a 50k-file repository (adapter tests run on small
   temporary repositories with a worktree).
 
