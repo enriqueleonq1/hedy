@@ -25,12 +25,6 @@ export function needsYou(state: BoardState): boolean {
   return state === "plan" || state === "permission" || state === "limited";
 }
 
-/** How many tasks wait for the user, for the badge on the navigation. */
-export function useNeedsYouCount(): number {
-  const board = useActivity();
-  return (board.data ?? []).filter((item) => needsYou(item.state)).length;
-}
-
 export function useTasks(project: string) {
   const api = useApi();
   return useQuery({ queryKey: tasksKey(project), queryFn: () => api.tasks(project) });
@@ -96,6 +90,8 @@ const CHANGES_ACCOUNTS: AgentEvent["kind"][] = ["usage", "rateLimit"];
 /** The backend notifies `task-updated` only on a new status; these change the rest of the task. */
 const CHANGES_TASK: AgentEvent["kind"][] = ["phaseStarted", "sessionStarted", "finished"];
 const CHANGES_STATS: AgentEvent["kind"][] = ["usage", "testsRun"];
+/** A turn that ends may have proposed notes or skills (the inbox counts them). */
+const CHANGES_PROPOSALS: AgentEvent["kind"][] = ["finished"];
 /** What changes a task's row on the board besides its status. */
 const CHANGES_BOARD: AgentEvent["kind"][] = [
   "phaseStarted",
@@ -133,6 +129,10 @@ export function TaskEventsBridge() {
       if (CHANGES_ACCOUNTS.includes(event.kind)) refresh(OVERVIEW_KEY);
       if (CHANGES_TASK.includes(event.kind)) refresh(ALL_TASKS_KEY);
       if (CHANGES_BOARD.includes(event.kind)) refresh(ACTIVITY_KEY);
+      if (CHANGES_PROPOSALS.includes(event.kind)) {
+        refresh(["memory"]);
+        refresh(["skills"]);
+      }
       if (CHANGES_STATS.includes(event.kind)) {
         refresh(["status"]);
         refresh(["projectUsage"]);

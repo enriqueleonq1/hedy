@@ -168,6 +168,7 @@ function Root() {
             <ActivityScreen
               overview={data}
               onOpenTask={(project, task) => navigate({ screen: "workspace", project, task })}
+              onOpenMemory={(project, tab) => navigate({ screen: "memory", project, tab })}
             />
           )}
           {current.screen === "workspace" && (

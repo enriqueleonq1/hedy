@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import type { Account, Overview, TaskMode } from "../api/types";
 import { useLanguage, useT } from "../i18n";
-import { useNeedsYouCount } from "../tasks/hooks";
+import { useInbox } from "../tasks/inbox";
 import { MODE_LABEL } from "../tasks/timeline";
 import { DEFAULT_ACCOUNT_COLOR, TIP_MASCOT_COLOR } from "../theme/tokens";
 import { shortAccountLabel } from "./accounts";
@@ -133,7 +133,7 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
   const tipColor = defaultAccount(overview)?.color ?? TIP_MASCOT_COLOR;
   const active = viewProject(view);
   const used = overview.accounts.some((a) => a.usage.weekTokens > 0);
-  const needsYou = useNeedsYouCount();
+  const needsYou = useInbox().count;
   // The sidebar shows every account's plan usage: keep it fresh while it is on screen.
   usePlanUsageRefresh(overview.accounts, view.screen);
 

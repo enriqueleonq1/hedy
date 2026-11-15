@@ -186,12 +186,19 @@ describe("English", () => {
 
   it("shows the task board in English", async () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity());
-    await user.click(await screen.findByRole("button", { name: "Activity: 3 tasks need you" }, { timeout: 8000 }));
+    await user.click(await screen.findByRole("button", { name: "Activity: 8 items need you" }, { timeout: 8000 }));
     expect(await screen.findByRole("heading", { name: "Activity" })).toBeInTheDocument();
-    const needs = await screen.findByRole("region", { name: "Need you (3)" });
+    const needs = await screen.findByRole("region", { name: "Need you (8)" });
     expect(within(needs).getByText("Plan to approve")).toBeInTheDocument();
     expect(within(needs).getByText("Asks for permission")).toBeInTheDocument();
     expect(within(needs).getByText("Blocked by a limit")).toBeInTheDocument();
+    // The inbox also holds the proposals, answered from their rows.
+    expect(await within(needs).findByRole("button", { name: "Allow once" })).toBeInTheDocument();
+    expect(within(needs).getByRole("button", { name: "Deny" })).toBeInTheDocument();
+    expect(within(needs).getAllByText("Note to approve")).toHaveLength(2);
+    expect(within(needs).getByText("Skill change to approve")).toBeInTheDocument();
+    expect(within(needs).getAllByText("proposed by Codex").length).toBeGreaterThan(0);
+    expect(within(needs).getAllByRole("button", { name: "Approve change" })).toHaveLength(2);
     expect(within(needs).getAllByText(/^running for \d+ min$/)).toHaveLength(3);
     const running = screen.getByRole("region", { name: "Running (1)" });
     expect(within(running).getByText("Working")).toBeInTheDocument();

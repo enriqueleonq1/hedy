@@ -1,14 +1,16 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 
-import { errorMessage } from "../../api/context";
-import type { ActivityItem, BoardState, Overview, Phase } from "../../api/types";
+import { errorMessage, useAction } from "../../api/context";
+import type { ActivityItem, BoardState, Decision, Overview, Phase, Task } from "../../api/types";
 import { defaultAccount } from "../../components/Layout";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { WorkingWord } from "../../components/Mascot/WorkingWord";
 import { Button } from "../../components/ui/Button";
 import { formatElapsed, timeAgo } from "../../format";
 import { useT, type MessageKey } from "../../i18n";
-import { needsYou, useActivity, useTaskEvents } from "../../tasks/hooks";
+import { ACTIVITY_KEY, needsYou, tasksKey, useActivity, useTaskEvents } from "../../tasks/hooks";
+import { openPermission, useInbox, type InboxItem } from "../../tasks/inbox";
+import { useFilesNotice } from "../memory/skills";
 import { useMascot } from "../../tasks/useMascot";
 import { DEFAULT_ACCOUNT_COLOR, ERROR_MASCOT_COLOR } from "../../theme/tokens";
 
@@ -77,30 +79,29 @@ function useNow(everyMs: number): number {
 export function ActivityScreen({
   overview,
   onOpenTask,
+  onOpenMemory,
 }: {
   overview: Overview;
   onOpenTask: (project: string, taskId: string) => void;
+  /** Opens a project's memory, on its notes or its skills. */
+  onOpenMemory?: (project: string, tab: "notes" | "skills") => void;
 }) {
   const t = useT();
   const board = useActivity();
+  const inbox = useInbox();
   const now = useNow(30_000);
   const color = defaultAccount(overview)?.color ?? DEFAULT_ACCOUNT_COLOR;
 
   const items = board.data ?? [];
-  const waiting = items.filter((i) => needsYou(i.state));
-  const groups: { title: string; items: ActivityItem[]; note?: string }[] = [
-    {
-      title: t("activity.group.needsYou"),
-      items: waiting,
-      // Hedy never switches accounts by itself: the user decides.
-      note: waiting.some((i) => i.state === "limited") ? t("activity.limitHint") : undefined,
-    },
+  const limited = inbox.items.some((i) => i.kind === "task" && i.item.state === "limited");
+  const groups: { title: string; items: ActivityItem[] }[] = [
     { title: t("activity.group.running"), items: items.filter((i) => i.state === "working") },
     {
       title: t("activity.group.recent", { hours: RECENT_HOURS }),
       items: items.filter((i) => !needsYou(i.state) && i.state !== "working"),
     },
   ];
+  const openMemory = onOpenMemory ?? (() => {});
 
   return (
     <div className="screen board">
@@ -119,6 +120,23 @@ export function ActivityScreen({
         </div>
       )}
 
+      {inbox.count > 0 && (
+        <BoardGroup
+          title={t("activity.group.needsYou")}
+          items={inbox.items}
+          // Hedy never switches accounts by itself: the user decides.
+          note={limited ? t("activity.limitHint") : undefined}
+        >
+          {(entry) =>
+            entry.kind === "task" ? (
+              <BoardRow key={entry.key} item={entry.item} overview={overview} now={now} onOpen={onOpenTask} />
+            ) : (
+              <ProposalRow key={entry.key} entry={entry} overview={overview} now={now} onOpen={openMemory} />
+            )
+          }
+        </BoardGroup>
+      )}
+
       {board.isSuccess && items.length === 0 && (
         <div className="board__empty">
           <Mascot color={color} state="sleeping" size={160} />
@@ -130,7 +148,7 @@ export function ActivityScreen({
       {groups
         .filter((group) => group.items.length > 0)
         .map((group) => (
-          <BoardGroup key={group.title} title={group.title} items={group.items} note={group.note}>
+          <BoardGroup key={group.title} title={group.title} items={group.items}>
             {(item) => (
               <BoardRow key={item.task.id} item={item} overview={overview} now={now} onOpen={onOpenTask} />
             )}
@@ -140,16 +158,16 @@ export function ActivityScreen({
   );
 }
 
-function BoardGroup({
+function BoardGroup<T>({
   title,
   items,
   note,
   children,
 }: {
   title: string;
-  items: ActivityItem[];
+  items: T[];
   note?: string;
-  children: (item: ActivityItem) => ReactNode;
+  children: (item: T) => ReactNode;
 }) {
   const id = useId();
   return (
@@ -184,46 +202,157 @@ function BoardRow({
   const time = active
     ? t("activity.runningFor", { time: formatElapsed(now - task.createdAt) })
     : timeAgo(item.updatedAt, t, now);
+  const row = (
+    <button className={`board-row board-row--${TONE[state]}`} onClick={() => onOpen(task.project, task.id)}>
+      <span className="board-row__title">{task.title}</span>
+      <span className={`board-state board-state--${TONE[state]}`}>
+        <span aria-hidden>{MARK[state]}</span>
+        {activity ? (
+          <>
+            <span className="sr-only">{t(STATE_LABEL[state])}</span>
+            <WorkingWord activity={activity} />
+          </>
+        ) : (
+          t(STATE_LABEL[state])
+        )}
+      </span>
+      <span className="board-row__meta">
+        <span className="board-row__project">{item.projectName}</span>
+        <span aria-hidden>·</span>
+        <span className="board-row__who">
+          <span className="dot" style={{ background: account?.color ?? DEFAULT_ACCOUNT_COLOR }} aria-hidden />
+          {account?.name ?? task.account}
+        </span>
+        <span aria-hidden>·</span>
+        <span>{item.agent}</span>
+        {task.mode === "project" && (
+          <>
+            <span aria-hidden>·</span>
+            <span>{t(PHASE_LABEL[item.phase])}</span>
+          </>
+        )}
+        <span aria-hidden>·</span>
+        <span>{time}</span>
+        {item.queued > 0 && (
+          <>
+            <span aria-hidden>·</span>
+            <span className="board-row__queued">{t("queue.count", { n: item.queued })}</span>
+          </>
+        )}
+      </span>
+    </button>
+  );
+  // A permission is answered right here (once, or no); everything else opens the task.
+  if (state !== "permission" || !task.live) return <li>{row}</li>;
   return (
     <li>
-      <button className={`board-row board-row--${TONE[state]}`} onClick={() => onOpen(task.project, task.id)}>
-        <span className="board-row__title">{task.title}</span>
-        <span className={`board-state board-state--${TONE[state]}`}>
-          <span aria-hidden>{MARK[state]}</span>
-          {activity ? (
-            <>
-              <span className="sr-only">{t(STATE_LABEL[state])}</span>
-              <WorkingWord activity={activity} />
-            </>
-          ) : (
-            t(STATE_LABEL[state])
-          )}
-        </span>
-        <span className="board-row__meta">
-          <span className="board-row__project">{item.projectName}</span>
-          <span aria-hidden>·</span>
-          <span className="board-row__who">
-            <span className="dot" style={{ background: account?.color ?? DEFAULT_ACCOUNT_COLOR }} aria-hidden />
-            {account?.name ?? task.account}
+      <div className={`board-item board-item--${TONE[state]}`}>
+        {row}
+        <PermissionActions task={task} />
+      </div>
+    </li>
+  );
+}
+
+/** Allow once or deny the waiting request; "allow in this chat" stays on the task's own card. */
+function PermissionActions({ task }: { task: Task }) {
+  const t = useT();
+  const events = useTaskEvents(task.id);
+  const request = openPermission(events.data ?? []);
+  const answer = useAction(
+    (api, decision: Decision) => api.answerPermission(task.id, request?.requestId ?? "", decision),
+    { invalidate: [ACTIVITY_KEY, tasksKey(task.project)] },
+  );
+  if (!request) return null;
+  return (
+    <div className="board-item__actions" role="group" aria-label={t("activity.inbox.permissionOf", { title: task.title })}>
+      <code className="board-item__what">
+        {request.tool}: {request.summary}
+      </code>
+      <Button small variant="primary" disabled={answer.isPending} onClick={() => answer.mutate("allow")}>
+        {t("activity.inbox.allowOnce")}
+      </Button>
+      <Button small className="btn--warn" disabled={answer.isPending} onClick={() => answer.mutate("deny")}>
+        {t("activity.inbox.deny")}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * A note or skill an AI proposed, approved or rejected right here by the user
+ * (rule 6); the row opens the project's memory to read it in full first.
+ */
+function ProposalRow({
+  entry,
+  overview,
+  now,
+  onOpen,
+}: {
+  entry: Extract<InboxItem, { kind: "note" | "skill" }>;
+  overview: Overview;
+  now: number;
+  onOpen: (project: string, tab: "notes" | "skills") => void;
+}) {
+  const t = useT();
+  const notice = useFilesNotice();
+  const isNote = entry.kind === "note";
+  const scope = entry.kind === "note" ? entry.proposal.note.project : entry.proposal.skill.project;
+  const author = entry.kind === "note" ? entry.proposal.note.author : entry.proposal.skill.author;
+  const createdAt = entry.kind === "note" ? entry.proposal.note.createdAt : entry.proposal.skill.createdAt;
+  const change = !!entry.proposal.replaces;
+  const title =
+    entry.kind === "note" ? entry.proposal.note.text : `${entry.proposal.skill.name} — ${entry.proposal.skill.description}`;
+  const state = isNote
+    ? t(change ? "activity.inbox.noteChange" : "activity.inbox.note")
+    : t(change ? "activity.inbox.skillChange" : "activity.inbox.skill");
+  const where =
+    scope === null
+      ? t("activity.inbox.global")
+      : (overview.projects.find((p) => p.path === scope)?.name ?? scope.split("/").pop() ?? scope);
+  // A global note shows in every project's memory: refresh them all.
+  const invalidate = isNote ? [["memory"], ["status"]] : [["skills"]];
+  const approve = useAction(
+    async (api) => {
+      if (entry.kind === "note") return api.approveNote(entry.proposal.note.id);
+      const result = await api.approveSkill(entry.proposal.skill.id);
+      notice("saved", result.skill.name, result.files, t);
+    },
+    { invalidate },
+  );
+  const reject = useAction(
+    (api) => (entry.kind === "note" ? api.forgetNote(entry.proposal.note.id) : api.rejectSkill(entry.proposal.skill.id)),
+    { invalidate },
+  );
+  const busy = approve.isPending || reject.isPending;
+  const short = title.length > 60 ? `${title.slice(0, 57)}…` : title;
+
+  return (
+    <li>
+      <div className="board-item board-item--needs">
+        <button className="board-row board-row--needs" onClick={() => onOpen(entry.project, isNote ? "notes" : "skills")}>
+          <span className="board-row__title">{title}</span>
+          <span className="board-state board-state--needs">
+            <span aria-hidden>◇</span>
+            {state}
           </span>
-          <span aria-hidden>·</span>
-          <span>{item.agent}</span>
-          {task.mode === "project" && (
-            <>
-              <span aria-hidden>·</span>
-              <span>{t(PHASE_LABEL[item.phase])}</span>
-            </>
-          )}
-          <span aria-hidden>·</span>
-          <span>{time}</span>
-          {item.queued > 0 && (
-            <>
-              <span aria-hidden>·</span>
-              <span className="board-row__queued">{t("queue.count", { n: item.queued })}</span>
-            </>
-          )}
-        </span>
-      </button>
+          <span className="board-row__meta">
+            <span className="board-row__project">{where}</span>
+            <span aria-hidden>·</span>
+            <span>{t("activity.inbox.proposedBy", { author: author === "user" ? t("memory.note.you") : author })}</span>
+            <span aria-hidden>·</span>
+            <span>{timeAgo(createdAt, t, now)}</span>
+          </span>
+        </button>
+        <div className="board-item__actions" role="group" aria-label={t("activity.inbox.decide", { title: short })}>
+          <Button small variant="primary" disabled={busy} onClick={() => approve.mutate(undefined)}>
+            {t(change ? "activity.inbox.approveChange" : "activity.inbox.approve")}
+          </Button>
+          <Button small variant="ghost" disabled={busy} onClick={() => reject.mutate(undefined)}>
+            {t("activity.inbox.reject")}
+          </Button>
+        </div>
+      </div>
     </li>
   );
 }
