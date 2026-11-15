@@ -3,7 +3,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ApiProvider, errorMessage, useApi, useOverview } from "./api/context";
 import type { HedyApi } from "./api/HedyApi";
-import type { TaskMode } from "./api/types";
 import { Shell, Sidebar, Topbar, viewProject, type View } from "./components/Layout";
 import { Mascot } from "./components/Mascot/Mascot";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
@@ -83,7 +82,6 @@ function Root() {
     const project = viewProject(view);
     return project ? [project] : [];
   });
-  const [mode, setMode] = useState<TaskMode>("project");
   const api = useApi();
 
   const navigate = useCallback((next: View) => {
@@ -152,10 +150,8 @@ function Root() {
               overview={data}
               view={current}
               openProjects={openProjects}
-              mode={mode}
               onNavigate={navigate}
               onCloseProject={closeProject}
-              onMode={setMode}
             />
           }
           sidebar={<Sidebar overview={data} view={current} onNavigate={navigate} />}
@@ -176,7 +172,6 @@ function Root() {
               overview={data}
               project={current.project}
               initialTask={current.task}
-              mode={mode}
               onOpenMemory={() => navigate({ screen: "memory", project: current.project })}
               onOpenStatus={() => navigate({ screen: "status", project: current.project })}
             />

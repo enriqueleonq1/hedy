@@ -6,6 +6,7 @@ import type { Overview, PromptTemplate, Task, TaskMode } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { shortPath } from "../../components/projects";
 import { Button } from "../../components/ui/Button";
+import { Segmented } from "../../components/ui/controls";
 import { isBusy, tasksKey, useQueue, useSetQueue, useTaskEvents, useTasks, useTemplates } from "../../tasks/hooks";
 import {
   agentName,
@@ -65,14 +66,12 @@ function useMilestone(taskId: string | null, items: TimelineItem[], ready: boole
 export function Workspace({
   overview,
   project,
-  mode,
   initialTask,
   onOpenMemory,
   onOpenStatus,
 }: {
   overview: Overview;
   project: string;
-  mode: TaskMode;
   /** Open this task (from the task board or a notification). */
   initialTask?: string;
   onOpenMemory?: () => void;
@@ -184,7 +183,6 @@ export function Workspace({
           name={name}
           task={task}
           card={card}
-          mode={mode}
           models={account ? MODEL_SUGGESTIONS[account.provider] : []}
           agent={agent}
           disabled={!account}
@@ -206,6 +204,30 @@ function StopButton({ task }: { task: Task }) {
   );
 }
 
+const MODES = Object.keys(MODE_LABEL) as TaskMode[];
+
+/** The mode the composer starts new tasks in, remembered per project (a convenience: storage may fail). */
+function useProjectMode(project: string): [TaskMode, (mode: TaskMode) => void] {
+  const key = `hedy.mode.${project}`;
+  const [mode, setMode] = useState<TaskMode>(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      return MODES.find((m) => m === saved) ?? "project";
+    } catch {
+      return "project";
+    }
+  });
+  const choose = (next: TaskMode) => {
+    setMode(next);
+    try {
+      localStorage.setItem(key, next);
+    } catch {
+      // Remembering the mode is only a convenience.
+    }
+  };
+  return [mode, choose];
+}
+
 const CARD_LABEL: Record<NonNullable<CardWaiting>, MessageKey> = {
   plan: "workspace.composer.cardPlan",
   permission: "workspace.composer.cardPermission",
@@ -217,7 +239,6 @@ function Composer({
   name,
   task,
   card,
-  mode,
   models,
   agent,
   disabled,
@@ -228,7 +249,6 @@ function Composer({
   task: Task | null;
   /** A plan or permission card waits: what is written now goes after its answer. */
   card: CardWaiting;
-  mode: TaskMode;
   models: string[];
   /** Who works on the task now, for the queue's label. */
   agent: string;
@@ -250,6 +270,9 @@ function Composer({
   const followUp = isOpen(task);
   // While the agent works, a follow-up waits in the queue for the end of its turn.
   const queueing = followUp && isBusy(task);
+  const [newMode, setNewMode] = useProjectMode(project);
+  // A follow-up stays in its task's mode; the selector is only for new tasks.
+  const mode = followUp && task ? task.mode : newMode;
   const templates = useTemplates(project);
 
   const query = slashQuery(text);
@@ -415,6 +438,12 @@ function Composer({
       <div className="composer__bar">
         {!followUp && (
           <>
+            <Segmented<TaskMode>
+              label={t("workspace.composer.mode")}
+              value={mode}
+              options={MODES.map((value) => ({ value, label: t(MODE_LABEL[value]) }))}
+              onChange={setNewMode}
+            />
             <select className="pill-select" aria-label={t("common.models")} value={model} onChange={(e) => setModel(e.target.value)}>
               <option value="">{t("workspace.composer.autoModels")}</option>
               {models.map((m) => (

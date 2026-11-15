@@ -105,6 +105,32 @@ describe("Workspace", () => {
     expect(await screen.findByText(/Terminó/, { selector: ".activity" })).toBeInTheDocument();
   });
 
+  it("picks the mode in the composer, only for new tasks, remembered per project", async () => {
+    const { user } = setup();
+    await openProject(user, /^hedy/);
+    const modes = await screen.findByRole("radiogroup", { name: "Modo" });
+    expect(modes.closest(".composer")).not.toBeNull();
+    expect(document.querySelector(".topbar [role=radiogroup]")).toBeNull();
+    expect(within(modes).getByRole("radio", { name: "Investigar" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Planificar primero")).toBeInTheDocument();
+
+    await user.click(within(modes).getByRole("radio", { name: "Investigar" }));
+    expect(screen.queryByLabelText("Planificar primero")).not.toBeInTheDocument();
+    expect(localStorage.getItem("hedy.mode./code/hedy")).toBe("research");
+
+    // Another project keeps its own mode; coming back finds the one chosen here.
+    await openProject(user, /^homming/);
+    expect(await screen.findByRole("radio", { name: "Proyecto" })).toHaveAttribute("aria-checked", "true");
+    await user.click(within(screen.getByRole("navigation", { name: "Proyectos abiertos" })).getByRole("button", { name: "hedy" }));
+    expect(await screen.findByRole("radio", { name: "Investigar" })).toHaveAttribute("aria-checked", "true");
+
+    // Inside a task, follow-ups keep its mode: no selector.
+    await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Qué librerías hay para recordatorios?");
+    await user.click(screen.getByRole("button", { name: "Enviar" }));
+    expect(await screen.findByLabelText("Responde o pide algo más")).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Modo" })).not.toBeInTheDocument();
+  });
+
   it("refreshes a stopped task even when its status stays the same", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);

@@ -47,6 +47,7 @@ const es = {
   "workspace.composer.onlyModel": "Solo {model}",
   "workspace.composer.planFirst": "Planificar primero",
   "workspace.composer.send": "Enviar",
+  "workspace.composer.mode": "Modo",
   "workspace.composer.cardPlan":
     "Primero responde al plan de arriba (para cambiarlo, usa «Pedir cambios»). Lo que escribas aquí queda en cola para después.",
   "workspace.composer.cardPermission":
@@ -188,6 +189,7 @@ const en: Record<keyof typeof es, string> = {
   "workspace.composer.onlyModel": "Only {model}",
   "workspace.composer.planFirst": "Plan first",
   "workspace.composer.send": "Send",
+  "workspace.composer.mode": "Mode",
   "workspace.composer.cardPlan":
     "Answer the plan above first (to change it, use “Request changes”). Whatever you write here waits in the queue.",
   "workspace.composer.cardPermission": "Answer the permission request above first. Whatever you write here waits in the queue.",
