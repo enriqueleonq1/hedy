@@ -13,6 +13,7 @@ import type {
   Rev,
   SearchOptions,
   SearchResults,
+  WriteResult,
 } from "./codeTypes";
 import { MockCode } from "./mockCode";
 import { resolveLanguage } from "../i18n";
@@ -2235,6 +2236,54 @@ export class MockApi implements HedyApi {
 
   async revealInFileManager(copy: CodeCopy, path: string): Promise<void> {
     this.code.revealInFileManager(copy, path);
+  }
+
+  /** A task's review reads its worktree: after an edit there, its diff is computed again. */
+  private edited<T>(copy: CodeCopy, result: T): T {
+    if (copy.kind === "task") {
+      const task = this.tasksById.get(copy.task);
+      if (task && this.code.hasTaskChanges(task.project, task.id)) {
+        this.diffs.set(task.id, this.code.taskDiff(task.project, task.id));
+      }
+    }
+    return result;
+  }
+
+  async writeFile(copy: CodeCopy, path: string, text: string, expected: string): Promise<WriteResult> {
+    return this.edited(copy, this.code.writeFile(copy, path, text, expected));
+  }
+
+  async createFile(copy: CodeCopy, path: string): Promise<{ version: string; size: number }> {
+    return this.edited(copy, this.code.createFile(copy, path));
+  }
+
+  async createFolder(copy: CodeCopy, path: string): Promise<void> {
+    this.code.createFolder(copy, path);
+  }
+
+  async renamePath(copy: CodeCopy, from: string, to: string): Promise<void> {
+    this.edited(copy, this.code.renamePath(copy, from, to));
+  }
+
+  async deletePath(copy: CodeCopy, path: string): Promise<void> {
+    this.edited(copy, this.code.deletePath(copy, path));
+  }
+
+  async duplicateFile(copy: CodeCopy, path: string): Promise<string> {
+    return this.edited(copy, this.code.duplicateFile(copy, path));
+  }
+
+  private closeGuards = new Set<() => Promise<boolean>>();
+
+  onCloseRequested(confirm: () => Promise<boolean>): Unsubscribe {
+    this.closeGuards.add(confirm);
+    return () => this.closeGuards.delete(confirm);
+  }
+
+  /** Tests: the user closes the window; resolves to whether it closed. */
+  async requestClose(): Promise<boolean> {
+    for (const confirm of this.closeGuards) if (!(await confirm())) return false;
+    return true;
   }
 
   // ---------------------------------------------------------------- images

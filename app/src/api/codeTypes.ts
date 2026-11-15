@@ -70,7 +70,8 @@ export interface CodeTree {
 
 /** A file's contents as the UI can show them. */
 export type FileContent =
-  | { kind: "text"; text: string; size: number }
+  /** `version`: what a save is checked against (the file changed on disk when it differs). */
+  | { kind: "text"; text: string; size: number; version: string }
   /** PNG, JPEG, GIF or WebP up to 5 MB; `dataUrl` goes straight into an `<img>`. SVG comes as text. */
   | { kind: "image"; mime: string; size: number; dataUrl: string }
   | { kind: "binary"; size: number }
@@ -254,3 +255,15 @@ export interface CodeSymbol {
   /** Nesting by indentation (0 = top level); headings: `#` count − 1. */
   depth: number;
 }
+
+/** The version of a file that does not exist: saving with it writes the file again. */
+export const MISSING_VERSION = "missing";
+
+/**
+ * What a save did. `conflict`: the file changed on disk since the editor loaded
+ * it and nothing was written; `text` is what is there now (`null`: deleted) and
+ * saving again with `version` overwrites it.
+ */
+export type WriteResult =
+  | { kind: "saved"; version: string; size: number }
+  | { kind: "conflict"; text: string | null; version: string };
