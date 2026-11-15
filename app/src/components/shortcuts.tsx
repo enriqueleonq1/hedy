@@ -120,6 +120,17 @@ function groups(mod: string, alt: string): { title: MessageKey; rows: Row[] }[] 
       ],
     },
     {
+      title: "reviewer.shortcuts.title",
+      rows: [
+        { label: "reviewer.shortcuts.files", combos: [["j"], ["k"]], joiner: "or" },
+        { label: "reviewer.shortcuts.lines", combos: [["↑"], ["↓"]], joiner: "or" },
+        { label: "reviewer.shortcuts.select", combos: [["Shift", "↑"], ["Shift", "↓"]], joiner: "or" },
+        { label: "reviewer.shortcuts.comment", combos: [["C"], ["Enter"]], joiner: "or" },
+        { label: "reviewer.shortcuts.add", combos: [[mod, "Enter"]] },
+        { label: "reviewer.shortcuts.menu", combos: [["Shift", "F10"]] },
+      ],
+    },
+    {
       title: "ship.shortcuts.title",
       rows: [{ label: "ship.shortcuts.confirm", combos: [[mod, "Enter"]] }],
     },
