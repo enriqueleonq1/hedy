@@ -4,6 +4,7 @@ import { QueryClient } from "@tanstack/react-query";
 
 import { App } from "../../App";
 import { MockApi } from "../../api/MockApi";
+import { chooseOption } from "../../test/select";
 
 // xterm needs a real canvas; the Terminal tab is not exercised here.
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
@@ -65,7 +66,8 @@ describe("Prompt templates", () => {
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
     const composer = await screen.findByLabelText("Pídele algo a hedy");
     await user.type(composer, "Revisa los textos de {{pantalla}");
-    await user.click(screen.getByRole("button", { name: "Guardar como plantilla" }));
+    await user.click(screen.getByRole("button", { name: "Plantillas" }));
+    await user.click(screen.getByRole("menuitem", { name: "Guardar como plantilla" }));
 
     const dialog = screen.getByRole("dialog", { name: "Guardar el mensaje como plantilla" });
     expect(within(dialog).getByText("Pide: {pantalla}")).toBeInTheDocument();
@@ -98,7 +100,7 @@ describe("Prompt templates", () => {
     const dialog = screen.getByRole("dialog", { name: "Nueva plantilla" });
     await user.type(within(dialog).getByLabelText("Nombre"), "Migrar datos");
     await user.type(within(dialog).getByLabelText("Texto"), "Escribe la migración de {{tabla}");
-    await user.selectOptions(within(dialog).getByLabelText("Para"), "Solo homming");
+    await chooseOption(user, within(dialog).getByLabelText("Para"), "Solo homming");
     await user.click(within(dialog).getByRole("button", { name: "Guardar plantilla" }));
     expect(await within(section).findByText("Migrar datos")).toBeInTheDocument();
     expect(within(section).getByText("Solo homming")).toBeInTheDocument();

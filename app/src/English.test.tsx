@@ -85,8 +85,23 @@ describe("English", () => {
     const { user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
     expect(await screen.findByText(/^What should we do in hedy\?/)).toBeInTheDocument();
-    expect(screen.getByRole("radiogroup", { name: "Mode" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Mode" })).toHaveTextContent("Project");
+    expect(screen.getByText("Ctrl+Enter send")).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
+    // Every menu of the composer speaks English too.
+    await user.click(screen.getByRole("combobox", { name: "Mode" }));
+    expect(screen.getByRole("option", { name: "Research", description: "Searches the web before answering" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+    await user.click(screen.getByRole("combobox", { name: "Model" }));
+    expect(screen.getByRole("option", { name: "Auto per phase", description: "Each phase uses the model you assigned it" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "opus", description: "The most capable, spends more" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Templates" }));
+    expect(screen.getByRole("menuitem", { name: "Use a template" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Save as template" })).toBeDisabled();
+    expect(spanishLeftovers()).toEqual([]);
+    await user.keyboard("{Escape}");
 
     await user.type(screen.getByLabelText("Ask hedy for something"), "Agrega un recordatorio");
     await user.click(screen.getByRole("button", { name: "Send" }));
@@ -140,7 +155,7 @@ describe("English", () => {
     const { api, user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
     await user.type(await screen.findByLabelText("Ask hedy for something"), "Recordatorios");
-    await user.click(screen.getByLabelText("Plan first"));
+    await user.click(screen.getByRole("button", { name: "Plan first" }));
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByRole("region", { name: "Claude wants to run a command" });
     await user.type(screen.getByLabelText(/^Answer the permission request above first/), "Sigue");
@@ -159,7 +174,7 @@ describe("English", () => {
     const { api, user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
     await user.type(await screen.findByLabelText("Ask hedy for something"), "Recordatorios");
-    await user.click(screen.getByLabelText("Plan first"));
+    await user.click(screen.getByRole("button", { name: "Plan first" }));
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByRole("region", { name: "Claude wants to run a command" });
 
@@ -362,7 +377,17 @@ describe("English", () => {
     expect(screen.getByText("No project · never touches your files")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "What do you want to know?" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Conversations (1)" })).toBeInTheDocument();
+    expect(screen.getByText("Enter send · Shift+Enter new line")).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
+    // The account and model menus, with the plan's usage and the promise about switching.
+    await user.click(screen.getByRole("combobox", { name: "Account for the question" }));
+    expect(screen.getByRole("listbox", { name: "Account" })).toBeInTheDocument();
+    expect(screen.getByText("Hedy never switches accounts on its own")).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+    await user.click(screen.getByRole("combobox", { name: "Model" }));
+    expect(screen.getByRole("option", { name: "Account's model", description: "Whatever the account uses by default" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+    await user.keyboard("{Escape}");
     await user.type(screen.getByRole("textbox", { name: "What do you want to know?" }), "What is a monad?{Enter}");
     expect(await screen.findByRole("heading", { name: "What is a monad?" })).toBeInTheDocument();
     expect(await screen.findByText(/^Short answer/)).toBeInTheDocument();

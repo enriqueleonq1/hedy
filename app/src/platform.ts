@@ -15,6 +15,8 @@ export function keyLabels(mac = isMac()) {
   return {
     /** Enter (Return on a Mac). */
     enter: mac ? "⏎" : "Enter",
+    /** Shift + Enter: a new line where Enter sends. */
+    newline: mac ? "⇧⏎" : "Shift+Enter",
     /** Ctrl/⌘ + Enter: sends the composer. */
     submit: mac ? "⌘⏎" : "Ctrl+Enter",
     /** Ctrl/⌘ + a digit: jumps to that task. */
