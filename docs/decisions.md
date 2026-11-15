@@ -1134,6 +1134,13 @@ claude -p /usage --output-format json --no-session-persistence --safe-mode
   in `App`; `useFileNavigator().open({ copy, path, line?, rev?, view? })`) and
   `codeKeys` for shared query keys. `MockApi` serves `/code/hedy` and `/code/homming`
   from `mockCodeSamples.ts`; task s5's review diff is computed from the same sample.
+- **Palette (quick open):** one palette, modes read from the field's first character as
+  in VS Code: `>` commands, `:` line, `@` symbol, `#` text, `?` modes; without a prefix,
+  files (Ctrl/⌘ P) or everything (Ctrl/⌘ K, files after the commands); F1 and
+  Ctrl/⌘ ⇧ P open it on `>`. It searches the copy on screen (open task, else the
+  project's folder; none outside a project) and opens files only through the navigator.
+  The side panel's views are reached by pressing their shortcuts (Ctrl/⌘ ⇧ E/F/G), with
+  a fallback through the navigator. Recent files live in `localStorage` per project.
 - **Not verified live** against a 50k-file repository (adapter tests run on small
   temporary repositories with a worktree).
 
