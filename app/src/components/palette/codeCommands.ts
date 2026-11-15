@@ -34,10 +34,10 @@ export function useOpenFile(active: ActiveCopy | null, onNavigate: (view: View) 
 
 /**
  * The side panel's views answer to VS Code's shortcuts (Ctrl/⌘ ⇧ E, F, G): the
- * palette presses them, so it needs no handle on the panel. `false` when nothing
- * on screen took it.
+ * palette and the status bar press them, so they need no handle on the panel.
+ * `false` when nothing on screen took it.
  */
-function pressPanelShortcut(key: "E" | "F" | "G"): boolean {
+export function pressPanelShortcut(key: "E" | "F" | "G"): boolean {
   const mac = modKey() === "⌘";
   const event = new KeyboardEvent("keydown", {
     key,
