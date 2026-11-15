@@ -1,7 +1,7 @@
 // The plan's limit windows (5-hour session, week, per model…) as each provider
 // reports them, and how the app keeps them fresh.
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { OVERVIEW_KEY, useApi } from "../api/context";
@@ -147,6 +147,38 @@ export function formatBalance(balance: { available: number; currency: string }, 
   } catch {
     return `${balance.available.toFixed(2)} ${balance.currency}`;
   }
+}
+
+/**
+ * What a plan card can show: the limit windows, a prepaid balance, "pay as you
+ * go" for an API key without one, a reading on its way, nothing read (with a
+ * retry), or a provider that reports nothing at all.
+ */
+export type PlanCardState = "windows" | "balance" | "payAsYouGo" | "loading" | "noData" | "unsupported";
+
+export function planCardState(account: Account): PlanCardState {
+  const plan = account.usage.plan;
+  if (plan.usage && sharedWindows(plan.usage).length > 0) return "windows";
+  if (plan.usage?.balance) return "balance";
+  if (plan.supported && plan.attemptedAt === null && plan.problem === null) return "loading";
+  if (account.kind === "apiKey") return "payAsYouGo";
+  return plan.supported ? "noData" : "unsupported";
+}
+
+/** Asks for one account's reading again, on demand (the "retry" of a card without data). */
+export function usePlanRetry(id: string): { retry: () => void; retrying: boolean } {
+  const api = useApi();
+  const client = useQueryClient();
+  const [retrying, setRetrying] = useState(false);
+  const retry = useCallback(() => {
+    setRetrying(true);
+    api
+      .refreshPlanUsage(id)
+      .then((plan) => client.setQueryData<Overview>(OVERVIEW_KEY, (old) => withPlan(old, id, plan)))
+      .catch(() => {})
+      .finally(() => setRetrying(false));
+  }, [api, client, id]);
+  return { retry, retrying };
 }
 
 function withPlan(overview: Overview | undefined, id: string, plan: PlanState): Overview | undefined {

@@ -5,6 +5,7 @@ import {
   formatBalance,
   headlineText,
   headlineWindow,
+  planCardState,
   resetLabel,
   shortWindowLabel,
   usageLevel,
@@ -84,5 +85,23 @@ describe("plan usage", () => {
   it("formats a balance in its currency", () => {
     expect(formatBalance({ available: 12.5, currency: "USD" }, "en")).toBe("$12.50");
     expect(formatBalance({ available: 1, currency: "???" }, "en")).toBe("1.00 ???");
+  });
+
+  it("picks what a plan card shows: rings only when there is something to draw", () => {
+    const card = (kind: Account["kind"], plan: Partial<Account["usage"]["plan"]>) =>
+      planCardState({
+        kind,
+        usage: { plan: { usage: null, attemptedAt: 1, problem: null, supported: true, ...plan } },
+      } as unknown as Account);
+    const reading = (extra: object) => ({ windows: [], checkedAt: 1, source: "claudeUsage", balance: null, ...extra });
+    expect(card("subscription", { usage: reading({ windows: [window({})] }) as never })).toBe("windows");
+    expect(card("apiKey", { usage: reading({ balance: { available: 3, currency: "USD" } }) as never })).toBe("balance");
+    // Never asked yet: a skeleton while the first reading comes.
+    expect(card("subscription", { attemptedAt: null })).toBe("loading");
+    expect(card("apiKey", { attemptedAt: null })).toBe("loading");
+    expect(card("apiKey", {})).toBe("payAsYouGo");
+    expect(card("subscription", { problem: "unavailable" })).toBe("noData");
+    expect(card("subscription", { attemptedAt: null, problem: "unavailable" })).toBe("noData");
+    expect(card("subscription", { supported: false, attemptedAt: null })).toBe("unsupported");
   });
 });

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { useApi } from "../api/context";
 import type { Account, ActivityItem, Overview, Project, UsageSummary, UsageWindow } from "../api/types";
@@ -8,10 +8,13 @@ import {
   barColor,
   formatBalance,
   headlineWindow,
+  levelClass,
+  planCardState,
   resetLabel,
   sharedWindows,
   shortWindowLabel,
   usageLevel,
+  usePlanRetry,
   windowLabel,
   windowText,
 } from "../components/planUsage";
@@ -67,17 +70,19 @@ function planSummary(accounts: Account[], t: Translate): string {
 
 const OUTER = 40;
 const INNER = 26;
+/** The inner ring is drawn a little lighter; its swatch matches. */
+const INNER_OPACITY = 0.75;
 const dash = (r: number, percent: number) => {
   const length = 2 * Math.PI * r;
   return `${((length * Math.min(percent, 100)) / 100).toFixed(1)} ${length.toFixed(1)}`;
 };
 
-/** Two rings like the Activity app: the week outside, the 5-hour session inside. */
-function PlanRings({ account, outer, inner }: { account: Account; outer?: UsageWindow; inner?: UsageWindow }) {
-  const ring = (r: number, w: UsageWindow | undefined, opacity: number) => (
+/** Rings like the Activity app: one per window, the second (when there is one) inside. */
+function PlanRings({ account, outer, inner }: { account: Account; outer: UsageWindow; inner?: UsageWindow }) {
+  const ring = (r: number, w: UsageWindow, opacity: number) => (
     <>
       <circle cx="48" cy="48" r={r} className="rings__track" />
-      {w && w.percent > 0 && (
+      {w.percent > 0 && (
         <circle
           cx="48"
           cy="48"
@@ -94,62 +99,168 @@ function PlanRings({ account, outer, inner }: { account: Account; outer?: UsageW
   return (
     <svg className="rings" width="96" height="96" viewBox="0 0 96 96" aria-hidden="true">
       {ring(OUTER, outer, 1)}
-      {ring(INNER, inner, 0.75)}
+      {inner && ring(INNER, inner, INNER_OPACITY)}
     </svg>
+  );
+}
+
+/** A dot in the color (and lightness) of a window's ring, so each figure names its ring. */
+function Swatch({ account, w, inner }: { account: Account; w: UsageWindow; inner: boolean }) {
+  return (
+    <span
+      className="plan-usage__swatch"
+      style={{ background: barColor(w.percent, account.color), opacity: inner ? INNER_OPACITY : 1 }}
+      aria-hidden
+    />
   );
 }
 
 function PlanCard({ account, onOpen }: { account: Account; onOpen: () => void }) {
   const t = useT();
   const language = useLanguage();
-  const usage = account.usage.plan.usage;
-  const windows = usage ? sharedWindows(usage) : [];
-  const inner = windows.find((w) => w.kind === "session") ?? (windows.length > 1 ? windows[0] : undefined);
+  const { retry, retrying } = usePlanRetry(account.id);
+  const plan = account.usage.plan;
+  const state = retrying ? "loading" : planCardState(account);
+  const windows = plan.usage ? sharedWindows(plan.usage) : [];
+  // The week outside, the 5-hour session inside.
+  const inner = windows.length > 1 ? (windows.find((w) => w.kind === "session") ?? windows[0]) : undefined;
   const outer = windows.find((w) => w !== inner);
-  const top = headlineWindow(account);
+  // The ring closest to its limit leads (like `headlineWindow`); the other one follows, smaller.
+  const top = inner && outer && inner.percent >= outer.percent ? inner : outer;
+  const second = top === inner ? outer : inner;
 
-  // The headline names its window ("Semana · 83%"), like the top bar and the sidebar.
-  let kind: string | null = null;
-  let headline = "—";
-  let detail: string;
-  let tone = "muted";
-  if (top) {
-    kind = shortWindowLabel(top, t);
-    headline = `${Math.round(top.percent)}%`;
+  let body: ReactNode;
+  let label: string;
+  if (state === "windows" && top) {
     const level = usageLevel(top.percent);
-    tone = level === "ok" ? "ink" : level;
-    const others = windows.filter((w) => w !== top).map((w) => windowText(w, t));
-    detail = [resetLabel(top, t, language), ...others].filter(Boolean).join(" · ");
-  } else if (usage?.balance) {
-    headline = formatBalance(usage.balance, language);
-    detail = t("accounts.plan.balance");
-  } else if (account.kind === "apiKey") {
-    detail = t("welcome.plans.apiKey");
+    const others = windows.filter((w) => w !== outer && w !== inner).map((w) => windowText(w, t));
+    const detail = [resetLabel(top, t, language), ...others].filter(Boolean).join(" · ");
+    label = windows.map((w) => windowText(w, t)).join(", ");
+    body = (
+      <>
+        <span className={`plan-usage__value plan-usage__value--${level === "ok" ? "ink" : level}`}>
+          <Swatch account={account} w={top} inner={top === inner} />
+          <span className="plan-usage__kind">{shortWindowLabel(top, t)}</span> {Math.round(top.percent)}%
+        </span>
+        {second && (
+          <span className="plan-usage__second">
+            <Swatch account={account} w={second} inner={second === inner} />
+            {shortWindowLabel(second, t)}{" "}
+            <span className={levelClass(second.percent)}>{Math.round(second.percent)}%</span>
+          </span>
+        )}
+        {detail && <span className="muted small">{detail}</span>}
+      </>
+    );
+  } else if (state === "balance" && plan.usage?.balance) {
+    const balance = formatBalance(plan.usage.balance, language);
+    label = `${t("accounts.plan.balance")} · ${balance}`;
+    body = (
+      <span className="plan-usage__value plan-usage__value--ink">
+        <span className="plan-usage__kind">{t("accounts.plan.balance")}</span> {balance}
+      </span>
+    );
+  } else if (state === "loading") {
+    label = t("accounts.plan.checking");
+    body = (
+      <span className="plan-usage__skeletons" aria-hidden>
+        <span className="plan-usage__skeleton plan-usage__skeleton--value" />
+        <span className="plan-usage__skeleton plan-usage__skeleton--line" />
+      </span>
+    );
+  } else if (state === "payAsYouGo") {
+    label = t("welcome.plans.payAsYouGo");
+    body = <span className="plan-usage__quiet">{label}</span>;
   } else {
-    detail = account.usage.plan.supported
-      ? t("accounts.plan.checking")
-      : t("accounts.plan.notReported", { provider: account.providerName });
+    const why =
+      state === "unsupported"
+        ? t("accounts.plan.notReported", { provider: account.providerName })
+        : plan.problem === "spendsTokens"
+          ? t("accounts.plan.spendsTokens")
+          : t("accounts.plan.unavailable");
+    label = `${t("welcome.plans.noData")}: ${why}`;
+    body = (
+      <>
+        <span className="plan-usage__quiet">{t("welcome.plans.noData")}</span>
+        <span className="muted small">{why}</span>
+      </>
+    );
   }
-  const label = windows.length ? windows.map((w) => windowText(w, t)).join(", ") : detail;
+  // Asking again would not help when reading the plan would spend tokens.
+  const canRetry = state === "noData" && plan.problem !== "spendsTokens";
 
   return (
-    <button type="button" className="plan-usage" onClick={onOpen} aria-label={`${account.name}: ${label}`}>
-      <PlanRings account={account} outer={outer} inner={inner} />
-      <span className="plan-usage__text">
-        <AccountChip account={account} />
-        <strong className={`plan-usage__value plan-usage__value--${tone}`}>
-          {kind && <span className="plan-usage__kind">{kind} · </span>}
-          {headline}
-        </strong>
-        <span className="muted small">{detail}</span>
-      </span>
-    </button>
+    <div className={`plan-usage-card${canRetry ? " plan-usage-card--retry" : ""}`}>
+      <button type="button" className="plan-usage" onClick={onOpen} aria-label={`${account.name}: ${label}`}>
+        {state === "windows" && outer && <PlanRings account={account} outer={outer} inner={inner} />}
+        {state === "loading" && account.kind === "subscription" && (
+          <span className="plan-usage__skeleton plan-usage__skeleton--ring" aria-hidden />
+        )}
+        <span className="plan-usage__text">
+          <AccountChip account={account} />
+          {body}
+        </span>
+      </button>
+      {canRetry && (
+        <Button
+          small
+          variant="ghost"
+          className="plan-usage__retry"
+          onClick={retry}
+          aria-label={t("welcome.plans.retryLabel", { name: account.name })}
+        >
+          {t("welcome.plans.retry")}
+        </Button>
+      )}
+    </div>
   );
 }
 
-type Notice = { key: string; tone: "warn" | "danger" | "info"; text: string; go?: () => void };
+type NoticeKind = "waiting" | "proposals" | "review" | "limit" | "health";
+type Notice = { key: string; kind: NoticeKind; tone: "warn" | "danger" | "info"; text: string; meta?: string; go: () => void };
 
-/** What deserves a look right away, as pills: tasks waiting, plans near their limit, setup problems. */
+/** At most this many rows; the rest live in Activity. */
+const INBOX_ROWS = 5;
+
+const inboxIcon = {
+  width: 16,
+  height: 16,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+  "aria-hidden": true,
+  focusable: false,
+};
+
+/** A warning sign for what is close to a limit or waits on you; a quiet glyph for the rest. */
+function NoticeIcon({ notice }: { notice: Notice }) {
+  if (notice.tone !== "info") {
+    return (
+      <svg {...inboxIcon}>
+        <path d="M12 4 2.8 19.5h18.4z" />
+        <path d="M12 10v4.2M12 17h.01" />
+      </svg>
+    );
+  }
+  if (notice.kind === "review") {
+    return (
+      <svg {...inboxIcon}>
+        <path d="M6 4v10M6 18h.01M18 20V10M18 6h.01M9 7h4a3 3 0 0 1 3 3" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...inboxIcon}>
+      <path d="M6 3.5h9l3.5 3.5v13.5H6z" />
+      <path d="M9.5 11h5M9.5 15h5" />
+    </svg>
+  );
+}
+
+/** What deserves a look right away, as an inbox: tasks waiting, proposals, plans near their limit. */
 function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: View) => void }) {
   const api = useApi();
   const t = useT();
@@ -164,6 +275,7 @@ function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: 
   if (waiting > 0) {
     notices.push({
       key: "waiting",
+      kind: "waiting",
       tone: "warn",
       text: waiting === 1 ? t("welcome.forYou.waiting.one") : t("welcome.forYou.waiting.other", { n: waiting }),
       go: toBoard,
@@ -174,6 +286,7 @@ function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: 
   if (proposals > 0) {
     notices.push({
       key: "proposals",
+      kind: "proposals",
       tone: "info",
       text: proposals === 1 ? t("welcome.forYou.proposals.one") : t("welcome.forYou.proposals.other", { n: proposals }),
       go: toBoard,
@@ -183,6 +296,7 @@ function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: 
   if (review > 0) {
     notices.push({
       key: "review",
+      kind: "review",
       tone: "info",
       text: review === 1 ? t("welcome.forYou.review.one") : t("welcome.forYou.review.other", { n: review }),
       go: toBoard,
@@ -191,45 +305,55 @@ function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: 
   for (const account of overview.accounts) {
     const w = headlineWindow(account);
     if (!w || w.percent < 80) continue;
-    const resets = resetLabel(w, t, language);
     notices.push({
       key: `limit-${account.id}`,
+      kind: "limit",
       tone: w.percent >= 95 ? "danger" : "warn",
       text: t("welcome.forYou.limit", {
         name: account.name,
         percent: Math.round(w.percent),
         label: windowLabel(w, t).toLowerCase(),
-        resets: resets ? ` · ${resets}` : "",
       }),
+      meta: resetLabel(w, t, language) ?? undefined,
       go: () => onNavigate({ screen: "accounts", account: account.id }),
     });
   }
-  if (doctor && doctor.errors + doctor.warnings > 0) {
-    const first = doctor.checks.find((c) => c.level === "error") ?? doctor.checks.find((c) => c.level === "warning");
+  // Only what is broken: version drift and other warnings live in Settings, under the diagnosis.
+  if (doctor && doctor.errors > 0) {
     notices.push({
       key: "doctor",
-      tone: doctor.errors > 0 ? "danger" : "info",
-      text: first
-        ? t("welcome.forYou.doctorOne", { subject: first.subject, message: first.message })
-        : t("welcome.forYou.doctor", { n: doctor.errors + doctor.warnings }),
+      kind: "health",
+      tone: "danger",
+      text: t("welcome.forYou.doctor", { n: doctor.errors }),
+      go: () => onNavigate({ screen: "settings" }),
     });
   }
 
   if (notices.length === 0) return <p className="for-you__calm">{t("welcome.forYou.calm")}</p>;
   return (
-    <ul className="pills-row" aria-label={t("welcome.forYou.title")}>
-      {notices.map((n) => (
-        <li key={n.key}>
-          {n.go ? (
-            <button type="button" className={`notice-pill notice-pill--${n.tone}`} onClick={n.go}>
-              {n.text}
+    <>
+      <ul className="inbox" aria-label={t("welcome.forYou.title")}>
+        {notices.slice(0, INBOX_ROWS).map((n) => (
+          <li key={n.key}>
+            <button type="button" className={`inbox__row inbox__row--${n.tone}`} onClick={n.go}>
+              <span className="inbox__icon">
+                <NoticeIcon notice={n} />
+              </span>
+              <span className="inbox__text">{n.text}</span>
+              {n.meta && <span className="inbox__meta">{n.meta}</span>}
+              <svg {...inboxIcon} className="inbox__chevron">
+                <path d="m9 6 6 6-6 6" />
+              </svg>
             </button>
-          ) : (
-            <span className={`notice-pill notice-pill--${n.tone}`}>{n.text}</span>
-          )}
-        </li>
-      ))}
-    </ul>
+          </li>
+        ))}
+      </ul>
+      {notices.length > INBOX_ROWS && (
+        <Button small variant="ghost" className="inbox__more" onClick={toBoard}>
+          {t("welcome.forYou.more")}
+        </Button>
+      )}
+    </>
   );
 }
 
@@ -302,6 +426,9 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
           ) : null}
           {hasAccounts && (
             <MenuButton label={t("create.menuLabel")} items={create.menu} className="btn btn--secondary">
+              <svg {...inboxIcon} className="icon">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
               {t("create.menu")}
             </MenuButton>
           )}
@@ -310,10 +437,7 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
 
       {hasAccounts && (
         <section className="today__section" aria-labelledby="plans-title">
-          <div className="section-head">
-            <h2 id="plans-title">{t("welcome.plans.title")}</h2>
-            <span className="muted small">{t("welcome.plans.legend")}</span>
-          </div>
+          <h2 id="plans-title">{t("welcome.plans.title")}</h2>
           <div className="plan-usage-grid">
             {overview.accounts.map((account) => (
               <PlanCard

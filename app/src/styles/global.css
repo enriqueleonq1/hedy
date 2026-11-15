@@ -800,29 +800,48 @@ button.popover__item:focus-visible { background: var(--selection); outline: none
 .today__projects .project-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 
 .plan-usage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
+/* The card is the button; "retry" sits on top of it, outside the button. */
+.plan-usage-card { position: relative; display: grid; min-width: 0; }
 .plan-usage { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-5) var(--space-4) var(--space-4); border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--panel); color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
 .plan-usage:hover { border-color: var(--line-strong); }
 .plan-usage:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.plan-usage-card--retry .plan-usage { padding-right: 112px; }
+.plan-usage__retry { position: absolute; right: var(--space-4); bottom: var(--space-4); }
 .plan-usage__text { display: grid; gap: 4px; min-width: 0; justify-items: start; }
 .plan-usage__text .chip { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.plan-usage__value { font: 700 24px var(--font-title); font-variant-numeric: tabular-nums; }
+.plan-usage__value { display: inline-flex; align-items: center; gap: 6px; font: 700 24px var(--font-title); font-variant-numeric: tabular-nums; }
 .plan-usage__value--muted { color: var(--muted); }
 .plan-usage__value--warning { color: var(--warning); }
 .plan-usage__value--danger { color: var(--danger); }
+.plan-usage__second { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-callout); font-weight: 600; font-variant-numeric: tabular-nums; }
+.plan-usage__swatch { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.plan-usage__quiet { font-weight: 600; color: var(--muted); }
+.plan-usage__skeletons { display: grid; gap: 8px; padding-top: 2px; }
+.plan-usage__skeleton { display: block; border-radius: 6px; background: var(--line); animation: plan-usage-shimmer 1.4s ease-in-out infinite; }
+.plan-usage__skeleton--value { width: 128px; height: 22px; }
+.plan-usage__skeleton--line { width: 168px; height: 12px; }
+.plan-usage__skeleton--ring { flex: none; width: 96px; height: 96px; border-radius: 50%; background: none; border: 10px solid var(--line); box-sizing: border-box; }
+@keyframes plan-usage-shimmer { 50% { opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .plan-usage__skeleton { animation: none; } }
 .rings { flex: none; }
 .rings__track { fill: none; stroke: var(--line); stroke-width: 10; }
 .rings__fill { fill: none; stroke-width: 10; stroke-linecap: round; }
 
 .for-you__calm { color: var(--muted); }
-.pills-row { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
-.notice-pill { display: inline-flex; align-items: center; min-height: var(--target); padding: 0 var(--space-4); border-radius: var(--radius-pill); border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 600; }
-button.notice-pill { cursor: pointer; }
-button.notice-pill:hover { border-color: var(--line-strong); }
-button.notice-pill--warn:hover { border-color: var(--warn-ink); }
-button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.notice-pill--warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-ink); }
-.notice-pill--danger { background: var(--diff-del-bg); border-color: var(--danger); color: var(--diff-del-ink); }
-.notice-pill--info { color: var(--ink); }
+/* "Para ti": an inbox, one row per thing to look at; the whole row is the button. */
+.inbox { list-style: none; margin: 0; padding: 0; display: grid; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); overflow: hidden; }
+.inbox li + li { border-top: 1px solid var(--line); }
+.inbox__row { width: 100%; min-height: var(--target); display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-4); border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.inbox__row:hover { background: var(--panel-2); }
+.inbox__row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.inbox__icon { flex: none; display: inline-flex; color: var(--muted); }
+.inbox__row--warn .inbox__icon { color: var(--warning); }
+.inbox__row--danger .inbox__icon { color: var(--danger); }
+.inbox__text { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox__meta { flex: none; color: var(--muted); font-size: var(--text-callout); white-space: nowrap; }
+.inbox__chevron { flex: none; color: var(--muted); }
+.inbox__more { justify-self: start; }
+@media (max-width: 640px) { .inbox__meta { display: none; } }
 
 .recent-tasks { list-style: none; margin: 0; padding: 0; display: grid; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); overflow: hidden; }
 .recent-tasks li + li { border-top: 1px solid var(--line); }
@@ -987,6 +1006,15 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 /* ---------------------------------------------------------------- settings */
 
 .settings__section { gap: 16px; }
+.diagnosis { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.diagnosis__row { display: grid; grid-template-columns: auto minmax(110px, 160px) minmax(0, 1fr); align-items: baseline; gap: 10px; font-size: var(--text-callout); }
+.diagnosis__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); transform: translateY(-1px); }
+.diagnosis__dot--ok { background: var(--success); }
+.diagnosis__dot--warning { background: var(--warning); }
+.diagnosis__dot--error { background: var(--danger); }
+.diagnosis__subject { font-weight: 600; }
+.diagnosis__message { min-width: 0; overflow-wrap: anywhere; }
+.diagnosis__fix { display: block; margin-top: 2px; color: var(--muted); }
 .settings__color-row { padding: 6px 0; border-bottom: 1px solid var(--line); }
 
 .mascot-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-3); padding: var(--space-2) 0; }
