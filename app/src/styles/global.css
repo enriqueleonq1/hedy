@@ -2058,18 +2058,23 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 .board { max-width: 980px; }
 .board__group { display: grid; gap: 10px; }
 .board__group-title { font: 700 var(--text-headline) var(--font-title); }
-.board__list { display: grid; gap: 8px; }
+.board__list { display: grid; gap: 6px; }
 
-/* Rows carry their state as a short inset bar on the leading edge. */
+/* The board's keys, said once above the lists. */
+.board__keys { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--space-4); margin-top: calc(-1 * var(--space-2)); font-size: var(--text-caption); color: var(--muted); }
+.board__keys > span { display: inline-flex; align-items: center; gap: 4px; }
+.board__keys .kbd { min-width: 18px; height: 18px; font-size: 10.5px; }
+
+/* Rows carry their state as a thin inset bar on the leading edge; title, then state and meta on one line. */
 .board-row {
   --state: var(--line-strong);
   position: relative;
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px var(--space-4);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
   align-items: center;
-  padding: 14px var(--space-5) 14px 22px;
+  padding: 11px var(--space-5) 11px 20px;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--panel);
@@ -2084,13 +2089,15 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
   left: 8px;
   top: var(--space-3);
   bottom: var(--space-3);
-  width: 3px;
+  width: 2px;
   border-radius: var(--radius-pill);
   background: var(--state);
 }
 
 .board-row:hover { border-color: var(--line-strong); }
 .board-row--needs { --state: var(--warning); }
+.board-row--blocked { --state: var(--danger); }
+.board-row--proposal { --state: var(--accent); }
 .board-row--working { --state: var(--activity); }
 .board-row--done { --state: var(--success); }
 .board-row--failed { --state: var(--danger); }
@@ -2104,7 +2111,6 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 }
 
 .board-row__meta {
-  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2128,10 +2134,19 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 }
 
 .board-state--needs { color: var(--warning); }
+.board-state--blocked { color: var(--danger); }
+.board-state--proposal { color: var(--accent); }
 .board-state--working { color: var(--activity); }
 .board-state--done { color: var(--success); }
 .board-state--failed { color: var(--danger); }
 .board-state--closed { color: var(--muted); }
+
+/* The keyboard's selection: a tinted row, and the focus color on its edge while focused. */
+.board-entry--selected > .board-row,
+.board-entry--selected > .board-item { background: var(--selection); }
+.board-entry:focus-within > .board-row,
+.board-entry:focus-within > .board-item { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.board-entry .board-row:focus-visible { outline: none; }
 
 .board__empty {
   display: grid;

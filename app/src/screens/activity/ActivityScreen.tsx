@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { errorMessage, useAction } from "../../api/context";
 import type { ActivityItem, BoardState, Decision, Overview, Phase, Task } from "../../api/types";
@@ -37,12 +37,16 @@ const PHASE_LABEL: Record<Phase, MessageKey> = {
   review: "activity.phase.review",
 };
 
-export type Tone = "needs" | "working" | "done" | "failed" | "closed";
+/**
+ * A state's color family. Waiting for a decision (plan, permission) is amber,
+ * blocked by a plan limit is red, proposals (`ProposalRow`) are violet.
+ */
+export type Tone = "needs" | "blocked" | "proposal" | "working" | "done" | "failed" | "closed";
 
 export const TONE: Record<BoardState, Tone> = {
   plan: "needs",
   permission: "needs",
-  limited: "needs",
+  limited: "blocked",
   working: "working",
   review: "done",
   answered: "done",
@@ -103,15 +107,24 @@ export function ActivityScreen({
     },
   ];
   const openMemory = onOpenMemory ?? (() => {});
+  const root = useRef<HTMLDivElement>(null);
+  // Every row's key, in the order they are on screen.
+  const keys = [
+    ...(inbox.count > 0 ? inbox.items.map((entry) => entry.key) : []),
+    ...groups.flatMap((group) => group.items.map((item) => item.task.id)),
+  ];
+  const selected = useBoardKeys(root, keys);
 
   return (
-    <div className="screen board">
+    <div className="screen board" ref={root}>
       <div className="page-head">
         <div>
           <h1>{t("activity.title")}</h1>
           <p className="muted">{t("activity.subtitle")}</p>
         </div>
       </div>
+
+      {(inbox.count > 0 || items.length > 0) && <KeysHint />}
 
       {board.isError && (
         <div className="board__empty">
@@ -130,9 +143,25 @@ export function ActivityScreen({
         >
           {(entry) =>
             entry.kind === "task" ? (
-              <BoardRow key={entry.key} item={entry.item} overview={overview} now={now} onOpen={onOpenTask} />
+              <BoardRow
+                key={entry.key}
+                entryKey={entry.key}
+                selected={selected === entry.key}
+                item={entry.item}
+                overview={overview}
+                now={now}
+                onOpen={onOpenTask}
+              />
             ) : (
-              <ProposalRow key={entry.key} entry={entry} overview={overview} now={now} onOpen={openMemory} />
+              <ProposalRow
+                key={entry.key}
+                entryKey={entry.key}
+                selected={selected === entry.key}
+                entry={entry}
+                overview={overview}
+                now={now}
+                onOpen={openMemory}
+              />
             )
           }
         </BoardGroup>
@@ -151,11 +180,154 @@ export function ActivityScreen({
         .map((group) => (
           <BoardGroup key={group.title} title={group.title} items={group.items}>
             {(item) => (
-              <BoardRow key={item.task.id} item={item} overview={overview} now={now} onOpen={onOpenTask} />
+              <BoardRow
+                key={item.task.id}
+                entryKey={item.task.id}
+                selected={selected === item.task.id}
+                item={item}
+                overview={overview}
+                now={now}
+                onOpen={onOpenTask}
+              />
             )}
           </BoardGroup>
         ))}
     </div>
+  );
+}
+
+/** Where typing happens: the board's letter keys stay out of it. */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    !!target.closest("input, textarea, select, [role=combobox], [role=menu], [role=listbox], .xterm")
+  );
+}
+
+const ENTRY = "[data-entry]";
+
+/**
+ * The board's keyboard: j/k (or ↓/↑) move the selection through every row,
+ * Enter opens the selected one, `a` approves or allows once and `r` rejects or
+ * denies, where the row has those buttons. Keys are ignored while typing or
+ * with a dialog open. The selection is the focused row: focus moves with it
+ * (so screen readers follow) and Tab or a click selects too. When the
+ * selected row leaves (answered, approved), the one now in its place takes
+ * over. `keys`: every row's key, in order. Returns the selected row's key.
+ */
+function useBoardKeys(root: RefObject<HTMLDivElement | null>, keys: string[]): string | null {
+  const [chosen, setChosen] = useState<{ key: string; index: number } | null>(null);
+  const selected =
+    chosen === null
+      ? null
+      : keys.includes(chosen.key)
+        ? chosen.key
+        : (keys[Math.min(chosen.index, keys.length - 1)] ?? null);
+
+  // Tab or a click into a row selects it.
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const onFocus = (e: FocusEvent) => {
+      const entry = (e.target as HTMLElement).closest<HTMLElement>(ENTRY);
+      const list = entriesOf(el);
+      if (entry?.dataset.entry) setChosen({ key: entry.dataset.entry, index: list.indexOf(entry) });
+    };
+    el.addEventListener("focusin", onFocus);
+    return () => el.removeEventListener("focusin", onFocus);
+  }, [root]);
+
+  // The selected row went away and took the focus with it: the next one gets it.
+  useEffect(() => {
+    if (selected === null || selected === chosen?.key) return;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    focusRow(entriesOf(root.current).find((el) => el.dataset.entry === selected));
+  }, [root, selected, chosen]);
+
+  useEffect(() => {
+    const select = (list: HTMLElement[], index: number) => {
+      const el = list[index];
+      if (!el?.dataset.entry) return;
+      setChosen({ key: el.dataset.entry, index });
+      const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      el.scrollIntoView?.({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
+      focusRow(el);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (isTypingTarget(e.target) || document.querySelector("[aria-modal=true]")) return;
+      const list = entriesOf(root.current);
+      if (list.length === 0) return;
+      const at = list.findIndex((el) => el.dataset.entry === selected);
+      const focus = document.activeElement;
+      const onBoard = !focus || focus === document.body || !!root.current?.contains(focus);
+      const press = (action: string) => {
+        const button = list[at]?.querySelector<HTMLButtonElement>(`[data-key-action="${action}"]:not(:disabled)`);
+        if (!button) return;
+        e.preventDefault();
+        button.click();
+      };
+      switch (e.key) {
+        case "ArrowDown":
+        case "ArrowUp":
+          // Elsewhere (the sidebar…) the arrows keep their own meaning.
+          if (!onBoard) return;
+          e.preventDefault();
+          select(list, at < 0 ? 0 : Math.max(0, Math.min(at + (e.key === "ArrowDown" ? 1 : -1), list.length - 1)));
+          break;
+        case "j":
+        case "k":
+          e.preventDefault();
+          select(list, at < 0 ? 0 : Math.max(0, Math.min(at + (e.key === "j" ? 1 : -1), list.length - 1)));
+          break;
+        case "Enter":
+          // On a button, Enter already presses it.
+          if (focus instanceof HTMLButtonElement || focus instanceof HTMLAnchorElement) return;
+          press("open");
+          break;
+        case "a":
+          press("approve");
+          break;
+        case "r":
+          press("reject");
+          break;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [root, selected]);
+
+  return selected;
+}
+
+function entriesOf(root: HTMLElement | null): HTMLElement[] {
+  return [...(root?.querySelectorAll<HTMLElement>(ENTRY) ?? [])];
+}
+
+function focusRow(entry: HTMLElement | undefined) {
+  entry?.querySelector<HTMLElement>(".board-row")?.focus({ preventScroll: true });
+}
+
+/** "j/k para moverte · Enter abrir · a aprobar · r rechazar": the board's keys, said once and quietly. */
+function KeysHint() {
+  const t = useT();
+  return (
+    <p className="board__keys" aria-hidden>
+      <span>
+        <kbd className="kbd">j</kbd>
+        <kbd className="kbd">k</kbd> {t("activity.keys.move")}
+      </span>
+      <span>
+        <kbd className="kbd">Enter</kbd> {t("activity.keys.open")}
+      </span>
+      <span>
+        <kbd className="kbd">a</kbd> {t("activity.keys.approve")}
+      </span>
+      <span>
+        <kbd className="kbd">r</kbd> {t("activity.keys.reject")}
+      </span>
+    </p>
   );
 }
 
@@ -183,11 +355,15 @@ function BoardGroup<T>({
 }
 
 function BoardRow({
+  entryKey,
+  selected,
   item,
   overview,
   now,
   onOpen,
 }: {
+  entryKey: string;
+  selected: boolean;
   item: ActivityItem;
   overview: Overview;
   now: number;
@@ -199,25 +375,32 @@ function BoardRow({
   // While it works, the state reads as what it is doing ("Leyendo…").
   const events = useTaskEvents(state === "working" ? task.id : null);
   const { activity } = useMascot(state === "working" ? task : null, events.data ?? []);
-  const active = TONE[state] === "needs" || state === "working";
+  const tone = TONE[state];
+  const active = tone === "needs" || tone === "blocked" || state === "working";
   const time = active
     ? t("activity.runningFor", { time: formatElapsed(now - task.createdAt) })
     : timeAgo(item.updatedAt, t, now);
+  const live = state === "permission" && task.live;
   const row = (
-    <button className={`board-row board-row--${TONE[state]}`} onClick={() => onOpen(task.project, task.id)}>
+    <button
+      className={`board-row board-row--${tone}`}
+      data-key-action="open"
+      onClick={() => onOpen(task.project, task.id)}
+    >
       <span className="board-row__title">{task.title}</span>
-      <span className={`board-state board-state--${TONE[state]}`}>
-        <span aria-hidden>{MARK[state]}</span>
-        {activity ? (
-          <>
-            <span className="sr-only">{t(STATE_LABEL[state])}</span>
-            <WorkingWord activity={activity} />
-          </>
-        ) : (
-          t(STATE_LABEL[state])
-        )}
-      </span>
       <span className="board-row__meta">
+        <span className={`board-state board-state--${tone}`}>
+          <span aria-hidden>{MARK[state]}</span>
+          {activity ? (
+            <>
+              <span className="sr-only">{t(STATE_LABEL[state])}</span>
+              <WorkingWord activity={activity} />
+            </>
+          ) : (
+            t(STATE_LABEL[state])
+          )}
+        </span>
+        <span aria-hidden>·</span>
         <span className="board-row__project">{item.projectName}</span>
         <span aria-hidden>·</span>
         <span className="board-row__who">
@@ -244,11 +427,18 @@ function BoardRow({
       </span>
     </button>
   );
+  const entryClass = `board-entry${selected ? " board-entry--selected" : ""}`;
   // A permission is answered right here (once, or no); everything else opens the task.
-  if (state !== "permission" || !task.live) return <li>{row}</li>;
+  if (!live) {
+    return (
+      <li className={entryClass} data-entry={entryKey}>
+        {row}
+      </li>
+    );
+  }
   return (
-    <li>
-      <div className={`board-item board-item--${TONE[state]}`}>
+    <li className={entryClass} data-entry={entryKey}>
+      <div className={`board-item board-item--${tone}`}>
         {row}
         <PermissionActions task={task} />
       </div>
@@ -268,13 +458,25 @@ function PermissionActions({ task }: { task: Task }) {
   if (!request) return null;
   return (
     <div className="board-item__actions" role="group" aria-label={t("activity.inbox.permissionOf", { title: task.title })}>
-      <code className="board-item__what">
+      <code className="board-item__what" title={`${request.tool}: ${request.summary}`}>
         {request.tool}: {request.summary}
       </code>
-      <Button small variant="primary" disabled={answer.isPending} onClick={() => answer.mutate("allow")}>
+      <Button
+        small
+        variant="primary"
+        data-key-action="approve"
+        disabled={answer.isPending}
+        onClick={() => answer.mutate("allow")}
+      >
         {t("activity.inbox.allowOnce")}
       </Button>
-      <Button small variant="ghost" disabled={answer.isPending} onClick={() => answer.mutate("deny")}>
+      <Button
+        small
+        variant="ghost"
+        data-key-action="reject"
+        disabled={answer.isPending}
+        onClick={() => answer.mutate("deny")}
+      >
         {t("activity.inbox.deny")}
       </Button>
     </div>
@@ -286,11 +488,15 @@ function PermissionActions({ task }: { task: Task }) {
  * (rule 6); the row opens the project's memory to read it in full first.
  */
 function ProposalRow({
+  entryKey,
+  selected,
   entry,
   overview,
   now,
   onOpen,
 }: {
+  entryKey: string;
+  selected: boolean;
   entry: Extract<InboxItem, { kind: "note" | "skill" }>;
   overview: Overview;
   now: number;
@@ -330,15 +536,20 @@ function ProposalRow({
   const short = title.length > 60 ? `${title.slice(0, 57)}…` : title;
 
   return (
-    <li>
-      <div className="board-item board-item--needs board-item--proposal">
-        <button className="board-row board-row--needs" onClick={() => onOpen(entry.project, isNote ? "notes" : "skills")}>
+    <li className={`board-entry${selected ? " board-entry--selected" : ""}`} data-entry={entryKey}>
+      <div className="board-item board-item--proposal">
+        <button
+          className="board-row board-row--proposal"
+          data-key-action="open"
+          onClick={() => onOpen(entry.project, isNote ? "notes" : "skills")}
+        >
           <span className="board-row__title">{title}</span>
-          <span className="board-state board-state--needs">
-            <span aria-hidden>◇</span>
-            {state}
-          </span>
           <span className="board-row__meta">
+            <span className="board-state board-state--proposal">
+              <span aria-hidden>◇</span>
+              {state}
+            </span>
+            <span aria-hidden>·</span>
             <span className="board-row__project">{where}</span>
             <span aria-hidden>·</span>
             <span>{t("activity.inbox.proposedBy", { author: author === "user" ? t("memory.note.you") : author })}</span>
@@ -347,10 +558,22 @@ function ProposalRow({
           </span>
         </button>
         <div className="board-item__actions" role="group" aria-label={t("activity.inbox.decide", { title: short })}>
-          <Button small variant="primary" disabled={busy} onClick={() => approve.mutate(undefined)}>
+          <Button
+            small
+            variant="primary"
+            data-key-action="approve"
+            disabled={busy}
+            onClick={() => approve.mutate(undefined)}
+          >
             {t(change ? "activity.inbox.approveChange" : "activity.inbox.approve")}
           </Button>
-          <Button small variant="ghost" disabled={busy} onClick={() => reject.mutate(undefined)}>
+          <Button
+            small
+            variant="ghost"
+            data-key-action="reject"
+            disabled={busy}
+            onClick={() => reject.mutate(undefined)}
+          >
             {t("activity.inbox.reject")}
           </Button>
         </div>
