@@ -241,3 +241,35 @@ export const STATUS_LABEL: Record<Task["status"], MessageKey> = {
 export function isOpen(task: Task | null | undefined): boolean {
   return !!task && task.status !== "accepted" && task.status !== "discarded";
 }
+
+/** A plan or permission card that still waits for the user's answer. */
+export type PendingCard = "plan" | "permission";
+
+/** The latest card still waiting for an answer, if any. */
+export function pendingCard(events: AgentEvent[]): PendingCard | null {
+  const open = new Map<string, PendingCard>();
+  for (const e of events) {
+    if (e.kind === "plan" && e.requestId) open.set(e.requestId, "plan");
+    if (e.kind === "permissionRequest") open.set(e.requestId, "permission");
+    if (e.kind === "permissionResolved") open.delete(e.requestId);
+  }
+  return [...open.values()].at(-1) ?? null;
+}
+
+/** What a screen reader hears about a task: only when it needs the user or ends. */
+export type Milestone = "plan" | "permission" | "finished" | "failed" | "limit";
+
+/**
+ * The latest milestone of a timeline and its position, to announce each one
+ * once. Cards count while they wait; limits only once reached.
+ */
+export function latestMilestone(items: TimelineItem[]): { index: number; milestone: Milestone } | null {
+  for (let index = items.length - 1; index >= 0; index--) {
+    const item = items[index]!;
+    if (item.type === "plan" && item.requestId !== null && item.resolution === null) return { index, milestone: "plan" };
+    if (item.type === "permission" && item.resolution === null) return { index, milestone: "permission" };
+    if (item.type === "finished") return { index, milestone: item.ok ? "finished" : "failed" };
+    if (item.type === "limit" && item.level === "reached") return { index, milestone: "limit" };
+  }
+  return null;
+}
