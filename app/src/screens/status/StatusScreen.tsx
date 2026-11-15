@@ -15,8 +15,8 @@ import { useMascot } from "../../tasks/useMascot";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 
 const TASK_BADGE: Record<Task["status"], { label: MessageKey; tone: string }> = {
-  running: { label: "status.badge.running", tone: "warn" },
-  waitingApproval: { label: "status.badge.waitingApproval", tone: "info" },
+  running: { label: "status.badge.running", tone: "info" },
+  waitingApproval: { label: "status.badge.waitingApproval", tone: "warn" },
   review: { label: "status.badge.review", tone: "ok" },
   accepted: { label: "status.badge.accepted", tone: "muted" },
   discarded: { label: "status.badge.discarded", tone: "muted" },

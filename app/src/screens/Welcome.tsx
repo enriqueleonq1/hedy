@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { CSSProperties } from "react";
 
 import { useApi } from "../api/context";
 import type { Account, ActivityItem, Overview, Project, UsageSummary, UsageWindow } from "../api/types";
@@ -247,8 +248,12 @@ function RecentTasks({ onNavigate }: { onNavigate: (v: View) => void }) {
             onClick={() => onNavigate({ screen: "workspace", project: item.task.project, task: item.task.id })}
           >
             <span className="recent-tasks__title">{item.task.title}</span>
-            <span className={`small recent-tasks__meta recent-tasks__meta--${needsYou(item.state) ? "needs" : item.state}`}>
-              {item.projectName} · {t(STATE_LABEL[item.state])} · {timeAgo(item.updatedAt, t)}
+            <span className="small recent-tasks__meta">
+              {item.projectName} ·{" "}
+              <span className={`recent-tasks__state recent-tasks__state--${needsYou(item.state) ? "needs" : item.state}`}>
+                {t(STATE_LABEL[item.state])}
+              </span>{" "}
+              · {timeAgo(item.updatedAt, t)}
             </span>
           </button>
         </li>
@@ -396,12 +401,12 @@ function ProjectCard({
     <article
       className="card project-card"
       aria-labelledby={`project-${project.path}`}
-      style={{ borderTopColor: projectColor(project, overview.accounts) }}
+      style={{ "--project": projectColor(project, overview.accounts) } as CSSProperties}
     >
       <header>
         <h3 id={`project-${project.path}`}>{project.name}</h3>
         <span className="project-card__badges">
-          {project.protected && <span className="badge badge--warn">{t("common.protected")}</span>}
+          {project.protected && <span className="badge badge--protected">{t("common.protected")}</span>}
           <MenuButton
             label={t("welcome.card.more", { name: project.name })}
             items={[

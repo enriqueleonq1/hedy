@@ -60,6 +60,10 @@ describe.each(Object.keys(themes) as ThemeName[])("%s theme", (name) => {
   });
 });
 
+it("both themes define the same tokens", () => {
+  expect(Object.keys(themes.light).sort()).toEqual(Object.keys(themes.dark).sort());
+});
+
 it("account colors stand out on the dark background (3:1, non-text)", () => {
   for (const { hex } of accountPalette) {
     expect(contrast(hex, themes.dark.bg!)).toBeGreaterThanOrEqual(3);
