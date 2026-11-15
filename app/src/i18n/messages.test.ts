@@ -5,11 +5,13 @@ import mascot from "./messages/mascot";
 import memory from "./messages/memory";
 import onboarding from "./messages/onboarding";
 import queue from "./messages/queue";
+import review from "./messages/review";
 import settings from "./messages/settings";
 import shell from "./messages/shell";
 import skills from "./messages/skills";
 import status from "./messages/status";
 import templates from "./messages/templates";
+import waits from "./messages/waits";
 import welcome from "./messages/welcome";
 import workspace from "./messages/workspace";
 import { messages } from "./messages";
@@ -23,11 +25,13 @@ const AREAS = {
   memory,
   onboarding,
   queue,
+  review,
   settings,
   shell,
   skills,
   status,
   templates,
+  waits,
   welcome,
   workspace,
 };

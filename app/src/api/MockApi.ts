@@ -2,6 +2,7 @@ import type { HedyApi, Unsubscribe } from "./HedyApi";
 import { resolveLanguage } from "../i18n";
 import { placeholders } from "../templates/placeholders";
 import type {
+  AcceptPreview,
   Account,
   ActivityItem,
   AgentEvent,
@@ -1348,16 +1349,21 @@ export class MockApi implements HedyApi {
         { kind: "permissionRequest", requestId: "req-s2", tool: "Bash", summary: "npm test", input: { command: "npm test" } },
       ],
     );
+    // At its limit; the user chose to wait: it resumes by itself at the reset.
+    const resetsAt = now + 47 * min;
     add(
       "s3",
       "/code/hedy",
       "claude-personal",
       "Traduce los correos de confirmación",
-      { live: true },
+      {
+        live: true,
+        wait: { account: "claude-personal", until: resetsAt, since: now - 4 * min, ready: false },
+      },
       { created: 38 * min, updated: 5 * min },
       [
         opus("Claude personal"),
-        { kind: "limitWarning", account: "claude-personal", level: "reached", percent: 100, resetsAt: null },
+        { kind: "limitWarning", account: "claude-personal", level: "reached", percent: 100, resetsAt },
       ],
     );
     add(
@@ -1384,10 +1390,24 @@ export class MockApi implements HedyApi {
       "/code/hedy",
       "claude-personal",
       "Arregla el cálculo de impuestos en las facturas",
-      { status: "review" },
+      {
+        status: "review",
+        workspace: {
+          worktree: "/code/hedy/.hedy/worktrees/s5",
+          branch: "hedy/arregla-el-calculo-de-impuestos-s5",
+          baseBranch: "main",
+          baseCommit: "a3f9c1e",
+        },
+      },
       { created: 70 * min, updated: 40 * min },
-      [opus("Claude personal"), { kind: "finished", ok: true, summary: "Listo", durationMs: 1_200_000 }],
+      [
+        opus("Claude personal"),
+        { kind: "fileEdited", path: "facturas/impuestos.py" },
+        { kind: "testsRun", command: "pytest tests/test_facturas.py", passed: false },
+        { kind: "finished", ok: true, summary: "El IVA se redondea por línea y no al total.", durationMs: 1_200_000 },
+      ],
     );
+    this.diffs.set("s5", ["facturas/impuestos.py", "facturas/totales.py", "tests/test_facturas.py"].map(sampleDiff));
     add(
       "s6",
       "/code/hedy",
@@ -1444,6 +1464,12 @@ export class MockApi implements HedyApi {
     const task = this.tasksById.get(id);
     if (!task || task.status === "accepted" || task.status === "discarded") throw "la tarea ya está cerrada";
     task.live = true;
+    // Writing to the agent ends a wait for its limit, like the backend.
+    if (task.wait) {
+      clearTimeout(this.waitTimers.get(id));
+      task.wait = null;
+      this.notifyTask(task);
+    }
     this.push(id, { kind: "userMessage", text });
     this.script(id, [{ kind: "message", text: `Hecho: ${text}` }, { kind: "finished", ok: true, summary: "", durationMs: 1000 }]);
   }
@@ -1464,8 +1490,143 @@ export class MockApi implements HedyApi {
     return [...(this.diffs.get(id) ?? [])];
   }
 
-  async acceptTask(id: string): Promise<void> {
+  async acceptPreview(id: string): Promise<AcceptPreview> {
+    const task = this.tasksById.get(id);
+    if (!task) throw `no existe la tarea ${id}`;
+    if (task.status === "accepted" || task.status === "discarded") throw `la tarea ${id} ya está cerrada`;
+    if (!task.workspace) throw `la tarea ${id} no cambia archivos (es una pregunta)`;
+    const files = this.diffs.get(id) ?? [];
+    const events = this.eventsById.get(id) ?? [];
+    const tests = [...events].reverse().find((e) => e.kind === "testsRun");
+    return {
+      branch: task.workspace.branch,
+      targetBranch: task.workspace.baseBranch,
+      checkoutBranch: task.workspace.baseBranch,
+      files: files.length,
+      additions: files.reduce((n, f) => n + f.additions, 0),
+      deletions: files.reduce((n, f) => n + f.deletions, 0),
+      message: this.proposedMessage(task),
+      tests:
+        tests?.kind === "testsRun"
+          ? { command: tests.command, passed: tests.passed, at: this.updatedAt.get(id) ?? task.createdAt }
+          : null,
+    };
+  }
+
+  /** Like the backend: the title and the first paragraph of the agent's summary. */
+  private proposedMessage(task: Task): string {
+    const finished = [...(this.eventsById.get(task.id) ?? [])]
+      .reverse()
+      .find((e) => e.kind === "finished" && e.ok);
+    const summary = finished?.kind === "finished" ? finished.summary : "";
+    const paragraph = summary.split("\n\n").map((p) => p.trim()).find((p) => p) ?? "";
+    return paragraph && paragraph !== task.title ? `${task.title}\n\n${paragraph}` : task.title;
+  }
+
+  /** Commit messages of accepted tasks (test helper). */
+  readonly commitMessages = new Map<string, string>();
+  private acceptedDiffs = new Map<string, FileDiff[]>();
+  /** When set, undo is refused with this message, as when the branch moved on. */
+  undoRefusal: string | null = null;
+
+  async acceptTask(id: string, message?: string | null): Promise<void> {
+    const task = this.tasksById.get(id);
+    if (!task) throw `no existe la tarea ${id}`;
+    this.commitMessages.set(id, message?.trim() || this.proposedMessage(task));
+    this.acceptedDiffs.set(id, this.diffs.get(id) ?? []);
+    task.merge = { before: "a3f9c1e", after: "5d0b7e2", tip: "9c4e1aa", at: Math.floor(Date.now() / 1000) };
+    task.wait = null;
     this.close(id, "accepted");
+  }
+
+  async undoAccept(id: string): Promise<void> {
+    const task = this.tasksById.get(id);
+    if (!task) throw `no existe la tarea ${id}`;
+    if (task.status !== "accepted" || !task.merge) {
+      throw "No se puede deshacer sin riesgo: la tarea no está integrada. Si quieres quitar los cambios, usa git revert.";
+    }
+    if (this.undoRefusal) throw this.undoRefusal;
+    task.merge = null;
+    task.status = "review";
+    this.diffs.set(id, this.acceptedDiffs.get(id) ?? []);
+    this.notifyTask(task);
+  }
+
+  // ---------------------------------------------------------------- limit waits
+  // Like the backend: the wait is stored in the task; at the reset the task
+  // resumes on the same account with its held queue or a "continue" turn.
+
+  private waitTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  async waitForLimit(id: string): Promise<void> {
+    const task = this.tasksById.get(id);
+    if (!task) throw `no existe la tarea ${id}`;
+    if (task.status === "accepted" || task.status === "discarded") throw `la tarea ${id} ya está cerrada`;
+    const now = Math.floor(Date.now() / 1000);
+    const reported = [...(this.eventsById.get(id) ?? [])]
+      .reverse()
+      .find((e) => e.kind === "limitWarning" && e.level === "reached");
+    const resetsAt = reported?.kind === "limitWarning" ? reported.resetsAt : null;
+    const until = resetsAt && resetsAt > now ? resetsAt : null;
+    task.wait = { account: task.account, until, since: now, ready: false };
+    this.notifyTask(task);
+    this.scheduleResume(id);
+  }
+
+  private scheduleResume(id: string): void {
+    clearTimeout(this.waitTimers.get(id));
+    const until = this.tasksById.get(id)?.wait?.until;
+    if (!until) return;
+    this.waitTimers.set(
+      id,
+      setTimeout(() => void this.resumeDue(id), Math.max(0, until * 1000 - Date.now())),
+    );
+  }
+
+  /** The reset time came (or a test says so): resume on the same account. */
+  async resumeDue(id: string): Promise<void> {
+    const task = this.tasksById.get(id);
+    if (!task?.wait || task.wait.ready) return;
+    await this.resumeAfterLimit(id);
+  }
+
+  /**
+   * Test helper: Hedy was closed when the limit renewed. Like the backend at
+   * start-up, the wait becomes "Ya puedes continuar" and nothing is sent.
+   */
+  simulateRestartAfterReset(id: string): void {
+    const task = this.tasksById.get(id);
+    if (!task?.wait) return;
+    clearTimeout(this.waitTimers.get(id));
+    task.wait = { ...task.wait, until: Math.floor(Date.now() / 1000) - 60, ready: true };
+    this.notifyTask(task);
+  }
+
+  async cancelWait(id: string): Promise<void> {
+    const task = this.tasksById.get(id);
+    if (!task) throw `no existe la tarea ${id}`;
+    clearTimeout(this.waitTimers.get(id));
+    task.wait = null;
+    this.notifyTask(task);
+  }
+
+  async resumeAfterLimit(id: string): Promise<void> {
+    const task = this.tasksById.get(id);
+    if (!task) throw `no existe la tarea ${id}`;
+    if (task.status === "accepted" || task.status === "discarded") throw `la tarea ${id} ya está cerrada`;
+    clearTimeout(this.waitTimers.get(id));
+    task.wait = null;
+    const queue = this.queues.get(id) ?? [];
+    this.queues.delete(id);
+    if (queue.length) this.emitQueue(id);
+    const english = resolveLanguage(this.state.language) === "en";
+    const text = queue.length
+      ? queue.map((m) => m.text.trim()).join("\n\n")
+      : english
+        ? "Your limit renewed. Continue the task where you left off."
+        : "Tu límite se renovó. Continúa con la tarea donde la dejaste.";
+    this.notifyTask(task);
+    await this.sendMessage(id, text);
   }
 
   async discardTask(id: string): Promise<void> {
@@ -1533,6 +1694,8 @@ export class MockApi implements HedyApi {
     const task = this.tasksById.get(id);
     if (!task) throw `no existe la tarea ${id}`;
     const target = this.account(account);
+    clearTimeout(this.waitTimers.get(id));
+    task.wait = null;
     task.account = account;
     task.live = true;
     this.push(id, { kind: "phaseStarted", phase: "implement", agent: target.providerName.split(" ")[0] ?? "IA", account: target.name });

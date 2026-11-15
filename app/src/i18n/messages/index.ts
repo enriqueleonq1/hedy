@@ -9,11 +9,13 @@ import mascot from "./mascot";
 import memory from "./memory";
 import onboarding from "./onboarding";
 import queue from "./queue";
+import review from "./review";
 import settings from "./settings";
 import shell from "./shell";
 import skills from "./skills";
 import status from "./status";
 import templates from "./templates";
+import waits from "./waits";
 import welcome from "./welcome";
 import workspace from "./workspace";
 
@@ -34,6 +36,8 @@ const es = {
   ...activity.es,
   ...queue.es,
   ...templates.es,
+  ...review.es,
+  ...waits.es,
 };
 const en: Record<keyof typeof es, string> = {
   ...common.en,
@@ -50,6 +54,8 @@ const en: Record<keyof typeof es, string> = {
   ...activity.en,
   ...queue.en,
   ...templates.en,
+  ...review.en,
+  ...waits.en,
 };
 
 export type MessageKey = keyof typeof es;
