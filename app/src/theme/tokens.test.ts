@@ -24,6 +24,9 @@ const textPairs: [string, string][] = [
   ["success", "panel"],
   ["activity", "panel"],
   ["warning", "panel"],
+  // Usage near a limit, on the page and inside a card's nested surface.
+  ["warning", "bg"],
+  ["warning", "panel2"],
   ["danger", "panel"],
   ["warnInk", "warnBg"],
   ["diffAddInk", "diffAddBg"],
@@ -33,6 +36,8 @@ const textPairs: [string, string][] = [
   ["muted", "diffAddBg"],
   ["muted", "diffDelBg"],
   ["accent", "panel2"],
+  // A ghost button inside a nested surface.
+  ["actionText", "panel2"],
 ];
 
 describe.each(Object.keys(themes) as ThemeName[])("%s theme", (name) => {
@@ -46,6 +51,12 @@ describe.each(Object.keys(themes) as ThemeName[])("%s theme", (name) => {
 
   it("focus ring is visible against the background (3:1)", () => {
     expect(contrast(t.focus!, t.bg!)).toBeGreaterThanOrEqual(3);
+  });
+
+  // Cards inside cards have no border: their tone alone must tell them apart.
+  it("nested surfaces stand apart from the card and the page", () => {
+    expect(contrast(t.panel!, t.panel2!)).toBeGreaterThanOrEqual(1.05);
+    expect(contrast(t.bg!, t.panel2!)).toBeGreaterThanOrEqual(1.04);
   });
 
   it("applies every token as a CSS variable", () => {
