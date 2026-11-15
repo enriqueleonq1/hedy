@@ -8,9 +8,9 @@ use std::path::{Path, PathBuf};
 
 use hedy_core::adapters::{CODE_MAP_PROGRAM, find_program};
 use hedy_core::application::{
-    AccountStatus, AccountUsage, AppResult, CheckLevel, DoctorReport, Hedy, MemoryView,
-    PlanUsageState, ProjectStatus, Proposal, Setting, SkillChange, SkillDraft, SkillFiles,
-    SkillsView, TaskActivity, TestRun, UsageSummary,
+    AcceptPreview, AccountStatus, AccountUsage, AppResult, CheckLevel, DoctorReport, Hedy,
+    MemoryView, PlanUsageState, ProjectStatus, Proposal, Setting, SkillChange, SkillDraft,
+    SkillFiles, SkillsView, TaskActivity, TestRun, UsageSummary,
 };
 use hedy_core::domain::{
     Account, ConfigFolder, Credentials, LoginState, Note, Phase, PhasePlan, PlanUsage, Project,
@@ -484,6 +484,52 @@ pub struct TestRunDto {
     pub command: String,
     pub passed: bool,
     pub at: i64,
+}
+
+impl From<TestRun> for TestRunDto {
+    fn from(
+        TestRun {
+            command,
+            passed,
+            at,
+        }: TestRun,
+    ) -> Self {
+        Self {
+            command,
+            passed,
+            at,
+        }
+    }
+}
+
+/// What "Aceptar e integrar" is about to do, for the review sheet.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcceptPreviewDto {
+    pub branch: String,
+    pub target_branch: String,
+    pub checkout_branch: Option<String>,
+    pub files: usize,
+    pub additions: u64,
+    pub deletions: u64,
+    pub message: String,
+    /// The task's latest test run; `None` when it never ran tests.
+    pub tests: Option<TestRunDto>,
+}
+
+impl From<AcceptPreview> for AcceptPreviewDto {
+    fn from(p: AcceptPreview) -> Self {
+        Self {
+            branch: p.branch,
+            target_branch: p.target_branch,
+            checkout_branch: p.checkout_branch,
+            files: p.files,
+            additions: p.additions,
+            deletions: p.deletions,
+            message: p.message,
+            tests: p.tests.map(Into::into),
+        }
+    }
 }
 
 impl From<ProjectStatus> for ProjectStatusDto {
