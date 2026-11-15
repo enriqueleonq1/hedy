@@ -8,6 +8,7 @@ import common from "./common";
 import mascot from "./mascot";
 import memory from "./memory";
 import onboarding from "./onboarding";
+import palette from "./palette";
 import queue from "./queue";
 import settings from "./settings";
 import shell from "./shell";
@@ -34,6 +35,7 @@ const es = {
   ...activity.es,
   ...queue.es,
   ...templates.es,
+  ...palette.es,
 };
 const en: Record<keyof typeof es, string> = {
   ...common.en,
@@ -50,6 +52,7 @@ const en: Record<keyof typeof es, string> = {
   ...activity.en,
   ...queue.en,
   ...templates.en,
+  ...palette.en,
 };
 
 export type MessageKey = keyof typeof es;

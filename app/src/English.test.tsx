@@ -216,6 +216,25 @@ describe("English", () => {
     expect(await screen.findByRole("heading", { name: "Traduce los correos de confirmación" })).toBeInTheDocument();
   });
 
+  it("shows the command palette and the plan usage popover in English", async () => {
+    const { user } = setup(MockApi.withSampleData().withSampleActivity());
+    await screen.findByRole("heading", { name: /Hi, Enrique!/ });
+    await user.click(screen.getByRole("button", { name: /^Plan usage: Claude personal: Week · 83%/ }));
+    const popover = screen.getByRole("dialog", { name: "Plan usage" });
+    expect(within(popover).getByRole("button", { name: "Claude trabajo: 5-hour session · 34%, Week · 29%. Open the account" })).toBeInTheDocument();
+    expect(within(popover).getByRole("button", { name: "See accounts and models" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+    await user.keyboard("{Escape}");
+
+    await user.keyboard("{Control>}k{/Control}");
+    expect(screen.getByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
+    expect(await screen.findByRole("group", { name: "Needs you" }, { timeout: 8000 })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^Answer: Migra el reporte/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^Open a terminal in hedy/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^Claude trabajo account/ })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+  });
+
   it("shows the empty task board in English", async () => {
     window.history.replaceState(null, "", "#activity");
     setup();

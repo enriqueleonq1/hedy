@@ -7,6 +7,7 @@ import { MODE_LABEL } from "../tasks/timeline";
 import { DEFAULT_ACCOUNT_COLOR, TIP_MASCOT_COLOR } from "../theme/tokens";
 import { shortAccountLabel } from "./accounts";
 import { Mascot } from "./Mascot/Mascot";
+import { paletteKeys } from "./palette/keys";
 import { barColor, headlineText, planPercent, usageLabel, usePlanUsageRefresh } from "./planUsage";
 import { projectColor } from "./projects";
 import { useTerminals } from "./Terminal/TerminalProvider";
@@ -20,8 +21,8 @@ export type View =
   | { screen: "accounts"; account?: string }
   | { screen: "settings" }
   | { screen: "activity" }
-  /** `task`: open that task instead of the most recent open one. */
-  | { screen: "workspace"; project: string; task?: string }
+  /** `task`: open that task instead of the most recent open one; `null`: a new task. */
+  | { screen: "workspace"; project: string; task?: string | null }
   /** `tab`: the skills tab instead of the notes. */
   | { screen: "memory"; project: string; tab?: "notes" | "skills" }
   | { screen: "status"; project: string };
@@ -45,11 +46,23 @@ interface TopbarProps {
   onNavigate: (view: View) => void;
   onCloseProject: (path: string) => void;
   onMode: (mode: TaskMode) => void;
+  /** Opens the command palette (also Ctrl/⌘ K). */
+  onOpenPalette?: () => void;
 }
 
-export function Topbar({ overview, view, openProjects, mode, onNavigate, onCloseProject, onMode }: TopbarProps) {
+export function Topbar({
+  overview,
+  view,
+  openProjects,
+  mode,
+  onNavigate,
+  onCloseProject,
+  onMode,
+  onOpenPalette,
+}: TopbarProps) {
   const terminals = useTerminals();
   const t = useT();
+  const keys = paletteKeys();
   const color = defaultAccount(overview)?.color ?? DEFAULT_ACCOUNT_COLOR;
   const active = viewProject(view);
 
@@ -100,6 +113,19 @@ export function Topbar({ overview, view, openProjects, mode, onNavigate, onClose
       </nav>
 
       <span className="spacer" />
+      {onOpenPalette && (
+        <button
+          type="button"
+          className="palette-hint"
+          aria-label={t("palette.open", { keys })}
+          aria-keyshortcuts={keys === "⌘K" ? "Meta+K" : "Control+K"}
+          title={t("palette.open", { keys })}
+          onClick={onOpenPalette}
+        >
+          <span className="palette-hint__text">{t("palette.hint")}</span>
+          <kbd>{keys}</kbd>
+        </button>
+      )}
       {view.screen === "workspace" && (
         <Segmented<TaskMode>
           label={t("shell.mode")}

@@ -6,6 +6,7 @@ import type { HedyApi } from "./api/HedyApi";
 import type { TaskMode } from "./api/types";
 import { Shell, Sidebar, Topbar, viewProject, type View } from "./components/Layout";
 import { Mascot } from "./components/Mascot/Mascot";
+import { CommandPalette } from "./components/palette/CommandPalette";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import { TerminalProvider } from "./components/Terminal/TerminalProvider";
 import { Button } from "./components/ui/Button";
@@ -84,6 +85,7 @@ function Root() {
     return project ? [project] : [];
   });
   const [mode, setMode] = useState<TaskMode>("project");
+  const [palette, setPalette] = useState(false);
   const api = useApi();
 
   const navigate = useCallback((next: View) => {
@@ -156,6 +158,7 @@ function Root() {
               onNavigate={navigate}
               onCloseProject={closeProject}
               onMode={setMode}
+              onOpenPalette={() => setPalette(true)}
             />
           }
           sidebar={<Sidebar overview={data} view={current} onNavigate={navigate} />}
@@ -173,7 +176,7 @@ function Root() {
           )}
           {current.screen === "workspace" && (
             <Workspace
-              key={`${current.project}\n${current.task ?? ""}`}
+              key={`${current.project}\n${current.task === null ? "*new" : (current.task ?? "")}`}
               overview={data}
               project={current.project}
               initialTask={current.task}
@@ -202,6 +205,7 @@ function Root() {
             />
           )}
         </Shell>
+        <CommandPalette open={palette} onOpenChange={setPalette} overview={data} onNavigate={navigate} />
       </TerminalProvider>
     </ThemeProvider>
   );

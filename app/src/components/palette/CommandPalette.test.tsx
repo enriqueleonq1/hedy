@@ -1,0 +1,164 @@
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient } from "@tanstack/react-query";
+
+import { App } from "../../App";
+import { MockApi } from "../../api/MockApi";
+
+vi.mock("../Terminal/TerminalView", () => ({ TerminalView: () => null }));
+
+function setup(api = MockApi.withSampleData().withSampleActivity(), language?: "en") {
+  api.delayMs = 0;
+  if (language) void api.setSetting("ui.language", language);
+  render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+  return { api, user: userEvent.setup() };
+}
+
+const SLOW = { timeout: 8000 };
+
+/** The labels of the options on screen, in order. */
+function options(): string[] {
+  return screen.getAllByRole("option").map((o) => o.querySelector(".palette__label")?.textContent ?? "");
+}
+
+describe("Command palette", () => {
+  afterEach(() => {
+    history.replaceState(null, "", "#");
+    localStorage.clear();
+  });
+
+  it("opens with Ctrl K and goes to a project typed loosely", async () => {
+    const { user } = setup();
+    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await user.keyboard("{Control>}k{/Control}");
+    const field = screen.getByRole("combobox", { name: "Paleta de comandos" });
+    expect(field).toHaveFocus();
+    expect(screen.getByRole("dialog", { name: "Paleta de comandos" })).toBeInTheDocument();
+    await user.type(field, "hmng");
+    expect(options()[0]).toBe("homming");
+    expect(field).toHaveAttribute("aria-activedescendant", screen.getAllByRole("option")[0]!.id);
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("dialog", { name: "Paleta de comandos" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "homming" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("moves with the arrows, wraps around and lists the groups with no query", async () => {
+    const { user } = setup();
+    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await user.click(screen.getByRole("button", { name: "Buscar y ejecutar comandos (Ctrl K)" }));
+    const field = screen.getByRole("combobox");
+    const list = screen.getByRole("listbox", { name: "Comandos" });
+    // What needs you first (the inbox), then where to go.
+    expect(await within(list).findByRole("group", { name: "Te necesitan" }, SLOW)).toBeInTheDocument();
+    for (const name of ["Ir a", "Proyectos", "Cuentas", "Acciones"]) {
+      expect(within(list).getByRole("group", { name })).toBeInTheDocument();
+    }
+    const all = screen.getAllByRole("option");
+    expect(all[0]).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{ArrowDown}");
+    expect(all[1]).toHaveAttribute("aria-selected", "true");
+    expect(field).toHaveAttribute("aria-activedescendant", all[1]!.id);
+    await user.keyboard("{ArrowUp}{ArrowUp}");
+    expect(screen.getAllByRole("option").at(-1)).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("jumps to what waits for an answer", async () => {
+    const { user } = setup();
+    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await user.keyboard("{Control>}k{/Control}");
+    await user.type(screen.getByRole("combobox"), "responder migra");
+    await waitFor(() => expect(options()[0]).toBe("Responder: Migra el reporte de comisiones a la API nueva"));
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("heading", { name: "Migra el reporte de comisiones a la API nueva" })).toBeInTheDocument();
+  });
+
+  it("starts a new task in a project", async () => {
+    const { user } = setup();
+    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await user.keyboard("{Control>}k{/Control}");
+    await user.type(screen.getByRole("combobox"), "nueva tarea hedy");
+    expect(options()[0]).toBe("Nueva tarea en hedy");
+    await user.keyboard("{Enter}");
+    // hedy has open tasks, but this opens an empty chat.
+    expect(await screen.findByRole("heading", { name: "hedy", level: 1 })).toBeInTheDocument();
+  });
+
+  it("opens an account's card", async () => {
+    const { user } = setup();
+    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await user.keyboard("{Control>}k{/Control}");
+    await user.type(screen.getByRole("combobox"), "cuenta trabajo");
+    expect(options()[0]).toBe("Cuenta Claude trabajo");
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("article", { name: "Claude trabajo" })).toHaveClass("account-card--focus");
+    expect(window.location.hash).toBe("#a=claude-trabajo");
+  });
+
+  it("changes a project's account only when asked, and never a protected one", async () => {
+    const { api, user } = setup();
+    const assign = vi.spyOn(api, "useAccount");
+    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await user.keyboard("{Control>}k{/Control}");
+    await user.type(screen.getByRole("combobox"), "cambiar cuenta homming");
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    expect(screen.getByText("Nada coincide con «cambiar cuenta homming».")).toBeInTheDocument();
+
+    await user.clear(screen.getByRole("combobox"));
+    await user.type(screen.getByRole("combobox"), "cambiar cuenta hedy");
+    expect(options()[0]).toBe("Cambiar la cuenta de hedy…");
+    await user.keyboard("{Enter}");
+    const page = screen.getByRole("dialog", { name: "¿Con qué cuenta trabaja hedy?" });
+    expect(within(page).getByText(/^Ahora: Claude personal\. Hedy nunca cambia de cuenta solo/)).toBeInTheDocument();
+    // The protected project's account is not offered; the current one neither.
+    expect(options()).toEqual(["ChatGPT", "Kimi"]);
+    expect(assign).not.toHaveBeenCalled();
+    await user.keyboard("{Enter}");
+    expect(assign).toHaveBeenCalledWith("/code/hedy", "chatgpt");
+    expect(await screen.findByText("hedy ahora trabaja con ChatGPT")).toBeInTheDocument();
+  });
+
+  it("goes back from a page with Escape, then closes and gives the focus back", async () => {
+    const { user } = setup();
+    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    const hint = screen.getByRole("button", { name: "Buscar y ejecutar comandos (Ctrl K)" });
+    await user.click(hint);
+    await user.type(screen.getByRole("combobox"), "cambiar cuenta hedy");
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("dialog", { name: "¿Con qué cuenta trabaja hedy?" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog", { name: "Paleta de comandos" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(hint).toHaveFocus();
+  });
+
+  it("puts recent commands first", async () => {
+    const { user } = setup();
+    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await user.keyboard("{Control>}k{/Control}");
+    await user.type(screen.getByRole("combobox"), "ajustes");
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("heading", { name: "Ajustes" })).toBeInTheDocument();
+    await user.keyboard("{Control>}k{/Control}");
+    const recent = screen.getByRole("group", { name: "Recientes" });
+    expect(within(recent).getAllByRole("option").map((o) => o.textContent)).toEqual(["Ajustes"]);
+    expect(screen.getAllByRole("option")[0]).toHaveTextContent("Ajustes");
+  });
+
+  it("speaks English", async () => {
+    const { user } = setup(undefined, "en");
+    await screen.findByRole("heading", { name: /Hi, Enrique!/ });
+    await user.click(screen.getByRole("button", { name: "Search and run commands (Ctrl K)" }));
+    expect(screen.getByRole("combobox", { name: "Command palette" })).toHaveAttribute(
+      "placeholder",
+      "Search a project, a task or an action",
+    );
+    expect(await screen.findByRole("group", { name: "Needs you" }, SLOW)).toBeInTheDocument();
+    await user.type(screen.getByRole("combobox"), "new task hedy");
+    expect(options()[0]).toBe("New task in hedy");
+    await user.clear(screen.getByRole("combobox"));
+    await user.type(screen.getByRole("combobox"), "change hedy");
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("dialog", { name: "Which account does hedy work with?" })).toBeInTheDocument();
+  });
+});

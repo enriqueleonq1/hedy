@@ -29,8 +29,8 @@ export function Workspace({
   overview: Overview;
   project: string;
   mode: TaskMode;
-  /** Open this task (from the task board or a notification). */
-  initialTask?: string;
+  /** Open this task (from the task board or a notification); `null`: a new one. */
+  initialTask?: string | null;
   onOpenMemory?: () => void;
   onOpenStatus?: () => void;
 }) {
