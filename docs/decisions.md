@@ -886,3 +886,70 @@ claude -p /usage --output-format json --no-session-persistence --safe-mode
 - **Open:** Kimi (API, Kimi Code subscription, or both) and Gemini (API key, Code Assist,
   or Antigravity for a personal plan). Both arrive in phase 4.
 - **Pending:** end-to-end test with a real login (see `prototypes/phase0/README.md`).
+
+## 22. Accepting after a review, undo, and waiting for a limit (Nov 14, 2026)
+
+### Review before accepting
+
+- "Aceptar cambios" opens a sheet first (`Hedy::accept_preview`, nothing changes): target
+  branch and task branch, files and +/− lines, the branch the main folder is on (warned
+  when it is not the target), the task's latest `TestsRun` (passed, failed or none; a
+  failure or no tests is a warning, never a block) and an editable commit message. The
+  proposal is the task's title plus the first paragraph of the agent's last summary
+  (≤ 300 chars, `domain::task::default_commit_message`); empty falls back to it. Before,
+  the message was the title alone.
+- In the diff, `j` / `k` move between files (not while typing in a field) and each file
+  can be marked "Revisado" ("3 de 7 revisados"). The marks are per task and per file
+  version (path + counts), in the webview's `localStorage`: a convenience, never sent
+  anywhere.
+
+### Undo (strategy and limits)
+
+- Accepting stores a `MergeRecord` in the task: base branch commit before and after the
+  merge (a merge commit or a fast-forward) and the task branch's tip.
+- "Deshacer" (a 12 s toast after accepting, and "Deshacer la integración" on the accepted
+  task) only acts when all of this holds; otherwise it refuses and says why
+  (`UndoBlocked`), suggesting `git revert`:
+  1. the main folder is on the base branch;
+  2. the base branch is still at the merge (`HEAD == after`): no commits after it;
+  3. no remote-tracking branch contains the merge (`git branch -r --contains`): never
+     rewrites pushed history;
+  4. `git reset --keep <before>` succeeds: git itself refuses when a file the merge
+     changed has local changes, and leaves other local changes and untracked files alone.
+- The task's branch and worktree are re-created at the tip **before** the reset (and
+  removed again if the reset is refused), so the work is never lost; the task goes back
+  to "Lista para revisar" and can be accepted again.
+- Why not `git revert -m 1`: it works after other commits, but it adds commits, and a
+  reverted merge cannot simply be merged again later (git sees the commits as already
+  merged), so "back to review" would not work. Reset-only-when-nothing-else-happened is
+  the safest option that keeps undo exact; anything else stays the user's call.
+- Tasks accepted before this change have no record and cannot be undone from Hedy.
+
+### Waiting for a limit
+
+- "Esperar" stores a `LimitWait` in the task (account, reset time, since, `ready`). Tasks
+  are stored as JSON, so this is a task field with `#[serde(default)]`: **no SQLite
+  migration**; `waiting_tasks()` filters on `json_extract(data, '$.wait')`. The reset time
+  is the latest reached-limit report of that account in the task (`resetsAt`), else the
+  latest renewal among the plan-usage windows at 100 % (§20), else the last
+  `rate_limit_event`; only future times count. Unknown → no countdown and the user
+  presses "Continuar".
+- While the app runs, a thread calls `Hedy::resume_due_waits` every 15 s. A due task
+  resumes **on the same account** (rule 3): if its account or current phase's account is
+  no longer the one waited for (a handoff), nothing is sent. It sends the held queue
+  (§19), or "Tu límite se renovó. Continúa con la tarea donde la dejaste.", as the next
+  turn of the same session (resumed with its session id if the process is gone; queued
+  if a turn is still running), clears the session's limit memory so a new limit warns
+  again, and notifies ("Claude sigue con la tarea · proyecto"). If it cannot start, the
+  queue goes back on hold, the error is in the history and the wait becomes `ready`.
+- If the reset passed while Hedy was closed, start-up only marks the wait `ready`
+  (`mark_overdue_waits`) and notifies "Ya puedes continuar": nothing is sent without the
+  user there (tokens are spent only when someone can watch). The card then shows
+  "Continuar".
+- Writing to the agent, a handoff, accepting or "Cancelar espera" end the wait. The other
+  options on the card (hand over to another provider or an API key) stay as they were.
+- The limit card counts down every second (outside the timeline's live region, so
+  screen readers are not flooded); the Activity board row says "sigue en 47 min" or
+  "ya puede continuar".
+- **Not verified live**: a real reset with a real account (tested with the agent double,
+  the fake clock and `MockApi`).
