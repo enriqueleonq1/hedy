@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { errorMessage, useAction } from "../../api/context";
@@ -6,58 +6,123 @@ import type { Overview, PromptTemplate, Task, TaskMode } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { shortPath } from "../../components/projects";
 import { Button } from "../../components/ui/Button";
+import { Segmented } from "../../components/ui/controls";
 import { isBusy, tasksKey, useQueue, useSetQueue, useTaskEvents, useTasks, useTemplates } from "../../tasks/hooks";
-import { agentName, buildTimeline, isOpen, MODE_LABEL, STATUS_LABEL } from "../../tasks/timeline";
+import {
+  agentName,
+  buildTimeline,
+  isOpen,
+  latestMilestone,
+  MODE_LABEL,
+  pendingCard,
+  STATUS_LABEL,
+  type Milestone,
+  type PendingCard,
+  type TimelineItem,
+} from "../../tasks/timeline";
 import { useMascot } from "../../tasks/useMascot";
 import { MODEL_SUGGESTIONS } from "../../components/models";
-import { useT } from "../../i18n";
+import { useT, type MessageKey } from "../../i18n";
+import { keyLabels } from "../../platform";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { fillTemplate, filterTemplates, slashQuery } from "../../templates/placeholders";
 import { TemplateDialog } from "../templates/TemplateDialog";
 import { ChangesPanel } from "./ChangesPanel";
 import { QueuedMessages } from "./QueuedMessages";
+import { jumpDigit, TaskSwitcher } from "./TaskSwitcher";
 import { Timeline } from "./Timeline";
+
+/** A card waits for the user's answer (which one, when the events say). */
+type CardWaiting = PendingCard | "other" | null;
+
+const MILESTONE: Record<Milestone, MessageKey> = {
+  plan: "workspace.announce.plan",
+  permission: "workspace.announce.permission",
+  finished: "workspace.announce.finished",
+  failed: "workspace.announce.failed",
+  limit: "workspace.announce.limit",
+};
+
+type Said = { index: number; milestone: Milestone };
+
+/**
+ * What a screen reader hears about the open task: each new milestone once
+ * (a card to answer, the end, a limit), never the stream of activity, and
+ * nothing for what was already there when the task opened.
+ */
+function useMilestone(taskId: string | null, items: TimelineItem[], ready: boolean): Said | null {
+  const [seen, setSeen] = useState<{ task: string | null; baseline: number; said: Said | null }>({
+    task: null,
+    baseline: -1,
+    said: null,
+  });
+  const latest = ready ? latestMilestone(items) : null;
+  if (ready && taskId && seen.task !== taskId) {
+    setSeen({ task: taskId, baseline: latest?.index ?? -1, said: null });
+  } else if (ready && latest && seen.task === taskId && latest.index > Math.max(seen.baseline, seen.said?.index ?? -1)) {
+    setSeen({ ...seen, said: latest });
+  }
+  return seen.task === taskId ? seen.said : null;
+}
 
 export function Workspace({
   overview,
   project,
-  mode,
-  initialTask,
+  task: chosen,
+  onSelectTask,
   onOpenMemory,
   onOpenStatus,
 }: {
   overview: Overview;
   project: string;
-  mode: TaskMode;
-  /** Open this task (from the task board or a notification). */
-  initialTask?: string;
+  /** The task to show: an id, `null` for a new one, or (unset) the most recent open one. */
+  task?: string | null;
+  /** Shows another task (`null`: a new one); `replace` keeps the step out of Back. */
+  onSelectTask: (task: string | null, options?: { replace?: boolean }) => void;
   onOpenMemory?: () => void;
   onOpenStatus?: () => void;
 }) {
   const t = useT();
   const tasks = useTasks(project);
-  const [chosen, setChosen] = useState<string | null | undefined>(initialTask);
   const info = overview.projects.find((p) => p.path === project);
   const account = overview.accounts.find((a) => a.id === info?.account);
 
   // By default, the most recent task that is still open.
-  const list = tasks.data ?? [];
+  const list = useMemo(() => tasks.data ?? [], [tasks.data]);
   const task =
     chosen === null ? null : (list.find((t) => t.id === chosen) ?? (chosen === undefined ? list.find(isOpen) : undefined) ?? null);
 
   const events = useTaskEvents(task?.id ?? null);
-  const history = events.data ?? [];
+  const history = useMemo(() => events.data ?? [], [events.data]);
+  const items = useMemo(() => buildTimeline(history, t), [history, t]);
   const queue = useQueue(task?.id ?? null).data ?? [];
   const agent = agentName(history);
   const mascot = useMascot(task, history);
   const name = info?.name ?? shortPath(project);
+  const milestone = useMilestone(task?.id ?? null, items, events.isSuccess);
+  // A message written now waits for the card's answer (and the end of the turn).
+  const card: CardWaiting = isBusy(task) && task?.status === "waitingApproval" ? (pendingCard(history) ?? "other") : null;
+
+  // Ctrl/Cmd + 1-9 jump to the project's tasks, from anywhere in the workspace.
+  const taskId = task?.id;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const digit = jumpDigit(e);
+      const target = digit ? list[digit - 1] : undefined;
+      if (!target) return;
+      e.preventDefault();
+      if (target.id !== taskId) onSelectTask(target.id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [list, taskId, onSelectTask]);
 
   return (
     <div className="workspace">
       <section className="chat" aria-label={t("workspace.chat")}>
         <header className="chat__head">
           <div className="chat__title">
-            <h1>{task ? task.title : name}</h1>
+            <h1 title={task ? task.title : undefined}>{task ? task.title : name}</h1>
             <p className="muted">
               {name}
               {task?.workspace && <> · {t("common.branch", { branch: task.workspace.branch })}</>}
@@ -66,21 +131,7 @@ export function Workspace({
           </div>
           <div className="chat__tools">
             {list.length > 0 && (
-              <select
-                className="pill-select"
-                aria-label={t("workspace.task")}
-                value={task?.id ?? ""}
-                onChange={(e) => setChosen(e.target.value || null)}
-              >
-                <option value="">{t("workspace.newTask")}</option>
-                {list.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.id === task?.id
-                      ? t("workspace.tasks", { n: list.length })
-                      : `${item.title} · ${t(STATUS_LABEL[item.status])}`}
-                  </option>
-                ))}
-              </select>
+              <TaskSwitcher tasks={list} current={task?.id ?? null} accounts={overview.accounts} onSelect={onSelectTask} />
             )}
             {task?.live && <StopButton task={task} />}
             {onOpenStatus && (
@@ -104,7 +155,7 @@ export function Workspace({
         {task ? (
           <Timeline
             task={task}
-            items={buildTimeline(history, t)}
+            items={items}
             agent={agent}
             account={account}
             accounts={overview.accounts}
@@ -125,16 +176,21 @@ export function Workspace({
           </div>
         )}
 
+        {/* The only live region of the chat: milestones, not the stream. */}
+        <p className="sr-only chat__announce" role="status">
+          {milestone && <span key={milestone.index}>{t(MILESTONE[milestone.milestone])}</span>}
+        </p>
+
         <Composer
           key={task?.id ?? "new"}
           project={project}
           name={name}
           task={task}
-          mode={mode}
+          card={card}
           models={account ? MODEL_SUGGESTIONS[account.provider] : []}
           agent={agent}
           disabled={!account}
-          onStarted={(t) => setChosen(t.id)}
+          onStarted={(created) => onSelectTask(created.id, { replace: true })}
         />
       </section>
       <ChangesPanel project={project} task={task} />
@@ -152,11 +208,41 @@ function StopButton({ task }: { task: Task }) {
   );
 }
 
+const MODES = Object.keys(MODE_LABEL) as TaskMode[];
+
+const CARD_LABEL: Record<NonNullable<CardWaiting>, MessageKey> = {
+  plan: "workspace.composer.cardPlan",
+  permission: "workspace.composer.cardPermission",
+  other: "workspace.composer.cardOther",
+};
+
+/** The mode the composer starts new tasks in, remembered per project (a convenience: storage may fail). */
+function useProjectMode(project: string): [TaskMode, (mode: TaskMode) => void] {
+  const key = `hedy.mode.${project}`;
+  const [mode, setMode] = useState<TaskMode>(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      return MODES.find((m) => m === saved) ?? "project";
+    } catch {
+      return "project";
+    }
+  });
+  const choose = (next: TaskMode) => {
+    setMode(next);
+    try {
+      localStorage.setItem(key, next);
+    } catch {
+      // Remembering the mode is only a convenience.
+    }
+  };
+  return [mode, choose];
+}
+
 function Composer({
   project,
   name,
   task,
-  mode,
+  card,
   models,
   agent,
   disabled,
@@ -165,7 +251,8 @@ function Composer({
   project: string;
   name: string;
   task: Task | null;
-  mode: TaskMode;
+  /** A plan or permission card waits: what is written now goes after its answer. */
+  card: CardWaiting;
   models: string[];
   /** Who works on the task now, for the queue's label. */
   agent: string;
@@ -187,6 +274,10 @@ function Composer({
   const followUp = isOpen(task);
   // While the agent works, a follow-up waits in the queue for the end of its turn.
   const queueing = followUp && isBusy(task);
+  const [newMode, setNewMode] = useProjectMode(project);
+  // A follow-up stays in its task's mode; the selector is only for new tasks.
+  const mode = followUp && task ? task.mode : newMode;
+  const keys = keyLabels();
   const templates = useTemplates(project);
 
   const query = slashQuery(text);
@@ -301,11 +392,13 @@ function Composer({
         />
       )}
       <label className="composer__label" htmlFor="composer-input">
-        {queueing
-          ? t("queue.composerBusy", { agent })
-          : followUp
-            ? t("workspace.composer.followUp")
-            : t("workspace.composer.ask", { name })}
+        {followUp && card
+          ? t(CARD_LABEL[card])
+          : queueing
+            ? t("queue.composerBusy", { agent })
+            : followUp
+              ? t("workspace.composer.followUp")
+              : t("workspace.composer.ask", { name })}
       </label>
       <textarea
         ref={input}
@@ -350,6 +443,12 @@ function Composer({
       <div className="composer__bar">
         {!followUp && (
           <>
+            <Segmented<TaskMode>
+              label={t("workspace.composer.mode")}
+              value={mode}
+              options={MODES.map((value) => ({ value, label: t(MODE_LABEL[value]) }))}
+              onChange={setNewMode}
+            />
             <select className="pill-select" aria-label={t("common.models")} value={model} onChange={(e) => setModel(e.target.value)}>
               <option value="">{t("workspace.composer.autoModels")}</option>
               {models.map((m) => (
@@ -370,9 +469,16 @@ function Composer({
           {t("templates.saveCurrent")}
         </Button>
         <span className="spacer" />
-        <span className="muted small">Ctrl + Enter</span>
-        <Button type="submit" variant="primary" disabled={!text.trim() || busy || disabled}>
-          {queueing ? t("queue.add") : t("workspace.composer.send")}
+        <kbd className="kbd composer__hint" aria-hidden>
+          {keys.submit}
+        </kbd>
+        <Button
+          type="submit"
+          variant="primary"
+          aria-keyshortcuts="Control+Enter Meta+Enter"
+          disabled={!text.trim() || busy || disabled}
+        >
+          {followUp && card ? t("workspace.composer.sendAfterCard") : queueing ? t("queue.add") : t("workspace.composer.send")}
         </Button>
       </div>
       {saving && (

@@ -1,10 +1,9 @@
 import type { ReactNode } from "react";
 
-import type { Account, Overview, TaskMode } from "../api/types";
+import type { Account, Overview } from "../api/types";
 import { formatTokens, formatUsd } from "../format";
 import { useLanguage, useT, type Language } from "../i18n";
 import { useNeedsYouCount } from "../tasks/hooks";
-import { MODE_LABEL } from "../tasks/timeline";
 import { DEFAULT_ACCOUNT_COLOR, TIP_MASCOT_COLOR } from "../theme/tokens";
 import { shortAccountLabel } from "./accounts";
 import { Mascot } from "./Mascot/Mascot";
@@ -13,7 +12,6 @@ import { projectColor } from "./projects";
 import { PROVIDER_NAMES } from "./providers";
 import { useTerminals } from "./Terminal/TerminalProvider";
 import { Button } from "./ui/Button";
-import { Segmented } from "./ui/controls";
 
 export type View =
   | { screen: "welcome" }
@@ -21,8 +19,8 @@ export type View =
   | { screen: "accounts"; account?: string }
   | { screen: "settings" }
   | { screen: "activity" }
-  /** `task`: open that task instead of the most recent open one. */
-  | { screen: "workspace"; project: string; task?: string }
+  /** `task`: open that task instead of the most recent open one; `null`: a new task. */
+  | { screen: "workspace"; project: string; task?: string | null }
   /** `tab`: the skills tab instead of the notes. */
   | { screen: "memory"; project: string; tab?: "notes" | "skills" }
   | { screen: "status"; project: string };
@@ -73,19 +71,15 @@ function providerSummary(overview: Overview): { label: string; account: Account 
   return [...seen].map(([label, account]) => ({ label, account }));
 }
 
-const MODES = Object.keys(MODE_LABEL) as TaskMode[];
-
 interface TopbarProps {
   overview: Overview;
   view: View;
   openProjects: string[];
-  mode: TaskMode;
   onNavigate: (view: View) => void;
   onCloseProject: (path: string) => void;
-  onMode: (mode: TaskMode) => void;
 }
 
-export function Topbar({ overview, view, openProjects, mode, onNavigate, onCloseProject, onMode }: TopbarProps) {
+export function Topbar({ overview, view, openProjects, onNavigate, onCloseProject }: TopbarProps) {
   const terminals = useTerminals();
   const t = useT();
   const language = useLanguage();
@@ -139,14 +133,6 @@ export function Topbar({ overview, view, openProjects, mode, onNavigate, onClose
       </nav>
 
       <span className="spacer" />
-      {view.screen === "workspace" && (
-        <Segmented<TaskMode>
-          label={t("shell.mode")}
-          value={mode}
-          options={MODES.map((value) => ({ value, label: t(MODE_LABEL[value]) }))}
-          onChange={onMode}
-        />
-      )}
       {overview.accounts.length > 0 && (
         <div className="usage-pill" role="group" aria-label={t("shell.weekUsageByProvider")}>
           {providerSummary(overview).map(({ label, account }) => {

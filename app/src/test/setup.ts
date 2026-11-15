@@ -6,6 +6,12 @@ afterEach(() => {
   cleanup();
   // The app keeps the current screen in the URL hash.
   window.history.replaceState(null, "", "/");
+  // Conveniences remembered per viewer (like each project's composer mode) start fresh.
+  try {
+    localStorage.clear();
+  } catch {
+    // No storage: nothing to clear.
+  }
 });
 
 // `findBy…` waits 1 s by default; whole-app tests need longer on a busy machine.

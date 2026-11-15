@@ -1521,6 +1521,11 @@ export class MockApi implements HedyApi {
     this.push(id, { kind: "limitWarning", account: this.tasksById.get(id)?.account ?? "", level, percent: 92, resetsAt: null });
   }
 
+  /** Test helper: the agent of a task reports any event (a new card, the end...). */
+  simulateEvent(id: string, event: AgentEvent): void {
+    this.push(id, event);
+  }
+
   async handoffOptions(id: string): Promise<string[]> {
     const task = this.tasksById.get(id);
     const current = this.state.accounts.find((a) => a.id === task?.account);

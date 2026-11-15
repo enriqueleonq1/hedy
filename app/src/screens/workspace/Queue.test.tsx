@@ -55,8 +55,8 @@ describe("Message queue", () => {
     const { user } = setup();
     const card = await taskAtPermission(user);
 
-    await user.type(screen.getByLabelText(/^Escribe mientras Claude Opus trabaja/), "Luego actualiza el README");
-    await user.click(screen.getByRole("button", { name: "Poner en cola" }));
+    await user.type(screen.getByLabelText(/^Primero responde al permiso de arriba/), "Luego actualiza el README");
+    await user.click(screen.getByRole("button", { name: "Enviar después" }));
     const queue = await screen.findByRole("region", { name: "Mensajes en cola" });
     expect(within(queue).getByText("Primero responde la tarjeta de arriba; después se envía la cola.")).toBeInTheDocument();
 
@@ -68,8 +68,8 @@ describe("Message queue", () => {
   it("keeps the queue on hold after a limit until the user sends it", async () => {
     const { api, user } = setup();
     await taskAtPermission(user);
-    await user.type(screen.getByLabelText(/^Escribe mientras Claude Opus trabaja/), "Sigue con los correos");
-    await user.click(screen.getByRole("button", { name: "Poner en cola" }));
+    await user.type(screen.getByLabelText(/^Primero responde al permiso de arriba/), "Sigue con los correos");
+    await user.click(screen.getByRole("button", { name: "Enviar después" }));
 
     const task = (await api.tasks("/code/hedy"))[0]!;
     api.simulateLimit(task.id, "reached");

@@ -34,9 +34,9 @@ const PHASE_LABEL: Record<Phase, MessageKey> = {
   review: "activity.phase.review",
 };
 
-type Tone = "needs" | "working" | "done" | "failed" | "closed";
+export type Tone = "needs" | "working" | "done" | "failed" | "closed";
 
-const TONE: Record<BoardState, Tone> = {
+export const TONE: Record<BoardState, Tone> = {
   plan: "needs",
   permission: "needs",
   limited: "needs",
@@ -48,7 +48,7 @@ const TONE: Record<BoardState, Tone> = {
   cancelled: "closed",
 };
 
-const MARK: Record<BoardState, string> = {
+export const MARK: Record<BoardState, string> = {
   plan: "◆",
   permission: "◆",
   limited: "■",

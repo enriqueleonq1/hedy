@@ -8,8 +8,8 @@ import { TerminalView } from "../../components/Terminal/TerminalView";
 import { Button, ConfirmButton } from "../../components/ui/Button";
 import { useToast } from "../../components/ui/Toast";
 import { useT, type MessageKey } from "../../i18n";
-import { useTaskDiff } from "../../tasks/hooks";
-import { isOpen } from "../../tasks/timeline";
+import { useTaskDiff, useTaskEvents } from "../../tasks/hooks";
+import { isOpen, pendingCard } from "../../tasks/timeline";
 import { DiffView } from "./DiffView";
 
 type Tab = "changes" | "terminal" | "preview";
@@ -114,6 +114,18 @@ function Preview({ project }: { project: string }) {
   );
 }
 
+/** No worktree: a question or research never gets one; a project task gets it once the agent starts. */
+function NoWorktree({ task }: { task: Task }) {
+  const t = useT();
+  const events = useTaskEvents(task.mode === "project" ? task.id : null);
+  if (task.mode !== "project") return <p className="empty">{t("workspace.changes.noWorkspace")}</p>;
+  if (!isOpen(task) || task.status === "review" || task.status === "failed") {
+    return <p className="empty">{t("workspace.changes.noneMade")}</p>;
+  }
+  const planWaits = pendingCard(events.data ?? []) === "plan";
+  return <p className="empty">{planWaits ? t("workspace.changes.afterPlan") : t("workspace.changes.notYet")}</p>;
+}
+
 function Changes({ project, task }: { project: string; task: Task | null }) {
   const api = useApi();
   const toast = useToast();
@@ -137,7 +149,7 @@ function Changes({ project, task }: { project: string; task: Task | null }) {
   const discard = useAction((a, id: string) => a.discardTask(id), { invalidate: changed });
 
   if (!task) return <p className="empty">{t("workspace.changes.noTask")}</p>;
-  if (!task.workspace) return <p className="empty">{t("workspace.changes.noWorkspace")}</p>;
+  if (!task.workspace) return <NoWorktree task={task} />;
   if (!isOpen(task)) {
     return (
       <p className="empty">
