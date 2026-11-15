@@ -5,6 +5,7 @@ import type { PromptTemplate } from "../../api/types";
 import { Button } from "../../components/ui/Button";
 import { Segmented } from "../../components/ui/controls";
 import { Dialog } from "../../components/ui/Dialog";
+import { Select } from "../../components/ui/Select";
 import { TEMPLATES_KEY } from "../../tasks/hooks";
 import { placeholders } from "../../templates/placeholders";
 import { useT } from "../../i18n";
@@ -94,14 +95,16 @@ export function TemplateDialog({
       {!template && projects.length > 1 && (
         <div className="field">
           <label htmlFor={whereId}>{t("templates.where")}</label>
-          <select id={whereId} value={project} onChange={(e) => setProject(e.target.value)}>
-            <option value={GLOBAL}>{t("templates.global")}</option>
-            {projects.map((p) => (
-              <option key={p.path} value={p.path}>
-                {t("templates.ofProject", { project: p.name })}
-              </option>
-            ))}
-          </select>
+          <Select
+            id={whereId}
+            title={t("templates.where")}
+            value={project}
+            onChange={setProject}
+            options={[
+              { value: GLOBAL, label: t("templates.global") },
+              ...projects.map((p) => ({ value: p.path, label: t("templates.ofProject", { project: p.name }) })),
+            ]}
+          />
         </div>
       )}
     </Dialog>
