@@ -28,12 +28,57 @@ describe("Welcome", () => {
   it("shows each plan as rings, what needs a look and the latest tasks", async () => {
     renderApp(MockApi.withSampleData().withSampleActivity());
     const plans = (await screen.findByRole("heading", { name: "Tus planes" })).closest("section")!;
-    expect(within(plans).getByRole("button", { name: /^Claude trabajo: Sesión actual \(5 h\) 34%, Esta semana 29%$/ })).toBeInTheDocument();
+    const work = within(plans).getByRole("button", { name: "Claude trabajo: Sesión 5 h · 34%, Semana · 29%" });
+    // Every card's headline says which window it is.
+    expect(work.querySelector(".plan-usage__value")).toHaveTextContent("Sesión 5 h · 34%");
+    const personal = within(plans).getByRole("button", { name: /^Claude personal: / });
+    expect(personal.querySelector(".plan-usage__value")).toHaveTextContent("Semana · 83%");
     expect(within(plans).getByRole("button", { name: /^ChatGPT: / })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /tareas esperan tu respuesta/ })).toBeInTheDocument();
+    // The proposals of the Activity inbox count here too.
+    expect(await screen.findByRole("button", { name: "5 notas o habilidades propuestas por aprobar" })).toBeInTheDocument();
     const recent = (await screen.findByRole("heading", { name: "Últimas tareas" })).closest("section")!;
     expect(within(recent).getAllByRole("button").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /^Seguir en / })).toBeInTheDocument();
+  });
+
+  it("shows each project's live state and keeps its secondary actions in a menu", async () => {
+    const { user } = renderApp(MockApi.withSampleData().withSampleActivity());
+    const hedy = (await screen.findByRole("article", { name: "hedy" }));
+    const homming = screen.getByRole("article", { name: "homming" });
+    expect(await within(hedy).findByText("2 tareas te esperan")).toHaveClass("project-card__live--needs");
+    expect(within(homming).getByText("1 tarea te espera · trabajando")).toBeInTheDocument();
+    // One primary action; the rest behind "⋯".
+    expect(within(hedy).getByRole("button", { name: "Trabajar aquí" })).toBeInTheDocument();
+    expect(within(hedy).queryByRole("button", { name: "Abrir en VS Code" })).not.toBeInTheDocument();
+
+    const more = within(hedy).getByRole("button", { name: "Más acciones para hedy" });
+    expect(more).toHaveAttribute("aria-haspopup", "menu");
+    await user.click(more);
+    const menu = within(hedy).getByRole("menu", { name: "Más acciones para hedy" });
+    expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
+      "Claude Code en terminal",
+      "Terminal",
+      "Abrir en VS Code",
+      "Estado",
+      "Memoria",
+    ]);
+    expect(within(menu).getByRole("menuitem", { name: "Claude Code en terminal" })).toHaveFocus();
+    await user.keyboard("{ArrowUp}");
+    expect(within(menu).getByRole("menuitem", { name: "Memoria" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(within(hedy).queryByRole("menu")).not.toBeInTheDocument();
+    expect(more).toHaveFocus();
+
+    await user.click(more);
+    await user.click(within(hedy).getByRole("menuitem", { name: "Memoria" }));
+    expect(await screen.findByRole("heading", { name: "Memoria de hedy" })).toBeInTheDocument();
+  });
+
+  it("says when a project had no recent activity", async () => {
+    renderApp();
+    const hedy = await screen.findByRole("article", { name: "hedy" });
+    expect(await within(hedy).findByText("Sin actividad en las últimas 24 h")).toBeInTheDocument();
   });
 
   it("invites to add an account when there are none", async () => {
@@ -86,9 +131,13 @@ describe("Accounts", () => {
 
     // The sidebar and the header use the window closest to its limit.
     const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
-    expect(within(sidebar).getByRole("meter", { name: "Claude personal: 83%" })).toBeInTheDocument();
-    expect(within(sidebar).getByText("83%")).toHaveClass("level--warning");
-    expect(within(sidebar).getByRole("meter", { name: "Claude trabajo: 34%" })).toBeInTheDocument();
+    // The sidebar shows a name and a thin bar; the window and figure are in its name.
+    const personalRow = within(sidebar).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" });
+    expect(personalRow.querySelector<HTMLElement>(".bar__fill")?.style.background).toBe("var(--warning)");
+    expect(within(sidebar).getByRole("button", { name: "Claude trabajo: Sesión 5 h · 34%. Abrir la cuenta" })).toBeInTheDocument();
+    // The top bar names the account closest to its limit, the same way.
+    const indicator = screen.getByRole("button", { name: /^Uso de los planes: Claude personal: Semana · 83%/ });
+    expect(within(indicator).getByText("Semana · 83%")).toHaveClass("level--warning");
   });
 
   it("asks for fresh readings while the sidebar is on screen and says which providers do not report", async () => {

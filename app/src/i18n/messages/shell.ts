@@ -6,6 +6,9 @@ const es = {
   "shell.openProjects": "Proyectos abiertos",
   "shell.openAnother": "Abrir otro proyecto",
   "shell.weekUsageByProvider": "Consumo de la semana por proveedor",
+  "shell.usage.trigger": "Uso de los planes: {summary}. Ver todas las cuentas",
+  "shell.usage.title": "Uso de los planes",
+  "shell.usage.all": "Ver cuentas y modelos",
   "shell.openAccount": "{name}: {usage}. Abrir la cuenta",
   "shell.noProjects": "Sin proyectos todavía.",
   "shell.tip.noAccounts": "Agrega una cuenta y te ayudo a repartir el trabajo.",
@@ -18,6 +21,8 @@ const es = {
   "shell.exitCode": "código {code}",
   "shell.dismiss": "Cerrar aviso",
   "shell.customColor": "{label}: color personalizado",
+  "shell.sidebar.collapse": "Contraer la barra lateral",
+  "shell.sidebar.expand": "Expandir la barra lateral",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -25,6 +30,9 @@ const en: Record<keyof typeof es, string> = {
   "shell.openProjects": "Open projects",
   "shell.openAnother": "Open another project",
   "shell.weekUsageByProvider": "This week's usage by provider",
+  "shell.usage.trigger": "Plan usage: {summary}. See every account",
+  "shell.usage.title": "Plan usage",
+  "shell.usage.all": "See accounts and models",
   "shell.openAccount": "{name}: {usage}. Open the account",
   "shell.noProjects": "No projects yet.",
   "shell.tip.noAccounts": "Add an account and I'll help you split up the work.",
@@ -37,6 +45,8 @@ const en: Record<keyof typeof es, string> = {
   "shell.exitCode": "code {code}",
   "shell.dismiss": "Dismiss",
   "shell.customColor": "{label}: custom color",
+  "shell.sidebar.collapse": "Collapse the sidebar",
+  "shell.sidebar.expand": "Expand the sidebar",
 };
 
 export default { es, en };

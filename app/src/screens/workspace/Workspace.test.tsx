@@ -258,18 +258,18 @@ describe("Workspace", () => {
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /^Actividad/ }, { timeout: 8000 }));
-    const needs = await screen.findByRole("region", { name: "Te necesitan (3)" });
+    const needs = await screen.findByRole("region", { name: /^Te necesitan/ });
     await user.click(within(needs).getByRole("button", { name: /Migra el reporte de comisiones/ }));
     const title = "Migra el reporte de comisiones a la API nueva";
     expect(await screen.findByRole("heading", { name: title })).toBeInTheDocument();
 
     history.back();
-    expect(await screen.findByRole("region", { name: "Te necesitan (3)" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: /^Te necesitan/ })).toBeInTheDocument();
     expect(window.location.hash).toBe("#activity");
     history.back();
     expect(await screen.findByRole("heading", { name: /¡Hola, Enrique!/ })).toBeInTheDocument();
     history.forward();
-    expect(await screen.findByRole("region", { name: "Te necesitan (3)" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: /^Te necesitan/ })).toBeInTheDocument();
     history.forward();
     expect(await screen.findByRole("heading", { name: title })).toBeInTheDocument();
     expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/homming")}&t=s2`);

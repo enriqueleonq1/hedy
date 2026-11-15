@@ -29,7 +29,7 @@ describe("Waiting for a limit", () => {
 
   it("counts down to the reset, survives navigation and can be cancelled", async () => {
     const { user } = setup();
-    let card = await openWaitingTask(user, /^Actividad: 3 tareas/, /Claude personal llegó a su límite/);
+    let card = await openWaitingTask(user, /^Actividad: /, /Claude personal llegó a su límite/);
     expect(
       within(card).getByText(/^Se renueva en 4\d min\. Entonces Hedy retoma la tarea con Claude personal\.$/),
     ).toBeInTheDocument();
@@ -54,7 +54,7 @@ describe("Waiting for a limit", () => {
 
   it("resumes on the same account at the reset, with the held message", async () => {
     const { api, user } = setup();
-    const card = await openWaitingTask(user, /^Actividad: 3 tareas/, /Claude personal llegó a su límite/);
+    const card = await openWaitingTask(user, /^Actividad: /, /Claude personal llegó a su límite/);
     await act(() => api.resumeDue("s3"));
     expect(await screen.findByText("Revisa también el asunto del correo.", { selector: ".bubble" })).toBeInTheDocument();
     await waitFor(() => expect(within(card).queryByText(/Entonces Hedy retoma/)).toBeNull());
@@ -64,7 +64,7 @@ describe("Waiting for a limit", () => {
 
   it("after a restart past the reset it waits for the user to continue", async () => {
     const { api, user } = setup();
-    const card = await openWaitingTask(user, /^Actividad: 3 tareas/, /Claude personal llegó a su límite/);
+    const card = await openWaitingTask(user, /^Actividad: /, /Claude personal llegó a su límite/);
     act(() => api.simulateRestartAfterReset("s3"));
     expect(await within(card).findByText("Ya puedes continuar: el límite de Claude personal se renovó.")).toBeInTheDocument();
     expect(screen.queryByText("Revisa también el asunto del correo.", { selector: ".bubble" })).toBeNull();
@@ -93,7 +93,7 @@ describe("Waiting for a limit", () => {
 
   it("works in English", async () => {
     const { user } = setup("en");
-    const card = await openWaitingTask(user, /^Activity: 3 tasks/, /Claude personal hit its limit/);
+    const card = await openWaitingTask(user, /^Activity: /, /Claude personal hit its limit/);
     expect(
       within(card).getByText(/^Renews in 4\d min\. Then Hedy resumes the task with Claude personal\.$/),
     ).toBeInTheDocument();

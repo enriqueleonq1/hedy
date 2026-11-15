@@ -16,6 +16,8 @@ const es = {
   "welcome.forYou.calm": "Todo en orden: ninguna tarea te espera y tus cuentas tienen margen.",
   "welcome.forYou.waiting.one": "1 tarea espera tu respuesta",
   "welcome.forYou.waiting.other": "{n} tareas esperan tu respuesta",
+  "welcome.forYou.proposals.one": "1 nota o habilidad propuesta por aprobar",
+  "welcome.forYou.proposals.other": "{n} notas o habilidades propuestas por aprobar",
   "welcome.forYou.review.one": "1 tarea con cambios por revisar",
   "welcome.forYou.review.other": "{n} tareas con cambios por revisar",
   "welcome.forYou.limit": "{name} va en {percent} % {label}{resets}",
@@ -31,6 +33,12 @@ const es = {
   "welcome.empty.noAccounts": "Primero agrega una cuenta; luego asígnala a tus proyectos.",
   "welcome.card.workHere": "Trabajar aquí",
   "welcome.card.cliInTerminal": "{cli} en terminal",
+  "welcome.card.more": "Más acciones para {name}",
+  "welcome.card.waiting.one": "1 tarea te espera",
+  "welcome.card.waiting.other": "{n} tareas te esperan",
+  "welcome.card.working": "trabajando",
+  "welcome.card.lastActivity": "Última actividad {when}",
+  "welcome.card.quiet": "Sin actividad en las últimas 24 h",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -49,6 +57,8 @@ const en: Record<keyof typeof es, string> = {
   "welcome.forYou.calm": "All good: no task is waiting for you and your accounts have room.",
   "welcome.forYou.waiting.one": "1 task is waiting for your answer",
   "welcome.forYou.waiting.other": "{n} tasks are waiting for your answer",
+  "welcome.forYou.proposals.one": "1 proposed note or skill to approve",
+  "welcome.forYou.proposals.other": "{n} proposed notes or skills to approve",
   "welcome.forYou.review.one": "1 task with changes to review",
   "welcome.forYou.review.other": "{n} tasks with changes to review",
   "welcome.forYou.limit": "{name} is at {percent}% {label}{resets}",
@@ -64,6 +74,12 @@ const en: Record<keyof typeof es, string> = {
   "welcome.empty.noAccounts": "Add an account first, then assign it to your projects.",
   "welcome.card.workHere": "Work here",
   "welcome.card.cliInTerminal": "{cli} in terminal",
+  "welcome.card.more": "More actions for {name}",
+  "welcome.card.waiting.one": "1 task is waiting for you",
+  "welcome.card.waiting.other": "{n} tasks are waiting for you",
+  "welcome.card.working": "working",
+  "welcome.card.lastActivity": "Last activity {when}",
+  "welcome.card.quiet": "No activity in the last 24 h",
 };
 
 export default { es, en };

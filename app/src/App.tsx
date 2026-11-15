@@ -5,6 +5,7 @@ import { ApiProvider, errorMessage, useApi, useOverview } from "./api/context";
 import type { HedyApi } from "./api/HedyApi";
 import { Shell, Sidebar, Topbar, viewProject, type View } from "./components/Layout";
 import { Mascot } from "./components/Mascot/Mascot";
+import { CommandPalette } from "./components/palette/CommandPalette";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import { TerminalProvider } from "./components/Terminal/TerminalProvider";
 import { Button } from "./components/ui/Button";
@@ -93,6 +94,7 @@ function Root() {
     const project = viewProject(view);
     return project ? [project] : [];
   });
+  const [palette, setPalette] = useState(false);
   const api = useApi();
 
   const show = useCallback((next: View) => {
@@ -179,6 +181,7 @@ function Root() {
               openProjects={openProjects}
               onNavigate={navigate}
               onCloseProject={closeProject}
+              onOpenPalette={() => setPalette(true)}
             />
           }
           sidebar={<Sidebar overview={data} view={current} onNavigate={navigate} />}
@@ -191,6 +194,7 @@ function Root() {
             <ActivityScreen
               overview={data}
               onOpenTask={(project, task) => navigate({ screen: "workspace", project, task })}
+              onOpenMemory={(project, tab) => navigate({ screen: "memory", project, tab })}
             />
           )}
           {current.screen === "workspace" && (
@@ -224,6 +228,7 @@ function Root() {
             />
           )}
         </Shell>
+        <CommandPalette open={palette} onOpenChange={setPalette} overview={data} onNavigate={navigate} />
       </TerminalProvider>
     </ThemeProvider>
   );

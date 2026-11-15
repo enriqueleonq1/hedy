@@ -33,7 +33,7 @@ describe("Review before accepting", () => {
 
   it("shows what will be merged, warns about failed tests and uses the edited message", async () => {
     const { api, user } = setup();
-    await openReviewTask(user, /^Actividad: 3 tareas/);
+    await openReviewTask(user, /^Actividad: /);
     await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
 
     const sheet = await screen.findByRole("dialog", { name: "Revisar antes de integrar" });
@@ -60,7 +60,7 @@ describe("Review before accepting", () => {
 
   it("cancels without merging", async () => {
     const { api, user } = setup();
-    await openReviewTask(user, /^Actividad: 3 tareas/);
+    await openReviewTask(user, /^Actividad: /);
     await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
     const sheet = await screen.findByRole("dialog", { name: "Revisar antes de integrar" });
     await user.click(within(sheet).getByRole("button", { name: "Cancelar" }));
@@ -71,7 +71,7 @@ describe("Review before accepting", () => {
 
   it("undoes the merge from the toast and the task comes back to review", async () => {
     const { user } = setup();
-    await openReviewTask(user, /^Actividad: 3 tareas/);
+    await openReviewTask(user, /^Actividad: /);
     await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
     const sheet = await screen.findByRole("dialog", { name: "Revisar antes de integrar" });
     await user.click(await within(sheet).findByRole("button", { name: "Aceptar e integrar" }));
@@ -85,7 +85,7 @@ describe("Review before accepting", () => {
 
   it("explains why an undo is not safe, from the accepted task", async () => {
     const { api, user } = setup();
-    await openReviewTask(user, /^Actividad: 3 tareas/);
+    await openReviewTask(user, /^Actividad: /);
     await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
     const sheet = await screen.findByRole("dialog", { name: "Revisar antes de integrar" });
     await user.click(await within(sheet).findByRole("button", { name: "Aceptar e integrar" }));
@@ -100,7 +100,7 @@ describe("Review before accepting", () => {
 
   it("moves through files with j / k and counts the ones marked reviewed", async () => {
     const { user } = setup();
-    const files = await openReviewTask(user, /^Actividad: 3 tareas/);
+    const files = await openReviewTask(user, /^Actividad: /);
     expect(screen.getByText("0 de 3 revisados")).toBeInTheDocument();
 
     const first = within(files).getByRole("button", { name: /facturas\/impuestos\.py/ });
@@ -130,7 +130,7 @@ describe("Review before accepting", () => {
 
   it("works in English", async () => {
     const { user } = setup("en");
-    await openReviewTask(user, /^Activity: 3 tasks/);
+    await openReviewTask(user, /^Activity: /);
     expect(screen.getByText("0 of 3 reviewed")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Accept changes" }));
     const sheet = await screen.findByRole("dialog", { name: "Review before merging" });

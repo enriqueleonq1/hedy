@@ -1,0 +1,334 @@
+/* The shell's global surfaces: plan usage in the top bar, the command palette,
+   the sidebar rail, the inbox rows and the responsive layout. Colors only from
+   theme tokens; loaded after global.css, so equal selectors here win. */
+
+/* ---------------------------------------------------------------- plan usage */
+
+.bar__fill { display: block; }
+
+.usage-indicator { position: relative; flex: none; min-width: 0; }
+.usage-indicator__trigger { gap: 14px; cursor: pointer; color: var(--ink); max-width: 100%; }
+.usage-indicator__trigger:hover { border-color: var(--action); }
+.usage-indicator__chip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; min-width: 0; }
+.usage-indicator__name { overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.usage-indicator__caret { color: var(--muted); font-size: 11px; }
+
+.usage-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.usage-popover__title { font: 700 11px var(--font-ui); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding: 2px 6px; }
+.usage-popover__list { display: grid; gap: 2px; }
+.usage-popover__all { justify-self: start; padding: 6px; }
+
+.usage-row {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.usage-row:hover { background: var(--selection); }
+.usage-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.usage-row__name { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+.usage-row__name .dot { width: 8px; height: 8px; }
+.usage-row__window { display: grid; gap: 4px; }
+.usage-row__line { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
+
+.sidebar__account { gap: 6px; }
+.sidebar__account-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.plan-usage__kind { font-size: 15px; font-weight: 600; }
+
+/* ---------------------------------------------------------------- command palette */
+
+.palette-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  min-height: 36px;
+  padding: 0 8px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.palette-hint:hover { border-color: var(--action); color: var(--ink); }
+.palette-hint kbd,
+.palette__foot kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2);
+  color: var(--ink);
+  font: 600 12px var(--font-ui);
+}
+
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  justify-items: center;
+  align-items: start;
+  padding: 12vh 16px 16px;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.palette {
+  width: min(640px, 100%);
+  max-height: min(70vh, 620px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  animation: palette-in 120ms ease-out;
+}
+
+@keyframes palette-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.palette__page { display: grid; gap: 4px; padding: 12px 16px 0; }
+.palette__page-title { font-weight: 700; }
+.palette__back { justify-self: start; padding: 2px 0; border: 0; background: none; color: var(--action-text); font: inherit; font-size: 13px; cursor: pointer; }
+.palette .palette__input {
+  border-radius: 0;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 18px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  font-size: 16px;
+}
+
+.palette__input:focus-visible { outline: none; }
+.palette__list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px; }
+.palette__group { padding: 10px 12px 4px; font: 700 11px var(--font-ui); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+
+.palette__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.palette__option[aria-selected="true"] { background: var(--selection); box-shadow: inset 3px 0 0 var(--focus); }
+.palette__option .dot { width: 8px; height: 8px; flex: none; }
+.palette__label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette__detail { flex: 0 0 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12.5px; }
+.palette__more { color: var(--muted); }
+.palette__empty { padding: 16px 12px; color: var(--muted); }
+.palette__foot { padding: 8px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+
+/* ---------------------------------------------------------------- menu button, project cards */
+
+.menu { position: relative; display: inline-flex; }
+
+.menu-button {
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.menu-button:hover,
+.menu-button[aria-expanded="true"] { border-color: var(--line); background: var(--selection); color: var(--ink); }
+
+.menu__list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 200px;
+  display: grid;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.menu__item {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.menu__item:hover:not(:disabled),
+.menu__item:focus-visible { background: var(--selection); outline: none; }
+.menu__item:disabled { color: var(--muted); cursor: default; }
+
+.project-card__badges { display: inline-flex; align-items: center; gap: 6px; }
+.project-card__live { font-weight: 600; }
+.project-card__live--needs { color: var(--warning); }
+.project-card__live--working { color: var(--activity); }
+.project-card__live--calm { color: var(--muted); font-weight: 500; }
+
+/* ---------------------------------------------------------------- sidebar and its rail */
+
+.app--rail { grid-template-columns: 68px minmax(0, 1fr); }
+
+.sidebar { position: relative; }
+.sidebar .icon { flex: none; color: var(--muted); }
+.sidebar__item[aria-current="page"] .icon { color: var(--ink); }
+.sidebar__nav { position: relative; }
+
+.sidebar__toggle {
+  position: absolute;
+  top: 10px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.sidebar__toggle:hover { background: var(--selection); color: var(--ink); }
+.sidebar:not(.sidebar--rail) > .sidebar__nav { margin-right: 34px; width: auto; }
+
+.sidebar--rail { padding: 10px 8px 14px; gap: 14px; align-items: center; overflow-x: hidden; }
+.sidebar--rail .sidebar__toggle { position: static; width: 44px; height: 36px; }
+.sidebar--rail section { width: 100%; }
+.sidebar--rail .sidebar__list { justify-items: center; }
+.sidebar--rail .sidebar__item { width: 44px; min-height: 44px; padding: 0; justify-content: center; }
+.sidebar--rail .sidebar__name { display: none; }
+.sidebar--rail .sidebar__nav .nav-badge {
+  position: absolute;
+  top: 2px;
+  right: -2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+.sidebar--rail .sidebar__accounts { margin: 0 auto 6px; }
+.sidebar--rail .sidebar__account { width: 44px; margin: 0; padding: 4px 0; justify-items: center; box-sizing: border-box; }
+
+.sidebar__avatar {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 3px solid var(--muted);
+  border-radius: 50%;
+  color: var(--ink);
+  font: 700 13px var(--font-title);
+}
+
+.mini-ring__track { fill: none; stroke: var(--selection); stroke-width: 4; }
+.mini-ring__fill { fill: none; stroke-width: 4; stroke-linecap: round; }
+
+/* ---------------------------------------------------------------- narrow windows */
+
+/* Its visually hidden cells must not stick out of the page while it scrolls sideways. */
+.table-wrap { position: relative; }
+.tabs { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab-wrap, .tab--add { flex: none; }
+.topbar > .btn { flex: none; }
+
+@media (max-width: 1100px) {
+  .topbar { gap: 10px; padding: 0 10px 0 12px; }
+  .brand__name,
+  .palette-hint__text { display: none; }
+  .palette-hint { padding: 0 8px; }
+  /* Only the account closest to its limit; the rest are one click away in the popover. */
+  .usage-indicator__chip + .usage-indicator__chip { display: none; }
+  .usage-indicator__trigger { padding: 0 12px; gap: 8px; }
+  .usage-indicator__name { max-width: 110px; }
+  .screen { padding: 24px 20px 40px; }
+}
+
+@media (max-width: 960px) {
+  .usage-indicator__name { display: none; }
+}
+
+/* The workspace's side panel (Changes, Terminal, Preview) becomes a sheet under the chat. */
+@media (max-width: 1000px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(180px, 32%); }
+  .side-panel { border-left: 0; border-top: 1px solid var(--line); }
+  .chat { padding: 18px 18px 14px; }
+}
+
+/* ---------------------------------------------------------------- inbox rows ("Te necesitan") */
+
+.board-item {
+  display: grid;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+}
+
+.board-item:hover { border-color: var(--action); }
+.board-item--needs { border-left-color: var(--warning); }
+.board-item > .board-row { border: 0; border-radius: var(--radius-card); background: none; }
+.board-item__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 18px 14px; }
+/* A proposal's two buttons sit at the end of its meta line on wide enough rows. */
+@media (min-width: 700px) {
+  .board-item--proposal .board-row__meta { padding-right: 220px; }
+  .board-item--proposal > .board-row { min-height: 104px; align-content: start; }
+  .board-item--proposal .board-item__actions {
+    position: relative;
+    justify-self: end;
+    width: max-content;
+    margin-top: -56px;
+    padding: 0 18px 12px;
+  }
+}
+
+.board-item__what { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); }

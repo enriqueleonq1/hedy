@@ -7,7 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { OVERVIEW_KEY, useApi } from "../api/context";
 import type { Account, Overview, PlanState, PlanUsage, UsageWindow } from "../api/types";
 import type { Language, MessageKey, Translate } from "../i18n";
-import { timeAgo } from "../format";
+import { formatTokens, formatUsd, timeAgo } from "../format";
 
 /** At or above: the warning color. */
 export const WARNING_PERCENT = 80;
@@ -47,6 +47,31 @@ export function headlineWindow(account: Account): UsageWindow | null {
   return sharedWindows(usage).reduce<UsageWindow | null>((top, w) => (!top || w.percent > top.percent ? w : top), null);
 }
 
+/**
+ * The plan's percentage for compact labels: the shared window closest to its
+ * limit (see `headlineWindow`), or what a task reported; `null` when unknown.
+ */
+export function planPercent(account: Account): number | null {
+  return headlineWindow(account)?.percent ?? account.usage.limit?.percent ?? null;
+}
+
+/** CSS class that colors a percentage near (or at) the limit. */
+export function levelClass(percent: number | null): string | undefined {
+  if (percent === null) return undefined;
+  const level = usageLevel(percent);
+  return level === "ok" ? undefined : `level--${level}`;
+}
+
+/** "34%" of the plan, "$2,10" for API spend, tokens otherwise. */
+export function usageLabel(account: Account, language: Language): string {
+  const { usage } = account;
+  const percent = planPercent(account);
+  if (percent !== null) return `${Math.round(percent)}%`;
+  if (account.kind === "apiKey" && usage.weekCostUsd != null) return formatUsd(usage.weekCostUsd, language);
+  if (usage.weekTokens > 0) return `${formatTokens(usage.weekTokens)} tok`;
+  return "—";
+}
+
 const KIND_LABEL: Record<Exclude<UsageWindow["kind"], "other">, MessageKey> = {
   session: "accounts.plan.session",
   week: "accounts.plan.week",
@@ -59,6 +84,35 @@ export function windowLabel(w: UsageWindow, t: Translate): string {
   return w.minutes % 60 === 0
     ? t("accounts.plan.hours", { n: w.minutes / 60 })
     : t("accounts.plan.minutes", { n: w.minutes });
+}
+
+const SHORT_LABEL: Record<Exclude<UsageWindow["kind"], "other">, MessageKey> = {
+  session: "accounts.plan.short.session",
+  week: "accounts.plan.short.week",
+  day: "accounts.plan.short.day",
+};
+
+/** "Sesión 5 h", "Semana": the window's name in compact labels. */
+export function shortWindowLabel(w: UsageWindow, t: Translate): string {
+  if (w.kind !== "other") return t(SHORT_LABEL[w.kind]);
+  if (w.minutes === null) return t("accounts.plan.short.other");
+  return w.minutes % 60 === 0
+    ? t("accounts.plan.short.hours", { n: w.minutes / 60 })
+    : t("accounts.plan.short.minutes", { n: w.minutes });
+}
+
+/** "Semana · 83%": a window and its figure, the one pattern for compact plan labels. */
+export function windowText(w: UsageWindow, t: Translate): string {
+  return `${shortWindowLabel(w, t)} · ${Math.round(w.percent)}%`;
+}
+
+/**
+ * The headline window (see `headlineWindow`) as `windowText`, wherever an
+ * account's plan is summed up in one line; `null` when it is unknown.
+ */
+export function headlineText(account: Account, t: Translate): string | null {
+  const w = headlineWindow(account);
+  return w ? windowText(w, t) : null;
 }
 
 /** "se renueva hoy a las 19:00", in the active language; the source's text when the time is unknown. */

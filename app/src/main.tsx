@@ -8,6 +8,7 @@ import { App } from "./App";
 import { MockApi } from "./api/MockApi";
 import { isTauri, tauriApi } from "./api/tauriApi";
 import "./styles/global.css";
+import "./styles/shell.css";
 import { applyTheme } from "./theme/tokens";
 
 // Dark tokens until the user's theme setting loads.

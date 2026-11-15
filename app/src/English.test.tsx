@@ -69,6 +69,12 @@ describe("English", () => {
     expect(screen.getByRole("navigation", { name: "Open projects" })).toBeInTheDocument();
     const homming = screen.getByRole("heading", { name: "homming" }).closest("article")!;
     expect(within(homming).getByText("Protected")).toBeInTheDocument();
+    expect(await within(homming).findByText("No activity in the last 24 h")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "5 proposed notes or skills to approve" })).toBeInTheDocument();
+    expect(within(homming).getByRole("button", { name: "More actions for homming" })).toBeInTheDocument();
+    expect(within(homming).getByRole("button", { name: "Work here" })).toBeInTheDocument();
+    const plans = screen.getByRole("heading", { name: "Your plans" }).closest("section")!;
+    expect(within(plans).getByRole("button", { name: "Claude trabajo: 5-hour session · 34%, Week · 29%" })).toBeInTheDocument();
     expect(
       await screen.findByText(/^In Hedy: 216k tokens this week \(about \$4\.1\d\); hedy was the busiest project\.$/),
     ).toBeInTheDocument();
@@ -194,12 +200,19 @@ describe("English", () => {
 
   it("shows the task board in English", async () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity());
-    await user.click(await screen.findByRole("button", { name: "Activity: 3 tasks need you" }, { timeout: 8000 }));
+    await user.click(await screen.findByRole("button", { name: "Activity: 8 items need you" }, { timeout: 8000 }));
     expect(await screen.findByRole("heading", { name: "Activity" })).toBeInTheDocument();
-    const needs = await screen.findByRole("region", { name: "Need you (3)" });
+    const needs = await screen.findByRole("region", { name: "Need you (8)" });
     expect(within(needs).getByText("Plan to approve")).toBeInTheDocument();
     expect(within(needs).getByText("Asks for permission")).toBeInTheDocument();
     expect(within(needs).getByText("Blocked by a limit")).toBeInTheDocument();
+    // The inbox also holds the proposals, answered from their rows.
+    expect(await within(needs).findByRole("button", { name: "Allow once" })).toBeInTheDocument();
+    expect(within(needs).getByRole("button", { name: "Deny" })).toBeInTheDocument();
+    expect(within(needs).getAllByText("Note to approve")).toHaveLength(2);
+    expect(within(needs).getByText("Skill change to approve")).toBeInTheDocument();
+    expect(within(needs).getAllByText("proposed by Codex").length).toBeGreaterThan(0);
+    expect(within(needs).getAllByRole("button", { name: "Approve change" })).toHaveLength(2);
     expect(within(needs).getAllByText(/^running for \d+ min$/)).toHaveLength(3);
     const running = screen.getByRole("region", { name: "Running (1)" });
     expect(within(running).getByText("Working")).toBeInTheDocument();
@@ -215,6 +228,25 @@ describe("English", () => {
 
     await user.click(within(needs).getByRole("button", { name: /Traduce los correos/ }));
     expect(await screen.findByRole("heading", { name: "Traduce los correos de confirmación" })).toBeInTheDocument();
+  });
+
+  it("shows the command palette and the plan usage popover in English", async () => {
+    const { user } = setup(MockApi.withSampleData().withSampleActivity());
+    await screen.findByRole("heading", { name: /Hi, Enrique!/ });
+    await user.click(screen.getByRole("button", { name: /^Plan usage: Claude personal: Week · 83%/ }));
+    const popover = screen.getByRole("dialog", { name: "Plan usage" });
+    expect(within(popover).getByRole("button", { name: "Claude trabajo: 5-hour session · 34%, Week · 29%. Open the account" })).toBeInTheDocument();
+    expect(within(popover).getByRole("button", { name: "See accounts and models" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+    await user.keyboard("{Escape}");
+
+    await user.keyboard("{Control>}k{/Control}");
+    expect(screen.getByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
+    expect(await screen.findByRole("group", { name: "Needs you" }, { timeout: 8000 })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^Answer: Migra el reporte/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^Open a terminal in hedy/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^Claude trabajo account/ })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
   });
 
   it("shows the empty task board in English", async () => {

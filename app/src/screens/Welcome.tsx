@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { useApi } from "../api/context";
-import type { Account, Overview, Project, UsageSummary, UsageWindow } from "../api/types";
+import type { Account, ActivityItem, Overview, Project, UsageSummary, UsageWindow } from "../api/types";
 import { AccountChip } from "../components/accounts";
 import {
   barColor,
@@ -9,15 +9,19 @@ import {
   headlineWindow,
   resetLabel,
   sharedWindows,
+  shortWindowLabel,
   usageLevel,
   windowLabel,
+  windowText,
 } from "../components/planUsage";
 import type { View } from "../components/Layout";
 import { Mascot } from "../components/Mascot/Mascot";
 import { projectColor, shortPath, useProjectActions } from "../components/projects";
 import { Button } from "../components/ui/Button";
+import { MenuButton } from "../components/ui/Menu";
 import { formatTokens, formatUsd, timeAgo } from "../format";
 import { needsYou, useActivity } from "../tasks/hooks";
+import { useInbox } from "../tasks/inbox";
 import { STATE_LABEL } from "./activity/ActivityScreen";
 import { SpendByClient } from "./accounts/SpendByClient";
 import { useLanguage, useT, type Language, type Translate } from "../i18n";
@@ -103,15 +107,18 @@ function PlanCard({ account, onOpen }: { account: Account; onOpen: () => void })
   const outer = windows.find((w) => w !== inner);
   const top = headlineWindow(account);
 
+  // The headline names its window ("Semana · 83%"), like the top bar and the sidebar.
+  let kind: string | null = null;
   let headline = "—";
   let detail: string;
   let tone = "muted";
   if (top) {
+    kind = shortWindowLabel(top, t);
     headline = `${Math.round(top.percent)}%`;
     const level = usageLevel(top.percent);
     tone = level === "ok" ? "ink" : level;
-    const resets = resetLabel(top, t, language);
-    detail = `${windowLabel(top, t)}${resets ? ` · ${resets}` : ""}`;
+    const others = windows.filter((w) => w !== top).map((w) => windowText(w, t));
+    detail = [resetLabel(top, t, language), ...others].filter(Boolean).join(" · ");
   } else if (usage?.balance) {
     headline = formatBalance(usage.balance, language);
     detail = t("accounts.plan.balance");
@@ -122,16 +129,17 @@ function PlanCard({ account, onOpen }: { account: Account; onOpen: () => void })
       ? t("accounts.plan.checking")
       : t("accounts.plan.notReported", { provider: account.providerName });
   }
-  const label = windows.length
-    ? windows.map((w) => `${windowLabel(w, t)} ${Math.round(w.percent)}%`).join(", ")
-    : detail;
+  const label = windows.length ? windows.map((w) => windowText(w, t)).join(", ") : detail;
 
   return (
     <button type="button" className="plan-usage" onClick={onOpen} aria-label={`${account.name}: ${label}`}>
       <PlanRings account={account} outer={outer} inner={inner} />
       <span className="plan-usage__text">
         <AccountChip account={account} />
-        <strong className={`plan-usage__value plan-usage__value--${tone}`}>{headline}</strong>
+        <strong className={`plan-usage__value plan-usage__value--${tone}`}>
+          {kind && <span className="plan-usage__kind">{kind} · </span>}
+          {headline}
+        </strong>
         <span className="muted small">{detail}</span>
       </span>
     </button>
@@ -146,6 +154,7 @@ function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: 
   const t = useT();
   const language = useLanguage();
   const board = useActivity().data ?? [];
+  const inbox = useInbox();
   const doctor = useQuery({ queryKey: ["doctor"], queryFn: () => api.doctor(), staleTime: 10 * 60_000 }).data;
   const toBoard = () => onNavigate({ screen: "activity" });
 
@@ -156,6 +165,16 @@ function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: 
       key: "waiting",
       tone: "warn",
       text: waiting === 1 ? t("welcome.forYou.waiting.one") : t("welcome.forYou.waiting.other", { n: waiting }),
+      go: toBoard,
+    });
+  }
+  // The same inbox as Activity's "Te necesitan": proposals count too.
+  const proposals = inbox.items.filter((item) => item.kind !== "task").length;
+  if (proposals > 0) {
+    notices.push({
+      key: "proposals",
+      tone: "info",
+      text: proposals === 1 ? t("welcome.forYou.proposals.one") : t("welcome.forYou.proposals.other", { n: proposals }),
       go: toBoard,
     });
   }
@@ -314,12 +333,7 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
           ) : (
             <div className="project-grid">
               {overview.projects.map((p) => (
-                <ProjectCard
-                  key={p.path}
-                  project={p}
-                  overview={overview}
-                  onOpen={() => onNavigate({ screen: "workspace", project: p.path })}
-                />
+                <ProjectCard key={p.path} project={p} overview={overview} board={board} onNavigate={onNavigate} />
               ))}
             </div>
           )}
@@ -338,32 +352,78 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
   );
 }
 
-function ProjectCard({ project, overview, onOpen }: { project: Project; overview: Overview; onOpen: () => void }) {
+/** What a project's tasks are up to, from the task board: "1 tarea te espera · trabajando". */
+export function projectLive(
+  path: string,
+  board: ActivityItem[],
+  t: Translate,
+  now = Date.now() / 1000,
+): { text: string; tone: "needs" | "working" | "calm" } {
+  const items = board.filter((item) => item.task.project === path);
+  const waiting = items.filter((item) => needsYou(item.state)).length;
+  const working = items.some((item) => item.state === "working");
+  const parts: string[] = [];
+  if (waiting > 0) {
+    parts.push(waiting === 1 ? t("welcome.card.waiting.one") : t("welcome.card.waiting.other", { n: waiting }));
+  }
+  if (working) parts.push(t("welcome.card.working"));
+  if (parts.length > 0) return { text: parts.join(" · "), tone: waiting > 0 ? "needs" : "working" };
+  const last = items.reduce((max, item) => Math.max(max, item.updatedAt), 0);
+  return {
+    text: last > 0 ? t("welcome.card.lastActivity", { when: timeAgo(last, t, now) }) : t("welcome.card.quiet"),
+    tone: "calm",
+  };
+}
+
+function ProjectCard({
+  project,
+  overview,
+  board,
+  onNavigate,
+}: {
+  project: Project;
+  overview: Overview;
+  board: ActivityItem[];
+  onNavigate: (v: View) => void;
+}) {
   const t = useT();
   const actions = useProjectActions();
   const account = overview.accounts.find((a) => a.id === project.account);
   const runnable = account?.kind === "subscription";
+  const live = projectLive(project.path, board, t);
 
   return (
-    <article className="card project-card" style={{ borderTopColor: projectColor(project, overview.accounts) }}>
+    <article
+      className="card project-card"
+      aria-labelledby={`project-${project.path}`}
+      style={{ borderTopColor: projectColor(project, overview.accounts) }}
+    >
       <header>
-        <h3>{project.name}</h3>
-        {project.protected && <span className="badge badge--warn">{t("common.protected")}</span>}
+        <h3 id={`project-${project.path}`}>{project.name}</h3>
+        <span className="project-card__badges">
+          {project.protected && <span className="badge badge--warn">{t("common.protected")}</span>}
+          <MenuButton
+            label={t("welcome.card.more", { name: project.name })}
+            items={[
+              {
+                label: t("welcome.card.cliInTerminal", { cli: account?.providerName ?? "CLI" }),
+                disabled: !runnable,
+                onSelect: () => actions.openCli(project),
+              },
+              { label: t("common.terminal"), onSelect: () => actions.openShell(project) },
+              { label: t("common.openInVsCode"), onSelect: () => void actions.openEditor(project) },
+              { label: t("workspace.status"), onSelect: () => onNavigate({ screen: "status", project: project.path }) },
+              { label: t("common.memory"), onSelect: () => onNavigate({ screen: "memory", project: project.path }) },
+            ]}
+          />
+        </span>
       </header>
       <p className="mono muted">{shortPath(project.path)}</p>
       {account ? <AccountChip account={account} /> : <span className="muted">{t("common.noAccount")}</span>}
+      <p className={`small project-card__live project-card__live--${live.tone}`}>{live.text}</p>
       <div className="actions">
-        <Button small variant="primary" onClick={onOpen}>
+        <Button small variant="primary" onClick={() => onNavigate({ screen: "workspace", project: project.path })}>
           {t("welcome.card.workHere")}
-        </Button>
-        <Button small disabled={!runnable} onClick={() => actions.openCli(project)}>
-          {t("welcome.card.cliInTerminal", { cli: account?.providerName ?? "CLI" })}
-        </Button>
-        <Button small onClick={() => actions.openShell(project)}>
-          {t("common.terminal")}
-        </Button>
-        <Button small variant="ghost" onClick={() => actions.openEditor(project)}>
-          {t("common.openInVsCode")}
         </Button>
       </div>
     </article>
