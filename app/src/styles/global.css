@@ -69,7 +69,7 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-::selection { background: var(--selection); }
+::selection { background: var(--text-selection); color: var(--ink); }
 
 /* Thin scrollbars that sit back until they are needed. */
 * { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }

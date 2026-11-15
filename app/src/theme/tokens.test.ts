@@ -12,6 +12,7 @@ const textPairs: [string, string][] = [
   ["actionInk", "action"],
   ["modeInk", "modeBg"],
   ["actionText", "selection"],
+  ["ink", "textSelection"],
   ["ink", "tipBg"],
   ["actionText", "bg"],
   ["actionText", "panel"],
