@@ -70,6 +70,7 @@ describe("English", () => {
     const homming = screen.getByRole("heading", { name: "homming" }).closest("article")!;
     expect(within(homming).getByText("Protected")).toBeInTheDocument();
     expect(await within(homming).findByText("No activity in the last 24 h")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "5 proposed notes or skills to approve" })).toBeInTheDocument();
     expect(within(homming).getByRole("button", { name: "More actions for homming" })).toBeInTheDocument();
     expect(within(homming).getByRole("button", { name: "Work here" })).toBeInTheDocument();
     const plans = screen.getByRole("heading", { name: "Your plans" }).closest("section")!;

@@ -35,6 +35,8 @@ describe("Welcome", () => {
     expect(personal.querySelector(".plan-usage__value")).toHaveTextContent("Semana · 83%");
     expect(within(plans).getByRole("button", { name: /^ChatGPT: / })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /tareas esperan tu respuesta/ })).toBeInTheDocument();
+    // The proposals of the Activity inbox count here too.
+    expect(await screen.findByRole("button", { name: "5 notas o habilidades propuestas por aprobar" })).toBeInTheDocument();
     const recent = (await screen.findByRole("heading", { name: "Últimas tareas" })).closest("section")!;
     expect(within(recent).getAllByRole("button").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /^Seguir en / })).toBeInTheDocument();

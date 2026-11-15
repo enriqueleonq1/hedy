@@ -21,6 +21,7 @@ import { Button } from "../components/ui/Button";
 import { MenuButton } from "../components/ui/Menu";
 import { formatTokens, formatUsd, timeAgo } from "../format";
 import { needsYou, useActivity } from "../tasks/hooks";
+import { useInbox } from "../tasks/inbox";
 import { STATE_LABEL } from "./activity/ActivityScreen";
 import { SpendByClient } from "./accounts/SpendByClient";
 import { useLanguage, useT, type Language, type Translate } from "../i18n";
@@ -153,6 +154,7 @@ function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: 
   const t = useT();
   const language = useLanguage();
   const board = useActivity().data ?? [];
+  const inbox = useInbox();
   const doctor = useQuery({ queryKey: ["doctor"], queryFn: () => api.doctor(), staleTime: 10 * 60_000 }).data;
   const toBoard = () => onNavigate({ screen: "activity" });
 
@@ -163,6 +165,16 @@ function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: 
       key: "waiting",
       tone: "warn",
       text: waiting === 1 ? t("welcome.forYou.waiting.one") : t("welcome.forYou.waiting.other", { n: waiting }),
+      go: toBoard,
+    });
+  }
+  // The same inbox as Activity's "Te necesitan": proposals count too.
+  const proposals = inbox.items.filter((item) => item.kind !== "task").length;
+  if (proposals > 0) {
+    notices.push({
+      key: "proposals",
+      tone: "info",
+      text: proposals === 1 ? t("welcome.forYou.proposals.one") : t("welcome.forYou.proposals.other", { n: proposals }),
       go: toBoard,
     });
   }
