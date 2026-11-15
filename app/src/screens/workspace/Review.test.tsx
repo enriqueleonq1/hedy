@@ -54,6 +54,10 @@ describe("Review before accepting", () => {
 
     expect(await screen.findByText("Cambios integrados en main.")).toBeInTheDocument();
     expect(api.commitMessages.get("s5")).toBe("fix: IVA por línea");
+    expect(api.acceptModes.get("s5")).toBe("merge");
+    // The folder has a remote: publishing is offered next, and can wait.
+    const publish = await screen.findByRole("dialog", { name: "Publicar" });
+    await user.click(within(publish).getByRole("button", { name: "Ahora no" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(await screen.findByText(/ya se aceptó/)).toBeInTheDocument();
   });

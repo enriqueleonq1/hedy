@@ -127,6 +127,7 @@ mod tests {
                 merge: None,
                 wait: None,
                 conversation: false,
+                ship: None,
             })
             .unwrap();
         store

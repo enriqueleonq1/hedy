@@ -15,6 +15,7 @@ import queue from "./queue";
 import review from "./review";
 import reviewer from "./reviewer";
 import settings from "./settings";
+import ship from "./ship";
 import shell from "./shell";
 import skills from "./skills";
 import status from "./status";
@@ -46,6 +47,7 @@ const es = {
   ...palette.es,
   ...create.es,
   ...composer.es,
+  ...ship.es,
 };
 const en: Record<keyof typeof es, string> = {
   ...common.en,
@@ -68,6 +70,7 @@ const en: Record<keyof typeof es, string> = {
   ...palette.en,
   ...create.en,
   ...composer.en,
+  ...ship.en,
 };
 
 export type MessageKey = keyof typeof es;

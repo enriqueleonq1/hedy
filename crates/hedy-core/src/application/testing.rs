@@ -14,11 +14,14 @@ use super::ports::{
     UsageRecord, UsageRepository,
 };
 use super::{Hedy, NewAccount, Ports};
+
+mod ship;
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, ImageSupport,
     LaunchSpec, Note, NoteStatus, Notice, NoticeKind, Project, PromptImage, Provider,
     QueuedMessage, Skill, SkillStatus, Task, TaskId, TaskStatus, UsageSample,
 };
+pub use ship::{FakeHost, FakeSource};
 
 #[derive(Default)]
 pub struct MemoryStore {
@@ -672,9 +675,16 @@ pub struct FakeAgents {
     sent_images: Arc<Mutex<Vec<Vec<PromptImage>>>>,
     /// Overrides what every backend says about images.
     image_support: Mutex<Option<ImageSupport>>,
+    /// Events the next agent plays as soon as it starts.
+    script: Mutex<Option<Vec<AgentEvent>>>,
 }
 
 impl FakeAgents {
+    /// The next agent started plays `events` right away (for use cases that
+    /// wait for an answer).
+    pub fn reply_on_start(&self, events: Vec<AgentEvent>) {
+        *self.script.lock().unwrap() = Some(events);
+    }
     /// Every backend answers `support` about images.
     pub fn set_image_support(&self, support: ImageSupport) {
         *self.image_support.lock().unwrap() = Some(support);
@@ -761,6 +771,11 @@ impl AgentLauncher for FakeAgents {
             return Err(PortError::new("no se encontró el programa"));
         }
         self.requests.lock().unwrap().push(request);
+        if let Some(script) = self.script.lock().unwrap().take() {
+            for event in script {
+                events(event);
+            }
+        }
         self.sinks.lock().unwrap().push(events);
         Ok(Box::new(FakeSession {
             calls: Arc::clone(&self.calls),
@@ -1210,6 +1225,8 @@ pub struct Fixture {
     pub agents: Arc<FakeAgents>,
     pub clock: Arc<FakeClock>,
     pub probe: Arc<FakeUsageProbe>,
+    pub source: Arc<FakeSource>,
+    pub host: Arc<FakeHost>,
 }
 
 impl Fixture {
@@ -1223,6 +1240,8 @@ impl Fixture {
         let store = Arc::new(MemoryStore::default());
         let clock = Arc::new(FakeClock(AtomicI64::new(1_700_000_000_000)));
         let probe = Arc::new(FakeUsageProbe::default());
+        let source = Arc::new(FakeSource::default());
+        let host = Arc::new(FakeHost::default());
         let hedy = Hedy::new(Ports {
             store: store.clone(),
             secrets: secrets.clone(),
@@ -1233,6 +1252,8 @@ impl Fixture {
             agents: agents.clone(),
             clock: clock.clone(),
             usage: probe.clone(),
+            source: source.clone(),
+            host: host.clone(),
         });
         let notices = Arc::new(RecordedNotices::default());
         let hedy = hedy.with_task_events(notices.clone());
@@ -1248,6 +1269,8 @@ impl Fixture {
             agents,
             clock,
             probe,
+            source,
+            host,
         }
     }
 

@@ -51,6 +51,7 @@ import { TemplateDialog } from "../templates/TemplateDialog";
 import "../../styles/composer.css";
 import { ChangesPanel } from "./ChangesPanel";
 import { useReviewTask } from "../../review/comments";
+import { FolderStatus } from "./ship/FolderStatus";
 import { AttachButton, draggingFiles, ImageTray, transferFiles, useComposerImages } from "./ComposerImages";
 import { FilePicker } from "./FilePicker";
 import { insertMention, mentionAt, rankFiles } from "./mentions";
@@ -213,6 +214,7 @@ export function Workspace({
             </p>
           </div>
           <div className="chat__tools">
+            {!solo && <FolderStatus project={project} />}
             {list.length > 0 && (
               <TaskSwitcher
                 tasks={list}
@@ -356,7 +358,7 @@ const PANEL_KEY = "hedy.sidePanel";
 function useSidePanel(task: Task | null) {
   const editable = !!task?.workspace && isOpen(task);
   const diff = useTaskDiff(task?.id ?? null, editable);
-  const hasContent = (editable && (diff.data?.length ?? 0) > 0) || (task?.status === "accepted" && !!task.merge);
+  const hasContent = (editable && (diff.data?.length ?? 0) > 0) || (task?.status === "accepted" && (!!task.merge || !!task.ship));
   const [chosen, setChosen] = useState<boolean | null>(() => {
     try {
       const saved = sessionStorage.getItem(PANEL_KEY);

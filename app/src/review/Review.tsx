@@ -16,6 +16,7 @@ import { isOpen, pendingCard } from "../tasks/timeline";
 import { AcceptSheet, useAcceptedToast } from "../screens/workspace/AcceptSheet";
 import { DiffView, type DiffLayout } from "../screens/workspace/DiffView";
 import { useReviewed } from "../screens/workspace/reviewed";
+import { ShipPanel } from "../screens/workspace/ship/ShipPanel";
 import { useReviewComments } from "./comments";
 import { HistoryDialog } from "./HistoryDialog";
 import { CheckIcon, CommentIcon, DisclosureIcon, ExternalIcon, FileIcon, SplitIcon, UnifiedIcon } from "./icons";
@@ -168,8 +169,11 @@ export function Changes({ project, task }: { project: string; task: Task | null 
     return (
       <div className="changes">
         <p className="empty">
-          {task.status === "accepted" ? t("workspace.changes.accepted") : t("workspace.changes.discarded")}
+          {task.status === "accepted"
+            ? t(task.ship?.kept ? "ship.keptAccepted" : "workspace.changes.accepted")
+            : t("workspace.changes.discarded")}
         </p>
+        {task.status === "accepted" && <ShipPanel task={task} />}
         {task.status === "accepted" && task.merge && (
           <div className="undo-merge">
             <Button disabled={accepted.undo.isPending} onClick={() => accepted.undo.mutate(task.id)}>

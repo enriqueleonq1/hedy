@@ -116,6 +116,10 @@ pub struct Task {
     /// handoff) gets them too.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<super::Attachment>,
+    /// Where accepting put the work (merged, or kept on its branch) and what
+    /// Hedy published of it (push, pull request).
+    #[serde(default)]
+    pub ship: Option<super::Shipment>,
 }
 
 /// What "Aceptar" changed in the main checkout, kept so it can be undone
