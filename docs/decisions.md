@@ -1060,3 +1060,17 @@ claude -p /usage --output-format json --no-session-persistence --safe-mode
   protocol (a recording `claude` stdin, a fake app-server, a fake ACP agent with and
   without the capability, a local HTTP server). Which ACP CLIs advertise images
   (Gemini CLI, Kimi Code, Antigravity) is not checked: none is installed here.
+
+### `@file` mentions
+
+- Typing `@` in a project's composer lists the project's files (`Hedy::project_files`, the
+  `Git::list_files` port): `git ls-files -z --cached --others --exclude-standard` in the
+  main checkout, so tracked files plus untracked ones git does not ignore, never
+  `.hedy/`. Protected names (`permissions::DEFAULT_BLOCKED`: `.env`, `.env.*`, keys,
+  credentials…) are never offered, the same rule that keeps agents away from them.
+  Sorted and cut at 5,000 paths (`MAX_PROJECT_FILES`).
+- The picker ranks file names that start with the query, then names that contain it, then
+  paths that contain it (no case), shorter paths first; ↑/↓, Enter or Tab insert
+  `@relative/path `, Esc closes it. The mention is plain text in the prompt: each agent
+  reads the file with its own tools, under Hedy's rules. A quick question has no project,
+  so `@` is just text there.

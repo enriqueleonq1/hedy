@@ -94,6 +94,7 @@ export const tauriApi: HedyApi = {
   queued: (id) => invoke("queued", { id }),
   queueMessage: (id, text, images) => invoke("queue_message", { id, text, images: images ?? null }),
   imageSupport: (account) => invoke("image_support", { account }),
+  projectFiles: (path) => invoke("project_files", { path }),
   attachment: (id, file) => invoke("attachment", { id, file }),
   editQueued: (message, text) => invoke("edit_queued", { message, text }),
   removeQueued: (message) => invoke("remove_queued", { message }),

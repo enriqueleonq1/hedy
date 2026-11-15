@@ -51,6 +51,8 @@ import { TemplateDialog } from "../templates/TemplateDialog";
 import "../../styles/composer.css";
 import { ChangesPanel } from "./ChangesPanel";
 import { AttachButton, draggingFiles, ImageTray, transferFiles, useComposerImages } from "./ComposerImages";
+import { FilePicker } from "./FilePicker";
+import { insertMention, mentionAt, rankFiles } from "./mentions";
 import { QueuedMessages } from "./QueuedMessages";
 import { PanelIcon, PlusIcon, StopIcon } from "./icons";
 import { jumpDigit, TaskSwitcher } from "./TaskSwitcher";
@@ -505,6 +507,11 @@ function Composer({
   const templates = useTemplates(scope);
   const images = useComposerImages({ account: disabled ? null : imageAccount, queueing });
   const [dropping, setDropping] = useState(false);
+  const api = useApi();
+  // `@file` mentions: only in a project (a quick question has no files).
+  const [caret, setCaret] = useState(0);
+  const [fileActive, setFileActive] = useState(0);
+  const [mentionClosed, setMentionClosed] = useState<number | null>(null);
 
   // After the dialogs that led here closed (they give the focus back first).
   useEffect(() => {
@@ -523,6 +530,33 @@ function Composer({
   const pickerOpen = query !== null && !pickerClosed && !filling;
   const current = pickerOpen ? matches[Math.min(active, matches.length - 1)] : undefined;
   const optionId = (index: number) => `${listId}-option-${index}`;
+
+  const mention = solo || pickerOpen || filling ? null : mentionAt(text, caret);
+  const mentionOpen = !!mention && mentionClosed !== mention.start;
+  const projectFiles = useQuery({
+    queryKey: ["projectFiles", scope],
+    queryFn: () => api.projectFiles(scope ?? ""),
+    enabled: mentionOpen,
+    staleTime: 30_000,
+  });
+  const fileMatches = mentionOpen && mention ? rankFiles(projectFiles.data ?? [], mention.query) : [];
+  const currentFile = fileMatches.length > 0 ? Math.min(fileActive, fileMatches.length - 1) : -1;
+  const fileListId = `${listId}-files`;
+  const fileOptionId = (index: number) => `${fileListId}-${index}`;
+
+  function pickFile(path: string) {
+    if (!mention) return;
+    const next = insertMention(text, mention.start, caret, path);
+    setText(next.text);
+    setCaret(next.caret);
+    setFileActive(0);
+    requestAnimationFrame(() => {
+      const el = input.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(next.caret, next.caret);
+    });
+  }
 
   const start = useAction(
     (api, message: { text: string; images: ImageInput[] }) =>
@@ -566,9 +600,12 @@ function Composer({
     if (task?.live && !stop.isPending) stop.mutate(task.id);
   }
 
-  function edit(value: string) {
+  function edit(value: string, at?: number | null) {
     setText(value);
     setActive(0);
+    setFileActive(0);
+    setCaret(at ?? value.length);
+    if (!mentionAt(value, at ?? value.length)) setMentionClosed(null);
     if (slashQuery(value) === null) setPickerClosed(false);
   }
 
@@ -629,6 +666,17 @@ function Composer({
         <p className="composer__drop" aria-hidden>
           {images.blocked ?? t("composer.images.drop")}
         </p>
+      )}
+      {mentionOpen && (
+        <FilePicker
+          id={fileListId}
+          files={fileMatches}
+          active={currentFile}
+          loading={projectFiles.isPending}
+          optionId={fileOptionId}
+          onPick={pickFile}
+          onHover={setFileActive}
+        />
       )}
       {pickerOpen && (
         <div className="template-picker">
@@ -698,8 +746,12 @@ function Composer({
         disabled={disabled}
         aria-autocomplete="list"
         aria-haspopup="listbox"
-        aria-controls={pickerOpen && matches.length > 0 ? listId : undefined}
-        aria-activedescendant={current ? optionId(matches.indexOf(current)) : undefined}
+        aria-controls={
+          pickerOpen && matches.length > 0 ? listId : mentionOpen && fileMatches.length > 0 ? fileListId : undefined
+        }
+        aria-activedescendant={
+          current ? optionId(matches.indexOf(current)) : currentFile >= 0 ? fileOptionId(currentFile) : undefined
+        }
         aria-keyshortcuts="Enter"
         aria-describedby={`${listId}-enter`}
         placeholder={
@@ -715,7 +767,8 @@ function Composer({
                     ? t("workspace.composer.placeholderProject")
                     : t("workspace.composer.placeholderAsk")
         }
-        onChange={(e) => edit(e.target.value)}
+        onChange={(e) => edit(e.target.value, e.target.selectionStart)}
+        onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
         onPaste={(e) => {
           const files = transferFiles(e.clipboardData);
           if (files.length === 0) return;
@@ -724,6 +777,25 @@ function Composer({
           void images.add(files);
         }}
         onKeyDown={(e) => {
+          if (mentionOpen && mention) {
+            if (fileMatches.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+              e.preventDefault();
+              const step = e.key === "ArrowDown" ? 1 : -1;
+              setFileActive((i) => (Math.min(i, fileMatches.length - 1) + step + fileMatches.length) % fileMatches.length);
+              return;
+            }
+            const picked = fileMatches[currentFile];
+            if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey && picked) {
+              e.preventDefault();
+              pickFile(picked);
+              return;
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              setMentionClosed(mention.start);
+              return;
+            }
+          }
           if (pickerOpen && matches.length > 0) {
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault();

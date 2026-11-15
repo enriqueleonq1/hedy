@@ -120,6 +120,8 @@ export interface HedyApi {
    * now when it is idle. Returns what is left in the queue.
    */
   queueMessage(id: string, text: string, images?: ImageInput[]): Promise<QueuedMessage[]>;
+  /** The project's files for `@` mentions, relative and sorted (never `.env` or keys). */
+  projectFiles(project: string): Promise<string[]>;
   /** Whether the agent of `account` takes images with a prompt. */
   imageSupport(account: string): Promise<ImageSupport>;
   /** An image of a task's history as a data URL; `null` when it was deleted. */

@@ -1913,6 +1913,32 @@ export class MockApi implements HedyApi {
     return () => this.openTaskListeners.delete(listener);
   }
 
+  // ---------------------------------------------------------------- files
+
+  /** Tests: the files `projectFiles` answers for a project. */
+  files = new Map<string, string[]>([
+    [
+      "/code/hedy",
+      [
+        "README.md",
+        "citas/__init__.py",
+        "citas/modelos.py",
+        "citas/servicio.py",
+        "citas/vistas.py",
+        "notificaciones/recordatorios.py",
+        "notificaciones/whatsapp.py",
+        "pyproject.toml",
+        "tests/test_citas.py",
+        "tests/test_recordatorios.py",
+      ],
+    ],
+  ]);
+
+  async projectFiles(project: string): Promise<string[]> {
+    this.project(project);
+    return [...(this.files.get(project) ?? [])];
+  }
+
   // ---------------------------------------------------------------- images
 
   private attachments = new Map<string, string>();
