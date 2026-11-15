@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use hedy_core::adapters::{CODE_MAP_PROGRAM, find_program};
 use hedy_core::application::{
     AcceptPreview, AccountStatus, AccountUsage, AppResult, CheckLevel, DoctorReport, Hedy,
-    MemoryView, PlanUsageState, ProjectStatus, Proposal, Setting, SkillChange, SkillDraft,
-    SkillFiles, SkillsView, TaskActivity, TestRun, UsageSummary,
+    MemoryView, NewImage, PlanUsageState, ProjectStatus, Proposal, Setting, SkillChange,
+    SkillDraft, SkillFiles, SkillsView, TaskActivity, TestRun, UsageSummary,
 };
 use hedy_core::domain::{
     Account, ConfigFolder, Credentials, LoginState, Note, Phase, PhasePlan, PlanUsage, Project,
@@ -334,6 +334,40 @@ pub struct NewTaskInput {
     pub mode: TaskMode,
     pub model: Option<String>,
     pub plan_first: bool,
+    #[serde(default)]
+    pub images: Vec<ImageInput>,
+}
+
+/// An image attached in the composer: its file name and its bytes in
+/// base64. The backend checks the real type from the bytes.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageInput {
+    pub name: String,
+    pub data: String,
+}
+
+/// The images as the use cases take them.
+pub fn decode_images(images: Vec<ImageInput>) -> Result<Vec<NewImage>, String> {
+    use base64::Engine as _;
+    images
+        .into_iter()
+        .map(|image| {
+            let data = base64::engine::general_purpose::STANDARD
+                .decode(image.data.as_bytes())
+                .map_err(|_| {
+                    let name = &image.name;
+                    hedy_core::tr!(
+                        "«{name}» no se pudo leer como imagen",
+                        "«{name}» could not be read as an image"
+                    )
+                })?;
+            Ok(NewImage {
+                name: image.name,
+                data,
+            })
+        })
+        .collect()
 }
 
 /// "Nuevo proyecto": a project started from scratch.
@@ -355,6 +389,8 @@ pub struct NewConversationInput {
     pub mode: TaskMode,
     pub account: Option<String>,
     pub model: Option<String>,
+    #[serde(default)]
+    pub images: Vec<ImageInput>,
 }
 
 /// A prompt template with its placeholders (`{archivo}` → `archivo`).

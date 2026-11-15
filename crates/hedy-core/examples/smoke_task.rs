@@ -99,6 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mode: TaskMode::Ask,
             model: Some(model),
             plan_first: false,
+            images: Vec::new(),
         }
     } else {
         NewTask {
@@ -109,6 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mode: TaskMode::Project,
             model: Some(model),
             plan_first: true,
+            images: Vec::new(),
         }
     })?;
     println!("Tarea {} en {}", task.id, task.work_dir().display());

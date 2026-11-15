@@ -8,6 +8,7 @@ use hedy_core::application::{
     AppResult, Hedy, NewAccount, NewConversation, NewProject, NewTask, NewTemplate, Setting,
     TemplateScope,
 };
+use hedy_core::domain::ImageSupport;
 use hedy_core::domain::{
     AgentEvent, Category, Color, Commit, Decision, FileDiff, Note, PhasePlan, QueuedMessage,
     TaskId, TemplateId,
@@ -17,10 +18,10 @@ use tauri::ipc::Channel;
 
 use crate::AppState;
 use crate::dto::{
-    self, AcceptPreviewDto, ActivityDto, MemoryDto, NewAccountInput, NewConversationInput,
-    NewProjectInput, NewTaskInput, NewTemplateInput, OverviewDto, PlanDto, ProjectStatusDto,
-    SkillChangeDto, SkillDraftInput, SkillFilesDto, SkillsDto, TaskDto, TemplateDto, UsagePointDto,
-    UsageSummaryDto,
+    self, AcceptPreviewDto, ActivityDto, ImageInput, MemoryDto, NewAccountInput,
+    NewConversationInput, NewProjectInput, NewTaskInput, NewTemplateInput, OverviewDto, PlanDto,
+    ProjectStatusDto, SkillChangeDto, SkillDraftInput, SkillFilesDto, SkillsDto, TaskDto,
+    TemplateDto, UsagePointDto, UsageSummaryDto,
 };
 use crate::terminal::{TerminalEvent, TerminalRequest, Terminals};
 
@@ -246,6 +247,7 @@ fn task_id(id: String) -> TaskId {
 
 #[tauri::command]
 pub async fn start_task(state: State<'_, AppState>, input: NewTaskInput) -> CommandResult<TaskDto> {
+    let images = dto::decode_images(input.images)?;
     blocking(&state, move |h| {
         let task = h.start_task(NewTask {
             project: input.project,
@@ -253,6 +255,7 @@ pub async fn start_task(state: State<'_, AppState>, input: NewTaskInput) -> Comm
             mode: input.mode,
             model: input.model.filter(|m| !m.is_empty()),
             plan_first: input.plan_first,
+            images,
         })?;
         Ok(TaskDto {
             live: h.is_running(&task.id),
@@ -302,12 +305,14 @@ pub async fn start_conversation(
     state: State<'_, AppState>,
     input: NewConversationInput,
 ) -> CommandResult<TaskDto> {
+    let images = dto::decode_images(input.images)?;
     blocking(&state, move |h| {
         let task = h.start_conversation(NewConversation {
             prompt: input.prompt,
             mode: input.mode,
             account: input.account,
             model: input.model,
+            images,
         })?;
         Ok(TaskDto {
             live: h.is_running(&task.id),
@@ -428,8 +433,42 @@ pub async fn queue_message(
     state: State<'_, AppState>,
     id: String,
     text: String,
+    images: Option<Vec<ImageInput>>,
 ) -> CommandResult<Vec<QueuedMessage>> {
-    blocking(&state, move |h| h.queue_message(&task_id(id), &text)).await
+    let images = dto::decode_images(images.unwrap_or_default())?;
+    blocking(&state, move |h| {
+        h.queue_message_with(&task_id(id), &text, images)
+    })
+    .await
+}
+
+/// Whether the account's agent takes images with a prompt.
+#[tauri::command]
+pub async fn image_support(
+    state: State<'_, AppState>,
+    account: String,
+) -> CommandResult<ImageSupport> {
+    blocking(&state, move |h| h.image_support(&account)).await
+}
+
+/// An image of a task's history as a data URL, or `None` when it is gone.
+#[tauri::command]
+pub async fn attachment(
+    state: State<'_, AppState>,
+    id: String,
+    file: String,
+) -> CommandResult<Option<String>> {
+    blocking(&state, move |h| {
+        Ok(h.attachment(&task_id(id), &file)?.map(|(kind, bytes)| {
+            use base64::Engine as _;
+            format!(
+                "data:{};base64,{}",
+                kind.media_type(),
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            )
+        }))
+    })
+    .await
 }
 
 #[tauri::command]

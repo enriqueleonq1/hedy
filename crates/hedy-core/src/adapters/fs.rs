@@ -8,15 +8,31 @@ use crate::domain::AccountId;
 pub struct LocalFileSystem {
     accounts_dir: PathBuf,
     chats_dir: PathBuf,
+    attachments_dir: PathBuf,
 }
 
 impl LocalFileSystem {
+    /// Attachments live next to the chats folder (both in Hedy's data folder).
     pub fn new(accounts_dir: PathBuf, chats_dir: PathBuf) -> Self {
         Self {
             accounts_dir,
+            attachments_dir: chats_dir.with_file_name("attachments"),
             chats_dir,
         }
     }
+}
+
+/// Makes `path` readable only by the user.
+fn make_private(path: &Path, mode: u32) -> PortResult<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(mode))
+            .map_err(|e| io_error("proteger", path, e))?;
+    }
+    #[cfg(not(unix))]
+    let _ = (path, mode);
+    Ok(())
 }
 
 fn io_error(action: &str, path: &Path, err: std::io::Error) -> PortError {
@@ -30,6 +46,10 @@ impl FileSystem for LocalFileSystem {
 
     fn chats_dir(&self) -> PathBuf {
         self.chats_dir.clone()
+    }
+
+    fn attachments_dir(&self) -> PathBuf {
+        self.attachments_dir.clone()
     }
 
     fn home_dir(&self) -> Option<PathBuf> {
@@ -54,13 +74,7 @@ impl FileSystem for LocalFileSystem {
     fn create_private_dir(&self, path: &Path) -> PortResult<()> {
         fs::create_dir_all(path).map_err(|e| io_error("crear", path, e))?;
         // Account folders hold CLI logins: private to the user.
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(path, fs::Permissions::from_mode(0o700))
-                .map_err(|e| io_error("proteger", path, e))?;
-        }
-        Ok(())
+        make_private(path, 0o700)
     }
 
     fn exists(&self, path: &Path) -> bool {
@@ -110,6 +124,30 @@ impl FileSystem for LocalFileSystem {
         fs::write(path, contents).map_err(|e| io_error("escribir", path, e))
     }
 
+    fn write_private_file(&self, path: &Path, contents: &[u8]) -> PortResult<()> {
+        if let Some(dir) = path.parent() {
+            self.create_private_dir(dir)?;
+        }
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(path).map_err(|e| io_error("crear", path, e))?;
+        file.write_all(contents)
+            .map_err(|e| io_error("escribir", path, e))
+    }
+
+    fn read_bytes(&self, path: &Path) -> PortResult<Option<Vec<u8>>> {
+        match fs::read(path) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(io_error("leer", path, e)),
+        }
+    }
+
     fn remove_file(&self, path: &Path) -> PortResult<()> {
         match fs::remove_file(path) {
             Err(e) if e.kind() != ErrorKind::NotFound => Err(io_error("borrar", path, e)),
@@ -140,6 +178,25 @@ impl FileSystem for LocalFileSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attachments_are_private_and_never_overwritten() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"), tmp.path().join("chats"));
+        assert_eq!(fs_.attachments_dir(), tmp.path().join("attachments"));
+        let file = fs_.attachments_dir().join("t1/a-0.png");
+        fs_.write_private_file(&file, b"img").unwrap();
+        assert_eq!(fs_.read_bytes(&file).unwrap(), Some(b"img".to_vec()));
+        assert!(fs_.write_private_file(&file, b"other").is_err());
+        assert_eq!(fs_.read_bytes(&file.with_file_name("x.png")).unwrap(), None);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode(&file), 0o600);
+            assert_eq!(mode(file.parent().unwrap()), 0o700);
+        }
+    }
 
     #[test]
     fn finds_git_root_and_writes_once() {

@@ -195,6 +195,7 @@ impl Runner {
 
         let clock = Instant::now();
         let task = hedy.start_task(NewTask {
+            images: Vec::new(),
             project: repo.to_owned(),
             prompt: case.spec.prompt.clone(),
             mode: TaskMode::Project,

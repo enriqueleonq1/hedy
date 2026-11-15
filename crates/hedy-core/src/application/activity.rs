@@ -98,6 +98,7 @@ mod tests {
             .unwrap();
         f.hedy
             .start_task(NewTask {
+                images: Vec::new(),
                 project: f.dir(project),
                 prompt: prompt.into(),
                 mode: TaskMode::Project,

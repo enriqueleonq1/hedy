@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use super::{AppError, AppResult, Hedy};
+use super::{AppError, AppResult, Hedy, NewImage};
 use crate::domain::phase::pipeline;
 use crate::domain::task::title_from_prompt;
 use crate::domain::{
@@ -22,6 +22,8 @@ pub struct NewConversation {
     /// `None`: the default account. Hedy never picks another one by itself.
     pub account: Option<String>,
     pub model: Option<String>,
+    /// Images attached to the question.
+    pub images: Vec<NewImage>,
 }
 
 impl Hedy {
@@ -64,6 +66,7 @@ impl Hedy {
         };
         policy::check_launch(None, &account.id, &self.projects()?)?;
         self.backend(&account)?;
+        self.check_images(&request.images, &account)?;
 
         let now = self.clock.now_ms();
         let id = self.new_task_id(now);
@@ -99,12 +102,15 @@ impl Hedy {
             merge: None,
             wait: None,
             conversation: true,
+            images: Vec::new(),
         };
+        task.images = self.store_images(&task.id, &request.images)?;
         self.store.save_task(&task)?;
         self.record(
             &task.id,
             AgentEvent::UserMessage {
                 text: request.prompt.clone(),
+                images: task.images.clone(),
             },
         )?;
         self.run_stage(&mut task, 0, request.prompt, None)?;
@@ -125,6 +131,7 @@ impl Hedy {
         self.clear_queue(id)?;
         self.store.delete_task(id)?;
         self.fs.remove_dir_all(&folder)?;
+        self.remove_attachments(id)?;
         Ok(())
     }
 
@@ -150,6 +157,7 @@ mod tests {
 
     fn ask(prompt: &str) -> NewConversation {
         NewConversation {
+            images: Vec::new(),
             prompt: prompt.into(),
             mode: TaskMode::Ask,
             account: None,
@@ -336,6 +344,7 @@ mod tests {
         let project_task = f
             .hedy
             .start_task(NewTask {
+                images: Vec::new(),
                 project: f.dir("/code/moira"),
                 prompt: "¿Dónde se crean las citas?".into(),
                 mode: TaskMode::Ask,
@@ -354,7 +363,13 @@ mod tests {
             Err(AppError::TaskNotFound(_))
         ));
         assert!(f.hedy.task_events(&chat.id).unwrap().is_empty());
-        assert_eq!(f.fs.deleted_trees(), vec![chat.project.clone()]);
+        assert_eq!(
+            f.fs.deleted_trees(),
+            vec![
+                chat.project.clone(),
+                PathBuf::from("/data/attachments").join(chat.id.as_str())
+            ]
+        );
         assert!(f.hedy.conversations().unwrap().is_empty());
         assert!(f.hedy.task(&project_task.id).is_ok());
     }

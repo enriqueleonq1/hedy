@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::domain::{
-    Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, LaunchSpec, Note,
-    NoteStatus, Notice, Phase, PlanUsage, Project, QueuedMessage, Skill, SkillStatus, Task, TaskId,
-    TaskMode, UsageProblem, UsageSample, plan_usage::WallTime,
+    Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, ImageSupport,
+    LaunchSpec, Note, NoteStatus, Notice, Phase, PlanUsage, Project, PromptImage, QueuedMessage,
+    Skill, SkillStatus, Task, TaskId, TaskMode, UsageProblem, UsageSample, plan_usage::WallTime,
 };
 
 /// Failure in an adapter. The message is user-facing (Spanish).
@@ -502,6 +502,8 @@ pub struct AgentRequest {
     pub plan_first: bool,
     pub model: Option<String>,
     pub prompt: String,
+    /// Images that go with the prompt (only when the backend takes them).
+    pub images: Vec<PromptImage>,
     /// CLI session to continue.
     pub resume: Option<String>,
     /// The project's shared memory, unless turned off for this account.
@@ -524,12 +526,18 @@ impl AgentRequest {
 
 pub trait AgentLauncher: Send + Sync {
     fn start(&self, request: AgentRequest, events: EventSink) -> PortResult<Box<dyn AgentSession>>;
+    /// Whether the backend takes images with a prompt, through the CLI's
+    /// (or API's) official input.
+    fn image_support(&self, _backend: &AgentBackend) -> ImageSupport {
+        ImageSupport::No
+    }
 }
 
 /// A running agent process.
 pub trait AgentSession: Send {
-    /// A follow-up message from the user.
-    fn send(&mut self, text: &str) -> PortResult<()>;
+    /// A follow-up message from the user, with its images (only sent when
+    /// [`AgentLauncher::image_support`] allows them).
+    fn send(&mut self, text: &str, images: &[PromptImage]) -> PortResult<()>;
     /// Answers a permission (or plan) request.
     fn answer(&mut self, request_id: &str, allow: bool, message: Option<&str>) -> PortResult<()>;
     fn stop(&mut self);
@@ -560,6 +568,9 @@ pub trait FileSystem: Send + Sync {
     fn account_folder(&self, id: &AccountId) -> PathBuf;
     /// Where conversations outside any project get their scratch folders.
     fn chats_dir(&self) -> PathBuf;
+    /// Where images attached to messages are kept, one folder per task.
+    /// Never inside a repository.
+    fn attachments_dir(&self) -> PathBuf;
     /// The user's home folder, if known.
     fn home_dir(&self) -> Option<PathBuf>;
     /// Creates `path` (and missing parents). Fails when `path` already
@@ -581,6 +592,11 @@ pub trait FileSystem: Send + Sync {
     fn read_text(&self, path: &Path) -> PortResult<Option<String>>;
     /// Creates or replaces a file, creating its parent folders.
     fn write_text(&self, path: &Path, contents: &str) -> PortResult<()>;
+    /// Writes a file readable only by the user (its folder too), creating
+    /// the folder when missing. Fails when the file already exists.
+    fn write_private_file(&self, path: &Path, contents: &[u8]) -> PortResult<()>;
+    /// A file's bytes; `None` when it does not exist.
+    fn read_bytes(&self, path: &Path) -> PortResult<Option<Vec<u8>>>;
     /// Deletes a file; nothing happens when it does not exist.
     fn remove_file(&self, path: &Path) -> PortResult<()>;
     /// Deletes a folder only when it exists and is empty.

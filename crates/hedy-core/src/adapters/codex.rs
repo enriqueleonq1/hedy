@@ -20,7 +20,7 @@ use crate::application::ports::{
     AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
 use crate::domain::agent::looks_like_tests;
-use crate::domain::{AgentEvent, PlanStep, StepStatus, UsageSample, prompts};
+use crate::domain::{AgentEvent, PlanStep, PromptImage, StepStatus, UsageSample, prompts};
 use crate::tr;
 
 pub struct CodexLauncher;
@@ -42,6 +42,8 @@ struct State {
     planning: bool,
     plans: u32,
     first_prompt: Option<String>,
+    /// Images of the first prompt.
+    first_images: Vec<PromptImage>,
     model: Option<String>,
     resume: Option<String>,
     /// Extra instructions for the thread (the memory guidance).
@@ -91,7 +93,7 @@ impl Shared {
     }
 
     /// A user turn. `read_only` overrides the session's sandbox for this turn.
-    fn turn(&self, text: &str, read_only: bool) -> PortResult<()> {
+    fn turn(&self, text: &str, images: &[PromptImage], read_only: bool) -> PortResult<()> {
         let thread = self.state.lock().unwrap().thread.clone();
         let Some(thread) = thread else {
             return Err(PortError::new(tr!(
@@ -101,7 +103,7 @@ impl Shared {
         };
         self.request(
             "turn/start",
-            json!({"threadId": thread, "input": [{"type": "text", "text": text}],
+            json!({"threadId": thread, "input": super::images::codex_input(text, images),
                    "sandboxPolicy": Self::sandbox(read_only)}),
             Pending::Other,
         )
@@ -150,6 +152,7 @@ impl AgentLauncher for CodexLauncher {
                 planning: request.plan_first,
                 plans: 0,
                 first_prompt: Some(first_prompt),
+                first_images: request.images.clone(),
                 model: request.model.clone(),
                 resume: request.resume.clone(),
                 instructions: request
@@ -305,17 +308,21 @@ fn response(shared: &Shared, id: u64, msg: &Value) -> PortResult<()> {
                 .as_str()
                 .unwrap_or_default()
                 .to_owned();
-            let (prompt, read_only) = {
+            let (prompt, images, read_only) = {
                 let mut s = shared.state.lock().unwrap();
                 s.thread = Some(thread.clone());
-                (s.first_prompt.take(), s.read_only || s.planning)
+                (
+                    s.first_prompt.take(),
+                    std::mem::take(&mut s.first_images),
+                    s.read_only || s.planning,
+                )
             };
             shared.emit(AgentEvent::SessionStarted {
                 session_id: thread,
                 model: result["model"].as_str().unwrap_or("codex").to_owned(),
             });
             match prompt {
-                Some(prompt) => shared.turn(&prompt, read_only),
+                Some(prompt) => shared.turn(&prompt, &images, read_only),
                 None => Ok(()),
             }
         }
@@ -537,12 +544,12 @@ fn notification(shared: &Shared, method: &str, p: &Value) -> PortResult<()> {
 }
 
 impl AgentSession for CodexSession {
-    fn send(&mut self, text: &str) -> PortResult<()> {
+    fn send(&mut self, text: &str, images: &[PromptImage]) -> PortResult<()> {
         let read_only = {
             let s = self.shared.state.lock().unwrap();
             s.read_only || s.planning
         };
-        self.shared.turn(text, read_only)
+        self.shared.turn(text, images, read_only)
     }
 
     fn answer(&mut self, request_id: &str, allow: bool, message: Option<&str>) -> PortResult<()> {
@@ -553,9 +560,11 @@ impl AgentSession for CodexSession {
                     s.planning = false;
                     s.read_only
                 };
-                return self.shared.turn(&prompts::plan_approved(), read_only);
+                return self.shared.turn(&prompts::plan_approved(), &[], read_only);
             }
-            return self.shared.turn(message.unwrap_or("Revisa el plan."), true);
+            return self
+                .shared
+                .turn(message.unwrap_or("Revisa el plan."), &[], true);
         }
         let id = self
             .shared
@@ -639,6 +648,7 @@ for line in sys.stdin:
         let (tx, rx) = mpsc::channel();
         let tx = Mutex::new(tx);
         let request = AgentRequest {
+            images: Vec::new(),
             backend: AgentBackend::Codex,
             launch: LaunchSpec::program("sh", vec!["-c".into(), "read x; exit 3".into()]),
             mode: TaskMode::Project,
@@ -665,6 +675,7 @@ for line in sys.stdin:
     #[test]
     fn mcp_servers_are_config_overrides() {
         let mut request = AgentRequest {
+            images: Vec::new(),
             backend: AgentBackend::Codex,
             launch: LaunchSpec::program("codex", vec![]),
             mode: TaskMode::Project,
@@ -702,6 +713,7 @@ for line in sys.stdin:
         let (tx, rx) = mpsc::channel();
         let tx = Mutex::new(tx);
         let request = AgentRequest {
+            images: Vec::new(),
             backend: AgentBackend::Codex,
             launch: LaunchSpec::program(
                 "python3",
@@ -828,6 +840,66 @@ for line in sys.stdin:
                 .any(|e| matches!(e, AgentEvent::FileEdited { .. }))
         );
         assert!(!dir.join("hola.txt").exists());
+        session.stop();
+    }
+
+    /// Answers the handshake and records each `turn/start`'s input.
+    const RECORDING_CODEX: &str = r#"
+import json, sys
+log = open(sys.argv[1], "a")
+def out(obj): print(json.dumps(obj), flush=True)
+for line in sys.stdin:
+    msg = json.loads(line)
+    method, mid, p = msg.get("method"), msg.get("id"), msg.get("params", {})
+    if method == "initialize":
+        out({"jsonrpc": "2.0", "id": mid, "result": {"userAgent": "fake"}})
+    elif method == "thread/start":
+        out({"jsonrpc": "2.0", "id": mid, "result": {"thread": {"id": "th-1"}, "model": "gpt"}})
+    elif method == "turn/start":
+        log.write(json.dumps(p["input"]) + "\n"); log.flush()
+        out({"jsonrpc": "2.0", "id": mid, "result": {"turn": {"id": "tu"}}})
+        out({"jsonrpc": "2.0", "method": "turn/completed", "params": {"threadId": "th-1",
+             "turn": {"id": "tu", "status": "completed", "items": [], "durationMs": 1}}})
+"#;
+
+    #[test]
+    fn images_go_as_local_image_items() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().canonicalize().unwrap();
+        let image = crate::adapters::images::tests::png(&dir);
+        let script = dir.join("recording_codex.py");
+        std::fs::write(&script, RECORDING_CODEX).unwrap();
+        let log = dir.join("turns.jsonl");
+        let request = AgentRequest {
+            backend: AgentBackend::Codex,
+            launch: LaunchSpec::program(
+                "python3",
+                vec![
+                    "-I".into(),
+                    script.to_string_lossy().into_owned(),
+                    log.to_string_lossy().into_owned(),
+                ],
+            )
+            .in_dir(dir.clone()),
+            mode: TaskMode::Ask,
+            phase: Phase::Implement,
+            plan_first: false,
+            model: None,
+            prompt: "mira".into(),
+            images: vec![image.clone()],
+            resume: None,
+            memory: None,
+            mcp: vec![],
+        };
+        let mut session = CodexLauncher.start(request, Arc::new(|_| {})).unwrap();
+        let turns = crate::adapters::claude::tests::lines_when(&log, 1);
+        assert_eq!(
+            turns[0],
+            json!([{"type": "text", "text": "mira"}, {"type": "localImage", "path": image.path}])
+        );
+        session.send("otra", &[]).unwrap();
+        let turns = crate::adapters::claude::tests::lines_when(&log, 2);
+        assert_eq!(turns[1], json!([{"type": "text", "text": "otra"}]));
         session.stop();
     }
 }

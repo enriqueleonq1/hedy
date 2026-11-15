@@ -5,7 +5,8 @@
 //! is stopped or reaches its limit, the queue is kept on hold and only the
 //! user sends it (rule 3: nothing goes out by itself after a limit).
 
-use super::{AppError, AppResult, Hedy};
+use super::tasks::current_stage;
+use super::{AppError, AppResult, Hedy, NewImage};
 use crate::domain::queue::join_queued;
 use crate::domain::{HoldReason, LimitLevel, QueuedMessage, Task, TaskId, TaskStatus};
 
@@ -19,19 +20,38 @@ impl Hedy {
     /// it is queued; otherwise it goes now, resuming the session if needed.
     /// Returns what is left in the queue.
     pub fn queue_message(&self, id: &TaskId, text: &str) -> AppResult<Vec<QueuedMessage>> {
+        self.queue_message_with(id, text, Vec::new())
+    }
+
+    /// Like [`Hedy::queue_message`], with images. Images only go with a
+    /// message sent now: they never wait in the queue.
+    pub fn queue_message_with(
+        &self,
+        id: &TaskId,
+        text: &str,
+        images: Vec<NewImage>,
+    ) -> AppResult<Vec<QueuedMessage>> {
         let mut task = self.open_task(id)?;
         let text = text.trim();
         if text.is_empty() {
             return Err(AppError::EmptyPrompt);
         }
+        if !images.is_empty() {
+            let account = self.account(current_stage(&task).account.as_str())?;
+            self.check_images(&images, &account)?;
+        }
         {
             let _queue = self.queue_lock.lock().unwrap();
             if self.turn_in_progress(&task) {
+                if !images.is_empty() {
+                    return Err(AppError::ImagesWhileQueued);
+                }
                 self.store.add_queued(id, text, self.now_secs())?;
                 return self.queue_changed(id);
             }
         }
-        self.deliver(&mut task, text)?;
+        let attachments = self.store_images(id, &images)?;
+        self.deliver(&mut task, text, attachments)?;
         self.queued(id)
     }
 
@@ -71,7 +91,7 @@ impl Hedy {
                 .delete_queued(&messages.iter().map(|m| m.id).collect::<Vec<_>>())?;
             messages
         };
-        let sent = self.deliver(&mut task, &join_queued(&messages));
+        let sent = self.deliver(&mut task, &join_queued(&messages), Vec::new());
         if sent.is_err() {
             // Not lost: back in the queue, on hold.
             for m in &messages {
@@ -123,7 +143,7 @@ impl Hedy {
             messages
         };
         self.queue_changed(&task.id)?;
-        self.deliver(task, &join_queued(&messages))?;
+        self.deliver(task, &join_queued(&messages), Vec::new())?;
         Ok(true)
     }
 
@@ -199,6 +219,7 @@ mod tests {
             .unwrap();
         f.hedy
             .start_task(NewTask {
+                images: Vec::new(),
                 project: f.dir("/code/moira"),
                 prompt: "Recordatorios".into(),
                 mode: TaskMode::Project,
@@ -250,6 +271,7 @@ mod tests {
         assert_eq!(
             events.last(),
             Some(&AgentEvent::UserMessage {
+                images: Vec::new(),
                 text: "y los tests\n\nusa pytest".into()
             })
         );
@@ -409,6 +431,7 @@ mod tests {
         let task = f
             .hedy
             .start_task(NewTask {
+                images: Vec::new(),
                 project: f.dir("/code/moira"),
                 prompt: "Hola".into(),
                 mode: TaskMode::Project,

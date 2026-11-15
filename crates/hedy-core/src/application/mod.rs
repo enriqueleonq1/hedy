@@ -2,6 +2,7 @@
 
 mod accounts;
 mod activity;
+mod attachments;
 mod conversations;
 mod detect;
 mod doctor;
@@ -29,6 +30,7 @@ use std::sync::{Arc, Mutex};
 
 pub use accounts::NewAccount;
 pub use activity::{MAX_FINISHED, RECENT_HOURS, TaskActivity};
+pub use attachments::NewImage;
 pub use conversations::NewConversation;
 pub use detect::DetectedCli;
 pub use doctor::{Check, CheckArea, CheckLevel, DoctorReport};

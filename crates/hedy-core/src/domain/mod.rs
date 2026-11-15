@@ -3,6 +3,7 @@
 pub mod account;
 pub mod activity;
 pub mod agent;
+pub mod attachment;
 pub mod color;
 pub mod diff;
 pub mod env;
@@ -27,6 +28,7 @@ pub mod version;
 pub use account::{Account, AccountId, ConfigFolder, Credentials};
 pub use activity::{Notice, NoticeKind, TaskState, task_state};
 pub use agent::{AgentEvent, Decision, LimitLevel, PlanStep, StepStatus, UsageSample};
+pub use attachment::{Attachment, ImageSupport, ImageType, PromptImage};
 pub use color::Color;
 pub use diff::{Commit, FileDiff};
 pub use error::DomainError;

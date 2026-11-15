@@ -17,7 +17,7 @@ use crate::application::ports::{
     AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
 use crate::domain::permissions::DEFAULT_BLOCKED;
-use crate::domain::{AgentEvent, Phase, TaskMode, prompts};
+use crate::domain::{AgentEvent, Phase, PromptImage, TaskMode, prompts};
 use crate::tr;
 use translate::Translator;
 
@@ -143,9 +143,12 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     args
 }
 
-fn user_message(text: &str) -> Value {
-    json!({"type": "user", "session_id": "", "parent_tool_use_id": null,
-           "message": {"role": "user", "content": text}})
+fn user_message(text: &str, images: &[PromptImage]) -> PortResult<Value> {
+    let content = super::images::claude_content(text, images)?;
+    Ok(
+        json!({"type": "user", "session_id": "", "parent_tool_use_id": null,
+           "message": {"role": "user", "content": content}}),
+    )
 }
 
 /// State shared by the reader thread and the session handle.
@@ -257,7 +260,9 @@ impl AgentLauncher for ClaudeCodeLauncher {
             &json!({"type": "control_request", "request_id": "hedy-init",
                                     "request": {"subtype": "initialize"}}),
         )?;
-        session.writer.send(&user_message(&request.prompt))?;
+        session
+            .writer
+            .send(&user_message(&request.prompt, &request.images)?)?;
         Ok(Box::new(session))
     }
 }
@@ -295,9 +300,10 @@ fn read_events(
 }
 
 impl AgentSession for ClaudeSession {
-    fn send(&mut self, text: &str) -> PortResult<()> {
+    fn send(&mut self, text: &str, images: &[PromptImage]) -> PortResult<()> {
+        let message = user_message(text, images)?;
         self.turn_open.store(true, Ordering::SeqCst);
-        self.writer.send(&user_message(text))
+        self.writer.send(&message)
     }
 
     fn answer(&mut self, request_id: &str, allow: bool, message: Option<&str>) -> PortResult<()> {
@@ -337,7 +343,7 @@ impl Drop for ClaudeSession {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -347,6 +353,7 @@ mod tests {
 
     fn request(mode: TaskMode, plan_first: bool) -> AgentRequest {
         AgentRequest {
+            images: Vec::new(),
             backend: crate::application::ports::AgentBackend::ClaudeCode,
             launch: LaunchSpec::program("claude", vec![]),
             mode,
@@ -598,11 +605,68 @@ for line in sys.stdin:
         assert!(!dir.join("hola.txt").exists());
 
         // Same process, second turn.
-        session.send("otra vez").unwrap();
+        session.send("otra vez", &[]).unwrap();
         let request = until_permission(&rx);
         session.answer(&request, true, None).unwrap();
         rest_of_turn(&rx);
         assert!(dir.join("hola.txt").exists());
         session.stop();
+    }
+
+    /// Lines `path` holds once it has at least `count` of them (waits a little).
+    pub(crate) fn lines_when(path: &std::path::Path, count: usize) -> Vec<Value> {
+        for _ in 0..100 {
+            let text = std::fs::read_to_string(path).unwrap_or_default();
+            let lines: Vec<Value> = text
+                .lines()
+                .filter_map(|l| serde_json::from_str(l).ok())
+                .collect();
+            if lines.len() >= count {
+                return lines;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        panic!("{} never had {count} lines", path.display());
+    }
+
+    #[test]
+    fn images_go_as_content_blocks_of_the_user_message() {
+        let tmp = tempfile::tempdir().unwrap();
+        let image = crate::adapters::images::tests::png(tmp.path());
+        let stdin = tmp.path().join("stdin.jsonl");
+        let launch = LaunchSpec::program(
+            "sh",
+            vec!["-c".into(), format!("cat > '{}'", stdin.display())],
+        );
+        let mut session = ClaudeCodeLauncher::default()
+            .start(
+                AgentRequest {
+                    launch,
+                    images: vec![image.clone()],
+                    ..request(TaskMode::Project, false)
+                },
+                Arc::new(|_| {}),
+            )
+            .unwrap();
+        session.send("y esta", &[image]).unwrap();
+        session.send("sin imagen", &[]).unwrap();
+        let lines = lines_when(&stdin, 4);
+        session.stop();
+        let content = |i: usize| lines[i]["message"]["content"].clone();
+        assert_eq!(lines[1]["type"], "user");
+        assert_eq!(content(1)[0], json!({"type": "text", "text": "hola"}));
+        assert_eq!(content(1)[1]["type"], "image");
+        assert_eq!(content(1)[1]["source"]["type"], "base64");
+        assert_eq!(content(1)[1]["source"]["media_type"], "image/png");
+        assert!(
+            content(1)[1]["source"]["data"]
+                .as_str()
+                .unwrap()
+                .starts_with("iVBORw0KGgp4eA==")
+        );
+        assert_eq!(content(2)[0]["text"], "y esta");
+        assert_eq!(content(2)[1]["type"], "image");
+        // Without images the content stays a plain string, as before.
+        assert_eq!(content(3), json!("sin imagen"));
     }
 }

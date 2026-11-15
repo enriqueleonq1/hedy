@@ -59,6 +59,12 @@ pub enum DomainError {
     EmptyTemplate,
     #[error("{}", self.message())]
     InvalidProjectName(String),
+    #[error("{}", self.message())]
+    ImageTooLarge(String),
+    #[error("{}", self.message())]
+    UnsupportedImage(String),
+    #[error("{}", self.message())]
+    TooManyImages(usize),
 }
 
 impl DomainError {
@@ -163,6 +169,18 @@ impl DomainError {
             Self::InvalidProjectName(name) if name.is_empty() => {
                 tr!("ponle un nombre al proyecto", "give the project a name")
             }
+            Self::ImageTooLarge(name) => tr!(
+                "«{name}» pesa más de 5 MB: reduce la imagen o recórtala",
+                "«{name}» is larger than 5 MB: shrink or crop the image"
+            ),
+            Self::UnsupportedImage(name) => tr!(
+                "«{name}» no es una imagen PNG, JPEG, GIF o WebP",
+                "«{name}» is not a PNG, JPEG, GIF or WebP image"
+            ),
+            Self::TooManyImages(max) => tr!(
+                "como mucho {max} imágenes por mensaje",
+                "at most {max} images per message"
+            ),
             Self::InvalidProjectName(name) => tr!(
                 "«{name}» no sirve como nombre de carpeta: usa letras o números",
                 "«{name}» does not work as a folder name: use letters or digits"

@@ -24,7 +24,9 @@ use crate::application::ports::{
     AgentBackend, AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
 use crate::domain::agent::looks_like_tests;
-use crate::domain::{AgentEvent, Decision, PlanStep, StepStatus, UsageSample, prompts};
+use crate::domain::{
+    AgentEvent, Decision, PlanStep, PromptImage, StepStatus, UsageSample, prompts,
+};
 use crate::tr;
 
 /// The protocol version Hedy speaks.
@@ -37,6 +39,22 @@ enum Pending {
     Initialize,
     Session,
     Prompt,
+}
+
+/// A user turn: text and the images that go with it.
+#[derive(Debug, Clone, Default)]
+struct Turn {
+    text: String,
+    images: Vec<PromptImage>,
+}
+
+impl Turn {
+    fn text(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            images: Vec::new(),
+        }
+    }
 }
 
 /// A tool call as the agent describes it, kept until it completes.
@@ -65,11 +83,13 @@ struct State {
     /// The current turn only proposes a plan.
     planning: bool,
     plans: u32,
-    first_prompt: Option<String>,
+    first_prompt: Option<Turn>,
+    /// The agent's `promptCapabilities.image`: without it, images are not sent.
+    takes_images: bool,
     /// A prompt is running; further messages wait in `queued`.
     in_turn: bool,
     turn_started: Option<Instant>,
-    queued: VecDeque<String>,
+    queued: VecDeque<Turn>,
     message: String,
     last_message: String,
     tools: HashMap<String, ToolCall>,
@@ -123,21 +143,43 @@ impl Shared {
         });
     }
 
-    /// Sends a prompt now, or after the running one.
-    fn prompt(&self, text: &str) -> PortResult<()> {
-        let session = {
+    /// Sends a prompt now, or after the running one. Images only go to an
+    /// agent that said it takes them; otherwise the user is told and only
+    /// the text goes.
+    fn prompt(&self, turn: Turn) -> PortResult<()> {
+        let (session, takes_images, name) = {
             let mut s = self.state.lock().unwrap();
             if s.in_turn || s.session.is_none() {
-                s.queued.push_back(text.to_owned());
+                s.queued.push_back(turn);
                 return Ok(());
             }
             s.in_turn = true;
             s.turn_started = Some(Instant::now());
-            s.session.clone().unwrap_or_default()
+            (
+                s.session.clone().unwrap_or_default(),
+                s.takes_images,
+                s.name.clone(),
+            )
+        };
+        let images: &[PromptImage] = if takes_images { &turn.images } else { &[] };
+        if !takes_images && !turn.images.is_empty() {
+            self.emit(AgentEvent::Error {
+                message: tr!(
+                    "{name} no acepta imágenes: se envió solo el texto.",
+                    "{name} does not take images: only the text was sent."
+                ),
+            });
+        }
+        let prompt = match super::images::acp_prompt(&turn.text, images) {
+            Ok(prompt) => prompt,
+            Err(e) => {
+                self.state.lock().unwrap().in_turn = false;
+                return Err(e);
+            }
         };
         self.request(
             "session/prompt",
-            json!({"sessionId": session, "prompt": [{"type": "text", "text": text}]}),
+            json!({"sessionId": session, "prompt": prompt}),
             Pending::Prompt,
         )
     }
@@ -226,7 +268,11 @@ impl AgentLauncher for AcpLauncher {
                 read_only: request.phase.read_only_in(request.mode),
                 planning: request.plan_first,
                 plans: 0,
-                first_prompt: Some(intro.join("\n\n")),
+                first_prompt: Some(Turn {
+                    text: intro.join("\n\n"),
+                    images: request.images.clone(),
+                }),
+                takes_images: false,
                 in_turn: false,
                 turn_started: None,
                 queued: VecDeque::new(),
@@ -338,8 +384,13 @@ fn response(shared: &Shared, id: u64, msg: &Value) -> PortResult<()> {
             let can_load = result["agentCapabilities"]["loadSession"]
                 .as_bool()
                 .unwrap_or(false);
+            // Omitted capabilities are unsupported (ACP initialization).
+            let takes_images = result["agentCapabilities"]["promptCapabilities"]["image"]
+                .as_bool()
+                .unwrap_or(false);
             let (cwd, mcp, resume) = {
                 let mut s = shared.state.lock().unwrap();
+                s.takes_images = takes_images;
                 let resume = s.resume.clone().filter(|_| can_load);
                 s.loading = resume.is_some();
                 (s.cwd.clone(), s.mcp_servers.clone(), resume)
@@ -374,7 +425,7 @@ fn response(shared: &Shared, id: u64, msg: &Value) -> PortResult<()> {
                 model: String::new(),
             });
             match prompt {
-                Some(prompt) => shared.prompt(&prompt),
+                Some(prompt) => shared.prompt(prompt),
                 None => Ok(()),
             }
         }
@@ -423,7 +474,7 @@ fn turn_ended(shared: &Shared, stop_reason: &str) -> PortResult<()> {
         });
     }
     match next {
-        Some(text) => shared.prompt(&text),
+        Some(turn) => shared.prompt(turn),
         None => Ok(()),
     }
 }
@@ -689,17 +740,22 @@ fn answer_with(shared: &Shared, id: &Value, options: &[Value], allow: bool) -> P
 }
 
 impl AgentSession for AcpSession {
-    fn send(&mut self, text: &str) -> PortResult<()> {
-        self.shared.prompt(text)
+    fn send(&mut self, text: &str, images: &[PromptImage]) -> PortResult<()> {
+        self.shared.prompt(Turn {
+            text: text.to_owned(),
+            images: images.to_vec(),
+        })
     }
 
     fn answer(&mut self, request_id: &str, allow: bool, message: Option<&str>) -> PortResult<()> {
         if request_id.starts_with("acp-plan-") {
             if allow {
                 self.shared.state.lock().unwrap().planning = false;
-                return self.shared.prompt(&prompts::plan_approved());
+                return self.shared.prompt(Turn::text(prompts::plan_approved()));
             }
-            return self.shared.prompt(message.unwrap_or("Revisa el plan."));
+            return self
+                .shared
+                .prompt(Turn::text(message.unwrap_or("Revisa el plan.")));
         }
         let (id, options) = self
             .shared
@@ -820,6 +876,7 @@ for line in sys.stdin:
         .in_dir(dir.to_owned());
         launch.args.push("acp".into());
         let request = AgentRequest {
+            images: Vec::new(),
             backend: AgentBackend::Acp {
                 name: "Kimi Code".into(),
                 model_flag: None,
@@ -940,5 +997,93 @@ for line in sys.stdin:
             );
             session.stop();
         }
+    }
+
+    /// Says whether it takes images (`FAKE_ACP_IMAGES`) and answers each
+    /// prompt with the types of its blocks.
+    const IMAGE_ACP: &str = r#"
+import json, os, sys
+images = os.environ.get("FAKE_ACP_IMAGES") == "1"
+def send(msg):
+    sys.stdout.write(json.dumps(msg) + "\n"); sys.stdout.flush()
+for line in sys.stdin:
+    msg = json.loads(line)
+    method, mid, params = msg.get("method"), msg.get("id"), msg.get("params", {})
+    if method == "initialize":
+        caps = {"loadSession": False}
+        if images:
+            caps["promptCapabilities"] = {"image": True}
+        send({"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": 1, "agentCapabilities": caps}})
+    elif method == "session/new":
+        send({"jsonrpc": "2.0", "id": mid, "result": {"sessionId": "s-1"}})
+    elif method == "session/prompt":
+        blocks = params["prompt"]
+        kinds = ",".join(b["type"] + (":" + b["mimeType"] if b["type"] == "image" else "") for b in blocks)
+        send({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "s-1",
+              "update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": kinds}}}})
+        send({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": "end_turn"}})
+"#;
+
+    fn image_turn(takes_images: bool) -> Vec<AgentEvent> {
+        let tmp = tempfile::tempdir().unwrap();
+        let image = crate::adapters::images::tests::png(tmp.path());
+        let script = tmp.path().join("image_acp.py");
+        std::fs::write(&script, IMAGE_ACP).unwrap();
+        let (tx, rx) = mpsc::channel();
+        let tx = Mutex::new(tx);
+        let flag = if takes_images { "1" } else { "0" };
+        let request = AgentRequest {
+            backend: AgentBackend::Acp {
+                name: "Gemini CLI".into(),
+                model_flag: None,
+            },
+            launch: LaunchSpec::program(
+                "env",
+                vec![
+                    format!("FAKE_ACP_IMAGES={flag}"),
+                    "python3".into(),
+                    "-I".into(),
+                    script.to_string_lossy().into_owned(),
+                ],
+            )
+            .in_dir(tmp.path().to_owned()),
+            mode: TaskMode::Ask,
+            phase: Phase::Implement,
+            plan_first: false,
+            model: None,
+            prompt: "mira".into(),
+            images: vec![image],
+            resume: None,
+            memory: None,
+            mcp: vec![],
+        };
+        let mut session = AcpLauncher
+            .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
+            .unwrap();
+        let seen = until(&rx, |e| matches!(e, AgentEvent::Finished { .. }));
+        session.stop();
+        seen
+    }
+
+    #[test]
+    fn images_go_only_to_agents_that_take_them() {
+        let seen = image_turn(true);
+        assert!(
+            seen.contains(&AgentEvent::Message {
+                text: "text,image:image/png".into()
+            }),
+            "{seen:?}"
+        );
+
+        let seen = image_turn(false);
+        assert!(seen.contains(&AgentEvent::Message {
+            text: "text".into()
+        }));
+        assert!(
+            seen.iter().any(
+                |e| matches!(e, AgentEvent::Error { message } if message.contains("no acepta imágenes"))
+            ),
+            "the user hears the images did not go: {seen:?}"
+        );
     }
 }
