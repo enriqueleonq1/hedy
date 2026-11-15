@@ -318,6 +318,19 @@ ul { list-style: none; margin: 0; padding: 0; }
 .btn--ghost:hover:not(:disabled) { background: var(--panel-2); border-color: var(--line); }
 .btn--danger { border-color: var(--danger); color: var(--danger); }
 .btn--warn { border-color: var(--warn-line); color: var(--warn-ink); }
+
+/* A keyboard hint: a key cap in the button's own color. */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 5px;
+  border: 1px solid currentColor;
+  font: 600 11px/1 var(--font-mono);
+  opacity: 0.8;
+}
 .btn--warn:hover:not(:disabled) { border-color: var(--warn-ink); }
 
 textarea {
@@ -910,6 +923,9 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
 }
 
 .permission-card h3 { font: 700 15px var(--font-ui); }
+/* A card that needs an answer takes the focus when it appears: show it. */
+.plan-card:focus,
+.permission-card:focus { outline: 2px solid var(--focus); outline-offset: 2px; }
 .permission-card__what { font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; }
 
 .composer {

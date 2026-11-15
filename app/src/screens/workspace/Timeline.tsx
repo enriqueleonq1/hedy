@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useAction, useApi } from "../../api/context";
@@ -7,6 +7,7 @@ import { Mascot } from "../../components/Mascot/Mascot";
 import { WorkingWord } from "../../components/Mascot/WorkingWord";
 import { Button } from "../../components/ui/Button";
 import { formatDuration } from "../../format";
+import { keyLabels } from "../../platform";
 import { tasksKey } from "../../tasks/hooks";
 import { isOpen, PHASE_VERB, type Resolution, type TimelineItem } from "../../tasks/timeline";
 import type { TaskMascot } from "../../tasks/useMascot";
@@ -39,7 +40,8 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
   const working = mascot.state === "working";
 
   return (
-    <div className="timeline" aria-live="polite">
+    // Not a live region: the workspace announces only what needs the user or ends the task.
+    <div className="timeline">
       {items.map((item, index) => {
         if (item.type === "user") {
           return (
@@ -173,6 +175,28 @@ function resolutionText(r: Resolution, t: Translate): string {
   return t(RESOLUTION[r.decision]);
 }
 
+/** Typing in a field: card shortcuts stay out of the way. */
+function isTextField(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")
+  );
+}
+
+/**
+ * A card that needs an answer takes the focus when it appears, unless the
+ * user is somewhere else: only from the page itself or the chat, and never
+ * from a field they are typing in.
+ */
+function useClaimFocus(ref: RefObject<HTMLElement | null>, active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    const current = document.activeElement;
+    const free = !current || current === document.body || (!!current.closest(".timeline") && !isTextField(current));
+    if (free) ref.current?.focus();
+  }, [ref, active]);
+}
+
 const TOOL_TITLE: Record<string, MessageKey> = {
   Bash: "workspace.permission.Bash",
   Edit: "workspace.permission.Edit",
@@ -185,7 +209,6 @@ const TOOL_TITLE: Record<string, MessageKey> = {
 
 function PermissionCard({ task, item }: { task: Task; item: Extract<TimelineItem, { type: "permission" }> }) {
   const t = useT();
-  const answer = useAction((api, decision: Decision) => api.answerPermission(task.id, item.requestId, decision));
   const name = item.agent.split(" ")[0] ?? item.agent;
   const titleKey = TOOL_TITLE[item.tool];
   const title = titleKey
@@ -203,14 +226,51 @@ function PermissionCard({ task, item }: { task: Task; item: Extract<TimelineItem
       </p>
     );
   }
+  return <PendingPermission task={task} item={item} title={title} />;
+}
+
+function PendingPermission({
+  task,
+  item,
+  title,
+}: {
+  task: Task;
+  item: Extract<TimelineItem, { type: "permission" }>;
+  title: string;
+}) {
+  const t = useT();
+  const card = useRef<HTMLElement>(null);
+  const answer = useAction((api, decision: Decision) => api.answerPermission(task.id, item.requestId, decision));
   const waiting = task.live;
+  const keys = keyLabels();
+  useClaimFocus(card, waiting);
+
   return (
-    <section className="permission-card" aria-label={title}>
+    <section
+      ref={card}
+      className="permission-card"
+      aria-label={title}
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        // Enter on the card itself (a focused button answers on its own).
+        if (e.key !== "Enter" || e.target !== e.currentTarget || e.ctrlKey || e.metaKey || e.altKey) return;
+        e.preventDefault();
+        if (waiting && !answer.isPending) answer.mutate("allow");
+      }}
+    >
       <h3>{title}</h3>
       <code className="permission-card__what">{item.summary}</code>
       <div className="actions">
-        <Button variant="primary" disabled={!waiting || answer.isPending} onClick={() => answer.mutate("allow")}>
+        <Button
+          variant="primary"
+          aria-keyshortcuts="Enter"
+          disabled={!waiting || answer.isPending}
+          onClick={() => answer.mutate("allow")}
+        >
           {t("workspace.permission.allow")}
+          <kbd className="kbd" aria-hidden>
+            {keys.enter}
+          </kbd>
         </Button>
         <Button className="btn--warn" disabled={!waiting || answer.isPending} onClick={() => answer.mutate("allowForTask")}>
           {t("workspace.permission.allowForTask")}
@@ -232,9 +292,32 @@ function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineIte
     api.answerPlan(task.id, item.requestId ?? "", vars.approve, vars.feedback),
   );
   const pending = item.requestId !== null && item.resolution === null;
+  const card = useRef<HTMLElement>(null);
+  const keys = keyLabels();
+  const approve = () => {
+    if (task.live && !answer.isPending) answer.mutate({ approve: true, feedback: null });
+  };
+  useClaimFocus(card, pending && task.live);
+
+  function shortcut(e: KeyboardEvent<HTMLElement>) {
+    if (!pending || changing || e.ctrlKey || e.metaKey || e.altKey || isTextField(e.target)) return;
+    if (e.key === "Enter" && e.target === e.currentTarget) {
+      e.preventDefault();
+      approve();
+    } else if ((e.key === "e" || e.key === "E") && task.live) {
+      e.preventDefault();
+      setChanging(true);
+    }
+  }
 
   return (
-    <section className={`card plan-card${pending ? " plan-card--pending" : ""}`} aria-label={t("workspace.plan.of", { agent })}>
+    <section
+      ref={card}
+      className={`card plan-card${pending ? " plan-card--pending" : ""}`}
+      aria-label={t("workspace.plan.of", { agent })}
+      tabIndex={pending ? -1 : undefined}
+      onKeyDown={shortcut}
+    >
       <h3>
         Plan · {agent}
         {item.resolution && (
@@ -246,11 +329,17 @@ function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineIte
       <div className="plan-card__text">{item.text}</div>
       {pending && !changing && (
         <div className="actions">
-          <Button variant="primary" disabled={!task.live || answer.isPending} onClick={() => answer.mutate({ approve: true, feedback: null })}>
+          <Button variant="primary" aria-keyshortcuts="Enter" disabled={!task.live || answer.isPending} onClick={approve}>
             {t("workspace.plan.approve")}
+            <kbd className="kbd" aria-hidden>
+              {keys.enter}
+            </kbd>
           </Button>
-          <Button disabled={!task.live} onClick={() => setChanging(true)}>
+          <Button aria-keyshortcuts="E" disabled={!task.live} onClick={() => setChanging(true)}>
             {t("workspace.plan.requestChanges")}
+            <kbd className="kbd" aria-hidden>
+              E
+            </kbd>
           </Button>
         </div>
       )}
@@ -264,13 +353,19 @@ function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineIte
         >
           <label className="field">
             <span className="field__label">{t("workspace.plan.whatToChange")}</span>
-            <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={2} />
+            <textarea autoFocus value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={2} />
           </label>
           <div className="actions">
             <Button type="submit" variant="primary" disabled={!feedback.trim() || answer.isPending}>
               {t("workspace.plan.sendChanges")}
             </Button>
-            <Button variant="ghost" onClick={() => setChanging(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setChanging(false);
+                card.current?.focus();
+              }}
+            >
               {t("common.cancel")}
             </Button>
           </div>
