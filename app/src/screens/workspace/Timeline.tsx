@@ -6,6 +6,7 @@ import { Mascot } from "../../components/Mascot/Mascot";
 import { WorkingWord } from "../../components/Mascot/WorkingWord";
 import { Button } from "../../components/ui/Button";
 import { formatDuration } from "../../format";
+import { Markdown } from "../../components/Markdown";
 import { keyLabels } from "../../platform";
 import { PHASE_VERB, type Resolution, type TimelineItem } from "../../tasks/timeline";
 import type { TaskMascot } from "../../tasks/useMascot";
@@ -101,7 +102,7 @@ function Item({ task, item }: { task: Task; item: TimelineItem }) {
   const t = useT();
   switch (item.type) {
     case "agent":
-      return <p className="agent-text">{item.text}</p>;
+      return <Markdown className="agent-text" text={item.text} />;
     case "plan":
       return <PlanCard task={task} item={item} agent={item.agent} />;
     case "steps":
@@ -328,7 +329,7 @@ function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineIte
           </span>
         )}
       </h3>
-      <div className="plan-card__text">{item.text}</div>
+      <Markdown className="plan-card__text" text={item.text} />
       {pending && !changing && (
         <div className="actions">
           <Button variant="primary" aria-keyshortcuts="Enter" disabled={!task.live || answer.isPending} onClick={approve}>
