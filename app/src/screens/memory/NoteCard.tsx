@@ -136,7 +136,7 @@ export function NoteCard({
             <Button small onClick={edit}>
               {t("common.edit")}
             </Button>
-            <Button small className="btn--danger" disabled={busy} onClick={() => forget.mutate(undefined)}>
+            <Button small variant="ghost" disabled={busy} onClick={() => forget.mutate(undefined)}>
               {t(looksLike.length > 0 ? "memory.similar.discard" : "common.reject")}
             </Button>
           </>

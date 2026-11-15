@@ -124,7 +124,7 @@ export function SkillCard({
             <Button small onClick={() => setEditing(true)}>
               {t("common.edit")}
             </Button>
-            <Button small className="btn--danger" disabled={busy} onClick={() => reject.mutate(undefined)}>
+            <Button small variant="ghost" disabled={busy} onClick={() => reject.mutate(undefined)}>
               {t("common.reject")}
             </Button>
           </>

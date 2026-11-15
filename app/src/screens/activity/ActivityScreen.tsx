@@ -274,7 +274,7 @@ function PermissionActions({ task }: { task: Task }) {
       <Button small variant="primary" disabled={answer.isPending} onClick={() => answer.mutate("allow")}>
         {t("activity.inbox.allowOnce")}
       </Button>
-      <Button small className="btn--warn" disabled={answer.isPending} onClick={() => answer.mutate("deny")}>
+      <Button small variant="ghost" disabled={answer.isPending} onClick={() => answer.mutate("deny")}>
         {t("activity.inbox.deny")}
       </Button>
     </div>
