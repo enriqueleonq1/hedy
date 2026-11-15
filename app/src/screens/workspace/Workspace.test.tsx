@@ -17,7 +17,7 @@ function setup() {
   return { api, user: userEvent.setup() };
 }
 
-const PANEL = "Cambios, terminal y vista previa";
+const PANEL = "Código, revisión, terminal y vista previa";
 
 async function openProject(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
   await user.click(await screen.findByRole("button", { name }));
@@ -43,10 +43,11 @@ describe("Workspace", () => {
     // The steps before the card, summed up in one line that opens on demand.
     const group = screen.getByRole("button", { name: "2 pasos · editó 2 archivos" });
     expect(group).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText("Claude editó citas/servicio.py")).toBeNull();
+    expect(screen.queryByRole("button", { name: "citas/servicio.py" })).toBeNull();
     await user.click(group);
     expect(group).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByText("Claude editó citas/servicio.py")).toBeInTheDocument();
+    // The edited file is a link to it in the viewer.
+    expect(screen.getByRole("button", { name: "citas/servicio.py" }).parentElement).toHaveTextContent("Claude editó citas/servicio.py");
     await user.click(within(card).getByRole("button", { name: "Permitir en este chat" }));
 
     expect(await screen.findByText(/Claude: pasan los tests/)).toBeInTheDocument();
@@ -218,7 +219,7 @@ describe("Workspace", () => {
     await user.click(toggle);
     expect(screen.queryByRole("complementary", { name: PANEL })).not.toBeInTheDocument();
     expect(toggle).toHaveAttribute("aria-pressed", "false");
-    expect(toggle).toHaveAccessibleName("Panel lateral: cambios, terminal y vista previa, hay cambios por revisar");
+    expect(toggle).toHaveAccessibleName("Panel lateral: código, revisión, terminal y vista previa, hay cambios por revisar");
     expect(sessionStorage.getItem("hedy.sidePanel")).toBe("hidden");
     await user.keyboard("{Control>}1{/Control}");
     await user.keyboard("{Control>}3{/Control}");
@@ -401,7 +402,7 @@ describe("Workspace", () => {
     await user.clear(address);
     await user.type(address, "http://localhost:5173");
     await user.click(screen.getByRole("button", { name: "Abrir" }));
-    expect(screen.getByTitle("Vista previa")).toHaveAttribute("src", "http://localhost:5173");
+    expect(screen.getAllByTitle("Vista previa").find((el) => el.tagName === "IFRAME")).toHaveAttribute("src", "http://localhost:5173");
   });
 
 });
