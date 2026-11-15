@@ -76,6 +76,7 @@ pub fn run() {
             commands::queued,
             commands::queue_message,
             commands::image_support,
+            commands::project_files,
             commands::attachment,
             commands::edit_queued,
             commands::remove_queued,

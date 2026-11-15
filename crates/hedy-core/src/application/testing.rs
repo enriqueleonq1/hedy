@@ -494,6 +494,7 @@ pub struct FakeGit {
     diff: Mutex<Vec<FileDiff>>,
     worktrees: Mutex<Vec<String>>,
     init_error: Mutex<Option<String>>,
+    files: Mutex<Vec<String>>,
 }
 
 impl Default for FakeGit {
@@ -510,11 +511,16 @@ impl Default for FakeGit {
             diff: Mutex::default(),
             worktrees: Mutex::default(),
             init_error: Mutex::default(),
+            files: Mutex::default(),
         }
     }
 }
 
 impl FakeGit {
+    /// What `list_files` answers.
+    pub fn set_files(&self, files: &[&str]) {
+        *self.files.lock().unwrap() = files.iter().map(|f| f.to_string()).collect();
+    }
     pub fn log(&self) -> Vec<String> {
         self.log.lock().unwrap().clone()
     }
@@ -620,6 +626,9 @@ impl Git for FakeGit {
     }
     fn remote_branches_containing(&self, _: &Path, _: &str) -> PortResult<Vec<String>> {
         Ok(self.remotes.lock().unwrap().clone())
+    }
+    fn list_files(&self, _repo: &Path) -> PortResult<Vec<String>> {
+        Ok(self.files.lock().unwrap().clone())
     }
     fn init_repo(&self, dir: &Path, message: &str) -> PortResult<()> {
         if let Some(error) = self.init_error.lock().unwrap().take() {

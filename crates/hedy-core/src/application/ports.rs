@@ -383,6 +383,9 @@ pub trait Git: Send + Sync {
     /// tasks can fork worktrees from it right away. Keeps the user's default
     /// branch name and identity.
     fn init_repo(&self, dir: &Path, message: &str) -> PortResult<()>;
+    /// The repository's files, relative to `repo`: tracked ones and
+    /// untracked ones git does not ignore (`.gitignore`, `.git/info/exclude`).
+    fn list_files(&self, repo: &Path) -> PortResult<Vec<String>>;
 }
 
 /// Receives the agent's events, on the adapter's own thread.

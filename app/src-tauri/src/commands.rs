@@ -442,6 +442,15 @@ pub async fn queue_message(
     .await
 }
 
+/// The project's files for `@` mentions (never `.env` or keys), sorted and capped.
+#[tauri::command]
+pub async fn project_files(
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> CommandResult<Vec<String>> {
+    blocking(&state, move |h| h.project_files(&path)).await
+}
+
 /// Whether the account's agent takes images with a prompt.
 #[tauri::command]
 pub async fn image_support(

@@ -210,6 +210,25 @@ impl Git for GitCli {
         Err(PortError::new(format!("git commit: {}", stderr.trim())))
     }
 
+    fn list_files(&self, repo: &Path) -> PortResult<Vec<String>> {
+        // `-z`: names as they are, without quoting unusual characters.
+        let out = git(
+            repo,
+            &[
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+            ],
+        )?;
+        Ok(out
+            .split('\0')
+            .filter(|p| !p.is_empty())
+            .map(str::to_owned)
+            .collect())
+    }
+
     fn recent_commits(&self, repo: &Path, limit: usize) -> PortResult<Vec<Commit>> {
         let out =
             git(repo, &["log", &format!("-n{limit}"), "--format=%h%x1f%s"]).unwrap_or_default();
@@ -305,6 +324,23 @@ mod tests {
                 .trim()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn lists_tracked_and_untracked_files_but_not_ignored_ones() {
+        let (_tmp, repo) = repo();
+        fs::write(repo.join(".gitignore"), "build/\n").unwrap();
+        fs::create_dir_all(repo.join("build")).unwrap();
+        fs::write(repo.join("build/out.js"), "x").unwrap();
+        fs::create_dir_all(repo.join("src")).unwrap();
+        fs::write(repo.join("src/nuevo archivo.py"), "x").unwrap();
+        let g = GitCli;
+        g.ensure_excluded(&repo, "/.hedy/").unwrap();
+        fs::create_dir_all(repo.join(".hedy/worktrees/t1")).unwrap();
+        fs::write(repo.join(".hedy/worktrees/t1/app.py"), "x").unwrap();
+        let mut files = g.list_files(&repo).unwrap();
+        files.sort();
+        assert_eq!(files, [".gitignore", "app.py", "src/nuevo archivo.py"]);
     }
 
     #[test]
