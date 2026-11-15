@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::domain::code::{Blame, CommitInfo, FileBytes, LineMatch, PathChange, TextQuery};
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, ImageSupport,
     LaunchSpec, Note, NoteStatus, Notice, Phase, PlanUsage, Project, PromptImage, QueuedMessage,
@@ -608,4 +609,80 @@ pub trait FileSystem: Send + Sync {
     fn canonicalize(&self, dir: &Path) -> PortResult<PathBuf>;
     /// Root of the git repository containing `dir`, if any.
     fn git_root(&self, dir: &Path) -> Option<PathBuf>;
+}
+
+/// Read-only access to a copy of the code and its git history, for code
+/// navigation and review. `dir` is where git runs: the user's folder or a
+/// task's worktree. `rev: None` reads the working files in `dir`; `Some`
+/// reads the commit (or tree) `rev` instead. Paths are relative to `dir`,
+/// already checked by the use case ([`crate::domain::code::normalize_code_path`]).
+/// Nothing here writes to the repository (not even the index).
+pub trait CodeReader: Send + Sync {
+    /// Every file in the commit `rev` (`git ls-tree -r`).
+    fn files_at(&self, dir: &Path, rev: &str) -> PortResult<Vec<String>>;
+    /// Untracked files git ignores, in the working copy; whole ignored
+    /// folders are collapsed into one entry ending with `/`.
+    fn ignored_files(&self, dir: &Path) -> PortResult<Vec<String>>;
+    /// What changed from `base` to `to` (a commit), or, with `to: None`, to
+    /// the working files: tracked changes (staged or not) plus untracked
+    /// files git does not ignore (`ChangeKind::Untracked`).
+    fn changes(&self, dir: &Path, base: &str, to: Option<&str>) -> PortResult<Vec<PathChange>>;
+    /// The first `max` bytes of a file and its size; `None` when it does not
+    /// exist there. Working files are read through symbolic links only when
+    /// they stay inside `dir` (otherwise an error).
+    fn read_file(
+        &self,
+        dir: &Path,
+        rev: Option<&str>,
+        path: &str,
+        max: u64,
+    ) -> PortResult<Option<FileBytes>>;
+    /// A file's size; `None` when it does not exist there.
+    fn file_size(&self, dir: &Path, rev: Option<&str>, path: &str) -> PortResult<Option<u64>>;
+    /// The unified diff of one file from `base` to `to` (or the working
+    /// file), with `context` lines around changes; `old_path` is the other
+    /// side of a rename. `None` when nothing changed.
+    fn diff_file(
+        &self,
+        dir: &Path,
+        base: &str,
+        to: Option<&str>,
+        path: &str,
+        old_path: Option<&str>,
+        context: u32,
+    ) -> PortResult<Option<FileDiff>>;
+    /// Lines matching `query` (`git grep`; untracked files included when
+    /// reading working files; binary files skipped), never in files whose
+    /// name matches one of `exclude` (shell globs on the file name) nor
+    /// under `exclude_dirs`. At most `max` lines; `true` when there were more.
+    fn grep(
+        &self,
+        dir: &Path,
+        rev: Option<&str>,
+        query: &TextQuery,
+        exclude: &[&str],
+        exclude_dirs: &[&str],
+        max: usize,
+    ) -> PortResult<(Vec<(String, LineMatch)>, bool)>;
+    /// Commits that touched the file, newest first, following renames
+    /// (`git log --follow`), from `rev` or `HEAD`. With `lines` (1-based,
+    /// inclusive, as in that commit), only those that touched that range
+    /// (`git log -L`).
+    fn file_log(
+        &self,
+        dir: &Path,
+        rev: Option<&str>,
+        path: &str,
+        lines: Option<(u32, u32)>,
+        max: usize,
+    ) -> PortResult<Vec<CommitInfo>>;
+    /// Who wrote each line (`git blame --porcelain`) of the working file or
+    /// of `rev`; with `lines`, only that range.
+    fn blame(
+        &self,
+        dir: &Path,
+        rev: Option<&str>,
+        path: &str,
+        lines: Option<(u32, u32)>,
+    ) -> PortResult<Blame>;
 }

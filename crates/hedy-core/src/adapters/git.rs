@@ -12,7 +12,7 @@ use crate::tr;
 
 pub struct GitCli;
 
-fn run(dir: &Path, args: &[&str]) -> PortResult<Output> {
+pub(super) fn run(dir: &Path, args: &[&str]) -> PortResult<Output> {
     Command::new("git")
         .arg("-C")
         .arg(dir)
@@ -23,7 +23,7 @@ fn run(dir: &Path, args: &[&str]) -> PortResult<Output> {
 }
 
 /// Runs git and returns stdout, or an error with git's own message.
-fn git(dir: &Path, args: &[&str]) -> PortResult<String> {
+pub(super) fn git(dir: &Path, args: &[&str]) -> PortResult<String> {
     let out = run(dir, args)?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())

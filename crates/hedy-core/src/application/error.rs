@@ -95,6 +95,19 @@ pub enum AppError {
     /// Images cannot wait in the queue: they go only with a message sent now.
     #[error("{}", self.message())]
     ImagesWhileQueued,
+    /// A path that is not a file inside the copy (absolute, `..`, `.git`...).
+    #[error("{}", self.message())]
+    InvalidCodePath(String),
+    /// A revision git should not be handed (an option, a range...).
+    #[error("{}", self.message())]
+    InvalidRevision(String),
+    /// The task's copy is gone (discarded, or accepted before Hedy kept a
+    /// record) or it has none (a conversation).
+    #[error("{}", self.message())]
+    CopyUnavailable(TaskId),
+    /// A protected file (`.env`, keys...): Hedy never reads it.
+    #[error("{}", self.message())]
+    FileLocked(String),
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -326,6 +339,22 @@ impl AppError {
             Self::ImagesWhileQueued => tr!(
                 "las imágenes no pueden esperar en la cola: envíalas cuando el agente termine su turno",
                 "images cannot wait in the queue: send them when the agent finishes its turn"
+            ),
+            Self::InvalidCodePath(path) => tr!(
+                "«{path}» no es un archivo dentro de esta copia",
+                "«{path}» is not a file inside this copy"
+            ),
+            Self::InvalidRevision(rev) => tr!(
+                "«{rev}» no es un commit válido",
+                "«{rev}» is not a valid commit"
+            ),
+            Self::CopyUnavailable(id) => tr!(
+                "los archivos de la tarea {id} ya no están disponibles (se descartó o se integró antes de que Hedy guardara su commit)",
+                "the files of task {id} are no longer available (it was discarded, or accepted before Hedy kept its commit)"
+            ),
+            Self::FileLocked(path) => tr!(
+                "{path} está protegido: Hedy no lo lee; ábrelo en tu editor",
+                "{path} is protected: Hedy does not read it; open it in your editor"
             ),
         }
     }

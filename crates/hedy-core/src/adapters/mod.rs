@@ -6,6 +6,7 @@ mod claude;
 mod codex;
 mod fs;
 mod git;
+mod git_code;
 mod images;
 mod keyring;
 mod paths;
@@ -157,6 +158,7 @@ fn build(paths: &HedyPaths, claude: ClaudeCodeLauncher) -> PortResult<Hedy> {
             paths.chats_dir(),
         )),
         git: Arc::new(GitCli),
+        code: Arc::new(GitCli),
         agents: Arc::new(AgentRouter {
             claude,
             codex: CodexLauncher,

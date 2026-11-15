@@ -1206,6 +1206,7 @@ pub struct Fixture {
     pub runner: Arc<FakeRunner>,
     pub fs: Arc<FakeFs>,
     pub git: Arc<FakeGit>,
+    pub code: Arc<super::testing_code::FakeCode>,
     pub agents: Arc<FakeAgents>,
     pub clock: Arc<FakeClock>,
     pub probe: Arc<FakeUsageProbe>,
@@ -1217,6 +1218,7 @@ impl Fixture {
         let runner = Arc::new(FakeRunner::default());
         let fs = Arc::new(FakeFs::default());
         let git = Arc::new(FakeGit::default());
+        let code = Arc::new(super::testing_code::FakeCode::default());
         let agents = Arc::new(FakeAgents::default());
         let store = Arc::new(MemoryStore::default());
         let clock = Arc::new(FakeClock(AtomicI64::new(1_700_000_000_000)));
@@ -1227,6 +1229,7 @@ impl Fixture {
             runner: runner.clone(),
             fs: fs.clone(),
             git: git.clone(),
+            code: code.clone(),
             agents: agents.clone(),
             clock: clock.clone(),
             usage: probe.clone(),
@@ -1241,6 +1244,7 @@ impl Fixture {
             runner,
             fs,
             git,
+            code,
             agents,
             clock,
             probe,

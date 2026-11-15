@@ -4,6 +4,7 @@ pub mod account;
 pub mod activity;
 pub mod agent;
 pub mod attachment;
+pub mod code;
 pub mod color;
 pub mod diff;
 pub mod env;
