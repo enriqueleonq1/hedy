@@ -3,7 +3,7 @@ import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 
 import { errorMessage, useAction, useApi } from "../../api/context";
 import type { HedyApi } from "../../api/HedyApi";
-import type { Account, Overview, PromptTemplate, Task, TaskMode } from "../../api/types";
+import type { Account, ImageInput, Overview, PromptTemplate, Task, TaskMode } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { accountOption } from "../../components/accounts";
 import { useFocusMode } from "../../components/focusMode";
@@ -48,7 +48,9 @@ import { keyLabels } from "../../platform";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { fillTemplate, filterTemplates, slashQuery } from "../../templates/placeholders";
 import { TemplateDialog } from "../templates/TemplateDialog";
+import "../../styles/composer.css";
 import { ChangesPanel } from "./ChangesPanel";
+import { AttachButton, draggingFiles, ImageTray, transferFiles, useComposerImages } from "./ComposerImages";
 import { QueuedMessages } from "./QueuedMessages";
 import { PanelIcon, PlusIcon, StopIcon } from "./icons";
 import { jumpDigit, TaskSwitcher } from "./TaskSwitcher";
@@ -286,6 +288,7 @@ export function Workspace({
           models={account ? MODEL_SUGGESTIONS[account.provider] : []}
           agent={agent}
           disabled={!account}
+          imageAccount={isOpen(task) && task ? task.account : (account?.id ?? null)}
           initialText={task ? "" : draft}
           autoFocus={chosen === null || (solo && !task)}
           start={
@@ -296,6 +299,7 @@ export function Workspace({
                     mode: input.mode,
                     account: account?.id ?? null,
                     model: input.model,
+                    ...(input.images ? { images: input.images } : {}),
                   })
               : (api, input) => api.startTask({ project, ...input })
           }
@@ -407,7 +411,7 @@ const MODE_DETAIL: Record<TaskMode, MessageKey> = {
 /** What starts a new task from the composer: in a project, or as a conversation. */
 type StartTask = (
   api: HedyApi,
-  input: { prompt: string; mode: TaskMode; model: string | null; planFirst: boolean },
+  input: { prompt: string; mode: TaskMode; model: string | null; planFirst: boolean; images?: ImageInput[] },
 ) => Promise<Task>;
 
 const CARD_LABEL: Record<NonNullable<CardWaiting>, MessageKey> = {
@@ -450,6 +454,7 @@ function Composer({
   models,
   agent,
   disabled,
+  imageAccount,
   initialText,
   autoFocus,
   start: startNew,
@@ -466,6 +471,8 @@ function Composer({
   /** Who works on the task now, for the queue's label. */
   agent: string;
   disabled: boolean;
+  /** Who gets the message, to know whether it takes images. */
+  imageAccount: string | null;
   initialText?: string;
   /** Takes the focus when it appears (a new task or question). */
   autoFocus?: boolean;
@@ -496,6 +503,8 @@ function Composer({
   const mode = followUp && task ? task.mode : newMode;
   const keys = keyLabels();
   const templates = useTemplates(scope);
+  const images = useComposerImages({ account: disabled ? null : imageAccount, queueing });
+  const [dropping, setDropping] = useState(false);
 
   // After the dialogs that led here closed (they give the focus back first).
   useEffect(() => {
@@ -515,21 +524,39 @@ function Composer({
   const current = pickerOpen ? matches[Math.min(active, matches.length - 1)] : undefined;
   const optionId = (index: number) => `${listId}-option-${index}`;
 
-  const start = useAction((api, prompt: string) => startNew(api, { prompt, mode, model: model || null, planFirst }), {
-    onSuccess: (created) => {
-      setText("");
-      client.setQueryData<Task[]>(listKey, (old) => [created, ...(old ?? [])]);
-      void client.invalidateQueries({ queryKey: ACTIVITY_KEY });
-      onStarted(created);
+  const start = useAction(
+    (api, message: { text: string; images: ImageInput[] }) =>
+      startNew(api, {
+        prompt: message.text,
+        mode,
+        model: model || null,
+        planFirst,
+        ...(message.images.length ? { images: message.images } : {}),
+      }),
+    {
+      onSuccess: (created) => {
+        setText("");
+        images.clear();
+        client.setQueryData<Task[]>(listKey, (old) => [created, ...(old ?? [])]);
+        void client.invalidateQueries({ queryKey: ACTIVITY_KEY });
+        onStarted(created);
+      },
     },
-  });
-  const send = useAction((api, message: string) => api.queueMessage(task?.id ?? "", message), {
-    invalidate: [listKey],
-    onSuccess: (left) => {
-      setText("");
-      if (task) setQueue(task.id, left);
+  );
+  const send = useAction(
+    (api, message: { text: string; images: ImageInput[] }) =>
+      message.images.length
+        ? api.queueMessage(task?.id ?? "", message.text, message.images)
+        : api.queueMessage(task?.id ?? "", message.text),
+    {
+      invalidate: [listKey],
+      onSuccess: (left) => {
+        setText("");
+        images.clear();
+        if (task) setQueue(task.id, left);
+      },
     },
-  });
+  );
   const stop = useAction((api, id: string) => api.stopTask(id), { invalidate: task ? [listKeyFor(task)] : [] });
   const busy = start.isPending || send.isPending;
   // While the agent runs, an empty composer offers to stop it (Esc does too).
@@ -569,19 +596,40 @@ function Composer({
   function submit() {
     const value = text.trim();
     if (!value || busy || disabled) return;
-    if (followUp) send.mutate(value);
-    else start.mutate(value);
+    const message = { text: value, images: images.inputs() };
+    if (followUp) send.mutate(message);
+    else start.mutate(message);
   }
 
   return (
     <form
-      className="composer"
+      className={dropping ? "composer composer--dropping" : "composer"}
       onSubmit={(e) => {
         e.preventDefault();
         if (current) choose(current);
         else submit();
       }}
+      onDragOver={(e) => {
+        if (disabled || !draggingFiles(e.dataTransfer)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = images.blocked ? "none" : "copy";
+        setDropping(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false);
+      }}
+      onDrop={(e) => {
+        if (disabled || !draggingFiles(e.dataTransfer)) return;
+        e.preventDefault();
+        setDropping(false);
+        void images.add(transferFiles(e.dataTransfer));
+      }}
     >
+      {dropping && (
+        <p className="composer__drop" aria-hidden>
+          {images.blocked ?? t("composer.images.drop")}
+        </p>
+      )}
       {pickerOpen && (
         <div className="template-picker">
           {matches.length > 0 ? (
@@ -628,6 +676,7 @@ function Composer({
           }}
         />
       )}
+      <ImageTray images={images.images} onRemove={images.remove} onEmptied={focusInput} />
       {/* The placeholder says what sending does now; the label says it in full. */}
       <label className="sr-only" htmlFor="composer-input">
         {followUp && card
@@ -667,6 +716,13 @@ function Composer({
                     : t("workspace.composer.placeholderAsk")
         }
         onChange={(e) => edit(e.target.value)}
+        onPaste={(e) => {
+          const files = transferFiles(e.clipboardData);
+          if (files.length === 0) return;
+          // A copied picture comes as a file; text copied with it still pastes.
+          if (!e.clipboardData.getData("text/plain")) e.preventDefault();
+          void images.add(files);
+        }}
         onKeyDown={(e) => {
           if (pickerOpen && matches.length > 0) {
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -772,6 +828,12 @@ function Composer({
           >
             <TemplateIcon />
           </MenuButton>
+          <AttachButton
+            blocked={images.blocked}
+            supported={images.supported}
+            disabled={disabled}
+            onFiles={(files) => void images.add(files)}
+          />
         </div>
         <span className="composer__hint" aria-hidden>
           {stoppable

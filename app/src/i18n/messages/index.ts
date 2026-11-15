@@ -5,6 +5,7 @@
 import accounts from "./accounts";
 import activity from "./activity";
 import common from "./common";
+import composer from "./composer";
 import create from "./create";
 import mascot from "./mascot";
 import memory from "./memory";
@@ -42,6 +43,7 @@ const es = {
   ...waits.es,
   ...palette.es,
   ...create.es,
+  ...composer.es,
 };
 const en: Record<keyof typeof es, string> = {
   ...common.en,
@@ -62,6 +64,7 @@ const en: Record<keyof typeof es, string> = {
   ...waits.en,
   ...palette.en,
   ...create.en,
+  ...composer.en,
 };
 
 export type MessageKey = keyof typeof es;

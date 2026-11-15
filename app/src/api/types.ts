@@ -320,6 +320,8 @@ export interface Task {
    * own private scratch folder, and it never changes files.
    */
   conversation?: boolean;
+  /** Images attached to the request itself. */
+  images?: Attachment[];
 }
 
 /** What "Aceptar" changed in the main checkout (commits), kept to undo it. */
@@ -366,7 +368,30 @@ export interface NewTaskInput {
   mode: TaskMode;
   model: string | null;
   planFirst: boolean;
+  images?: ImageInput[];
 }
+
+/** The image formats every supported CLI takes. */
+export type ImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+
+/** An image attached in the composer: the backend checks the real type from the bytes. */
+export interface ImageInput {
+  name: string;
+  /** The file's bytes, base64. */
+  data: string;
+}
+
+/** An image kept with a message of the history (in Hedy's data folder). */
+export interface Attachment {
+  /** The user's file name, for the alt text. */
+  name: string;
+  /** The stored file, to load it with `attachment()`. */
+  file: string;
+  mediaType: ImageMediaType;
+}
+
+/** Whether an account's agent takes images: ACP agents say so when they start. */
+export type ImageSupport = "yes" | "ifAgentAllows" | "no";
 
 /** "Nuevo proyecto": a new folder with git, registered with its account. */
 export interface NewProjectInput {
@@ -387,6 +412,7 @@ export interface NewConversationInput {
   /** null: the default account. */
   account: string | null;
   model: string | null;
+  images?: ImageInput[];
 }
 
 /** What a task shows on the task board ("Actividad"); derived by the backend. */
@@ -464,7 +490,7 @@ export type StepStatus = "pending" | "inProgress" | "done";
 
 /** The common event language (mirrors `hedy_core::domain::AgentEvent`). */
 export type AgentEvent =
-  | { kind: "userMessage"; text: string }
+  | { kind: "userMessage"; text: string; images?: Attachment[] }
   | { kind: "sessionStarted"; sessionId: string; model: string }
   | { kind: "message"; text: string }
   | { kind: "plan"; text: string; requestId: string | null }

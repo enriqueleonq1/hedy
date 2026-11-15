@@ -4,6 +4,10 @@ import { placeholders } from "../templates/placeholders";
 import type {
   AcceptPreview,
   Account,
+  Attachment,
+  ImageInput,
+  ImageMediaType,
+  ImageSupport,
   ActivityItem,
   AgentEvent,
   BoardState,
@@ -182,6 +186,16 @@ const BOARD_RANK: Record<BoardState, number> = {
   cancelled: 7,
 };
 const ACTIVE: BoardState[] = ["working", "plan", "permission", "limited"];
+
+/** The image type from the first bytes of its base64, like the backend's sniffing. */
+const IMAGE_PREFIX: [string, ImageMediaType][] = [
+  ["iVBORw0KGg", "image/png"],
+  ["/9j/", "image/jpeg"],
+  ["R0lGOD", "image/gif"],
+  ["UklGR", "image/webp"],
+];
+const MAX_IMAGES = 4;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function encode(text: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(text)));
@@ -1139,14 +1153,15 @@ export class MockApi implements HedyApi {
     return (this.queues.get(id) ?? []).map((m) => ({ ...m }));
   }
 
-  async queueMessage(id: string, text: string): Promise<QueuedMessage[]> {
+  async queueMessage(id: string, text: string, images?: ImageInput[]): Promise<QueuedMessage[]> {
     const task = this.tasksById.get(id);
     if (!task || task.status === "accepted" || task.status === "discarded") throw "la tarea ya está cerrada";
     if (!text.trim()) throw "escribe qué quieres que haga";
     if (!this.busy(task)) {
-      await this.sendMessage(id, text.trim());
+      await this.sendMessage(id, text.trim(), images);
       return this.queued(id);
     }
+    if (images?.length) throw "las imágenes no pueden esperar en la cola: envíalas cuando el agente termine su turno";
     const queue = this.queues.get(id) ?? [];
     queue.push({ id: ++this.nextQueued, task: id, text: text.trim(), createdAt: Math.floor(Date.now() / 1000), held: null });
     this.queues.set(id, queue);
@@ -1203,6 +1218,7 @@ export class MockApi implements HedyApi {
     if (!project.account) throw "este proyecto no tiene cuenta";
     if (!input.prompt.trim()) throw "escribe qué quieres que haga";
     const id = `t${++this.nextTask}`;
+    const images = await this.storeImages(id, project.account, input.images);
     const title = (input.prompt.split("\n")[0] ?? "").slice(0, 60);
     const planFirst = input.planFirst && input.mode === "project";
     const stage = (phase: "plan" | "implement") => ({ phase, account: project.account ?? "", model: input.model });
@@ -1229,11 +1245,12 @@ export class MockApi implements HedyApi {
       stages: planFirst ? [stage("plan"), stage("implement")] : [stage("implement")],
       stage: 0,
       live: true,
+      ...(images.length ? { images } : {}),
     };
     this.tasksById.set(id, task);
     this.eventsById.set(id, []);
     this.diffs.set(id, []);
-    this.push(id, { kind: "userMessage", text: input.prompt });
+    this.push(id, images.length ? { kind: "userMessage", text: input.prompt, images } : { kind: "userMessage", text: input.prompt });
     this.script(id, [
       { kind: "phaseStarted", phase: planFirst ? "plan" : "implement", agent: "Claude Opus", account: "Claude personal" },
       { kind: "sessionStarted", sessionId: `s-${id}`, model: "claude-opus-5-5" },
@@ -1258,6 +1275,7 @@ export class MockApi implements HedyApi {
     if (!account) throw "no hay cuenta para esta conversación";
     const name = this.account(account).name;
     const id = `t${++this.nextTask}`;
+    const images = await this.storeImages(id, account, input.images);
     const task: Task = {
       id,
       project: `${this.state.dataDir}/chats/${id}`,
@@ -1274,11 +1292,12 @@ export class MockApi implements HedyApi {
       stage: 0,
       live: true,
       conversation: true,
+      ...(images.length ? { images } : {}),
     };
     this.tasksById.set(id, task);
     this.eventsById.set(id, []);
     this.diffs.set(id, []);
-    this.push(id, { kind: "userMessage", text: input.prompt });
+    this.push(id, images.length ? { kind: "userMessage", text: input.prompt, images } : { kind: "userMessage", text: input.prompt });
     const english = this.english();
     this.script(id, [
       { kind: "phaseStarted", phase: "implement", agent: "Claude Opus", account: name },
@@ -1624,9 +1643,10 @@ export class MockApi implements HedyApi {
     );
   }
 
-  async sendMessage(id: string, text: string): Promise<void> {
+  async sendMessage(id: string, text: string, images?: ImageInput[]): Promise<void> {
     const task = this.tasksById.get(id);
     if (!task || task.status === "accepted" || task.status === "discarded") throw "la tarea ya está cerrada";
+    const attached = await this.storeImages(id, task.account, images);
     task.live = true;
     // Writing to the agent ends a wait for its limit, like the backend.
     if (task.wait) {
@@ -1634,7 +1654,7 @@ export class MockApi implements HedyApi {
       task.wait = null;
       this.notifyTask(task);
     }
-    this.push(id, { kind: "userMessage", text });
+    this.push(id, attached.length ? { kind: "userMessage", text, images: attached } : { kind: "userMessage", text });
     this.script(id, [{ kind: "message", text: `Hecho: ${text}` }, { kind: "finished", ok: true, summary: "", durationMs: 1000 }]);
   }
 
@@ -1891,6 +1911,50 @@ export class MockApi implements HedyApi {
   onOpenTask(listener: (request: OpenTaskRequest) => void): Unsubscribe {
     this.openTaskListeners.add(listener);
     return () => this.openTaskListeners.delete(listener);
+  }
+
+  // ---------------------------------------------------------------- images
+
+  private attachments = new Map<string, string>();
+  private imageSupportFor = new Map<string, ImageSupport>();
+  private nextAttachment = 0;
+
+  /** Tests: what `account` says about images. */
+  setImageSupport(account: string, support: ImageSupport): void {
+    this.imageSupportFor.set(account, support);
+  }
+
+  async imageSupport(account: string): Promise<ImageSupport> {
+    const set = this.imageSupportFor.get(account);
+    if (set) return set;
+    const found = this.account(account);
+    // Like the backend: an API account without its key cannot work yet.
+    if (found.kind === "apiKey") return found.login.state === "loggedIn" ? "yes" : "no";
+    return found.provider === "claude" || found.provider === "codex" ? "yes" : "ifAgentAllows";
+  }
+
+  async attachment(taskId: string, file: string): Promise<string | null> {
+    return this.attachments.get(`${taskId}/${file}`) ?? null;
+  }
+
+  /** Checks and keeps the images of a message, like the backend. */
+  private async storeImages(taskId: string, account: string, images: ImageInput[] | undefined): Promise<Attachment[]> {
+    if (!images?.length) return [];
+    if (images.length > MAX_IMAGES) throw `como mucho ${MAX_IMAGES} imágenes por mensaje`;
+    const typed = images.map((image) => {
+      const mediaType = IMAGE_PREFIX.find(([prefix]) => image.data.startsWith(prefix))?.[1];
+      if (!mediaType) throw `«${image.name}» no es una imagen PNG, JPEG, GIF o WebP`;
+      if ((image.data.length * 3) / 4 > MAX_IMAGE_BYTES) throw `«${image.name}» pesa más de 5 MB`;
+      return { image, mediaType };
+    });
+    if ((await this.imageSupport(account)) === "no") {
+      throw `${this.account(account).providerName} no acepta imágenes con esta cuenta`;
+    }
+    return typed.map(({ image, mediaType }) => {
+      const file = `${(++this.nextAttachment).toString(16)}-0.${mediaType.split("/")[1]}`;
+      this.attachments.set(`${taskId}/${file}`, `data:${mediaType};base64,${image.data}`);
+      return { name: image.name.split(/[/\\]/).pop() || "imagen", file, mediaType };
+    });
   }
 
   private account(id: string): Account {
