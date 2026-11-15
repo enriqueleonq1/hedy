@@ -1,6 +1,6 @@
 import type { AgentEvent, Task } from "../api/types";
 import { translator } from "../i18n";
-import { agentName, buildTimeline, mascotState, modelLabel } from "./timeline";
+import { agentName, buildTimeline, latestMilestone, mascotState, modelLabel, pendingCard } from "./timeline";
 
 const t = translator("es");
 
@@ -102,5 +102,44 @@ describe("mascotState", () => {
     ).toBe("done");
     expect(mascotState(task({ status: "accepted" }), [])).toBe("done");
     expect(mascotState(task({ status: "failed" }), [])).toBe("sleeping");
+  });
+});
+
+describe("pendingCard", () => {
+  it("is the latest card without an answer", () => {
+    const plan: AgentEvent = { kind: "plan", text: "1. Hacer", requestId: "p1" };
+    const ask: AgentEvent = { kind: "permissionRequest", requestId: "r1", tool: "Bash", summary: "ls", input: {} };
+    const answered = (requestId: string): AgentEvent => ({
+      kind: "permissionResolved",
+      requestId,
+      decision: "allow",
+      automatic: false,
+      reason: null,
+    });
+    expect(pendingCard([])).toBeNull();
+    expect(pendingCard([plan])).toBe("plan");
+    expect(pendingCard([plan, answered("p1"), ask])).toBe("permission");
+    expect(pendingCard([plan, answered("p1"), ask, answered("r1")])).toBeNull();
+    // A plan without a request (research) waits for nobody.
+    expect(pendingCard([{ kind: "plan", text: "Notas", requestId: null }])).toBeNull();
+  });
+});
+
+describe("latestMilestone", () => {
+  it("names the latest card to answer, end or reached limit", () => {
+    const events: AgentEvent[] = [
+      { kind: "userMessage", text: "Hola" },
+      { kind: "plan", text: "1. Hacer", requestId: "p1" },
+    ];
+    expect(latestMilestone(buildTimeline(events, t))).toEqual({ index: 1, milestone: "plan" });
+    events.push(
+      { kind: "permissionResolved", requestId: "p1", decision: "allow", automatic: false, reason: null },
+      { kind: "limitWarning", account: "a", level: "warning", percent: 80, resetsAt: null },
+    );
+    expect(latestMilestone(buildTimeline(events, t))).toBeNull();
+    events.push({ kind: "finished", ok: false, summary: "", durationMs: null });
+    expect(latestMilestone(buildTimeline(events, t))).toEqual({ index: 3, milestone: "failed" });
+    events.push({ kind: "limitWarning", account: "a", level: "reached", percent: 100, resetsAt: null });
+    expect(latestMilestone(buildTimeline(events, t))).toEqual({ index: 4, milestone: "limit" });
   });
 });

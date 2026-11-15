@@ -131,6 +131,78 @@ describe("Workspace", () => {
     expect(screen.queryByRole("radiogroup", { name: "Modo" })).not.toBeInTheDocument();
   });
 
+  it("answers the plan and permission cards with the keyboard", async () => {
+    const { user } = setup();
+    await openProject(user, /^hedy/);
+    await user.type(await screen.findByLabelText("Pídele algo a hedy"), "Recordatorios");
+    expect(screen.getByText("Ctrl+Enter")).toHaveClass("kbd");
+    await user.keyboard("{Control>}{Enter}{/Control}");
+
+    // The card takes the focus (nothing else had it) and shows its keys.
+    const plan = await screen.findByRole("region", { name: "Plan de Claude Opus" });
+    await waitFor(() => expect(plan).toHaveFocus());
+    const approve = within(plan).getByRole("button", { name: "Aprobar plan" });
+    expect(approve).toHaveAttribute("aria-keyshortcuts", "Enter");
+    expect(within(approve).getByText("Enter")).toHaveClass("kbd");
+    expect(within(within(plan).getByRole("button", { name: "Pedir cambios" })).getByText("E")).toHaveClass("kbd");
+    // Meanwhile the composer says what a message does now: it waits for the answer.
+    expect(screen.getByLabelText(/^Primero responde al plan de arriba/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enviar después" })).toBeDisabled();
+
+    await user.keyboard("e");
+    const feedback = within(plan).getByLabelText("¿Qué cambiarías?");
+    expect(feedback).toHaveFocus();
+    expect(feedback).toHaveValue("");
+    await user.click(within(plan).getByRole("button", { name: "Cancelar" }));
+    expect(plan).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+    const card = await screen.findByRole("region", { name: "Claude quiere correr un comando" });
+    expect(screen.getByText(/aprobado/)).toBeInTheDocument();
+    await waitFor(() => expect(card).toHaveFocus());
+    await waitFor(() => expect(document.querySelector(".chat__announce")).toHaveTextContent("Pide permiso"));
+    await user.keyboard("{Enter}");
+    expect(await screen.findByText(/Claude: pasan los tests/)).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector(".chat__announce")).toHaveTextContent("Terminó"));
+    expect(document.querySelector(".timeline")).not.toHaveAttribute("aria-live");
+  }, 20_000);
+
+  it("says why the Changes panel is empty, case by case", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await openProject(user, /^hedy/);
+    const panel = await screen.findByRole("complementary", { name: "Cambios, terminal y vista previa" });
+    // A project task whose plan waits (s1), one that works (s3), one done (s5), a question (s6).
+    expect(await within(panel).findByText("Aún no hay cambios: se crearán al aprobar el plan.")).toBeInTheDocument();
+    await user.keyboard("{Control>}2{/Control}");
+    expect(await within(panel).findByText("Aún no hay cambios: se crearán cuando la IA empiece a trabajar.")).toBeInTheDocument();
+    await user.keyboard("{Control>}3{/Control}");
+    expect(await within(panel).findByText("Esta tarea terminó sin cambiar archivos.")).toBeInTheDocument();
+    await user.keyboard("{Control>}4{/Control}");
+    expect(await within(panel).findByText("Las preguntas y la investigación no cambian archivos.")).toBeInTheDocument();
+    expect(within(panel).queryByText(/Aún no hay cambios/)).not.toBeInTheDocument();
+  });
+
+  it("does not take the focus from the composer when a card appears", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await openProject(user, /^homming/);
+    const composer = await screen.findByLabelText(/^Escribe mientras Claude Opus trabaja/);
+    await user.type(composer, "Una cosa más");
+
+    api.simulateEvent("s4", { kind: "permissionRequest", requestId: "req-s4", tool: "Bash", summary: "npm test", input: { command: "npm test" } });
+    const card = await screen.findByRole("region", { name: "Claude quiere correr un comando" });
+    expect(composer).toHaveFocus();
+    expect(card).not.toHaveFocus();
+    expect(await screen.findByLabelText(/^Primero responde al permiso de arriba/)).toBe(composer);
+    expect(screen.getByRole("button", { name: "Enviar después" })).toBeEnabled();
+    await waitFor(() => expect(document.querySelector(".chat__announce")).toHaveTextContent("Pide permiso"));
+  });
+
   it("switches tasks from a list with their state, account and time, or with Ctrl+digit", async () => {
     const api = MockApi.withSampleData().withSampleActivity();
     api.delayMs = 0;
