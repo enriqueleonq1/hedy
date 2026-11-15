@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { useAnchoredPopover } from "./popover";
 
@@ -12,6 +12,10 @@ export interface MenuItem {
   hint?: string;
   /** Right-aligned: the key that does the same ("/"). */
   shortcut?: string;
+  /** A destructive action: shown in the danger color. */
+  danger?: boolean;
+  /** Draws a thin line above the item, to set a group (or a destructive action) apart. */
+  separatorBefore?: boolean;
 }
 
 /**
@@ -116,34 +120,42 @@ export function MenuButton({
             </div>
           )}
           {items.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              role="menuitem"
-              tabIndex={-1}
-              className={item.hint ? "menu__item menu__item--hinted" : item.shortcut ? "menu__item menu__item--shortcut" : "menu__item"}
-              disabled={item.disabled}
-              onClick={() => {
-                close();
-                item.onSelect();
-              }}
-            >
-              {item.hint ? (
-                <>
-                  <span className="menu__label">{item.label}</span>
-                  <span className="menu__hint">{item.hint}</span>
-                </>
-              ) : item.shortcut ? (
-                <>
-                  <span className="menu__label">{item.label}</span>
-                  <kbd className="kbd menu__shortcut" aria-hidden>
-                    {item.shortcut}
-                  </kbd>
-                </>
-              ) : (
-                item.label
-              )}
-            </button>
+            <Fragment key={item.label}>
+              {item.separatorBefore && <div role="separator" className="menu__separator" />}
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                className={[
+                  "menu__item",
+                  item.hint ? "menu__item--hinted" : item.shortcut ? "menu__item--shortcut" : null,
+                  item.danger && "menu__item--danger",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                disabled={item.disabled}
+                onClick={() => {
+                  close();
+                  item.onSelect();
+                }}
+              >
+                {item.hint ? (
+                  <>
+                    <span className="menu__label">{item.label}</span>
+                    <span className="menu__hint">{item.hint}</span>
+                  </>
+                ) : item.shortcut ? (
+                  <>
+                    <span className="menu__label">{item.label}</span>
+                    <kbd className="kbd menu__shortcut" aria-hidden>
+                      {item.shortcut}
+                    </kbd>
+                  </>
+                ) : (
+                  item.label
+                )}
+              </button>
+            </Fragment>
           ))}
         </div>
       )}
