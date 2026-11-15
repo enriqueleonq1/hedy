@@ -194,6 +194,22 @@ impl Git for GitCli {
         git(repo, &["reset", "--quiet", "--keep", commit]).map(drop)
     }
 
+    fn init_repo(&self, dir: &Path, message: &str) -> PortResult<()> {
+        git(dir, &["init", "--quiet"])?;
+        let out = run(dir, &["commit", "--quiet", "--allow-empty", "-m", message])?;
+        if out.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if stderr.contains("user.email") || stderr.contains("user.name") {
+            return Err(PortError::new(tr!(
+                "git no sabe tu nombre ni tu correo; configúralos con `git config --global user.name \"Tu nombre\"` y `git config --global user.email tu@correo`",
+                "git does not know your name and email; set them with `git config --global user.name \"Your Name\"` and `git config --global user.email you@example.com`"
+            )));
+        }
+        Err(PortError::new(format!("git commit: {}", stderr.trim())))
+    }
+
     fn recent_commits(&self, repo: &Path, limit: usize) -> PortResult<Vec<Commit>> {
         let out =
             git(repo, &["log", &format!("-n{limit}"), "--format=%h%x1f%s"]).unwrap_or_default();
@@ -292,6 +308,32 @@ mod tests {
     }
 
     #[test]
+    fn a_new_repository_has_one_empty_commit_to_fork_tasks_from() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("tienda");
+        fs::create_dir(&dir).unwrap();
+        // The test's own identity; `init_repo` keeps it (re-initializing is safe).
+        for args in [
+            &["init", "-q"][..],
+            &["config", "user.email", "test@hedy.local"],
+            &["config", "user.name", "Test"],
+            &["config", "commit.gpgsign", "false"],
+        ] {
+            git(&dir, args).unwrap();
+        }
+        let g = GitCli;
+        g.init_repo(&dir, "Initial commit").unwrap();
+
+        let base = g.head_commit(&dir).unwrap();
+        assert!(!g.current_branch(&dir).unwrap().is_empty());
+        assert_eq!(g.recent_commits(&dir, 5).unwrap().len(), 1);
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1, "only .git");
+        let wt = dir.join(".hedy/worktrees/t1");
+        g.add_worktree(&dir, &wt, "hedy/primera-t1", &base).unwrap();
+        assert!(wt.is_dir());
+    }
+
+    #[test]
     fn shared_dependency_symlinks_stay_out_of_the_diff() {
         use crate::application::ports::FileSystem;
         let (_tmp, repo) = repo();
@@ -307,7 +349,7 @@ mod tests {
         let wt = repo.join(".hedy/worktrees/t3");
         g.add_worktree(&repo, &wt, "hedy/t3", &base).unwrap();
         g.ensure_excluded(&repo, "/node_modules").unwrap();
-        crate::adapters::LocalFileSystem::new(repo.clone())
+        crate::adapters::LocalFileSystem::new(repo.clone(), repo.join("chats"))
             .symlink_dir(&repo.join("node_modules"), &wt.join("node_modules"))
             .unwrap();
         assert!(wt.join("node_modules/pkg").is_dir());

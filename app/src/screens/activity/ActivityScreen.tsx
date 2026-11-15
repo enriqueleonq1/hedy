@@ -9,7 +9,7 @@ import { Button } from "../../components/ui/Button";
 import { formatElapsed, timeAgo } from "../../format";
 import { useT, type MessageKey } from "../../i18n";
 import { formatCountdown } from "../../tasks/countdown";
-import { ACTIVITY_KEY, needsYou, tasksKey, useActivity, useTaskEvents } from "../../tasks/hooks";
+import { ACTIVITY_KEY, listKeyFor, needsYou, useActivity, useTaskEvents } from "../../tasks/hooks";
 import { openPermission, useInbox, type InboxItem } from "../../tasks/inbox";
 import { useFilesNotice } from "../memory/skills";
 import { useMascot } from "../../tasks/useMascot";
@@ -263,7 +263,7 @@ function PermissionActions({ task }: { task: Task }) {
   const request = openPermission(events.data ?? []);
   const answer = useAction(
     (api, decision: Decision) => api.answerPermission(task.id, request?.requestId ?? "", decision),
-    { invalidate: [ACTIVITY_KEY, tasksKey(task.project)] },
+    { invalidate: [ACTIVITY_KEY, listKeyFor(task)] },
   );
   if (!request) return null;
   return (

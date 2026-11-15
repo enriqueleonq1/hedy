@@ -2,6 +2,7 @@
 
 mod accounts;
 mod activity;
+mod conversations;
 mod detect;
 mod doctor;
 mod error;
@@ -28,6 +29,7 @@ use std::sync::{Arc, Mutex};
 
 pub use accounts::NewAccount;
 pub use activity::{MAX_FINISHED, RECENT_HOURS, TaskActivity};
+pub use conversations::NewConversation;
 pub use detect::DetectedCli;
 pub use doctor::{Check, CheckArea, CheckLevel, DoctorReport};
 pub use error::{AppError, AppResult, UndoBlocked};
@@ -37,6 +39,7 @@ pub use memory::{
 };
 pub use metrics::{ProjectStatus, TestRun, UsageSummary};
 pub use plan_usage::{PLAN_USAGE_MIN_INTERVAL_SECS, PlanUsageState};
+pub use projects::NewProject;
 pub use review::AcceptPreview;
 pub use settings::{Setting, THEMES};
 pub use skills::{

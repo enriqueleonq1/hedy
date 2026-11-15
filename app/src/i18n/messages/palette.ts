@@ -35,6 +35,7 @@ const es = {
   "palette.changeAccount.hint": "Ahora: {account}. Hedy nunca cambia de cuenta solo; las tareas nuevas usarán la que elijas.",
   "palette.changeAccount.done": "{project} ahora trabaja con {account}",
   "palette.changeAccount.none": "sin cuenta",
+  "palette.ask": "Preguntar «{query}»",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -72,6 +73,7 @@ const en: Record<keyof typeof es, string> = {
   "palette.changeAccount.hint": "Now: {account}. Hedy never switches accounts on its own; new tasks will use the one you pick.",
   "palette.changeAccount.done": "{project} now works with {account}",
   "palette.changeAccount.none": "no account",
+  "palette.ask": "Ask “{query}”",
 };
 
 export default { es, en };

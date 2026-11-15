@@ -139,7 +139,10 @@ fn build(paths: &HedyPaths, claude: ClaudeCodeLauncher) -> PortResult<Hedy> {
         store: Arc::new(store),
         secrets: Arc::new(KeyringSecretStore::default()),
         runner: Arc::new(SystemProcessRunner),
-        fs: Arc::new(LocalFileSystem::new(paths.accounts_dir())),
+        fs: Arc::new(LocalFileSystem::new(
+            paths.accounts_dir(),
+            paths.chats_dir(),
+        )),
         git: Arc::new(GitCli),
         agents: Arc::new(AgentRouter {
             claude,

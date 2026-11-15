@@ -125,6 +125,7 @@ mod tests {
                 plan: None,
                 merge: None,
                 wait: None,
+                conversation: false,
             })
             .unwrap();
         store

@@ -58,6 +58,11 @@ pub trait TaskRepository: Send + Sync {
     fn timed_events(&self, id: &TaskId) -> PortResult<Vec<(i64, AgentEvent)>>;
     /// Tasks whose user chose to wait for a limit to renew (any age).
     fn waiting_tasks(&self) -> PortResult<Vec<Task>>;
+    /// Every conversation (task outside any project). Newest first.
+    fn conversations(&self) -> PortResult<Vec<Task>>;
+    /// Deletes the task with its events and queue. Usage records stay: the
+    /// tokens were spent.
+    fn delete_task(&self, id: &TaskId) -> PortResult<()>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -374,6 +379,10 @@ pub trait Git: Send + Sync {
     /// files with local changes it would overwrite make it fail and nothing
     /// changes; other local changes and untracked files stay as they are.
     fn reset_keep(&self, repo: &Path, commit: &str) -> PortResult<()>;
+    /// Makes `dir` a new repository with one empty commit (`message`), so
+    /// tasks can fork worktrees from it right away. Keeps the user's default
+    /// branch name and identity.
+    fn init_repo(&self, dir: &Path, message: &str) -> PortResult<()>;
 }
 
 /// Receives the agent's events, on the adapter's own thread.
@@ -549,6 +558,15 @@ impl TaskEvents for NoTaskEvents {
 pub trait FileSystem: Send + Sync {
     /// Folder for a new Hedy-managed account.
     fn account_folder(&self, id: &AccountId) -> PathBuf;
+    /// Where conversations outside any project get their scratch folders.
+    fn chats_dir(&self) -> PathBuf;
+    /// The user's home folder, if known.
+    fn home_dir(&self) -> Option<PathBuf>;
+    /// Creates `path` (and missing parents). Fails when `path` already
+    /// exists: nothing is ever overwritten.
+    fn create_new_dir(&self, path: &Path) -> PortResult<()>;
+    /// Deletes a folder and everything in it. Only for folders Hedy created.
+    fn remove_dir_all(&self, path: &Path) -> PortResult<()>;
     /// Creates `path` (and parents), readable only by the user: account
     /// folders hold CLI logins.
     fn create_private_dir(&self, path: &Path) -> PortResult<()>;

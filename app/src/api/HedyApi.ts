@@ -19,6 +19,8 @@ import type {
   UsagePoint,
   UsageSummary,
   NewAccountInput,
+  NewConversationInput,
+  NewProjectInput,
   NewTaskInput,
   NewTemplateInput,
   OpenTaskRequest,
@@ -66,6 +68,12 @@ export interface HedyApi {
   projectUsage(path: string, days: number): Promise<UsagePoint[]>;
   usageSummary(days: number): Promise<UsageSummary>;
   removeProject(path: string): Promise<void>;
+  /** Where "Nuevo proyecto" proposes to create it. */
+  defaultProjectParent(): Promise<string | null>;
+  /** The folder a new project would get; rejects with why it cannot be created there. */
+  newProjectPath(name: string, parent: string): Promise<string>;
+  /** Creates the folder (never an existing one) with git and registers it. Returns its path. */
+  newProject(input: NewProjectInput): Promise<string>;
 
   setSetting(key: SettingKey, value: string | null): Promise<void>;
   openInEditor(path: string): Promise<void>;
@@ -90,6 +98,14 @@ export interface HedyApi {
   /** Newest first. */
   tasks(project: string): Promise<Task[]>;
   taskEvents(id: string): Promise<AgentEvent[]>;
+  /** A question outside any project, in its own empty folder. */
+  startConversation(input: NewConversationInput): Promise<Task>;
+  /** Every conversation outside a project, newest first. */
+  conversations(): Promise<Task[]>;
+  /** Accounts a conversation may use (none reserved by a protected project). */
+  conversationAccounts(): Promise<string[]>;
+  /** Deletes a conversation, its history and its folder. */
+  deleteConversation(id: string): Promise<void>;
   /** The task board: every project's running and recent tasks, what needs the user first. */
   activity(): Promise<ActivityItem[]>;
   answerPermission(id: string, requestId: string, decision: Decision): Promise<void>;

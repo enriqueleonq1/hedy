@@ -7,11 +7,15 @@ use crate::domain::AccountId;
 
 pub struct LocalFileSystem {
     accounts_dir: PathBuf,
+    chats_dir: PathBuf,
 }
 
 impl LocalFileSystem {
-    pub fn new(accounts_dir: PathBuf) -> Self {
-        Self { accounts_dir }
+    pub fn new(accounts_dir: PathBuf, chats_dir: PathBuf) -> Self {
+        Self {
+            accounts_dir,
+            chats_dir,
+        }
     }
 }
 
@@ -22,6 +26,29 @@ fn io_error(action: &str, path: &Path, err: std::io::Error) -> PortError {
 impl FileSystem for LocalFileSystem {
     fn account_folder(&self, id: &AccountId) -> PathBuf {
         self.accounts_dir.join(id.as_str())
+    }
+
+    fn chats_dir(&self) -> PathBuf {
+        self.chats_dir.clone()
+    }
+
+    fn home_dir(&self) -> Option<PathBuf> {
+        directories::BaseDirs::new().map(|d| d.home_dir().to_owned())
+    }
+
+    fn create_new_dir(&self, path: &Path) -> PortResult<()> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| io_error("crear", parent, e))?;
+        }
+        // `create_dir` fails on an existing folder or file: never overwrite.
+        fs::create_dir(path).map_err(|e| io_error("crear", path, e))
+    }
+
+    fn remove_dir_all(&self, path: &Path) -> PortResult<()> {
+        match fs::remove_dir_all(path) {
+            Err(e) if e.kind() != ErrorKind::NotFound => Err(io_error("borrar", path, e)),
+            _ => Ok(()),
+        }
     }
 
     fn create_private_dir(&self, path: &Path) -> PortResult<()> {
@@ -121,7 +148,7 @@ mod tests {
         let nested = root.join("a/b");
         fs::create_dir_all(&nested).unwrap();
         fs::create_dir(root.join(".git")).unwrap();
-        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"));
+        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"), tmp.path().join("chats"));
 
         assert_eq!(fs_.git_root(&nested), Some(root.clone()));
         assert_eq!(fs_.git_root(tmp.path()), None);
@@ -135,7 +162,7 @@ mod tests {
     #[test]
     fn text_files_are_written_read_and_removed_with_their_empty_folders() {
         let tmp = tempfile::tempdir().unwrap();
-        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"));
+        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"), tmp.path().join("chats"));
         let file = tmp.path().join(".claude/skills/run-tests/SKILL.md");
         assert_eq!(fs_.read_text(&file).unwrap(), None);
         fs_.write_text(&file, "uno").unwrap();
@@ -156,10 +183,25 @@ mod tests {
     #[test]
     fn writable_check_leaves_nothing_behind() {
         let tmp = tempfile::tempdir().unwrap();
-        let fs_ = LocalFileSystem::new(tmp.path().to_owned());
+        let fs_ = LocalFileSystem::new(tmp.path().to_owned(), tmp.path().join("chats"));
         fs_.check_writable(tmp.path()).unwrap();
         assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 0);
         assert!(fs_.check_writable(&tmp.path().join("missing")).is_err());
+    }
+
+    #[test]
+    fn new_folders_never_replace_existing_ones() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"), tmp.path().join("chats"));
+        let project = tmp.path().join("Proyectos/tienda");
+        fs_.create_new_dir(&project).unwrap();
+        fs::write(project.join("main.rs"), "fn main() {}").unwrap();
+        assert!(fs_.create_new_dir(&project).is_err());
+        assert!(project.join("main.rs").exists(), "untouched");
+
+        fs_.remove_dir_all(&project).unwrap();
+        assert!(!project.exists());
+        fs_.remove_dir_all(&project).unwrap();
     }
 
     #[cfg(unix)]
@@ -167,7 +209,7 @@ mod tests {
     fn account_folders_are_private() {
         use std::os::unix::fs::PermissionsExt;
         let tmp = tempfile::tempdir().unwrap();
-        let fs_ = LocalFileSystem::new(tmp.path().to_owned());
+        let fs_ = LocalFileSystem::new(tmp.path().to_owned(), tmp.path().join("chats"));
         let folder = fs_.account_folder(&AccountId::new("personal").unwrap());
         fs_.create_private_dir(&folder).unwrap();
         let mode = fs::metadata(&folder).unwrap().permissions().mode();

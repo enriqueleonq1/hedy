@@ -315,6 +315,11 @@ export interface Task {
   merge?: MergeRecord | null;
   /** The user chose to wait for the account's limit to renew. */
   wait?: LimitWait | null;
+  /**
+   * A question outside any project ("Pregunta rápida"): `project` is then its
+   * own private scratch folder, and it never changes files.
+   */
+  conversation?: boolean;
 }
 
 /** What "Aceptar" changed in the main checkout (commits), kept to undo it. */
@@ -361,6 +366,27 @@ export interface NewTaskInput {
   mode: TaskMode;
   model: string | null;
   planFirst: boolean;
+}
+
+/** "Nuevo proyecto": a new folder with git, registered with its account. */
+export interface NewProjectInput {
+  name: string;
+  /** Absolute; created when missing. */
+  parent: string;
+  /** null: the default account. */
+  account: string | null;
+  protect: boolean;
+  client: string | null;
+}
+
+/** "Pregunta rápida": a question or research outside any project. */
+export interface NewConversationInput {
+  prompt: string;
+  /** Only `ask` or `research`. */
+  mode: TaskMode;
+  /** null: the default account. */
+  account: string | null;
+  model: string | null;
 }
 
 /** What a task shows on the task board ("Actividad"); derived by the backend. */

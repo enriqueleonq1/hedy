@@ -6,6 +6,7 @@ use super::{AppResult, Hedy, Setting};
 use crate::domain::memory::is_stale;
 use crate::domain::metrics::{ClientUsage, ProjectUsage, by_client};
 use crate::domain::{Account, AgentEvent, NoteStatus, Project, UsageSample};
+use crate::tr;
 
 const DAY_SECS: i64 = 24 * 60 * 60;
 
@@ -58,11 +59,31 @@ impl Hedy {
     pub fn usage_summary(&self, days: u32) -> AppResult<UsageSummary> {
         let since = self.now_secs() - i64::from(days) * DAY_SECS;
         let registered = self.projects()?;
-        let mut projects: Vec<ProjectUsage> = self
-            .store
-            .usage_by_project(since)?
+        // Conversations outside any project add up to one row, with no client.
+        let chats = self.fs.chats_dir();
+        let mut rows = Vec::new();
+        let mut conversations: Option<UsageSample> = None;
+        for (path, usage) in self.store.usage_by_project(since)? {
+            if path.starts_with(&chats) {
+                conversations
+                    .get_or_insert_with(UsageSample::default)
+                    .add(&usage);
+            } else {
+                rows.push((path, usage));
+            }
+        }
+        rows.extend(conversations.map(|usage| (chats.clone(), usage)));
+        let mut projects: Vec<ProjectUsage> = rows
             .into_iter()
             .map(|(path, usage)| {
+                if path == chats {
+                    return ProjectUsage {
+                        name: tr!("Conversaciones", "Conversations"),
+                        client: None,
+                        project: path,
+                        usage,
+                    };
+                }
                 let known = registered.iter().find(|p| p.path == path);
                 let fallback = Project::new(path.clone());
                 let project = known.unwrap_or(&fallback);

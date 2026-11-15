@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::{Result, bail};
 use chrono::Timelike;
 use hedy_core::application::{
-    AccountStatus, CheckArea, CheckLevel, DoctorReport, Hedy, NewAccount, NewTemplate,
+    AccountStatus, CheckArea, CheckLevel, DoctorReport, Hedy, NewAccount, NewProject, NewTemplate,
     PlanUsageState, Proposal, RECENT_HOURS, Setting, SkillFiles, TaskActivity, TemplateScope,
 };
 use hedy_core::domain::memory::USER_AUTHOR;
@@ -1117,6 +1117,71 @@ pub fn use_account(hedy: &Hedy, dir: &Path, id: &str, protect: Option<bool>) -> 
             "{name} {path} usa {label}{lock}",
             "{name} {path} uses {label}{lock}"
         )
+    );
+    Ok(())
+}
+
+/// `hedy new`: a new folder with git, registered with its account.
+pub fn new_project(
+    hedy: &Hedy,
+    dir: &Path,
+    name: &str,
+    parent: Option<std::path::PathBuf>,
+    account: Option<String>,
+    protect: bool,
+) -> Result<()> {
+    let s = Style::for_stdout();
+    let parent = match parent {
+        // Relative to the folder the command runs from.
+        Some(parent) => dir.join(parent),
+        None => match hedy.default_project_parent()? {
+            Some(parent) => parent,
+            None => bail!(tr!(
+                "no sé dónde crearlo: indica la carpeta con --in",
+                "I do not know where to create it: give the folder with --in"
+            )),
+        },
+    };
+    let project = hedy.new_project(NewProject {
+        name: name.to_owned(),
+        parent,
+        account,
+        protect,
+        client: None,
+    })?;
+    let title = s.bold(&project.name);
+    let path = s.muted(short_path(&project.path));
+    println!(
+        "{} {}",
+        s.ok("✔"),
+        tr!("{title} creado en {path}", "{title} created in {path}")
+    );
+    match &project.account {
+        Some(id) => {
+            let account = hedy.account(id.as_str())?;
+            let label = account_label(&s, &account);
+            let lock = if project.protected {
+                s.warn(tr!(" · protegido", " · protected"))
+            } else {
+                String::new()
+            };
+            println!("  {}", tr!("usa {label}{lock}", "uses {label}{lock}"));
+        }
+        None => println!(
+            "  {}",
+            s.muted(tr!(
+                "sin cuenta todavía: asígnale una con `hedy use <cuenta>`",
+                "no account yet: assign one with `hedy use <account>`"
+            ))
+        ),
+    }
+    let cd = format!("cd {}", tilde(&project.path));
+    println!(
+        "  {}",
+        s.muted(tr!(
+            "Entra con `{cd}` o ábrelo en la app de Hedy.",
+            "Go in with `{cd}` or open it in the Hedy app."
+        ))
     );
     Ok(())
 }

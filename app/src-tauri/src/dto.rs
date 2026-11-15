@@ -336,6 +336,27 @@ pub struct NewTaskInput {
     pub plan_first: bool,
 }
 
+/// "Nuevo proyecto": a project started from scratch.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewProjectInput {
+    pub name: String,
+    pub parent: PathBuf,
+    pub account: Option<String>,
+    pub protect: bool,
+    pub client: Option<String>,
+}
+
+/// "Pregunta rápida": a question or research outside any project.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewConversationInput {
+    pub prompt: String,
+    pub mode: TaskMode,
+    pub account: Option<String>,
+    pub model: Option<String>,
+}
+
 /// A prompt template with its placeholders (`{archivo}` → `archivo`).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

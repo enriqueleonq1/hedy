@@ -81,6 +81,14 @@ pub enum AppError {
     TemplateExists(String),
     #[error("{}", self.message())]
     UndoBlocked(UndoBlocked),
+    #[error("{}", self.message())]
+    ProjectFolderExists(PathBuf),
+    #[error("{}", self.message())]
+    RelativeProjectParent(PathBuf),
+    #[error("{}", self.message())]
+    ConversationChangesFiles,
+    #[error("{}", self.message())]
+    NotAConversation(TaskId),
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -283,6 +291,28 @@ impl AppError {
                     "It cannot be undone safely: {why}. To take the changes out, use git revert."
                 )
             }
+            Self::ProjectFolderExists(path) => {
+                let path = path.display();
+                tr!(
+                    "ya existe {path}; elige otro nombre o ábrela con «Abrir carpeta…»",
+                    "{path} already exists; pick another name or open it with “Open folder…”"
+                )
+            }
+            Self::RelativeProjectParent(path) => {
+                let path = path.display();
+                tr!(
+                    "la carpeta donde crear el proyecto debe ser una ruta completa: {path}",
+                    "the folder to create the project in must be a full path: {path}"
+                )
+            }
+            Self::ConversationChangesFiles => tr!(
+                "una pregunta rápida solo pregunta o investiga; para cambiar archivos, crea o abre un proyecto",
+                "a quick question only asks or researches; to change files, create or open a project"
+            ),
+            Self::NotAConversation(id) => tr!(
+                "la tarea {id} es de un proyecto, no una conversación",
+                "task {id} belongs to a project, it is not a conversation"
+            ),
         }
     }
 }

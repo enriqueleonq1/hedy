@@ -6,6 +6,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboard
 
 import type { Overview } from "../../api/types";
 import { useT, type MessageKey } from "../../i18n";
+import { useCreate } from "../../screens/create/CreateProvider";
 import type { View } from "../Layout";
 import { GROUP_ORDER, usePaletteCommands, type Command, type GroupKey, type Page } from "./commands";
 import { fuzzyScore } from "./fuzzy";
@@ -14,6 +15,8 @@ const RECENT_KEY = "hedy.palette.recent";
 const MAX_RECENT = 8;
 const SHOWN_RECENT = 5;
 const MAX_RESULTS = 60;
+/** "Preguntar «…»": not a stable command, never a recent one. */
+const ASK_ID = "ask:query";
 
 const GROUP_TITLE: Record<GroupKey | "recent", MessageKey> = {
   recent: "palette.group.recent",
@@ -124,10 +127,28 @@ function PalettePanel({
   const [active, setActive] = useState(0);
   const [recent, setRecent] = useState(readRecent);
   const all = usePaletteCommands({ overview, open: true, onNavigate, t });
+  const create = useCreate();
 
   const sections = page
     ? arrange(page.commands, query, [], () => "")
     : arrange(all, query, recent, (k) => t(GROUP_TITLE[k]));
+  // Whatever was typed can also be asked, outside any project (like Spotlight).
+  const asked = query.trim();
+  if (!page && asked && overview.accounts.length > 0) {
+    sections.push({
+      key: "ask",
+      title: "",
+      commands: [
+        {
+          id: ASK_ID,
+          group: "actions",
+          label: t("palette.ask", { query: asked }),
+          detail: t("create.quickQuestion"),
+          run: () => create.quickQuestion(asked),
+        },
+      ],
+    });
+  }
   const flat = sections.flatMap((s) => s.commands);
   const current = Math.min(active, Math.max(flat.length - 1, 0));
   const optionId = (index: number) => `${id}-option-${index}`;
@@ -145,7 +166,7 @@ function PalettePanel({
 
   const run = (command: Command | undefined) => {
     if (!command) return;
-    if (!page) {
+    if (!page && command.id !== ASK_ID) {
       const next = [command.id, ...recent.filter((r) => r !== command.id)];
       setRecent(next);
       writeRecent(next);
@@ -281,7 +302,9 @@ function PalettePanel({
               })}
             </div>
           ))}
-          {flat.length === 0 && <p className="palette__empty">{t("palette.empty", { query: query.trim() })}</p>}
+          {flat.every((c) => c.id === ASK_ID) && (
+            <p className="palette__empty">{t("palette.empty", { query: query.trim() })}</p>
+          )}
         </div>
         <p className="palette__foot" aria-hidden>
           {t("palette.keys")}

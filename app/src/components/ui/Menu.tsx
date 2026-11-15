@@ -6,6 +6,8 @@ export interface MenuItem {
   label: string;
   onSelect: () => void;
   disabled?: boolean;
+  /** A short second line: what the action is for. */
+  hint?: string;
 }
 
 /**
@@ -95,14 +97,21 @@ export function MenuButton({
               type="button"
               role="menuitem"
               tabIndex={-1}
-              className="menu__item"
+              className={item.hint ? "menu__item menu__item--hinted" : "menu__item"}
               disabled={item.disabled}
               onClick={() => {
                 close();
                 item.onSelect();
               }}
             >
-              {item.label}
+              {item.hint ? (
+                <>
+                  <span className="menu__label">{item.label}</span>
+                  <span className="menu__hint">{item.hint}</span>
+                </>
+              ) : (
+                item.label
+              )}
             </button>
           ))}
         </div>

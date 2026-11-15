@@ -68,15 +68,18 @@ describe("Activity", () => {
     expect(word.closest(".working-word")).toHaveAttribute("aria-hidden");
     expect(within(running).getByText("homming")).toBeInTheDocument();
 
-    const recent = screen.getByRole("region", { name: "Últimas 24 h (4)" });
+    const recent = screen.getByRole("region", { name: "Últimas 24 h (5)" });
     expect(titles(recent)).toEqual([
       "Arregla el cálculo de impuestos en las facturas",
       "Actualiza las dependencias del panel",
+      "¿Qué diferencia hay entre OAuth y OpenID Connect?",
       "¿Dónde se calculan las comisiones?",
       "Cambia el color del botón de reservar",
     ]);
+    // A question outside any project reads as a conversation, not a project.
+    expect(within(recent).getByText("Conversación")).toBeInTheDocument();
     for (const state of ["Cambios por revisar", "Falló", "Respondida", "Descartada"]) {
-      expect(within(recent).getByText(state)).toBeInTheDocument();
+      expect(within(recent).getAllByText(state)[0]).toBeInTheDocument();
     }
     expect(within(recent).getByText("hace 40 min")).toBeInTheDocument();
   });

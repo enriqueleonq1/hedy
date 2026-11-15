@@ -552,6 +552,29 @@ impl TaskRepository for SqliteStore {
             .map(|d| serde_json::from_str(d).map_err(json_error))
             .collect()
     }
+
+    fn conversations(&self) -> PortResult<Vec<Task>> {
+        // The flag lives in the task's JSON, like the wait: no migration.
+        let rows: Vec<String> = self.with(|c| {
+            c.prepare(
+                "SELECT data FROM tasks WHERE json_extract(data, '$.conversation') = 1
+                 ORDER BY created_at DESC, id DESC",
+            )?
+            .query_map([], |r| r.get(0))?
+            .collect()
+        })?;
+        rows.iter()
+            .map(|d| serde_json::from_str(d).map_err(json_error))
+            .collect()
+    }
+
+    fn delete_task(&self, id: &TaskId) -> PortResult<()> {
+        // Events and queued messages go with it (ON DELETE CASCADE).
+        self.with(|c| {
+            c.execute("DELETE FROM tasks WHERE id = ?1", [id.as_str()])
+                .map(drop)
+        })
+    }
 }
 
 const USAGE_SUMS: &str = "COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
@@ -1189,6 +1212,7 @@ mod tests {
             plan: None,
             merge: None,
             wait: None,
+            conversation: false,
         };
         // Old but still running; old with a recent event; recent; old and done.
         let running = task("t1", "/code/a", 10, TaskStatus::Running);
@@ -1231,6 +1255,7 @@ mod tests {
             plan: None,
             merge: None,
             wait: None,
+            conversation: false,
         };
         store.save_task(&task).unwrap();
         assert!(store.waiting_tasks().unwrap().is_empty());
@@ -1267,6 +1292,49 @@ mod tests {
     }
 
     #[test]
+    fn conversations_are_listed_apart_and_deleted_with_their_events() {
+        let store = SqliteStore::in_memory().unwrap();
+        let task = |id: &str, conversation: bool| Task {
+            id: TaskId::new(id),
+            project: format!("/data/chats/{id}").into(),
+            mode: crate::domain::TaskMode::Ask,
+            title: "¿Qué es un monad?".into(),
+            prompt: "¿Qué es un monad?".into(),
+            account: AccountId::new("personal").unwrap(),
+            model: None,
+            workspace: None,
+            session_id: None,
+            status: crate::domain::TaskStatus::Review,
+            created_at: 10,
+            stages: vec![],
+            stage: 0,
+            plan: None,
+            merge: None,
+            wait: None,
+            conversation,
+        };
+        let (chat, other) = (task("c1", true), task("t1", false));
+        store.save_task(&chat).unwrap();
+        store.save_task(&other).unwrap();
+        store
+            .append_event(
+                &chat.id,
+                11,
+                &AgentEvent::Error {
+                    message: "x".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(store.conversations().unwrap(), vec![chat.clone()]);
+
+        store.delete_task(&chat.id).unwrap();
+        assert!(store.conversations().unwrap().is_empty());
+        assert_eq!(store.task(&chat.id).unwrap(), None);
+        assert!(store.events(&chat.id).unwrap().is_empty());
+        assert_eq!(store.task(&other.id).unwrap(), Some(other));
+    }
+
+    #[test]
     fn tasks_events_and_usage_round_trip() {
         use crate::domain::{TaskMode, TaskStatus, Workspace};
         let store = SqliteStore::in_memory().unwrap();
@@ -1292,6 +1360,7 @@ mod tests {
             plan: None,
             merge: None,
             wait: None,
+            conversation: false,
         };
         let (old, new) = (task("t1", 10), task("t2", 20));
         store.save_task(&old).unwrap();

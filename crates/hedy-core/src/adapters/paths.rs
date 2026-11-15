@@ -41,6 +41,11 @@ impl HedyPaths {
     pub fn accounts_dir(&self) -> PathBuf {
         self.data_dir.join("accounts")
     }
+
+    /// Private scratch folders of conversations outside any project.
+    pub fn chats_dir(&self) -> PathBuf {
+        self.data_dir.join("chats")
+    }
 }
 
 /// `path` relative to `base` for display (`src/app.py`), or as given when it

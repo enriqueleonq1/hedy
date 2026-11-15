@@ -138,6 +138,46 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             tr!("Quita la reserva", "Remove the reservation"),
         ),
         (
+            "new",
+            "",
+            tr!(
+                "Empieza un proyecto desde cero: crea su carpeta con git y lo registra",
+                "Start a project from scratch: create its folder with git and register it"
+            ),
+        ),
+        (
+            "new",
+            "name",
+            tr!(
+                "Nombre del proyecto; la carpeta usa una versión segura («Mi tienda» → mi-tienda)",
+                "Project name; the folder gets a safe version (\"My shop\" → my-shop)"
+            ),
+        ),
+        (
+            "new",
+            "parent",
+            tr!(
+                "Dónde crearlo (por defecto, donde están tus otros proyectos, o ~/Proyectos)",
+                "Where to create it (by default, where your other projects are, or ~/Projects)"
+            ),
+        ),
+        (
+            "new",
+            "account",
+            tr!(
+                "Cuenta del proyecto (por defecto, la predeterminada)",
+                "The project's account (by default, the default one)"
+            ),
+        ),
+        (
+            "new",
+            "protect",
+            tr!(
+                "Reserva la cuenta solo para este proyecto",
+                "Reserve the account for this project only"
+            ),
+        ),
+        (
             "tasks",
             "",
             tr!(
@@ -581,6 +621,7 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
 fn value_names() -> Vec<(&'static str, String)> {
     vec![
         ("dir", tr!("CARPETA", "FOLDER")),
+        ("parent", tr!("CARPETA", "FOLDER")),
         ("account", tr!("CUENTA", "ACCOUNT")),
         ("name", tr!("NOMBRE", "NAME")),
         ("api", tr!("PROVEEDOR", "PROVIDER")),
@@ -688,6 +729,16 @@ pub enum Command {
         protect: bool,
         #[arg(long)]
         unprotect: bool,
+    },
+
+    New {
+        name: String,
+        #[arg(long = "in", id = "parent")]
+        parent: Option<PathBuf>,
+        #[arg(long, short)]
+        account: Option<String>,
+        #[arg(long)]
+        protect: bool,
     },
 
     #[command(visible_alias = "tareas")]

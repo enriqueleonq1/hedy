@@ -69,6 +69,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
             };
             commands::use_account(&hedy, &dir, &account, protection)
         }
+        Command::New {
+            name,
+            parent,
+            account,
+            protect,
+        } => commands::new_project(&hedy, &dir, &name, parent, account, protect),
         Command::Tasks => commands::tasks(&hedy),
         Command::Summary { week: _, days } => commands::summary(&hedy, days.unwrap_or(7)),
         Command::Client { name, clear } => {

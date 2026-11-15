@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use super::{AccountId, Color, PhasePlan};
+use super::{AccountId, Color, DomainError, PhasePlan};
 
 /// A folder (usually a git repository root) registered in Hedy.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +45,30 @@ impl Project {
     }
 }
 
+/// Longest folder name a new project gets.
+pub const MAX_FOLDER_NAME: usize = 64;
+
+/// The folder a new project called `name` gets: lowercase letters, digits,
+/// dashes, dots and underscores, accents folded ("Mi tienda online" →
+/// `mi-tienda-online`). Safe on every platform and in a shell.
+pub fn folder_name(name: &str) -> Result<String, DomainError> {
+    let mut folder = String::new();
+    for c in name.trim().chars() {
+        let c = super::account::fold_accent(c).to_ascii_lowercase();
+        if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
+            folder.push(c);
+        } else if !folder.is_empty() && !folder.ends_with('-') {
+            folder.push('-');
+        }
+    }
+    let folder: String = folder.chars().take(MAX_FOLDER_NAME).collect();
+    let folder = folder.trim_matches(|c| c == '-' || c == '.');
+    if folder.is_empty() || !folder.chars().any(|c| c.is_ascii_alphanumeric()) {
+        return Err(DomainError::InvalidProjectName(name.trim().to_owned()));
+    }
+    Ok(folder.to_owned())
+}
+
 /// The innermost registered project containing `dir`.
 pub fn find_for_dir<'a>(projects: &'a [Project], dir: &Path) -> Option<&'a Project> {
     projects
@@ -60,6 +84,23 @@ mod tests {
     #[test]
     fn name_comes_from_folder() {
         assert_eq!(Project::new("/home/e/code/homming".into()).name, "homming");
+    }
+
+    #[test]
+    fn folder_names_are_safe() {
+        let ok = |n: &str| folder_name(n).unwrap();
+        assert_eq!(ok("Mi tienda online"), "mi-tienda-online");
+        assert_eq!(ok("  Año 2027: ¡Plan!  "), "ano-2027-plan");
+        assert_eq!(ok("api_v2.web"), "api_v2.web");
+        assert_eq!(ok("../etc/passwd"), "etc-passwd");
+        assert_eq!(ok(".hidden"), "hidden");
+        assert_eq!(ok(&"x".repeat(100)).len(), MAX_FOLDER_NAME);
+        for bad in ["", "   ", "¿¿??", "..", "-_-"] {
+            assert!(
+                matches!(folder_name(bad), Err(DomainError::InvalidProjectName(_))),
+                "{bad:?}"
+            );
+        }
     }
 
     #[test]

@@ -1,13 +1,27 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 
-import { errorMessage, useAction } from "../../api/context";
-import type { Overview, PromptTemplate, Task, TaskMode } from "../../api/types";
+import { errorMessage, useAction, useApi } from "../../api/context";
+import type { HedyApi } from "../../api/HedyApi";
+import type { Account, Overview, PromptTemplate, Task, TaskMode } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { shortPath } from "../../components/projects";
-import { Button } from "../../components/ui/Button";
+import { Button, ConfirmButton } from "../../components/ui/Button";
 import { Segmented } from "../../components/ui/controls";
-import { isBusy, tasksKey, useQueue, useSetQueue, useTaskEvents, useTasks, useTemplates } from "../../tasks/hooks";
+import { useToast } from "../../components/ui/Toast";
+import {
+  ACTIVITY_KEY,
+  CONVERSATIONS_KEY,
+  isBusy,
+  listKeyFor,
+  tasksKey,
+  useConversations,
+  useQueue,
+  useSetQueue,
+  useTaskEvents,
+  useTasks,
+  useTemplates,
+} from "../../tasks/hooks";
 import {
   agentName,
   buildTimeline,
@@ -65,32 +79,70 @@ function useMilestone(taskId: string | null, items: TimelineItem[], ready: boole
   return seen.task === taskId ? seen.said : null;
 }
 
+/** The modes of a question outside any project: it never changes files. */
+const CONVERSATION_MODES: TaskMode[] = ["ask", "research"];
+
+/** A project's tasks, or (no project) the conversations. */
+function useWorkspaceTasks(project: string | null) {
+  const projectTasks = useTasks(project ?? "", project !== null);
+  const conversations = useConversations(project === null);
+  return project === null ? conversations : projectTasks;
+}
+
+/**
+ * The account a new conversation uses: the one the user picked, else the
+ * default one, else the first allowed. Never another one by itself (rule 3).
+ */
+function useConversationAccount(overview: Overview, enabled: boolean) {
+  const api = useApi();
+  const offered = useQuery({
+    queryKey: ["conversationAccounts"],
+    queryFn: () => api.conversationAccounts(),
+    enabled,
+  });
+  const [picked, setPicked] = useState<string | null>(null);
+  const accounts = overview.accounts.filter((a) => offered.data?.includes(a.id));
+  const chosen =
+    accounts.find((a) => a.id === picked) ?? accounts.find((a) => a.id === overview.defaultAccount) ?? accounts[0];
+  return { accounts, chosen, pick: setPicked, ready: offered.isSuccess };
+}
+
 export function Workspace({
   overview,
   project,
   task: chosen,
+  draft,
   onSelectTask,
   onOpenMemory,
   onOpenStatus,
 }: {
   overview: Overview;
-  project: string;
+  /** `null`: no project, a quick question ("conversation"). */
+  project: string | null;
   /** The task to show: an id, `null` for a new one, or (unset) the most recent open one. */
   task?: string | null;
+  /** Text to start the composer of a new task with. */
+  draft?: string;
   /** Shows another task (`null`: a new one); `replace` keeps the step out of Back. */
   onSelectTask: (task: string | null, options?: { replace?: boolean }) => void;
   onOpenMemory?: () => void;
   onOpenStatus?: () => void;
 }) {
   const t = useT();
-  const tasks = useTasks(project);
-  const info = overview.projects.find((p) => p.path === project);
-  const account = overview.accounts.find((a) => a.id === info?.account);
+  const solo = project === null;
+  const tasks = useWorkspaceTasks(project);
+  const info = solo ? undefined : overview.projects.find((p) => p.path === project);
+  const asking = useConversationAccount(overview, solo);
 
   // By default, the most recent task that is still open.
   const list = useMemo(() => tasks.data ?? [], [tasks.data]);
   const task =
     chosen === null ? null : (list.find((t) => t.id === chosen) ?? (chosen === undefined ? list.find(isOpen) : undefined) ?? null);
+
+  // A conversation shows its own account; a new one, the one picked for it.
+  const account: Account | undefined = solo
+    ? (overview.accounts.find((a) => a.id === task?.account) ?? (task ? undefined : asking.chosen))
+    : overview.accounts.find((a) => a.id === info?.account);
 
   const events = useTaskEvents(task?.id ?? null);
   const history = useMemo(() => events.data ?? [], [events.data]);
@@ -98,7 +150,7 @@ export function Workspace({
   const queue = useQueue(task?.id ?? null).data ?? [];
   const agent = agentName(history);
   const mascot = useMascot(task, history);
-  const name = info?.name ?? shortPath(project);
+  const name = solo ? t("conversation.title") : (info?.name ?? shortPath(project));
   const milestone = useMilestone(task?.id ?? null, items, events.isSuccess);
   // A message written now waits for the card's answer (and the end of the turn).
   const card: CardWaiting = isBusy(task) && task?.status === "waitingApproval" ? (pendingCard(history) ?? "other") : null;
@@ -118,27 +170,34 @@ export function Workspace({
   }, [list, taskId, onSelectTask]);
 
   return (
-    <div className="workspace">
+    <div className={solo ? "workspace workspace--solo" : "workspace"}>
       <section className="chat" aria-label={t("workspace.chat")}>
         <header className="chat__head">
           <div className="chat__title">
             <h1 title={task ? task.title : undefined}>{task ? task.title : name}</h1>
             <p className="muted">
-              {name}
+              {solo ? t("conversation.subtitle") : name}
               {task?.workspace && <> · {t("common.branch", { branch: task.workspace.branch })}</>}
               {task && <> · {t(MODE_LABEL[task.mode])} · {t(STATUS_LABEL[task.status])}</>}
             </p>
           </div>
           <div className="chat__tools">
             {list.length > 0 && (
-              <TaskSwitcher tasks={list} current={task?.id ?? null} accounts={overview.accounts} onSelect={onSelectTask} />
+              <TaskSwitcher
+                tasks={list}
+                current={task?.id ?? null}
+                accounts={overview.accounts}
+                onSelect={onSelectTask}
+                conversations={solo}
+              />
             )}
             {task && (
               <Button small variant="primary" onClick={() => onSelectTask(null)}>
-                {t("workspace.newTask")}
+                {solo ? t("conversation.newLabel") : t("workspace.newTask")}
               </Button>
             )}
             {task?.live && <StopButton task={task} />}
+            {solo && task && !isBusy(task) && <DeleteConversation task={task} onDeleted={() => onSelectTask(null)} />}
             {onOpenStatus && (
               <Button small variant="ghost" onClick={onOpenStatus}>
                 {t("workspace.status")}
@@ -174,9 +233,13 @@ export function Workspace({
           <div className="chat__empty">
             <Mascot color={account?.color ?? DEFAULT_ACCOUNT_COLOR} state="idle" size={120} label="Hedy" />
             <p>
-              {account
-                ? t("workspace.empty", { name, account: account.name })
-                : t("workspace.noAccount")}
+              {solo
+                ? asking.ready && !account
+                  ? t("conversation.noAccounts")
+                  : t("conversation.empty")
+                : account
+                  ? t("workspace.empty", { name, account: account.name })
+                  : t("workspace.noAccount")}
             </p>
           </div>
         )}
@@ -188,24 +251,53 @@ export function Workspace({
 
         <Composer
           key={task?.id ?? "new"}
-          project={project}
+          scope={project}
           name={name}
           task={task}
           card={card}
           models={account ? MODEL_SUGGESTIONS[account.provider] : []}
           agent={agent}
           disabled={!account}
+          initialText={task ? "" : draft}
+          autoFocus={chosen === null || (solo && !task)}
+          start={
+            solo
+              ? (api, input) =>
+                  api.startConversation({
+                    prompt: input.prompt,
+                    mode: input.mode,
+                    account: account?.id ?? null,
+                    model: input.model,
+                  })
+              : (api, input) => api.startTask({ project, ...input })
+          }
+          accountPicker={
+            solo && !task && asking.accounts.length > 1 && account ? (
+              <select
+                className="pill-select"
+                aria-label={t("conversation.account")}
+                value={account.id}
+                onChange={(e) => asking.pick(e.target.value)}
+              >
+                {asking.accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            ) : null
+          }
           onStarted={(created) => onSelectTask(created.id, { replace: true })}
         />
       </section>
-      <ChangesPanel project={project} task={task} />
+      {!solo && <ChangesPanel project={project} task={task} />}
     </div>
   );
 }
 
 function StopButton({ task }: { task: Task }) {
   const t = useT();
-  const stop = useAction((api) => api.stopTask(task.id), { invalidate: [tasksKey(task.project)] });
+  const stop = useAction((api) => api.stopTask(task.id), { invalidate: [listKeyFor(task)] });
   return (
     <Button small variant="ghost" onClick={() => stop.mutate(undefined)} disabled={stop.isPending}>
       {t("workspace.stop")}
@@ -213,7 +305,37 @@ function StopButton({ task }: { task: Task }) {
   );
 }
 
+/** Deletes a conversation (history and folder), after a second click. */
+function DeleteConversation({ task, onDeleted }: { task: Task; onDeleted: () => void }) {
+  const t = useT();
+  const toast = useToast();
+  const remove = useAction((api) => api.deleteConversation(task.id), {
+    invalidate: [CONVERSATIONS_KEY, ACTIVITY_KEY, ["usageSummary"]],
+    onSuccess: () => {
+      toast.info(t("conversation.deleted"));
+      onDeleted();
+    },
+  });
+  return (
+    <ConfirmButton
+      small
+      title={t("conversation.deleteLabel")}
+      confirmLabel={t("conversation.deleteConfirm")}
+      disabled={remove.isPending}
+      onConfirm={() => remove.mutate(undefined)}
+    >
+      {t("conversation.delete")}
+    </ConfirmButton>
+  );
+}
+
 const MODES = Object.keys(MODE_LABEL) as TaskMode[];
+
+/** What starts a new task from the composer: in a project, or as a conversation. */
+type StartTask = (
+  api: HedyApi,
+  input: { prompt: string; mode: TaskMode; model: string | null; planFirst: boolean },
+) => Promise<Task>;
 
 const CARD_LABEL: Record<NonNullable<CardWaiting>, MessageKey> = {
   plan: "workspace.composer.cardPlan",
@@ -221,15 +343,19 @@ const CARD_LABEL: Record<NonNullable<CardWaiting>, MessageKey> = {
   other: "workspace.composer.cardOther",
 };
 
-/** The mode the composer starts new tasks in, remembered per project (a convenience: storage may fail). */
-function useProjectMode(project: string): [TaskMode, (mode: TaskMode) => void] {
-  const key = `hedy.mode.${project}`;
+/**
+ * The mode the composer starts new tasks in, remembered per project (and for
+ * conversations); a convenience: storage may fail.
+ */
+function useProjectMode(project: string | null, modes: TaskMode[]): [TaskMode, (mode: TaskMode) => void] {
+  const key = `hedy.mode.${project ?? "*conversation"}`;
+  const fallback = modes[0] ?? "project";
   const [mode, setMode] = useState<TaskMode>(() => {
     try {
       const saved = localStorage.getItem(key);
-      return MODES.find((m) => m === saved) ?? "project";
+      return modes.find((m) => m === saved) ?? fallback;
     } catch {
-      return "project";
+      return fallback;
     }
   });
   const choose = (next: TaskMode) => {
@@ -244,16 +370,21 @@ function useProjectMode(project: string): [TaskMode, (mode: TaskMode) => void] {
 }
 
 function Composer({
-  project,
+  scope,
   name,
   task,
   card,
   models,
   agent,
   disabled,
+  initialText,
+  autoFocus,
+  start: startNew,
+  accountPicker,
   onStarted,
 }: {
-  project: string;
+  /** The project, or `null` for a conversation. */
+  scope: string | null;
   name: string;
   task: Task | null;
   /** A plan or permission card waits: what is written now goes after its answer. */
@@ -262,6 +393,12 @@ function Composer({
   /** Who works on the task now, for the queue's label. */
   agent: string;
   disabled: boolean;
+  initialText?: string;
+  /** Takes the focus when it appears (a new task or question). */
+  autoFocus?: boolean;
+  start: StartTask;
+  /** Shown in the bar of a new conversation. */
+  accountPicker?: ReactNode;
   onStarted: (task: Task) => void;
 }) {
   const t = useT();
@@ -269,7 +406,11 @@ function Composer({
   const setQueue = useSetQueue();
   const input = useRef<HTMLTextAreaElement>(null);
   const listId = useId();
-  const [text, setText] = useState("");
+  const solo = scope === null;
+  // A question is short: Enter sends it, like a search field.
+  const enterSends = solo;
+  const listKey: QueryKey = solo ? CONVERSATIONS_KEY : tasksKey(scope);
+  const [text, setText] = useState(initialText ?? "");
   const [model, setModel] = useState("");
   const [planFirst, setPlanFirst] = useState(true);
   const [active, setActive] = useState(0);
@@ -279,11 +420,23 @@ function Composer({
   const followUp = isOpen(task);
   // While the agent works, a follow-up waits in the queue for the end of its turn.
   const queueing = followUp && isBusy(task);
-  const [newMode, setNewMode] = useProjectMode(project);
+  const [newMode, setNewMode] = useProjectMode(scope, solo ? CONVERSATION_MODES : MODES);
   // A follow-up stays in its task's mode; the selector is only for new tasks.
   const mode = followUp && task ? task.mode : newMode;
   const keys = keyLabels();
-  const templates = useTemplates(project);
+  const templates = useTemplates(scope);
+
+  // After the dialogs that led here closed (they give the focus back first).
+  useEffect(() => {
+    if (!autoFocus || disabled) return;
+    const frame = requestAnimationFrame(() => {
+      const el = input.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [autoFocus, disabled]);
 
   const query = slashQuery(text);
   const matches = query === null ? [] : filterTemplates(templates.data ?? [], query);
@@ -291,18 +444,16 @@ function Composer({
   const current = pickerOpen ? matches[Math.min(active, matches.length - 1)] : undefined;
   const optionId = (index: number) => `${listId}-option-${index}`;
 
-  const start = useAction(
-    (api, prompt: string) => api.startTask({ project, prompt, mode, model: model || null, planFirst }),
-    {
-      onSuccess: (created) => {
-        setText("");
-        client.setQueryData<Task[]>(tasksKey(project), (old) => [created, ...(old ?? [])]);
-        onStarted(created);
-      },
+  const start = useAction((api, prompt: string) => startNew(api, { prompt, mode, model: model || null, planFirst }), {
+    onSuccess: (created) => {
+      setText("");
+      client.setQueryData<Task[]>(listKey, (old) => [created, ...(old ?? [])]);
+      void client.invalidateQueries({ queryKey: ACTIVITY_KEY });
+      onStarted(created);
     },
-  );
+  });
   const send = useAction((api, message: string) => api.queueMessage(task?.id ?? "", message), {
-    invalidate: [tasksKey(project)],
+    invalidate: [listKey],
     onSuccess: (left) => {
       setText("");
       if (task) setQueue(task.id, left);
@@ -403,7 +554,9 @@ function Composer({
             ? t("queue.composerBusy", { agent })
             : followUp
               ? t("workspace.composer.followUp")
-              : t("workspace.composer.ask", { name })}
+              : solo
+                ? t("conversation.ask")
+                : t("workspace.composer.ask", { name })}
       </label>
       <textarea
         ref={input}
@@ -416,8 +569,14 @@ function Composer({
         aria-haspopup="listbox"
         aria-controls={pickerOpen && matches.length > 0 ? listId : undefined}
         aria-activedescendant={current ? optionId(matches.indexOf(current)) : undefined}
+        aria-keyshortcuts={enterSends ? "Enter" : undefined}
+        aria-describedby={enterSends ? `${listId}-enter` : undefined}
         placeholder={
-          mode === "project" ? t("workspace.composer.placeholderProject") : t("workspace.composer.placeholderAsk")
+          solo
+            ? t("conversation.placeholder")
+            : mode === "project"
+              ? t("workspace.composer.placeholderProject")
+              : t("workspace.composer.placeholderAsk")
         }
         onChange={(e) => edit(e.target.value)}
         onKeyDown={(e) => {
@@ -439,23 +598,29 @@ function Composer({
             setPickerClosed(true);
             return;
           }
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey || (enterSends && !e.shiftKey && !e.nativeEvent.isComposing))) {
             e.preventDefault();
             submit();
           }
         }}
       />
+      {enterSends && (
+        <p id={`${listId}-enter`} className="sr-only">
+          {t("conversation.enterHint")}
+        </p>
+      )}
       <div className="composer__bar">
         {!followUp && (
           <>
             <Segmented<TaskMode>
               label={t("workspace.composer.mode")}
               value={mode}
-              options={MODES.map((value) => ({ value, label: t(MODE_LABEL[value]) }))}
+              options={(solo ? CONVERSATION_MODES : MODES).map((value) => ({ value, label: t(MODE_LABEL[value]) }))}
               onChange={setNewMode}
             />
+            {accountPicker}
             <select className="pill-select" aria-label={t("common.models")} value={model} onChange={(e) => setModel(e.target.value)}>
-              <option value="">{t("workspace.composer.autoModels")}</option>
+              <option value="">{solo ? t("conversation.defaultModel") : t("workspace.composer.autoModels")}</option>
               {models.map((m) => (
                 <option key={m} value={m}>
                   {t("workspace.composer.onlyModel", { model: m })}
@@ -475,12 +640,12 @@ function Composer({
         </Button>
         <span className="spacer" />
         <kbd className="kbd composer__hint" aria-hidden>
-          {keys.submit}
+          {enterSends ? "Enter" : keys.submit}
         </kbd>
         <Button
           type="submit"
           variant="primary"
-          aria-keyshortcuts="Control+Enter Meta+Enter"
+          aria-keyshortcuts={enterSends ? "Enter" : "Control+Enter Meta+Enter"}
           disabled={!text.trim() || busy || disabled}
         >
           {followUp && card ? t("workspace.composer.sendAfterCard") : queueing ? t("queue.add") : t("workspace.composer.send")}
@@ -490,8 +655,8 @@ function Composer({
         <TemplateDialog
           title={t("templates.saveCurrentTitle")}
           initialText={text.trim()}
-          projects={[{ path: project, name }]}
-          defaultProject={project}
+          projects={scope === null ? [] : [{ path: scope, name }]}
+          defaultProject={scope}
           onClose={() => setSaving(false)}
         />
       )}

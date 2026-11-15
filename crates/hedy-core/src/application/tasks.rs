@@ -84,7 +84,7 @@ impl Hedy {
     }
 
     /// The adapter and launch for an account, or why it cannot work yet.
-    fn backend(&self, account: &Account) -> AppResult<(AgentBackend, LaunchSpec)> {
+    pub(super) fn backend(&self, account: &Account) -> AppResult<(AgentBackend, LaunchSpec)> {
         if account.credentials == Credentials::ApiKey {
             let key = self
                 .secrets
@@ -152,9 +152,7 @@ impl Hedy {
         }
 
         let now = self.clock.now_ms();
-        // The counter keeps ids unique when two tasks start in the same ms.
-        let seq = self.sessions.fetch_add(1, Ordering::Relaxed) % 256;
-        let id = TaskId::new(format!("t{now:x}{seq:02x}"));
+        let id = self.new_task_id(now);
         let title = title_from_prompt(&request.prompt);
         // Codex and ACP agents read files without asking Hedy, so they always
         // work in a worktree, where `.env` and friends do not exist.
@@ -181,6 +179,7 @@ impl Hedy {
             plan: None,
             merge: None,
             wait: None,
+            conversation: false,
         };
         self.store.save_task(&task)?;
         self.record(
@@ -192,6 +191,13 @@ impl Hedy {
         self.run_stage(&mut task, 0, request.prompt, None)?;
         self.events.task_updated(&task);
         Ok(task)
+    }
+
+    /// A new, unique task id. The counter keeps ids unique when two tasks
+    /// start in the same millisecond.
+    pub(super) fn new_task_id(&self, now_ms: i64) -> TaskId {
+        let seq = self.sessions.fetch_add(1, Ordering::Relaxed) % 256;
+        TaskId::new(format!("t{now_ms:x}{seq:02x}"))
     }
 
     fn create_workspace(&self, repo: &Path, title: &str, id: &TaskId) -> AppResult<Workspace> {
@@ -227,7 +233,7 @@ impl Hedy {
 
     /// Starts stage `index` in a new agent session. If it cannot start, the
     /// task fails with the reason in its history instead of staying "running".
-    fn run_stage(
+    pub(super) fn run_stage(
         &self,
         task: &mut Task,
         index: usize,
@@ -268,9 +274,19 @@ impl Hedy {
             .account(task.account.as_str())
             .map(|a| a.provider.agent_label(None))
             .unwrap_or_else(|_| "Hedy".into());
-        let project = self.project_name(&task.project);
+        let project = self.place_name(task);
         self.events
             .notice(task, &Notice::new(kind, &agent, &project));
+    }
+
+    /// Where the task belongs, for people: its project's name, or
+    /// "Conversación" for a question outside any project.
+    pub(super) fn place_name(&self, task: &Task) -> String {
+        if task.conversation {
+            tr!("Conversación", "Conversation")
+        } else {
+            self.project_name(&task.project)
+        }
     }
 
     /// The project's name, or its folder's when it is no longer registered.
@@ -327,11 +343,20 @@ impl Hedy {
                 .or_else(|| account.provider.default_api_model().map(str::to_owned)),
             _ => stage.model.clone(),
         };
-        let project = self.project_at(&task.project).ok();
+        // A conversation has no project: no memory and nothing to map.
+        let project = if task.conversation {
+            None
+        } else {
+            self.project_at(&task.project).ok()
+        };
         let memory = project
             .as_ref()
             .and_then(|p| self.memory_link(p, &task.id, account));
-        let mcp = self.code_map_servers(&task.project)?;
+        let mcp = if task.conversation {
+            Vec::new()
+        } else {
+            self.code_map_servers(&task.project)?
+        };
         let number = self.sessions.fetch_add(1, Ordering::Relaxed) + 1;
         let hedy = self.clone();
         let id = task.id.clone();
@@ -812,7 +837,7 @@ impl Hedy {
     /// Who the task may be handed over to (another provider or an API key).
     pub fn handoff_options(&self, id: &TaskId) -> AppResult<Vec<Account>> {
         let task = self.task(id)?;
-        let project = self.project_at(&task.project)?;
+        let project = self.task_project(&task)?;
         let current = self.account(task.account.as_str())?;
         let accounts = self.accounts()?;
         let projects = self.projects()?;

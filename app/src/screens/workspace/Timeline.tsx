@@ -53,7 +53,8 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
           return (
             <p key={item.key} className="phase-divider">
               <span>
-                <strong>{item.agent}</strong> {t(PHASE_VERB[item.phase])} · {item.account}
+                <strong>{item.agent}</strong>{" "}
+                {t(task.mode === "project" ? PHASE_VERB[item.phase] : "workspace.phase.answer")} · {item.account}
               </span>
             </p>
           );

@@ -5,7 +5,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use hedy_core::application::{
-    AppResult, Hedy, NewAccount, NewTask, NewTemplate, Setting, TemplateScope,
+    AppResult, Hedy, NewAccount, NewConversation, NewProject, NewTask, NewTemplate, Setting,
+    TemplateScope,
 };
 use hedy_core::domain::{
     AgentEvent, Category, Color, Commit, Decision, FileDiff, Note, PhasePlan, QueuedMessage,
@@ -16,9 +17,10 @@ use tauri::ipc::Channel;
 
 use crate::AppState;
 use crate::dto::{
-    self, AcceptPreviewDto, ActivityDto, MemoryDto, NewAccountInput, NewTaskInput,
-    NewTemplateInput, OverviewDto, PlanDto, ProjectStatusDto, SkillChangeDto, SkillDraftInput,
-    SkillFilesDto, SkillsDto, TaskDto, TemplateDto, UsagePointDto, UsageSummaryDto,
+    self, AcceptPreviewDto, ActivityDto, MemoryDto, NewAccountInput, NewConversationInput,
+    NewProjectInput, NewTaskInput, NewTemplateInput, OverviewDto, PlanDto, ProjectStatusDto,
+    SkillChangeDto, SkillDraftInput, SkillFilesDto, SkillsDto, TaskDto, TemplateDto, UsagePointDto,
+    UsageSummaryDto,
 };
 use crate::terminal::{TerminalEvent, TerminalRequest, Terminals};
 
@@ -258,6 +260,93 @@ pub async fn start_task(state: State<'_, AppState>, input: NewTaskInput) -> Comm
         })
     })
     .await
+}
+
+/// Where "Nuevo proyecto" proposes to create it.
+#[tauri::command]
+pub async fn default_project_parent(state: State<'_, AppState>) -> CommandResult<Option<PathBuf>> {
+    blocking(&state, |h| h.default_project_parent()).await
+}
+
+/// The folder a new project would get, or why it cannot be created there.
+#[tauri::command]
+pub async fn new_project_path(
+    state: State<'_, AppState>,
+    name: String,
+    parent: PathBuf,
+) -> CommandResult<PathBuf> {
+    blocking(&state, move |h| h.new_project_path(&name, &parent)).await
+}
+
+/// Creates the folder with git and registers it. Returns its path.
+#[tauri::command]
+pub async fn new_project(
+    state: State<'_, AppState>,
+    input: NewProjectInput,
+) -> CommandResult<PathBuf> {
+    blocking(&state, move |h| {
+        h.new_project(NewProject {
+            name: input.name,
+            parent: input.parent,
+            account: input.account.filter(|a| !a.is_empty()),
+            protect: input.protect,
+            client: input.client,
+        })
+        .map(|p| p.path)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn start_conversation(
+    state: State<'_, AppState>,
+    input: NewConversationInput,
+) -> CommandResult<TaskDto> {
+    blocking(&state, move |h| {
+        let task = h.start_conversation(NewConversation {
+            prompt: input.prompt,
+            mode: input.mode,
+            account: input.account,
+            model: input.model,
+        })?;
+        Ok(TaskDto {
+            live: h.is_running(&task.id),
+            task,
+        })
+    })
+    .await
+}
+
+/// Every conversation outside a project, newest first.
+#[tauri::command]
+pub async fn conversations(state: State<'_, AppState>) -> CommandResult<Vec<TaskDto>> {
+    blocking(&state, |h| {
+        Ok(h.conversations()?
+            .into_iter()
+            .map(|task| TaskDto {
+                live: h.is_running(&task.id),
+                task,
+            })
+            .collect())
+    })
+    .await
+}
+
+/// Accounts a conversation may use (protection rules applied).
+#[tauri::command]
+pub async fn conversation_accounts(state: State<'_, AppState>) -> CommandResult<Vec<String>> {
+    blocking(&state, |h| {
+        Ok(h.conversation_accounts()?
+            .iter()
+            .map(ToString::to_string)
+            .collect())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_conversation(state: State<'_, AppState>, id: String) -> CommandResult<()> {
+    blocking(&state, move |h| h.delete_conversation(&task_id(id))).await
 }
 
 #[tauri::command]
