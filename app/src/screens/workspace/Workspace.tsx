@@ -23,6 +23,7 @@ import {
 import { useMascot } from "../../tasks/useMascot";
 import { MODEL_SUGGESTIONS } from "../../components/models";
 import { useT, type MessageKey } from "../../i18n";
+import { keyLabels } from "../../platform";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { fillTemplate, filterTemplates, slashQuery } from "../../templates/placeholders";
 import { TemplateDialog } from "../templates/TemplateDialog";
@@ -276,6 +277,7 @@ function Composer({
   const [newMode, setNewMode] = useProjectMode(project);
   // A follow-up stays in its task's mode; the selector is only for new tasks.
   const mode = followUp && task ? task.mode : newMode;
+  const keys = keyLabels();
   const templates = useTemplates(project);
 
   const query = slashQuery(text);
@@ -467,8 +469,15 @@ function Composer({
           {t("templates.saveCurrent")}
         </Button>
         <span className="spacer" />
-        <span className="muted small">Ctrl + Enter</span>
-        <Button type="submit" variant="primary" disabled={!text.trim() || busy || disabled}>
+        <kbd className="kbd composer__hint" aria-hidden>
+          {keys.submit}
+        </kbd>
+        <Button
+          type="submit"
+          variant="primary"
+          aria-keyshortcuts="Control+Enter Meta+Enter"
+          disabled={!text.trim() || busy || disabled}
+        >
           {followUp && card ? t("workspace.composer.sendAfterCard") : queueing ? t("queue.add") : t("workspace.composer.send")}
         </Button>
       </div>
