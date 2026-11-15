@@ -12,6 +12,9 @@ const textPairs: [string, string][] = [
   ["actionInk", "action"],
   ["modeInk", "modeBg"],
   ["actionText", "selection"],
+  // The active option of a select or menu: its label and its second line.
+  ["ink", "selection"],
+  ["muted", "selection"],
   ["ink", "textSelection"],
   ["ink", "tipBg"],
   ["actionText", "bg"],

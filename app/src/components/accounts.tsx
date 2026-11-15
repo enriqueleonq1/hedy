@@ -11,6 +11,7 @@ import {
   windowLabel,
 } from "./planUsage";
 import { PROVIDER_NAMES } from "./providers";
+import { ColorDot, type SelectOption } from "./ui/Select";
 
 const BRANDS = ["claude", "chatgpt", "codex", "gemini", "kimi", "antigravity"];
 
@@ -18,6 +19,11 @@ const BRANDS = ["claude", "chatgpt", "codex", "gemini", "kimi", "antigravity"];
 export function shortAccountLabel(account: Pick<Account, "name">): string {
   const [first = "", ...rest] = account.name.trim().split(/\s+/);
   return rest.length > 0 && BRANDS.includes(first.toLowerCase()) ? rest.join(" ") : account.name;
+}
+
+/** An account as an option of a `Select`: its color, its name and (below) its provider. */
+export function accountOption(account: Account, detail: string = account.providerName): SelectOption {
+  return { value: account.id, label: account.name, detail, icon: <ColorDot color={account.color} /> };
 }
 
 /** "Anthropic · Team", "OpenAI · Plus · Codex", "Moonshot · API key". */
