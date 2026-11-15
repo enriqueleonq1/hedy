@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ApiProvider, errorMessage, useApi, useOverview } from "./api/context";
 import type { HedyApi } from "./api/HedyApi";
-import { Shell, Sidebar, Topbar, viewProject, type View } from "./components/Layout";
+import { Shell, Sidebar, taskView, Topbar, viewProject, type View } from "./components/Layout";
 import { Mascot } from "./components/Mascot/Mascot";
 import { CommandPalette } from "./components/palette/CommandPalette";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
@@ -11,6 +11,7 @@ import { TerminalProvider } from "./components/Terminal/TerminalProvider";
 import { Button } from "./components/ui/Button";
 import { ToastProvider } from "./components/ui/Toast";
 import { AccountsScreen } from "./screens/accounts/AccountsScreen";
+import { CreateProvider } from "./screens/create/CreateProvider";
 import { ActivityScreen } from "./screens/activity/ActivityScreen";
 import { MemoryScreen } from "./screens/memory/MemoryScreen";
 import { Onboarding } from "./screens/onboarding/Onboarding";
@@ -54,7 +55,8 @@ function Localized({ children }: { children: ReactNode }) {
 
 /**
  * `#accounts`, `#a=<id>` (accounts, that card), `#settings`, `#activity`, `#p=<path>` (workspace; `&t=<id>`
- * that task, `&new` a new one), `#m=<path>` (memory), `#k=<path>` (memory, skills tab), `#s=<path>` (status).
+ * that task, `&new` a new one), `#m=<path>` (memory), `#k=<path>` (memory, skills tab), `#s=<path>` (status),
+ * `#c` (a new quick question), `#c=<id>` (that conversation).
  */
 function viewFromHash(): View {
   const raw = window.location.hash.slice(1);
@@ -68,6 +70,8 @@ function viewFromHash(): View {
   }
   const hash = decodeURIComponent(raw);
   if (hash === "accounts" || hash === "settings" || hash === "activity") return { screen: hash };
+  if (hash === "c") return { screen: "conversation" };
+  if (hash.startsWith("c=")) return { screen: "conversation", task: hash.slice(2) };
   if (hash.startsWith("a=")) return { screen: "accounts", account: hash.slice(2) };
   if (hash.startsWith("m=")) return { screen: "memory", project: hash.slice(2) };
   if (hash.startsWith("k=")) return { screen: "memory", project: hash.slice(2), tab: "skills" };
@@ -83,6 +87,7 @@ function hashFor(view: View): string {
   if (view.screen === "memory") return `#${view.tab === "skills" ? "k" : "m"}=${encodeURIComponent(view.project)}`;
   if (view.screen === "status") return `#s=${encodeURIComponent(view.project)}`;
   if (view.screen === "accounts" && view.account) return `#a=${encodeURIComponent(view.account)}`;
+  if (view.screen === "conversation") return view.task ? `#c=${encodeURIComponent(view.task)}` : "#c";
   return `#${view.screen}`;
 }
 
@@ -120,11 +125,15 @@ function Root() {
     return () => window.removeEventListener("popstate", onPop);
   }, [show]);
 
-  // A click on a desktop notification opens that task.
-  useEffect(
-    () => api.onOpenTask(({ taskId, project }) => navigate({ screen: "workspace", project, task: taskId })),
-    [api, navigate],
+  // A task opens in its project or, outside any project, as a conversation.
+  const projects = overview.data?.projects;
+  const openTask = useCallback(
+    (project: string, task: string) => navigate(taskView(projects ?? [], project, task)),
+    [navigate, projects],
   );
+
+  // A click on a desktop notification opens that task.
+  useEffect(() => api.onOpenTask(({ taskId, project }) => openTask(project, taskId)), [api, openTask]);
 
   const closeProject = (path: string) => {
     const rest = openProjects.filter((p) => p !== path);
@@ -173,6 +182,7 @@ function Root() {
   return (
     <ThemeProvider setting={data.theme}>
       <TerminalProvider>
+        <CreateProvider overview={data} onNavigate={navigate}>
         <Shell
           topbar={
             <Topbar
@@ -193,7 +203,7 @@ function Root() {
           {current.screen === "activity" && (
             <ActivityScreen
               overview={data}
-              onOpenTask={(project, task) => navigate({ screen: "workspace", project, task })}
+              onOpenTask={openTask}
               onOpenMemory={(project, tab) => navigate({ screen: "memory", project, tab })}
             />
           )}
@@ -206,6 +216,18 @@ function Root() {
               onSelectTask={(task, options) => navigate({ screen: "workspace", project: current.project, task }, options)}
               onOpenMemory={() => navigate({ screen: "memory", project: current.project })}
               onOpenStatus={() => navigate({ screen: "status", project: current.project })}
+            />
+          )}
+          {current.screen === "conversation" && (
+            <Workspace
+              key="conversation"
+              overview={data}
+              project={null}
+              task={current.task ?? null}
+              draft={current.draft}
+              onSelectTask={(task, options) =>
+                navigate(task ? { screen: "conversation", task } : { screen: "conversation" }, options)
+              }
             />
           )}
           {current.screen === "status" && (
@@ -229,6 +251,7 @@ function Root() {
           )}
         </Shell>
         <CommandPalette open={palette} onOpenChange={setPalette} overview={data} onNavigate={navigate} />
+        </CreateProvider>
       </TerminalProvider>
     </ThemeProvider>
   );

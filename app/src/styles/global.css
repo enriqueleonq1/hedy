@@ -263,6 +263,26 @@ ul { list-style: none; margin: 0; padding: 0; }
 }
 
 .sidebar__empty { padding: 0; }
+.sidebar__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
+.sidebar__head .sidebar__title { margin: 0; }
+.sidebar__add { width: 28px; height: 28px; font-size: 17px; }
+.sidebar__item--conversation { min-height: 36px; }
+.sidebar__item--conversation .sidebar__name { font-size: 14px; }
+.sidebar__bullet { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); opacity: 0.55; }
+.sidebar__bullet--live { background: var(--accent); opacity: 1; }
+.sidebar__more {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar__more:hover { background: var(--selection); color: var(--ink); }
 
 .sidebar__title--link {
   display: block;
@@ -629,6 +649,23 @@ select:disabled { opacity: 0.65; }
 .today__date::first-letter { text-transform: uppercase; }
 .today__summary { font-size: 17px; color: var(--muted); }
 .today__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.start-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.start-choice {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-out);
+}
+.start-choice:hover { transform: translateY(-1px); }
+.start-choice:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .start-choice { transition: none; }
+  .start-choice:hover { transform: none; }
+}
 .today__section { display: grid; gap: 14px; align-content: start; min-width: 0; }
 .today__section h2 { font: 700 var(--text-title) var(--font-title); }
 .today__columns { display: flex; flex-wrap: wrap; gap: 28px; }
@@ -871,6 +908,10 @@ button.notice-pill:focus-visible { outline: 2px solid var(--focus); outline-offs
   height: 100%;
   min-height: 0;
 }
+
+/* A conversation has no changes panel: the chat takes the width, kept readable. */
+.workspace--solo { grid-template-columns: minmax(0, 1fr); }
+.workspace--solo .chat { width: 100%; max-width: 960px; margin-inline: auto; }
 
 .chat {
   display: flex;

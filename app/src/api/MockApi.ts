@@ -15,6 +15,8 @@ import type {
   FileDiff,
   MemoryView,
   NewAccountInput,
+  NewConversationInput,
+  NewProjectInput,
   Note,
   NoteCategory,
   NewTaskInput,
@@ -121,6 +123,19 @@ function slug(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+/** Like the backend's `project::folder_name`: "Mi tienda online" → `mi-tienda-online`. */
+export function folderName(name: string): string {
+  return name
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_.]+/g, "-")
+    .replace(/^[-.]+/, "")
+    .slice(0, 64)
+    .replace(/[-.]+$/, "");
 }
 
 /** Like the backend's `task_state`: what a task shows on the board. */
@@ -776,6 +791,64 @@ export class MockApi implements HedyApi {
     this.project(path).phases = phases;
   }
 
+  /** Folders that already exist on the pretend disk (besides the projects). */
+  private folders = new Set<string>(["/code/notas"]);
+
+  private english(): boolean {
+    return resolveLanguage(this.state.language) === "en";
+  }
+
+  async defaultProjectParent(): Promise<string | null> {
+    const counts = new Map<string, number>();
+    for (const p of this.state.projects) {
+      const parent = p.path.slice(0, p.path.lastIndexOf("/")) || "/";
+      counts.set(parent, (counts.get(parent) ?? 0) + 1);
+    }
+    const best = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+    return best?.[0] ?? (this.english() ? "/home/demo/Projects" : "/home/demo/Proyectos");
+  }
+
+  async newProjectPath(name: string, parent: string): Promise<string> {
+    const folder = folderName(name);
+    if (!/[a-z0-9]/.test(folder)) {
+      if (!name.trim()) throw this.english() ? "give the project a name" : "ponle un nombre al proyecto";
+      throw this.english()
+        ? `«${name.trim()}» does not work as a folder name: use letters or digits`
+        : `«${name.trim()}» no sirve como nombre de carpeta: usa letras o números`;
+    }
+    if (!parent.startsWith("/")) {
+      throw this.english()
+        ? `the folder to create the project in must be a full path: ${parent}`
+        : `la carpeta donde crear el proyecto debe ser una ruta completa: ${parent}`;
+    }
+    const path = `${parent.replace(/\/+$/, "")}/${folder}`;
+    if (this.folders.has(path) || this.state.projects.some((p) => p.path === path)) {
+      throw this.english()
+        ? `${path} already exists; pick another name or open it with “Open folder…”`
+        : `ya existe ${path}; elige otro nombre o ábrela con «Abrir carpeta…»`;
+    }
+    return path;
+  }
+
+  async newProject(input: NewProjectInput): Promise<string> {
+    const path = await this.newProjectPath(input.name, input.parent);
+    const account = input.account ?? this.state.defaultAccount;
+    if (account && !this.offersFor(path).includes(account)) throw `la cuenta «${account}» está reservada`;
+    this.folders.add(path);
+    this.state.projects.push({
+      ...emptyProject(path),
+      name: input.name.trim(),
+      account,
+      protected: input.protect,
+      client: input.client?.trim() || null,
+    });
+    for (const a of this.state.accounts) {
+      a.projects = this.state.projects.filter((p) => p.account === a.id).map((p) => p.path);
+    }
+    this.recomputeOffers();
+    return path;
+  }
+
   async removeProject(path: string): Promise<void> {
     this.state.projects = this.state.projects.filter((p) => p.path !== path);
     for (const a of this.state.accounts) a.projects = a.projects.filter((p) => p !== path);
@@ -1176,6 +1249,74 @@ export class MockApi implements HedyApi {
     return { ...task };
   }
 
+  async startConversation(input: NewConversationInput): Promise<Task> {
+    if (input.mode === "project") throw "una pregunta rápida solo pregunta o investiga";
+    if (!input.prompt.trim()) throw "escribe qué quieres que haga";
+    const account = input.account ?? this.state.defaultAccount;
+    if (!account) throw "no hay cuenta para esta conversación";
+    const name = this.account(account).name;
+    const id = `t${++this.nextTask}`;
+    const task: Task = {
+      id,
+      project: `${this.state.dataDir}/chats/${id}`,
+      mode: input.mode,
+      title: (input.prompt.split("\n")[0] ?? "").slice(0, 60),
+      prompt: input.prompt,
+      account,
+      model: input.model,
+      workspace: null,
+      sessionId: null,
+      status: "running",
+      createdAt: Math.floor(Date.now() / 1000) + this.nextTask,
+      stages: [{ phase: "implement", account, model: input.model }],
+      stage: 0,
+      live: true,
+      conversation: true,
+    };
+    this.tasksById.set(id, task);
+    this.eventsById.set(id, []);
+    this.diffs.set(id, []);
+    this.push(id, { kind: "userMessage", text: input.prompt });
+    const english = this.english();
+    this.script(id, [
+      { kind: "phaseStarted", phase: "implement", agent: "Claude Opus", account: name },
+      { kind: "sessionStarted", sessionId: `s-${id}`, model: "claude-opus-5-5" },
+      ...(input.mode === "research"
+        ? [{ kind: "toolUsed", tool: "WebSearch", summary: input.prompt.slice(0, 40) } as AgentEvent]
+        : []),
+      {
+        kind: "message",
+        text: english
+          ? "Short answer: it depends on what you need. Here are the key differences, with an example of each."
+          : "Respuesta corta: depende de lo que necesites. Te dejo las diferencias clave, con un ejemplo de cada una.",
+      },
+      { kind: "usage", inputTokens: 300, outputTokens: 400, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0.01 },
+      { kind: "finished", ok: true, summary: "", durationMs: 2000 },
+    ]);
+    return { ...task };
+  }
+
+  async conversations(): Promise<Task[]> {
+    return [...this.tasksById.values()]
+      .filter((t) => t.conversation)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((t) => ({ ...t }));
+  }
+
+  async conversationAccounts(): Promise<string[]> {
+    return this.offersFor("");
+  }
+
+  async deleteConversation(id: string): Promise<void> {
+    const task = this.tasksById.get(id);
+    if (!task?.conversation) throw `la tarea ${id} es de un proyecto, no una conversación`;
+    task.live = false;
+    this.tasksById.delete(id);
+    this.eventsById.delete(id);
+    this.queues.delete(id);
+    this.updatedAt.delete(id);
+  }
+
   private implementation(): AgentEvent[] {
     const steps = (done: number): AgentEvent => ({
       kind: "steps",
@@ -1272,7 +1413,11 @@ export class MockApi implements HedyApi {
         phase: task.stages[task.stage]?.phase ?? "implement",
         agent:
           started?.kind === "phaseStarted" ? started.agent : (account?.providerName.split(" ")[0] ?? task.account),
-        projectName: project?.name ?? task.project.split("/").pop() ?? task.project,
+        projectName: task.conversation
+          ? this.english()
+            ? "Conversation"
+            : "Conversación"
+          : (project?.name ?? task.project.split("/").pop() ?? task.project),
         updatedAt: this.updatedAt.get(task.id) ?? task.createdAt,
         queued: this.queues.get(task.id)?.length ?? 0,
       };
@@ -1408,6 +1553,23 @@ export class MockApi implements HedyApi {
       ],
     );
     this.diffs.set("s5", ["facturas/impuestos.py", "facturas/totales.py", "tests/test_facturas.py"].map(sampleDiff));
+    // A question outside any project, already answered.
+    add(
+      "c1",
+      `${this.state.dataDir}/chats/c1`,
+      "claude-personal",
+      "¿Qué diferencia hay entre OAuth y OpenID Connect?",
+      { status: "review", mode: "ask", workspace: null, conversation: true },
+      { created: 50 * min, updated: 48 * min },
+      [
+        opus("Claude personal"),
+        {
+          kind: "message",
+          text: "OAuth 2.0 autoriza: da a una app acceso a algo tuyo. OpenID Connect va encima y autentica: dice quién eres, con un ID token.",
+        },
+        { kind: "finished", ok: true, summary: "", durationMs: 9000 },
+      ],
+    );
     add(
       "s6",
       "/code/hedy",

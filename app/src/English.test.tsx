@@ -219,11 +219,12 @@ describe("English", () => {
     expect(await within(running).findByText("Sniffing around")).toBeInTheDocument();
     expect(within(running).getByText("Implementation")).toBeInTheDocument();
     expect(within(running).getByText("2 queued")).toBeInTheDocument();
-    const recent = screen.getByRole("region", { name: "Last 24 h (4)" });
+    const recent = screen.getByRole("region", { name: "Last 24 h (5)" });
     for (const state of ["Changes to review", "Failed", "Answered", "Cancelled"]) {
-      expect(within(recent).getByText(state)).toBeInTheDocument();
+      expect(within(recent).getAllByText(state)[0]).toBeInTheDocument();
     }
     expect(within(recent).getByText("40 min ago")).toBeInTheDocument();
+    expect(within(recent).getByText("Conversation")).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
 
     await user.click(within(needs).getByRole("button", { name: /Traduce los correos/ }));

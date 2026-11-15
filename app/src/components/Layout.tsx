@@ -1,12 +1,16 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import type { Account, Overview } from "../api/types";
 import { useLanguage, useT } from "../i18n";
+import { useCreate } from "../screens/create/CreateProvider";
+import { isOpen } from "../tasks/timeline";
+import { useConversations } from "../tasks/hooks";
 import { useInbox } from "../tasks/inbox";
 import { DEFAULT_ACCOUNT_COLOR, TIP_MASCOT_COLOR } from "../theme/tokens";
 import { shortAccountLabel } from "./accounts";
 import { SidebarRailProvider, useSidebarRail } from "./sidebarRail";
-import { AccountsIcon, ActivityIcon, CollapseIcon, SettingsIcon } from "./ui/icons";
+import { AccountsIcon, ActivityIcon, CollapseIcon, QuestionIcon, SettingsIcon } from "./ui/icons";
+import { MenuButton } from "./ui/Menu";
 import { Mascot } from "./Mascot/Mascot";
 import { paletteKeys } from "./palette/keys";
 import { barColor, headlineText, planPercent, usageLabel, usePlanUsageRefresh } from "./planUsage";
@@ -25,7 +29,22 @@ export type View =
   | { screen: "workspace"; project: string; task?: string | null }
   /** `tab`: the skills tab instead of the notes. */
   | { screen: "memory"; project: string; tab?: "notes" | "skills" }
-  | { screen: "status"; project: string };
+  | { screen: "status"; project: string }
+  /**
+   * A question outside any project: `task` opens that conversation, none a
+   * new one (its composer starting with `draft`, if given).
+   */
+  | { screen: "conversation"; task?: string; draft?: string };
+
+/** Where a task opens: its project's workspace or, outside any project, its conversation. */
+export function taskView(projects: { path: string }[], project: string, task: string): View {
+  return projects.some((p) => p.path === project)
+    ? { screen: "workspace", project, task }
+    : { screen: "conversation", task };
+}
+
+/** Conversations listed in the sidebar before "Ver todas". */
+const SIDEBAR_CONVERSATIONS = 5;
 
 /** The project a view belongs to (its workspace, memory or status). */
 export function viewProject(view: View): string | null {
@@ -164,6 +183,11 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
   const active = viewProject(view);
   const used = overview.accounts.some((a) => a.usage.weekTokens > 0);
   const needsYou = useInbox().count;
+  const create = useCreate();
+  const conversations = useConversations().data ?? [];
+  const [allConversations, setAllConversations] = useState(false);
+  const shownConversations = allConversations ? conversations : conversations.slice(0, SIDEBAR_CONVERSATIONS);
+  const openConversation = view.screen === "conversation" ? (view.task ?? null) : undefined;
   // The sidebar shows every account's plan usage: keep it fresh while it is on screen.
   usePlanUsageRefresh(overview.accounts, view.screen);
   // In the rail, names are not on screen: they go in the accessible name and the tooltip.
@@ -206,7 +230,14 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
       </button>
 
       <section>
-        <h2 className={rail ? "sr-only" : "sidebar__title"}>{t("common.projects")}</h2>
+        <div className={rail ? "sr-only" : "sidebar__head"}>
+          <h2 className="sidebar__title">{t("common.projects")}</h2>
+          {!rail && overview.accounts.length > 0 && (
+            <MenuButton label={t("create.addProject")} items={create.menu.slice(0, 2)} className="menu-button sidebar__add">
+              <span aria-hidden>+</span>
+            </MenuButton>
+          )}
+        </div>
         {overview.projects.length === 0 && !rail && <p className="hint sidebar__empty">{t("shell.noProjects")}</p>}
         <ul className="sidebar__list">
           {overview.projects.map((p) => {
@@ -241,6 +272,69 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
           })}
         </ul>
       </section>
+
+      {overview.accounts.length > 0 && (
+        <section>
+          {rail ? (
+            <button
+              className="sidebar__item"
+              aria-current={openConversation === null ? "page" : undefined}
+              {...named(t("create.quickQuestion"))}
+              onClick={() => create.quickQuestion()}
+            >
+              <QuestionIcon />
+            </button>
+          ) : (
+            <>
+              <div className="sidebar__head">
+                <h2 className="sidebar__title">{t("conversation.list")}</h2>
+                <button
+                  type="button"
+                  className="menu-button sidebar__add"
+                  aria-label={t("create.quickQuestion")}
+                  title={t("create.quickQuestion")}
+                  aria-current={openConversation === null ? "page" : undefined}
+                  onClick={() => create.quickQuestion()}
+                >
+                  <span aria-hidden>+</span>
+                </button>
+              </div>
+              {conversations.length === 0 ? (
+                <p className="hint sidebar__empty">{t("conversation.sidebarEmpty")}</p>
+              ) : (
+                <ul className="sidebar__list">
+                  {shownConversations.map((task) => (
+                    <li key={task.id}>
+                      <button
+                        className="sidebar__item sidebar__item--conversation"
+                        aria-current={openConversation === task.id ? "page" : undefined}
+                        title={task.title}
+                        onClick={() => onNavigate({ screen: "conversation", task: task.id })}
+                      >
+                        <span
+                          className={`sidebar__bullet${isOpen(task) && task.live ? " sidebar__bullet--live" : ""}`}
+                          aria-hidden
+                        />
+                        <span className="sidebar__name">{task.title}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {conversations.length > SIDEBAR_CONVERSATIONS && (
+                <button
+                  type="button"
+                  className="sidebar__more"
+                  aria-expanded={allConversations}
+                  onClick={() => setAllConversations((all) => !all)}
+                >
+                  {allConversations ? t("conversation.fewer") : t("conversation.more", { n: conversations.length })}
+                </button>
+              )}
+            </>
+          )}
+        </section>
+      )}
 
       <section>
         <button

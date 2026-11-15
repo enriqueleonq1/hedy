@@ -7,12 +7,13 @@ import { useQueries } from "@tanstack/react-query";
 import { OVERVIEW_KEY, useAction, useApi } from "../../api/context";
 import type { Overview, Project } from "../../api/types";
 import type { Translate } from "../../i18n";
-import { tasksKey } from "../../tasks/hooks";
+import { useCreate } from "../../screens/create/CreateProvider";
+import { CONVERSATIONS_KEY, tasksKey } from "../../tasks/hooks";
 import { useInbox } from "../../tasks/inbox";
 import { STATUS_LABEL } from "../../tasks/timeline";
 import { STATE_LABEL } from "../../screens/activity/ActivityScreen";
 import { accountSubtitle } from "../accounts";
-import type { View } from "../Layout";
+import { taskView, type View } from "../Layout";
 import { headlineText } from "../planUsage";
 import { projectColor, useProjectActions } from "../projects";
 import { useToast } from "../ui/Toast";
@@ -60,6 +61,7 @@ export function usePaletteCommands({
   const toast = useToast();
   const actions = useProjectActions();
   const inbox = useInbox();
+  const create = useCreate();
   const assign = useAction(
     (a, vars: { project: Project; account: string }) => a.useAccount(vars.project.path, vars.account),
     {
@@ -78,6 +80,9 @@ export function usePaletteCommands({
       enabled: open,
     })),
   });
+  const conversations = useQueries({
+    queries: [{ queryKey: CONVERSATIONS_KEY, queryFn: () => api.conversations(), enabled: open }],
+  })[0];
 
   const commands: Command[] = [];
   const projectName = (path: string) => overview.projects.find((p) => p.path === path)?.name ?? path;
@@ -90,7 +95,7 @@ export function usePaletteCommands({
         group: "pending",
         label: t("palette.pending.task", { title: task.title }),
         detail: `${entry.item.projectName} · ${t(STATE_LABEL[state])}`,
-        run: () => onNavigate({ screen: "workspace", project: task.project, task: task.id }),
+        run: () => onNavigate(taskView(overview.projects, task.project, task.id)),
       });
     } else if (entry.kind === "note") {
       commands.push({
@@ -122,6 +127,32 @@ export function usePaletteCommands({
     },
     { id: "nav:settings", group: "nav", label: t("common.settings"), run: () => onNavigate({ screen: "settings" }) },
   );
+
+  if (overview.accounts.length > 0) {
+    commands.push(
+      {
+        id: "create:project",
+        group: "actions",
+        label: t("create.newProject"),
+        detail: t("create.newProjectHint"),
+        run: create.newProject,
+      },
+      {
+        id: "create:folder",
+        group: "actions",
+        label: t("create.openFolder"),
+        detail: t("create.openFolderHint"),
+        run: create.openFolder,
+      },
+      {
+        id: "create:question",
+        group: "actions",
+        label: t("create.quickQuestion"),
+        detail: t("create.quickQuestionHint"),
+        run: () => create.quickQuestion(),
+      },
+    );
+  }
 
   for (const project of overview.projects) {
     const { path, name } = project;
@@ -213,6 +244,16 @@ export function usePaletteCommands({
       detail: headlineText(account, t) ?? accountSubtitle(account, t),
       color: account.color,
       run: () => onNavigate({ screen: "accounts", account: account.id }),
+    });
+  }
+
+  for (const task of (conversations?.data ?? []).slice(0, TASKS_PER_PROJECT)) {
+    commands.push({
+      id: `task:${task.id}`,
+      group: "tasks",
+      label: task.title,
+      detail: `${t("conversation.place")} · ${t(STATUS_LABEL[task.status])}`,
+      run: () => onNavigate({ screen: "conversation", task: task.id }),
     });
   }
 

@@ -15,7 +15,7 @@ import {
   windowLabel,
   windowText,
 } from "../components/planUsage";
-import type { View } from "../components/Layout";
+import { taskView, type View } from "../components/Layout";
 import { Mascot } from "../components/Mascot/Mascot";
 import { projectColor, shortPath, useProjectActions } from "../components/projects";
 import { Button } from "../components/ui/Button";
@@ -27,7 +27,7 @@ import { STATE_LABEL } from "./activity/ActivityScreen";
 import { SpendByClient } from "./accounts/SpendByClient";
 import { useLanguage, useT, type Language, type Translate } from "../i18n";
 import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
-import { AddProjectDialog, useAddProject } from "./accounts/AddProjectDialog";
+import { useCreate } from "./create/CreateProvider";
 
 /** Hedy's one-liner about the week: tokens, estimated cost and the busiest project. */
 function weekUsageText(summary: UsageSummary, t: Translate, language: Language): string | null {
@@ -233,8 +233,8 @@ function ForYou({ overview, onNavigate }: { overview: Overview; onNavigate: (v: 
   );
 }
 
-/** The latest tasks of every project; a row opens the task. */
-function RecentTasks({ onNavigate }: { onNavigate: (v: View) => void }) {
+/** The latest tasks of every project (and conversations); a row opens the task. */
+function RecentTasks({ overview, onNavigate }: { overview: Overview; onNavigate: (v: View) => void }) {
   const t = useT();
   const items = (useActivity().data ?? []).slice().sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
   if (items.length === 0) return <p className="empty">{t("welcome.recent.empty")}</p>;
@@ -245,7 +245,7 @@ function RecentTasks({ onNavigate }: { onNavigate: (v: View) => void }) {
           <button
             type="button"
             className="recent-tasks__row"
-            onClick={() => onNavigate({ screen: "workspace", project: item.task.project, task: item.task.id })}
+            onClick={() => onNavigate(taskView(overview.projects, item.task.project, item.task.id))}
           >
             <span className="recent-tasks__title">{item.task.title}</span>
             <span className="small recent-tasks__meta">
@@ -266,7 +266,7 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
   const api = useApi();
   const t = useT();
   const language = useLanguage();
-  const adding = useAddProject();
+  const create = useCreate();
   const board = useActivity().data ?? [];
   const summary = useQuery({ queryKey: ["usageSummary", 7], queryFn: () => api.usageSummary(7) }).data;
   const color = overview.accounts.find((a) => a.id === overview.defaultAccount)?.color ?? DEFAULT_ACCOUNT_COLOR;
@@ -300,7 +300,11 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
               {t("welcome.continueIn", { name: current.name })}
             </Button>
           ) : null}
-          {hasAccounts && <Button onClick={adding.start}>{t("common.addProjectButton")}</Button>}
+          {hasAccounts && (
+            <MenuButton label={t("create.menuLabel")} items={create.menu} className="btn btn--secondary">
+              {t("create.menu")}
+            </MenuButton>
+          )}
         </div>
       </header>
 
@@ -334,7 +338,20 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
         <section className="today__section today__projects" aria-labelledby="projects-title">
           <h2 id="projects-title">{t("common.projects")}</h2>
           {overview.projects.length === 0 ? (
-            <p className="empty">{hasAccounts ? t("welcome.empty.hasAccounts") : t("welcome.empty.noAccounts")}</p>
+            hasAccounts ? (
+              <div className="start-choices">
+                <button type="button" className="card start-choice" onClick={create.newProject}>
+                  <strong>{t("create.newProject")}</strong>
+                  <span className="muted small">{t("create.newProjectHint")}</span>
+                </button>
+                <button type="button" className="card start-choice" onClick={create.openFolder}>
+                  <strong>{t("create.openFolder")}</strong>
+                  <span className="muted small">{t("create.openFolderHint")}</span>
+                </button>
+              </div>
+            ) : (
+              <p className="empty">{t("welcome.empty.noAccounts")}</p>
+            )
           ) : (
             <div className="project-grid">
               {overview.projects.map((p) => (
@@ -346,13 +363,12 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
         {hasAccounts && (
           <section className="today__section today__recent" aria-labelledby="recent-title">
             <h2 id="recent-title">{t("welcome.recent.title")}</h2>
-            <RecentTasks onNavigate={onNavigate} />
+            <RecentTasks overview={overview} onNavigate={onNavigate} />
           </section>
         )}
       </div>
 
       {summary?.clients.some((c) => c.client !== null) && <SpendByClient />}
-      {adding.path && <AddProjectDialog overview={overview} path={adding.path} onClose={adding.close} />}
     </div>
   );
 }

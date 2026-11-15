@@ -210,6 +210,9 @@
 .menu__item:hover:not(:disabled),
 .menu__item:focus-visible { background: var(--selection); outline: none; }
 .menu__item:disabled { color: var(--muted); cursor: default; }
+.menu__item--hinted { display: grid; gap: 1px; padding-block: 7px; white-space: normal; min-width: 260px; }
+.menu__label { font-weight: 600; }
+.menu__hint { font-size: 12.5px; color: var(--muted); }
 
 .project-card__badges { display: inline-flex; align-items: center; gap: 6px; }
 .project-card__live { font-weight: 600; }
@@ -305,6 +308,7 @@
 /* The workspace's side panel (Changes, Terminal, Preview) becomes a sheet under the chat. */
 @media (max-width: 1000px) {
   .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(180px, 32%); }
+  .workspace--solo { grid-template-rows: minmax(0, 1fr); }
   .side-panel { border-left: 0; border-top: 1px solid var(--line); }
   .chat { padding: 18px 18px 14px; }
 }

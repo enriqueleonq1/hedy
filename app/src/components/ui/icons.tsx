@@ -40,6 +40,16 @@ export function SettingsIcon() {
   );
 }
 
+/** A speech bubble: a quick question outside any project. */
+export function QuestionIcon() {
+  return (
+    <svg {...common} className="icon">
+      <path d="M4 5.5h16v10H10l-4.5 3.5v-3.5H4z" />
+      <path d="M10.2 8.6a1.9 1.9 0 1 1 2.6 1.8c-.5.2-.8.6-.8 1.1v.3M12 13.4h.01" />
+    </svg>
+  );
+}
+
 /** « when it collapses, » when it expands. */
 export function CollapseIcon({ collapsed }: { collapsed: boolean }) {
   return (

@@ -25,9 +25,22 @@ export function needsYou(state: BoardState): boolean {
   return state === "plan" || state === "permission" || state === "limited";
 }
 
-export function useTasks(project: string) {
+export function useTasks(project: string, enabled = true) {
   const api = useApi();
-  return useQuery({ queryKey: tasksKey(project), queryFn: () => api.tasks(project) });
+  return useQuery({ queryKey: tasksKey(project), queryFn: () => api.tasks(project), enabled });
+}
+
+/** Questions outside any project; under `["tasks"]`, so task refreshes reach them too. */
+export const CONVERSATIONS_KEY = ["tasks", "*conversations"] as const;
+
+export function useConversations(enabled = true) {
+  const api = useApi();
+  return useQuery({ queryKey: CONVERSATIONS_KEY, queryFn: () => api.conversations(), enabled });
+}
+
+/** The task list a task belongs in: its project's, or the conversations. */
+export function listKeyFor(task: Pick<Task, "project" | "conversation">) {
+  return task.conversation ? CONVERSATIONS_KEY : tasksKey(task.project);
 }
 
 export function useTaskEvents(taskId: string | null) {
@@ -140,7 +153,7 @@ export function TaskEventsBridge() {
       }
     });
     const offTask = api.onTaskUpdated((task) => {
-      void client.invalidateQueries({ queryKey: tasksKey(task.project) });
+      void client.invalidateQueries({ queryKey: listKeyFor(task) });
       void client.invalidateQueries({ queryKey: diffKey(task.id) });
       void client.invalidateQueries({ queryKey: ACTIVITY_KEY });
     });

@@ -100,7 +100,8 @@ describe("Command palette", () => {
     await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
     await user.keyboard("{Control>}k{/Control}");
     await user.type(screen.getByRole("combobox"), "cambiar cuenta homming");
-    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    // Nothing matches; what was typed can still be asked outside any project.
+    expect(options()).toEqual(["Preguntar «cambiar cuenta homming»"]);
     expect(screen.getByText("Nada coincide con «cambiar cuenta homming».")).toBeInTheDocument();
 
     await user.clear(screen.getByRole("combobox"));

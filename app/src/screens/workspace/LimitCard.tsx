@@ -6,7 +6,7 @@ import { Mascot } from "../../components/Mascot/Mascot";
 import { Button } from "../../components/ui/Button";
 import { useT, type Translate } from "../../i18n";
 import { formatCountdown, useNowSeconds } from "../../tasks/countdown";
-import { ACTIVITY_KEY, tasksKey } from "../../tasks/hooks";
+import { ACTIVITY_KEY, listKeyFor } from "../../tasks/hooks";
 import { isOpen, type TimelineItem } from "../../tasks/timeline";
 import { WARNING_MASCOT_COLOR } from "../../theme/tokens";
 import "../../styles/review.css";
@@ -49,7 +49,7 @@ export function LimitCard({
     queryFn: () => api.handoffOptions(task.id),
     enabled: actionable,
   });
-  const changed = [tasksKey(task.project), ACTIVITY_KEY];
+  const changed = [listKeyFor(task), ACTIVITY_KEY];
   const handoff = useAction((a, account: string) => a.handoffTask(task.id, account, null), { invalidate: changed });
   const startWait = useAction((a) => a.waitForLimit(task.id), { invalidate: changed });
   const cancelWait = useAction((a) => a.cancelWait(task.id), { invalidate: changed });
