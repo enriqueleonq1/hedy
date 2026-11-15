@@ -1,4 +1,4 @@
-//! Command-line definition. English commands with Spanish aliases.
+//! Command-line definition. Commands and flags are English only; the help follows the language.
 //!
 //! The help is in the current language, so its texts are not doc comments
 //! (clap's derive makes those static): they live in [`help_texts`] and are put
@@ -719,10 +719,8 @@ fn translate_builtins(mut command: ClapCommand) -> ClapCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    #[command(visible_alias = "estado")]
     Status,
 
-    #[command(visible_alias = "usar")]
     Use {
         account: String,
         #[arg(long, conflicts_with = "unprotect")]
@@ -741,18 +739,15 @@ pub enum Command {
         protect: bool,
     },
 
-    #[command(visible_alias = "tareas")]
     Tasks,
 
-    #[command(visible_alias = "resumen")]
     Summary {
-        #[arg(long, visible_alias = "semana", conflicts_with = "days")]
+        #[arg(long, conflicts_with = "days")]
         week: bool,
-        #[arg(long, visible_alias = "dias", value_name = "N")]
+        #[arg(long, value_name = "N")]
         days: Option<u32>,
     },
 
-    #[command(visible_alias = "cliente")]
     Client {
         #[arg(required_unless_present = "clear", conflicts_with = "clear")]
         name: Option<String>,
@@ -767,25 +762,21 @@ pub enum Command {
         args: Vec<String>,
     },
 
-    #[command(visible_alias = "diagnostico")]
     Doctor,
 
-    #[command(visible_alias = "cuenta", subcommand)]
+    #[command(subcommand)]
     Account(AccountCommand),
 
-    #[command(visible_alias = "memoria")]
     Memory {
         #[command(subcommand)]
         command: Option<MemoryCommand>,
     },
 
-    #[command(visible_alias = "habilidades")]
     Skills {
         #[command(subcommand)]
         command: Option<SkillsCommand>,
     },
 
-    #[command(visible_alias = "plantilla")]
     Template {
         #[command(subcommand)]
         command: Option<TemplateCommand>,
@@ -802,28 +793,23 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum AccountCommand {
-    #[command(visible_alias = "agregar")]
     Add(AddAccount),
 
-    #[command(visible_alias = "listar")]
     List,
 
     Login {
         account: String,
     },
 
-    #[command(visible_alias = "quitar")]
     Remove {
         account: String,
     },
 
-    #[command(visible_alias = "renombrar")]
     Rename {
         account: String,
         name: String,
     },
 
-    #[command(visible_alias = "predeterminada")]
     Default {
         #[arg(required_unless_present = "clear", conflicts_with = "clear")]
         account: Option<String>,
@@ -834,52 +820,41 @@ pub enum AccountCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum MemoryCommand {
-    #[command(visible_alias = "listar")]
     List,
 
-    #[command(visible_alias = "aprobar")]
     Approve { id: i64 },
 
-    #[command(visible_alias = "rechazar")]
     Reject { id: i64 },
 }
 
 #[derive(Debug, Subcommand)]
 pub enum SkillsCommand {
-    #[command(visible_alias = "listar")]
     List,
 
-    #[command(visible_alias = "ver")]
     Show { name: String },
 
-    #[command(visible_alias = "aprobar")]
     Approve { id: i64 },
 
-    #[command(visible_alias = "rechazar")]
     Reject { id: i64 },
 
-    #[command(visible_alias = "quitar")]
     Remove { name: String },
 }
 
 #[derive(Debug, Subcommand)]
 pub enum TemplateCommand {
-    #[command(visible_alias = "listar")]
     List,
 
-    #[command(visible_alias = "agregar")]
     Add {
         name: String,
-        #[arg(long, alias = "proyecto")]
+        #[arg(long)]
         project: bool,
-        #[arg(long, alias = "texto")]
+        #[arg(long)]
         text: String,
     },
 
-    #[command(visible_alias = "quitar")]
     Remove {
         name: String,
-        #[arg(long, alias = "proyecto")]
+        #[arg(long)]
         project: bool,
     },
 }
@@ -982,8 +957,8 @@ mod tests {
             );
         }
         assert!(english.contains("Usage:") && english.contains("<ACCOUNT>"));
-        // Spanish aliases are shown in both.
-        assert!(english.contains("estado") && spanish.contains("estado"));
+        // Commands are English only: no Spanish aliases in either help.
+        assert!(!english.contains("alias") && !spanish.contains("alias"));
     }
 
     #[test]
@@ -1010,23 +985,30 @@ mod tests {
     }
 
     #[test]
-    fn spanish_aliases_work() {
-        let cli =
-            Cli::try_parse_from(["hedy", "cuenta", "agregar", "Kimi", "--api", "kimi"]).unwrap();
+    fn spanish_aliases_are_gone() {
+        for alias in [
+            "estado",
+            "cuenta",
+            "usar",
+            "diagnostico",
+            "memoria",
+            "tareas",
+        ] {
+            assert!(Cli::try_parse_from(["hedy", alias]).is_err(), "{alias}");
+        }
+        let cli = Cli::try_parse_from(["hedy", "account", "add", "Kimi", "--api", "kimi"]).unwrap();
         let Some(Command::Account(AccountCommand::Add(add))) = cli.command else {
             panic!("expected account add");
         };
         assert_eq!(add.provider(), Provider::Kimi);
         assert!(matches!(
-            Cli::try_parse_from(["hedy", "usar", "trabajo", "--protect"])
+            Cli::try_parse_from(["hedy", "use", "trabajo", "--protect"])
                 .unwrap()
                 .command,
             Some(Command::Use { protect: true, .. })
         ));
         assert!(matches!(
-            Cli::try_parse_from(["hedy", "diagnostico"])
-                .unwrap()
-                .command,
+            Cli::try_parse_from(["hedy", "doctor"]).unwrap().command,
             Some(Command::Doctor)
         ));
     }
@@ -1041,20 +1023,20 @@ mod tests {
     }
 
     #[test]
-    fn memory_lists_by_default_and_takes_spanish_aliases() {
+    fn memory_lists_by_default() {
         let parse = |args: &[&str]| Cli::try_parse_from(args).unwrap().command;
         assert!(matches!(
             parse(&["hedy", "memory"]),
             Some(Command::Memory { command: None })
         ));
         assert!(matches!(
-            parse(&["hedy", "memoria", "aprobar", "7"]),
+            parse(&["hedy", "memory", "approve", "7"]),
             Some(Command::Memory {
                 command: Some(MemoryCommand::Approve { id: 7 })
             })
         ));
         assert!(matches!(
-            parse(&["hedy", "memoria", "rechazar", "3"]),
+            parse(&["hedy", "memory", "reject", "3"]),
             Some(Command::Memory {
                 command: Some(MemoryCommand::Reject { id: 3 })
             })
@@ -1063,26 +1045,26 @@ mod tests {
     }
 
     #[test]
-    fn skills_list_by_default_and_take_spanish_aliases() {
+    fn skills_list_by_default() {
         let parse = |args: &[&str]| Cli::try_parse_from(args).unwrap().command;
         assert!(matches!(
             parse(&["hedy", "skills"]),
             Some(Command::Skills { command: None })
         ));
         assert!(matches!(
-            parse(&["hedy", "habilidades", "aprobar", "4"]),
+            parse(&["hedy", "skills", "approve", "4"]),
             Some(Command::Skills {
                 command: Some(SkillsCommand::Approve { id: 4 })
             })
         ));
         assert!(matches!(
-            parse(&["hedy", "habilidades", "ver", "run-tests"]),
+            parse(&["hedy", "skills", "show", "run-tests"]),
             Some(Command::Skills {
                 command: Some(SkillsCommand::Show { name })
             }) if name == "run-tests"
         ));
         assert!(matches!(
-            parse(&["hedy", "skills", "quitar", "lint"]),
+            parse(&["hedy", "skills", "remove", "lint"]),
             Some(Command::Skills {
                 command: Some(SkillsCommand::Remove { .. })
             })
@@ -1091,7 +1073,7 @@ mod tests {
     }
 
     #[test]
-    fn templates_list_by_default_and_take_spanish_aliases() {
+    fn templates_list_by_default() {
         let parse = |args: &[&str]| Cli::try_parse_from(args).unwrap().command;
         assert!(matches!(
             parse(&["hedy", "template"]),
@@ -1106,11 +1088,11 @@ mod tests {
                 }),
         }) = parse(&[
             "hedy",
-            "plantilla",
-            "agregar",
+            "template",
+            "add",
             "Pruebas",
-            "--proyecto",
-            "--texto",
+            "--project",
+            "--text",
             "Pruebas para {archivo}",
         ])
         else {
@@ -1120,7 +1102,7 @@ mod tests {
         assert_eq!(text, "Pruebas para {archivo}");
         assert!(Cli::try_parse_from(["hedy", "template", "add", "x"]).is_err());
         assert!(matches!(
-            parse(&["hedy", "plantilla", "quitar", "x"]),
+            parse(&["hedy", "template", "remove", "x"]),
             Some(Command::Template {
                 command: Some(TemplateCommand::Remove { project: false, .. })
             })

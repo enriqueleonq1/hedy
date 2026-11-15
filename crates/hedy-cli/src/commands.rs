@@ -95,11 +95,11 @@ fn tips() -> Vec<String> {
             "`hedy use <account> --protect` keeps an account for one project only."
         ),
         tr!(
-            "`hedy tareas` muestra qué hacen tus IAs en todos los proyectos.",
+            "`hedy tasks` muestra qué hacen tus IAs en todos los proyectos.",
             "`hedy tasks` shows what your AIs are doing in every project."
         ),
         tr!(
-            "`hedy resumen` muestra cuánto usaste, por cliente y por proyecto.",
+            "`hedy summary` muestra cuánto usaste, por cliente y por proyecto.",
             "`hedy summary` shows how much you used, by client and by project."
         ),
         tr!(
@@ -107,7 +107,7 @@ fn tips() -> Vec<String> {
             "`hedy client <name>` adds up the cost of your projects by client."
         ),
         tr!(
-            "`hedy memoria` lista lo que tus IAs propusieron recordar; tú decides qué se guarda.",
+            "`hedy memory` lista lo que tus IAs propusieron recordar; tú decides qué se guarda.",
             "`hedy memory` lists what your AIs proposed to remember; you decide what is kept."
         ),
         tr!(
@@ -123,7 +123,7 @@ fn tips() -> Vec<String> {
             "`hedy completions fish` turns on completions (bash and zsh too)."
         ),
         tr!(
-            "`hedy diagnostico` revisa tus CLIs y cuentas, y avisa si una CLI cambió de versión.",
+            "`hedy doctor` revisa tus CLIs y cuentas, y avisa si una CLI cambió de versión.",
             "`hedy doctor` checks your CLIs and accounts, and warns when a CLI changed version."
         ),
         tr!(
@@ -264,7 +264,7 @@ pub fn status(hedy: &Hedy, dir: &Path) -> Result<()> {
         println!(
             "\n{}",
             tr!(
-                "Uso por proyecto y cliente: `hedy resumen`.",
+                "Uso por proyecto y cliente: `hedy summary`.",
                 "Usage by project and client: `hedy summary`."
             )
         );

@@ -181,7 +181,7 @@ fn renaming_an_account_keeps_its_id() {
     ])
     .assert()
     .success();
-    env.hedy(&["cuenta", "renombrar", "claude-personal", "Claude casa"])
+    env.hedy(&["account", "rename", "claude-personal", "Claude casa"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Cuenta renombrada"))
@@ -203,19 +203,13 @@ fn renaming_an_account_keeps_its_id() {
 fn status_shows_login_without_identifying_data() {
     let env = Env::new();
     let repo = env.repo("code/homming");
-    env.hedy(&[
-        "cuenta",
-        "agregar",
-        "Claude trabajo",
-        "--claude",
-        "--no-login",
-    ])
-    .assert()
-    .success();
-    env.hedy_in(&repo, &["usar", "claude-trabajo"])
+    env.hedy(&["account", "add", "Claude trabajo", "--claude", "--no-login"])
         .assert()
         .success();
-    env.hedy_in(&repo, &["estado"])
+    env.hedy_in(&repo, &["use", "claude-trabajo"])
+        .assert()
+        .success();
+    env.hedy_in(&repo, &["status"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Proyecto homming"))
@@ -338,7 +332,7 @@ fn completions_for_every_shell() {
 fn client_and_summary() {
     let env = Env::new();
     let repo = env.repo("code/moira");
-    env.hedy(&["-C", repo.to_str().unwrap(), "cliente", "León Blanco"])
+    env.hedy(&["-C", repo.to_str().unwrap(), "client", "León Blanco"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("no es un proyecto"));
@@ -348,11 +342,11 @@ fn client_and_summary() {
     env.hedy(&["-C", repo.to_str().unwrap(), "use", "personal"])
         .assert()
         .success();
-    env.hedy(&["-C", repo.to_str().unwrap(), "cliente", "León Blanco"])
+    env.hedy(&["-C", repo.to_str().unwrap(), "client", "León Blanco"])
         .assert()
         .success()
         .stdout(predicate::str::contains("moira es para León Blanco"));
-    env.hedy(&["resumen", "--semana"])
+    env.hedy(&["summary", "--week"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Sin uso registrado esta semana."));
@@ -388,7 +382,7 @@ fn speaks_english_when_asked() {
         .stdout(predicate::str::contains("Project moira"))
         .stdout(predicate::str::contains("signed in · max"))
         .stdout(predicate::str::contains("Accounts"));
-    en(&["resumen", "--semana"]).stdout(predicate::str::contains("No usage recorded this week."));
+    en(&["summary", "--week"]).stdout(predicate::str::contains("No usage recorded this week."));
     en(&["summary", "--days", "3"]).stdout(predicate::str::contains(
         "No usage recorded in the last 3 days.",
     ));
@@ -429,21 +423,23 @@ fn help_follows_the_language() {
     }
     env.hedy_lang("en", &["--help"])
         .assert()
-        .stdout(predicate::str::contains("Manage accounts [alias: cuenta]"));
+        .stdout(predicate::str::contains("Manage accounts"))
+        .stdout(predicate::str::contains("alias").not());
     env.hedy_lang("es", &["--help"])
         .assert()
-        .stdout(predicate::str::contains("Gestiona cuentas [alias: cuenta]"));
+        .stdout(predicate::str::contains("Gestiona cuentas"))
+        .stdout(predicate::str::contains("alias").not());
     env.hedy_lang("en", &["account", "add", "--help"])
         .assert()
         .stdout(predicate::str::contains("<NAME>  Display name"));
-    env.hedy_lang("es", &["cuenta", "agregar", "--help"])
+    env.hedy_lang("es", &["account", "add", "--help"])
         .assert()
         .stdout(predicate::str::contains("<NOMBRE>  Nombre visible"));
     env.hedy_lang("en", &["memory", "--help"])
         .assert()
         .stdout(predicate::str::contains("Project memory"))
         .stdout(predicate::str::contains("approve"));
-    env.hedy_lang("es", &["memoria", "--help"])
+    env.hedy_lang("es", &["memory", "--help"])
         .assert()
         .stdout(predicate::str::contains("Memoria del proyecto"))
         .stdout(predicate::str::contains("Rechaza una propuesta"));
@@ -499,13 +495,13 @@ fn memory_lists_approves_and_rejects_proposals() {
         .assert()
         .success();
     env.hedy_in(&repo, &["use", "claude"]).assert().success();
-    env.hedy_in(&repo, &["memoria"])
+    env.hedy_in(&repo, &["memory"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Todavía no hay notas"));
 
     let (old, change, similar) = seed_memory(&env, &repo);
-    env.hedy_in(&repo, &["memoria", "listar"])
+    env.hedy_in(&repo, &["memory", "list"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Propuestas · para aprobar"))
@@ -527,7 +523,7 @@ fn memory_lists_approves_and_rejects_proposals() {
         .stdout(predicate::str::contains("similar to #"));
 
     // Rejecting changes nothing; approving a change updates the old note.
-    env.hedy(&["memoria", "rechazar", &similar.to_string()])
+    env.hedy(&["memory", "reject", &similar.to_string()])
         .assert()
         .success()
         .stdout(predicate::str::contains("rechazada"));
@@ -611,7 +607,7 @@ fn skills_list_show_approve_reject_and_remove() {
         .assert()
         .success();
     env.hedy_in(&repo, &["use", "claude"]).assert().success();
-    env.hedy_in(&repo, &["habilidades"])
+    env.hedy_in(&repo, &["skills"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Todavía no hay habilidades"));
@@ -627,7 +623,7 @@ fn skills_list_show_approve_reject_and_remove() {
     assert!(exclude.contains("/.claude/skills/run-e2e-tests/"));
     assert!(exclude.contains("/.agents/skills/run-e2e-tests/"));
 
-    env.hedy_in(&repo, &["habilidades", "listar"])
+    env.hedy_in(&repo, &["skills", "list"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Propuestas · para aprobar"))
@@ -635,7 +631,7 @@ fn skills_list_show_approve_reject_and_remove() {
         .stdout(predicate::str::contains("hedy skills show run-e2e-tests"))
         .stdout(predicate::str::contains("Aprobadas"))
         .stdout(predicate::str::contains("hedy skills approve <id>"));
-    env.hedy_in(&repo, &["skills", "ver", "run-e2e-tests"])
+    env.hedy_in(&repo, &["skills", "show", "run-e2e-tests"])
         .assert()
         .success()
         .stdout(predicate::str::contains("npm run build"))
@@ -644,7 +640,7 @@ fn skills_list_show_approve_reject_and_remove() {
         )))
         .stdout(predicate::str::contains("--headless"));
 
-    env.hedy(&["skills", "rechazar", &lint.to_string()])
+    env.hedy(&["skills", "reject", &lint.to_string()])
         .assert()
         .success()
         .stdout(predicate::str::contains("rechazada"));
@@ -727,7 +723,7 @@ fn templates_are_added_listed_and_removed_per_scope() {
         .success();
     env.hedy_in(&repo, &["use", "claude"]).assert().success();
 
-    env.hedy(&["plantilla"])
+    env.hedy(&["template"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Para todos los proyectos"))
@@ -738,11 +734,11 @@ fn templates_are_added_listed_and_removed_per_scope() {
     env.hedy_in(
         &repo,
         &[
-            "plantilla",
-            "agregar",
+            "template",
+            "add",
             "Migración",
-            "--proyecto",
-            "--texto",
+            "--project",
+            "--text",
             "Escribe la migración de {tabla}",
         ],
     )
@@ -782,7 +778,7 @@ fn templates_are_added_listed_and_removed_per_scope() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("no existe la plantilla"));
-    env.hedy_in(&repo, &["plantilla", "quitar", "migración", "--project"])
+    env.hedy_in(&repo, &["template", "remove", "migración", "--project"])
         .assert()
         .success()
         .stdout(predicate::str::contains("borrada"));
@@ -829,7 +825,7 @@ fn doctor_checks_clis_accounts_and_the_environment() {
     ])
     .assert()
     .success();
-    env.doctor("es", &["diagnostico"])
+    env.doctor("es", &["doctor"])
         .env("ANTHROPIC_API_KEY", "sk-should-not-leak")
         .assert()
         .success()
@@ -1002,7 +998,7 @@ fn seed_tasks(env: &Env, repo: &Path) {
 #[test]
 fn tasks_lists_what_needs_you_first() {
     let env = Env::new();
-    env.hedy(&["tareas"])
+    env.hedy(&["tasks"])
         .assert()
         .success()
         .stdout(predicate::str::contains("No hay tareas en curso"));
@@ -1015,7 +1011,7 @@ fn tasks_lists_what_needs_you_first() {
     seed_tasks(&env, &repo);
 
     let output = env
-        .hedy(&["tareas"])
+        .hedy(&["tasks"])
         .assert()
         .success()
         .get_output()

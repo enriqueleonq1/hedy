@@ -472,7 +472,7 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
     are told to propose, before their final answer, one short note with the lasting
     decisions they made, and to stay quiet if there were none. It is only guidance; it is
     still a proposal the user approves.
-  - CLI: `hedy memory` (`memoria`) with `list` (default), `approve <id>` and
+  - CLI: `hedy memory` with `list` (default), `approve <id>` and
     `reject <id>`.
 - **"Quién la lee"**: the project's account and the accounts in its phases. Turning one off
   (`projects.memory_off`) starts that agent without the memory.
@@ -504,7 +504,7 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
   It does not count functions in the code map: that would mean querying the
   codebase-memory-mcp index from Hedy, so it only says whether the map is on.
 - **Cost per project and client.** Each project can have a client (`projects.client`).
-  `hedy resumen` and the "Uso de la semana por cliente" table in Cuentas add up tokens and
+  `hedy summary` and the "Uso de la semana por cliente" table in Cuentas add up tokens and
   cost per client and per project. All costs are estimates and the UI says so:
   - For subscriptions, the cost is what the CLI reports, which is not what is billed.
   - For API keys, it uses the price the user sets (`api_price.<provider>`, input/output
@@ -601,7 +601,7 @@ schemas):
 
 ## 16. Health check (`hedy doctor`)
 
-- **Read-only, official commands only.** `hedy doctor` (alias `diagnostico`, Tauri
+- **Read-only, official commands only.** `hedy doctor` (Tauri
   command `doctor`) runs each CLI's `--version` (5 s timeout) and the same official login
   status commands as `login_state`; it never opens a token file and never prints a key or
   a variable's value. The one thing it writes is the last version seen per CLI
@@ -624,7 +624,7 @@ schemas):
 
 ## 17. Task board and desktop notifications
 
-- **Task board ("Actividad" / "Activity", `hedy tasks` / `hedy tareas`).** `Hedy::activity()`
+- **Task board ("Actividad" / "Activity", `hedy tasks`).** `Hedy::activity()`
   lists every project's running and waiting tasks plus those with activity in the last
   24 h (at most 30 finished ones). The state is derived from the task and its history,
   never stored (`domain::task_state`): a plan or a permission card waiting, a limit
@@ -712,7 +712,7 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
   Hedy only picks the folder at launch, and `~/.agents/skills` would be shared by every
   account. Protected projects neither see nor create global skills.
 - **UI and CLI.** A "Habilidades" / "Skills" tab in the memory screen (`#k=<path>`) and
-  `hedy skills` (`habilidades`) with `list`, `show <name>`, `approve <id>`,
+  `hedy skills` with `list`, `show <name>`, `approve <id>`,
   `reject <id>` and `remove <name>`.
 - **Not verified with the real CLIs yet:** that Codex, Gemini CLI, Kimi Code and
   Antigravity load `.agents/skills` in ACP / app-server mode (their docs describe the
@@ -761,7 +761,7 @@ Verified against the official docs in November 2026 (Agent SDK "Streaming Input"
 - **Built-in examples.** Five generic, bilingual examples live in the code
   (`domain::template::builtins`) and follow the current language; editing or deleting
   one stores a row for it, and "Restaurar ejemplos" removes those rows.
-- **CLI.** `hedy template` (alias `plantilla`) lists, adds (`--project` for the current
+- **CLI.** `hedy template` lists, adds (`--project` for the current
   project) and removes templates. There is no task-launch command in the CLI (`hedy run`
   opens the official CLI), so there is no `--template` flag yet.
 - **Not verified** with a real CLI: delivery at the turn boundary is tested with the
