@@ -8,6 +8,7 @@ import { WorkingWord } from "../../components/Mascot/WorkingWord";
 import { Button } from "../../components/ui/Button";
 import { formatElapsed, timeAgo } from "../../format";
 import { useT, type MessageKey } from "../../i18n";
+import { formatCountdown } from "../../tasks/countdown";
 import { needsYou, useActivity, useTaskEvents } from "../../tasks/hooks";
 import { useMascot } from "../../tasks/useMascot";
 import { DEFAULT_ACCOUNT_COLOR, ERROR_MASCOT_COLOR } from "../../theme/tokens";
@@ -222,8 +223,25 @@ function BoardRow({
               <span className="board-row__queued">{t("queue.count", { n: item.queued })}</span>
             </>
           )}
+          <WaitCountdown task={task} now={now} />
         </span>
       </button>
     </li>
+  );
+}
+
+/** A task waiting for its limit: when it resumes, or that it can now. */
+function WaitCountdown({ task, now }: { task: ActivityItem["task"]; now: number }) {
+  const t = useT();
+  const wait = task.wait;
+  if (!wait || task.status === "accepted" || task.status === "discarded") return null;
+  const left = wait.until ? formatCountdown(wait.until - now, t) : null;
+  const text = wait.ready ? t("wait.boardReady") : left ? t("wait.board", { time: left }) : null;
+  if (!text) return null;
+  return (
+    <>
+      <span aria-hidden>·</span>
+      <span className="board-row__wait">{text}</span>
+    </>
   );
 }

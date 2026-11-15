@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
 
-import { useAction, useApi } from "../../api/context";
+import { useAction } from "../../api/context";
 import type { Account, Decision, Task } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { WorkingWord } from "../../components/Mascot/WorkingWord";
 import { Button } from "../../components/ui/Button";
 import { formatDuration } from "../../format";
-import { tasksKey } from "../../tasks/hooks";
-import { isOpen, PHASE_VERB, type Resolution, type TimelineItem } from "../../tasks/timeline";
+import { PHASE_VERB, type Resolution, type TimelineItem } from "../../tasks/timeline";
 import type { TaskMascot } from "../../tasks/useMascot";
 import { useT, type MessageKey, type Translate } from "../../i18n";
-import { DEFAULT_ACCOUNT_COLOR, WARNING_MASCOT_COLOR } from "../../theme/tokens";
+import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
+import { LimitCard } from "./LimitCard";
 
 interface TimelineProps {
   task: Task;
@@ -58,7 +57,9 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
           );
         }
         if (item.type === "limit") {
-          return <LimitCard key={item.key} task={task} item={item} accounts={accounts} />;
+          // A message or a new phase after the card set the task going again.
+          const active = !items.slice(index + 1).some((i) => i.type === "user" || i.type === "phase");
+          return <LimitCard key={item.key} task={task} item={item} accounts={accounts} active={active} />;
         }
         return (
           <div key={item.key} className="agent-row">
@@ -276,81 +277,6 @@ function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineIte
           </div>
         </form>
       )}
-    </section>
-  );
-}
-
-function resetsIn(resetsAt: number | null, t: Translate): string | null {
-  if (!resetsAt) return null;
-  const minutes = Math.round((resetsAt * 1000 - Date.now()) / 60_000);
-  if (minutes <= 0) return t("workspace.limit.resetPassed");
-  return minutes < 90
-    ? t("workspace.limit.resetsMinutes", { n: minutes })
-    : t("workspace.limit.resetsHours", { n: Math.round(minutes / 60) });
-}
-
-/**
- * Hedy never switches accounts by itself (spec rule 3): the card offers to
- * wait, or to hand the task to another provider or an API key.
- */
-function LimitCard({
-  task,
-  item,
-  accounts,
-}: {
-  task: Task;
-  item: Extract<TimelineItem, { type: "limit" }>;
-  accounts: Account[];
-}) {
-  const api = useApi();
-  const t = useT();
-  const [waiting, setWaiting] = useState(false);
-  const actionable = item.latest && isOpen(task) && !waiting;
-  const options = useQuery({
-    queryKey: ["handoff", task.id, item.key],
-    queryFn: () => api.handoffOptions(task.id),
-    enabled: actionable,
-  });
-  const handoff = useAction((a, account: string) => a.handoffTask(task.id, account, null), {
-    invalidate: [tasksKey(task.project)],
-  });
-  const account = accounts.find((a) => a.id === item.account);
-  const name = account?.name ?? item.account;
-  const title =
-    item.level === "reached"
-      ? t("workspace.limit.reached", { name })
-      : item.percent != null
-        ? t("workspace.limit.percent", { name, percent: Math.round(item.percent) })
-        : t("workspace.limit.near", { name });
-  const candidates = (options.data ?? [])
-    .map((id) => accounts.find((a) => a.id === id))
-    .filter((a): a is Account => !!a);
-
-  return (
-    <section className="limit-card" aria-label={title}>
-      <Mascot color={account?.color ?? WARNING_MASCOT_COLOR} state="sleeping" size={36} label="" />
-      <div className="limit-card__body">
-        <h3>{title}</h3>
-        <p>
-          {resetsIn(item.resetsAt, t) ?? ""} {candidates.length > 0 && t("workspace.limit.canHandOff")}
-        </p>
-        {actionable && (
-          <div className="actions">
-            <Button variant="primary" onClick={() => setWaiting(true)}>
-              {t("workspace.limit.wait")}
-            </Button>
-            {candidates.map((c) => (
-              <Button key={c.id} className="btn--warn" disabled={handoff.isPending} onClick={() => handoff.mutate(c.id)}>
-                {t("workspace.limit.handOff", { name: c.name })}
-              </Button>
-            ))}
-          </div>
-        )}
-        {actionable && options.isSuccess && candidates.length === 0 && (
-          <p className="small">{t("workspace.limit.noOther")}</p>
-        )}
-        {waiting && <p className="small">{t("workspace.limit.waiting")}</p>}
-      </div>
     </section>
   );
 }
