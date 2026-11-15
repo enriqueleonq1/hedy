@@ -248,7 +248,7 @@ function Root() {
             />
           )}
         </Shell>
-        <CommandPalette open={palette} onOpenChange={setPalette} overview={data} onNavigate={navigate} />
+        <CommandPalette open={palette} onOpenChange={setPalette} overview={data} view={current} onNavigate={navigate} />
         </ShortcutsProvider>
         </FocusModeProvider>
         </CreateProvider>

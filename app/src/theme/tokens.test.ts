@@ -48,6 +48,13 @@ const textPairs: [string, string][] = [
   ["accent", "panel2"],
   // A ghost button inside a nested surface.
   ["actionText", "panel2"],
+  // The palette's active row: matched letters and a changed file's status letter.
+  ["accent", "selection"],
+  ["success", "selection"],
+  ["warnInk", "selection"],
+  ["warnInk", "panel"],
+  ["danger", "selection"],
+  ["activity", "selection"],
 ];
 
 describe.each(Object.keys(themes) as ThemeName[])("%s theme", (name) => {
