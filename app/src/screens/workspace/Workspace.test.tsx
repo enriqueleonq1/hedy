@@ -226,6 +226,25 @@ describe("Workspace", () => {
     expect(screen.queryByRole("complementary", { name: PANEL })).not.toBeInTheDocument();
   });
 
+  it("puts the side panel away in focus mode; the toggle brings it back and leaves focus", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await openProject(user, /^hedy/);
+    await user.keyboard("{Control>}3{/Control}");
+    expect(await screen.findByRole("complementary", { name: PANEL })).toBeInTheDocument();
+
+    await user.keyboard("{Control>}\\{/Control}");
+    await waitFor(() => expect(screen.queryByRole("complementary", { name: PANEL })).not.toBeInTheDocument());
+    const toggle = screen.getByRole("button", { name: /^Panel lateral/ });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(toggle);
+    expect(await screen.findByRole("complementary", { name: PANEL })).toBeInTheDocument();
+    expect(document.querySelector(".app--focus")).toBeNull();
+  });
+
   it("says why the Changes panel is empty, case by case, once opened", async () => {
     const api = MockApi.withSampleData().withSampleActivity();
     api.delayMs = 0;

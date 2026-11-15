@@ -102,7 +102,8 @@ describe("Status", () => {
   it("offers to turn on the code map in Settings while it is off", async () => {
     const { user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
-    await user.click(await screen.findByRole("button", { name: "Estado" }));
+    await user.click(await screen.findByRole("button", { name: "Más acciones" }));
+    await user.click(screen.getByRole("menuitem", { name: "Estado" }));
     await user.click(await screen.findByRole("button", { name: "Activar mapa del código" }));
     expect(await screen.findByRole("heading", { name: "Ajustes" })).toBeInTheDocument();
   });

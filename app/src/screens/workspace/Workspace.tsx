@@ -6,6 +6,7 @@ import type { HedyApi } from "../../api/HedyApi";
 import type { Account, Overview, PromptTemplate, Task, TaskMode } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { accountOption } from "../../components/accounts";
+import { useFocusMode } from "../../components/focusMode";
 import { shortPath } from "../../components/projects";
 import { headlineText } from "../../components/planUsage";
 import { Button } from "../../components/ui/Button";
@@ -178,8 +179,9 @@ export function Workspace({
 
   const title = task ? task.title : name;
   const panel = useSidePanel(solo ? null : task);
-  // The one switch for the side panel (a Hedy-wide focus mode can join it here).
-  const panelShown = !solo && panel.shown;
+  // The one switch for the side panel: focus mode puts it away too.
+  const focusMode = useFocusMode();
+  const panelShown = !solo && panel.shown && !focusMode.focus;
   const [deleting, setDeleting] = useState(false);
   const more: MenuItem[] = [
     ...(onOpenStatus ? [{ label: t("workspace.status"), onSelect: onOpenStatus }] : []),
@@ -219,9 +221,9 @@ export function Workspace({
               <button
                 type="button"
                 className="tool-btn tool-btn--icon"
-                aria-pressed={panel.shown}
+                aria-pressed={panelShown}
                 title={t("workspace.panelToggle")}
-                onClick={panel.toggle}
+                onClick={() => (focusMode.focus && panel.shown ? focusMode.toggle() : panel.toggle())}
               >
                 <PanelIcon />
                 <span className="sr-only">
