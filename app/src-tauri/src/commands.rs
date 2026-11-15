@@ -525,16 +525,17 @@ pub async fn accept_preview(
     blocking(&state, move |h| Ok(h.accept_preview(&task_id(id))?.into())).await
 }
 
-/// "Aceptar e integrar", with the commit message from the sheet (the proposed
-/// one when empty).
+/// "Aceptar e integrar" (or keep it on its branch for a PR), with the commit
+/// message from the sheet (the proposed one when empty).
 #[tauri::command]
 pub async fn accept_task(
     state: State<'_, AppState>,
     id: String,
     message: Option<String>,
+    mode: Option<hedy_core::domain::AcceptMode>,
 ) -> CommandResult<()> {
     blocking(&state, move |h| {
-        h.accept_task_with(&task_id(id), message.as_deref())
+        h.accept_task_as(&task_id(id), message.as_deref(), mode.unwrap_or_default())
             .map(drop)
     })
     .await
