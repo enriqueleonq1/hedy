@@ -124,6 +124,8 @@ const es = {
   "palette.code.reveal": "Mostrar el archivo en su carpeta",
   "palette.copied": "Ruta copiada",
   "palette.copyFailed": "No pude copiar la ruta",
+  "palette.folder.pull": "Traer cambios a tu carpeta (pull)",
+  "palette.folder.push": "Publicar la rama de tu carpeta (push)",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -250,6 +252,8 @@ const en: Record<keyof typeof es, string> = {
   "palette.code.reveal": "Show the file in its folder",
   "palette.copied": "Path copied",
   "palette.copyFailed": "Couldn't copy the path",
+  "palette.folder.pull": "Pull into your folder",
+  "palette.folder.push": "Push your folder's branch",
 };
 
 export default { es, en };

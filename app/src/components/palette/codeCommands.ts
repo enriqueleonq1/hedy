@@ -10,6 +10,7 @@ import { useApi } from "../../api/context";
 import { codeKeys, sameCopy, useFileNavigator, type NavigatorTarget } from "../../files/navigator";
 import type { Translate } from "../../i18n";
 import type { View } from "../Layout";
+import { useFolderGit } from "../../screens/workspace/ship/FolderStatus";
 import { useToast } from "../ui/Toast";
 import type { ActiveCopy } from "./copy";
 import type { Command } from "./commands";
@@ -71,6 +72,8 @@ export function useCodeCommands({
   const client = useQueryClient();
   const toast = useToast();
   const openFile = useOpenFile(active, onNavigate);
+  // The project's folder: pull and push, as its status in the workspace offers them.
+  const folderGit = useFolderGit(active?.project ?? "");
   if (!active) return [];
 
   const { copy } = active;
@@ -188,6 +191,23 @@ export function useCodeCommands({
       },
     );
   }
+  const branch = folderGit.status.data?.branch ?? undefined;
+  commands.push(
+    {
+      id: "folder:pull",
+      group: "code",
+      label: t("palette.folder.pull"),
+      detail: branch,
+      run: () => folderGit.pull.mutate(),
+    },
+    {
+      id: "folder:push",
+      group: "code",
+      label: t("palette.folder.push"),
+      detail: branch,
+      run: () => folderGit.push.mutate(),
+    },
+  );
   return commands;
 }
 
