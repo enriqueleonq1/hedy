@@ -5,10 +5,10 @@
 //! their own remote. Hedy never forces a push and never stores credentials.
 
 use std::path::Path;
-use std::sync::{Arc, mpsc};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use super::ports::{AgentBackend, AgentRequest, EventSink, PullRequestSpec, RateLimit, Upstream};
+use super::one_shot::{OneShot, OneShotFailure};
+use super::ports::{PullRequestSpec, Upstream};
 use super::tasks::current_stage;
 use super::{AppError, AppResult, Hedy};
 use crate::domain::ship::{
@@ -16,8 +16,8 @@ use crate::domain::ship::{
     commit_subject, diff_for_prompt, pick_remote, pull_request_body, remote_host,
 };
 use crate::domain::{
-    Account, AgentEvent, GhState, LimitLevel, Phase, PullRequest, Shipment, Task, TaskId, TaskMode,
-    TaskStatus, policy,
+    Account, AgentEvent, GhState, LimitLevel, PullRequest, Shipment, Task, TaskId, TaskStatus,
+    policy,
 };
 use crate::tr;
 
@@ -475,7 +475,7 @@ impl Hedy {
             }
         }
         let body = pull_request_body(&PullRequestFacts {
-            prompt: &task.prompt,
+            prompt: task.instruction(),
             summary,
             files: &ship.files,
             tests: &tests,
@@ -552,7 +552,7 @@ impl Hedy {
 
     /// Whether `account` is known to be at its limit now: the task waits for
     /// it, its last report said so, or a plan window is full.
-    fn at_limit(&self, task: &Task, account: &Account) -> AppResult<bool> {
+    pub(super) fn at_limit(&self, task: &Task, account: &Account) -> AppResult<bool> {
         if task.wait.as_ref().is_some_and(|w| w.account == account.id) {
             return Ok(true);
         }
@@ -600,14 +600,6 @@ impl Hedy {
             }
             .into());
         }
-        let (backend, launch) = self.backend(&account)?;
-        let model = match backend {
-            AgentBackend::OpenAiCompatible { .. } => stage
-                .model
-                .clone()
-                .or_else(|| account.provider.default_api_model().map(str::to_owned)),
-            _ => stage.model.clone(),
-        };
         let diff = self.git.diff(&ws.worktree, &ws.base_commit)?;
         let recent: Vec<String> = self
             .git
@@ -621,88 +613,26 @@ impl Hedy {
             &recent,
             &diff_for_prompt(&diff, SUGGESTION_DIFF_MAX),
         );
-        let (tx, rx) = mpsc::channel();
-        let sink: EventSink = Arc::new(move |event| {
-            let _ = tx.send(event);
-        });
-        let mut session = self.agents.start(
-            AgentRequest {
-                backend,
-                launch: launch.in_dir(ws.worktree.clone()),
-                mode: TaskMode::Ask,
-                phase: Phase::Review,
-                plan_first: false,
-                model,
-                prompt,
-                images: Vec::new(),
-                resume: None,
-                memory: None,
-                mcp: Vec::new(),
-            },
-            sink,
-        )?;
-        let deadline = Instant::now() + timeout;
-        let mut last_text: Option<String> = None;
-        let result = loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            match rx.recv_timeout(left) {
-                Ok(AgentEvent::Usage(sample)) => {
-                    // The tokens were spent: they count for the task's account.
-                    let _ = self.handle_usage(id, &account.id, &sample);
-                }
-                Ok(AgentEvent::RateLimit {
-                    status,
-                    utilization,
-                    resets_at,
-                }) => {
-                    self.store.set_rate_limit(
-                        &account.id,
-                        &RateLimit {
-                            status: status.clone(),
-                            utilization,
-                            resets_at,
-                            at: self.now_secs(),
-                        },
-                    )?;
-                    if LimitLevel::from_report(&status, utilization) == Some(LimitLevel::Reached) {
-                        break Err(ShipError::AccountAtLimit {
-                            account: account.name.clone(),
-                        });
-                    }
-                }
-                Ok(AgentEvent::Message { text }) => last_text = Some(text),
-                Ok(AgentEvent::PermissionRequest { request_id, .. }) => {
-                    let _ = session.answer(
-                        &request_id,
-                        false,
-                        Some(&tr!(
-                            "No uses herramientas: responde solo con el mensaje de commit.",
-                            "Do not use tools: reply with the commit message only."
-                        )),
-                    );
-                }
-                Ok(AgentEvent::Finished { ok, summary, .. }) => {
-                    let answer = if summary.trim().is_empty() {
-                        last_text.take()
-                    } else {
-                        Some(summary)
-                    };
-                    break answer
-                        .filter(|_| ok)
-                        .and_then(|a| clean_suggestion(&a))
-                        .ok_or(ShipError::SuggestionFailed(None));
-                }
-                Ok(AgentEvent::Error { message }) => {
-                    break Err(ShipError::SuggestionFailed(Some(message)));
-                }
-                Ok(_) => {}
-                Err(mpsc::RecvTimeoutError::Timeout) => break Err(ShipError::SuggestionTimedOut),
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    break Err(ShipError::SuggestionFailed(None));
-                }
-            }
+        let answer = self.one_shot(OneShot {
+            task: id,
+            account: &account,
+            stage: &stage,
+            cwd: ws.worktree.clone(),
+            prompt,
+            refusal: tr!(
+                "No uses herramientas: responde solo con el mensaje de commit.",
+                "Do not use tools: reply with the commit message only."
+            ),
+            timeout,
+        })?;
+        let result = match answer {
+            Ok(text) => clean_suggestion(&text).ok_or(ShipError::SuggestionFailed(None)),
+            Err(OneShotFailure::AtLimit) => Err(ShipError::AccountAtLimit {
+                account: account.name.clone(),
+            }),
+            Err(OneShotFailure::Failed(detail)) => Err(ShipError::SuggestionFailed(detail)),
+            Err(OneShotFailure::TimedOut) => Err(ShipError::SuggestionTimedOut),
         };
-        session.stop();
         Ok(result?)
     }
 }
@@ -711,10 +641,12 @@ impl Hedy {
 mod tests {
     use super::*;
     use crate::application::NewTask;
+    use crate::application::ports::RateLimit;
     use crate::application::ports::{TaskRepository, UsageRepository};
     use crate::application::testing::{AgentCall, Fixture};
     use crate::domain::diff::{FileDiff, FileStatus};
     use crate::domain::{AcceptMode, UsageSample};
+    use crate::domain::{Phase, TaskMode};
     use crate::i18n::{Language, with_language};
 
     fn new_task(f: &Fixture) -> Task {
