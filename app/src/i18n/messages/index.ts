@@ -24,6 +24,7 @@ import skills from "./skills";
 import statusbar from "./statusbar";
 import status from "./status";
 import templates from "./templates";
+import themes from "./themes";
 import waits from "./waits";
 import welcome from "./welcome";
 import workspace from "./workspace";
@@ -56,6 +57,7 @@ const es = {
   ...statusbar.es,
   ...edit.es,
   ...carry.es,
+  ...themes.es,
 };
 const en: Record<keyof typeof es, string> = {
   ...common.en,
@@ -83,6 +85,7 @@ const en: Record<keyof typeof es, string> = {
   ...statusbar.en,
   ...edit.en,
   ...carry.en,
+  ...themes.en,
 };
 
 export type MessageKey = keyof typeof es;

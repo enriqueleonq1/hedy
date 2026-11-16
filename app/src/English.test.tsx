@@ -285,7 +285,7 @@ describe("English", () => {
     window.history.replaceState(null, "", "#settings");
     setup();
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
-    expect(screen.getByRole("radiogroup", { name: "Theme" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Mode" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Light" })).toBeInTheDocument();
     expect(screen.getByText("Done!")).toBeInTheDocument();
     const working = screen.getByLabelText("The mascot at work, by what the AI is doing");

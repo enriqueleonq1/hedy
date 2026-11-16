@@ -80,10 +80,33 @@ export interface Assignment {
 export type PhasePlan = Partial<Record<Phase, Assignment>>;
 
 export type ThemeSetting = "system" | "light" | "dark";
+export type ThemeBase = "dark" | "light";
+
+/** A theme of the user's own ("Tuyos"): imported, described with AI or edited. */
+export interface CustomTheme {
+  id: string;
+  name: string;
+  base: ThemeBase;
+  /** Every token of the theme (derived and contrast-checked when saved), so it renders the same later. */
+  colors: Record<string, string>;
+  origin: "vscode" | "described" | "edited";
+}
+
+/** A theme an AI described: a seed (`bg`, `ink`, `accent`, `keyword`…; see `theme/derive.ts`). */
+export interface ThemeDraft {
+  name: string;
+  base: ThemeBase;
+  colors: Record<string, string>;
+}
 
 export interface Overview {
   userName: string;
+  /** The mode: follow the system, or always light or dark. */
   theme: ThemeSetting;
+  /** The theme used in dark mode (`ui.theme.dark`): a preset id or `custom:<id>`. */
+  themeDark: string;
+  /** The theme used in light mode (`ui.theme.light`). */
+  themeLight: string;
   language: LanguageSetting;
   /** The first-run guide was finished or skipped. */
   onboarded: boolean;
@@ -211,6 +234,8 @@ export interface NewAccountInput {
 
 export type SettingKey =
   | "ui.theme"
+  | "ui.theme.dark"
+  | "ui.theme.light"
   | "ui.name"
   | "ui.language"
   | "ui.onboarded"

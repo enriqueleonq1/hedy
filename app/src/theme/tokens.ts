@@ -1,9 +1,17 @@
 // Design tokens (spec §5). Single source of truth: applied as CSS variables by
-// `applyTheme` and checked for WCAG AA contrast in `tokens.test.ts`.
+// `applyTokens` and checked for WCAG AA contrast (`repair.ts`, `tokens.test.ts`).
+// Other themes (presets, imported, described) are built from a seed by
+// `derive.ts` into this same set of tokens.
 
+import type { ThemeBase } from "../api/types";
 import type { MessageKey } from "../i18n";
 
-export type ThemeName = "dark" | "light";
+/** A theme is dark or light: it decides `color-scheme` and which mode setting uses it. */
+export type { ThemeBase };
+/** The base of the theme on screen (kept for the views that only need dark or light). */
+export type ThemeName = ThemeBase;
+/** Every token of a theme, by name (`panel2`, `diffAddBg`, `synKeyword`…), as hex. */
+export type ThemeTokens = Record<string, string>;
 
 /** Raw palette of the dark theme (Tokyo Night). */
 const tokyoNight = {
@@ -23,7 +31,8 @@ const tokyoNight = {
  */
 const blobViolet = "#6847F5";
 
-export const themes: Record<ThemeName, Record<string, string>> = {
+/** Hedy's own two themes: "Tokyo Night" (dark) and "Burbuja" (light). */
+export const themes = {
   dark: {
     bg: "#1A1B26",
     panel: "#16161E",
@@ -69,6 +78,22 @@ export const themes: Record<ThemeName, Record<string, string>> = {
     cheek: "#F7768E",
     tongue: "#FF7AB6",
     star: tokyoNight.yellow,
+    // Syntax: violet keywords, green strings, amber numbers, cyan functions and types.
+    synKeyword: "#B4A0FF",
+    synString: tokyoNight.green,
+    synNumber: tokyoNight.yellow,
+    synFunction: tokyoNight.cyan,
+    synType: tokyoNight.cyan,
+    synComment: "#9AA5CE",
+    synTag: tokyoNight.red,
+    // The terminal's ANSI colors that are not a semantic token already.
+    termCursor: tokyoNight.cyan,
+    termBlack: "#15161E",
+    termYellow: tokyoNight.yellow,
+    termBlue: tokyoNight.blue,
+    termMagenta: tokyoNight.magenta,
+    termWhite: "#A9B1D6",
+    termBrightBlack: "#414868",
   },
   light: {
     // "Burbuja": warm cream, violet and pink.
@@ -111,24 +136,48 @@ export const themes: Record<ThemeName, Record<string, string>> = {
     cheek: "#F7768E",
     tongue: "#FF7AB6",
     star: "#E0AF68",
+    synKeyword: "#4B32C8",
+    synString: "#116A43",
+    synNumber: "#A15F00",
+    synFunction: "#0B6A80",
+    synType: "#0B6A80",
+    synComment: "#625A76",
+    synTag: "#A1213F",
+    termCursor: "#7C5CFF",
+    termBlack: "#2B2340",
+    termYellow: "#7A5300",
+    termBlue: "#3D5BD9",
+    termMagenta: "#7C3AED",
+    termWhite: "#625A76",
+    termBrightBlack: "#625A76",
   },
-};
+} satisfies Record<ThemeBase, ThemeTokens>;
 
 /** `panel2` → `--panel-2`, `diffAddBg` → `--diff-add-bg`. */
 export function cssVar(token: string): string {
   return `--${token.replace(/([A-Z0-9])/g, (c) => `-${c.toLowerCase()}`)}`;
 }
 
-/** Sets the theme's tokens on `root`, which owns its inline custom properties: others are removed. */
-export function applyTheme(name: ThemeName, root: HTMLElement = document.documentElement): void {
-  root.dataset.theme = name;
-  root.style.colorScheme = name;
-  const tokens = new Map(Object.entries(themes[name]).map(([token, value]) => [cssVar(token), value]));
+/** Sets one of Hedy's own themes on `root` (see `applyTokens`). */
+export function applyTheme(name: ThemeBase, root: HTMLElement = document.documentElement): void {
+  applyTokens(themes[name], name, root);
+}
+
+/** Sets a theme's tokens on `root`, which owns its inline custom properties: others are removed. */
+export function applyTokens(tokens: ThemeTokens, base: ThemeBase, root: HTMLElement = document.documentElement): void {
+  root.dataset.theme = base;
+  root.style.colorScheme = base;
+  const vars = new Map(Object.entries(tokens).map(([token, value]) => [cssVar(token), value]));
   const stale = Array.from({ length: root.style.length }, (_, i) => root.style.item(i)).filter(
-    (property) => property.startsWith("--") && !tokens.has(property),
+    (property) => property.startsWith("--") && !vars.has(property),
   );
   for (const property of stale) root.style.removeProperty(property);
-  for (const [property, value] of tokens) root.style.setProperty(property, value);
+  for (const [property, value] of vars) root.style.setProperty(property, value);
+}
+
+/** A theme's tokens as inline CSS variables, to paint one element (a theme card) in it. */
+export function tokenStyle(tokens: ThemeTokens): Record<string, string> {
+  return Object.fromEntries(Object.entries(tokens).map(([token, value]) => [cssVar(token), value]));
 }
 
 /** Account colors offered to the user (spec §5), with the key of their name. */
@@ -153,24 +202,22 @@ export const WARNING_MASCOT_COLOR = tokyoNight.yellow;
 /** The app could not start. */
 export const ERROR_MASCOT_COLOR = tokyoNight.red;
 
-/** xterm.js colors for each theme. */
-export function terminalTheme(name: ThemeName) {
-  const t = themes[name];
-  const dark = name === "dark";
+/** xterm.js colors of a theme: its semantic tokens plus its `term*` ones. */
+export function terminalTheme(t: ThemeTokens) {
   return {
     background: t.panel,
     foreground: t.ink,
-    cursor: dark ? tokyoNight.cyan : "#7C5CFF",
+    cursor: t.termCursor ?? t.focus,
     selectionBackground: t.textSelection,
-    black: dark ? "#15161E" : "#2B2340",
-    red: dark ? tokyoNight.red : "#A1213F",
-    green: dark ? tokyoNight.green : "#116A43",
-    yellow: dark ? tokyoNight.yellow : "#7A5300",
-    blue: dark ? tokyoNight.blue : "#3D5BD9",
-    magenta: dark ? tokyoNight.magenta : "#7C3AED",
-    cyan: dark ? tokyoNight.cyan : "#0B6A80",
-    white: dark ? "#A9B1D6" : "#625A76",
-    brightBlack: dark ? "#414868" : "#625A76",
-    brightWhite: dark ? "#C0CAF5" : "#2B2340",
+    black: t.termBlack ?? t.panel,
+    red: t.danger,
+    green: t.success,
+    yellow: t.termYellow ?? t.warning,
+    blue: t.termBlue ?? t.activity,
+    magenta: t.termMagenta ?? t.accent,
+    cyan: t.activity,
+    white: t.termWhite ?? t.muted,
+    brightBlack: t.termBrightBlack ?? t.muted,
+    brightWhite: t.ink,
   };
 }

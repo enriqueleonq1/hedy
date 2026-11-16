@@ -141,6 +141,13 @@ export function usePaletteCommands({
     },
     { id: "nav:settings", group: "nav", label: t("common.settings"), run: () => onNavigate({ screen: "settings" }) },
     {
+      id: "view:theme",
+      group: "actions",
+      label: t("theme.palette"),
+      detail: t("theme.paletteHint"),
+      run: () => onNavigate({ screen: "settings", section: "themes" }),
+    },
+    {
       id: "view:focus",
       group: "actions",
       label: focusMode.focus ? t("shell.focus.exit") : t("shell.focus.enter"),

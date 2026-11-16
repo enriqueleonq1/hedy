@@ -3,13 +3,10 @@
 
 import type { HighlighterCore, ThemedToken } from "shiki/core";
 
-import type { ThemeName } from "../../theme/tokens";
+import { builtCodeTheme } from "../../theme/codeTheme";
 
-/** Tokyo Night as the spec asks; a warm light theme for "Burbuja". */
-const CODE_THEME: Record<ThemeName, string> = {
-  dark: "tokyo-night",
-  light: "catppuccin-latte",
-};
+/** A shiki theme name: a bundled one, or one built from a Hedy theme (`theme/codeTheme.ts`). */
+type CodeTheme = string;
 
 const LANG_BY_EXT: Record<string, string> = {
   ts: "typescript",
@@ -74,7 +71,7 @@ async function ensureLoaded(h: HighlighterCore, lang: string, theme: string): Pr
     import("shiki/themes"),
   ]);
   if (!h.getLoadedThemes().includes(theme)) {
-    const loader = bundledThemes[theme as keyof typeof bundledThemes];
+    const loader = builtCodeTheme(theme) ?? bundledThemes[theme as keyof typeof bundledThemes];
     if (loader) await h.loadTheme(loader);
   }
   if (!h.getLoadedLanguages().includes(lang)) {
@@ -87,26 +84,26 @@ async function ensureLoaded(h: HighlighterCore, lang: string, theme: string): Pr
 export async function highlightLines(
   lines: string[],
   path: string,
-  theme: ThemeName,
+  theme: CodeTheme,
 ): Promise<ThemedToken[][] | null> {
   const lang = languageFor(path);
   if (!lang) return null;
   const h = await getHighlighter();
-  await ensureLoaded(h, lang, CODE_THEME[theme]);
+  await ensureLoaded(h, lang, theme);
   if (!h.getLoadedLanguages().includes(lang)) return null;
   // One line at a time: diff hunks are not complete programs.
-  return lines.map((line) => h.codeToTokensBase(line, { lang, theme: CODE_THEME[theme] })[0] ?? []);
+  return lines.map((line) => h.codeToTokensBase(line, { lang, theme: theme })[0] ?? []);
 }
 
 /**
  * Tokens per line of a whole text (one side of a file), so strings and comments
  * that span lines are colored right; null when the language is unknown.
  */
-export async function highlightText(text: string, path: string, theme: ThemeName): Promise<ThemedToken[][] | null> {
+export async function highlightText(text: string, path: string, theme: CodeTheme): Promise<ThemedToken[][] | null> {
   const lang = languageFor(path);
   if (!lang) return null;
   const h = await getHighlighter();
-  await ensureLoaded(h, lang, CODE_THEME[theme]);
+  await ensureLoaded(h, lang, theme);
   if (!h.getLoadedLanguages().includes(lang)) return null;
-  return h.codeToTokensBase(text, { lang, theme: CODE_THEME[theme] });
+  return h.codeToTokensBase(text, { lang, theme: theme });
 }

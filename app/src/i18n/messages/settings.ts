@@ -2,7 +2,6 @@
 
 const es = {
   "settings.appearance": "Apariencia",
-  "settings.theme": "Tema",
   "settings.theme.system": "Según el sistema",
   "settings.theme.light": "Claro",
   "settings.theme.dark": "Oscuro",
@@ -55,7 +54,6 @@ const es = {
 
 const en: Record<keyof typeof es, string> = {
   "settings.appearance": "Appearance",
-  "settings.theme": "Theme",
   "settings.theme.system": "System default",
   "settings.theme.light": "Light",
   "settings.theme.dark": "Dark",

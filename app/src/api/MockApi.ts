@@ -16,9 +16,14 @@ import type {
   WriteResult,
 } from "./codeTypes";
 import { MockCode } from "./mockCode";
+import { MOCK_THEME_SEEDS } from "./mockThemes";
 import { resolveLanguage } from "../i18n";
 import { placeholders } from "../templates/placeholders";
+import { buildTheme } from "../theme/derive";
 import type {
+  CustomTheme,
+  ThemeBase,
+  ThemeDraft,
   AcceptMode,
   AcceptPreview,
   FolderStatus,
@@ -244,6 +249,8 @@ export class MockApi implements HedyApi {
     this.state = {
       userName: "Alex",
       theme: "system",
+      themeDark: "tokyo-night",
+      themeLight: "burbuja",
       language: "es",
       onboarded: true,
       dataDir: "/home/demo/.local/share/hedy",
@@ -408,7 +415,61 @@ export class MockApi implements HedyApi {
       api.recordUsage({ project: "/code/hedy", account: "claude-personal", at, tokens: k * 1000, costUsd: k / 40 });
       api.recordUsage({ project: "/code/tienda", account: "claude-trabajo", at, tokens: k * 300, costUsd: null });
     });
+    // One theme of the user's own, described with AI.
+    void api.saveTheme({
+      id: null,
+      name: "Café de la tarde",
+      base: "dark",
+      colors: buildTheme(MOCK_THEME_SEEDS.cafe.seed, "dark").tokens,
+      origin: "described",
+    });
     return api;
+  }
+
+  // --------------------------------------------------------------- themes
+
+  private customThemes: CustomTheme[] = [];
+  private nextTheme = 0;
+  /** What "Describir con IA" fails with (a limit, for example); null: it answers. */
+  describeFailure: string | null = null;
+
+  async listThemes(): Promise<CustomTheme[]> {
+    return structuredClone(this.customThemes);
+  }
+
+  async saveTheme(input: Parameters<HedyApi["saveTheme"]>[0]): Promise<CustomTheme> {
+    const name = input.name.trim();
+    if (!name) throw this.english() ? "the theme needs a name" : "el tema necesita un nombre";
+    const theme: CustomTheme = { ...input, name, id: input.id ?? `t${++this.nextTheme}` };
+    const at = this.customThemes.findIndex((t) => t.id === theme.id);
+    if (at >= 0) this.customThemes[at] = theme;
+    else this.customThemes.push(theme);
+    return structuredClone(theme);
+  }
+
+  async deleteTheme(id: string): Promise<void> {
+    this.customThemes = this.customThemes.filter((t) => t.id !== id);
+    for (const base of ["dark", "light"] as const) {
+      const key = base === "dark" ? "themeDark" : "themeLight";
+      if (this.state[key] === `custom:${id}`) this.state[key] = base === "dark" ? "tokyo-night" : "burbuja";
+    }
+  }
+
+  async describeTheme(account: string, description: string, base: ThemeBase | null): Promise<ThemeDraft> {
+    this.account(account);
+    if (!description.trim()) throw this.english() ? "describe the theme first" : "describe primero el tema";
+    await this.pause();
+    if (this.describeFailure) throw this.describeFailure;
+    const text = description.toLowerCase();
+    const match =
+      Object.values(MOCK_THEME_SEEDS).find((s) => s.words.some((w) => text.includes(w)) && (!base || s.base === base)) ??
+      (base === "light" || (!base && /claro|light/.test(text)) ? MOCK_THEME_SEEDS.notebook : MOCK_THEME_SEEDS.calm);
+    const name = description.trim().replace(/\s+/g, " ");
+    return {
+      name: name.length > 32 ? `${name.slice(0, 31)}…` : name.charAt(0).toUpperCase() + name.slice(1),
+      base: match.base,
+      colors: { ...match.seed },
+    };
   }
 
   // --------------------------------------------------------------- usage
@@ -912,6 +973,8 @@ export class MockApi implements HedyApi {
 
   async setSetting(key: string, value: string | null): Promise<void> {
     if (key === "ui.theme") this.state.theme = (value ?? "system") as Overview["theme"];
+    if (key === "ui.theme.dark") this.state.themeDark = value ?? "tokyo-night";
+    if (key === "ui.theme.light") this.state.themeLight = value ?? "burbuja";
     if (key === "ui.name") this.state.userName = value ?? "Alex";
     if (key === "ui.language") this.state.language = (value ?? "system") as Overview["language"];
     if (key === "ui.onboarded") this.state.onboarded = value === "true";

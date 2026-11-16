@@ -6,7 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 import { useApi } from "../../api/context";
 import type { TerminalRequest } from "../../api/types";
 import { useT } from "../../i18n";
-import { useThemeName } from "../../theme/ThemeProvider";
+import { useThemeTokens } from "../../theme/ThemeProvider";
 import { terminalTheme } from "../../theme/tokens";
 
 function decode(base64: string): Uint8Array {
@@ -22,7 +22,7 @@ interface TerminalViewProps {
 /** One xterm.js instance bound to one backend PTY for its whole lifetime. */
 export function TerminalView({ request, active, onExit }: TerminalViewProps) {
   const api = useApi();
-  const theme = useThemeName();
+  const theme = useThemeTokens();
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<Terminal | null>(null);
   const fit = useRef<FitAddon | null>(null);
