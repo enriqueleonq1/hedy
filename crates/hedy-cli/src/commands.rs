@@ -1997,12 +1997,12 @@ mod tests {
     #[test]
     fn summary_shows_the_api_key_cost_as_an_estimate() {
         let text = report(vec![
-            usage_of("moira", Some("León Blanco"), 4_000, Some(1.5)),
+            usage_of("moira", Some("Estudio Norte"), 4_000, Some(1.5)),
             usage_of("citas", None, 2_000, None),
         ]);
         assert!(text.contains("$1,50 de costo estimado (API key)"), "{text}");
         assert!(text.contains("Por cliente"));
-        assert!(text.contains("León Blanco"));
+        assert!(text.contains("Estudio Norte"));
         assert!(text.contains("Sin cliente"));
         assert!(text.contains("solo cuenta las cuentas con API key"));
         assert!(!text.contains("`hedy client <nombre>`"));

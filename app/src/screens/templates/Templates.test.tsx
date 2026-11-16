@@ -100,10 +100,10 @@ describe("Prompt templates", () => {
     const dialog = screen.getByRole("dialog", { name: "Nueva plantilla" });
     await user.type(within(dialog).getByLabelText("Nombre"), "Migrar datos");
     await user.type(within(dialog).getByLabelText("Texto"), "Escribe la migración de {{tabla}");
-    await chooseOption(user, within(dialog).getByLabelText("Para"), "Solo homming");
+    await chooseOption(user, within(dialog).getByLabelText("Para"), "Solo tienda");
     await user.click(within(dialog).getByRole("button", { name: "Guardar plantilla" }));
     expect(await within(section).findByText("Migrar datos")).toBeInTheDocument();
-    expect(within(section).getByText("Solo homming")).toBeInTheDocument();
+    expect(within(section).getByText("Solo tienda")).toBeInTheDocument();
 
     await user.click(within(section).getByRole("button", { name: "Editar Migrar datos" }));
     const edit = screen.getByRole("dialog", { name: "Editar plantilla" });

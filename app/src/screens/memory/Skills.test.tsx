@@ -114,7 +114,7 @@ describe("Skills", () => {
     api.delayMs = 0;
     for (const skill of (await api.skills("/code/hedy")).approved) await api.removeSkill(skill.id);
     for (const p of (await api.skills("/code/hedy")).proposed) await api.rejectSkill(p.skill.id);
-    history.replaceState(null, "", `#k=${encodeURIComponent("/code/homming")}`);
+    history.replaceState(null, "", `#k=${encodeURIComponent("/code/tienda")}`);
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     expect(await screen.findByText("Todavía no hay habilidades.")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Durmiendo" })).toBeInTheDocument();

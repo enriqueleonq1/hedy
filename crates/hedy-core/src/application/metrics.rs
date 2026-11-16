@@ -193,10 +193,10 @@ mod tests {
         f.hedy.use_account(&moira, "personal", None).unwrap();
         f.hedy.use_account(&citas, "personal", None).unwrap();
         f.hedy
-            .set_project_client(&moira, Some(" León Blanco "))
+            .set_project_client(&moira, Some(" Estudio Norte "))
             .unwrap();
         f.hedy
-            .set_project_client(&citas, Some("León Blanco"))
+            .set_project_client(&citas, Some("Estudio Norte"))
             .unwrap();
         let now = f.hedy.now_secs();
         for (project, at, tokens) in [
@@ -222,7 +222,7 @@ mod tests {
             "older records are left out"
         );
         assert_eq!(summary.clients.len(), 1);
-        assert_eq!(summary.clients[0].client.as_deref(), Some("León Blanco"));
+        assert_eq!(summary.clients[0].client.as_deref(), Some("Estudio Norte"));
         assert_eq!(
             summary.clients[0].usage.cost_usd, None,
             "a subscription's cost is only the CLI's guess"

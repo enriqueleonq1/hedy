@@ -1,6 +1,6 @@
 // Sample repositories for `MockApi`'s code navigation: small, realistic and
 // deterministic. `/code/hedy` is a Python app (task s5 fixes the invoice
-// taxes); `/code/homming` a TypeScript shop panel.
+// taxes); `/code/tienda` a TypeScript shop panel.
 
 /** A file at the repository's `HEAD`. */
 export type SampleFile =
@@ -121,11 +121,11 @@ uv run pytest
 export const HEDY_REPO: SampleRepo = {
   branch: "main",
   commits: [
-    { hash: "a3f9c1e", author: "Enrique León", date: T0 - 2 * DAY, subject: "Arreglo del envío" },
-    { hash: "7bd20aa", author: "Enrique León", date: T0 - 5 * DAY, subject: "Plantillas de correo" },
+    { hash: "a3f9c1e", author: "Alex Ortega", date: T0 - 2 * DAY, subject: "Arreglo del envío" },
+    { hash: "7bd20aa", author: "Alex Ortega", date: T0 - 5 * DAY, subject: "Plantillas de correo" },
     { hash: "5c81d02", author: "Camila Rojas", date: T0 - 9 * DAY, subject: "Facturas con IVA" },
-    { hash: "2e4b7a9", author: "Enrique León", date: T0 - 15 * DAY, subject: "Citas y recordatorios" },
-    { hash: "0f12ab3", author: "Enrique León", date: T0 - 30 * DAY, subject: "Inicio" },
+    { hash: "2e4b7a9", author: "Alex Ortega", date: T0 - 15 * DAY, subject: "Citas y recordatorios" },
+    { hash: "0f12ab3", author: "Alex Ortega", date: T0 - 30 * DAY, subject: "Inicio" },
   ],
   files: {
     ".env.example": { kind: "locked", commits: ["0f12ab3"] },
@@ -261,7 +261,7 @@ export class Carrito {
 }
 `;
 
-export const HOMMING_REPO: SampleRepo = {
+export const TIENDA_REPO: SampleRepo = {
   branch: "main",
   commits: [
     { hash: "c41e9b2", author: "Camila Rojas", date: T0 - 1 * DAY, subject: "Descuentos por código" },
@@ -271,9 +271,9 @@ export const HOMMING_REPO: SampleRepo = {
   files: {
     ".env.example": { kind: "locked", commits: ["1a7c3e4"] },
     ".gitignore": text("node_modules/\ndist/\n.env\n", "1a7c3e4"),
-    "README.md": text("# Panel Homming\n\nCarrito y reportes para la tienda.\n\n## Desarrollo\n\n```sh\nnpm install\nnpm test\n```\n", "1a7c3e4"),
+    "README.md": text("# Panel Tienda\n\nCarrito y reportes para la tienda.\n\n## Desarrollo\n\n```sh\nnpm install\nnpm test\n```\n", "1a7c3e4"),
     "package.json": text(
-      '{\n  "name": "panel-homming",\n  "private": true,\n  "type": "module",\n  "scripts": {\n    "dev": "vite",\n    "test": "vitest run"\n  }\n}\n',
+      '{\n  "name": "panel-tienda",\n  "private": true,\n  "type": "module",\n  "scripts": {\n    "dev": "vite",\n    "test": "vitest run"\n  }\n}\n',
       "98d0f5a",
       "1a7c3e4",
     ),
@@ -334,5 +334,5 @@ export const HOMMING_REPO: SampleRepo = {
 
 export const SAMPLE_REPOS: Record<string, SampleRepo> = {
   "/code/hedy": HEDY_REPO,
-  "/code/homming": HOMMING_REPO,
+  "/code/tienda": TIENDA_REPO,
 };

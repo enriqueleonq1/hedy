@@ -127,7 +127,7 @@ describe("review comments", () => {
   });
 
   it("queues the follow-up while the agent works, like the composer", async () => {
-    const { api, result } = await setup("s4", "/code/homming");
+    const { api, result } = await setup("s4", "/code/tienda");
     const copy = { kind: "task" as const, task: "s4" };
     act(() => {
       result.current.add({ copy, path: "carrito.ts", line: 2, side: "new", text: "Revisa esto", code: "x" });

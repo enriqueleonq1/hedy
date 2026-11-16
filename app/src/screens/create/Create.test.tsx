@@ -24,7 +24,7 @@ describe("Starting something new", () => {
 
   it("offers the three ways to start from one calm menu on home", async () => {
     const { user } = setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     const trigger = screen.getByRole("button", { name: "Empezar algo nuevo" });
     expect(trigger).toHaveTextContent("Nuevo");
     await user.click(trigger);
@@ -42,7 +42,7 @@ describe("Starting something new", () => {
   it("creates a project from a name and lands in its composer, ready to type", async () => {
     const { api, user } = setup();
     const create = vi.spyOn(api, "newProject");
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     await user.click(screen.getByRole("button", { name: "Empezar algo nuevo" }));
     await user.click(screen.getByRole("menuitem", { name: /Nuevo proyecto/ }));
 
@@ -89,7 +89,7 @@ describe("Starting something new", () => {
   it("asks a quick question outside any project: type, Enter, done", async () => {
     const { api, user } = setup();
     const start = vi.spyOn(api, "startConversation");
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     await user.click(screen.getByRole("button", { name: "Pregunta rápida" }));
 
     expect(await screen.findByRole("heading", { name: "Pregunta rápida" })).toBeInTheDocument();
@@ -150,7 +150,7 @@ describe("Starting something new", () => {
 
   it("turns what was typed in the palette into a question", async () => {
     const { user } = setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     await user.keyboard("{Control>}k{/Control}");
     await user.type(screen.getByRole("combobox"), "cómo funciona OIDC");
     const ask = screen.getAllByRole("option").at(-1)!;

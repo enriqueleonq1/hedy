@@ -1189,7 +1189,7 @@ mod tests {
                     model: Some("kimi-k3".into()),
                 },
             )]),
-            ..Project::new("/code/homming".into())
+            ..Project::new("/code/tienda".into())
         };
         store.save_project(&project).unwrap();
         store.save_project(&project).unwrap();

@@ -202,7 +202,7 @@ fn renaming_an_account_keeps_its_id() {
 #[test]
 fn status_shows_login_without_identifying_data() {
     let env = Env::new();
-    let repo = env.repo("code/homming");
+    let repo = env.repo("code/tienda");
     env.hedy(&["account", "add", "Claude trabajo", "--claude", "--no-login"])
         .assert()
         .success();
@@ -212,7 +212,7 @@ fn status_shows_login_without_identifying_data() {
     env.hedy_in(&repo, &["status"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Proyecto homming"))
+        .stdout(predicate::str::contains("Proyecto tienda"))
         .stdout(predicate::str::contains("conectada · max"))
         .stdout(predicate::str::contains("secret@example.com").not());
 }
@@ -271,7 +271,7 @@ fn status_shows_plan_usage_from_claude_usage() {
 #[test]
 fn protected_projects_keep_their_account() {
     let env = Env::new();
-    let work = env.repo("code/homming");
+    let work = env.repo("code/tienda");
     let hobby = env.repo("code/hobby");
     // The first account becomes the default, and the default cannot be protected.
     for name in ["Claude personal", "Claude trabajo"] {
@@ -332,7 +332,7 @@ fn completions_for_every_shell() {
 fn client_and_summary() {
     let env = Env::new();
     let repo = env.repo("code/moira");
-    env.hedy(&["-C", repo.to_str().unwrap(), "client", "León Blanco"])
+    env.hedy(&["-C", repo.to_str().unwrap(), "client", "Estudio Norte"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("no es un proyecto"));
@@ -342,10 +342,10 @@ fn client_and_summary() {
     env.hedy(&["-C", repo.to_str().unwrap(), "use", "personal"])
         .assert()
         .success();
-    env.hedy(&["-C", repo.to_str().unwrap(), "client", "León Blanco"])
+    env.hedy(&["-C", repo.to_str().unwrap(), "client", "Estudio Norte"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("moira es para León Blanco"));
+        .stdout(predicate::str::contains("moira es para Estudio Norte"));
     env.hedy(&["summary", "--week"])
         .assert()
         .success()

@@ -849,7 +849,7 @@ mod tests {
             Color::nth_in_palette(0),
         )
         .unwrap();
-        let project = Project::new("/code/homming".into());
+        let project = Project::new("/code/tienda".into());
         let dto = AccountDto::new(
             &account,
             &LoginState::LoggedIn {
@@ -864,7 +864,7 @@ mod tests {
         assert_eq!(json["color"], "#7AA2F7");
         assert_eq!(json["login"]["state"], "loggedIn");
         assert_eq!(json["login"]["plan"], "team");
-        assert_eq!(json["projects"][0], "/code/homming");
+        assert_eq!(json["projects"][0], "/code/tienda");
     }
 
     #[test]

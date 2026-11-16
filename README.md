@@ -22,7 +22,7 @@ hedy account add "Claude trabajo" --claude --default-folder
 hedy account add "Claude personal" --claude
 hedy account default claude-personal
 
-cd ~/code/homming; hedy use claude-trabajo   # add --protect to reserve it for this project
+cd ~/code/tienda; hedy use claude-trabajo    # add --protect to reserve it for this project
 hedy run                                      # opens `claude` with the right account
 hedy status                                   # accounts, logins and current project
 ```

@@ -94,15 +94,15 @@ mod tests {
         f.add_claude("Personal");
         f.add_claude("Trabajo");
         f.hedy
-            .use_account(&f.dir("/code/homming"), "trabajo", None)
+            .use_account(&f.dir("/code/tienda"), "trabajo", None)
             .unwrap();
         let r = f
             .hedy
-            .resolve_run(&f.dir("/code/homming/api"), None, vec!["-c".into()])
+            .resolve_run(&f.dir("/code/tienda/api"), None, vec!["-c".into()])
             .unwrap();
         assert_eq!(r.account.id.as_str(), "trabajo");
         assert_eq!(r.spec.args, vec!["-c"]);
-        assert_eq!(r.spec.cwd, Some(f.dir("/code/homming/api")));
+        assert_eq!(r.spec.cwd, Some(f.dir("/code/tienda/api")));
         assert_eq!(
             r.spec.env,
             vec![("CLAUDE_CONFIG_DIR".into(), "/data/accounts/trabajo".into())]
@@ -131,11 +131,11 @@ mod tests {
         f.add_claude("Personal");
         f.add_claude("Trabajo");
         f.hedy
-            .use_account(&f.dir("/code/homming"), "trabajo", Some(true))
+            .use_account(&f.dir("/code/tienda"), "trabajo", Some(true))
             .unwrap();
         assert!(matches!(
             f.hedy
-                .resolve_run(&f.dir("/code/homming"), Some("personal"), vec![]),
+                .resolve_run(&f.dir("/code/tienda"), Some("personal"), vec![]),
             Err(AppError::Domain(DomainError::ProtectedProject { .. }))
         ));
         // And the reserved account is not used outside its project.
@@ -156,7 +156,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             f.hedy
-                .use_account(&f.dir("/code/homming"), "trabajo", Some(true)),
+                .use_account(&f.dir("/code/tienda"), "trabajo", Some(true)),
             Err(AppError::DefaultCannotBeProtected(_))
         ));
 
@@ -164,7 +164,7 @@ mod tests {
             .set_setting(Setting::DefaultAccount, Some("personal"))
             .unwrap();
         f.hedy
-            .use_account(&f.dir("/code/homming"), "trabajo", Some(true))
+            .use_account(&f.dir("/code/tienda"), "trabajo", Some(true))
             .unwrap();
         assert!(matches!(
             f.hedy.set_setting(Setting::DefaultAccount, Some("trabajo")),

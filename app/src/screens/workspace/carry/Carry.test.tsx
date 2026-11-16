@@ -105,7 +105,7 @@ describe("Carrying a conversation into a project", () => {
 
   it("offers a new project when there is none yet", async () => {
     const api = MockApi.withSampleData().withSampleActivity();
-    for (const project of ["/code/hedy", "/code/homming"]) await api.removeProject(project);
+    for (const project of ["/code/hedy", "/code/tienda"]) await api.removeProject(project);
     const { user } = setup("#c=c1", api);
     await conversationHeading();
     await user.click(header().getByRole("button", { name: "Llevar a un proyecto" }));

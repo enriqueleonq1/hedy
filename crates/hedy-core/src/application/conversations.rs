@@ -251,7 +251,7 @@ mod tests {
         f.add_claude("Personal");
         f.add_claude("Trabajo");
         f.hedy
-            .use_account(&f.dir("/code/homming"), "trabajo", Some(true))
+            .use_account(&f.dir("/code/tienda"), "trabajo", Some(true))
             .unwrap();
         let ids: Vec<String> = f
             .hedy

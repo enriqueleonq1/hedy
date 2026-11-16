@@ -74,7 +74,7 @@ describe("MockApi code navigation", () => {
     expect(await mock.readFile(HEDY, "no/existe.py")).toEqual({ kind: "missing" });
     expect(await mock.readFile(HEDY, "docs/borrador.md", "base")).toEqual({ kind: "missing" });
     expect(await mock.fileDiff(HEDY, ".env.example")).toMatchObject({ body: { kind: "locked" } });
-    await expect(mock.readFile(HEDY, "../homming/README.md")).rejects.toMatch(/no es un archivo/);
+    await expect(mock.readFile(HEDY, "../tienda/README.md")).rejects.toMatch(/no es un archivo/);
     await expect(mock.readFile(HEDY, "README.md", "--output=x")).rejects.toMatch(/no es un commit/);
     await mock.discardTask("s5");
     await expect(mock.codeTree(S5)).rejects.toMatch(/ya no están disponibles/);
@@ -117,7 +117,7 @@ describe("MockApi code navigation", () => {
       "iva_de_linea",
       "iva_total",
     ]);
-    const ts = await mock.fileSymbols({ kind: "folder", project: "/code/homming" }, "src/carrito/carrito.ts");
+    const ts = await mock.fileSymbols({ kind: "folder", project: "/code/tienda" }, "src/carrito/carrito.ts");
     expect(ts.map((s) => [s.name, s.kind])).toEqual([
       ["Carrito", "class"],
       ["agregar", "method"],

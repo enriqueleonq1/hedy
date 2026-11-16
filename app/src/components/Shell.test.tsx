@@ -24,7 +24,7 @@ describe("Shell", () => {
 
   it("navigates from the sidebar alone: no project tabs, no tip card", async () => {
     setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     expect(screen.queryByRole("navigation", { name: "Proyectos abiertos" })).not.toBeInTheDocument();
     expect(within(sidebar()).queryByRole("note")).not.toBeInTheDocument();
     expect(screen.queryByText(/lo leo de la CLI/)).not.toBeInTheDocument();
@@ -36,7 +36,7 @@ describe("Shell", () => {
 
   it("keeps plan usage out of the top bar and explains the figure once, in the status bar's tooltip", async () => {
     setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     expect(within(document.querySelector(".topbar") as HTMLElement).queryByText(/%/)).toBeNull();
     const bar = screen.getByRole("contentinfo", { name: "Barra de estado" });
     const account = within(bar).getByRole("button", { name: /Abrir la cuenta$/ });
@@ -46,8 +46,8 @@ describe("Shell", () => {
 
   it("jumps to the Nth sidebar project with Alt+digit, and the palette still switches projects", async () => {
     const { user } = setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
-    const projects = within(sidebar()).getAllByRole("button").filter((b) => b.closest("section") && /^(hedy|homming)/.test(b.textContent ?? ""));
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
+    const projects = within(sidebar()).getAllByRole("button").filter((b) => b.closest("section") && /^(hedy|tienda)/.test(b.textContent ?? ""));
     expect(projects.length).toBeGreaterThan(1);
     await user.keyboard("{Alt>}2{/Alt}");
     expect(projects[1]).toHaveAttribute("aria-current", "page");
@@ -58,14 +58,14 @@ describe("Shell", () => {
     expect(projects[0]).toHaveAttribute("aria-current", "page");
 
     await user.keyboard("{Control>}k{/Control}");
-    await user.type(screen.getByRole("combobox", { name: "Paleta de comandos" }), "hmng");
+    await user.type(screen.getByRole("combobox", { name: "Paleta de comandos" }), "tnda");
     await user.keyboard("{Enter}");
-    expect(within(sidebar()).getByRole("button", { name: /^homming/ })).toHaveAttribute("aria-current", "page");
+    expect(within(sidebar()).getByRole("button", { name: /^tienda/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("hides the sidebar in focus mode with Ctrl+\\ or from the palette, and leaves it from the top bar", async () => {
     const { user } = setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     const app = document.querySelector(".app")!;
     expect(app).not.toHaveClass("app--focus");
 
@@ -84,7 +84,7 @@ describe("Shell", () => {
 
   it("lists the shortcuts with ?, outside text fields, and from the palette", async () => {
     const { user } = setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
 
     await user.keyboard("?");
     const dialog = screen.getByRole("dialog", { name: "Atajos de teclado" });

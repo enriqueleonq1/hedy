@@ -153,7 +153,7 @@ describe("Status bar", () => {
 
   it("says the agent is working and goes to the composer", async () => {
     const composer = <textarea id="composer-input" aria-label="composer" />;
-    const { bar, user } = await renderBar({ screen: "workspace", project: "/code/homming", task: "s4" }, composer);
+    const { bar, user } = await renderBar({ screen: "workspace", project: "/code/tienda", task: "s4" }, composer);
     const agent = await within(bar).findByRole("button", { name: "Claude Opus está trabajando. Ir al cuadro de texto" });
     expect(agent).toHaveTextContent("Claude Opus trabajando…");
     expect(agent.querySelector(".statusbar__dot--working")).not.toBeNull();
@@ -167,7 +167,7 @@ describe("Status bar", () => {
         <button type="button">Permitir</button>
       </section>
     );
-    const { bar, user } = await renderBar({ screen: "workspace", project: "/code/homming", task: "s2" }, card);
+    const { bar, user } = await renderBar({ screen: "workspace", project: "/code/tienda", task: "s2" }, card);
     const agent = await within(bar).findByRole("button", { name: "Claude Opus espera tu respuesta. Ir a la tarjeta" });
     expect(agent).toHaveTextContent("Te espera");
     expect(agent).toHaveClass("statusbar__agent--waiting");
@@ -176,7 +176,7 @@ describe("Status bar", () => {
   });
 
   it("names the open task's account, else the project's", async () => {
-    const { bar } = await renderBar({ screen: "memory", project: "/code/homming" });
+    const { bar } = await renderBar({ screen: "memory", project: "/code/tienda" });
     expect(within(bar).getByRole("button", { name: /^Claude trabajo: .*Abrir la cuenta$/ })).toBeInTheDocument();
     // No agent, copy or file outside the workspace.
     await waitFor(() => expect(within(bar).getByRole("group", { name: "Tu carpeta" })).toBeInTheDocument());
