@@ -11,7 +11,7 @@ without mixing them up.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-7c5cff)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Linux-555)
-[![Release](https://img.shields.io/github/v/release/enriqueleonq1/hedy?color=7c5cff)](https://github.com/enriqueleonq1/hedy/releases)
+[![Release](https://img.shields.io/github/v/release/enriqueleonq1/hedy?color=7c5cff&label=release)](https://github.com/enriqueleonq1/hedy/releases)
 
 <a href="docs/media/hedy-intro.mp4">
   <img src="docs/media/hedy-intro.gif" width="860" alt="Hedy in 60 seconds: accounts, parallel tasks, review and shipping">
