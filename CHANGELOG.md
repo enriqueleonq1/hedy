@@ -6,6 +6,18 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-16
+
+### Added
+
+- Your account's own slash commands in Hedy: custom commands, skills and plugin commands
+  (for example `/design`). Type `/` in the chat to see them next to your templates, with
+  what each one expects. They run as they would in the CLI. Hedy learns them from what the
+  CLI reports (Claude Code and the ACP agents), never by reading the account's folder.
+- `hedy commands` lists an account's slash commands, and `hedy ask "/design …"` runs one.
+- The terminal panel resizes like VS Code's: drag its top edge, double-click it or use
+  "Maximizar" to maximize and restore. Hedy remembers its height.
+
 ## [1.1.0] - 2026-11-16
 
 More of Hedy from the terminal.
@@ -91,7 +103,8 @@ The first public release. Linux only for now.
 - `hedy account`, `hedy use`, `hedy run`, `hedy status`, `hedy tasks`, `hedy doctor`,
   `hedy skills` and `hedy template`.
 
-[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/enriqueleonq1/hedy/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/enriqueleonq1/hedy/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/enriqueleonq1/hedy/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/enriqueleonq1/hedy/releases/tag/v1.0.0
