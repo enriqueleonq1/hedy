@@ -22,7 +22,12 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct OverviewDto {
     pub user_name: String,
+    /// The mode: `system`, `light` or `dark`.
     pub theme: String,
+    /// Theme used in dark mode: a preset id or `custom:<id>` (default `tokyo-night`).
+    pub theme_dark: String,
+    /// Theme used in light mode: a preset id or `custom:<id>` (default `burbuja`).
+    pub theme_light: String,
     /// `system`, `es` or `en`.
     pub language: String,
     /// The onboarding was finished or skipped.
@@ -800,6 +805,7 @@ pub fn overview(hedy: &Hedy, data_dir: &Path) -> AppResult<OverviewDto> {
         .map(|p| Ok((p.as_str(), hedy.setting(Setting::ApiPrice(p))?)))
         .collect::<AppResult<_>>()?;
 
+    let (theme_dark, theme_light) = hedy.mode_themes()?;
     Ok(OverviewDto {
         user_name: hedy
             .setting(Setting::UserName)?
@@ -807,6 +813,8 @@ pub fn overview(hedy: &Hedy, data_dir: &Path) -> AppResult<OverviewDto> {
         theme: hedy
             .setting(Setting::Theme)?
             .unwrap_or_else(|| "system".into()),
+        theme_dark,
+        theme_light,
         language: hedy
             .setting(Setting::Language)?
             .unwrap_or_else(|| "system".into()),

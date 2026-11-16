@@ -15,6 +15,7 @@ mod process;
 mod pty;
 mod ship;
 mod sqlite;
+mod themes;
 mod usage_probe;
 
 use std::sync::Arc;
@@ -33,6 +34,7 @@ pub use process::find_program;
 pub use pty::{PtyOutput, PtySession};
 pub use ship::{GhCli, GitSourceControl};
 pub use sqlite::SqliteStore;
+pub use themes::JsonThemeStore;
 pub use usage_probe::SystemUsageProbe;
 
 use crate::application::ports::{
@@ -174,6 +176,7 @@ fn build(paths: &HedyPaths, claude: ClaudeCodeLauncher) -> PortResult<Hedy> {
         usage: Arc::new(SystemUsageProbe),
         source: Arc::new(GitSourceControl),
         host: Arc::new(GhCli::default()),
+        themes: Arc::new(JsonThemeStore::new(paths.themes_dir())),
     });
     // The setting is read from the store: a failure keeps the system language.
     if hedy.apply_language().is_err() {

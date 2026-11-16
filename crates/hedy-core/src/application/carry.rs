@@ -206,7 +206,7 @@ impl Hedy {
             });
         }
         let answer = self.one_shot(OneShot {
-            task: id,
+            task: Some(id),
             account: &account,
             stage: &stage,
             cwd: task.work_dir(),

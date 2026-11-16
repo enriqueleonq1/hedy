@@ -7,6 +7,7 @@ mod dto;
 mod events;
 mod ship;
 mod terminal;
+mod themes;
 mod waits;
 
 use std::sync::Arc;
@@ -155,6 +156,10 @@ pub fn run() {
             ship::pull_request_draft,
             ship::create_pull_request,
             ship::suggest_commit_message,
+            themes::list_themes,
+            themes::save_theme,
+            themes::delete_theme,
+            themes::describe_theme,
         ])
         .run(tauri::generate_context!())
         .expect("error al ejecutar Hedy");

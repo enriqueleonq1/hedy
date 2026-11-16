@@ -507,8 +507,36 @@ impl Hedy {
         sample: &UsageSample,
     ) -> AppResult<()> {
         let task = self.task(id)?;
+        self.store.record_usage(&UsageRecord {
+            at: self.now_secs(),
+            account: spender.clone(),
+            project: task.project.clone(),
+            task: task.id.clone(),
+            sample: self.priced(spender, sample)?,
+        })?;
+        Ok(())
+    }
+
+    /// Records tokens spent outside any task (e.g. describing a theme): they
+    /// count for the account only, under no project.
+    pub(super) fn handle_account_usage(
+        &self,
+        spender: &AccountId,
+        sample: &UsageSample,
+    ) -> AppResult<()> {
+        self.store.record_usage(&UsageRecord {
+            at: self.now_secs(),
+            account: spender.clone(),
+            project: PathBuf::new(),
+            task: TaskId::new(""),
+            sample: self.priced(spender, sample)?,
+        })?;
+        Ok(())
+    }
+
+    /// API agents report tokens only; the cost comes from the user's price.
+    fn priced(&self, spender: &AccountId, sample: &UsageSample) -> AppResult<UsageSample> {
         let mut sample = sample.clone();
-        // API agents report tokens only; the cost comes from the user's price.
         if sample.cost_usd.is_none()
             && let Ok(account) = self.account(spender.as_str())
             && matches!(account.credentials, Credentials::ApiKey)
@@ -516,14 +544,7 @@ impl Hedy {
         {
             sample.cost_usd = Some(price.cost(&sample));
         }
-        self.store.record_usage(&UsageRecord {
-            at: self.now_secs(),
-            account: spender.clone(),
-            project: task.project.clone(),
-            task: task.id.clone(),
-            sample,
-        })?;
-        Ok(())
+        Ok(sample)
     }
 
     fn handle_event(&self, id: &TaskId, event: AgentEvent) -> AppResult<()> {

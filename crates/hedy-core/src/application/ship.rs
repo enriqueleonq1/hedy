@@ -556,6 +556,12 @@ impl Hedy {
         if task.wait.as_ref().is_some_and(|w| w.account == account.id) {
             return Ok(true);
         }
+        self.account_at_limit(account)
+    }
+
+    /// Whether `account`'s last report said it is at its limit, or a plan
+    /// window is full.
+    pub(super) fn account_at_limit(&self, account: &Account) -> AppResult<bool> {
         let now = self.now_secs();
         if let Some(limit) = self.store.rate_limit(&account.id)?
             && LimitLevel::from_report(&limit.status, limit.utilization)
@@ -614,7 +620,7 @@ impl Hedy {
             &diff_for_prompt(&diff, SUGGESTION_DIFF_MAX),
         );
         let answer = self.one_shot(OneShot {
-            task: id,
+            task: Some(id),
             account: &account,
             stage: &stage,
             cwd: ws.worktree.clone(),

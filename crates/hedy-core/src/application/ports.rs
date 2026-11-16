@@ -9,6 +9,7 @@ use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, ImageSupport,
     LaunchSpec, Note, NoteStatus, Notice, Phase, PlanUsage, Project, PromptImage, QueuedMessage,
     Skill, SkillStatus, Task, TaskId, TaskMode, UsageProblem, UsageSample, plan_usage::WallTime,
+    theme::CustomTheme,
 };
 
 /// Failure in an adapter. The message is user-facing (Spanish).
@@ -73,7 +74,10 @@ pub trait TaskRepository: Send + Sync {
 pub struct UsageRecord {
     pub at: i64,
     pub account: AccountId,
+    /// Empty for tokens spent outside any task (they count for the account
+    /// only).
     pub project: PathBuf,
+    /// Empty outside any task.
     pub task: TaskId,
     pub sample: UsageSample,
 }
@@ -568,6 +572,20 @@ pub struct NoTaskEvents;
 impl TaskEvents for NoTaskEvents {
     fn event(&self, _: &TaskId, _: &AgentEvent) {}
     fn task_updated(&self, _: &Task) {}
+}
+
+/// The user's custom themes, one shareable file each.
+pub trait ThemeStore: Send + Sync {
+    /// Every readable, valid theme; a broken one is skipped, not an error.
+    fn list(&self) -> PortResult<Vec<CustomTheme>>;
+    fn get(&self, id: &str) -> PortResult<Option<CustomTheme>>;
+    /// Creates the theme or replaces the one with its id.
+    fn save(&self, theme: &CustomTheme) -> PortResult<()>;
+    /// Nothing happens when there is no such theme.
+    fn delete(&self, id: &str) -> PortResult<()>;
+    /// An existing folder (created when missing) where an agent asked to
+    /// describe a theme can run: outside any project.
+    fn work_dir(&self) -> PortResult<PathBuf>;
 }
 
 pub trait FileSystem: Send + Sync {

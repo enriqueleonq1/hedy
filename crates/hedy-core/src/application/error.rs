@@ -143,6 +143,16 @@ pub enum AppError {
     SummaryFailed(Option<String>),
     #[error("{}", self.message())]
     SummaryTimedOut,
+    #[error("{}", self.message())]
+    ThemeNotFound(String),
+    /// Rule 3: the chosen account is at its limit; no other is used.
+    #[error("{}", self.message())]
+    ThemeAtLimit { account: String },
+    /// No usable theme came back (with the agent's error, if any).
+    #[error("{}", self.message())]
+    ThemeDescriptionFailed(Option<String>),
+    #[error("{}", self.message())]
+    ThemeDescriptionTimedOut,
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -435,6 +445,27 @@ impl AppError {
             Self::SummaryTimedOut => tr!(
                 "la IA tardó demasiado en resumir; vuelve a intentarlo o lleva las preguntas tal cual",
                 "the AI took too long to summarize; try again or carry the questions as they are"
+            ),
+            Self::ThemeNotFound(id) => {
+                tr!("no existe el tema «{id}»", "theme «{id}» does not exist")
+            }
+            Self::ThemeAtLimit { account } => tr!(
+                "la cuenta «{account}» está en su límite. Hedy no usa otra cuenta: elige otra tú, espera a que se renueve o importa un tema de VS Code",
+                "account «{account}» is at its limit. Hedy does not use another account: pick another one yourself, wait for it to renew or import a VS Code theme"
+            ),
+            Self::ThemeDescriptionFailed(detail) => match detail {
+                Some(detail) => tr!(
+                    "no se pudo crear el tema: {detail}",
+                    "could not create the theme: {detail}"
+                ),
+                None => tr!(
+                    "la IA no devolvió un tema válido; vuelve a intentarlo o describe el tema de otra forma",
+                    "the AI did not return a valid theme; try again or describe the theme another way"
+                ),
+            },
+            Self::ThemeDescriptionTimedOut => tr!(
+                "la IA tardó demasiado en crear el tema; vuelve a intentarlo",
+                "the AI took too long to create the theme; try again"
             ),
         }
     }
