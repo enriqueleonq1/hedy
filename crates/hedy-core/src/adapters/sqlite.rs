@@ -568,6 +568,21 @@ impl TaskRepository for SqliteStore {
             .collect()
     }
 
+    fn continuations(&self, conversation: &TaskId) -> PortResult<Vec<Task>> {
+        // The origin lives in the task's JSON too: no migration.
+        let rows: Vec<String> = self.with(|c| {
+            c.prepare(
+                "SELECT data FROM tasks WHERE json_extract(data, '$.origin.conversation') = ?1
+                 ORDER BY created_at DESC, id DESC",
+            )?
+            .query_map([conversation.as_str()], |r| r.get(0))?
+            .collect()
+        })?;
+        rows.iter()
+            .map(|d| serde_json::from_str(d).map_err(json_error))
+            .collect()
+    }
+
     fn delete_task(&self, id: &TaskId) -> PortResult<()> {
         // Events and queued messages go with it (ON DELETE CASCADE).
         self.with(|c| {
@@ -1215,6 +1230,7 @@ mod tests {
             wait: None,
             conversation: false,
             ship: None,
+            origin: None,
         };
         // Old but still running; old with a recent event; recent; old and done.
         let running = task("t1", "/code/a", 10, TaskStatus::Running);
@@ -1260,6 +1276,7 @@ mod tests {
             wait: None,
             conversation: false,
             ship: None,
+            origin: None,
         };
         store.save_task(&task).unwrap();
         assert!(store.waiting_tasks().unwrap().is_empty());
@@ -1318,6 +1335,7 @@ mod tests {
             wait: None,
             conversation,
             ship: None,
+            origin: None,
         };
         let (chat, other) = (task("c1", true), task("t1", false));
         store.save_task(&chat).unwrap();
@@ -1338,6 +1356,57 @@ mod tests {
         assert_eq!(store.task(&chat.id).unwrap(), None);
         assert!(store.events(&chat.id).unwrap().is_empty());
         assert_eq!(store.task(&other.id).unwrap(), Some(other));
+    }
+
+    #[test]
+    fn a_task_keeps_its_origin_and_is_listed_as_a_continuation() {
+        let store = SqliteStore::in_memory().unwrap();
+        let task = |id: &str, created_at: i64, origin: Option<crate::domain::TaskOrigin>| Task {
+            images: Vec::new(),
+            id: TaskId::new(id),
+            project: "/code/moira".into(),
+            mode: crate::domain::TaskMode::Project,
+            title: "Crea el esquema".into(),
+            prompt: "Crea el esquema".into(),
+            account: AccountId::new("personal").unwrap(),
+            model: None,
+            workspace: None,
+            session_id: None,
+            status: crate::domain::TaskStatus::Review,
+            created_at,
+            stages: vec![],
+            stage: 0,
+            plan: None,
+            merge: None,
+            wait: None,
+            conversation: false,
+            ship: None,
+            origin,
+        };
+        let origin = crate::domain::TaskOrigin {
+            conversation: TaskId::new("c1"),
+            title: "Base de datos".into(),
+            context: "--- Contexto ---".into(),
+        };
+        let (first, second, plain) = (
+            task("t1", 10, Some(origin.clone())),
+            task("t2", 20, Some(origin)),
+            task("t3", 30, None),
+        );
+        for t in [&first, &second, &plain] {
+            store.save_task(t).unwrap();
+        }
+        assert_eq!(store.task(&first.id).unwrap(), Some(first.clone()));
+        assert_eq!(
+            store.continuations(&TaskId::new("c1")).unwrap(),
+            vec![second, first]
+        );
+        assert!(store.continuations(&TaskId::new("c2")).unwrap().is_empty());
+        // A task without an origin stores no field for it.
+        let data: String = store
+            .with(|c| c.query_row("SELECT data FROM tasks WHERE id = 't3'", [], |r| r.get(0)))
+            .unwrap();
+        assert!(!data.contains("origin"));
     }
 
     #[test]
@@ -1369,6 +1438,7 @@ mod tests {
             wait: None,
             conversation: false,
             ship: None,
+            origin: None,
         };
         let (old, new) = (task("t1", 10), task("t2", 20));
         store.save_task(&old).unwrap();

@@ -343,6 +343,22 @@ impl TaskRepository for MemoryStore {
         tasks.sort_by_key(|t| std::cmp::Reverse(t.created_at));
         Ok(tasks)
     }
+    fn continuations(&self, conversation: &TaskId) -> PortResult<Vec<Task>> {
+        let mut tasks: Vec<_> = self
+            .tasks
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|t| {
+                t.origin
+                    .as_ref()
+                    .is_some_and(|o| &o.conversation == conversation)
+            })
+            .cloned()
+            .collect();
+        tasks.sort_by_key(|t| std::cmp::Reverse(t.created_at));
+        Ok(tasks)
+    }
     fn delete_task(&self, id: &TaskId) -> PortResult<()> {
         self.tasks.lock().unwrap().retain(|t| &t.id != id);
         self.events.lock().unwrap().remove(id);

@@ -128,6 +128,7 @@ mod tests {
                 wait: None,
                 conversation: false,
                 ship: None,
+                origin: None,
             })
             .unwrap();
         store
