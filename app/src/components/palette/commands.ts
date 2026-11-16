@@ -15,7 +15,7 @@ import { STATE_LABEL } from "../../screens/activity/ActivityScreen";
 import { accountSubtitle } from "../accounts";
 import { useFocusMode } from "../focusMode";
 import { taskView, type View } from "../Layout";
-import { headlineText } from "../planUsage";
+import { headlineText, usePlanRefreshActions } from "../planUsage";
 import { projectColor, useProjectActions } from "../projects";
 import { useShortcuts } from "../shortcuts";
 import { useToast } from "../ui/Toast";
@@ -72,6 +72,7 @@ export function usePaletteCommands({
   const create = useCreate();
   const focusMode = useFocusMode();
   const shortcuts = useShortcuts();
+  const plans = usePlanRefreshActions();
   const assign = useAction(
     (a, vars: { project: Project; account: string }) => a.useAccount(vars.project.path, vars.account),
     {
@@ -258,6 +259,15 @@ export function usePaletteCommands({
         }),
       });
     }
+  }
+
+  if (overview.accounts.some((a) => a.usage.plan.supported)) {
+    commands.push({
+      id: "accounts:refreshUsage",
+      group: "actions",
+      label: t("palette.refreshUsage"),
+      run: plans.refreshAll,
+    });
   }
 
   for (const account of overview.accounts) {

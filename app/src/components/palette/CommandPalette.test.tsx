@@ -118,6 +118,19 @@ describe("Command palette", () => {
     expect(await screen.findByText("hedy ahora trabaja con ChatGPT")).toBeInTheDocument();
   });
 
+  it("reads every plan's usage again on demand", async () => {
+    const { api, user } = setup();
+    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    const refresh = vi.spyOn(api, "refreshPlanUsage");
+    await user.keyboard("{Control>}k{/Control}");
+    await user.type(screen.getByRole("combobox"), "actualizar uso");
+    await waitFor(() => expect(options()[0]).toBe("Actualizar uso de los planes"));
+    await user.keyboard("{Enter}");
+    expect(refresh).toHaveBeenCalledWith("claude-personal");
+    expect(refresh).toHaveBeenCalledWith("claude-trabajo");
+    expect(await screen.findByText("Uso de los planes actualizado")).toBeInTheDocument();
+  });
+
   it("goes back from a page with Escape, then closes and gives the focus back", async () => {
     const { user } = setup();
     await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
