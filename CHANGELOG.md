@@ -6,6 +6,29 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-16
+
+More of Hedy from the terminal.
+
+### Added
+
+- `hedy ask "…"` asks a quick question from the terminal and streams the answer. It is
+  stored as an ordinary conversation, so it also shows up in Hedy → Conversations, where
+  you can keep chatting or carry it into a project. `-c` follows up, `-m` picks the model,
+  `-r` researches, `--json` is for scripts, and it reads from a pipe
+  (`git diff | hedy ask "anything odd here?"`).
+- `hedy usage` shows how much of its plan each account has used, like `/usage` in each CLI,
+  with when each window renews. `hedy usage --short` prints one line for a shell prompt or
+  a status bar (`CP 83% · CT 34%`).
+- `hedy run` warns before opening a CLI whose account is at 90 % or more of a window, and
+  asks before going on. It never switches accounts by itself.
+- `hedy commit` suggests a commit message for what you staged, using one of your accounts,
+  and commits with your own git (hooks and signing included). `--print` only prints it.
+
+### Changed
+
+- The app notices conversations started from the terminal without a restart.
+
 ## [1.0.1] - 2026-11-16
 
 ### Fixed
@@ -68,6 +91,7 @@ The first public release. Linux only for now.
 - `hedy account`, `hedy use`, `hedy run`, `hedy status`, `hedy tasks`, `hedy doctor`,
   `hedy skills` and `hedy template`.
 
-[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/enriqueleonq1/hedy/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/enriqueleonq1/hedy/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/enriqueleonq1/hedy/releases/tag/v1.0.0

@@ -1816,7 +1816,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hedy-app"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "base64 0.23.1",
  "hedy-core",
@@ -1832,7 +1832,7 @@ dependencies = [
 
 [[package]]
 name = "hedy-cli"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1849,7 +1849,7 @@ dependencies = [
 
 [[package]]
 name = "hedy-core"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "base64 0.23.1",
  "directories",
@@ -1868,7 +1868,7 @@ dependencies = [
 
 [[package]]
 name = "hedy-evals"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1881,7 +1881,7 @@ dependencies = [
 
 [[package]]
 name = "hedy-memory"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "hedy-core",
