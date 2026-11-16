@@ -33,6 +33,10 @@ import type {
   ShipState,
   Account,
   Attachment,
+  CarryInput,
+  ContextTurn,
+  ConversationContext,
+  TaskOrigin,
   ImageInput,
   ImageMediaType,
   ImageSupport,
@@ -1245,9 +1249,12 @@ export class MockApi implements HedyApi {
     const project = this.project(input.project);
     if (!project.account) throw "este proyecto no tiene cuenta";
     if (!input.prompt.trim()) throw "escribe qué quieres que haga";
+    const carried = input.carry ? await this.carried(input.carry, project.account, input.images?.length ?? 0) : null;
     const id = `t${++this.nextTask}`;
-    const images = await this.storeImages(id, project.account, input.images);
+    const own = await this.storeImages(id, project.account, input.images);
+    const images = [...own, ...(carried?.images ?? []).map((image) => this.copyAttachment(carried?.origin.conversation ?? "", id, image))];
     const title = (input.prompt.split("\n")[0] ?? "").slice(0, 60);
+    const prompt = carried ? `${carried.origin.context}\n\n${input.prompt.trim()}` : input.prompt;
     const planFirst = input.planFirst && input.mode === "project";
     const stage = (phase: "plan" | "implement") => ({ phase, account: project.account ?? "", model: input.model });
     const task: Task = {
@@ -1255,7 +1262,7 @@ export class MockApi implements HedyApi {
       project: project.path,
       mode: input.mode,
       title,
-      prompt: input.prompt,
+      prompt,
       account: project.account,
       model: input.model,
       workspace:
@@ -1274,11 +1281,12 @@ export class MockApi implements HedyApi {
       stage: 0,
       live: true,
       ...(images.length ? { images } : {}),
+      ...(carried ? { origin: carried.origin } : {}),
     };
     this.tasksById.set(id, task);
     this.eventsById.set(id, []);
     this.diffs.set(id, []);
-    this.push(id, images.length ? { kind: "userMessage", text: input.prompt, images } : { kind: "userMessage", text: input.prompt });
+    this.push(id, images.length ? { kind: "userMessage", text: prompt, images } : { kind: "userMessage", text: prompt });
     this.script(id, [
       { kind: "phaseStarted", phase: planFirst ? "plan" : "implement", agent: "Claude Opus", account: "Claude personal" },
       { kind: "sessionStarted", sessionId: `s-${id}`, model: "claude-opus-5-5" },
@@ -1350,6 +1358,151 @@ export class MockApi implements HedyApi {
       .filter((t) => t.conversation)
       .sort((a, b) => b.createdAt - a.createdAt)
       .map((t) => ({ ...t }));
+  }
+
+  // ------------------------------------------------ carrying a conversation
+  // Like the backend: questions with their final answers, a delimited context
+  // that opens the task's prompt, a summary by the conversation's own account.
+
+  /** What "Resumir con IA" answers next: a summary or an error (test helper). */
+  summary: string | { error: string } =
+    "- OAuth 2.0 autoriza el acceso de una app a tus datos.\n- OpenID Connect va encima y autentica con un ID token.";
+
+  private conversationTask(id: string): Task {
+    const task = this.tasksById.get(id);
+    if (!task) throw `no existe la tarea ${id}`;
+    if (!task.conversation) throw `la tarea ${id} es de un proyecto, no una conversación`;
+    return task;
+  }
+
+  private turns(id: string): ContextTurn[] {
+    const turns: ContextTurn[] = [];
+    let open: { question: string; images: Attachment[]; last: string | null; answer: string | null } | null = null;
+    const close = () => {
+      const answer = (open?.answer ?? open?.last ?? "").trim();
+      if (open && answer && open.question.trim()) turns.push({ question: open.question.trim(), answer, images: open.images });
+      open = null;
+    };
+    for (const event of this.eventsById.get(id) ?? []) {
+      if (event.kind === "userMessage") {
+        close();
+        open = { question: event.text, images: event.images ?? [], last: null, answer: null };
+      } else if (event.kind === "message" && open && event.text.trim()) {
+        open.last = event.text;
+      } else if (event.kind === "finished" && open && event.ok && event.summary.trim()) {
+        open.answer = event.summary;
+      }
+    }
+    close();
+    return turns;
+  }
+
+  private contextSection(title: string, turns: ContextTurn[], summary: string | null, attached: boolean): string {
+    const en = this.english();
+    const lines = [
+      en ? `--- Context: conversation «${title}» ---` : `--- Contexto: conversación «${title}» ---`,
+      en
+        ? "It comes from a quick question asked in Hedy outside this project. Use it as context; the instruction follows this block."
+        : "Viene de una pregunta rápida hecha en Hedy fuera de este proyecto. Úsala como contexto; la instrucción va después de este bloque.",
+      "",
+    ];
+    if (summary) {
+      lines.push(en ? "Summary of the conversation (made with AI):" : "Resumen de la conversación (hecho con IA):", summary, "");
+    } else {
+      turns.forEach((turn, i) => {
+        lines.push(en ? `Question ${i + 1}:` : `Pregunta ${i + 1}:`, turn.question);
+        if (turn.images.length) {
+          const names = turn.images.map((image) => image.name).join(", ");
+          lines.push(en ? `(Images: ${names})` : `(Imágenes: ${names})`);
+        }
+        lines.push("", en ? `Answer ${i + 1}:` : `Respuesta ${i + 1}:`, turn.answer, "");
+      });
+    }
+    if (turns.some((turn) => turn.images.length)) {
+      lines.push(
+        attached
+          ? en
+            ? "The conversation's images are attached to this message."
+            : "Las imágenes de la conversación van adjuntas a este mensaje."
+          : en
+            ? "The conversation's images are not attached: they are only named."
+            : "Las imágenes de la conversación no van adjuntas: solo se nombran.",
+        "",
+      );
+    }
+    lines.push(en ? "--- End of context ---" : "--- Fin del contexto ---");
+    return lines.join("\n");
+  }
+
+  private async carried(carry: CarryInput, account: string, ownImages: number) {
+    const conversation = this.conversationTask(carry.conversation);
+    if (this.busy(conversation)) throw "la conversación todavía está respondiendo; espera a que termine para llevarla a un proyecto";
+    const kept = this.turns(conversation.id).filter((_, i) => carry.turns.includes(i));
+    const summary = carry.summary?.trim() || null;
+    if (kept.length === 0 && !summary) throw "no queda nada de la conversación para llevar";
+    const wanted = kept.flatMap((turn) => turn.images);
+    const attach = wanted.length > 0 && ownImages + wanted.length <= MAX_IMAGES && (await this.imageSupport(account)) !== "no";
+    const origin: TaskOrigin = {
+      conversation: conversation.id,
+      title: conversation.title,
+      context: this.contextSection(conversation.title, kept, summary, attach),
+    };
+    return { origin, images: attach ? wanted : [] };
+  }
+
+  private copyAttachment(from: string, to: string, image: Attachment): Attachment {
+    const data = this.attachments.get(`${from}/${image.file}`);
+    if (data) this.attachments.set(`${to}/${image.file}`, data);
+    return { ...image };
+  }
+
+  async conversationContext(id: string): Promise<ConversationContext> {
+    const task = this.conversationTask(id);
+    const slug = task.title
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .split(/[^a-z0-9_]+/)
+      .filter(Boolean);
+    const stop = new Set(["a", "al", "an", "and", "como", "con", "cual", "de", "del", "do", "el", "en", "es", "hay", "how", "i", "is", "la", "las", "los", "me", "of", "para", "por", "que", "the", "to", "un", "una", "what", "y"]);
+    const words = slug.filter((w) => !stop.has(w)).slice(0, 4);
+    return {
+      conversation: task.id,
+      title: task.title,
+      turns: this.turns(id),
+      suggestedName: (words.length ? words : slug.slice(0, 4)).join("-") || (this.english() ? "project" : "proyecto"),
+      longAfter: 12_000,
+      busy: this.busy(task),
+    };
+  }
+
+  async summarizeConversation(id: string, turns: number[]): Promise<string> {
+    const task = this.conversationTask(id);
+    if (this.busy(task)) throw "la conversación todavía está respondiendo";
+    if (!this.turns(id).some((_, i) => turns.includes(i))) throw "no queda nada de la conversación para llevar";
+    await this.pause();
+    if (typeof this.summary !== "string") throw this.summary.error;
+    return this.summary;
+  }
+
+  async continuations(id: string): Promise<Task[]> {
+    return [...this.tasksById.values()]
+      .filter((t) => t.origin?.conversation === id)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((t) => ({ ...t }));
+  }
+
+  async saveConversationNote(
+    conversation: string,
+    project: string,
+    title: string,
+    text: string,
+    category: NoteCategory,
+  ): Promise<Note> {
+    this.conversationTask(conversation);
+    this.project(project);
+    const body = [title.trim(), text.trim()].filter(Boolean).join("\n\n");
+    return this.addNote(project, body, category);
   }
 
   async conversationAccounts(): Promise<string[]> {

@@ -324,6 +324,48 @@ export interface Task {
   images?: Attachment[];
   /** Where accepting put the work and what Hedy published of it. */
   ship?: Shipment | null;
+  /** The conversation this task continues: its prompt opens with `origin.context`. */
+  origin?: TaskOrigin | null;
+}
+
+// ------------------------------------------------- carrying a conversation
+
+/** Where a task came from: the conversation it continues ("Llevar a un proyecto"). */
+export interface TaskOrigin {
+  conversation: string;
+  /** The conversation's title when it was carried (kept after it is deleted). */
+  title: string;
+  /** The delimited context section that opens the task's prompt. */
+  context: string;
+}
+
+/** A question of a conversation with the agent's final answer. */
+export interface ContextTurn {
+  question: string;
+  answer: string;
+  images: Attachment[];
+}
+
+/** What a conversation offers to carry into a project. */
+export interface ConversationContext {
+  conversation: string;
+  title: string;
+  turns: ContextTurn[];
+  /** A safe folder name from the title, for "Proyecto nuevo". */
+  suggestedName: string;
+  /** From this many characters the context is long: suggest "Resumir con IA". */
+  longAfter: number;
+  /** The agent is still answering: carrying waits for it. */
+  busy: boolean;
+}
+
+/** What of a conversation goes with a new task. */
+export interface CarryInput {
+  conversation: string;
+  /** Indexes of the kept turns. */
+  turns: number[];
+  /** A summary instead of the turns' text (their images still go). */
+  summary: string | null;
 }
 
 // ---------------------------------------------------------------- shipping
@@ -477,6 +519,8 @@ export interface NewTaskInput {
   model: string | null;
   planFirst: boolean;
   images?: ImageInput[];
+  /** A conversation carried into the task: its context opens the prompt. */
+  carry?: CarryInput;
 }
 
 /** The image formats every supported CLI takes. */

@@ -70,6 +70,11 @@ export const tauriApi: HedyApi = {
   taskEvents: (id) => invoke("task_events", { id }),
   startConversation: (input) => invoke("start_conversation", { input }),
   conversations: () => invoke("conversations"),
+  conversationContext: (id) => invoke("conversation_context", { id }),
+  summarizeConversation: (id, turns) => invoke("summarize_conversation", { id, turns }),
+  continuations: (id) => invoke("continuations", { id }),
+  saveConversationNote: (conversation, project, title, text, category) =>
+    invoke("save_conversation_note", { conversation, project, title, text, category }),
   conversationAccounts: () => invoke("conversation_accounts"),
   deleteConversation: (id) => invoke("delete_conversation", { id }),
   activity: () => invoke("activity"),
