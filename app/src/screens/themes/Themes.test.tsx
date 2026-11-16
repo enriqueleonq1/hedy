@@ -158,6 +158,37 @@ describe("Theme gallery", () => {
     expect(await screen.findByRole("button", { name: /^One Dark Pro.*De VS Code/ })).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("describes a theme with the chosen account and previews it", async () => {
+    const { api, user } = await setup();
+    const describe = vi.spyOn(api, "describeTheme");
+    await user.click(screen.getByRole("button", { name: "Describir con IA" }));
+    const dialog = screen.getByRole("dialog", { name: "Describir con IA" });
+    expect(within(dialog).getByText("Una pregunta corta a tu propia cuenta (unos pocos tokens).")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Cálido, tipo café" }));
+    expect(within(dialog).getByLabelText("¿Cómo quieres que se vea Hedy?")).toHaveValue("Cálido, tipo café");
+    await user.click(within(dialog).getByRole("button", { name: "Generar" }));
+
+    expect(await screen.findByText("Vista previa: Cálido, tipo café")).toBeInTheDocument();
+    expect(describe).toHaveBeenCalledWith("claude-personal", "Cálido, tipo café", null);
+    expect(cssVar("--bg")).toBe("#2A211C");
+    expect(within(bar()!).getByRole("button", { name: "Guardar y aplicar" })).toBeInTheDocument();
+  });
+
+  it("says when the account hit its limit and never tries another one", async () => {
+    const { api, user } = await setup();
+    api.describeFailure = "Claude personal llegó a su límite de uso";
+    const describe = vi.spyOn(api, "describeTheme");
+    await user.click(screen.getByRole("button", { name: "Describir con IA" }));
+    const dialog = screen.getByRole("dialog", { name: "Describir con IA" });
+    await user.type(within(dialog).getByLabelText("¿Cómo quieres que se vea Hedy?"), "Oscuro y azul");
+    await user.click(within(dialog).getByRole("button", { name: "Generar" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Claude personal llegó a su límite. Elige otra cuenta o espera a que se renueve.",
+    );
+    expect(describe).toHaveBeenCalledTimes(1);
+    expect(bar()).toBeNull();
+  });
+
   it("renames and deletes a theme of the user's own", async () => {
     const { user } = await setup();
     await user.click(screen.getByRole("button", { name: "Opciones de Café de la tarde" }));

@@ -9,16 +9,19 @@ import { Dialog } from "../../components/ui/Dialog";
 import { Field } from "../../components/ui/controls";
 import { useToast } from "../../components/ui/Toast";
 import { THEMES_KEY, useTheme, type DraftSource } from "../../theme/ThemeProvider";
+import { DescribeThemeDialog } from "./DescribeThemeDialog";
 import { ImportThemeDialog } from "./ImportThemeDialog";
 import { PreviewBar } from "./PreviewBar";
 
 type Open =
   | { kind: "vscode"; source?: Extract<DraftSource, { kind: "vscode" }> }
+  | { kind: "described"; source?: Extract<DraftSource, { kind: "described" }> }
   | { kind: "rename"; theme: CustomTheme }
   | { kind: "delete"; theme: CustomTheme };
 
 interface Studio {
   importVscode(): void;
+  describe(): void;
   rename(theme: CustomTheme): void;
   remove(theme: CustomTheme): void;
 }
@@ -36,7 +39,7 @@ export function useThemeStudio(): Studio {
  * stays on every screen while the user looks around, and "Ajustar" reopens the
  * dialog a draft came from wherever they are.
  */
-export function ThemeStudio({ children }: { overview: Overview; children: ReactNode }) {
+export function ThemeStudio({ overview, children }: { overview: Overview; children: ReactNode }) {
   const { preview } = useTheme();
   const [open, setOpen] = useState<Open | null>(null);
   const close = () => setOpen(null);
@@ -44,6 +47,7 @@ export function ThemeStudio({ children }: { overview: Overview; children: ReactN
   const studio = useMemo<Studio>(
     () => ({
       importVscode: () => setOpen({ kind: "vscode" }),
+      describe: () => setOpen({ kind: "described" }),
       rename: (theme) => setOpen({ kind: "rename", theme }),
       remove: (theme) => setOpen({ kind: "delete", theme }),
     }),
@@ -55,10 +59,13 @@ export function ThemeStudio({ children }: { overview: Overview; children: ReactN
       {children}
       <PreviewBar
         onAdjust={(source) =>
-          source.kind === "vscode" && setOpen({ kind: "vscode", source })
+          setOpen(source.kind === "vscode" ? { kind: "vscode", source } : { kind: "described", source })
         }
       />
       {open?.kind === "vscode" && <ImportThemeDialog initial={open.source} onClose={close} onPreview={preview} />}
+      {open?.kind === "described" && (
+        <DescribeThemeDialog overview={overview} initial={open.source} onClose={close} onPreview={preview} />
+      )}
       {open?.kind === "rename" && <RenameThemeDialog theme={open.theme} onClose={close} />}
       {open?.kind === "delete" && <DeleteThemeDialog theme={open.theme} onClose={close} />}
     </StudioContext.Provider>

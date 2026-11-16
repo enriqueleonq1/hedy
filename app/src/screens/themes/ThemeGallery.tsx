@@ -114,6 +114,9 @@ export function ThemeGallery({ overview }: { overview: Overview }) {
               <Button small onClick={studio.importVscode}>
                 {t("theme.import")}
               </Button>
+              <Button small onClick={studio.describe}>
+                {t("theme.describe")}
+              </Button>
             </span>
           </li>
         </ul>
