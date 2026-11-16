@@ -1,9 +1,18 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 
 import { errorMessage, useAction, useApi } from "../../api/context";
 import type { HedyApi } from "../../api/HedyApi";
-import type { Account, ImageInput, Overview, PromptTemplate, Task, TaskMode } from "../../api/types";
+import type {
+  Account,
+  AgentCommand,
+  CommandSource,
+  ImageInput,
+  Overview,
+  PromptTemplate,
+  Task,
+  TaskMode,
+} from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { accountOption } from "../../components/accounts";
 import { useFocusMode } from "../../components/focusMode";
@@ -30,6 +39,7 @@ import {
   useTaskEvents,
   useTasks,
   useTemplates,
+  useAccountCommands,
 } from "../../tasks/hooks";
 import {
   agentName,
@@ -49,6 +59,7 @@ import { useT, type MessageKey } from "../../i18n";
 import { keyLabels } from "../../platform";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { fillTemplate, filterTemplates, slashQuery } from "../../templates/placeholders";
+import { commandName, commandText, commandWithArguments, filterCommands } from "../../templates/commands";
 import { TemplateDialog } from "../templates/TemplateDialog";
 import "../../styles/composer.css";
 import { ChangesPanel } from "./ChangesPanel";
@@ -398,6 +409,10 @@ export function Workspace({
           agent={agent}
           disabled={!account}
           imageAccount={isOpen(task) && task ? task.account : (account?.id ?? null)}
+          commandAccount={overview.accounts.find(
+            (a) => a.id === (isOpen(task) && task ? task.account : (account?.id ?? null)),
+          )}
+          onCarry={carryable ? startCarry : undefined}
           initialText={task ? "" : draft}
           context={
             carried ? (
@@ -604,6 +619,8 @@ function Composer({
   context,
   sendBlocked,
   placeholder: placeholderOverride,
+  commandAccount,
+  onCarry,
   onStarted,
 }: {
   /** The project, or `null` for a conversation. */
@@ -632,6 +649,10 @@ function Composer({
   sendBlocked?: boolean;
   /** Says what to write, instead of the default for the mode. */
   placeholder?: string;
+  /** Who gets the message: its slash commands go in the "/" picker. */
+  commandAccount?: Account;
+  /** "Llevar a un proyecto…", for a conversation that has a task to carry. */
+  onCarry?: () => void;
   onStarted: (task: Task) => void;
 }) {
   const t = useT();
@@ -696,9 +717,24 @@ function Composer({
   }, [fill]);
 
   const query = slashQuery(text);
-  const matches = query === null ? [] : filterTemplates(templates.data ?? [], query);
-  const pickerOpen = query !== null && !pickerClosed && !filling;
-  const current = pickerOpen ? matches[Math.min(active, matches.length - 1)] : undefined;
+  // The account's slash commands, read when a message starts with "/".
+  const accountCommands = useAccountCommands(commandAccount?.id ?? null, scope, text.trimStart().startsWith("/"));
+  const offered = accountCommands.data?.supported ? accountCommands.data : null;
+  const known = offered?.commands ?? [];
+  const commandsUnknown = !!offered && offered.commands === null;
+  // Once a known command is followed by a space, its arguments are being written.
+  const argsFor = commandWithArguments(text, known);
+  const typedName = commandName(text);
+  const typed = typedName ? (known.find((c) => c.name === typedName) ?? null) : null;
+  const options: PickerOption[] =
+    query === null || argsFor
+      ? []
+      : [
+          ...filterTemplates(templates.data ?? [], query).map((template) => ({ kind: "template" as const, template })),
+          ...(offered ? filterCommands(known, query) : []).map((command) => ({ kind: "command" as const, command })),
+        ];
+  const pickerOpen = query !== null && !pickerClosed && !filling && !argsFor;
+  const current = pickerOpen ? options[Math.min(active, options.length - 1)] : undefined;
   const optionId = (index: number) => `${listId}-option-${index}`;
 
   const mention = solo || pickerOpen || filling ? null : mentionAt(text, caret);
@@ -810,6 +846,19 @@ function Composer({
     focusInput();
   }
 
+  /** A template as before; a command goes in as `/name `, for its arguments. */
+  function pick(option: PickerOption) {
+    if (option.kind === "template") {
+      choose(option.template);
+      return;
+    }
+    const value = commandText(option.command);
+    setText(value);
+    setCaret(value.length);
+    setActive(0);
+    focusInput();
+  }
+
   const sendLabel =
     followUp && card ? t("workspace.composer.sendAfterCard") : queueing ? t("queue.add") : t("workspace.composer.send");
 
@@ -826,7 +875,7 @@ function Composer({
       className={dropping ? "composer composer--dropping" : "composer"}
       onSubmit={(e) => {
         e.preventDefault();
-        if (current) choose(current);
+        if (current) pick(current);
         else submit();
       }}
       onDragOver={(e) => {
@@ -862,36 +911,16 @@ function Composer({
         />
       )}
       {pickerOpen && (
-        <div className="template-picker">
-          {matches.length > 0 ? (
-            <ul className="template-picker__list" role="listbox" id={listId} aria-label={t("templates.picker")}>
-              {matches.map((template, index) => (
-                <li
-                  key={template.id}
-                  id={optionId(index)}
-                  role="option"
-                  aria-selected={template === current}
-                  className={`template-option${template === current ? " template-option--active" : ""}`}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    choose(template);
-                  }}
-                  onMouseEnter={() => setActive(index)}
-                >
-                  <span className="template-option__name">{template.name}</span>
-                  <span className="template-option__text">{template.text}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="template-picker__empty" role="status">
-              {t("templates.noMatch")}
-            </p>
-          )}
-          <p className="template-picker__hint" aria-hidden>
-            {t("templates.pickerHint")}
-          </p>
-        </div>
+        <TemplatePicker
+          id={listId}
+          options={options}
+          current={current}
+          optionId={optionId}
+          account={offered ? (commandAccount?.name ?? null) : null}
+          unknown={commandsUnknown}
+          onPick={pick}
+          onHover={setActive}
+        />
       )}
       {filling && (
         <TemplateFill
@@ -909,6 +938,11 @@ function Composer({
       )}
       {!followUp && context}
       <ImageTray images={images.images} onRemove={images.remove} onEmptied={focusInput} />
+      {argsFor?.argumentHint && (
+        <p className="composer__command" id={`${listId}-command`}>
+          {t("commands.takes", { name: argsFor.name, hint: argsFor.argumentHint })}
+        </p>
+      )}
       {/* The placeholder says what sending does now; the label says it in full. */}
       <label className="sr-only" htmlFor="composer-input">
         {followUp && card
@@ -931,13 +965,13 @@ function Composer({
         aria-autocomplete="list"
         aria-haspopup="listbox"
         aria-controls={
-          pickerOpen && matches.length > 0 ? listId : mentionOpen && fileMatches.length > 0 ? fileListId : undefined
+          pickerOpen && options.length > 0 ? listId : mentionOpen && fileMatches.length > 0 ? fileListId : undefined
         }
         aria-activedescendant={
-          current ? optionId(matches.indexOf(current)) : currentFile >= 0 ? fileOptionId(currentFile) : undefined
+          current ? optionId(options.indexOf(current)) : currentFile >= 0 ? fileOptionId(currentFile) : undefined
         }
         aria-keyshortcuts="Enter"
-        aria-describedby={`${listId}-enter`}
+        aria-describedby={argsFor?.argumentHint ? `${listId}-enter ${listId}-command` : `${listId}-enter`}
         placeholder={
           !followUp && placeholderOverride
             ? placeholderOverride
@@ -982,16 +1016,16 @@ function Composer({
               return;
             }
           }
-          if (pickerOpen && matches.length > 0) {
+          if (pickerOpen && options.length > 0) {
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault();
               const step = e.key === "ArrowDown" ? 1 : -1;
-              setActive((i) => (Math.min(i, matches.length - 1) + step + matches.length) % matches.length);
+              setActive((i) => (Math.min(i, options.length - 1) + step + options.length) % options.length);
               return;
             }
             if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey && current) {
               e.preventDefault();
-              choose(current);
+              pick(current);
               return;
             }
           }
@@ -1123,6 +1157,16 @@ function Composer({
           </button>
         )}
       </div>
+      {solo && typed && USERS_SOURCES.includes(typed.source) && (
+        <p className="composer__note" role="note">
+          <span>{t("commands.readOnly")}</span>
+          {onCarry && (
+            <button type="button" className="link-button" onClick={onCarry}>
+              {t("carry.actionMenu")}
+            </button>
+          )}
+        </p>
+      )}
       {saving && (
         <TemplateDialog
           title={t("templates.saveCurrentTitle")}
@@ -1133,6 +1177,136 @@ function Composer({
         />
       )}
     </form>
+  );
+}
+
+/** A template, or one of the account's slash commands, in the "/" picker. */
+type PickerOption = { kind: "template"; template: PromptTemplate } | { kind: "command"; command: AgentCommand };
+
+/** Sources the user added: in a quick question these cannot write what they may want to. */
+const USERS_SOURCES: CommandSource[] = ["plugin", "skill", "custom"];
+
+const SOURCE_LABEL: Partial<Record<CommandSource, MessageKey>> = {
+  plugin: "commands.source.plugin",
+  skill: "commands.source.skill",
+  custom: "commands.source.custom",
+  builtin: "commands.source.builtin",
+};
+
+/**
+ * The "/" picker: the templates, then (when the account tells Hedy its
+ * commands) a group with the account's commands. One active option across
+ * both, announced through `aria-activedescendant` on the composer.
+ */
+function TemplatePicker({
+  id,
+  options,
+  current,
+  optionId,
+  account,
+  unknown,
+  onPick,
+  onHover,
+}: {
+  id: string;
+  options: PickerOption[];
+  current: PickerOption | undefined;
+  optionId: (index: number) => string;
+  /** The account whose commands are offered; `null`: templates only. */
+  account: string | null;
+  /** The account has not answered in Hedy yet: its commands are unknown. */
+  unknown: boolean;
+  onPick: (option: PickerOption) => void;
+  onHover: (index: number) => void;
+}) {
+  const t = useT();
+  const item = (option: PickerOption) => {
+    const index = options.indexOf(option);
+    const active = option === current;
+    const props = {
+      id: optionId(index),
+      role: "option",
+      "aria-selected": active,
+      onMouseDown: (e: MouseEvent) => {
+        e.preventDefault();
+        onPick(option);
+      },
+      onMouseEnter: () => onHover(index),
+    } as const;
+    if (option.kind === "template") {
+      const template = option.template;
+      return (
+        <li key={`t-${template.id}`} {...props} className={`template-option${active ? " template-option--active" : ""}`}>
+          <span className="template-option__name">{template.name}</span>
+          <span className="template-option__text">{template.text}</span>
+        </li>
+      );
+    }
+    const command = option.command;
+    const source = SOURCE_LABEL[command.source];
+    return (
+      <li
+        key={`c-${command.name}`}
+        {...props}
+        className={`template-option command-option${active ? " template-option--active" : ""}`}
+      >
+        <span className="command-option__head">
+          <span className="template-option__name mono">/{command.name}</span>
+          {command.argumentHint && <span className="command-option__hint mono">{command.argumentHint}</span>}
+          {source && <span className="command-option__source">{t(source)}</span>}
+        </span>
+        {command.description && <span className="template-option__text">{command.description}</span>}
+      </li>
+    );
+  };
+  const templates = options.filter((o) => o.kind === "template");
+  const commands = options.filter((o) => o.kind === "command");
+  const label = t("templates.picker");
+  return (
+    <div className="template-picker">
+      {account === null ? (
+        templates.length > 0 && (
+          <ul className="template-picker__list" role="listbox" id={id} aria-label={label}>
+            {templates.map(item)}
+          </ul>
+        )
+      ) : (
+        options.length > 0 && (
+          <div className="template-picker__list" role="listbox" id={id} aria-label={t("commands.pickerLabel")}>
+            {templates.length > 0 && (
+              <ul className="template-picker__group" role="group" aria-labelledby={`${id}-templates`}>
+                <li className="template-picker__head" role="presentation" id={`${id}-templates`}>
+                  {label}
+                </li>
+                {templates.map(item)}
+              </ul>
+            )}
+            {commands.length > 0 && (
+              <ul className="template-picker__group" role="group" aria-labelledby={`${id}-commands`}>
+                <li className="template-picker__head" role="presentation" id={`${id}-commands`}>
+                  {t("commands.group", { account })}
+                </li>
+                {commands.map(item)}
+              </ul>
+            )}
+          </div>
+        )
+      )}
+      {options.length === 0 && (
+        <p className="template-picker__empty" role="status">
+          {account === null ? t("templates.noMatch") : t("commands.noMatch")}
+        </p>
+      )}
+      {account !== null && unknown && (
+        <p className="template-picker__note" role="status">
+          <span className="template-picker__head">{t("commands.group", { account })}</span>
+          {t("commands.unknown")}
+        </p>
+      )}
+      <p className="template-picker__hint" aria-hidden>
+        {account === null ? t("templates.pickerHint") : t("commands.pickerHint")}
+      </p>
+    </div>
   );
 }
 

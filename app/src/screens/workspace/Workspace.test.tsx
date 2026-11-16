@@ -530,7 +530,7 @@ describe("Composer", () => {
     await user.click(templates);
     expect(screen.getByRole("menuitem", { name: "Guardar como plantilla" })).toBeDisabled();
     await user.click(screen.getByRole("menuitem", { name: "Usar una plantilla" }));
-    expect(await screen.findByRole("listbox", { name: "Plantillas" })).toBeInTheDocument();
+    expect(await screen.findByRole("listbox", { name: "Plantillas y comandos" })).toBeInTheDocument();
     expect(composer).toHaveValue("/");
     await waitFor(() => expect(composer).toHaveFocus());
 

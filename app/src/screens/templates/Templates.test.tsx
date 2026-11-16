@@ -24,7 +24,7 @@ describe("Prompt templates", () => {
     const composer = await screen.findByLabelText("Pídele algo a hedy");
 
     await user.type(composer, "/");
-    const list = await screen.findByRole("listbox", { name: "Plantillas" });
+    const list = await screen.findByRole("listbox", { name: "Plantillas y comandos" });
     // The project's own template first, then the global ones.
     const options = within(list).getAllByRole("option");
     expect(options[0]).toHaveTextContent("Revisar accesibilidad");
@@ -34,7 +34,7 @@ describe("Prompt templates", () => {
     expect(composer).toHaveAttribute("aria-activedescendant", options[1]!.id);
 
     await user.type(composer, "pru");
-    const filtered = within(screen.getByRole("listbox", { name: "Plantillas" })).getAllByRole("option");
+    const filtered = within(screen.getByRole("listbox", { name: "Plantillas y comandos" })).getAllByRole("option");
     expect(filtered[0]).toHaveTextContent("Escribir pruebas");
     await user.keyboard("{Enter}");
 
@@ -55,9 +55,10 @@ describe("Prompt templates", () => {
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
     const composer = await screen.findByLabelText("Pídele algo a hedy");
     await user.type(composer, "/zzz");
-    expect(await screen.findByText("Ninguna plantilla se llama así.")).toHaveAttribute("role", "status");
+    const none = "Ninguna plantilla ni comando se llama así: se enviará tal cual.";
+    expect(await screen.findByText(none)).toHaveAttribute("role", "status");
     await user.keyboard("{Escape}");
-    expect(screen.queryByText("Ninguna plantilla se llama así.")).not.toBeInTheDocument();
+    expect(screen.queryByText(none)).not.toBeInTheDocument();
     expect(composer).toHaveValue("/zzz");
   });
 
@@ -78,7 +79,7 @@ describe("Prompt templates", () => {
 
     await user.clear(composer);
     await user.type(composer, "/revisar t");
-    const list = await screen.findByRole("listbox", { name: "Plantillas" });
+    const list = await screen.findByRole("listbox", { name: "Plantillas y comandos" });
     expect(within(list).getAllByRole("option")[0]).toHaveTextContent("Revisar textos");
   });
 

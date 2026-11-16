@@ -146,9 +146,12 @@ describe("English", () => {
     await user.keyboard("{Escape}");
 
     await user.type(composer, "/");
-    const list = await screen.findByRole("listbox", { name: "Templates" });
+    const list = await screen.findByRole("listbox", { name: "Templates and commands" });
     expect(within(list).getByText("Write tests")).toBeInTheDocument();
-    expect(screen.getByText("↑ ↓ to choose · Enter to use it · Esc to close")).toBeInTheDocument();
+    // This account has not answered in Hedy yet: its commands are not known.
+    expect(screen.getByText("This account's commands show up after its first answer")).toBeInTheDocument();
+    expect(screen.getByText("Claude trabajo commands")).toBeInTheDocument();
+    expect(screen.getByText("↑ ↓ to choose · Enter to use · Esc to close")).toBeInTheDocument();
     await user.type(composer, "write");
     await user.keyboard("{Enter}");
     const fill = await screen.findByRole("group", { name: "Fill in “Write tests”" });
