@@ -17,8 +17,14 @@ pub enum Setting {
     /// Price of an API-key provider, `input/output` in USD per million tokens,
     /// to estimate what API tasks cost.
     ApiPrice(Provider),
-    /// App theme: `system`, `light` or `dark`.
+    /// App theme mode: `system`, `light` or `dark`.
     Theme,
+    /// Theme used in dark mode: a preset id or `custom:<id>`. Unset:
+    /// [`DEFAULT_DARK_THEME`].
+    ThemeDark,
+    /// Theme used in light mode: a preset id or `custom:<id>`. Unset:
+    /// [`DEFAULT_LIGHT_THEME`].
+    ThemeLight,
     /// Name used to greet the user in the app.
     UserName,
     /// Interface language: `system`, `es` or `en`.
@@ -35,6 +41,25 @@ pub enum Setting {
 pub const THEMES: [&str; 3] = ["system", "light", "dark"];
 pub const LANGUAGES: [&str; 3] = ["system", "es", "en"];
 pub const SWITCH: [&str; 2] = ["on", "off"];
+/// The dark-mode theme when none is chosen (a preset of the UI).
+pub const DEFAULT_DARK_THEME: &str = "tokyo-night";
+/// The light-mode theme when none is chosen (a preset of the UI).
+pub const DEFAULT_LIGHT_THEME: &str = "burbuja";
+/// How a theme setting points at a saved theme: `custom:<id>`.
+pub const CUSTOM_THEME_PREFIX: &str = "custom:";
+/// Longest preset or custom theme id in a theme setting.
+const MAX_THEME_CHOICE: usize = 80;
+
+/// A preset id or `custom:<id>`: 1–80 of `[a-z0-9-]`. Only the shape is
+/// checked; presets live in the UI.
+fn is_theme_choice(value: &str) -> bool {
+    let id = value.strip_prefix(CUSTOM_THEME_PREFIX).unwrap_or(value);
+    !id.is_empty()
+        && id.len() <= MAX_THEME_CHOICE
+        && id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
 
 impl Setting {
     pub fn key(self) -> String {
@@ -44,6 +69,8 @@ impl Setting {
             Self::ApiUrl(p) => format!("api_url.{}", p.as_str()),
             Self::ApiPrice(p) => format!("api_price.{}", p.as_str()),
             Self::Theme => "ui.theme".into(),
+            Self::ThemeDark => "ui.theme.dark".into(),
+            Self::ThemeLight => "ui.theme.light".into(),
             Self::UserName => "ui.name".into(),
             Self::Language => "ui.language".into(),
             Self::Onboarded => "ui.onboarded".into(),
@@ -66,6 +93,8 @@ impl Setting {
             .chain(api_urls)
             .chain([
                 Self::Theme,
+                Self::ThemeDark,
+                Self::ThemeLight,
                 Self::UserName,
                 Self::Language,
                 Self::Onboarded,
@@ -109,6 +138,12 @@ impl Hedy {
                     value: theme.to_owned(),
                 });
             }
+            (Setting::ThemeDark | Setting::ThemeLight, Some(theme)) if !is_theme_choice(theme) => {
+                return Err(AppError::InvalidSettingValue {
+                    key: setting.key(),
+                    value: theme.to_owned(),
+                });
+            }
             (Setting::Language, Some(language)) if !LANGUAGES.contains(&language) => {
                 return Err(AppError::InvalidSettingValue {
                     key: setting.key(),
@@ -134,6 +169,17 @@ impl Hedy {
     pub fn apply_language(&self) -> AppResult<()> {
         crate::i18n::init(self.setting(Setting::Language)?.as_deref());
         Ok(())
+    }
+
+    /// The theme each mode uses (`(dark, light)`), with the defaults when
+    /// unset.
+    pub fn mode_themes(&self) -> AppResult<(String, String)> {
+        Ok((
+            self.setting(Setting::ThemeDark)?
+                .unwrap_or_else(|| DEFAULT_DARK_THEME.into()),
+            self.setting(Setting::ThemeLight)?
+                .unwrap_or_else(|| DEFAULT_LIGHT_THEME.into()),
+        ))
     }
 
     /// Whether desktop notifications are on (the default).
@@ -203,6 +249,50 @@ mod tests {
             f.hedy.setting(Setting::Theme).unwrap().as_deref(),
             Some("light")
         );
+    }
+
+    #[test]
+    fn mode_themes_have_defaults_and_a_checked_shape() {
+        let f = Fixture::new();
+        assert_eq!(
+            f.hedy.mode_themes().unwrap(),
+            ("tokyo-night".into(), "burbuja".into())
+        );
+        f.hedy
+            .set_setting(Setting::ThemeDark, Some("custom:one-dark-pro"))
+            .unwrap();
+        f.hedy
+            .set_setting(Setting::ThemeLight, Some("solarized-light"))
+            .unwrap();
+        assert_eq!(
+            f.hedy.mode_themes().unwrap(),
+            ("custom:one-dark-pro".into(), "solarized-light".into())
+        );
+        let long = "a".repeat(81);
+        for bad in [
+            "",
+            "custom:",
+            "Dracula",
+            "one dark",
+            "custom:x_y",
+            "other:x",
+            &long,
+        ] {
+            assert!(
+                matches!(
+                    f.hedy.set_setting(Setting::ThemeDark, Some(bad)),
+                    Err(AppError::InvalidSettingValue { .. })
+                ),
+                "{bad}"
+            );
+        }
+        assert!(
+            f.hedy
+                .set_setting(Setting::ThemeDark, Some(&"a".repeat(80)))
+                .is_ok()
+        );
+        f.hedy.set_setting(Setting::ThemeLight, None).unwrap();
+        assert_eq!(f.hedy.mode_themes().unwrap().1, "burbuja");
     }
 
     #[test]

@@ -58,7 +58,7 @@ pub use metrics::{ProjectStatus, TestRun, UsageSummary};
 pub use plan_usage::{PLAN_USAGE_MIN_INTERVAL_SECS, PlanUsageState};
 pub use projects::NewProject;
 pub use review::AcceptPreview;
-pub use settings::{Setting, THEMES};
+pub use settings::{CUSTOM_THEME_PREFIX, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, Setting, THEMES};
 pub use ship::{
     FolderStatus, NewPullRequest, PullRequestDraft, Pulled, Pushed, ShipError, ShipState,
 };
