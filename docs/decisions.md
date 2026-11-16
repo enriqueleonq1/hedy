@@ -1491,3 +1491,74 @@ AI is the third way in, not the only one.
 
 **Not verified live:** a real "describe with AI" answer from each provider (tested with the
 agent double and `MockApi`).
+
+## 31. Plan usage, limit warnings and commit messages in the terminal (Nov 16, 2026)
+
+Three things the app already did, now in `hedy` (§30 is the parallel `hedy ask` work).
+
+### `hedy usage`
+
+- Reads the **same cache** as the app (§20, one row per account in `plan_usage`), so both
+  show the same figures. Without flags it refreshes, in parallel, every account whose
+  last attempt is older than `PLAN_USAGE_MIN_INTERVAL_SECS` (3 min), exactly as the app
+  does (`Hedy::refresh_plan_usage`); `--cached` never asks anyone; `--refresh` asks now,
+  but the core still refuses to ask an account more than once every 3 min. A failure
+  only affects its own account (shown as "no disponible: …"), never the command.
+- One line per account: its color dot, name, the window closest to its limit
+  (`PlanUsage::headline`, the binding one), which window it is, when it renews (local
+  time, short: `18:40`, `mañana 09:00`, `jue 20, 00:00`) and the reading's age. The other
+  windows (session, per-model weeks such as Fable) follow, indented and dimmed. ≥ 80 %
+  warns and ≥ 95 % is danger, as in the app.
+- Nothing is invented: API keys say "sin plan: se paga por uso" (with Moonshot's balance
+  when known), providers without a source say so (§20), a CLI version that would spend
+  tokens says so.
+- `--short` is one line for a shell prompt or a status bar (`CP 83% · CT 34%`), only
+  accounts with a plan figure, empty when none, colored only in a terminal. It reads the
+  cache unless `--refresh` is given, so it is instant. Labels come from the account
+  names (`domain::plan_usage::short_names`): initials of several words, a word of up to
+  six letters as is, the capitals of a longer one (`ChatGPT` → `GPT`), else its first
+  three letters; a repeated label gets a number. `--json` prints every account with its
+  reading, headline window, age, problem and short label.
+
+### Warning before `hedy run`
+
+- Before opening the CLI, `Hedy::run_limit_warning` looks at the account's **cached**
+  figures only (no provider is asked: the launch is never delayed; the warning says how
+  old the figure is). `PlanUsage::limit_alert` picks the window at ≥ 90 % (the same level
+  as a task's limit card) whose reset has not passed yet: reached when a window shared by
+  every model is at 100 %, a warning otherwise (a full per-model window leaves the other
+  models working). A task's last report that the account was rejected and has not renewed
+  counts as reached when no newer reading contradicts it.
+- The warning (stderr) names the account, the %, the window and when it renews, and the
+  options: go on, use another account (`hedy run -a <id>` with its cached %), or wait.
+  The accounts offered follow §11 (`policy::limit_alternatives`): another provider's
+  subscription (`hedy run` cannot open an API key), never another subscription of the
+  same provider, none in a protected project. **Hedy never switches by itself** (rule 3).
+- In a terminal it asks `¿Seguir con <cuenta>? [S/n]` (No by default at the limit);
+  without a terminal it only warns and goes on; `--yes` skips the question.
+
+### `hedy commit`
+
+- `Hedy::suggest_staged_commit` sends the **staged** diff (`git diff --cached` through
+  the `Git` port, without context lines, cut at 12,000 characters with a note) and the
+  last 8 subjects. The prompt asks for Conventional Commits only when most recent
+  subjects use them (`uses_conventional_commits`), else the repository's own style.
+  Protected files (`is_protected_path`: `.env`, keys…) are never sent: only their names,
+  and the user is told. Nothing staged is an error pointing to `git add`.
+- Account: `-a`, else the project's, else the default one, through the protection rules
+  (`check_launch`); an account at its limit is refused naming it, never another one
+  (rule 3), and a limit reported mid-answer stops it. One-shot as §26 and §29:
+  read-only, tools denied, no memory or MCP, 120 s, cwd the repository; tokens count for
+  the account only (no task). `-m` picks the model.
+- Committing is `git commit -F <file in .git>` (`--edit` for "editar", so git opens the
+  user's own editor: `GIT_EDITOR`, `core.editor`, `VISUAL`, `EDITOR`, then `vi`; an
+  emptied message cancels) with the terminal left to git: the user's hooks, signing and
+  identity apply as with any commit. Hedy never stages anything and never pushes.
+- In a terminal: `[Enter] confirmar · e editar · r regenerar · q cancelar`. Without one,
+  or with `--print`, only the message goes to stdout (notes to stderr), so
+  `git commit -m "$(hedy commit --print)"` works; `--yes` commits without asking.
+
+**Not verified live:** the suggestion against a real Claude or Codex account (tested with
+a fake `claude` speaking stream-json), the interactive prompts (`[S/n]`, the commit
+menu) and GPG/SSH signing prompts through `hedy commit` (hooks were checked against a
+real git).

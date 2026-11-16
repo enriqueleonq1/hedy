@@ -22,6 +22,17 @@ if [ "$1" = -p ] && [ "$2" = /usage ] && [ "$3" = --output-format ] && [ "$4" = 
   echo '{"type":"result","subtype":"success","is_error":false,"num_turns":0,"total_cost_usd":0,"local_command":"usage","result":"You are currently using your subscription to power your Claude Code usage\n\nCurrent session: 34% used · resets Nov 14, 7pm (America/Caracas)\nCurrent week (all models): 29% used · resets Nov 20, 12am (America/Caracas)\nCurrent week (Fable): 0% used · resets Nov 20, 12am (America/Caracas)\n\nWhat is contributing to your limits usage?\n  98%  Give subagents a cheaper model\n"}'
   exit 0
 fi
+if [ "$1" = -p ] && [ "$2" = --input-format ]; then
+  while IFS= read -r line; do
+    case "$line" in
+      *'"type":"user"'*)
+        [ -n "$FAKE_PROMPT_LOG" ] && printf '%s\n' "$line" >> "$FAKE_PROMPT_LOG"
+        echo '{"type":"result","subtype":"success","is_error":false,"result":"'"${FAKE_ANSWER:-feat: add a greeting}"'","usage":{"input_tokens":5,"output_tokens":2}}'
+        ;;
+    esac
+  done
+  exit 0
+fi
 echo "CONFIG=${CLAUDE_CONFIG_DIR:-unset}"
 echo "APIKEY=${ANTHROPIC_API_KEY:-none}"
 echo "OAUTH=${CLAUDE_CODE_OAUTH_TOKEN:-none}"
@@ -1154,4 +1165,355 @@ fn new_without_a_folder_goes_to_the_usual_place_and_has_help_in_english() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Empieza un proyecto desde cero"));
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
+
+/// A plan reading as the app leaves it in the shared cache, read `ago`
+/// seconds ago: `(kind, model, percent, renews in seconds)`.
+fn seed_plan(
+    env: &Env,
+    account: &str,
+    windows: &[(hedy_core::domain::WindowKind, Option<&str>, f64, i64)],
+    ago: i64,
+) {
+    use hedy_core::adapters::{HedyPaths, SqliteStore};
+    use hedy_core::application::ports::{PlanUsageRecord, UsageRepository};
+    use hedy_core::domain::{AccountId, PlanUsage, UsageSource, UsageWindow};
+
+    let store = SqliteStore::open(&HedyPaths::at(env.path("data")).database()).unwrap();
+    let now = now_secs();
+    let usage = PlanUsage {
+        windows: windows
+            .iter()
+            .map(|(kind, model, percent, renews)| UsageWindow {
+                kind: *kind,
+                minutes: None,
+                model: model.map(str::to_owned),
+                percent: *percent,
+                resets_text: None,
+                resets_at: Some(now + renews),
+            })
+            .collect(),
+        checked_at: now - ago,
+        source: UsageSource::ClaudeUsage,
+        balance: None,
+    };
+    store
+        .set_plan_usage(
+            &AccountId::new(account).unwrap(),
+            &PlanUsageRecord {
+                usage: Some(usage),
+                attempted_at: now - ago,
+                problem: None,
+            },
+        )
+        .unwrap();
+}
+
+fn add_accounts(env: &Env, accounts: &[&[&str]]) {
+    for args in accounts {
+        let mut all = vec!["account", "add"];
+        all.extend_from_slice(args);
+        all.push("--no-login");
+        env.hedy(&all).assert().success();
+    }
+}
+
+fn stdout_of(cmd: &mut Command) -> String {
+    String::from_utf8(cmd.assert().success().get_output().stdout.clone()).unwrap()
+}
+
+#[test]
+fn usage_shows_each_plan_from_the_cache() {
+    use hedy_core::domain::WindowKind::{Session, Week};
+    let env = Env::new();
+    add_accounts(
+        &env,
+        &[
+            &["Claude personal", "--claude"],
+            &["Claude trabajo", "--claude"],
+            &["Kimi Code", "--kimi"],
+            &["Gemini", "--api", "gemini"],
+        ],
+    );
+    seed_plan(
+        &env,
+        "claude-personal",
+        &[
+            (Session, None, 40.0, 3_600),
+            (Week, None, 83.0, 3 * 86_400),
+            (Week, Some("Fable"), 10.0, 3 * 86_400),
+        ],
+        120,
+    );
+    seed_plan(&env, "claude-trabajo", &[(Session, None, 34.0, 7_200)], 120);
+
+    let out = stdout_of(&mut env.hedy(&["usage", "--cached"]));
+    let line = |needle: &str| {
+        out.lines()
+            .find(|l| l.contains(needle))
+            .unwrap_or_else(|| panic!("no line with {needle} in:\n{out}"))
+            .to_owned()
+    };
+    let personal = line("Claude personal");
+    assert!(personal.starts_with("● Claude personal"), "{out}");
+    for part in ["83%", "semana · se renueva", "(hace 2 min)"] {
+        assert!(personal.contains(part), "{part} in {personal}");
+    }
+    // The other windows, below it.
+    assert!(line("sesión 5 h").contains("40%"), "{out}");
+    assert!(line("semana (Fable)").contains("10%"), "{out}");
+    assert!(line("Claude trabajo").contains("34%  sesión 5 h"), "{out}");
+    // Honest about what cannot be known.
+    assert!(line("Gemini").contains("—"), "{out}");
+    assert!(
+        line("Gemini").contains("sin plan: se paga por uso"),
+        "{out}"
+    );
+    assert!(
+        line("Kimi Code").contains("Kimi aún no informa el límite a Hedy"),
+        "{out}"
+    );
+
+    env.hedy_lang("en", &["usage", "--cached"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("week · renews"))
+        .stdout(predicate::str::contains("(2 min ago)"))
+        .stdout(predicate::str::contains("no plan: pay per use"));
+
+    // One line for a prompt: only accounts with a plan, from the cache.
+    assert_eq!(
+        stdout_of(&mut env.hedy(&["usage", "--short"])),
+        "CP 83% · CT 34%\n"
+    );
+
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout_of(&mut env.hedy(&["usage", "--json"]))).unwrap();
+    let list = json.as_array().unwrap();
+    assert_eq!(list.len(), 4);
+    assert_eq!(list[0]["id"], "claude-personal");
+    assert_eq!(list[0]["short"], "CP");
+    assert_eq!(list[0]["headline"]["percent"], 83.0);
+    assert_eq!(list[0]["headline"]["kind"], "week");
+    assert_eq!(list[0]["usage"]["windows"].as_array().unwrap().len(), 3);
+    assert!(list[0]["ageSecs"].as_i64().unwrap() >= 120);
+    assert_eq!(list[3]["id"], "gemini");
+    assert_eq!(list[3]["supported"], false);
+    assert!(list[3]["usage"].is_null());
+    assert_eq!(list[2]["problem"], "unsupported");
+}
+
+#[test]
+fn usage_asks_for_stale_figures_and_short_stays_empty_without_plans() {
+    let env = Env::new();
+    // Without accounts, nothing at all for a prompt.
+    assert_eq!(stdout_of(&mut env.hedy(&["usage", "--short"])), "");
+    add_accounts(&env, &[&["Claude", "--claude"]]);
+    // Nothing cached and `--short`: it does not ask.
+    assert_eq!(stdout_of(&mut env.hedy(&["usage", "--short"])), "");
+    // Without `--cached`, it asks the CLI (`/usage`), like the app.
+    let out = stdout_of(&mut env.hedy(&["usage"]));
+    assert!(out.contains("34%  sesión 5 h"), "{out}");
+    assert!(out.contains("29%  semana"), "{out}");
+    assert!(out.contains("(hace un momento)"), "{out}");
+    assert_eq!(
+        stdout_of(&mut env.hedy(&["usage", "--short"])),
+        "Claude 34%\n"
+    );
+}
+
+#[test]
+fn run_warns_near_the_limit_and_never_switches() {
+    use hedy_core::domain::WindowKind::{Session, Week};
+    let env = Env::new();
+    add_accounts(
+        &env,
+        &[
+            &["Claude personal", "--claude"],
+            &["Claude trabajo", "--claude"],
+            &["ChatGPT", "--codex"],
+        ],
+    );
+    seed_plan(&env, "claude-personal", &[(Session, None, 85.0, 3_600)], 60);
+    env.hedy_in(env.tmp.path(), &["run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("CONFIG="))
+        .stderr(predicate::str::contains("límite").not());
+
+    seed_plan(
+        &env,
+        "claude-personal",
+        &[(Session, None, 20.0, 3_600), (Week, None, 92.0, 86_400)],
+        120,
+    );
+    seed_plan(&env, "chatgpt", &[(Session, None, 12.0, 3_600)], 60);
+    // Without a terminal it warns and goes on with the same account.
+    let out = env.hedy_in(env.tmp.path(), &["run"]).assert().success();
+    let output = out.get_output();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for part in [
+        "⚠ Claude personal va al 92% (semana) · se renueva mañana",
+        "dato de hace 2 min",
+        "Hedy no cambia de cuenta por su cuenta",
+        "seguir con Claude personal",
+        "usar otra: hedy run -a chatgpt  (ChatGPT · 12%)",
+        "esperar a que se renueve",
+    ] {
+        assert!(stderr.contains(part), "{part} in:\n{stderr}");
+    }
+    // Rule 3: not another subscription of the same provider.
+    assert!(!stderr.contains("claude-trabajo"), "{stderr}");
+    let personal = env.path("data/accounts/claude-personal");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains(&format!("CONFIG={}", personal.display()))
+    );
+
+    // At the limit: still only a warning without a terminal, in English too.
+    seed_plan(
+        &env,
+        "claude-personal",
+        &[(Session, None, 100.0, 3_600)],
+        30,
+    );
+    env.hedy_lang("en", &["-C", env.tmp.path().to_str().unwrap(), "run", "-y"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("CONFIG="))
+        .stderr(predicate::str::contains(
+            "✗ Claude personal reached its limit (5-h session, 100%)",
+        ))
+        .stderr(predicate::str::contains("Hedy never switches accounts"));
+}
+
+/// A real repository with its own identity and no signing, isolated from
+/// the user's global git settings.
+fn commit_repo(env: &Env) -> PathBuf {
+    let repo = git_repo(env, "code/web");
+    for args in [
+        &["config", "user.email", "test@hedy.local"][..],
+        &["config", "user.name", "Test"],
+        &["config", "commit.gpgsign", "false"],
+    ] {
+        git(&repo, args);
+    }
+    fs::write(repo.join("README.md"), "# Web\n").unwrap();
+    git(&repo, &["add", "README.md"]);
+    git(&repo, &["commit", "-qm", "feat: start the site"]);
+    fs::write(repo.join("app.js"), "export const x = 1;\n").unwrap();
+    git(&repo, &["add", "app.js"]);
+    git(&repo, &["commit", "-qm", "fix(app): export x"]);
+    repo
+}
+
+fn git(repo: &Path, args: &[&str]) -> String {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git {args:?}: {out:?}");
+    String::from_utf8(out.stdout).unwrap()
+}
+
+fn hedy_commit(env: &Env, repo: &Path, args: &[&str]) -> Command {
+    let mut cmd = env.hedy_in(repo, &["commit"]);
+    cmd.args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("FAKE_PROMPT_LOG", env.path("prompts.log"));
+    cmd
+}
+
+#[test]
+fn commit_suggests_a_message_for_the_staged_changes_without_secrets() {
+    let env = Env::new();
+    add_accounts(&env, &[&["Claude personal", "--claude"]]);
+    let repo = commit_repo(&env);
+    hedy_commit(&env, &repo, &["--print"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("git add"));
+
+    fs::write(repo.join("hello.js"), "console.log('hola mundo');\n").unwrap();
+    fs::write(repo.join(".env"), "TOKEN=sk-secreto\n").unwrap();
+    fs::write(repo.join("notes.txt"), "not staged\n").unwrap();
+    git(&repo, &["add", "hello.js", ".env"]);
+
+    let out = hedy_commit(&env, &repo, &["--print"]).assert().success();
+    let output = out.get_output();
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "feat: add a greeting\n"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Claude personal"), "{stderr}");
+    assert!(
+        stderr.contains("archivos privados") && stderr.contains(".env"),
+        "{stderr}"
+    );
+    let prompt = fs::read_to_string(env.path("prompts.log")).unwrap();
+    assert!(
+        prompt.contains("hello.js") && prompt.contains("hola mundo"),
+        "{prompt}"
+    );
+    assert!(prompt.contains("- fix(app): export x"), "{prompt}");
+    assert!(prompt.contains("Conventional Commits"), "{prompt}");
+    assert!(!prompt.contains("sk-secreto"), "{prompt}");
+    assert!(!prompt.contains("not staged"), "{prompt}");
+    // Printing commits nothing; without a terminal neither does the bare command.
+    hedy_commit(&env, &repo, &[])
+        .assert()
+        .success()
+        .stdout("feat: add a greeting\n");
+    assert_eq!(
+        git(&repo, &["log", "-1", "--format=%s"]),
+        "fix(app): export x\n"
+    );
+}
+
+#[test]
+fn commit_yes_commits_with_the_users_git_and_hooks() {
+    let env = Env::new();
+    add_accounts(&env, &[&["Claude personal", "--claude"]]);
+    let repo = commit_repo(&env);
+    let hook = repo.join(".git/hooks/commit-msg");
+    fs::write(
+        &hook,
+        "#!/bin/sh\necho ran > \"$(git rev-parse --git-dir)/hook-ran\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::write(repo.join("hello.js"), "console.log('hola');\n").unwrap();
+    fs::write(repo.join("notes.txt"), "not staged\n").unwrap();
+    git(&repo, &["add", "hello.js"]);
+
+    hedy_commit(&env, &repo, &["--yes"])
+        .env("FAKE_ANSWER", "feat(web): greet visitors")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("Hedy no hace push"));
+    assert_eq!(
+        git(&repo, &["log", "-1", "--format=%s"]),
+        "feat(web): greet visitors\n"
+    );
+    assert!(repo.join(".git/hook-ran").exists());
+    // Only what was staged; nothing else is added.
+    assert_eq!(git(&repo, &["status", "--porcelain"]), "?? notes.txt\n");
+
+    env.hedy_lang("en", &["-C", repo.to_str().unwrap(), "commit", "--yes"])
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("nothing is staged"));
 }

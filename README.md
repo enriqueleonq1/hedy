@@ -141,6 +141,9 @@ cd ~/code/shop
 hedy use claude-work    # this project uses the work account
 hedy run                # opens claude with that account
 hedy status             # accounts, logins and the current project
+hedy usage              # how much plan each account has left
+hedy usage --short      # one line for your prompt: CP 83% · CT 34%
+hedy commit             # a commit message for what you staged
 ```
 
 `hedy doctor` checks your CLIs, accounts and versions if something looks off. `hedy --help` lists

@@ -729,7 +729,7 @@ fn reset_label(w: &UsageWindow) -> Option<String> {
 }
 
 /// "hace 2 min", "just now".
-fn age_label(secs: i64) -> String {
+pub(crate) fn age_label(secs: i64) -> String {
     match secs.max(0) {
         s if s < 60 => tr!("hace un momento", "just now"),
         s if s < 3600 => {
@@ -1224,9 +1224,18 @@ pub fn new_project(
     Ok(())
 }
 
-pub fn run(hedy: &Hedy, dir: &Path, account: Option<&str>, args: Vec<String>) -> Result<()> {
+pub fn run(
+    hedy: &Hedy,
+    dir: &Path,
+    account: Option<&str>,
+    yes: bool,
+    args: Vec<String>,
+) -> Result<()> {
     let s = Style::for_stderr();
     let resolved = hedy.resolve_run(dir, account, args)?;
+    if !crate::usage::confirm_run(hedy, &resolved, yes) {
+        return Ok(());
+    }
     let place = resolved
         .project
         .as_ref()

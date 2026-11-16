@@ -520,6 +520,8 @@ pub struct FakeGit {
     worktrees: Mutex<Vec<String>>,
     init_error: Mutex<Option<String>>,
     files: Mutex<Vec<String>>,
+    staged: Mutex<Vec<FileDiff>>,
+    commits: Mutex<Vec<Commit>>,
 }
 
 impl Default for FakeGit {
@@ -537,6 +539,8 @@ impl Default for FakeGit {
             worktrees: Mutex::default(),
             init_error: Mutex::default(),
             files: Mutex::default(),
+            staged: Mutex::default(),
+            commits: Mutex::default(),
         }
     }
 }
@@ -583,6 +587,21 @@ impl FakeGit {
     /// The next `init_repo` fails with git's message.
     pub fn fail_init(&self, message: &str) {
         *self.init_error.lock().unwrap() = Some(message.into());
+    }
+    /// What `staged_diff` answers.
+    pub fn set_staged(&self, diff: Vec<FileDiff>) {
+        *self.staged.lock().unwrap() = diff;
+    }
+    /// What `recent_commits` answers (subjects, newest first).
+    pub fn set_commits(&self, subjects: &[&str]) {
+        *self.commits.lock().unwrap() = subjects
+            .iter()
+            .enumerate()
+            .map(|(i, s)| Commit {
+                hash: format!("c{i}"),
+                subject: s.to_string(),
+            })
+            .collect();
     }
     /// Worktrees added: "<branch> at <commit>".
     pub fn worktrees(&self) -> Vec<String> {
@@ -639,8 +658,20 @@ impl Git for FakeGit {
         self.log.lock().unwrap().push(format!("remove {branch}"));
         Ok(())
     }
-    fn recent_commits(&self, _: &Path, _: usize) -> PortResult<Vec<Commit>> {
-        Ok(vec![])
+    fn recent_commits(&self, _: &Path, limit: usize) -> PortResult<Vec<Commit>> {
+        let commits = self.commits.lock().unwrap();
+        Ok(commits.iter().take(limit).cloned().collect())
+    }
+    fn staged_diff(&self, _: &Path) -> PortResult<Vec<FileDiff>> {
+        Ok(self.staged.lock().unwrap().clone())
+    }
+    fn commit_staged(&self, repo: &Path, message: &str, edit: bool) -> PortResult<()> {
+        let edit = if edit { " (edit)" } else { "" };
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("commit-staged {}{edit} {message}", repo.display()));
+        Ok(())
     }
     fn rev_parse(&self, _: &Path, rev: &str) -> PortResult<String> {
         Ok(if rev == "HEAD" {

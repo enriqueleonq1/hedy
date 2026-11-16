@@ -15,7 +15,7 @@ use crate::domain::plan_usage::{
 };
 use crate::domain::version::parse_version;
 use crate::domain::{
-    Account, LaunchPurpose, LaunchSpec, PlanUsage, Provider, UsageProblem, UsageSource,
+    Account, LaunchPurpose, LaunchSpec, LimitLevel, PlanUsage, Provider, UsageProblem, UsageSource,
     UsageWindow, WindowKind,
 };
 
@@ -32,6 +32,19 @@ const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 /// reached the model. Hedy does not ask that version again.
 fn spends_tokens_key(provider: Provider) -> String {
     format!("plan_usage.spends_tokens.{}", provider.as_str())
+}
+
+/// An account close to or at its limit, from what Hedy already knows (the
+/// cached reading and the last report of a task), never asking the provider.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LimitCheck {
+    pub level: LimitLevel,
+    /// The window, when the plan reading says which one.
+    pub window: Option<UsageWindow>,
+    /// When it renews (Unix seconds), when known.
+    pub resets_at: Option<i64>,
+    /// When the figure was read (Unix seconds).
+    pub checked_at: i64,
 }
 
 /// What screens show about an account's plan usage.
@@ -89,6 +102,39 @@ impl Hedy {
             },
             supported,
         })
+    }
+
+    /// Whether `account` is close to (≥ 90 %) or at its limit, from the
+    /// cache only, so it never slows a launch down: the window closest to
+    /// its limit ([`PlanUsage::limit_alert`]), else a task's last report
+    /// that it was rejected and has not renewed yet.
+    pub fn limit_check(&self, account: &Account) -> AppResult<Option<LimitCheck>> {
+        let now = self.now_secs();
+        let usage = self.plan_usage_of(account)?.usage;
+        if let Some(usage) = &usage
+            && let Some(alert) = usage.limit_alert(now)
+        {
+            return Ok(Some(LimitCheck {
+                level: alert.level,
+                resets_at: alert.window.resets_at,
+                window: Some(alert.window),
+                checked_at: usage.checked_at,
+            }));
+        }
+        let Some(limit) = self.store.rate_limit(&account.id)? else {
+            return Ok(None);
+        };
+        let level = LimitLevel::from_report(&limit.status, limit.utilization);
+        let current = limit.resets_at.map_or(now - limit.at < 3600, |at| at > now);
+        // A newer reading that says nothing is wrong wins over an old report.
+        let superseded = usage.is_some_and(|u| u.checked_at >= limit.at);
+        let reached = level == Some(LimitLevel::Reached) && current && !superseded;
+        Ok(reached.then_some(LimitCheck {
+            level: LimitLevel::Reached,
+            window: None,
+            resets_at: limit.resets_at,
+            checked_at: limit.at,
+        }))
     }
 
     /// Asks the provider for a new reading unless one was asked less than

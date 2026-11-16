@@ -22,9 +22,9 @@ use crate::domain::{
 use crate::tr;
 
 /// How long "Sugerir con IA" waits for the agent's answer.
-const SUGGESTION_TIMEOUT: Duration = Duration::from_secs(120);
+pub(super) const SUGGESTION_TIMEOUT: Duration = Duration::from_secs(120);
 /// The diff sent to the agent is cut here (characters).
-const SUGGESTION_DIFF_MAX: usize = 12_000;
+pub(super) const SUGGESTION_DIFF_MAX: usize = 12_000;
 
 /// The main folder's state for its header: branch, changes, ahead/behind,
 /// the remote's host (never its URL: it may hold a token) and whether
@@ -138,6 +138,12 @@ pub enum ShipError {
     BranchGone {
         branch: String,
     },
+    /// `hedy commit` outside a git repository.
+    NotARepository,
+    /// `hedy commit` with nothing staged.
+    NothingStaged,
+    /// An empty commit message.
+    EmptyMessage,
 }
 
 fn last_lines(detail: &str) -> String {
@@ -278,6 +284,18 @@ impl ShipError {
             Self::BranchGone { branch } => tr!(
                 "la rama «{branch}» ya no existe en tu carpeta, así que no se puede reabrir la tarea",
                 "branch «{branch}» no longer exists in your folder, so the task cannot be reopened"
+            ),
+            Self::NotARepository => tr!(
+                "esta carpeta no está en un repositorio de git",
+                "this folder is not in a git repository"
+            ),
+            Self::NothingStaged => tr!(
+                "no hay cambios preparados: añade lo que quieras incluir con `git add <archivo>` y vuelve a intentarlo",
+                "nothing is staged: add what you want to include with `git add <file>` and try again"
+            ),
+            Self::EmptyMessage => tr!(
+                "el mensaje de commit está vacío",
+                "the commit message is empty"
             ),
         }
     }

@@ -244,6 +244,84 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             ),
         ),
         (
+            "run",
+            "yes",
+            tr!(
+                "No pregunta si la cuenta está cerca de su límite (igual avisa)",
+                "Do not ask when the account is close to its limit (it still warns)"
+            ),
+        ),
+        (
+            "usage",
+            "",
+            tr!(
+                "Cuánto del plan lleva usado cada cuenta, como /usage en cada CLI",
+                "Show how much of its plan each account has used, like /usage in each CLI"
+            ),
+        ),
+        (
+            "usage",
+            "cached",
+            tr!(
+                "Solo lo guardado, sin preguntar a nadie (al instante)",
+                "Only what is cached, without asking anyone (instant)"
+            ),
+        ),
+        (
+            "usage",
+            "refresh",
+            tr!(
+                "Pregunta ahora, aunque nunca más de una vez cada 3 min por cuenta",
+                "Ask now, though never more than once every 3 min per account"
+            ),
+        ),
+        (
+            "usage",
+            "short",
+            tr!(
+                "Una línea corta para el prompt o la barra de estado (CP 83% · CT 34%); usa lo guardado salvo con --refresh",
+                "One short line for a prompt or a status bar (CP 83% · CT 34%); uses the cache unless --refresh"
+            ),
+        ),
+        ("usage", "json", tr!("Salida en JSON", "JSON output")),
+        (
+            "commit",
+            "",
+            tr!(
+                "Sugiere un mensaje de commit para lo que preparaste (git add) y hace el commit con tu git",
+                "Suggest a commit message for what you staged (git add) and commit it with your git"
+            ),
+        ),
+        (
+            "commit",
+            "account",
+            tr!(
+                "Cuenta que escribe el mensaje (por defecto, la del proyecto o la predeterminada)",
+                "Account that writes the message (by default, the project's or the default one)"
+            ),
+        ),
+        (
+            "commit",
+            "model",
+            tr!(
+                "Modelo a usar (por defecto, el de la cuenta)",
+                "Model to use (by default, the account's)"
+            ),
+        ),
+        (
+            "commit",
+            "print",
+            tr!(
+                "Solo imprime el mensaje: git commit -m \"$(hedy commit --print)\"",
+                "Only print the message: git commit -m \"$(hedy commit --print)\""
+            ),
+        ),
+        (
+            "commit",
+            "yes",
+            tr!("Hace el commit sin preguntar", "Commit without asking"),
+        ),
+        (
             "doctor",
             "",
             tr!(
@@ -629,6 +707,7 @@ fn value_names() -> Vec<(&'static str, String)> {
         ("key", tr!("CLAVE", "KEY")),
         ("value", tr!("VALOR", "VALUE")),
         ("text", tr!("TEXTO", "TEXT")),
+        ("model", tr!("MODELO", "MODEL")),
     ]
 }
 
@@ -758,11 +837,35 @@ pub enum Command {
     Run {
         #[arg(long, short)]
         account: Option<String>,
+        #[arg(long, short)]
+        yes: bool,
         #[arg(last = true)]
         args: Vec<String>,
     },
 
     Doctor,
+
+    Usage {
+        #[arg(long, conflicts_with = "refresh")]
+        cached: bool,
+        #[arg(long)]
+        refresh: bool,
+        #[arg(long, conflicts_with = "json")]
+        short: bool,
+        #[arg(long)]
+        json: bool,
+    },
+
+    Commit {
+        #[arg(long, short)]
+        account: Option<String>,
+        #[arg(long, short)]
+        model: Option<String>,
+        #[arg(long, conflicts_with = "yes")]
+        print: bool,
+        #[arg(long, short)]
+        yes: bool,
+    },
 
     #[command(subcommand)]
     Account(AccountCommand),
@@ -1113,10 +1216,49 @@ mod tests {
     fn run_passes_arguments_through() {
         let cli =
             Cli::try_parse_from(["hedy", "run", "-a", "personal", "--", "--resume", "x"]).unwrap();
-        let Some(Command::Run { account, args }) = cli.command else {
+        let Some(Command::Run { account, args, .. }) = cli.command else {
             panic!("expected run");
         };
         assert_eq!(account.as_deref(), Some("personal"));
         assert_eq!(args, vec!["--resume", "x"]);
+        assert!(matches!(
+            Cli::try_parse_from(["hedy", "run", "-y", "--", "-c"])
+                .unwrap()
+                .command,
+            Some(Command::Run { yes: true, .. })
+        ));
+    }
+
+    #[test]
+    fn usage_and_commit_flags() {
+        assert!(matches!(
+            Cli::try_parse_from(["hedy", "usage", "--short", "--refresh"])
+                .unwrap()
+                .command,
+            Some(Command::Usage {
+                short: true,
+                refresh: true,
+                cached: false,
+                json: false
+            })
+        ));
+        assert!(Cli::try_parse_from(["hedy", "usage", "--cached", "--refresh"]).is_err());
+        assert!(Cli::try_parse_from(["hedy", "usage", "--short", "--json"]).is_err());
+        let Some(Command::Commit {
+            account,
+            model,
+            print,
+            yes,
+        }) = Cli::try_parse_from(["hedy", "commit", "-a", "personal", "-m", "haiku", "--print"])
+            .unwrap()
+            .command
+        else {
+            panic!("expected commit");
+        };
+        assert_eq!(
+            (account.as_deref(), model.as_deref(), print, yes),
+            (Some("personal"), Some("haiku"), true, false)
+        );
+        assert!(Cli::try_parse_from(["hedy", "commit", "--print", "--yes"]).is_err());
     }
 }
