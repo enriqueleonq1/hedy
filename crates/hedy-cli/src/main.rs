@@ -2,9 +2,11 @@
 
 mod cli;
 mod commands;
+mod commit;
 mod mascot;
 mod spinner;
 mod style;
+mod usage;
 
 use std::process::ExitCode;
 
@@ -80,7 +82,38 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Client { name, clear } => {
             commands::set_client(&hedy, &dir, if clear { None } else { name.as_deref() })
         }
-        Command::Run { account, args } => commands::run(&hedy, &dir, account.as_deref(), args),
+        Command::Run { account, yes, args } => {
+            commands::run(&hedy, &dir, account.as_deref(), yes, args)
+        }
+        Command::Usage {
+            cached,
+            refresh,
+            short,
+            json,
+        } => usage::usage(
+            &hedy,
+            usage::UsageOptions {
+                cached,
+                refresh,
+                short,
+                json,
+            },
+        ),
+        Command::Commit {
+            account,
+            model,
+            print,
+            yes,
+        } => commit::commit(
+            &hedy,
+            &dir,
+            commit::CommitOptions {
+                account: account.as_deref(),
+                model: model.as_deref(),
+                print,
+                yes,
+            },
+        ),
         Command::Account(sub) => match sub {
             AccountCommand::Add(args) => commands::add_account(&hedy, args),
             AccountCommand::List => commands::list_accounts(&hedy),

@@ -1831,6 +1831,7 @@ dependencies = [
  "hedy-core",
  "predicates",
  "rpassword",
+ "serde_json",
  "tempfile",
 ]
 
