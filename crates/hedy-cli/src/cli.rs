@@ -189,8 +189,8 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             "summary",
             "",
             tr!(
-                "Uso y costo estimado por cliente y por proyecto",
-                "Show usage and estimated cost by client and by project"
+                "Uso (tokens) por cliente y por proyecto; costo estimado solo de API keys",
+                "Show usage (tokens) by client and by project; estimated cost for API keys only"
             ),
         ),
         (
@@ -210,8 +210,8 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             "client",
             "",
             tr!(
-                "Para quién es el proyecto actual, para sumar el costo por cliente",
-                "Set who the current project is for, to add up the cost by client"
+                "Para quién es el proyecto actual, para agrupar el uso por cliente",
+                "Set who the current project is for, to group usage by client"
             ),
         ),
         (
