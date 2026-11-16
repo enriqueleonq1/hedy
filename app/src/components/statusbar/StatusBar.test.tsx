@@ -6,10 +6,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "../../App";
 import { ApiProvider } from "../../api/context";
 import { MockApi } from "../../api/MockApi";
-import type { Overview } from "../../api/types";
+import type { Overview, PlanState } from "../../api/types";
 import { FileNavigatorProvider, useFileNavigator, type NavigatorTarget } from "../../files/navigator";
 import { I18nProvider } from "../../i18n";
 import type { View } from "../Layout";
+import { PlanUsageProvider } from "../planUsage";
 import { ShortcutsProvider } from "../shortcuts";
 import { TerminalProvider } from "../Terminal/TerminalProvider";
 import { ToastProvider } from "../ui/Toast";
@@ -44,8 +45,10 @@ async function renderBar(view: View, extra?: ReactNode) {
             <FileNavigatorProvider>
               <TerminalProvider>
                 <ShortcutsProvider>
-                  <StatusBar overview={overview} view={view} onNavigate={onNavigate} />
-                  {extra}
+                  <PlanUsageProvider accounts={overview.accounts} screen={view.screen}>
+                    <StatusBar overview={overview} view={view} onNavigate={onNavigate} />
+                    {extra}
+                  </PlanUsageProvider>
                 </ShortcutsProvider>
               </TerminalProvider>
             </FileNavigatorProvider>
@@ -55,8 +58,11 @@ async function renderBar(view: View, extra?: ReactNode) {
     </QueryClientProvider>,
   );
   const bar = screen.getByRole("contentinfo", { name: "Barra de estado" });
-  return { api, onNavigate, bar, user: userEvent.setup() };
+  return { api, overview, onNavigate, bar, user: userEvent.setup() };
 }
+
+const PERSONAL = "Claude personal: Semana · 83%. Abrir la cuenta";
+const nowSecs = () => Math.floor(Date.now() / 1000);
 
 describe("Status bar", () => {
   it("at home shows only the account and the shortcuts", async () => {
@@ -175,6 +181,73 @@ describe("Status bar", () => {
     // No agent, copy or file outside the workspace.
     await waitFor(() => expect(within(bar).getByRole("group", { name: "Tu carpeta" })).toBeInTheDocument());
     expect(within(bar).queryByRole("button", { name: /trabajando|Te espera|copiar la ruta/ })).toBeNull();
+  });
+});
+
+describe("Status bar account", () => {
+  /** Waits for the reading asked on mount, then answers the next ones with `answer`. */
+  async function withReading(api: MockApi, overview: Overview, answer: (plan: PlanState) => PlanState | Promise<PlanState>) {
+    const plan = overview.accounts.find((a) => a.id === "claude-personal")!.usage.plan;
+    const refresh = vi.spyOn(api, "refreshPlanUsage");
+    await waitFor(() => expect(within(screen.getByRole("contentinfo")).getByRole("button", { name: PERSONAL })).not.toHaveAttribute("aria-busy"));
+    refresh.mockClear();
+    refresh.mockImplementation(async () => answer(plan));
+    return refresh;
+  }
+
+  it("says how old the reading is in its tooltip", async () => {
+    const { bar } = await renderBar({ screen: "welcome" });
+    const title = within(bar).getByRole("button", { name: PERSONAL }).getAttribute("title")!;
+    expect(title.split("\n")[0]).toBe("Claude personal · Semana · 83% · actualizado hace 2 min");
+    expect(title).toContain("Clic derecho: actualizar ahora");
+  });
+
+  it("reads the plan again from its context menu and says the new figure", async () => {
+    const { api, overview, bar, user } = await renderBar({ screen: "welcome" });
+    const refresh = await withReading(api, overview, (plan) => ({ ...plan, attemptedAt: nowSecs() + 5 }));
+    const account = within(bar).getByRole("button", { name: PERSONAL });
+    await user.pointer({ keys: "[MouseRight]", target: account });
+    const menu = screen.getByRole("menu", { name: "Uso de Claude personal" });
+    expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Actualizar ahora", "Abrir la cuenta"]);
+    await user.click(within(menu).getByRole("menuitem", { name: "Actualizar ahora" }));
+    expect(refresh).toHaveBeenCalledWith("claude-personal");
+    expect(await screen.findByText("Uso de Claude personal actualizado: Semana · 83%")).toBeInTheDocument();
+  });
+
+  it("does not pretend when the backend answers from its cache", async () => {
+    const { api, overview, bar, user } = await renderBar({ screen: "welcome" });
+    // Asked 30 s ago: the backend keeps the reading for three minutes.
+    await withReading(api, overview, (plan) => ({ ...plan, attemptedAt: nowSecs() - 30 }));
+    await user.pointer({ keys: "[MouseRight]", target: within(bar).getByRole("button", { name: PERSONAL }) });
+    await user.click(screen.getByRole("menuitem", { name: "Actualizar ahora" }));
+    expect(
+      await screen.findByText("Actualizado hace 2 min; se puede volver a consultar en 2 min 30 s"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/actualizado: Semana/)).toBeNull();
+  });
+
+  it("opens its menu from the keyboard and keeps the last figure, muted, while it reads", async () => {
+    const { api, overview, bar, onNavigate, user } = await renderBar({ screen: "welcome" });
+    let answer!: (plan: PlanState) => void;
+    const reading = new Promise<PlanState>((resolve) => (answer = resolve));
+    const plan = overview.accounts.find((a) => a.id === "claude-personal")!.usage.plan;
+    await withReading(api, overview, () => reading);
+    const account = within(bar).getByRole("button", { name: PERSONAL });
+
+    account.focus();
+    await user.keyboard("{Shift>}{F10}{/Shift}");
+    await user.click(screen.getByRole("menuitem", { name: "Actualizar ahora" }));
+    expect(account).toHaveAttribute("aria-busy", "true");
+    expect(within(account).getByText("83%")).toHaveClass("plan-figure--busy");
+    expect(account.getAttribute("title")).toMatch(/actualizando…/);
+    answer({ ...plan, attemptedAt: nowSecs() + 5 });
+    await waitFor(() => expect(account).not.toHaveAttribute("aria-busy"));
+    expect(within(account).getByText("83%")).not.toHaveClass("plan-figure--busy");
+
+    account.focus();
+    await user.keyboard("{ContextMenu}");
+    await user.click(screen.getByRole("menuitem", { name: "Abrir la cuenta" }));
+    expect(onNavigate).toHaveBeenCalledWith({ screen: "accounts", account: "claude-personal" });
   });
 });
 
