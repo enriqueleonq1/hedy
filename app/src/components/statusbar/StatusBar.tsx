@@ -14,14 +14,24 @@ import { timeAgo } from "../../format";
 import { useLanguage, useT, type Language, type Translate } from "../../i18n";
 import { FolderStatus } from "../../screens/workspace/ship/FolderStatus";
 import { useFolderStatus } from "../../screens/workspace/ship/useShip";
+import { useNowSeconds } from "../../tasks/countdown";
 import { isOpen, modelLabel } from "../../tasks/timeline";
 import { needsYou, useActivity, useConversations, useTaskDiff, useTasks } from "../../tasks/hooks";
 import { viewProject, type View } from "../Layout";
 import { pressPanelShortcut } from "../palette/codeCommands";
 import { resolveCopy } from "../palette/copy";
 import { modKey, shiftKey } from "../palette/keys";
-import { headlineText, levelClass, planPercent, usageLabel } from "../planUsage";
+import {
+  headlineText,
+  levelClass,
+  planPercent,
+  usageLabel,
+  usageTitle,
+  usePlanRefresh,
+  usePlanRefreshActions,
+} from "../planUsage";
 import { useShortcuts } from "../shortcuts";
+import { isMenuKey, pointFor, useContextMenu, type ContextMenuItem } from "../ui/ContextMenu";
 import { MenuButton, type MenuItem } from "../ui/Menu";
 import { useToast } from "../ui/Toast";
 
@@ -302,30 +312,65 @@ function accountUsage(account: Account, t: Translate, language: Language): strin
   return headlineText(account, t) ?? usageLabel(account, language);
 }
 
-/** The account at work here and its plan's figure; a click opens its card. */
+/**
+ * The account at work here and its plan's figure; a click opens its card. Its
+ * tooltip says how old the reading is; right-click (or Shift+F10) offers to
+ * read it again now. While a new reading comes, the last figure stays, muted.
+ */
 function AccountItem({ account, onOpen }: { account: Account; onOpen: () => void }) {
   const t = useT();
   const language = useLanguage();
+  const now = useNowSeconds(30_000);
+  const busy = usePlanRefresh().busy.has(account.id);
+  const { refreshAccount } = usePlanRefreshActions();
+  const menu = useContextMenu();
   const percent = planPercent(account);
   const label = t("shell.openAccount", { name: account.name, usage: accountUsage(account, t, language) });
+  const title = [usageTitle(account, t, language, now), busy && t("shell.usage.refreshing")].filter(Boolean).join(" · ");
+  const items: ContextMenuItem[] = [
+    {
+      label: t("statusbar.account.refresh"),
+      disabled: !account.usage.plan.supported,
+      onSelect: () => refreshAccount(account),
+    },
+    { label: t("statusbar.account.open"), onSelect: onOpen },
+  ];
+  const menuLabel = t("statusbar.account.menu", { name: account.name });
 
   return (
-    <button
-      type="button"
-      className="statusbar__item statusbar__account"
-      // The tooltip also says where the figure comes from, once.
-      title={`${label}\n${t("shell.usage.note")}`}
-      aria-label={label}
-      onClick={onOpen}
-    >
-      <span className="statusbar__dot" style={{ background: account.color }} aria-hidden />
-      <span className="statusbar__text statusbar__account-name" aria-hidden>
-        {account.name}
-      </span>
-      <span className={["statusbar__figure", levelClass(percent)].filter(Boolean).join(" ")} aria-hidden>
-        {percent === null ? usageLabel(account, language) : `${Math.round(percent)}%`}
-      </span>
-    </button>
+    <>
+      <button
+        type="button"
+        className="statusbar__item statusbar__account"
+        // The tooltip also says where the figure comes from, once.
+        title={`${title}\n${t("shell.usage.note")}\n${t("statusbar.account.hint")}`}
+        aria-label={label}
+        aria-busy={busy || undefined}
+        aria-keyshortcuts="Shift+F10"
+        onClick={onOpen}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          menu.open(e, items, menuLabel);
+        }}
+        onKeyDown={(e) => {
+          if (!isMenuKey(e)) return;
+          e.preventDefault();
+          menu.open(pointFor(e.currentTarget), items, menuLabel);
+        }}
+      >
+        <span className="statusbar__dot" style={{ background: account.color }} aria-hidden />
+        <span className="statusbar__text statusbar__account-name" aria-hidden>
+          {account.name}
+        </span>
+        <span
+          className={["statusbar__figure", levelClass(percent), busy && "plan-figure--busy"].filter(Boolean).join(" ")}
+          aria-hidden
+        >
+          {percent === null ? usageLabel(account, language) : `${Math.round(percent)}%`}
+        </span>
+      </button>
+      {menu.element}
+    </>
   );
 }
 

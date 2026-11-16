@@ -256,7 +256,7 @@ describe("English", () => {
     await screen.findByRole("heading", { name: /Hi, Enrique!/ });
     const bar = screen.getByRole("contentinfo", { name: "Status bar" });
     const account = within(bar).getByRole("button", { name: "Claude personal: Week · 83%. Open the account" });
-    expect(account.title).toMatch(/^Claude personal: Week · 83%\. Open the account\n/);
+    expect(account.title).toMatch(/^Claude personal · Week · 83% · updated 2 min ago\n[^]*\nRight-click: refresh now$/);
     expect(within(bar).getByRole("button", { name: "Keyboard shortcuts (?)" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
 

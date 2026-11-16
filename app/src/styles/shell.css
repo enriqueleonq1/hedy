@@ -373,3 +373,13 @@
 @media (max-width: 600px) {
   .statusbar__copy .statusbar__text { display: none; }
 }
+
+/* A plan figure being read again: the last value stays, muted and breathing,
+   until the new reading comes (still, with reduced motion). */
+.plan-figure--busy,
+.plan-figure--busy.level--warning,
+.plan-figure--busy.level--danger { color: var(--muted); animation: plan-figure-pulse 1.4s ease-in-out infinite; }
+@keyframes plan-figure-pulse { 50% { opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) {
+  .plan-figure--busy { animation: none; opacity: 0.7; }
+}

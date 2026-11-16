@@ -1,20 +1,38 @@
 // The plan's limit windows (5-hour session, week, per model…) as each provider
 // reports them, and how the app keeps them fresh.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { OVERVIEW_KEY, useApi } from "../api/context";
 import type { Account, Overview, PlanState, PlanUsage, UsageWindow } from "../api/types";
-import type { Language, MessageKey, Translate } from "../i18n";
+import { useLanguage, useT, type Language, type MessageKey, type Translate } from "../i18n";
 import { formatTokens, formatUsd, timeAgo } from "../format";
+import { formatCountdown } from "../tasks/countdown";
+import { useToast } from "./ui/Toast";
 
 /** At or above: the warning color. */
 export const WARNING_PERCENT = 80;
 /** At or above: the danger color. */
 export const DANGER_PERCENT = 95;
-/** While the window is focused, readings are asked this often. */
-export const REFRESH_EVERY_MS = 5 * 60 * 1000;
+/**
+ * The backend asks each provider at most this often and answers from its cache
+ * otherwise (`PLAN_USAGE_MIN_INTERVAL_SECS` in hedy-core).
+ */
+export const PLAN_USAGE_MIN_INTERVAL_SECS = 180;
+/**
+ * While the window is focused, a reading this old is asked again: the
+ * backend's minimum, so a figure is never older than it has to be.
+ */
+export const REFRESH_EVERY_MS = PLAN_USAGE_MIN_INTERVAL_SECS * 1000;
+/**
+ * How often the focused window looks for readings that are due. Checking the
+ * age (rather than asking on a fixed beat) keeps the pace when a reading
+ * came from elsewhere: a focus, a screen change, a task that ended.
+ */
+export const DUE_CHECK_MS = 15_000;
+/** A figure older than this is shown as being read again until the new one comes. */
+export const STALE_AFTER_MS = 2 * REFRESH_EVERY_MS;
 
 export type UsageLevel = "ok" | "warning" | "danger";
 
@@ -60,6 +78,17 @@ export function levelClass(percent: number | null): string | undefined {
   if (percent === null) return undefined;
   const level = usageLevel(percent);
   return level === "ok" ? undefined : `level--${level}`;
+}
+
+/**
+ * "Claude personal · Semana · 83% · actualizado hace 12 min": an account's
+ * figure and how old its reading is, for tooltips.
+ */
+export function usageTitle(account: Account, t: Translate, language: Language, now = Date.now() / 1000): string {
+  const usage = headlineText(account, t) ?? usageLabel(account, language);
+  const checkedAt = account.usage.plan.usage?.checkedAt;
+  const age = checkedAt == null ? null : t("shell.usage.updated", { when: timeAgo(checkedAt, t, now) });
+  return [account.name, usage, age].filter(Boolean).join(" · ");
 }
 
 /** "34%" of the plan, "$2,10" for API spend, tokens otherwise. */
@@ -189,49 +218,147 @@ function withPlan(overview: Overview | undefined, id: string, plan: PlanState): 
   };
 }
 
+/** What asking for a reading gave. */
+export type RefreshOutcome =
+  /** The provider was asked just now (`plan.problem` says if it failed). */
+  | { kind: "fresh"; plan: PlanState }
+  /** The backend answered from its cache: it asked less than its minimum ago. */
+  | { kind: "cached"; plan: PlanState; retryInSecs: number }
+  /** The backend could not be reached. */
+  | { kind: "failed" };
+
+export interface PlanRefresh {
+  /** Accounts whose figure is being read again (shown muted, `aria-busy`). */
+  busy: ReadonlySet<string>;
+  /** Asks for one account's reading now, showing its figure as busy meanwhile. */
+  refreshNow(id: string): Promise<RefreshOutcome>;
+  /** The same for every account with a usage source. */
+  refreshAllNow(): Promise<RefreshOutcome[]>;
+}
+
+const NO_REFRESH: PlanRefresh = {
+  busy: new Set(),
+  refreshNow: async () => ({ kind: "failed" }),
+  refreshAllNow: async () => [],
+};
+
+const PlanRefreshContext = createContext<PlanRefresh>(NO_REFRESH);
+
+/** Keeps the plan usage fresh (`usePlanUsageRefresh`) for everything under it. */
+export function PlanUsageProvider({ accounts, screen, children }: { accounts: Account[]; screen: string; children: ReactNode }) {
+  const refresh = usePlanUsageRefresh(accounts, screen);
+  return <PlanRefreshContext.Provider value={refresh}>{children}</PlanRefreshContext.Provider>;
+}
+
+/** The plan refresh of the nearest `PlanUsageProvider` (none: nothing is busy, nothing is asked). */
+export function usePlanRefresh(): PlanRefresh {
+  return useContext(PlanRefreshContext);
+}
+
+/** Whether a reading is due: the backend would ask the provider again. */
+function isDue(plan: PlanState, now: number): boolean {
+  return plan.attemptedAt === null || Math.floor(now) - plan.attemptedAt >= PLAN_USAGE_MIN_INTERVAL_SECS;
+}
+
+/** Whether a figure is old enough to show it as being read again. */
+function isStale(plan: PlanState, now: number): boolean {
+  const checkedAt = plan.usage?.checkedAt;
+  return checkedAt != null && (now - checkedAt) * 1000 > STALE_AFTER_MS;
+}
+
 /**
- * Keeps the plan usage fresh while the shell (and with it the sidebar) is on
- * screen: when it appears or `screen` changes, every five minutes while the
+ * Keeps the plan usage fresh while the shell is on screen: when it appears or
+ * `screen` changes, whenever a reading is `REFRESH_EVERY_MS` old while the
  * window has focus, on focus, and when one of Hedy's tasks ends. The backend
- * asks each provider at most every few minutes and answers from its cache
- * otherwise, so this never blocks or floods anything. Failures are quiet:
- * the last reading stays.
+ * asks each provider at most every `PLAN_USAGE_MIN_INTERVAL_SECS` and answers
+ * from its cache otherwise, so this never blocks or floods anything. Failures
+ * are quiet: the last reading stays. A figure is marked busy while it is read
+ * again after the window was away longer than the interval, when it is older
+ * than `STALE_AFTER_MS`, or when the user asked.
  */
-export function usePlanUsageRefresh(accounts: Account[], screen: string) {
+export function usePlanUsageRefresh(accounts: Account[], screen: string): PlanRefresh {
   const api = useApi();
   const client = useQueryClient();
+  const latest = useRef(accounts);
+  useEffect(() => {
+    latest.current = accounts;
+  });
   const ids = accounts
     .filter((a) => a.usage.plan.supported)
     .map((a) => a.id)
     .join("\n");
-  const refreshing = useRef(new Set<string>());
+  const inFlight = useRef(new Map<string, Promise<RefreshOutcome>>());
+  const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
 
-  const refresh = useCallback(
-    (only?: string) => {
-      for (const id of ids ? ids.split("\n") : []) {
-        if ((only && id !== only) || refreshing.current.has(id)) continue;
-        refreshing.current.add(id);
-        api
-          .refreshPlanUsage(id)
-          .then((plan) => client.setQueryData<Overview>(OVERVIEW_KEY, (old) => withPlan(old, id, plan)))
-          .catch(() => {})
-          .finally(() => refreshing.current.delete(id));
-      }
+  const mark = useCallback((id: string, on: boolean) => {
+    setBusy((old) => {
+      if (old.has(id) === on) return old;
+      const next = new Set(old);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  /** One reading at a time per account: a second ask joins the one on its way. */
+  const ask = useCallback(
+    (id: string, show: boolean): Promise<RefreshOutcome> => {
+      if (show) mark(id, true);
+      const running = inFlight.current.get(id);
+      if (running) return running;
+      const asked = Math.floor(Date.now() / 1000);
+      const reading = api
+        .refreshPlanUsage(id)
+        .then((plan): RefreshOutcome => {
+          client.setQueryData<Overview>(OVERVIEW_KEY, (old) => withPlan(old, id, plan));
+          if (plan.attemptedAt === null || plan.attemptedAt >= asked) return { kind: "fresh", plan };
+          const age = Date.now() / 1000 - plan.attemptedAt;
+          return { kind: "cached", plan, retryInSecs: Math.max(1, Math.ceil(PLAN_USAGE_MIN_INTERVAL_SECS - age)) };
+        })
+        .catch((): RefreshOutcome => ({ kind: "failed" }))
+        .finally(() => {
+          inFlight.current.delete(id);
+          mark(id, false);
+        });
+      inFlight.current.set(id, reading);
+      return reading;
     },
-    [api, client, ids],
+    [api, client, mark],
   );
 
-  useEffect(() => refresh(), [refresh, screen]);
+  const refresh = useCallback(
+    ({ only, due = false, show = false }: { only?: string; due?: boolean; show?: boolean } = {}) => {
+      const now = Date.now() / 1000;
+      for (const account of latest.current) {
+        const plan = account.usage.plan;
+        if (!plan.supported || (only && account.id !== only) || (due && !isDue(plan, now))) continue;
+        void ask(account.id, show || isStale(plan, now));
+      }
+    },
+    [ask],
+  );
+
+  // `ids`: a new account gets its first reading right away.
+  useEffect(() => refresh(), [refresh, screen, ids]);
 
   useEffect(() => {
-    const tick = () => {
-      if (document.hasFocus()) refresh();
+    let leftAt: number | null = null;
+    const timer = window.setInterval(() => {
+      if (document.hasFocus()) refresh({ due: true });
+    }, DUE_CHECK_MS);
+    const onBlur = () => {
+      leftAt = Date.now();
     };
-    const timer = window.setInterval(tick, REFRESH_EVERY_MS);
-    const onFocus = () => refresh();
+    const onFocus = () => {
+      const away = leftAt !== null && Date.now() - leftAt > REFRESH_EVERY_MS;
+      leftAt = null;
+      refresh({ show: away });
+    };
+    window.addEventListener("blur", onBlur);
     window.addEventListener("focus", onFocus);
     return () => {
       window.clearInterval(timer);
+      window.removeEventListener("blur", onBlur);
       window.removeEventListener("focus", onFocus);
     };
   }, [refresh]);
@@ -241,8 +368,70 @@ export function usePlanUsageRefresh(accounts: Account[], screen: string) {
     const running = new Map<string, boolean>();
     return api.onTaskUpdated((task) => {
       const isRunning = task.status === "running";
-      if (running.get(task.id) && !isRunning) refresh(task.account);
+      if (running.get(task.id) && !isRunning) refresh({ only: task.account });
       running.set(task.id, isRunning);
     });
   }, [api, refresh]);
+
+  return useMemo<PlanRefresh>(
+    () => ({
+      busy,
+      refreshNow: (id) => ask(id, true),
+      refreshAllNow: () =>
+        Promise.all(latest.current.filter((a) => a.usage.plan.supported).map((a) => ask(a.id, true))),
+    }),
+    [busy, ask],
+  );
+}
+
+/**
+ * "Actualizar ahora" from a menu or the palette, said in a toast: the new
+ * figure, or, when the backend answered from its cache, how old the reading
+ * is and when it can be asked again (never a pretended refresh).
+ */
+export function usePlanRefreshActions() {
+  const { refreshNow, refreshAllNow } = usePlanRefresh();
+  const toast = useToast();
+  const t = useT();
+  const language = useLanguage();
+
+  const cachedText = useCallback(
+    (outcome: Extract<RefreshOutcome, { kind: "cached" }>) => {
+      const read = outcome.plan.usage?.checkedAt ?? outcome.plan.attemptedAt ?? Date.now() / 1000;
+      return t("shell.usage.cached", {
+        when: timeAgo(read, t),
+        wait: formatCountdown(outcome.retryInSecs, t) ?? t("wait.time.seconds", { s: 1 }),
+      });
+    },
+    [t],
+  );
+
+  const refreshAccount = useCallback(
+    (account: Account) => {
+      void refreshNow(account.id).then((outcome) => {
+        if (outcome.kind === "cached") toast.info(cachedText(outcome));
+        else if (outcome.kind === "failed" || outcome.plan.problem !== null)
+          toast.info(t("shell.usage.refreshFailed", { name: account.name }));
+        else {
+          const updated: Account = { ...account, usage: { ...account.usage, plan: outcome.plan } };
+          const usage = headlineText(updated, t) ?? usageLabel(updated, language);
+          toast.info(t("shell.usage.refreshed", { name: account.name, usage }));
+        }
+      });
+    },
+    [refreshNow, toast, t, language, cachedText],
+  );
+
+  const refreshAll = useCallback(() => {
+    void refreshAllNow().then((outcomes) => {
+      if (outcomes.length === 0) return;
+      const fresh = outcomes.filter((o) => o.kind === "fresh");
+      const cached = outcomes.filter((o) => o.kind === "cached");
+      if (fresh.some((o) => o.plan.problem === null)) toast.info(t("shell.usage.refreshedAll"));
+      else if (cached.length === 0 || fresh.length > 0) toast.info(t("shell.usage.refreshFailedAll"));
+      else toast.info(cachedText(cached.reduce((a, b) => (b.retryInSecs < a.retryInSecs ? b : a))));
+    });
+  }, [refreshAllNow, toast, t, cachedText]);
+
+  return { refreshAccount, refreshAll };
 }

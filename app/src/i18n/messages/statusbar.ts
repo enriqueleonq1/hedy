@@ -23,6 +23,10 @@ const es = {
   "statusbar.file.line": "Lín {n}",
   "statusbar.file.copy": "{path}: copiar la ruta",
   "statusbar.file.copied": "Ruta copiada: {path}",
+  "statusbar.account.menu": "Uso de {name}",
+  "statusbar.account.refresh": "Actualizar ahora",
+  "statusbar.account.open": "Abrir la cuenta",
+  "statusbar.account.hint": "Clic derecho: actualizar ahora",
   "statusbar.help": "Atajos de teclado (?)",
 };
 
@@ -48,6 +52,10 @@ const en: Record<keyof typeof es, string> = {
   "statusbar.file.line": "Ln {n}",
   "statusbar.file.copy": "{path}: copy the path",
   "statusbar.file.copied": "Path copied: {path}",
+  "statusbar.account.menu": "{name} usage",
+  "statusbar.account.refresh": "Refresh now",
+  "statusbar.account.open": "Open the account",
+  "statusbar.account.hint": "Right-click: refresh now",
   "statusbar.help": "Keyboard shortcuts (?)",
 };
 

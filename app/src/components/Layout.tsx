@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 import type { Account, Overview } from "../api/types";
 import { useLanguage, useT } from "../i18n";
 import { useCreate } from "../screens/create/CreateProvider";
+import { useNowSeconds } from "../tasks/countdown";
 import { isOpen } from "../tasks/timeline";
 import { useConversations } from "../tasks/hooks";
 import { useInbox } from "../tasks/inbox";
@@ -14,7 +15,7 @@ import { AccountsIcon, ActivityIcon, CollapseIcon, QuestionIcon, SettingsIcon } 
 import { MenuButton } from "./ui/Menu";
 import { Mascot } from "./Mascot/Mascot";
 import { modKey, paletteKeys } from "./palette/keys";
-import { headlineText, levelClass, planPercent, usageLabel, usePlanUsageRefresh } from "./planUsage";
+import { headlineText, levelClass, planPercent, usageLabel, usageTitle, usePlanRefresh } from "./planUsage";
 import { projectColor } from "./projects";
 import { useTerminals } from "./Terminal/TerminalProvider";
 import { Button } from "./ui/Button";
@@ -139,8 +140,9 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
   const [allConversations, setAllConversations] = useState(false);
   const shownConversations = allConversations ? conversations : conversations.slice(0, SIDEBAR_CONVERSATIONS);
   const openConversation = view.screen === "conversation" ? (view.task ?? null) : undefined;
-  // The sidebar shows every account's plan usage: keep it fresh while it is on screen.
-  usePlanUsageRefresh(overview.accounts, view.screen);
+  // Plan figures and how old they are (`PlanUsageProvider` keeps them fresh).
+  const planBusy = usePlanRefresh().busy;
+  const now = useNowSeconds(60_000);
   // In the rail, names are not on screen: they go in the accessible name and the tooltip.
   const named = (name: string) => (rail ? { "aria-label": name, title: name } : {});
 
@@ -306,20 +308,26 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
             // The same headline window as the top bar; quiet unless it gets close to the limit.
             const percent = planPercent(a);
             const usage = headlineText(a, t) ?? usageLabel(a, language);
+            const busy = planBusy.has(a.id);
             return (
               <li key={a.id}>
                 <button
                   type="button"
                   className="sidebar__item sidebar__account"
-                  title={`${a.name}: ${usage}`}
+                  title={[usageTitle(a, t, language, now), busy && t("shell.usage.refreshing")].filter(Boolean).join(" · ")}
                   aria-label={t("shell.openAccount", { name: a.name, usage })}
+                  aria-busy={busy || undefined}
                   aria-current={view.screen === "accounts" && view.account === a.id ? "true" : undefined}
                   onClick={() => onNavigate({ screen: "accounts", account: a.id })}
                 >
                   <span className="dot" style={{ background: a.color }} aria-hidden />
                   <span className="sidebar__name">{a.name}</span>
                   {percent !== null && (
-                    <span className={["sidebar__meta sidebar__percent", levelClass(percent)].filter(Boolean).join(" ")}>
+                    <span
+                      className={["sidebar__meta sidebar__percent", levelClass(percent), busy && "plan-figure--busy"]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
                       {Math.round(percent)}%
                     </span>
                   )}
