@@ -1,0 +1,159 @@
+/* "Llevar a un proyecto": the context card above the composer, the links
+   between a conversation and its tasks, the quiet suggestion under an answer,
+   and the carried context in a task's first message. Colors only from the
+   theme's tokens. */
+
+/* The context card: a quiet block inside the composer, above the text. */
+.carry-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--panel-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.carry-card__head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.carry-card__toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-callout);
+  text-align: left;
+  cursor: pointer;
+}
+.carry-card__title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.carry-card__meta { flex-shrink: 0; color: var(--muted); font-size: var(--text-caption); font-variant-numeric: tabular-nums; }
+.carry-card__chevron { display: inline-grid; place-items: center; color: var(--muted); transform: rotate(-90deg); transition: transform 0.16s var(--ease-out); }
+.carry-card__chevron--open { transform: rotate(0deg); }
+.carry-card__chevron .icon,
+.carry-card__chevron svg { width: 12px; height: 12px; }
+.carry-card__icon {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.carry-card__icon:hover,
+.carry-card__icon:focus-visible { background: var(--selection); color: var(--ink); }
+.carry-card__note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; color: var(--muted); font-size: var(--text-caption); }
+.carry-card__note--warn { color: var(--warn-ink); }
+.carry-card__body { display: grid; gap: var(--space-2); max-height: min(40vh, 360px); overflow-y: auto; padding-right: var(--space-1); }
+.carry-card__body[hidden] { display: none; }
+.carry-card__turns { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.carry-card__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.carry-card__hint { margin-right: auto; color: var(--muted); font-size: var(--text-caption); }
+.carry-card__summary { display: grid; gap: var(--space-2); }
+.carry-card__summary textarea { width: 100%; resize: vertical; font: inherit; font-size: var(--text-callout); }
+
+.carry-turn {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--line);
+}
+.carry-turn:first-child { border-top: 0; }
+.carry-turn__text { display: grid; gap: 2px; min-width: 0; }
+.carry-turn__label { margin: 0; color: var(--muted); font-size: var(--text-caption); font-weight: 600; }
+.carry-turn__question { margin: 0; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.carry-turn__answer {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--text-callout);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+}
+.carry-turn__images { margin: 0; color: var(--muted); font-size: var(--text-caption); }
+.carry-turn--removed .carry-turn__question { color: var(--muted); font-weight: 400; text-decoration: line-through; }
+
+/* Links in a header's meta line: plain text until hovered or focused. */
+.carry-link {
+  display: inline-block;
+  max-width: 34ch;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.carry-link:hover,
+.carry-link:focus-visible { color: var(--action-text); text-decoration-color: currentColor; }
+.carry-link--gone { cursor: default; text-decoration: none; }
+.carry-continued { white-space: nowrap; }
+/* Several tasks share the line: their text is cut by the line's own ellipsis. */
+.carry-continued .carry-link { display: inline; max-width: none; }
+
+/* Under a finished answer: next steps, without a box. */
+.carry-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin: 0 0 0 46px; }
+.carry-suggest__label { margin-right: var(--space-1); color: var(--muted); font-size: var(--text-caption); }
+.carry-suggest .btn { gap: 6px; }
+
+/* The carried context, folded inside the task's first message. */
+.carried-context { margin: -2px 0 6px; white-space: normal; }
+.carried-context__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--text-caption);
+  font-weight: 600;
+  cursor: pointer;
+}
+.carried-context__toggle:hover,
+.carried-context__toggle:focus-visible { color: var(--ink); }
+.carried-context__text {
+  max-height: 320px;
+  margin: 6px 0 0;
+  padding: var(--space-2) var(--space-3);
+  overflow: auto;
+  border-radius: var(--radius-control);
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-caption);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The dialogs. */
+.carry-dialog,
+.carry-note { display: grid; gap: var(--space-3); }
+.carry-dialog p { margin: 0; }
+.carry-note__text { width: 100%; resize: vertical; font: inherit; }
+
+@media (prefers-reduced-motion: reduce) {
+  .carry-card__chevron { transition: none; }
+}

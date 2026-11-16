@@ -7,6 +7,7 @@ import type { Account, ImageInput, Overview, PromptTemplate, Task, TaskMode } fr
 import { Mascot } from "../../components/Mascot/Mascot";
 import { accountOption } from "../../components/accounts";
 import { useFocusMode } from "../../components/focusMode";
+import type { View } from "../../components/Layout";
 import { shortPath } from "../../components/projects";
 import { headlineText } from "../../components/planUsage";
 import { Button } from "../../components/ui/Button";
@@ -57,7 +58,12 @@ import { FilePicker } from "./FilePicker";
 import { insertMention, mentionAt, rankFiles } from "./mentions";
 import { Suggestions, useSuggestions, type Suggestion } from "./Suggestions";
 import { QueuedMessages } from "./QueuedMessages";
-import { PanelIcon, PlusIcon, StopIcon } from "./icons";
+import { CarryIcon, PanelIcon, PlusIcon, StopIcon } from "./icons";
+import { CarryDialog } from "./carry/CarryDialog";
+import { ContextCard, useCarryDraft } from "./carry/ContextCard";
+import { CarrySuggestion, ContinuedIn, OriginLink } from "./carry/links";
+import { NoteDialog } from "./carry/NoteDialog";
+import { continuationsKey, contextKey, useContinuations } from "./carry/queries";
 import { jumpDigit, TaskSwitcher } from "./TaskSwitcher";
 import { Timeline } from "./Timeline";
 
@@ -127,6 +133,8 @@ export function Workspace({
   project,
   task: chosen,
   draft,
+  carry,
+  onNavigate,
   onSelectTask,
   onOpenMemory,
   onOpenStatus,
@@ -138,6 +146,10 @@ export function Workspace({
   task?: string | null;
   /** Text to start the composer of a new task with. */
   draft?: string;
+  /** A new task continues this conversation: its context goes in a card above the composer. */
+  carry?: string;
+  /** Goes to another screen (the links between a conversation and its tasks). */
+  onNavigate?: (view: View) => void;
   /** Shows another task (`null`: a new one); `replace` keeps the step out of Back. */
   onSelectTask: (task: string | null, options?: { replace?: boolean }) => void;
   onOpenMemory?: () => void;
@@ -195,11 +207,42 @@ export function Workspace({
   const focusMode = useFocusMode();
   const panelShown = !solo && panel.shown && !focusMode.focus;
   const [deleting, setDeleting] = useState(false);
+  // "Llevar a un proyecto" and "Guardar como nota" wait for the answer to end.
+  const [carrying, setCarrying] = useState(false);
+  const [noting, setNoting] = useState(false);
+  const toast = useToast();
+  const client = useQueryClient();
+  const answering = !!task && (task.status === "running" || task.status === "waitingApproval");
+  const carryable = solo && !!task && !!onNavigate;
+  const continued = useContinuations(carryable ? task?.id : null);
+  const startCarry = () => (answering ? toast.info(t("carry.busy")) : setCarrying(true));
+  const startNote = () => (answering ? toast.info(t("carry.busy")) : setNoting(true));
   const more: MenuItem[] = [
     ...(onOpenStatus ? [{ label: t("workspace.status"), onSelect: onOpenStatus }] : []),
     ...(onOpenMemory ? [{ label: t("common.memory"), onSelect: onOpenMemory }] : []),
-    ...(solo && task && !isBusy(task) ? [{ label: t("conversation.deleteLabel"), onSelect: () => setDeleting(true) }] : []),
+    ...(carryable
+      ? [
+          {
+            label: t("carry.actionMenu"),
+            hint: answering ? t("carry.busy") : t("carry.actionHint"),
+            disabled: answering,
+            onSelect: () => setCarrying(true),
+          },
+          {
+            label: t("carry.saveNoteMenu"),
+            hint: answering ? t("carry.busy") : t("carry.saveNoteHint"),
+            disabled: answering,
+            onSelect: () => setNoting(true),
+          },
+        ]
+      : []),
+    ...(solo && task && !isBusy(task)
+      ? [{ label: t("conversation.deleteLabel"), onSelect: () => setDeleting(true), separatorBefore: carryable }]
+      : []),
   ];
+  // A new project task that continues a conversation.
+  const carried = useCarryDraft(!solo && !task ? carry : undefined);
+  const carriedFrom = useConversations(!!carried).data?.find((c) => c.id === carried?.conversation);
 
   return (
     <div className={["workspace", solo && "workspace--solo", !panelShown && "workspace--no-panel"].filter(Boolean).join(" ")}>
@@ -208,7 +251,20 @@ export function Workspace({
           <div className="chat__title">
             <h1 title={title}>{title}</h1>
             <p className="muted">
-              {solo ? t("conversation.subtitle") : name}
+              {/* Where it came from or went goes first: the line is cut at its end. */}
+              {carryable && task && (continued.data?.length ?? 0) > 0 && onNavigate ? (
+                <ContinuedIn conversation={task.id} overview={overview} onNavigate={onNavigate} />
+              ) : solo ? (
+                t("conversation.subtitle")
+              ) : (
+                name
+              )}
+              {task?.origin && onNavigate && (
+                <>
+                  {" · "}
+                  <OriginLink origin={task.origin} onNavigate={onNavigate} />
+                </>
+              )}
               {task?.workspace && <> · {t("common.branch", { branch: task.workspace.branch })}</>}
               {task && <> · {t(MODE_LABEL[task.mode])} · {t(STATUS_LABEL[task.status])}</>}
             </p>
@@ -222,6 +278,18 @@ export function Workspace({
                 onSelect={onSelectTask}
                 conversations={solo}
               />
+            )}
+            {carryable && (
+              <button
+                type="button"
+                className="tool-btn tool-btn--icon"
+                aria-disabled={answering || undefined}
+                title={`${t("carry.action")} · ${answering ? t("carry.busy") : t("carry.actionHint")}`}
+                onClick={startCarry}
+              >
+                <CarryIcon />
+                <span className="sr-only">{t("carry.action")}</span>
+              </button>
             )}
             {task && (
               <button
@@ -256,6 +324,18 @@ export function Workspace({
         {deleting && task && (
           <DeleteConversation task={task} onClose={() => setDeleting(false)} onDeleted={() => onSelectTask(null)} />
         )}
+        {carrying && task && onNavigate && (
+          <CarryDialog overview={overview} conversation={task} onClose={() => setCarrying(false)} onNavigate={onNavigate} />
+        )}
+        {noting && task && onNavigate && (
+          <NoteDialog
+            overview={overview}
+            conversation={task}
+            defaultProject={continued.data?.[0]?.project}
+            onClose={() => setNoting(false)}
+            onNavigate={onNavigate}
+          />
+        )}
 
         {tasks.isError && (
           <p className="error-text" role="alert">
@@ -271,6 +351,11 @@ export function Workspace({
             accounts={overview.accounts}
             mascot={mascot}
             scrollKey={queue.length}
+            footer={
+              carryable && task?.status === "review" ? (
+                <CarrySuggestion onCarry={startCarry} onNote={startNote} />
+              ) : undefined
+            }
           />
         ) : (
           <div className="chat__empty">
@@ -284,7 +369,7 @@ export function Workspace({
                   ? t("workspace.empty", { name, account: account.name })
                   : t("workspace.noAccount")}
             </p>
-            {account && (
+            {account && !carried && (
               <Suggestions
                 items={suggestions}
                 onPick={(s) => setFill({ ...s, n: (fill?.n ?? 0) + 1, scope: project })}
@@ -311,6 +396,17 @@ export function Workspace({
           disabled={!account}
           imageAccount={isOpen(task) && task ? task.account : (account?.id ?? null)}
           initialText={task ? "" : draft}
+          context={
+            carried ? (
+              <ContextCard
+                draft={carried}
+                account={overview.accounts.find((a) => a.id === carriedFrom?.account)}
+                onRemove={() => onSelectTask(null, { replace: true })}
+              />
+            ) : undefined
+          }
+          sendBlocked={!!carried && (carried.empty || carried.busy || carried.loading)}
+          placeholder={carried ? t("carry.placeholder", { name }) : undefined}
           fill={!task && fill?.scope === project ? fill : null}
           autoFocus={chosen === null || (solo && !task)}
           start={
@@ -323,7 +419,7 @@ export function Workspace({
                     model: input.model,
                     ...(input.images ? { images: input.images } : {}),
                   })
-              : (api, input) => api.startTask({ project, ...input })
+              : (api, input) => api.startTask({ project, ...input, ...(carried ? { carry: carried.input } : {}) })
           }
           accountPicker={
             solo && !task && asking.accounts.length > 1 && account ? (
@@ -342,6 +438,10 @@ export function Workspace({
           }
           onStarted={(created) => {
             setFill(null);
+            if (created.origin) {
+              void client.invalidateQueries({ queryKey: continuationsKey(created.origin.conversation) });
+              void client.invalidateQueries({ queryKey: contextKey(created.origin.conversation) });
+            }
             onSelectTask(created.id, { replace: true });
           }}
         />
@@ -498,6 +598,9 @@ function Composer({
   autoFocus,
   start: startNew,
   accountPicker,
+  context,
+  sendBlocked,
+  placeholder: placeholderOverride,
   onStarted,
 }: {
   /** The project, or `null` for a conversation. */
@@ -520,6 +623,12 @@ function Composer({
   start: StartTask;
   /** Shown in the bar of a new conversation. */
   accountPicker?: ReactNode;
+  /** Above the text of a new task: the context it carries (a conversation). */
+  context?: ReactNode;
+  /** Sending waits (the carried context is not ready). */
+  sendBlocked?: boolean;
+  /** Says what to write, instead of the default for the mode. */
+  placeholder?: string;
   onStarted: (task: Task) => void;
 }) {
   const t = useT();
@@ -703,7 +812,7 @@ function Composer({
 
   function submit() {
     const value = text.trim();
-    if (!value || busy || disabled) return;
+    if (!value || busy || disabled || sendBlocked) return;
     const message = { text: value, images: images.inputs() };
     if (followUp) send.mutate(message);
     else start.mutate(message);
@@ -795,6 +904,7 @@ function Composer({
           }}
         />
       )}
+      {!followUp && context}
       <ImageTray images={images.images} onRemove={images.remove} onEmptied={focusInput} />
       {/* The placeholder says what sending does now; the label says it in full. */}
       <label className="sr-only" htmlFor="composer-input">
@@ -826,7 +936,9 @@ function Composer({
         aria-keyshortcuts="Enter"
         aria-describedby={`${listId}-enter`}
         placeholder={
-          followUp && card
+          !followUp && placeholderOverride
+            ? placeholderOverride
+            : followUp && card
             ? t("workspace.composer.placeholderCard")
             : queueing
               ? t("workspace.composer.placeholderQueue")
@@ -1002,7 +1114,7 @@ function Composer({
             aria-label={sendLabel}
             title={sendLabel}
             aria-keyshortcuts="Enter Control+Enter Meta+Enter"
-            disabled={!text.trim() || busy || disabled}
+            disabled={!text.trim() || busy || disabled || sendBlocked}
           >
             <SendIcon />
           </button>

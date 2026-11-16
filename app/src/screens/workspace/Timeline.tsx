@@ -17,6 +17,8 @@ import { useT, type MessageKey, type Translate } from "../../i18n";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { LimitCard } from "./LimitCard";
 import { MessageImages } from "./MessageImages";
+import { CarriedContext } from "./carry/links";
+import { splitCarried } from "./carry/queries";
 import { groupSteps, summarize, summaryFacts, type StepItem } from "./stepGroups";
 
 interface TimelineProps {
@@ -42,6 +44,8 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
 
   const color = account?.color ?? DEFAULT_ACCOUNT_COLOR;
   const lastAgent = items.findLastIndex((i) => i.type !== "user");
+  // A carried conversation's context opens the first message, folded away.
+  const firstUser = items.findIndex((i) => i.type === "user");
   const working = mascot.state === "working";
   const entries = useMemo(() => groupSteps(items), [items]);
 
@@ -84,10 +88,12 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
         }
         const { item, index } = entry;
         if (item.type === "user") {
+          const carried = index === firstUser ? splitCarried(task, item.text) : null;
           return (
             <div key={item.key} className="bubble">
+              {carried && <CarriedContext origin={carried.origin} />}
               <MessageImages taskId={task.id} images={item.images} />
-              {item.text}
+              {carried ? carried.rest : item.text}
             </div>
           );
         }

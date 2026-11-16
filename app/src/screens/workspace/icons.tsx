@@ -79,3 +79,24 @@ export function ImageIcon() {
     </svg>
   );
 }
+
+/** ↗ into a folder: carry a conversation into a project. */
+export function CarryIcon() {
+  return (
+    <svg {...common} className="icon">
+      <path d="M4 8V6a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v1" />
+      <path d="M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+      <path d="M10 15l5-5M11 10h4v4" />
+    </svg>
+  );
+}
+
+/** A page with a fold: a memory note. */
+export function NoteIcon() {
+  return (
+    <svg {...common} className="icon">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5M9 13h6M9 17h4" />
+    </svg>
+  );
+}

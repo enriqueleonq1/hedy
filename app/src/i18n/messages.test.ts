@@ -1,5 +1,6 @@
 import accounts from "./messages/accounts";
 import activity from "./messages/activity";
+import carry from "./messages/carry";
 import code from "./messages/code";
 import common from "./messages/common";
 import composer from "./messages/composer";
@@ -28,6 +29,7 @@ import { translator } from ".";
 const AREAS = {
   accounts,
   activity,
+  carry,
   code,
   common,
   composer,
