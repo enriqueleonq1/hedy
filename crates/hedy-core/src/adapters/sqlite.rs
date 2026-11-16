@@ -625,12 +625,19 @@ impl UsageRepository for SqliteStore {
         })
     }
 
-    fn usage_by_project(&self, since: i64) -> PortResult<Vec<(PathBuf, UsageSample)>> {
+    fn usage_by_project(&self, since: i64) -> PortResult<Vec<(PathBuf, AccountId, UsageSample)>> {
         self.with(|c| {
             c.prepare(&format!(
-                "SELECT project, {USAGE_SUMS} FROM usage WHERE at >= ?1 GROUP BY project ORDER BY project"
+                "SELECT project, account_id, {USAGE_SUMS} FROM usage WHERE at >= ?1
+                 GROUP BY project, account_id ORDER BY project, account_id"
             ))?
-            .query_map([since], |r| Ok((PathBuf::from(r.get::<_, String>(0)?), usage_from_row(r, 1)?)))?
+            .query_map([since], |r| {
+                Ok((
+                    PathBuf::from(r.get::<_, String>(0)?),
+                    AccountId::new(r.get::<_, String>(1)?).map_err(invalid(1))?,
+                    usage_from_row(r, 2)?,
+                ))
+            })?
             .collect()
         })
     }
@@ -1418,6 +1425,13 @@ mod tests {
         assert_eq!(
             (since.input_tokens, since.output_tokens, since.cost_usd),
             (11, 2, Some(1.0))
+        );
+        let rows = store.usage_by_project(40).unwrap();
+        assert_eq!(rows.len(), 1, "one row per project and account");
+        let (project, by, usage) = &rows[0];
+        assert_eq!(
+            (project.as_path(), by, usage.input_tokens),
+            (Path::new("/code/moira"), &account, 11)
         );
 
         assert_eq!(store.rate_limit(&account).unwrap(), None);

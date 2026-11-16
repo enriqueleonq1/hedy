@@ -59,7 +59,10 @@ describe("English", () => {
   });
 
   it("greets on the home screen and frames it in English", async () => {
-    setup();
+    const api = MockApi.withSampleData();
+    // An API key spent something: the one cost worth adding up.
+    api.recordUsage({ project: "/code/hedy", account: "kimi", at: Math.floor(Date.now() / 1000), tokens: 400, costUsd: 1.25 });
+    setup(api);
     expect(await screen.findByRole("heading", { name: /Hi, Enrique!/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Your plans" })).toBeInTheDocument();
     expect(screen.getByText(/has room to spare\./)).toBeInTheDocument();
@@ -76,7 +79,7 @@ describe("English", () => {
     const plans = screen.getByRole("heading", { name: "Your plans" }).closest("section")!;
     expect(within(plans).getByRole("button", { name: "Claude trabajo: 5-hour session · 34%, Week · 29%" })).toBeInTheDocument();
     expect(
-      await screen.findByText(/^In Hedy: 216k tokens this week \(about \$4\.1\d\); hedy was the busiest project\.$/),
+      await screen.findByText(/^In Hedy: 216k tokens this week \(about \$1\.25 on API keys\); hedy was the busiest project\.$/),
     ).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
   });

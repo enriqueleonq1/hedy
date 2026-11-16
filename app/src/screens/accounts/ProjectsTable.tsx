@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { OVERVIEW_KEY, useAction } from "../../api/context";
 import { phaseSummary } from "../../components/models";
@@ -16,6 +16,7 @@ import { PhasesDialog } from "./PhasesDialog";
 export function ProjectsTable({ overview }: { overview: Overview }) {
   const t = useT();
   const adding = useAddProject();
+  const clientHintId = useId();
 
   return (
     <section className="card table-card" aria-labelledby="projects-table-title">
@@ -46,18 +47,32 @@ export function ProjectsTable({ overview }: { overview: Overview }) {
             </thead>
             <tbody>
               {overview.projects.map((p) => (
-                <ProjectRow key={p.path} project={p} overview={overview} />
+                <ProjectRow key={p.path} project={p} overview={overview} clientHintId={clientHintId} />
               ))}
             </tbody>
           </table>
         </div>
+      )}
+      {overview.projects.length > 0 && (
+        <p id={clientHintId} className="small muted">
+          {t("accounts.table.clientHint")}
+        </p>
       )}
       {adding.path && <AddProjectDialog overview={overview} path={adding.path} onClose={adding.close} />}
     </section>
   );
 }
 
-function ProjectRow({ project, overview }: { project: Project; overview: Overview }) {
+function ProjectRow({
+  project,
+  overview,
+  clientHintId,
+}: {
+  project: Project;
+  overview: Overview;
+  /** The line under the table that says what the client is for. */
+  clientHintId: string;
+}) {
   const t = useT();
   const actions = useProjectActions();
   const assign = useAction(
@@ -83,6 +98,7 @@ function ProjectRow({ project, overview }: { project: Project; overview: Overvie
         <input
           className="table__input"
           aria-label={t("accounts.table.clientOf", { name: project.name })}
+          aria-describedby={clientHintId}
           placeholder={t("common.noClient")}
           key={project.client ?? ""}
           defaultValue={project.client ?? ""}

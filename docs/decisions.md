@@ -503,13 +503,17 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
 
   It does not count functions in the code map: that would mean querying the
   codebase-memory-mcp index from Hedy, so it only says whether the map is on.
-- **Cost per project and client.** Each project can have a client (`projects.client`).
-  `hedy summary` and the "Uso de la semana por cliente" table in Cuentas add up tokens and
-  cost per client and per project. All costs are estimates and the UI says so:
-  - For subscriptions, the cost is what the CLI reports, which is not what is billed.
-  - For API keys, it uses the price the user sets (`api_price.<provider>`, input/output
-    USD per million tokens), because Hedy does not know the providers' prices. Cached
-    input is charged as regular input, so the figure is an upper bound.
+- **Usage per project and client.** Each project can have a client (`projects.client`),
+  set in Cuentas → Proyectos or with `hedy client`, not when creating a project (an
+  optional field there read as billing). `hedy summary` and the "Uso de la semana por
+  cliente" table in Cuentas add up usage (tokens) per client and per project; the
+  per-client parts only appear once some project has a client.
+  - The cost only counts API-key accounts, where usage is really paid, and is marked as an
+    estimate. It uses the price the user sets (`api_price.<provider>`, input/output USD
+    per million tokens), because Hedy does not know the providers' prices. Cached input is
+    charged as regular input, so the figure is an upper bound.
+  - A subscription's cost (what the CLI reports) is still recorded but not shown: it is
+    not what is billed, and next to tokens it read as money spent.
 - **Evals** (`crates/hedy-evals`, cases in `evals/`). These are real tasks run with and
   without each layer (`plain`, `memory`, `code-map`, `full`):
   - The runner drives Hedy like the app, approving plans and allowing permissions;

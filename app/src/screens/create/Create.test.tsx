@@ -70,7 +70,8 @@ describe("Starting something new", () => {
     expect(within(dialog).queryByRole("combobox", { name: "Cuenta" })).not.toBeInTheDocument();
     await user.click(more);
     expect(within(dialog).getByRole("combobox", { name: "Cuenta" })).toHaveTextContent("Claude personal");
-    await user.type(within(dialog).getByRole("textbox", { name: "Cliente" }), "ACME");
+    // The client is set later, from Cuentas: not asked when creating.
+    expect(within(dialog).queryByRole("textbox", { name: "Cliente" })).not.toBeInTheDocument();
 
     await user.click(createButton);
     expect(create).toHaveBeenCalledWith({
@@ -78,7 +79,6 @@ describe("Starting something new", () => {
       parent: "/code",
       account: "claude-personal",
       protect: false,
-      client: "ACME",
     });
     const composer = await screen.findByRole("textbox", { name: "Pídele algo a Mi tienda" });
     await waitFor(() => expect(composer).toHaveFocus());

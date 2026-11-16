@@ -32,7 +32,7 @@ import { useLanguage, useT, type Language, type Translate } from "../i18n";
 import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 import { useCreate } from "./create/CreateProvider";
 
-/** Hedy's one-liner about the week: tokens, estimated cost and the busiest project. */
+/** Hedy's one-liner about the week: tokens, the API keys' estimated cost (if any) and the busiest project. */
 function weekUsageText(summary: UsageSummary, t: Translate, language: Language): string | null {
   const tokens = summary.projects.reduce((sum, p) => sum + p.tokens, 0);
   if (tokens === 0) return null;

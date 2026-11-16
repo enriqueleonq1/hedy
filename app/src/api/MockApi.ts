@@ -400,15 +400,21 @@ export class MockApi implements HedyApi {
     [18, 42, 25, 61, 20, 0, 0].forEach((k, i) => {
       if (k === 0) return;
       const at = Math.floor(today.getTime() / 1000) - (6 - i) * day;
-      api.usage.push({ project: "/code/hedy", at, tokens: k * 1000, costUsd: k / 40 });
-      api.usage.push({ project: "/code/homming", at, tokens: k * 300, costUsd: null });
+      // Subscriptions: the CLI's cost guess is recorded, never added up as spend.
+      api.recordUsage({ project: "/code/hedy", account: "claude-personal", at, tokens: k * 1000, costUsd: k / 40 });
+      api.recordUsage({ project: "/code/homming", account: "claude-trabajo", at, tokens: k * 300, costUsd: null });
     });
     return api;
   }
 
   // --------------------------------------------------------------- usage
 
-  private usage: (UsagePoint & { project: string })[] = [];
+  private usage: (UsagePoint & { project: string; account: string })[] = [];
+
+  /** What a finished turn records (sample data and tests). */
+  recordUsage(record: UsagePoint & { project: string; account: string }) {
+    this.usage.push(record);
+  }
 
   async setProjectClient(path: string, client: string | null): Promise<void> {
     this.project(path).client = client?.trim() || null;
@@ -441,6 +447,8 @@ export class MockApi implements HedyApi {
   async usageSummary(days: number): Promise<UsageSummary> {
     const since = Math.floor(Date.now() / 1000 - days * 86_400);
     const add = (a: number | null, b: number | null) => (a === null && b === null ? null : (a ?? 0) + (b ?? 0));
+    // Like the backend: only API keys are really paid.
+    const paid = new Set(this.state.accounts.filter((a) => a.kind === "apiKey").map((a) => a.id));
     const projects = new Map<string, UsageSummary["projects"][number]>();
     for (const u of this.usage.filter((u) => u.at >= since)) {
       const project = this.state.projects.find((p) => p.path === u.project);
@@ -452,7 +460,7 @@ export class MockApi implements HedyApi {
         costUsd: null,
       };
       entry.tokens += u.tokens;
-      entry.costUsd = add(entry.costUsd, u.costUsd);
+      entry.costUsd = add(entry.costUsd, paid.has(u.account) ? u.costUsd : null);
       projects.set(u.project, entry);
     }
     const list = [...projects.values()].sort((a, b) => b.tokens - a.tokens);
@@ -884,7 +892,6 @@ export class MockApi implements HedyApi {
       name: input.name.trim(),
       account,
       protected: input.protect,
-      client: input.client?.trim() || null,
     });
     for (const a of this.state.accounts) {
       a.projects = this.state.projects.filter((p) => p.account === a.id).map((p) => p.path);

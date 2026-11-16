@@ -8,6 +8,7 @@ use chrono::Timelike;
 use hedy_core::application::{
     AccountStatus, CheckArea, CheckLevel, DoctorReport, Hedy, NewAccount, NewProject, NewTemplate,
     PlanUsageState, Proposal, RECENT_HOURS, Setting, SkillFiles, TaskActivity, TemplateScope,
+    UsageSummary,
 };
 use hedy_core::domain::memory::USER_AUTHOR;
 use hedy_core::domain::{
@@ -103,8 +104,8 @@ fn tips() -> Vec<String> {
             "`hedy summary` shows how much you used, by client and by project."
         ),
         tr!(
-            "`hedy client <nombre>` suma el costo de tus proyectos por cliente.",
-            "`hedy client <name>` adds up the cost of your projects by client."
+            "`hedy client <nombre>` agrupa el uso de tus proyectos por cliente.",
+            "`hedy client <name>` groups your projects' usage by client."
         ),
         tr!(
             "`hedy memory` lista lo que tus IAs propusieron recordar; tú decides qué se guarda.",
@@ -391,24 +392,41 @@ pub fn summary(hedy: &Hedy, days: u32) -> Result<()> {
         return Ok(());
     }
 
+    println!();
+    for line in summary_report(&s, &summary, &period) {
+        println!("{line}");
+    }
+    println!();
+    Ok(())
+}
+
+/// The lines of `hedy summary` when something was used. Tokens for every
+/// account; a cost column only when an API key spent something, since that is
+/// the only usage really paid (a subscription's cost is the CLI's guess). The
+/// per-client table only when some project has a client.
+fn summary_report(s: &Style, summary: &UsageSummary, period: &str) -> Vec<String> {
     let mut total = hedy_core::domain::UsageSample::default();
     for p in &summary.projects {
         total.add(&p.usage);
     }
-    let totals = format!(
-        "{} tokens · {}",
-        tokens(total.total_tokens()),
-        usd(total.cost_usd)
-    );
-    println!();
-    println!(
+    let paid = total.cost_usd.is_some();
+    let mut totals = format!("{} tokens", tokens(total.total_tokens()));
+    if paid {
+        let cost = usd(total.cost_usd);
+        totals.push_str(&tr!(
+            " · {cost} de costo estimado (API key)",
+            " · {cost} estimated cost (API key)"
+        ));
+    }
+    let mut lines = vec![format!(
         "  {}  {}",
         s.bold(tr!("Uso {period}", "Usage {period}")),
         s.accent(totals)
-    );
+    )];
 
-    let rows = |title: String, rows: Vec<(String, u64, Option<f64>)>| {
-        println!("\n{}", s.section(&title));
+    let mut table = |title: String, rows: Vec<(String, u64, Option<f64>)>| {
+        lines.push(String::new());
+        lines.push(s.section(&title));
         let max = rows.iter().map(|r| r.1).max().unwrap_or(0).max(1);
         for (name, used, cost) in rows {
             let name = fit(&name, NAME_WIDTH);
@@ -417,27 +435,34 @@ pub fn summary(hedy: &Hedy, days: u32) -> Result<()> {
             } else {
                 String::new()
             };
-            println!(
-                "  {}  {bar}{:>8}  {:>8}",
+            let cost = if paid {
+                format!("  {}", s.muted(format!("{:>8}", usd(cost))))
+            } else {
+                String::new()
+            };
+            lines.push(format!(
+                "  {}  {bar}{:>8}{cost}",
                 pad(&name, name.chars().count(), NAME_WIDTH),
                 tokens(used),
-                s.muted(format!("{:>8}", usd(cost))),
-            );
+            ));
         }
     };
-    let no_client = tr!("Sin cliente", "No client");
-    rows(
-        tr!("Por cliente", "By client"),
-        summary
-            .clients
-            .iter()
-            .map(|c| {
-                let name = c.client.clone().unwrap_or_else(|| no_client.clone());
-                (name, c.usage.total_tokens(), c.usage.cost_usd)
-            })
-            .collect(),
-    );
-    rows(
+    let grouped = summary.clients.iter().any(|c| c.client.is_some());
+    if grouped {
+        let no_client = tr!("Sin cliente", "No client");
+        table(
+            tr!("Por cliente", "By client"),
+            summary
+                .clients
+                .iter()
+                .map(|c| {
+                    let name = c.client.clone().unwrap_or_else(|| no_client.clone());
+                    (name, c.usage.total_tokens(), c.usage.cost_usd)
+                })
+                .collect(),
+        );
+    }
+    table(
         tr!("Por proyecto", "By project"),
         summary
             .projects
@@ -445,18 +470,32 @@ pub fn summary(hedy: &Hedy, days: u32) -> Result<()> {
             .map(|p| (p.name.clone(), p.usage.total_tokens(), p.usage.cost_usd))
             .collect(),
     );
-    let note = tr!(
-        "Tokens que Hedy registró en sus tareas. El costo es una estimación: en suscripciones, \
-         lo que calcula la CLI (no lo que se cobra); en API keys, según el precio de `api_price.<proveedor>`.",
-        "Tokens Hedy recorded in its tasks. The cost is an estimate: for subscriptions, \
-         what the CLI calculates (not what you are charged); for API keys, from the `api_price.<provider>` price."
+
+    let mut note = tr!(
+        "Tokens que Hedy registró en sus tareas.",
+        "Tokens Hedy recorded in its tasks."
     );
-    println!();
-    for line in wrap(&note, 72) {
-        println!("  {}", hint(&s, &line));
+    if paid {
+        note.push(' ');
+        note.push_str(&tr!(
+            "El costo es una estimación y solo cuenta las cuentas con API key, según el precio de `api_price.<proveedor>`.",
+            "The cost is an estimate and only counts API-key accounts, from the `api_price.<provider>` price."
+        ));
     }
-    println!();
-    Ok(())
+    if !grouped {
+        note.push(' ');
+        note.push_str(&tr!(
+            "Para agrupar proyectos por cliente: `hedy client <nombre>`.",
+            "To group projects by client: `hedy client <name>`."
+        ));
+    }
+    lines.push(String::new());
+    lines.extend(
+        wrap(&note, 72)
+            .iter()
+            .map(|line| format!("  {}", hint(s, line))),
+    );
+    lines
 }
 
 /// "3 min", "2 h 5 min", "3 d".
@@ -1147,7 +1186,6 @@ pub fn new_project(
         parent,
         account,
         protect,
-        client: None,
     })?;
     let title = s.bold(&project.name);
     let path = s.muted(short_path(&project.path));
@@ -1860,6 +1898,8 @@ pub fn config_set(hedy: &Hedy, key: &str, value: Option<&str>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hedy_core::domain::UsageSample;
+    use hedy_core::domain::metrics::{ProjectUsage, by_client};
 
     #[test]
     fn long_text_is_wrapped_and_cut() {
@@ -1915,5 +1955,56 @@ mod tests {
     #[test]
     fn hints_keep_their_backticks_without_colors() {
         assert_eq!(hint(&Style::plain(), "usa `hedy run`"), "usa `hedy run`");
+    }
+
+    fn usage_of(
+        project: &str,
+        client: Option<&str>,
+        tokens: u64,
+        cost: Option<f64>,
+    ) -> ProjectUsage {
+        ProjectUsage {
+            project: format!("/code/{project}").into(),
+            name: project.into(),
+            client: client.map(str::to_owned),
+            usage: UsageSample {
+                input_tokens: tokens,
+                cost_usd: cost,
+                ..UsageSample::default()
+            },
+        }
+    }
+
+    fn report(projects: Vec<ProjectUsage>) -> String {
+        let summary = UsageSummary {
+            since: 0,
+            clients: by_client(&projects),
+            projects,
+        };
+        summary_report(&Style::plain(), &summary, "esta semana").join("\n")
+    }
+
+    #[test]
+    fn summary_talks_about_tokens_and_hides_unused_parts() {
+        let text = report(vec![usage_of("moira", None, 4_000, None)]);
+        assert!(text.contains("Uso esta semana  4 k tokens"), "{text}");
+        assert!(!text.contains('$'), "no cost without an API key: {text}");
+        assert!(!text.contains("Por cliente"), "no client set: {text}");
+        assert!(text.contains("Por proyecto"));
+        assert!(text.contains("`hedy client <nombre>`"));
+    }
+
+    #[test]
+    fn summary_shows_the_api_key_cost_as_an_estimate() {
+        let text = report(vec![
+            usage_of("moira", Some("León Blanco"), 4_000, Some(1.5)),
+            usage_of("citas", None, 2_000, None),
+        ]);
+        assert!(text.contains("$1,50 de costo estimado (API key)"), "{text}");
+        assert!(text.contains("Por cliente"));
+        assert!(text.contains("León Blanco"));
+        assert!(text.contains("Sin cliente"));
+        assert!(text.contains("solo cuenta las cuentas con API key"));
+        assert!(!text.contains("`hedy client <nombre>`"));
     }
 }

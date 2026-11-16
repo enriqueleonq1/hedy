@@ -54,7 +54,8 @@ export function AccountsScreen({ overview, focus }: { overview: Overview; focus?
       )}
 
       <ProjectsTable overview={overview} />
-      <SpendByClient />
+      {/* Only once some project has a client: without one it would be a single "Sin cliente" row. */}
+      {overview.projects.some((p) => p.client) && <SpendByClient />}
 
       {adding && (
         <AddAccountDialog overview={overview} onClose={() => setAdding(false)} onNeedsKey={(account) => setKeyFor(account)} />

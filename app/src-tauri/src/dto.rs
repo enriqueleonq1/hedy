@@ -378,7 +378,6 @@ pub struct NewProjectInput {
     pub parent: PathBuf,
     pub account: Option<String>,
     pub protect: bool,
-    pub client: Option<String>,
 }
 
 /// "Pregunta rápida": a question or research outside any project.
