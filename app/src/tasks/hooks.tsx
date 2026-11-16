@@ -4,6 +4,7 @@ import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { OVERVIEW_KEY, useApi } from "../api/context";
 import type { AgentEvent, BoardState, QueuedMessage, Task } from "../api/types";
 import { codeKeys } from "../files/navigator";
+import { runningElsewhere } from "./timeline";
 
 export const tasksKey = (project: string) => ["tasks", project] as const;
 const eventsKey = (taskId: string) => ["taskEvents", taskId] as const;
@@ -34,9 +35,47 @@ export function useTasks(project: string, enabled = true) {
 /** Questions outside any project; under `["tasks"]`, so task refreshes reach them too. */
 export const CONVERSATIONS_KEY = ["tasks", "*conversations"] as const;
 
+/**
+ * How often the conversations are read again while the window is visible:
+ * `hedy ask` stores them from another process, whose events never reach the
+ * app. One small query; paused while the window is hidden.
+ */
+export const CONVERSATIONS_REFRESH_MS = 10_000;
+
+/** How often a conversation answered elsewhere is read again while it is open. */
+export const ELSEWHERE_REFRESH_MS = 3_000;
+
 export function useConversations(enabled = true) {
   const api = useApi();
-  return useQuery({ queryKey: CONVERSATIONS_KEY, queryFn: () => api.conversations(), enabled });
+  return useQuery({
+    queryKey: CONVERSATIONS_KEY,
+    queryFn: () => api.conversations(),
+    enabled,
+    refetchInterval: CONVERSATIONS_REFRESH_MS,
+  });
+}
+
+/**
+ * Keeps an open conversation that answers elsewhere current: its history and
+ * status are read again from the store every few seconds while the window is
+ * visible, and once more when it stops running.
+ */
+export function useFollowElsewhere(task: Task | null | undefined) {
+  const client = useQueryClient();
+  const id = runningElsewhere(task) ? task.id : null;
+  useEffect(() => {
+    if (!id) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      void client.invalidateQueries({ queryKey: eventsKey(id) });
+      void client.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
+    }, ELSEWHERE_REFRESH_MS);
+    return () => {
+      window.clearInterval(timer);
+      // The last events may have landed with the new status.
+      void client.invalidateQueries({ queryKey: eventsKey(id) });
+    };
+  }, [client, id]);
 }
 
 /** The task list a task belongs in: its project's, or the conversations. */
@@ -167,10 +206,26 @@ export function TaskEventsBridge() {
       client.setQueryData(queueKey(taskId), queue);
       void client.invalidateQueries({ queryKey: ACTIVITY_KEY });
     });
+    // Back to the window: `hedy ask` may have stored conversations, or added
+    // to one, from another process. Only conversations without an agent here
+    // are read again (a live one's history arrives as events).
+    const onFocus = () => {
+      const outside = new Set(
+        (client.getQueryData<Task[]>(CONVERSATIONS_KEY) ?? []).filter((t) => !t.live).map((t) => t.id),
+      );
+      void client.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
+      void client.invalidateQueries({ queryKey: ACTIVITY_KEY });
+      void client.invalidateQueries({
+        queryKey: ["taskEvents"],
+        predicate: (query) => outside.has(String(query.queryKey[1])),
+      });
+    };
+    window.addEventListener("focus", onFocus);
     return () => {
       offEvent();
       offTask();
       offQueue();
+      window.removeEventListener("focus", onFocus);
     };
   }, [api, client]);
 

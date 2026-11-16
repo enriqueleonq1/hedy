@@ -248,7 +248,7 @@ export function mascotState(task: Task | null | undefined, events: AgentEvent[])
       return finished?.kind === "finished" && finished.ok ? "done" : "idle";
     }
     case "running":
-      return task.live ? "working" : "sleeping";
+      return task.live || runningElsewhere(task) ? "working" : "sleeping";
   }
 }
 
@@ -266,6 +266,14 @@ export const STATUS_LABEL: Record<Task["status"], MessageKey> = {
   discarded: "workspace.status.discarded",
   failed: "workspace.status.failed",
 };
+
+/**
+ * A conversation that is answering in another Hedy process (`hedy ask` in a
+ * terminal): running by its stored status, with no agent in this app.
+ */
+export function runningElsewhere(task: Task | null | undefined): task is Task {
+  return !!task && !!task.conversation && !task.live && (task.status === "running" || task.status === "waitingApproval");
+}
 
 /** Not accepted nor discarded: it can still take messages and changes. */
 export function isOpen(task: Task | null | undefined): boolean {
