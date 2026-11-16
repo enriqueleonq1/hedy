@@ -1453,3 +1453,41 @@ its outcome in a project's memory.
 
 **Not verified live:** a real carried task and a real summary with each provider (tested
 with the agent double and `MockApi`).
+
+## 29. Themes: a gallery, a whole-app preview, VS Code import and "describe with AI" (Nov 16, 2026)
+
+The user wanted Hedy to look like their editor ("que se vea como One Dark Pro"). Asking an
+AI alone gets close but invents hex values, so named themes come from exact sources and the
+AI is the third way in, not the only one.
+
+- **One model.** A theme is a full map of the tokens in `theme/tokens.ts` (plus `syn*`
+  syntax tokens for CodeMirror and the terminal's ANSI colors derived from it). Presets,
+  imported and described themes start from a small seed (`bg, panel, panel2, ink, muted,
+  line, accent, action, success, warning, danger, info, keyword, string, number, function,
+  type, comment`) that `deriveTokens` expands. Hedy's own themes (Tokyo Night, Burbuja)
+  keep their exact tokens.
+- **Contrast is enforced, not hoped for.** Every theme Hedy shows goes through
+  `repairContrast` with the same AA pairs the token tests check; a fix is listed in the
+  preview (token, before → after). Presets must pass with no fixes.
+- **Mode and theme are separate.** `ui.theme` stays `system|light|dark`; `ui.theme.dark` and
+  `ui.theme.light` name the theme each mode uses (a preset id or `custom:<id>`; defaults
+  `tokyo-night`, `burbuja`), as VS Code's preferred dark/light themes.
+- **Preview before applying.** Clicking a theme paints the whole app (not a thumbnail) and a
+  bar on every screen offers Cancelar (Esc) and Aplicar; nothing is saved until then, so a
+  restart forgets a preview. Applying offers Deshacer. No color transitions (animations stay
+  transform/opacity only).
+- **Account colors never change with the theme**: they identify accounts.
+- **VS Code import** is parsed locally with no AI: JSONC, `type`, `colors` and
+  `tokenColors` mapped to the seed. `include` of other files is not followed.
+- **Describe with AI** is a one-shot request (§28's machinery) to an account the user picks:
+  read-only, tools denied, no memory or MCP, 120 s. Its answer is parsed as JSON (prose and
+  fences tolerated), only seed keys with valid hex kept, `bg`/`ink`/`accent` required. A
+  limit is an error naming the account; Hedy never tries another (rule 3). With no task,
+  its tokens count against the account only (stored with an empty project and task, which
+  `usage_summary` skips).
+- **Storage.** Custom themes are pretty JSON files in `<data dir>/themes/<id>.json` with
+  the full token map, so they render the same later and can be shared by copying the file.
+  Unreadable files are skipped. Deleting a theme in use clears that mode's setting.
+
+**Not verified live:** a real "describe with AI" answer from each provider (tested with the
+agent double and `MockApi`).
