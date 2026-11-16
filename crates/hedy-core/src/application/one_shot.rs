@@ -1,6 +1,7 @@
 //! A one-shot, read-only request to an account's own agent ("Sugerir con
-//! IA", "Resumir con IA"): no memory, no MCP, no resume, tools denied. Its
-//! tokens count as the given task's usage. A limit reported mid-answer stops
+//! IA", "Resumir con IA", "Describir con IA"): no memory, no MCP, no resume,
+//! tools denied. Its tokens count as the given task's usage, or only as the
+//! account's when there is no task. A limit reported mid-answer stops
 //! it: Hedy never moves to another account (rule 3).
 
 use std::path::PathBuf;
@@ -13,8 +14,8 @@ use crate::domain::{Account, AgentEvent, LimitLevel, Phase, Stage, TaskId, TaskM
 
 /// What to ask, and of whom.
 pub(super) struct OneShot<'a> {
-    /// Whose usage the tokens count as.
-    pub task: &'a TaskId,
+    /// Whose usage the tokens count as; `None`: only the account's.
+    pub task: Option<&'a TaskId>,
     pub account: &'a Account,
     /// The stage whose model to use (the account's default when it has none).
     pub stage: &'a Stage,
@@ -76,7 +77,10 @@ impl Hedy {
             match rx.recv_timeout(left) {
                 Ok(AgentEvent::Usage(sample)) => {
                     // The tokens were spent: they count for the account.
-                    let _ = self.handle_usage(shot.task, &shot.account.id, &sample);
+                    let _ = match shot.task {
+                        Some(task) => self.handle_usage(task, &shot.account.id, &sample),
+                        None => self.handle_account_usage(&shot.account.id, &sample),
+                    };
                 }
                 Ok(AgentEvent::RateLimit {
                     status,

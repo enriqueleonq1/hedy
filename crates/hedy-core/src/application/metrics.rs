@@ -75,6 +75,10 @@ impl Hedy {
         let chats = self.fs.chats_dir();
         let mut totals: BTreeMap<PathBuf, UsageSample> = BTreeMap::new();
         for (path, account, mut usage) in self.store.usage_by_project(since)? {
+            // Spent outside any task (a theme description): the account's only.
+            if path.as_os_str().is_empty() {
+                continue;
+            }
             if !paid.contains(&account) {
                 usage.cost_usd = None;
             }
