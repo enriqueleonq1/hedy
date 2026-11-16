@@ -6,7 +6,7 @@ import { PROVIDER_NAMES } from "./providers";
 
 /** Suggestions only: any model name the provider accepts can be typed. */
 export const MODEL_SUGGESTIONS: Record<ProviderId, string[]> = {
-  claude: ["opus", "sonnet", "haiku"],
+  claude: ["fable", "opus", "sonnet", "haiku"],
   codex: [],
   kimi: ["kimi-k3.1-pro", "kimi-k3.1-pro-highspeed", "kimi-k3"],
   gemini: ["gemini-4-hydrogen", "gemini-4-carbon", "gemini-3.8-flash"],
@@ -21,6 +21,7 @@ export function modelLabel(model: string): string {
 
 /** A few words on the suggested models we know; any other shows none. */
 export const MODEL_HINTS: Record<string, MessageKey> = {
+  fable: "workspace.model.ownWeek",
   opus: "workspace.model.capable",
   sonnet: "workspace.model.balanced",
   haiku: "workspace.model.fastest",
