@@ -9,7 +9,9 @@ use serde_json::Value;
 
 use crate::domain::agent::looks_like_tests;
 use crate::domain::permissions::summarize;
-use crate::domain::{AgentEvent, Decision, PlanStep, StepStatus, UsageSample};
+use crate::domain::{
+    AgentCommand, AgentEvent, CommandSource, Decision, PlanStep, StepStatus, UsageSample,
+};
 
 const EDIT_TOOLS: &[&str] = &["Edit", "Write", "MultiEdit", "NotebookEdit"];
 
@@ -19,13 +21,23 @@ pub struct Translator {
     cwd: PathBuf,
     /// tool_use_id → (tool, input).
     tool_uses: HashMap<String, (String, Value)>,
+    /// The commands in the answer to Hedy's `initialize` request, with their
+    /// descriptions; the `init` message only names them.
+    described: Option<Vec<Value>>,
+    /// The session's commands were reported already.
+    commands_sent: bool,
 }
+
+/// The id of the `initialize` request Hedy sends first (see `mod.rs`).
+pub const INIT_REQUEST_ID: &str = "hedy-init";
 
 impl Translator {
     pub fn new(cwd: PathBuf) -> Self {
         Self {
             cwd,
             tool_uses: HashMap::new(),
+            described: None,
+            commands_sent: false,
         }
     }
 
@@ -37,10 +49,25 @@ impl Translator {
     pub fn translate(&mut self, msg: &Value, denied: &HashSet<String>) -> Vec<AgentEvent> {
         let str_of = |v: &Value| v.as_str().unwrap_or_default().to_owned();
         match msg["type"].as_str().unwrap_or("") {
-            "system" if msg["subtype"] == "init" => vec![AgentEvent::SessionStarted {
-                session_id: str_of(&msg["session_id"]),
-                model: str_of(&msg["model"]),
-            }],
+            "system" if msg["subtype"] == "init" => {
+                let mut events = vec![AgentEvent::SessionStarted {
+                    session_id: str_of(&msg["session_id"]),
+                    model: str_of(&msg["model"]),
+                }];
+                if !self.commands_sent {
+                    self.commands_sent = true;
+                    events.push(AgentEvent::Commands {
+                        commands: commands(self.described.as_deref(), msg),
+                    });
+                }
+                events
+            }
+            "control_response" if msg["response"]["request_id"] == INIT_REQUEST_ID => {
+                if let Some(list) = msg["response"]["response"]["commands"].as_array() {
+                    self.described = Some(list.clone());
+                }
+                vec![]
+            }
             "assistant" => self.assistant(&msg["message"]["content"]),
             "user" => self.tool_results(&msg["message"]["content"], denied),
             "control_request" if msg["request"]["subtype"] == "can_use_tool" => {
@@ -199,6 +226,88 @@ impl Translator {
     }
 }
 
+/// The session's slash commands (verified with Claude Code 2.1.306, §32).
+/// `described`: the `commands` of the `initialize` answer (`name`,
+/// `description`, `argumentHint`, `builtin`; the user's own say "(user)" or
+/// "(project)" at the end, a plugin's start with "(plugin)"). `init` names
+/// them all in `slash_commands`, and says which are `skills`, which
+/// `plugins` are loaded and which commands only work in a terminal
+/// (`terminal_slash_commands`, left out).
+fn commands(described: Option<&[Value]>, init: &Value) -> Vec<AgentCommand> {
+    let names = |key: &str| -> HashSet<String> {
+        init[key]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect()
+    };
+    let skills = names("skills");
+    let terminal = names("terminal_slash_commands");
+    let plugins: HashSet<String> = init["plugins"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|p| p["name"].as_str().map(str::to_owned))
+        .collect();
+    let plugin_of = |name: &str, description: &str| {
+        name.split_once(':')
+            .map(|(prefix, _)| prefix)
+            .filter(|p| plugins.contains(*p) || description.starts_with(&format!("({p})")))
+            .map(str::to_owned)
+    };
+    let source = |name: &str, description: &str, builtin: Option<bool>| {
+        if plugin_of(name, description).is_some() {
+            CommandSource::Plugin
+        } else if builtin == Some(true) {
+            CommandSource::Builtin
+        } else if skills.contains(name) {
+            CommandSource::Skill
+        } else if builtin.is_some() && !name.starts_with("mcp__") {
+            CommandSource::Custom
+        } else {
+            CommandSource::Unknown
+        }
+    };
+    let text = |s: &str| (!s.trim().is_empty()).then(|| s.trim().to_owned());
+    let mut found: Vec<AgentCommand> = Vec::new();
+    for entry in described.into_iter().flatten() {
+        let name = entry["name"].as_str().unwrap_or("").to_owned();
+        if name.is_empty() || terminal.contains(&name) {
+            continue;
+        }
+        let raw = entry["description"].as_str().unwrap_or("").trim();
+        let builtin = Some(entry["builtin"].as_bool().unwrap_or(false));
+        let mut description = raw;
+        for scope in [" (user)", " (project)"] {
+            description = description.strip_suffix(scope).unwrap_or(description);
+        }
+        let plugin = plugin_of(&name, raw);
+        let tag = plugin.map(|p| format!("({p})")).unwrap_or_default();
+        if !tag.is_empty() {
+            description = description.strip_prefix(&tag).unwrap_or(description);
+        }
+        found.push(AgentCommand {
+            description: text(description),
+            argument_hint: entry["argumentHint"].as_str().and_then(text),
+            source: source(&name, raw, builtin),
+            name,
+        });
+    }
+    // Named in `init` only (an older CLI, or MCP prompts that came later).
+    for name in init["slash_commands"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        if !terminal.contains(name) && !found.iter().any(|c| c.name == name) {
+            found.push(AgentCommand::new(name, source(name, "", None)));
+        }
+    }
+    found
+}
+
 /// Every reason Hedy gives starts with one of these (see `domain::permissions`),
 /// in either language.
 const HOOK_MARKS: [&str; 2] = ["Hedy no permite", "Hedy does not allow"];
@@ -247,7 +356,19 @@ mod tests {
         let none = HashSet::new();
         assert_eq!(
             t.translate(&json!({"type":"system","subtype":"init","session_id":"s1","model":"claude-opus-5-5"}), &none),
-            vec![AgentEvent::SessionStarted { session_id: "s1".into(), model: "claude-opus-5-5".into() }]
+            vec![
+                AgentEvent::SessionStarted { session_id: "s1".into(), model: "claude-opus-5-5".into() },
+                AgentEvent::Commands { commands: vec![] },
+            ]
+        );
+        // The commands go once per session.
+        assert_eq!(
+            t.translate(
+                &json!({"type":"system","subtype":"init","session_id":"s1","model":"m"}),
+                &none
+            )
+            .len(),
+            1
         );
         let assistant = json!({"type":"assistant","message":{"content":[
             {"type":"text","text":"Voy a buscar."},
@@ -274,6 +395,106 @@ mod tests {
                 StepStatus::InProgress,
                 StepStatus::Pending
             ]
+        );
+    }
+
+    /// As Claude Code 2.1.306 answers (trimmed): `initialize` first, then
+    /// the `init` of the first turn.
+    #[test]
+    fn commands_come_from_the_initialize_answer_and_the_init_message() {
+        let mut t = translator();
+        let none = HashSet::new();
+        let answer = json!({"type":"control_response","response":{"subtype":"success","request_id":"hedy-init",
+        "response":{"commands":[
+            {"name":"hello","description":"Say hello to someone (user)","argumentHint":"<name>"},
+            {"name":"projcmd","description":"Project command (project)","argumentHint":""},
+            {"name":"demo-skill","description":"A demo skill (user)","argumentHint":""},
+            {"name":"studio:mockup","description":"(studio) Draw a mockup","argumentHint":"<screen>"},
+            {"name":"studio:brand","description":"(studio) Apply the brand","argumentHint":"","aliases":["brand"]},
+            {"name":"code-review","description":"Review the diff","argumentHint":"[low|high]","aliases":["review"],"builtin":true},
+            {"name":"color","description":"Set the prompt bar color","argumentHint":"[red|blue]","builtin":true}
+        ]}}});
+        assert!(t.translate(&answer, &none).is_empty());
+        let init = json!({"type":"system","subtype":"init","session_id":"s1","model":"m",
+            "slash_commands":["hello","projcmd","demo-skill","studio:mockup","studio:brand","code-review","color","mcp__docs__search"],
+            "skills":["demo-skill","studio:brand","code-review"],
+            "plugins":[{"name":"studio","path":"/p","source":"studio@inline"}],
+            "terminal_slash_commands":["color"]});
+        let events = t.translate(&init, &none);
+        let AgentEvent::Commands { commands } = &events[1] else {
+            panic!("{events:?}")
+        };
+        let summary: Vec<(&str, CommandSource, Option<&str>, Option<&str>)> = commands
+            .iter()
+            .map(|c| {
+                (
+                    c.name.as_str(),
+                    c.source,
+                    c.description.as_deref(),
+                    c.argument_hint.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                (
+                    "hello",
+                    CommandSource::Custom,
+                    Some("Say hello to someone"),
+                    Some("<name>")
+                ),
+                (
+                    "projcmd",
+                    CommandSource::Custom,
+                    Some("Project command"),
+                    None
+                ),
+                (
+                    "demo-skill",
+                    CommandSource::Skill,
+                    Some("A demo skill"),
+                    None
+                ),
+                (
+                    "studio:mockup",
+                    CommandSource::Plugin,
+                    Some("Draw a mockup"),
+                    Some("<screen>")
+                ),
+                (
+                    "studio:brand",
+                    CommandSource::Plugin,
+                    Some("Apply the brand"),
+                    None
+                ),
+                (
+                    "code-review",
+                    CommandSource::Builtin,
+                    Some("Review the diff"),
+                    Some("[low|high]")
+                ),
+                ("mcp__docs__search", CommandSource::Unknown, None, None),
+            ]
+        );
+    }
+
+    #[test]
+    fn without_the_initialize_answer_the_init_names_are_enough() {
+        let mut t = translator();
+        let init = json!({"type":"system","subtype":"init","session_id":"s1","model":"m",
+            "slash_commands":["design","studio:mockup","compact"],"skills":["design"],
+            "plugins":[{"name":"studio"}]});
+        let events = t.translate(&init, &HashSet::new());
+        assert_eq!(
+            events[1],
+            AgentEvent::Commands {
+                commands: vec![
+                    AgentCommand::new("design", CommandSource::Skill),
+                    AgentCommand::new("studio:mockup", CommandSource::Plugin),
+                    AgentCommand::new("compact", CommandSource::Unknown),
+                ]
+            }
         );
     }
 

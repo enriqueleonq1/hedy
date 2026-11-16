@@ -257,8 +257,8 @@ impl AgentLauncher for ClaudeCodeLauncher {
         }
 
         session.writer.send(
-            &json!({"type": "control_request", "request_id": "hedy-init",
-                                    "request": {"subtype": "initialize"}}),
+            &json!({"type": "control_request", "request_id": translate::INIT_REQUEST_ID,
+                    "request": {"subtype": "initialize"}}),
         )?;
         session
             .writer
@@ -560,6 +560,7 @@ for line in sys.stdin:
         };
         assert_eq!(session_id, "s-42");
         assert!(model.contains("--permission-prompt-tool stdio"), "{model}");
+        assert!(matches!(next(&rx), AgentEvent::Commands { .. }));
         assert_eq!(
             next(&rx),
             AgentEvent::Message {

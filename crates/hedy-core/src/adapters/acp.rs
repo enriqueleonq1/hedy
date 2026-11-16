@@ -24,8 +24,10 @@ use crate::application::ports::{
     AgentBackend, AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
 use crate::domain::agent::looks_like_tests;
+use crate::domain::command::slash_command;
 use crate::domain::{
-    AgentEvent, Decision, PlanStep, PromptImage, StepStatus, UsageSample, prompts,
+    AgentCommand, AgentEvent, CommandSource, Decision, PlanStep, PromptImage, StepStatus,
+    UsageSample, prompts,
 };
 use crate::tr;
 
@@ -253,6 +255,11 @@ impl AgentLauncher for AcpLauncher {
             intro.push(prompts::plan_first());
         }
         intro.push(request.prompt.clone());
+        // A slash command only runs when the prompt starts with it, so it
+        // goes alone; Hedy's checks still refuse what the mode forbids.
+        if slash_command(&request.prompt).is_some() {
+            intro = vec![request.prompt.clone()];
+        }
 
         let shared = Arc::new(Shared {
             stdin: Mutex::new(stdin),
@@ -479,8 +486,16 @@ fn turn_ended(shared: &Shared, stop_reason: &str) -> PortResult<()> {
     }
 }
 
-/// `session/update` notifications: text, tool activity, plan and cost.
+/// `session/update` notifications: text, tool activity, plan, cost and the
+/// agent's slash commands.
 fn update(shared: &Shared, update: &Value) -> PortResult<()> {
+    // Still true while a loaded session replays its history.
+    if update["sessionUpdate"] == "available_commands_update" {
+        shared.emit(AgentEvent::Commands {
+            commands: available_commands(&update["availableCommands"]),
+        });
+        return Ok(());
+    }
     if shared.state.lock().unwrap().loading {
         return Ok(());
     }
@@ -536,6 +551,30 @@ fn update(shared: &Shared, update: &Value) -> PortResult<()> {
         _ => {}
     }
     Ok(())
+}
+
+/// ACP's `AvailableCommand` list: `name` (no slash), `description` and an
+/// optional `input.hint`. ACP does not say where a command comes from.
+fn available_commands(list: &Value) -> Vec<AgentCommand> {
+    let text = |v: &Value| {
+        v.as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+    };
+    list.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|command| {
+            let name = text(&command["name"])?;
+            Some(AgentCommand {
+                name: name.trim_start_matches('/').to_owned(),
+                description: text(&command["description"]),
+                source: CommandSource::Unknown,
+                argument_hint: text(&command["input"]["hint"]),
+            })
+        })
+        .collect()
 }
 
 /// Merges a tool call or update into what is known about it.
@@ -825,6 +864,12 @@ for line in sys.stdin:
             continue
         assert params["cwd"] and params["mcpServers"] == []
         send({"jsonrpc": "2.0", "id": mid, "result": {"sessionId": "s-1"}})
+        update({"sessionUpdate": "available_commands_update", "availableCommands": [
+            {"name": "web", "description": "Search the web", "input": {"hint": "query to search for"}},
+            {"name": "/init", "description": ""}]})
+    elif method == "session/prompt" and mode == "echo":
+        update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": params["prompt"][0]["text"]}})
+        send({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": "end_turn"}})
     elif method == "session/prompt":
         turns += 1
         text = params["prompt"][0]["text"]
@@ -860,6 +905,15 @@ for line in sys.stdin:
         mode: &str,
         plan_first: bool,
     ) -> (Box<dyn AgentSession>, mpsc::Receiver<AgentEvent>) {
+        start_with(dir, mode, plan_first, "Crea hola.txt")
+    }
+
+    fn start_with(
+        dir: &Path,
+        mode: &str,
+        plan_first: bool,
+        prompt: &str,
+    ) -> (Box<dyn AgentSession>, mpsc::Receiver<AgentEvent>) {
         let script = dir.join("fake_acp.py");
         std::fs::write(&script, FAKE_ACP).unwrap();
         let (tx, rx) = mpsc::channel();
@@ -890,7 +944,7 @@ for line in sys.stdin:
             },
             plan_first,
             model: None,
-            prompt: "Crea hola.txt".into(),
+            prompt: prompt.into(),
             resume: None,
             memory: None,
             mcp: vec![],
@@ -961,6 +1015,36 @@ for line in sys.stdin:
         assert!(
             matches!(seen.last(), Some(AgentEvent::Finished { ok: true, summary, .. }) if summary == "Listo.")
         );
+        session.stop();
+    }
+
+    #[test]
+    fn reports_the_agents_commands_and_sends_a_command_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut session, rx) = start_with(tmp.path(), "echo", false, "/web acp schema");
+        let seen = until(&rx, |e| matches!(e, AgentEvent::Finished { .. }));
+        assert!(seen.contains(&AgentEvent::Commands {
+            commands: vec![
+                AgentCommand {
+                    name: "web".into(),
+                    description: Some("Search the web".into()),
+                    source: CommandSource::Unknown,
+                    argument_hint: Some("query to search for".into()),
+                },
+                AgentCommand::new("init", CommandSource::Unknown),
+            ]
+        }));
+        // No guidance before it: the command must open the prompt.
+        assert!(seen.contains(&AgentEvent::Message {
+            text: "/web acp schema".into()
+        }));
+        session.stop();
+
+        let (mut session, rx) = start_with(tmp.path(), "echo", false, "¿Qué hace?");
+        let seen = until(&rx, |e| matches!(e, AgentEvent::Finished { .. }));
+        assert!(seen.iter().any(
+            |e| matches!(e, AgentEvent::Message { text } if text.ends_with("¿Qué hace?") && text.len() > 20)
+        ));
         session.stop();
     }
 
