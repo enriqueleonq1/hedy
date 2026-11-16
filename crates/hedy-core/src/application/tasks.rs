@@ -9,8 +9,10 @@ use std::sync::atomic::Ordering;
 
 use serde_json::Value;
 
+use super::carry::Carry;
 use super::ports::{AgentBackend, AgentRequest, AgentSession, RateLimit, Secret, UsageRecord};
 use super::{AppError, AppResult, Hedy, NewImage, Setting};
+use crate::domain::carry::carried_prompt;
 use crate::domain::permissions::{self, AllowRule, Verdict};
 use crate::domain::phase::pipeline;
 use crate::domain::prompts;
@@ -130,6 +132,16 @@ impl Hedy {
 
     /// Creates the worktree, works out the phases and starts the first one.
     pub fn start_task(&self, request: NewTask) -> AppResult<Task> {
+        self.start_task_with(request, None)
+    }
+
+    /// `start_task`, optionally continuing a conversation: its context opens
+    /// the prompt, before the user's instruction (see `carry`).
+    pub(super) fn start_task_with(
+        &self,
+        request: NewTask,
+        carry: Option<Carry>,
+    ) -> AppResult<Task> {
         let project = self.project_at(&request.project)?;
         let main_account = project.account.clone().ok_or(AppError::NoAccountResolved)?;
         if request.prompt.trim().is_empty() {
@@ -158,9 +170,26 @@ impl Hedy {
             }
         }
 
+        // A carried conversation is checked before anything is created.
+        let carried = match carry {
+            Some(carry) => {
+                let first = self.account(stages[0].account.as_str())?;
+                Some(self.prepare_carry(&carry, &first, request.images.len())?)
+            }
+            None => None,
+        };
+
         let now = self.clock.now_ms();
         let id = self.new_task_id(now);
         let title = title_from_prompt(&request.prompt);
+        let (prompt, origin, images) = match carried {
+            Some(carried) => (
+                carried_prompt(&carried.origin.context, &request.prompt),
+                Some(carried.origin),
+                [request.images, carried.images].concat(),
+            ),
+            None => (request.prompt, None, request.images),
+        };
         // Codex and ACP agents read files without asking Hedy, so they always
         // work in a worktree, where `.env` and friends do not exist.
         let workspace = if request.mode.changes_files() || isolated {
@@ -174,7 +203,7 @@ impl Hedy {
             project: project.path.clone(),
             mode: request.mode,
             title,
-            prompt: request.prompt.clone(),
+            prompt: prompt.clone(),
             account: first.account,
             model: first.model,
             workspace,
@@ -188,18 +217,19 @@ impl Hedy {
             wait: None,
             conversation: false,
             ship: None,
+            origin,
             images: Vec::new(),
         };
-        task.images = self.store_images(&task.id, &request.images)?;
+        task.images = self.store_images(&task.id, &images)?;
         self.store.save_task(&task)?;
         self.record(
             &task.id,
             AgentEvent::UserMessage {
-                text: request.prompt.clone(),
+                text: prompt.clone(),
                 images: task.images.clone(),
             },
         )?;
-        self.run_stage(&mut task, 0, request.prompt, None)?;
+        self.run_stage(&mut task, 0, prompt, None)?;
         self.events.task_updated(&task);
         Ok(task)
     }

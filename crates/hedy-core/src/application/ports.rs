@@ -61,6 +61,9 @@ pub trait TaskRepository: Send + Sync {
     fn waiting_tasks(&self) -> PortResult<Vec<Task>>;
     /// Every conversation (task outside any project). Newest first.
     fn conversations(&self) -> PortResult<Vec<Task>>;
+    /// The tasks that continue conversation `id` (`origin.conversation`).
+    /// Newest first.
+    fn continuations(&self, conversation: &TaskId) -> PortResult<Vec<Task>>;
     /// Deletes the task with its events and queue. Usage records stay: the
     /// tokens were spent.
     fn delete_task(&self, id: &TaskId) -> PortResult<()>;

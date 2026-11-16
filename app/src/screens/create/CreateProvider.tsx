@@ -4,6 +4,7 @@
 
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 
+import { useApi } from "../../api/context";
 import type { Overview } from "../../api/types";
 import type { View } from "../../components/Layout";
 import type { MenuItem } from "../../components/ui/Menu";
@@ -13,7 +14,12 @@ import { AddProjectDialog, useAddProject } from "../accounts/AddProjectDialog";
 import { NewProjectDialog } from "./NewProjectDialog";
 
 interface Create {
-  newProject: () => void;
+  /**
+   * Opens "Nuevo proyecto"; `name` starts its name field, `carry` continues
+   * that conversation in the new project's first task (named after it unless
+   * `name` says otherwise).
+   */
+  newProject: (options?: { name?: string; carry?: string }) => void;
   openFolder: () => void;
   /** Opens a new conversation; `draft` starts its composer with that text. */
   quickQuestion: (draft?: string) => void;
@@ -40,11 +46,20 @@ export function CreateProvider({
 }) {
   const t = useT();
   const toast = useToast();
+  const api = useApi();
   const adding = useAddProject();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<{ name?: string; carry?: string } | null>(null);
 
   const value = useMemo<Create>(() => {
-    const newProject = () => setCreating(true);
+    const newProject = (options?: { name?: string; carry?: string }) => {
+      const carry = options?.carry;
+      if (!carry || options?.name) return setCreating(options ?? {});
+      // The name the backend suggests from the conversation's title.
+      void api
+        .conversationContext(carry)
+        .then((context) => setCreating({ carry, name: context.suggestedName }))
+        .catch(() => setCreating({ carry }));
+    };
     const openFolder = () => void adding.start();
     const quickQuestion = (draft?: string) => onNavigate({ screen: "conversation", draft });
     return {
@@ -52,12 +67,12 @@ export function CreateProvider({
       openFolder,
       quickQuestion,
       menu: [
-        { label: t("create.newProject"), hint: t("create.newProjectHint"), onSelect: newProject },
+        { label: t("create.newProject"), hint: t("create.newProjectHint"), onSelect: () => newProject() },
         { label: t("create.openFolder"), hint: t("create.openFolderHint"), onSelect: openFolder },
         { label: t("create.quickQuestion"), hint: t("create.quickQuestionHint"), onSelect: () => quickQuestion() },
       ],
     };
-  }, [adding, onNavigate, t]);
+  }, [adding, api, onNavigate, t]);
 
   return (
     <CreateContext.Provider value={value}>
@@ -65,12 +80,14 @@ export function CreateProvider({
       {creating && (
         <NewProjectDialog
           overview={overview}
-          onClose={() => setCreating(false)}
+          initialName={creating.name}
+          onClose={() => setCreating(null)}
           onCreated={(path, name) => {
-            setCreating(false);
+            const carry = creating.carry;
+            setCreating(null);
             toast.info(t("newProject.created", { name }));
-            // Straight to the composer of its first task, focused.
-            onNavigate({ screen: "workspace", project: path, task: null });
+            // Straight to the composer of its first task, focused (with the conversation, if carried).
+            onNavigate({ screen: "workspace", project: path, task: null, ...(carry ? { carry } : {}) });
           }}
         />
       )}

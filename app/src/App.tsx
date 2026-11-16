@@ -68,15 +68,18 @@ function Localized({ children }: { children: ReactNode }) {
 
 /**
  * `#accounts`, `#a=<id>` (accounts, that card), `#settings`, `#activity`, `#p=<path>` (workspace; `&t=<id>`
- * that task, `&new` a new one), `#m=<path>` (memory), `#k=<path>` (memory, skills tab), `#s=<path>` (status),
+ * that task, `&new` a new one, `&new&from=<id>` a new one continuing that conversation), `#m=<path>` (memory), `#k=<path>` (memory, skills tab), `#s=<path>` (status),
  * `#c` (a new quick question), `#c=<id>` (that conversation).
  */
 function viewFromHash(): View {
   const raw = window.location.hash.slice(1);
   if (raw.startsWith("p=")) {
     // The path is encoded, so a raw `&` starts the task part.
-    const [path = "", extra] = raw.slice(2).split("&");
+    const [path = "", extra, more] = raw.slice(2).split("&");
     const project = decodeURIComponent(path);
+    if (extra === "new" && more?.startsWith("from=")) {
+      return { screen: "workspace", project, task: null, carry: decodeURIComponent(more.slice(5)) };
+    }
     if (extra === "new") return { screen: "workspace", project, task: null };
     if (extra?.startsWith("t=")) return { screen: "workspace", project, task: decodeURIComponent(extra.slice(2)) };
     return { screen: "workspace", project };
@@ -94,7 +97,8 @@ function viewFromHash(): View {
 
 function hashFor(view: View): string {
   if (view.screen === "workspace") {
-    const task = view.task === null ? "&new" : view.task ? `&t=${encodeURIComponent(view.task)}` : "";
+    const from = view.task === null && view.carry ? `&from=${encodeURIComponent(view.carry)}` : "";
+    const task = view.task === null ? `&new${from}` : view.task ? `&t=${encodeURIComponent(view.task)}` : "";
     return `#p=${encodeURIComponent(view.project)}${task}`;
   }
   if (view.screen === "memory") return `#${view.tab === "skills" ? "k" : "m"}=${encodeURIComponent(view.project)}`;
@@ -240,6 +244,8 @@ function Root() {
               overview={data}
               project={current.project}
               task={current.task}
+              carry={current.task === null ? current.carry : undefined}
+              onNavigate={navigate}
               onSelectTask={(task, options) => navigate({ screen: "workspace", project: current.project, task }, options)}
               onOpenMemory={() => navigate({ screen: "memory", project: current.project })}
               onOpenStatus={() => navigate({ screen: "status", project: current.project })}
@@ -252,6 +258,7 @@ function Root() {
               project={null}
               task={current.task ?? null}
               draft={current.draft}
+              onNavigate={navigate}
               onSelectTask={(task, options) =>
                 navigate(task ? { screen: "conversation", task } : { screen: "conversation" }, options)
               }

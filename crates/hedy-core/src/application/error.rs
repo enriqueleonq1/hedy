@@ -130,6 +130,19 @@ pub enum AppError {
     /// Not a valid name for a file or folder.
     #[error("{}", self.message())]
     InvalidFileName(String),
+    /// The conversation's agent is still answering: carrying waits for it.
+    #[error("{}", self.message())]
+    ConversationBusy(TaskId),
+    /// No question kept and no summary: nothing to carry.
+    #[error("{}", self.message())]
+    NothingToCarry,
+    /// Rule 3: the conversation's account is at its limit; no other is used.
+    #[error("{}", self.message())]
+    SummaryAtLimit { account: String },
+    #[error("{}", self.message())]
+    SummaryFailed(Option<String>),
+    #[error("{}", self.message())]
+    SummaryTimedOut,
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -396,6 +409,32 @@ impl AppError {
             Self::InvalidFileName(name) => tr!(
                 "«{name}» no es un nombre válido para un archivo o carpeta",
                 "«{name}» is not a valid name for a file or folder"
+            ),
+            Self::ConversationBusy(_) => tr!(
+                "la conversación todavía está respondiendo; espera a que termine para llevarla a un proyecto",
+                "the conversation is still answering; wait for it to finish before carrying it into a project"
+            ),
+            Self::NothingToCarry => tr!(
+                "no queda nada de la conversación para llevar: conserva al menos una pregunta o un resumen",
+                "nothing of the conversation is left to carry: keep at least one question or a summary"
+            ),
+            Self::SummaryAtLimit { account } => tr!(
+                "la cuenta «{account}» está en su límite. Hedy no usa otra cuenta: lleva las preguntas tal cual o espera a que se renueve",
+                "account «{account}» is at its limit. Hedy does not use another account: carry the questions as they are or wait for it to renew"
+            ),
+            Self::SummaryFailed(detail) => match detail {
+                Some(detail) => tr!(
+                    "no se pudo resumir la conversación: {detail}",
+                    "could not summarize the conversation: {detail}"
+                ),
+                None => tr!(
+                    "no se pudo resumir la conversación; lleva las preguntas tal cual",
+                    "could not summarize the conversation; carry the questions as they are"
+                ),
+            },
+            Self::SummaryTimedOut => tr!(
+                "la IA tardó demasiado en resumir; vuelve a intentarlo o lleva las preguntas tal cual",
+                "the AI took too long to summarize; try again or carry the questions as they are"
             ),
         }
     }

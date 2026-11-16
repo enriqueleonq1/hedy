@@ -1362,3 +1362,93 @@ else goes to VS Code ("Abrir en VS Code en esta línea").
 
 **Not verified live:** the trash on macOS and Windows, and Tauri's close-requested in the
 packaged app (the flow is tested against `MockApi.requestClose`).
+
+## 28. Carrying a quick question into a project (Nov 16, 2026)
+
+A quick question (§23) often ends in "now do it": "Llevar a un proyecto" opens a new task
+in a project with the conversation as context, and "Guardar como nota del proyecto" keeps
+its outcome in a project's memory.
+
+### Core
+
+- **Origin.** `Task::origin: Option<TaskOrigin>` (`{ conversation, title, context }`), a
+  JSON field with `#[serde(default)]` and skipped when empty: no migration. The title is
+  copied so the link still reads well after the conversation is deleted.
+  `TaskRepository::continuations(id)` finds the tasks that continue a conversation with
+  `json_extract(data, '$.origin.conversation')`; a conversation may continue into several.
+- **The context, deterministic and free** (`domain::carry`): each question with the
+  agent's final answer of that turn (the `Finished` summary, else its last message); a
+  question without an answer (failed, stopped, still running) is left out. The section is
+  delimited by `--- Contexto: conversación «…» ---` and `--- Fin del contexto ---`
+  (localized), says it comes from a quick question outside the project, and the
+  instruction follows it (`carried_prompt`).
+- **Use cases** (`application/carry.rs`): `conversation_context` (turns, a suggested
+  project name, `long_after`, `busy`), `start_carried_task(NewTask, Carry)` (`Carry`:
+  the conversation, the indexes of the kept turns, an optional summary that replaces
+  their text), `carried_context` (the text alone, for a future CLI command),
+  `continuations`, `summarize_conversation`, `save_conversation_note`. Everything is
+  checked before the worktree is created.
+- **What the task stores.** `Task::prompt` is the whole prompt (context + instruction), so
+  later phases and handoffs keep the context; the title comes from the instruction, and
+  `Task::instruction()` (the prompt without `origin.context`) is what the pull request
+  body quotes. The first `UserMessage` also holds the whole prompt; the timeline folds
+  the context away ("Contexto: conversación «…»", expandable) and shows the instruction.
+- **While the conversation answers** (status running or waiting for a card), carrying and
+  summarizing are refused (`ConversationBusy`). Nothing left (every turn removed, no
+  summary) is `NothingToCarry`.
+- **Images.** The kept questions' images are re-attached to the task's message (copied
+  into its own private attachments folder, §24) when the agent that starts it takes images
+  and they fit with the user's own within 4 per message; otherwise they are only named.
+  The context always names them and says which of the two happened. Chosen over always
+  naming them because a screenshot is often the point of the question; over always
+  attaching because the limits of §24 stay the same for every message.
+- **"Resumir con IA"** uses the conversation's current account and model only (rule 3),
+  through the one-shot request shared with §26's commit message (`application/one_shot.rs`,
+  extracted from it): read-only (`Ask`, review phase), no memory, no MCP, no resume, tool
+  requests denied, cwd the conversation's own empty folder, 120 s. The questions and
+  answers sent are cut at 40,000 characters, the most recent kept. A known limit (the same
+  checks as §26) refuses it before starting and a limit reported mid-answer stops it,
+  saying to carry the questions as they are or wait; never another account. Its tokens
+  count as the conversation's usage; nothing goes to its timeline. A surrounding code
+  fence is dropped.
+- **Long context**: from 12,000 characters (`LONG_CONTEXT_CHARS`) the card notes it and
+  suggests the summary; nothing is cut without the user.
+- **Project name** for "Proyecto nuevo": the title as a safe folder name
+  (`folder_name`, §23) without filler words (que, de, para, the, how…), at most four words:
+  "¿Qué diferencia hay entre OAuth y OpenID Connect?" → `diferencia-oauth-openid-connect`.
+- **Protected projects.** Carrying into one is allowed: the task uses that project's
+  account only, as any task there (rule 4); what is carried is the user's own text. The
+  summary runs on the conversation's account, which is never one reserved by a protected
+  project (§23).
+
+### The note
+
+- `save_conversation_note` calls `add_note`: author `user`, **approved**. This matches rule
+  6 and §12: agents only read approved notes and only propose; notes the user writes are
+  approved right away. Here the user picks the project, edits the title and the text (the
+  last answer, prefilled) and saves; no agent writes anything. The title goes on the first
+  line, which is what `memory_search` shows agents.
+
+### UI
+
+- Entry points in a conversation: a quiet icon in the header (tooltip names it), "Llevar
+  a un proyecto…" and "Guardar como nota del proyecto…" in its ⋯ menu, a discreet row under
+  a finished answer ("¿Y ahora?"), and the palette ("Llevar la conversación a un proyecto",
+  a page with "Proyecto nuevo…" and the projects that have an account). While it answers,
+  the icon says why on click (`aria-disabled`, as §27's pencil), the menu items are
+  disabled with the reason, and the row is hidden.
+- The dialog: an existing project (our `Select`; one without an account cannot be picked)
+  and "Abrir tarea", or "Proyecto nuevo…", which opens §23's dialog with the suggested name
+  and lands in that project's first task with the context. No projects: only the new one.
+- The new task opens at `#p=<path>&new&from=<conversation>`: a context card above the
+  composer (never pasted into the text) with the count and size, expandable to preview each
+  question and answer, × to drop one (and "Incluir" to bring it back), × to drop the whole
+  context, and "Resumir con IA" (tooltip: the account, and that it spends a few tokens),
+  whose summary is editable and can be undone ("Llevar las preguntas tal cual"). Sending
+  waits while the conversation answers or nothing is left.
+- Links: the task's header says "Viene de: conversación «…»" (plain text once the
+  conversation is deleted); the conversation's header says "Continuada en <proyecto> ·
+  <tarea>" for each task, in place of its "Sin proyecto" line.
+
+**Not verified live:** a real carried task and a real summary with each provider (tested
+with the agent double and `MockApi`).

@@ -120,6 +120,10 @@ pub struct Task {
     /// Hedy published of it (push, pull request).
     #[serde(default)]
     pub ship: Option<super::Shipment>,
+    /// The conversation this task continues ("Llevar a un proyecto"): its
+    /// prompt opens with that conversation's context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<super::TaskOrigin>,
 }
 
 /// What "Aceptar" changed in the main checkout, kept so it can be undone
@@ -191,6 +195,15 @@ impl Task {
         self.workspace
             .as_ref()
             .map_or_else(|| self.project.clone(), |w| w.worktree.clone())
+    }
+
+    /// What the user asked, without the context a carried conversation put
+    /// before it.
+    pub fn instruction(&self) -> &str {
+        self.origin
+            .as_ref()
+            .and_then(|o| self.prompt.strip_prefix(o.context.as_str()))
+            .map_or(self.prompt.as_str(), str::trim_start)
     }
 }
 

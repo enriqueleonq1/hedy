@@ -249,14 +249,18 @@ fn task_id(id: String) -> TaskId {
 pub async fn start_task(state: State<'_, AppState>, input: NewTaskInput) -> CommandResult<TaskDto> {
     let images = dto::decode_images(input.images)?;
     blocking(&state, move |h| {
-        let task = h.start_task(NewTask {
+        let request = NewTask {
             project: input.project,
             prompt: input.prompt,
             mode: input.mode,
             model: input.model.filter(|m| !m.is_empty()),
             plan_first: input.plan_first,
             images,
-        })?;
+        };
+        let task = match input.carry {
+            Some(carry) => h.start_carried_task(request, carry.into())?,
+            None => h.start_task(request)?,
+        };
         Ok(TaskDto {
             live: h.is_running(&task.id),
             task,

@@ -221,6 +221,7 @@ export function CommandPalette({
     <PalettePanel
       request={request}
       overview={overview}
+      view={view}
       active={active}
       onNavigate={onNavigate}
       onClose={close}
@@ -268,6 +269,7 @@ function Highlight({ text, hits }: { text: string; hits?: number[] }) {
 function PalettePanel({
   request,
   overview,
+  view,
   active,
   onNavigate,
   onClose,
@@ -275,6 +277,7 @@ function PalettePanel({
 }: {
   request: Request;
   overview: Overview;
+  view: View;
   active: ActiveCopy | null;
   onNavigate: (view: View) => void;
   onClose: () => void;
@@ -305,7 +308,7 @@ function PalettePanel({
   const { mode, query } = parsed;
   const trimmed = query.trim();
 
-  const appCommands = usePaletteCommands({ overview, open: true, onNavigate, t });
+  const appCommands = usePaletteCommands({ overview, open: true, onNavigate, t, view });
   const codeCommands = useCodeCommands({ active, t, onNavigate, reopen: onReopen });
   const commands = [...appCommands, ...codeCommands];
 

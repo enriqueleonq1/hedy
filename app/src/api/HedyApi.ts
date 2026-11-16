@@ -28,6 +28,7 @@ import type {
   ImageSupport,
   ActivityItem,
   AgentEvent,
+  ConversationContext,
   Commit,
   Decision,
   DetectedCli,
@@ -132,6 +133,20 @@ export interface HedyApi {
   conversationAccounts(): Promise<string[]>;
   /** Deletes a conversation, its history and its folder. */
   deleteConversation(id: string): Promise<void>;
+  /** Its questions with their final answers, a project name, and whether it is still answering. */
+  conversationContext(id: string): Promise<ConversationContext>;
+  /** "Resumir con IA": the conversation's own account sums up the kept turns (spends a few tokens). */
+  summarizeConversation(id: string, turns: number[]): Promise<string>;
+  /** The tasks that continue a conversation, newest first. */
+  continuations(id: string): Promise<Task[]>;
+  /** "Guardar como nota del proyecto": a note of the user's (approved), title first. */
+  saveConversationNote(
+    conversation: string,
+    project: string,
+    title: string,
+    text: string,
+    category: NoteCategory,
+  ): Promise<Note>;
   /** The task board: every project's running and recent tasks, what needs the user first. */
   activity(): Promise<ActivityItem[]>;
   answerPermission(id: string, requestId: string, decision: Decision): Promise<void>;
