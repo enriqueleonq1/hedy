@@ -93,8 +93,17 @@ You'll need the CLIs you want to use already installed (`claude`, `codex`, `gemi
 **Download**
 
 Each [release](https://github.com/enriqueleonq1/hedy/releases) has a `.deb`, an AppImage, an Arch
-package and the `hedy` command on its own. The `.deb` and the AppImage include the app only; for
-the command, take `hedy-cli-*.tar.gz` and put `hedy` somewhere on your `PATH`.
+package and the `hedy` command on its own. No need to clone the repo for any of them.
+
+On Debian, Ubuntu 22.04+ or Linux Mint 21+:
+
+```sh
+sudo apt install ./Hedy_*_amd64.deb
+```
+
+Anywhere else, the AppImage runs as is (`chmod +x Hedy_*.AppImage`, then open it). The `.deb`
+and the AppImage include the app only; for the command, take `hedy-cli-*.tar.gz` and put `hedy`
+somewhere on your `PATH` (`~/.local/bin` works).
 
 **Arch / CachyOS / Manjaro, from source**
 
