@@ -1,5 +1,6 @@
 import { contrast } from "./contrast";
-import { repairContrast, TEXT_PAIRS } from "./repair";
+import { PRESETS, presetById } from "./presets";
+import { contrastFailures, FOCUS_RATIO, repairContrast, TEXT_PAIRS } from "./repair";
 import { accountPalette, applyTheme, applyTokens, cssVar, terminalTheme, themes, type ThemeName, type ThemeTokens } from "./tokens";
 
 describe.each(Object.keys(themes) as ThemeName[])("%s theme", (name) => {
@@ -45,8 +46,8 @@ it("both themes define the same tokens", () => {
 // Hedy's own themes look exactly as before the theme gallery: same tokens, and
 // syntax and terminal colors that are the semantic ones they used to be.
 it("keeps Hedy's own themes as they were", () => {
-  expect(repairContrast(themes.dark, "dark").fixes).toEqual([]);
-  expect(repairContrast(themes.light, "light").fixes).toEqual([]);
+  expect(presetById("tokyo-night")?.tokens).toBe(themes.dark);
+  expect(presetById("burbuja")?.tokens).toBe(themes.light);
   const d = themes.dark;
   expect([d.bg, d.panel, d.panel2, d.ink, d.muted, d.accent, d.action, d.selection]).toEqual([
     "#1A1B26",
@@ -84,9 +85,38 @@ it("keeps Hedy's own themes as they were", () => {
   expect(terminalTheme(l)).toMatchObject({ cursor: "#7C5CFF", yellow: "#7A5300", magenta: "#7C3AED", brightBlack: "#625A76" });
 });
 
+describe.each(PRESETS.map((p) => [p.id, p] as const))("preset %s", (_id, preset) => {
+  it("has every token of Hedy's themes", () => {
+    expect(Object.keys(preset.tokens).sort()).toEqual(Object.keys(themes.dark).sort());
+    for (const value of Object.values(preset.tokens)) expect(value).toMatch(/^#[0-9A-F]{6}([0-9A-F]{2})?$/);
+  });
+
+  it("passes every contrast check on its own", () => {
+    expect(contrastFailures(preset.tokens)).toEqual([]);
+    expect(repairContrast(preset.tokens, preset.base).fixes).toEqual([]);
+    expect(contrast(preset.tokens.focus!, preset.tokens.bg!)).toBeGreaterThanOrEqual(FOCUS_RATIO);
+  });
+});
+
+it("lists two Hedy themes and eight more, dark and light", () => {
+  expect(PRESETS.map((p) => p.id)).toEqual([
+    "tokyo-night",
+    "one-dark-pro",
+    "dracula",
+    "catppuccin-mocha",
+    "nord",
+    "github-dark",
+    "burbuja",
+    "github-light",
+    "catppuccin-latte",
+    "solarized-light",
+  ]);
+  expect(PRESETS.filter((p) => p.base === "light")).toHaveLength(4);
+});
+
 it("sets the color scheme of the theme's base", () => {
   const root = document.createElement("div");
-  applyTokens({ ...themes.light, bg: "#FFFFFF" }, "light", root);
+  applyTokens(presetById("github-light")!.tokens, "light", root);
   expect(root.style.colorScheme).toBe("light");
   expect(root.style.getPropertyValue("--bg")).toBe("#FFFFFF");
 });

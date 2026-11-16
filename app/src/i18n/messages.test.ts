@@ -20,6 +20,7 @@ import skills from "./messages/skills";
 import statusbar from "./messages/statusbar";
 import status from "./messages/status";
 import templates from "./messages/templates";
+import themes from "./messages/themes";
 import waits from "./messages/waits";
 import welcome from "./messages/welcome";
 import workspace from "./messages/workspace";
@@ -49,6 +50,7 @@ const AREAS = {
   statusbar,
   status,
   templates,
+  themes,
   waits,
   welcome,
   workspace,
