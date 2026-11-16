@@ -65,6 +65,20 @@ pub enum DomainError {
     UnsupportedImage(String),
     #[error("{}", self.message())]
     TooManyImages(usize),
+    #[error("{}", self.message())]
+    InvalidThemeName(String),
+    #[error("{}", self.message())]
+    InvalidThemeId(String),
+    #[error("{}", self.message())]
+    InvalidThemeBase(String),
+    #[error("{}", self.message())]
+    ThemeColorCount { count: usize, max: usize },
+    #[error("{}", self.message())]
+    InvalidThemeColorKey(String),
+    #[error("{}", self.message())]
+    InvalidThemeColor { key: String, value: String },
+    #[error("{}", self.message())]
+    InvalidThemeDescription { max: usize },
 }
 
 impl DomainError {
@@ -184,6 +198,34 @@ impl DomainError {
             Self::InvalidProjectName(name) => tr!(
                 "«{name}» no sirve como nombre de carpeta: usa letras o números",
                 "«{name}» does not work as a folder name: use letters or digits"
+            ),
+            Self::InvalidThemeName(_) => tr!(
+                "ponle al tema un nombre de hasta 60 caracteres",
+                "give the theme a name of up to 60 characters"
+            ),
+            Self::InvalidThemeId(id) => tr!(
+                "identificador de tema no válido: «{id}» (minúsculas, números y guiones, hasta 40)",
+                "invalid theme id: «{id}» (lowercase letters, digits and dashes, up to 40)"
+            ),
+            Self::InvalidThemeBase(base) => tr!(
+                "base de tema no válida: «{base}» (usa dark o light)",
+                "invalid theme base: «{base}» (use dark or light)"
+            ),
+            Self::ThemeColorCount { count, max } => tr!(
+                "un tema necesita entre 1 y {max} colores (tiene {count})",
+                "a theme needs between 1 and {max} colors (it has {count})"
+            ),
+            Self::InvalidThemeColorKey(key) => tr!(
+                "nombre de color no válido: «{key}» (una letra y luego letras o números, hasta 40)",
+                "invalid color name: «{key}» (a letter, then letters or digits, up to 40)"
+            ),
+            Self::InvalidThemeColor { key, value } => tr!(
+                "color no válido para «{key}»: «{value}» (usa #RGB, #RRGGBB o #RRGGBBAA)",
+                "invalid color for «{key}»: «{value}» (use #RGB, #RRGGBB or #RRGGBBAA)"
+            ),
+            Self::InvalidThemeDescription { max } => tr!(
+                "describe el tema en 1 a {max} caracteres",
+                "describe the theme in 1 to {max} characters"
             ),
         }
     }

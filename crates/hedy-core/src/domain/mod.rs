@@ -26,6 +26,7 @@ pub mod ship;
 pub mod skill;
 pub mod task;
 pub mod template;
+pub mod theme;
 pub mod version;
 
 pub use account::{Account, AccountId, ConfigFolder, Credentials};
@@ -48,3 +49,4 @@ pub use ship::{AcceptMode, GhState, PullRequest, Shipment};
 pub use skill::{Skill, SkillStatus};
 pub use task::{LimitWait, MergeRecord, Task, TaskId, TaskMode, TaskStatus, Workspace};
 pub use template::{PromptTemplate, TemplateId};
+pub use theme::{CustomTheme, ThemeBase, ThemeDraft, ThemeOrigin};
