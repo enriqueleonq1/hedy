@@ -26,6 +26,11 @@ fi
 if [ "$1" = -p ] && [ "$2" = --input-format ]; then
   case "$*" in *"--resume s-42"*) resumed=1 ;; *) resumed= ;; esac
   while IFS= read -r line; do
+    case "$line" in *'"subtype":"initialize"'*)
+      # As Claude Code 2.1.306 answers Hedy's `initialize` (trimmed).
+      echo '{"type":"control_response","response":{"subtype":"success","request_id":"hedy-init","response":{"commands":[{"name":"design","description":"Create a design (user)","argumentHint":"<what>"},{"name":"studio:mockup","description":"(studio) Draw a mockup","argumentHint":"<screen>"},{"name":"code-review","description":"Review the diff","argumentHint":"","builtin":true},{"name":"login","description":"Log in","argumentHint":"","builtin":true}]}}}'
+      continue ;;
+    esac
     case "$line" in *'"type":"user"'*) ;; *) continue ;; esac
     case "$line" in *[Cc]ommit*)
       # A one-shot commit message request (`hedy commit`).
@@ -33,7 +38,8 @@ if [ "$1" = -p ] && [ "$2" = --input-format ]; then
       echo '{"type":"result","subtype":"success","is_error":false,"result":"'"${FAKE_ANSWER:-feat: add a greeting}"'","usage":{"input_tokens":5,"output_tokens":2}}'
       continue ;;
     esac
-    echo '{"type":"system","subtype":"init","session_id":"s-42","model":"claude-fake"}'
+    [ -n "$FAKE_PROMPT_LOG" ] && printf '%s\n' "$line" >> "$FAKE_PROMPT_LOG"
+    echo '{"type":"system","subtype":"init","session_id":"s-42","model":"claude-fake","slash_commands":["design","studio:mockup","code-review","login"],"skills":["design","code-review"],"plugins":[{"name":"studio","path":"/p"}],"terminal_slash_commands":[]}'
     if [ "$FAKE_CLAUDE_MODE" = limit ]; then
       echo '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1800000000}}'
       echo '{"type":"result","subtype":"error","is_error":true,"result":"You have hit your limit","duration_ms":5}'
@@ -1810,4 +1816,77 @@ fn ask_is_in_the_help_and_the_completions() {
         .assert()
         .success()
         .stdout(predicate::str::contains("--continue"));
+}
+
+#[test]
+fn ask_sends_a_slash_command_verbatim_and_commands_lists_what_claude_reported() {
+    let env = ask_env();
+    // Unknown before the account answers once in Hedy.
+    env.hedy(&["commands"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Aparecen después de su primera respuesta en Hedy",
+        ));
+    env.hedy_lang("en", &["commands"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "They show up after its first answer in Hedy",
+        ));
+    let empty: serde_json::Value =
+        serde_json::from_str(&stdout_of(&mut env.hedy(&["commands", "--json"]))).unwrap();
+    assert_eq!(empty["seenAt"], serde_json::Value::Null);
+    assert_eq!(empty["commands"], serde_json::json!([]));
+
+    env.hedy(&["ask", "/design pantalla de login"])
+        .env("FAKE_PROMPT_LOG", env.path("prompts.log"))
+        .assert()
+        .success();
+    let sent = fs::read_to_string(env.path("prompts.log")).unwrap();
+    assert!(
+        sent.contains(r#""content":"/design pantalla de login""#),
+        "{sent}"
+    );
+
+    let listed = stdout_of(&mut env.hedy(&["commands"]));
+    assert!(listed.contains("Comandos de Personal"), "{listed}");
+    assert!(listed.contains("vistos hace un momento"), "{listed}");
+    assert!(listed.contains("Plugins") && listed.contains("/studio:mockup <screen>"));
+    assert!(listed.contains("Habilidades") && listed.contains("/design <what>"));
+    assert!(listed.contains("Create a design"));
+    assert!(listed.contains("Incluidos en la CLI") && listed.contains("/code-review"));
+    assert!(
+        !listed.contains("/login"),
+        "interactive-only commands are left out"
+    );
+
+    let json: serde_json::Value = serde_json::from_str(&stdout_of(
+        &mut env.hedy(&["commands", "-a", "personal", "--json"]),
+    ))
+    .unwrap();
+    assert_eq!(json["account"], "personal");
+    assert!(json["seenAt"].as_i64().unwrap() > 0);
+    let names: Vec<&str> = json["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["design", "studio:mockup", "code-review"]);
+    assert_eq!(json["commands"][1]["source"], "plugin");
+    assert_eq!(json["commands"][1]["argumentHint"], "<screen>");
+}
+
+#[test]
+fn commands_explains_accounts_without_commands() {
+    let env = Env::new();
+    env.hedy(&["account", "add", "Trabajo", "--codex", "--no-login"])
+        .assert()
+        .success();
+    env.hedy(&["commands", "-a", "trabajo"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no le pasa sus comandos a Hedy"));
+    env.hedy(&["commands", "-a", "nadie"]).assert().failure();
 }

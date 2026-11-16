@@ -5,6 +5,7 @@ mod cli;
 mod commands;
 mod commit;
 mod mascot;
+mod slash;
 mod spinner;
 mod style;
 mod usage;
@@ -111,6 +112,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 json,
             },
         ),
+        Command::Commands { account, json } => {
+            slash::commands(&hedy, &dir, account.as_deref(), json)
+        }
         Command::Commit {
             account,
             model,
