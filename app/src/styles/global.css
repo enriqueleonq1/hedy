@@ -982,6 +982,7 @@ button.popover__item:focus-visible { background: var(--selection); outline: none
 
 .terminal-panel {
   grid-column: 2;
+  position: relative;
   height: 320px;
   display: grid;
   grid-template-rows: auto 1fr;
@@ -1026,6 +1027,7 @@ button.popover__item:focus-visible { background: var(--selection); outline: none
   cursor: pointer;
 }
 
+.terminal-panel__edge { top: -5px; }
 .terminal-panel__body { position: relative; min-height: 0; padding: 6px 8px; }
 .terminal-view { height: 100%; }
 

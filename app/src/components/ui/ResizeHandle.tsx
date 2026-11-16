@@ -20,10 +20,12 @@ export interface ResizeHandleProps {
   /** Double-click or Enter: maximize / restore. */
   onToggleMax?: () => void;
   /**
-   * Which way grows the area: `-1` when it sits to the right of the handle
-   * (dragging left makes it wider), `1` when it sits to the left.
+   * Which way grows the area: `-1` when it sits after the handle (to its right,
+   * or below it: dragging left or up makes it bigger), `1` when it sits before.
    */
   direction?: 1 | -1;
+  /** `vertical`: an edge between areas side by side (the default); `horizontal`: between areas stacked. */
+  orientation?: "vertical" | "horizontal";
   /** Shown on hover. */
   title?: string;
   className?: string;
@@ -41,17 +43,20 @@ export function ResizeHandle({
   onChange,
   onToggleMax,
   direction = -1,
+  orientation = "vertical",
   title,
   className,
 }: ResizeHandleProps) {
-  const drag = useRef<{ x: number; start: number } | null>(null);
+  const drag = useRef<{ at: number; start: number } | null>(null);
+  const stacked = orientation === "horizontal";
+  const position = (e: PointerEvent<HTMLDivElement>) => (stacked ? e.clientY : e.clientX);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const step = e.shiftKey ? BIG_STEP : STEP;
-    // Arrows point where the edge goes: left widens an area on the right.
-    const grow = (towardLeft: boolean) => onChange(clampSize(value + (towardLeft ? -direction : direction) * step, min, max));
-    if (e.key === "ArrowLeft") grow(true);
-    else if (e.key === "ArrowRight") grow(false);
+    // Arrows point where the edge goes: left (or up) grows an area after it.
+    const move = (towardStart: boolean) => onChange(clampSize(value + (towardStart ? -direction : direction) * step, min, max));
+    if (e.key === (stacked ? "ArrowUp" : "ArrowLeft")) move(true);
+    else if (e.key === (stacked ? "ArrowDown" : "ArrowRight")) move(false);
     else if (e.key === "Home") onChange(direction === -1 ? max : min);
     else if (e.key === "End") onChange(direction === -1 ? min : max);
     else if (e.key === "Enter" && onToggleMax) onToggleMax();
@@ -64,34 +69,35 @@ export function ResizeHandle({
     e.preventDefault();
     e.currentTarget.setPointerCapture?.(e.pointerId);
     e.currentTarget.focus({ preventScroll: true });
-    drag.current = { x: e.clientX, start: value };
+    drag.current = { at: position(e), start: value };
     document.documentElement.classList.add("resizing");
+    if (stacked) document.documentElement.classList.add("resizing--rows");
   };
 
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
     const d = drag.current;
     if (!d) return;
-    onChange(clampSize(d.start + (e.clientX - d.x) * direction, min, max));
+    onChange(clampSize(d.start + (position(e) - d.at) * direction, min, max));
   };
 
   const end = (e: PointerEvent<HTMLDivElement>) => {
     if (!drag.current) return;
     drag.current = null;
     e.currentTarget.releasePointerCapture?.(e.pointerId);
-    document.documentElement.classList.remove("resizing");
+    document.documentElement.classList.remove("resizing", "resizing--rows");
   };
 
   return (
     <div
       role="separator"
-      aria-orientation="vertical"
+      aria-orientation={orientation}
       aria-label={label}
       aria-valuenow={Math.round(value)}
       aria-valuemin={Math.round(min)}
       aria-valuemax={Math.round(max)}
       tabIndex={0}
       title={title}
-      className={["resize-handle", className].filter(Boolean).join(" ")}
+      className={["resize-handle", stacked && "resize-handle--rows", className].filter(Boolean).join(" ")}
       onKeyDown={onKeyDown}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

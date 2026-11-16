@@ -55,6 +55,14 @@ html.resizing,
 html.resizing * { cursor: col-resize !important; user-select: none !important; }
 html.resizing .resize-handle::after { background: var(--action); transform: scaleX(2); }
 html.resizing iframe { pointer-events: none; }
+/* An edge between stacked areas (the terminal panel's top). */
+.resize-handle--rows { top: auto; bottom: auto; left: 0; right: 0; width: auto; height: 9px; cursor: row-resize; }
+.resize-handle--rows::after { top: 4px; bottom: auto; left: 0; right: 0; width: auto; height: 1px; }
+.resize-handle--rows:hover::after,
+.resize-handle--rows:focus-visible::after,
+html.resizing .resize-handle--rows::after { transform: scaleY(2); }
+html.resizing--rows,
+html.resizing--rows * { cursor: row-resize !important; }
 
 /* ---------------------------------------------------------------- tab bar */
 
