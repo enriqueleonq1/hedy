@@ -7,7 +7,7 @@ use std::path::Path;
 
 use super::{AppResult, Hedy};
 use crate::domain::command::offerable;
-use crate::domain::{Account, AccountId, AgentCommand, KnownCommands, TaskId};
+use crate::domain::{Account, AccountId, AgentCommand, CommandSource, KnownCommands, TaskId};
 
 impl Hedy {
     /// Stores the commands a session of `account` reported, for the task's
@@ -29,8 +29,10 @@ impl Hedy {
 
     /// The commands known for `account` in `project` (`None`: outside any
     /// project). Without a list from that project, the one seen outside any
-    /// project (the account's own commands), else the newest one seen
-    /// anywhere. `None` until the account answers once in Hedy.
+    /// project (the account's own commands), else, from the newest list seen
+    /// in another project, only what belongs to the account rather than to
+    /// that project (built-ins and plugins). `None` until the account answers
+    /// once in Hedy.
     pub fn account_commands(
         &self,
         account: &str,
@@ -47,7 +49,7 @@ impl Hedy {
         Ok(project
             .and_then(|p| pick(Some(p)))
             .or_else(|| pick(None))
-            .or_else(|| lists.first().map(|(_, k)| k.clone())))
+            .or_else(|| lists.first().map(|(_, k)| account_wide(k))))
     }
 
     /// For `hedy commands`: the account given, else the project's, else the
@@ -74,6 +76,21 @@ impl Hedy {
     }
 }
 
+/// The part of a list seen in some project that holds in any other: the
+/// CLI's built-ins and the account's plugins. Custom commands and skills may
+/// be that project's own (`.claude/commands`, `.claude/skills`).
+fn account_wide(known: &KnownCommands) -> KnownCommands {
+    KnownCommands {
+        commands: known
+            .commands
+            .iter()
+            .filter(|c| matches!(c.source, CommandSource::Builtin | CommandSource::Plugin))
+            .cloned()
+            .collect(),
+        seen_at: known.seen_at,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -90,6 +107,23 @@ mod tests {
                 .map(|n| AgentCommand::new(*n, CommandSource::Skill))
                 .collect(),
         }
+    }
+
+    #[test]
+    fn another_projects_list_lends_only_built_ins_and_plugins() {
+        let known = KnownCommands {
+            commands: vec![
+                AgentCommand::new("review", CommandSource::Builtin),
+                AgentCommand::new("studio:mockup", CommandSource::Plugin),
+                AgentCommand::new("deploy", CommandSource::Custom),
+                AgentCommand::new("pricing", CommandSource::Skill),
+                AgentCommand::new("mcp__x__y", CommandSource::Unknown),
+            ],
+            seen_at: 7,
+        };
+        let lent = super::account_wide(&known);
+        assert_eq!(names(Some(lent.clone())), ["review", "studio:mockup"]);
+        assert_eq!(lent.seen_at, 7);
     }
 
     fn names(known: Option<KnownCommands>) -> Vec<String> {
@@ -173,10 +207,11 @@ mod tests {
             ),
             ["deploy", "design"]
         );
-        // Outside the project, the newest list seen anywhere.
+        // Outside the project, only what is not that project's own: custom
+        // commands and skills may live in its `.claude` folder.
         assert_eq!(
             names(f.hedy.account_commands("personal", None).unwrap()),
-            ["deploy", "design"]
+            Vec::<&str>::new()
         );
         let (account, known) = f.hedy.commands_in(&project.path, None).unwrap();
         assert_eq!(account.id.as_str(), "personal");

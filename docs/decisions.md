@@ -1682,8 +1682,9 @@ the fake ACP agent).
   any project), the list as JSON, `seen_at`. Per project because Claude adds the project's
   `.claude/commands` and skills (from the cwd); a conversation's folder is empty, so its
   list is the account's own (user commands, plugins, built-ins). Lookup: the project's list,
-  else the one seen outside any project, else the newest anywhere (it may hold another
-  project's own commands; anything typed is sent as is, so the worst case is a model turn).
+  else the one seen outside any project, else, from the newest list seen in another
+  project, only the built-ins and plugins: custom commands and skills may be that
+  project's own, so they are never offered elsewhere.
 - **Deny-list** (`domain::command::HEADLESS_DENIED`), hidden from the lists: `login`,
   `logout`, `config`/`settings`, `resume`/`continue`, `clear`/`reset`/`new`, `exit`/`quit`,
   `vim`, `terminal-setup`, `theme`, `model`, `permissions`, plus internal `__name` ones and
