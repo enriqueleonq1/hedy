@@ -66,7 +66,8 @@ Tested with empty folders: each CLI wrote only inside its folder and did not tou
   by setting `CLAUDE_CONFIG_DIR=~/.claude`: it would lose the MCP servers and settings in
   `~/.claude.json`. The existing account is registered in Hedy as the "default folder"
   and launched **without** the variable.
-- On this machine the default account (`~/.claude`) is a **Team** subscription (work).
+- On the machine these notes were verified on, the default account (`~/.claude`) is a
+  **Team** subscription.
 - Login into a new folder: `CLAUDE_CONFIG_DIR=<folder> claude auth login` (or `/login`
   inside `claude`). Both are the official flow.
 - `claude auth status --json` returns `loggedIn`, `authMethod`, `subscriptionType`,
