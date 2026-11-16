@@ -46,6 +46,11 @@ impl HedyPaths {
     pub fn chats_dir(&self) -> PathBuf {
         self.data_dir.join("chats")
     }
+
+    /// Custom themes, one JSON file each.
+    pub fn themes_dir(&self) -> PathBuf {
+        self.data_dir.join("themes")
+    }
 }
 
 /// `path` relative to `base` for display (`src/app.py`), or as given when it

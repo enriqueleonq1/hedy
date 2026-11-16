@@ -10,8 +10,8 @@ use super::ports::{
     Clock, EventSink, FileSystem, Git, MemoryRepository, MergeOutcome, NewNote, NewSkill,
     NoteRevision, PlanUsageRecord, PortError, PortResult, ProcessRunner, ProjectRepository,
     QueueRepository, RateLimit, SecretStore, SettingsRepository, SkillRepository, SkillRevision,
-    StoreHealth, TaskEvents, TaskRepository, TemplateRecord, TemplateRepository, UsageProbe,
-    UsageRecord, UsageRepository,
+    StoreHealth, TaskEvents, TaskRepository, TemplateRecord, TemplateRepository, ThemeStore,
+    UsageProbe, UsageRecord, UsageRepository,
 };
 use super::{Hedy, NewAccount, Ports};
 
@@ -19,7 +19,7 @@ mod ship;
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, ImageSupport,
     LaunchSpec, Note, NoteStatus, Notice, NoticeKind, Project, PromptImage, Provider,
-    QueuedMessage, Skill, SkillStatus, Task, TaskId, TaskStatus, UsageSample,
+    QueuedMessage, Skill, SkillStatus, Task, TaskId, TaskStatus, UsageSample, theme::CustomTheme,
 };
 pub use ship::{FakeHost, FakeSource};
 
@@ -1249,6 +1249,34 @@ pub struct Fixture {
     pub probe: Arc<FakeUsageProbe>,
     pub source: Arc<FakeSource>,
     pub host: Arc<FakeHost>,
+    pub themes: Arc<FakeThemes>,
+}
+
+/// Themes kept in memory, by id.
+#[derive(Default)]
+pub struct FakeThemes(Mutex<BTreeMap<String, CustomTheme>>);
+
+impl ThemeStore for FakeThemes {
+    fn list(&self) -> PortResult<Vec<CustomTheme>> {
+        Ok(self.0.lock().unwrap().values().cloned().collect())
+    }
+    fn get(&self, id: &str) -> PortResult<Option<CustomTheme>> {
+        Ok(self.0.lock().unwrap().get(id).cloned())
+    }
+    fn save(&self, theme: &CustomTheme) -> PortResult<()> {
+        self.0
+            .lock()
+            .unwrap()
+            .insert(theme.id.clone(), theme.clone());
+        Ok(())
+    }
+    fn delete(&self, id: &str) -> PortResult<()> {
+        self.0.lock().unwrap().remove(id);
+        Ok(())
+    }
+    fn work_dir(&self) -> PortResult<PathBuf> {
+        Ok(PathBuf::from("/data/themes"))
+    }
 }
 
 impl Fixture {
@@ -1264,6 +1292,7 @@ impl Fixture {
         let probe = Arc::new(FakeUsageProbe::default());
         let source = Arc::new(FakeSource::default());
         let host = Arc::new(FakeHost::default());
+        let themes = Arc::new(FakeThemes::default());
         let hedy = Hedy::new(Ports {
             store: store.clone(),
             secrets: secrets.clone(),
@@ -1277,6 +1306,7 @@ impl Fixture {
             usage: probe.clone(),
             source: source.clone(),
             host: host.clone(),
+            themes: themes.clone(),
         });
         let notices = Arc::new(RecordedNotices::default());
         let hedy = hedy.with_task_events(notices.clone());
@@ -1294,6 +1324,7 @@ impl Fixture {
             probe,
             source,
             host,
+            themes,
         }
     }
 

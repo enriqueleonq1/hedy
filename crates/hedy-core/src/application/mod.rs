@@ -30,6 +30,7 @@ mod templates;
 mod testing;
 #[cfg(test)]
 mod testing_code;
+mod themes;
 mod waits;
 
 use std::collections::HashMap;
@@ -68,11 +69,12 @@ pub use skills::{
 pub use status::{AccountStatus, AccountUsage, Status};
 pub use tasks::NewTask;
 pub use templates::{NewTemplate, TemplateScope};
+pub use themes::NewTheme;
 
 use crate::domain::TaskId;
 use ports::{
     AgentLauncher, Clock, CodeHost, CodeReader, CodeWriter, FileSystem, Git, NoTaskEvents,
-    ProcessRunner, SecretStore, SourceControl, Store, TaskEvents, UsageProbe,
+    ProcessRunner, SecretStore, SourceControl, Store, TaskEvents, ThemeStore, UsageProbe,
 };
 
 /// Everything the use cases need from the outside world.
@@ -89,6 +91,7 @@ pub struct Ports {
     pub usage: Arc<dyn UsageProbe>,
     pub source: Arc<dyn SourceControl>,
     pub host: Arc<dyn CodeHost>,
+    pub themes: Arc<dyn ThemeStore>,
 }
 
 /// Application facade used by every driving adapter (the CLI and the app).
@@ -106,6 +109,7 @@ pub struct Hedy {
     usage: Arc<dyn UsageProbe>,
     source: Arc<dyn SourceControl>,
     host: Arc<dyn CodeHost>,
+    themes: Arc<dyn ThemeStore>,
     events: Arc<dyn TaskEvents>,
     /// Running agent sessions, by task.
     live: Arc<Mutex<HashMap<TaskId, tasks::LiveTask>>>,
@@ -132,6 +136,7 @@ impl Hedy {
             usage: ports.usage,
             source: ports.source,
             host: ports.host,
+            themes: ports.themes,
             events: Arc::new(NoTaskEvents),
             live: Arc::default(),
             sessions: Arc::default(),

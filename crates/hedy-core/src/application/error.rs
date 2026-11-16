@@ -143,6 +143,8 @@ pub enum AppError {
     SummaryFailed(Option<String>),
     #[error("{}", self.message())]
     SummaryTimedOut,
+    #[error("{}", self.message())]
+    ThemeNotFound(String),
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -436,6 +438,9 @@ impl AppError {
                 "la IA tardó demasiado en resumir; vuelve a intentarlo o lleva las preguntas tal cual",
                 "the AI took too long to summarize; try again or carry the questions as they are"
             ),
+            Self::ThemeNotFound(id) => {
+                tr!("no existe el tema «{id}»", "theme «{id}» does not exist")
+            }
         }
     }
 }
