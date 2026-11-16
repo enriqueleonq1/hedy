@@ -1491,3 +1491,48 @@ AI is the third way in, not the only one.
 
 **Not verified live:** a real "describe with AI" answer from each provider (tested with the
 agent double and `MockApi`).
+
+## 30. Quick questions from the terminal: `hedy ask` (Nov 16, 2026)
+
+The user wanted to ask from the terminal and find the question in the app's
+"Conversaciones", with its answer, as if asked there (open it, keep chatting, carry it
+into a project).
+
+- **One store, the same use cases.** `hedy ask "…"` calls `start_conversation`, and
+  `-c`/`--continue[=<id>]` calls `send_message` on the latest (or given) conversation,
+  exactly like the app. So a terminal question is an ordinary conversation: same scratch
+  folder (`chats/<id>`), title, account and model fields, usage records and events in
+  SQLite. Events were already written as they arrive (`record`; only `ToolStarted` is
+  live-only), so the app reads the full answer from the store. Continuing in the app
+  resumes the stored session id, like any conversation.
+- **Terminal output.** The CLI follows the task through `TaskEvents` (as the app does):
+  answer messages go to stdout as they arrive, tool activity, status, the footer and
+  errors dimmed to stderr (`> out.md` keeps only the answer). `--json` prints
+  `{id, title, account, answer}` at the end. Only `Ask`/`Research`; with `-c`, the
+  account, model and mode are the conversation's (`-a`, `-m`, `-r` are refused).
+- **Nobody to ask.** A permission card cannot be answered in a pipe: the CLI declines it
+  (`decline_open_requests`, recorded as an automatic deny with the reason told to the
+  agent) and says so; a plan card is declined too.
+- **Ending.** The CLI waits for the turn's status (review or failed), then stops its
+  agent. Ctrl+C stops the task with `stop_task` (review, not failed; exit 130). Headless
+  agents now run in their own process group, so the terminal's Ctrl+C reaches Hedy and
+  not the agent first (which would have failed the turn). Claude gets the same
+  `PreToolUse` hook as in the app (the `hedy` binary serves it).
+- **Rule 3.** The account is the one given or the default one; at a limit the CLI names
+  the account, says Hedy does not switch, and exits 1. It never retries elsewhere.
+- **How the app notices.** The CLI is another process: no event reaches the app. The app
+  reads the conversations list again every 10 s while the window is visible
+  (react-query `refetchInterval`, paused when hidden; one small SQLite query) and on
+  window focus (a `focus` listener: a webview may not fire `visibilitychange` when
+  another window had the focus), which also re-reads the history of every conversation
+  without an agent in the app. An open conversation that is running by its stored status but has no agent
+  in the app (`runningElsewhere`) has its history and the list re-read every 3 s while
+  visible, and once more when it stops; it shows the working mascot instead of the
+  sleeping one. Conversations started in the app are unchanged (their events stream).
+- **Known limits.** "Running elsewhere" is derived from the stored status, so a
+  conversation whose process died mid-turn also looks running until it is continued.
+  Sending a message in the app while the terminal is still answering resumes the same
+  session in a second process (the app does not know the other one is busy).
+
+**Not verified live:** a real `hedy ask` with each provider and the refresh inside the
+Tauri window (tested with a fake `claude`, the agent double and `MockApi`).

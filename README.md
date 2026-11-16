@@ -141,6 +141,8 @@ cd ~/code/shop
 hedy use claude-work    # this project uses the work account
 hedy run                # opens claude with that account
 hedy status             # accounts, logins and the current project
+
+hedy ask "what does this regex do: ^\d{3}$"   # a quick question, also listed in the app
 ```
 
 `hedy doctor` checks your CLIs, accounts and versions if something looks off. `hedy --help` lists
