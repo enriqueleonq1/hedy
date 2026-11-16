@@ -1,0 +1,17 @@
+{
+  "name": "hedy-intro-video",
+  "private": true,
+  "type": "module",
+  "description": "Source of the README intro video and stills (not part of the app).",
+  "scripts": {
+    "serve": "../../../app/node_modules/.bin/vite --config capture/vite.config.mjs",
+    "capture": "node capture/capture.mjs",
+    "stills": "node capture/stills.mjs",
+    "render": "node render.mjs",
+    "poster": "node render.mjs --poster 10.6",
+    "gif": "node gif.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.52.0"
+  }
+}
