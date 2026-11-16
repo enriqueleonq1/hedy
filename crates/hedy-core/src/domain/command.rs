@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::{Account, Provider};
+
 /// Where a command comes from, as far as the CLI says.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +83,13 @@ pub const HEADLESS_DENIED: &[&str] = &[
     "model",
     "permissions",
 ];
+
+/// Whether the account's agent tells Hedy its commands: Claude Code and
+/// the ACP agents do; Codex's app server has no slash commands (its skills
+/// go through `$name`), and an API key has no CLI at all.
+pub fn reports_commands(account: &Account) -> bool {
+    account.is_subscription() && account.provider != Provider::Codex
+}
 
 /// The commands worth offering: no denied or internal (`__name`) ones, no
 /// empty or repeated names, a leading `/` dropped. Order is kept.
