@@ -47,6 +47,10 @@ export const tauriApi: HedyApi = {
   newProject: (input) => invoke("new_project", { input }),
 
   setSetting: (key, value) => invoke("set_setting", { key, value }),
+  listThemes: () => invoke("list_themes"),
+  saveTheme: (theme) => invoke("save_theme", { theme }),
+  deleteTheme: (id) => invoke("delete_theme", { id }),
+  describeTheme: (account, description, base) => invoke("describe_theme", { account, description, base }),
   openInEditor: (path) => invoke("open_in_editor", { path }),
   openLink: (url) => invoke("open_link", { url }),
   detectClis: () => invoke("detect_clis"),

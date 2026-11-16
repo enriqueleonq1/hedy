@@ -28,6 +28,9 @@ import type {
   ImageSupport,
   ActivityItem,
   AgentEvent,
+  CustomTheme,
+  ThemeBase,
+  ThemeDraft,
   ConversationContext,
   Commit,
   Decision,
@@ -103,6 +106,25 @@ export interface HedyApi {
   newProject(input: NewProjectInput): Promise<string>;
 
   setSetting(key: SettingKey, value: string | null): Promise<void>;
+
+  /** The user's own themes ("Tuyos"). */
+  listThemes(): Promise<CustomTheme[]>;
+  /** Saves a theme (`id: null` makes a new one; an id renames or replaces it). */
+  saveTheme(theme: {
+    id: string | null;
+    name: string;
+    base: ThemeBase;
+    colors: Record<string, string>;
+    origin: CustomTheme["origin"];
+  }): Promise<CustomTheme>;
+  deleteTheme(id: string): Promise<void>;
+  /**
+   * "Describir con IA": a short question to the user's own `account` (a few
+   * tokens) that turns a description into a seed. `base: null` lets it choose.
+   * Never another account: a limit comes back as an error.
+   */
+  describeTheme(account: string, description: string, base: ThemeBase | null): Promise<ThemeDraft>;
+
   openInEditor(path: string): Promise<void>;
   /** Opens an https page in the browser. */
   openLink(url: string): Promise<void>;
