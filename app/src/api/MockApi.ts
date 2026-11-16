@@ -884,7 +884,6 @@ export class MockApi implements HedyApi {
       name: input.name.trim(),
       account,
       protected: input.protect,
-      client: input.client?.trim() || null,
     });
     for (const a of this.state.accounts) {
       a.projects = this.state.projects.filter((p) => p.account === a.id).map((p) => p.path);

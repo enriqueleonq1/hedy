@@ -293,7 +293,6 @@ pub async fn new_project(
             parent: input.parent,
             account: input.account.filter(|a| !a.is_empty()),
             protect: input.protect,
-            client: input.client,
         })
         .map(|p| p.path)
     })

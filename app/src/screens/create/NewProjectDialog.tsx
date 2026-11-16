@@ -24,7 +24,8 @@ function useSettled<T>(value: T, ms: number): T {
 
 /**
  * "Nuevo proyecto": only a name and where (with a sensible default) to start;
- * the account (preselected), protection and client wait under "Más opciones".
+ * the account (preselected) and protection wait under "Más opciones". The
+ * client is set later, in Cuentas → Proyectos.
  * The final folder is shown before anything is created.
  */
 export function NewProjectDialog({
@@ -47,7 +48,6 @@ export function NewProjectDialog({
   const [more, setMore] = useState(false);
   const [chosen, setChosen] = useState("");
   const [protect, setProtect] = useState(false);
-  const [client, setClient] = useState("");
 
   const defaults = useQuery({ queryKey: ["defaultProjectParent"], queryFn: () => api.defaultProjectParent() });
   const parent = picked ?? defaults.data ?? "";
@@ -90,7 +90,6 @@ export function NewProjectDialog({
       parent,
       account: account || null,
       protect,
-      client: client.trim() || null,
     });
   };
 
@@ -192,16 +191,6 @@ export function NewProjectDialog({
             </div>
             <Switch checked={protect} onChange={setProtect} label={t("accounts.project.protectLabel")} />
           </div>
-          <Field label={t("common.client")}>
-            {(id) => (
-              <input
-                id={id}
-                value={client}
-                placeholder={t("newProject.clientPlaceholder")}
-                onChange={(e) => setClient(e.target.value)}
-              />
-            )}
-          </Field>
         </div>
       </form>
     </Dialog>

@@ -30,7 +30,6 @@ pub struct NewProject {
     /// `None`: the default account, if there is one.
     pub account: Option<String>,
     pub protect: bool,
-    pub client: Option<String>,
 }
 
 impl Hedy {
@@ -159,12 +158,6 @@ impl Hedy {
         let projects = self.projects()?;
         let mut project = Project::new(path.clone());
         project.name = request.name.trim().to_owned();
-        project.client = request
-            .client
-            .as_deref()
-            .map(str::trim)
-            .filter(|c| !c.is_empty())
-            .map(str::to_owned);
         if let Some(account) = &account {
             policy::check_assignment(&project, account, &projects)?;
         }
@@ -244,7 +237,6 @@ mod tests {
             parent: parent.into(),
             account: Some("personal".into()),
             protect: false,
-            client: None,
         }
     }
 
@@ -254,16 +246,12 @@ mod tests {
         f.add_claude("Personal");
         let p = f
             .hedy
-            .new_project(NewProject {
-                client: Some(" ACME ".into()),
-                ..new("Mi tienda online", "/home/e/Proyectos")
-            })
+            .new_project(new("Mi tienda online", "/home/e/Proyectos"))
             .unwrap();
         let path = PathBuf::from("/home/e/Proyectos/mi-tienda-online");
         assert_eq!(p.path, path);
         assert_eq!(p.name, "Mi tienda online");
         assert_eq!(p.account.as_ref().unwrap().as_str(), "personal");
-        assert_eq!(p.client.as_deref(), Some("ACME"));
         assert!(!p.protected);
         assert_eq!(f.fs.created(), vec![path.clone()]);
         assert_eq!(

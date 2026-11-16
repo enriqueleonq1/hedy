@@ -509,7 +509,6 @@ export interface NewProjectInput {
   /** null: the default account. */
   account: string | null;
   protect: boolean;
-  client: string | null;
 }
 
 /** "Pregunta rápida": a question or research outside any project. */

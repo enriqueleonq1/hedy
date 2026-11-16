@@ -1186,7 +1186,6 @@ pub fn new_project(
         parent,
         account,
         protect,
-        client: None,
     })?;
     let title = s.bold(&project.name);
     let path = s.muted(short_path(&project.path));
