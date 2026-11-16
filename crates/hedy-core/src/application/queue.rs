@@ -213,14 +213,14 @@ mod tests {
 
     fn running_task(f: &Fixture, plan_first: bool) -> Task {
         f.add_claude("Personal");
-        f.fs.add_git_root("/code/moira");
+        f.fs.add_git_root("/code/agenda");
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
         f.hedy
             .start_task(NewTask {
                 images: Vec::new(),
-                project: f.dir("/code/moira"),
+                project: f.dir("/code/agenda"),
                 prompt: "Recordatorios".into(),
                 mode: TaskMode::Project,
                 model: None,
@@ -414,11 +414,11 @@ mod tests {
         f.add_kimi("Kimi");
         f.hedy.set_api_key("kimi", "sk").unwrap();
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
         f.hedy
             .set_project_phases(
-                &f.dir("/code/moira"),
+                &f.dir("/code/agenda"),
                 PhasePlan::from([(
                     Phase::Tests,
                     Assignment {
@@ -432,7 +432,7 @@ mod tests {
             .hedy
             .start_task(NewTask {
                 images: Vec::new(),
-                project: f.dir("/code/moira"),
+                project: f.dir("/code/agenda"),
                 prompt: "Hola".into(),
                 mode: TaskMode::Project,
                 model: None,

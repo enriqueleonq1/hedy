@@ -189,20 +189,20 @@ mod tests {
     fn usage_per_project_and_client() {
         let f = Fixture::new();
         f.add_claude("Personal");
-        let (moira, citas) = (f.dir("/code/moira"), f.dir("/code/citas"));
-        f.hedy.use_account(&moira, "personal", None).unwrap();
+        let (agenda, citas) = (f.dir("/code/agenda"), f.dir("/code/citas"));
+        f.hedy.use_account(&agenda, "personal", None).unwrap();
         f.hedy.use_account(&citas, "personal", None).unwrap();
         f.hedy
-            .set_project_client(&moira, Some(" Estudio Norte "))
+            .set_project_client(&agenda, Some(" Estudio Norte "))
             .unwrap();
         f.hedy
             .set_project_client(&citas, Some("Estudio Norte"))
             .unwrap();
         let now = f.hedy.now_secs();
         for (project, at, tokens) in [
-            (&moira, now, 100),
+            (&agenda, now, 100),
             (&citas, now, 40),
-            (&moira, now - 9 * DAY_SECS, 999),
+            (&agenda, now - 9 * DAY_SECS, 999),
         ] {
             f.store
                 .record_usage(&UsageRecord {
@@ -215,7 +215,7 @@ mod tests {
                 .unwrap();
         }
         let summary = f.hedy.usage_summary(7).unwrap();
-        assert_eq!(summary.projects[0].name, "moira");
+        assert_eq!(summary.projects[0].name, "agenda");
         assert_eq!(
             summary.projects[0].usage.total_tokens(),
             100,
@@ -227,7 +227,7 @@ mod tests {
             summary.clients[0].usage.cost_usd, None,
             "a subscription's cost is only the CLI's guess"
         );
-        assert_eq!(f.hedy.project_usage(&moira, 30).unwrap().len(), 2);
+        assert_eq!(f.hedy.project_usage(&agenda, 30).unwrap().len(), 2);
 
         // An API key is really paid: its cost adds up, the tokens of both too.
         let kimi = f.add_kimi("Kimi API");
@@ -235,7 +235,7 @@ mod tests {
             .record_usage(&UsageRecord {
                 at: now,
                 account: kimi.id,
-                project: moira.clone(),
+                project: agenda.clone(),
                 task: TaskId::new("t"),
                 sample: usage(10, Some(0.25)),
             })
@@ -253,21 +253,21 @@ mod tests {
     fn status_of_a_project() {
         let f = Fixture::new();
         f.add_claude("Personal");
-        let moira = f.dir("/code/moira");
-        f.hedy.use_account(&moira, "personal", None).unwrap();
+        let agenda = f.dir("/code/agenda");
+        f.hedy.use_account(&agenda, "personal", None).unwrap();
         f.hedy
-            .add_note(Some(&moira), "Precios en USD", Category::Decision)
+            .add_note(Some(&agenda), "Precios en USD", Category::Decision)
             .unwrap();
         f.hedy
             .propose_note(
-                &moira,
+                &agenda,
                 "Tests con pytest",
                 Category::Convention,
                 "Codex",
                 None,
             )
             .unwrap();
-        let status = f.hedy.project_status(&moira).unwrap();
+        let status = f.hedy.project_status(&agenda).unwrap();
         assert_eq!(status.branch.as_deref(), Some("main"));
         assert_eq!(status.uncommitted, Some(3));
         assert_eq!(status.memory_notes, 1);

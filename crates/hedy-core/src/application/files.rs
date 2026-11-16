@@ -37,9 +37,9 @@ mod tests {
     fn lists_the_project_files_without_secrets() {
         let f = Fixture::new();
         f.add_claude("Personal");
-        f.fs.add_git_root("/code/moira");
+        f.fs.add_git_root("/code/agenda");
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
         f.git.set_files(&[
             "src/app.py",
@@ -51,7 +51,7 @@ mod tests {
             "src/app.py",
         ]);
         assert_eq!(
-            f.hedy.project_files(&f.dir("/code/moira")).unwrap(),
+            f.hedy.project_files(&f.dir("/code/agenda")).unwrap(),
             ["README.md", "src/app.py"]
         );
     }
@@ -60,16 +60,16 @@ mod tests {
     fn caps_big_repositories_and_needs_a_registered_project() {
         let f = Fixture::new();
         f.add_claude("Personal");
-        f.fs.add_git_root("/code/moira");
+        f.fs.add_git_root("/code/agenda");
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
         let many: Vec<String> = (0..MAX_PROJECT_FILES + 10)
             .map(|i| format!("f{i:05}.rs"))
             .collect();
         f.git
             .set_files(&many.iter().map(String::as_str).collect::<Vec<_>>());
-        let files = f.hedy.project_files(&f.dir("/code/moira")).unwrap();
+        let files = f.hedy.project_files(&f.dir("/code/agenda")).unwrap();
         assert_eq!(files.len(), MAX_PROJECT_FILES);
         assert_eq!(files[0], "f00000.rs");
         assert!(matches!(

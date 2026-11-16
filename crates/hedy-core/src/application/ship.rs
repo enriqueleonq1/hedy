@@ -651,9 +651,9 @@ mod tests {
 
     fn new_task(f: &Fixture) -> Task {
         f.add_claude("Personal");
-        f.fs.add_git_root("/code/moira");
+        f.fs.add_git_root("/code/agenda");
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
         f.git.set_diff(vec![FileDiff {
             path: "app.py".into(),
@@ -667,7 +667,7 @@ mod tests {
         f.hedy
             .start_task(NewTask {
                 images: Vec::new(),
-                project: f.dir("/code/moira"),
+                project: f.dir("/code/agenda"),
                 prompt: "Recordatorios por WhatsApp".into(),
                 mode: TaskMode::Project,
                 model: Some("sonnet".into()),
@@ -697,7 +697,7 @@ mod tests {
         f.source
             .set_remotes(&[("origin", "https://u:tok@github.com/a/b.git")]);
         f.host.set(true, true);
-        let status = f.hedy.folder_status(&f.dir("/code/moira")).unwrap();
+        let status = f.hedy.folder_status(&f.dir("/code/agenda")).unwrap();
         assert_eq!(status.remote.as_deref(), Some("origin"));
         assert_eq!(status.remote_host.as_deref(), Some("github.com"));
         assert_eq!(status.gh, Some(GhState::Ready));
@@ -708,12 +708,12 @@ mod tests {
 
         f.host.set(true, false);
         assert_eq!(
-            f.hedy.folder_status(&f.dir("/code/moira")).unwrap().gh,
+            f.hedy.folder_status(&f.dir("/code/agenda")).unwrap().gh,
             Some(GhState::LoggedOut)
         );
         f.host.set(false, false);
         assert_eq!(
-            f.hedy.folder_status(&f.dir("/code/moira")).unwrap().gh,
+            f.hedy.folder_status(&f.dir("/code/agenda")).unwrap().gh,
             Some(GhState::Missing)
         );
         f.source.set_remotes(&[]);
@@ -721,7 +721,7 @@ mod tests {
             branch: Some("main".into()),
             ..Default::default()
         });
-        let status = f.hedy.folder_status(&f.dir("/code/moira")).unwrap();
+        let status = f.hedy.folder_status(&f.dir("/code/agenda")).unwrap();
         assert_eq!((status.remote, status.gh), (None, None));
     }
 
@@ -730,13 +730,13 @@ mod tests {
         let f = Fixture::new();
         f.source
             .set_remotes(&[("origin", "git@github.com:a/b.git")]);
-        let pushed = f.hedy.push_folder(&f.dir("/code/moira")).unwrap();
+        let pushed = f.hedy.push_folder(&f.dir("/code/agenda")).unwrap();
         assert!(pushed.upstream_set);
         assert_eq!(pushed.upstream, "origin/main");
         assert_eq!(f.source.log(), vec!["push -u origin main:main"]);
 
         f.source.set_upstream("main", "origin", "main", 0, 0);
-        let pushed = f.hedy.push_folder(&f.dir("/code/moira")).unwrap();
+        let pushed = f.hedy.push_folder(&f.dir("/code/agenda")).unwrap();
         assert!(!pushed.upstream_set);
         assert_eq!(f.source.log().last().unwrap(), "push origin main:main");
     }
@@ -748,7 +748,7 @@ mod tests {
             .set_remotes(&[("origin", "https://github.com/a/b.git")]);
         f.source
             .fail_push(" ! [rejected] main -> main (non-fast-forward)");
-        let error = ship_error(f.hedy.push_folder(&f.dir("/code/moira")));
+        let error = ship_error(f.hedy.push_folder(&f.dir("/code/agenda")));
         assert!(matches!(
             error,
             ShipError::Push {
@@ -762,13 +762,13 @@ mod tests {
 
         f.source
             .fail_push("fatal: Authentication failed for 'https://github.com/a/b.git/'");
-        let error = ship_error(f.hedy.push_folder(&f.dir("/code/moira")));
+        let error = ship_error(f.hedy.push_folder(&f.dir("/code/agenda")));
         let message = AppError::Ship(error).to_string();
         assert!(message.contains("github.com no aceptó"), "{message}");
 
         f.source.set_remotes(&[]);
         assert_eq!(
-            ship_error(f.hedy.push_folder(&f.dir("/code/moira"))),
+            ship_error(f.hedy.push_folder(&f.dir("/code/agenda"))),
             ShipError::NoRemote
         );
     }
@@ -783,12 +783,12 @@ mod tests {
             ..Default::default()
         });
         // The fake moves no commit: already up to date.
-        assert!(!f.hedy.pull_folder(&f.dir("/code/moira")).unwrap().updated);
+        assert!(!f.hedy.pull_folder(&f.dir("/code/agenda")).unwrap().updated);
         assert_eq!(f.source.log(), vec!["pull --ff-only"]);
 
         f.source
             .fail_pull("fatal: Not possible to fast-forward, aborting.");
-        let error = ship_error(f.hedy.pull_folder(&f.dir("/code/moira")));
+        let error = ship_error(f.hedy.pull_folder(&f.dir("/code/agenda")));
         let message = AppError::Ship(error.clone()).to_string();
         assert!(matches!(
             error,
@@ -804,7 +804,7 @@ mod tests {
             ..Default::default()
         });
         assert!(matches!(
-            ship_error(f.hedy.pull_folder(&f.dir("/code/moira"))),
+            ship_error(f.hedy.pull_folder(&f.dir("/code/agenda"))),
             ShipError::Pull {
                 problem: PullProblem::NoUpstream,
                 ..
@@ -1007,7 +1007,7 @@ mod tests {
             .hedy
             .start_task(NewTask {
                 images: Vec::new(),
-                project: f.dir("/code/moira"),
+                project: f.dir("/code/agenda"),
                 prompt: "Otra".into(),
                 mode: TaskMode::Project,
                 model: None,

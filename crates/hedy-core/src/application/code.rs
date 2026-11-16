@@ -691,7 +691,7 @@ mod tests {
     use crate::domain::diff::{DiffLine, Hunk, LineKind};
     use crate::domain::{AgentEvent, FileDiff, TaskMode};
 
-    const ROOT: &str = "/code/moira";
+    const ROOT: &str = "/code/agenda";
 
     fn project(f: &Fixture) {
         f.add_claude("Personal");

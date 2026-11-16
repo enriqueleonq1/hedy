@@ -268,9 +268,9 @@ mod tests {
         f.hedy
             .set_setting(Setting::DefaultAccount, Some("personal"))
             .unwrap();
-        f.fs.add_git_root("/code/moira");
+        f.fs.add_git_root("/code/agenda");
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
         let chat = f
             .hedy
@@ -296,7 +296,7 @@ mod tests {
 
     fn instruction() -> NewTask {
         NewTask {
-            project: "/code/moira".into(),
+            project: "/code/agenda".into(),
             prompt: "Crea el esquema".into(),
             mode: TaskMode::Project,
             model: None,
@@ -608,7 +608,7 @@ mod tests {
             .hedy
             .save_conversation_note(
                 &chat.id,
-                &f.dir("/code/moira"),
+                &f.dir("/code/agenda"),
                 "Base de datos",
                 "SQLite para empezar; Postgres al escalar.",
                 Category::Decision,
@@ -620,11 +620,11 @@ mod tests {
             note.text,
             "Base de datos\n\nSQLite para empezar; Postgres al escalar."
         );
-        assert_eq!(note.project, Some(f.dir("/code/moira")));
+        assert_eq!(note.project, Some(f.dir("/code/agenda")));
         // Agents read it.
         let read = f
             .hedy
-            .memory(&f.dir("/code/moira"))
+            .memory(&f.dir("/code/agenda"))
             .unwrap()
             .notes
             .into_iter()

@@ -1266,7 +1266,7 @@ mod tests {
         let mut task = Task {
             images: Vec::new(),
             id: TaskId::new("t1"),
-            project: "/code/moira".into(),
+            project: "/code/agenda".into(),
             mode: TaskMode::Project,
             title: "Recordatorios".into(),
             prompt: "Recordatorios".into(),
@@ -1308,8 +1308,8 @@ mod tests {
         store
             .with(|c| {
                 c.execute(
-                    "INSERT INTO tasks (id, project, created_at, data) VALUES ('t0', '/code/moira', 1, ?1)",
-                    [r#"{"id":"t0","project":"/code/moira","mode":"project","title":"x","prompt":"x","account":"personal","model":null,"workspace":null,"sessionId":null,"status":"review","createdAt":1}"#],
+                    "INSERT INTO tasks (id, project, created_at, data) VALUES ('t0', '/code/agenda', 1, ?1)",
+                    [r#"{"id":"t0","project":"/code/agenda","mode":"project","title":"x","prompt":"x","account":"personal","model":null,"workspace":null,"sessionId":null,"status":"review","createdAt":1}"#],
                 )
                 .map(drop)
             })
@@ -1371,7 +1371,7 @@ mod tests {
         let task = |id: &str, created_at: i64, origin: Option<crate::domain::TaskOrigin>| Task {
             images: Vec::new(),
             id: TaskId::new(id),
-            project: "/code/moira".into(),
+            project: "/code/agenda".into(),
             mode: crate::domain::TaskMode::Project,
             title: "Crea el esquema".into(),
             prompt: "Crea el esquema".into(),
@@ -1423,14 +1423,14 @@ mod tests {
         let task = |id: &str, at: i64| Task {
             images: Vec::new(),
             id: TaskId::new(id),
-            project: "/code/moira".into(),
+            project: "/code/agenda".into(),
             mode: TaskMode::Project,
             title: "Recordatorios".into(),
             prompt: "Agrega recordatorios".into(),
             account: AccountId::new("personal").unwrap(),
             model: None,
             workspace: Some(Workspace {
-                worktree: "/code/moira/.hedy/worktrees/t1".into(),
+                worktree: "/code/agenda/.hedy/worktrees/t1".into(),
                 branch: "hedy/recordatorios-t1".into(),
                 base_branch: "main".into(),
                 base_commit: "abc".into(),
@@ -1455,7 +1455,7 @@ mod tests {
         store.save_task(&updated).unwrap();
         assert_eq!(store.task(&old.id).unwrap(), Some(updated.clone()));
         assert_eq!(
-            store.tasks(Path::new("/code/moira")).unwrap(),
+            store.tasks(Path::new("/code/agenda")).unwrap(),
             vec![new.clone(), updated]
         );
 
@@ -1480,7 +1480,7 @@ mod tests {
                 .record_usage(&UsageRecord {
                     at,
                     account: account.clone(),
-                    project: "/code/moira".into(),
+                    project: "/code/agenda".into(),
                     task: old.id.clone(),
                     sample: UsageSample {
                         input_tokens: tokens,
@@ -1501,7 +1501,7 @@ mod tests {
         let (project, by, usage) = &rows[0];
         assert_eq!(
             (project.as_path(), by, usage.input_tokens),
-            (Path::new("/code/moira"), &account, 11)
+            (Path::new("/code/agenda"), &account, 11)
         );
 
         assert_eq!(store.rate_limit(&account).unwrap(), None);
@@ -1553,12 +1553,12 @@ mod tests {
                 .unwrap()
         };
         let price = add(
-            Some("/code/moira"),
+            Some("/code/agenda"),
             "Los precios se guardan en USD",
             NoteStatus::Approved,
         );
         let remind = add(
-            Some("/code/moira"),
+            Some("/code/agenda"),
             "Los recordatorios se envían por WhatsApp",
             NoteStatus::Proposed,
         );
@@ -1574,25 +1574,25 @@ mod tests {
         );
 
         let ids = |notes: Vec<Note>| notes.iter().map(|n| n.id).collect::<Vec<_>>();
-        let moira = Some(Path::new("/code/moira"));
-        assert_eq!(ids(store.notes(moira, true).unwrap()).len(), 3);
-        assert_eq!(ids(store.notes(moira, false).unwrap()).len(), 2);
+        let agenda = Some(Path::new("/code/agenda"));
+        assert_eq!(ids(store.notes(agenda, true).unwrap()).len(), 3);
+        assert_eq!(ids(store.notes(agenda, false).unwrap()).len(), 2);
         assert_eq!(ids(store.notes(None, false).unwrap()), vec![global.id]);
 
         // Accents and prefixes match: "recordatorio" finds "recordatorios".
         assert_eq!(
             ids(store
-                .search_notes(moira, true, "recordatorio whatsapp")
+                .search_notes(agenda, true, "recordatorio whatsapp")
                 .unwrap()),
             vec![remind.id]
         );
         assert_eq!(
-            ids(store.search_notes(moira, true, "espanol").unwrap()),
+            ids(store.search_notes(agenda, true, "espanol").unwrap()),
             vec![global.id]
         );
         assert!(
             store
-                .search_notes(moira, false, "espanol")
+                .search_notes(agenda, false, "espanol")
                 .unwrap()
                 .is_empty()
         );
@@ -1605,7 +1605,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            ids(store.search_notes(moira, true, "Bs").unwrap()),
+            ids(store.search_notes(agenda, true, "Bs").unwrap()),
             vec![price.id]
         );
         store
@@ -1630,7 +1630,7 @@ mod tests {
         assert_eq!(store.dismissed_pairs().unwrap(), vec![(2, 5)]);
 
         store.delete_note(price.id).unwrap();
-        assert!(store.search_notes(moira, true, "USD").unwrap().is_empty());
+        assert!(store.search_notes(agenda, true, "USD").unwrap().is_empty());
         assert!(
             store
                 .notes_used_by(&task)
@@ -1643,10 +1643,10 @@ mod tests {
     #[test]
     fn topics_are_searched_and_notes_revised_in_place() {
         let store = SqliteStore::in_memory().unwrap();
-        let moira = Path::new("/code/moira");
+        let agenda = Path::new("/code/agenda");
         let note = store
             .add_note(&NewNote {
-                project: Some(moira.into()),
+                project: Some(agenda.into()),
                 text: "Los pagos van por Stripe".into(),
                 category: Category::Decision,
                 author: "Claude".into(),
@@ -1658,7 +1658,7 @@ mod tests {
         assert_eq!(note.topic.as_deref(), Some("arquitectura/cobros"));
         assert_eq!(note.updated_at, None);
         // The topic is indexed too.
-        let found = store.search_notes(Some(moira), false, "cobros").unwrap();
+        let found = store.search_notes(Some(agenda), false, "cobros").unwrap();
         assert_eq!(found.iter().map(|n| n.id).collect::<Vec<_>>(), [note.id]);
 
         store.record_uses(&[note.id], None, 20).unwrap();
@@ -1689,26 +1689,26 @@ mod tests {
         // The index follows the new text and topic.
         assert!(
             store
-                .search_notes(Some(moira), false, "Stripe")
+                .search_notes(Some(agenda), false, "Stripe")
                 .unwrap()
                 .is_empty()
         );
         assert!(
             store
-                .search_notes(Some(moira), false, "cobros")
+                .search_notes(Some(agenda), false, "cobros")
                 .unwrap()
                 .is_empty()
         );
         assert_eq!(
             store
-                .search_notes(Some(moira), false, "mercado")
+                .search_notes(Some(agenda), false, "mercado")
                 .unwrap()
                 .len(),
             1
         );
         assert_eq!(
             store
-                .search_notes(Some(moira), false, "pagos")
+                .search_notes(Some(agenda), false, "pagos")
                 .unwrap()
                 .len(),
             1
@@ -1719,11 +1719,11 @@ mod tests {
     fn similar_notes_are_found_by_their_key_words() {
         use crate::domain::memory::{key_words, similar};
         let store = SqliteStore::in_memory().unwrap();
-        let moira = Path::new("/code/moira");
+        let agenda = Path::new("/code/agenda");
         let add = |text: &str| {
             store
                 .add_note(&NewNote {
-                    project: Some(moira.into()),
+                    project: Some(agenda.into()),
                     text: text.into(),
                     category: Category::Decision,
                     author: "user".into(),
@@ -1741,7 +1741,7 @@ mod tests {
         // accents folded), then keep the close ones.
         let query = key_words(proposal).join(" ");
         let found: Vec<Note> = store
-            .search_notes(Some(moira), false, &query)
+            .search_notes(Some(agenda), false, &query)
             .unwrap()
             .into_iter()
             .filter(|n| similar(&n.text, proposal))
@@ -1762,7 +1762,7 @@ mod tests {
             conn.pragma_update(None, "user_version", 6).unwrap();
             conn.execute(
                 "INSERT INTO notes (project, text, category, author, status, created_at)
-                 VALUES ('/code/moira', 'Los recordatorios se envían por WhatsApp', 'decision',
+                 VALUES ('/code/agenda', 'Los recordatorios se envían por WhatsApp', 'decision',
                          'user', 'approved', 5)",
                 [],
             )
@@ -1770,14 +1770,14 @@ mod tests {
         }
         let store = SqliteStore::open(&path).unwrap();
         let notes = store
-            .search_notes(Some(Path::new("/code/moira")), false, "recordatorio")
+            .search_notes(Some(Path::new("/code/agenda")), false, "recordatorio")
             .unwrap();
         assert_eq!(notes.len(), 1);
         assert_eq!((notes[0].topic.as_ref(), notes[0].updated_at), (None, None));
         store.delete_note(notes[0].id).unwrap();
         assert!(
             store
-                .search_notes(Some(Path::new("/code/moira")), false, "whatsapp")
+                .search_notes(Some(Path::new("/code/agenda")), false, "whatsapp")
                 .unwrap()
                 .is_empty()
         );
@@ -1786,7 +1786,7 @@ mod tests {
     #[test]
     fn skills_round_trip_by_scope() {
         let store = SqliteStore::in_memory().unwrap();
-        let moira = PathBuf::from("/code/moira");
+        let agenda = PathBuf::from("/code/agenda");
         let new = |project: Option<&PathBuf>, name: &str, status| NewSkill {
             project: project.cloned(),
             name: name.into(),
@@ -1798,7 +1798,7 @@ mod tests {
             source_task: Some(TaskId::new("t-1")),
         };
         let tests = store
-            .add_skill(&new(Some(&moira), "run-tests", SkillStatus::Proposed))
+            .add_skill(&new(Some(&agenda), "run-tests", SkillStatus::Proposed))
             .unwrap();
         assert_eq!(tests.source_task, Some(TaskId::new("t-1")));
         assert_eq!(
@@ -1818,11 +1818,11 @@ mod tests {
 
         let names = |skills: Vec<Skill>| skills.into_iter().map(|s| s.name).collect::<Vec<_>>();
         assert_eq!(
-            names(store.skills(Some(&moira), true).unwrap()),
+            names(store.skills(Some(&agenda), true).unwrap()),
             ["a-global", "run-tests"]
         );
         assert_eq!(
-            names(store.skills(Some(&moira), false).unwrap()),
+            names(store.skills(Some(&agenda), false).unwrap()),
             ["run-tests"]
         );
         assert_eq!(names(store.skills(None, false).unwrap()), ["a-global"]);
@@ -1871,7 +1871,7 @@ mod tests {
                 .unwrap();
             conn.execute(
                 "INSERT INTO notes (project, text, category, author, status, created_at)
-                 VALUES ('/code/moira', 'Precios en USD', 'decision', 'user', 'approved', 5)",
+                 VALUES ('/code/agenda', 'Precios en USD', 'decision', 'user', 'approved', 5)",
                 [],
             )
             .unwrap();
@@ -1879,7 +1879,7 @@ mod tests {
         let store = SqliteStore::open(&path).unwrap();
         assert_eq!(
             store
-                .notes(Some(Path::new("/code/moira")), false)
+                .notes(Some(Path::new("/code/agenda")), false)
                 .unwrap()
                 .len(),
             1

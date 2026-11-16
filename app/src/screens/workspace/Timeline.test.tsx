@@ -16,7 +16,7 @@ const t = translator("es");
 
 const task: Task = {
   id: "t1",
-  project: "/code/moira",
+  project: "/code/agenda",
   mode: "project",
   title: "IVA",
   prompt: "Corrige el IVA",

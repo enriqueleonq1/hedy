@@ -275,14 +275,14 @@ mod tests {
 
     fn new_task(f: &Fixture) -> Task {
         f.add_claude("Personal");
-        f.fs.add_git_root("/code/moira");
+        f.fs.add_git_root("/code/agenda");
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
         f.hedy
             .start_task(NewTask {
                 images: Vec::new(),
-                project: f.dir("/code/moira"),
+                project: f.dir("/code/agenda"),
                 prompt: "Recordatorios por WhatsApp".into(),
                 mode: TaskMode::Project,
                 model: None,

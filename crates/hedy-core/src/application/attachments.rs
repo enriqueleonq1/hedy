@@ -140,15 +140,15 @@ mod tests {
 
     fn project(f: &Fixture) {
         f.add_claude("Personal");
-        f.fs.add_git_root("/code/moira");
+        f.fs.add_git_root("/code/agenda");
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
     }
 
     fn ask(f: &Fixture, images: Vec<NewImage>) -> AppResult<crate::domain::Task> {
         f.hedy.start_task(NewTask {
-            project: f.dir("/code/moira"),
+            project: f.dir("/code/agenda"),
             prompt: "¿Qué falla aquí?".into(),
             mode: TaskMode::Ask,
             model: None,

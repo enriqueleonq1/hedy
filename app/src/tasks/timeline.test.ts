@@ -6,7 +6,7 @@ const t = translator("es");
 
 const task = (extra: Partial<Task>): Task => ({
   id: "t1",
-  project: "/code/moira",
+  project: "/code/agenda",
   mode: "project",
   title: "Recordatorios",
   prompt: "Agrega recordatorios",

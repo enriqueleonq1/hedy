@@ -236,15 +236,15 @@ mod tests {
     fn task_at_limit_with(f: &Fixture, resets_at: Option<i64>, queued: Option<&str>) -> Task {
         f.add_claude("Personal");
         f.add_kimi("Kimi");
-        f.fs.add_git_root("/code/moira");
+        f.fs.add_git_root("/code/agenda");
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
         let task = f
             .hedy
             .start_task(NewTask {
                 images: Vec::new(),
-                project: f.dir("/code/moira"),
+                project: f.dir("/code/agenda"),
                 prompt: "Recordatorios".into(),
                 mode: TaskMode::Project,
                 model: None,

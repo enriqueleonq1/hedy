@@ -687,7 +687,7 @@ mod tests {
         f.add_claude("Personal");
         f.add_claude("Trabajo");
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
         f
     }
@@ -695,29 +695,29 @@ mod tests {
     #[test]
     fn user_notes_are_approved_and_ai_notes_are_proposals() {
         let f = setup();
-        let moira = f.dir("/code/moira");
+        let agenda = f.dir("/code/agenda");
         f.hedy
-            .add_note(Some(&moira), "Tests con pytest", Category::Convention)
+            .add_note(Some(&agenda), "Tests con pytest", Category::Convention)
             .unwrap();
         f.hedy
             .add_note(None, "Respuestas cortas y en español", Category::Preference)
             .unwrap();
         let proposal = f
             .hedy
-            .propose_note(&moira, "Precios en USD", Category::Decision, "Codex", None)
+            .propose_note(&agenda, "Precios en USD", Category::Decision, "Codex", None)
             .unwrap();
         assert!(matches!(
-            f.hedy.add_note(Some(&moira), "  ", Category::Rule),
+            f.hedy.add_note(Some(&agenda), "  ", Category::Rule),
             Err(AppError::EmptyNote)
         ));
 
-        let view = f.hedy.memory(&moira).unwrap();
+        let view = f.hedy.memory(&agenda).unwrap();
         assert_eq!(view.notes.len(), 2, "project + global");
         assert_eq!(view.proposed.len(), 1);
         // Agents never see proposals.
         assert_eq!(
             f.hedy
-                .read_memory_for_agent(&moira, None, "")
+                .read_memory_for_agent(&agenda, None, "")
                 .unwrap()
                 .len(),
             2
@@ -725,7 +725,7 @@ mod tests {
 
         f.hedy.approve_note(proposal.id).unwrap();
         assert_eq!(
-            f.hedy.read_memory_for_agent(&moira, None, "USD").unwrap()[0].author,
+            f.hedy.read_memory_for_agent(&agenda, None, "USD").unwrap()[0].author,
             "Codex"
         );
     }
@@ -756,18 +756,18 @@ mod tests {
             vec!["Regla del trabajo"]
         );
         assert!(view.protected);
-        let moira = f.hedy.memory(&f.dir("/code/moira")).unwrap();
-        assert!(moira.notes.iter().all(|n| n.text != "Regla del trabajo"));
+        let agenda = f.hedy.memory(&f.dir("/code/agenda")).unwrap();
+        assert!(agenda.notes.iter().all(|n| n.text != "Regla del trabajo"));
     }
 
     #[test]
     fn contradictions_are_resolved_or_dismissed() {
         let f = setup();
-        let moira = f.dir("/code/moira");
+        let agenda = f.dir("/code/agenda");
         let a = f
             .hedy
             .add_note(
-                Some(&moira),
+                Some(&agenda),
                 "Los recordatorios se envían 24 h antes",
                 Category::Decision,
             )
@@ -775,30 +775,30 @@ mod tests {
         let b = f
             .hedy
             .add_note(
-                Some(&moira),
+                Some(&agenda),
                 "Los recordatorios se envían 2 h antes",
                 Category::Decision,
             )
             .unwrap();
-        assert_eq!(f.hedy.memory(&moira).unwrap().contradictions.len(), 1);
+        assert_eq!(f.hedy.memory(&agenda).unwrap().contradictions.len(), 1);
 
         f.hedy.dismiss_contradiction(b.id, a.id).unwrap();
-        assert!(f.hedy.memory(&moira).unwrap().contradictions.is_empty());
+        assert!(f.hedy.memory(&agenda).unwrap().contradictions.is_empty());
 
         f.hedy.keep_note(a.id, b.id).unwrap();
-        assert_eq!(f.hedy.memory(&moira).unwrap().notes.len(), 1);
+        assert_eq!(f.hedy.memory(&agenda).unwrap().notes.len(), 1);
     }
 
     #[test]
     fn agents_reading_count_as_uses_of_the_task() {
         let f = setup();
-        let moira = f.dir("/code/moira");
+        let agenda = f.dir("/code/agenda");
         f.hedy
-            .add_note(Some(&moira), "Precios en USD", Category::Decision)
+            .add_note(Some(&agenda), "Precios en USD", Category::Decision)
             .unwrap();
         let task = TaskId::new("t-1");
         let account = f.hedy.account("personal").unwrap();
-        let project = f.hedy.project_at(&moira).unwrap();
+        let project = f.hedy.project_at(&agenda).unwrap();
         let link = f.hedy.memory_link(&project, &task, &account).unwrap();
         assert!(
             link.server.is_none(),
@@ -811,29 +811,29 @@ mod tests {
                 .contains("Propuesta")
         );
         assert_eq!(
-            f.hedy.memory(&moira).unwrap().proposed[0].note.author,
+            f.hedy.memory(&agenda).unwrap().proposed[0].note.author,
             "Claude"
         );
 
-        let note = &f.hedy.memory(&moira).unwrap().notes[0];
+        let note = &f.hedy.memory(&agenda).unwrap().notes[0];
         assert_eq!(note.uses, 1);
     }
 
     #[test]
     fn unknown_categories_are_not_saved() {
         let f = setup();
-        let moira = f.dir("/code/moira");
-        let tools = f.hedy.memory_tools(&moira, None, "Codex").unwrap();
+        let agenda = f.dir("/code/agenda");
+        let tools = f.hedy.memory_tools(&agenda, None, "Codex").unwrap();
         let answer = tools.propose("Precios en USD", "idea", None);
         assert!(answer.contains("decision, convention, rule, preference"));
-        assert!(f.hedy.memory(&moira).unwrap().proposed.is_empty());
+        assert!(f.hedy.memory(&agenda).unwrap().proposed.is_empty());
 
         assert!(
             tools
                 .propose("Precios en USD", "Regla", None)
                 .contains("Propuesta")
         );
-        let proposed = f.hedy.memory(&moira).unwrap().proposed;
+        let proposed = f.hedy.memory(&agenda).unwrap().proposed;
         assert_eq!(proposed[0].note.category, Category::Rule);
         assert_eq!(proposed[0].note.author, "Codex");
         assert!(
@@ -860,27 +860,27 @@ mod tests {
     #[test]
     fn a_proposal_under_a_topic_changes_the_approved_note() {
         let f = setup();
-        let moira = f.dir("/code/moira");
+        let agenda = f.dir("/code/agenda");
         let old = approved_with_topic(
             &f,
-            &moira,
+            &agenda,
             "Los recordatorios se envían por WhatsApp",
             "Recordatorios/Canal",
         );
         assert_eq!(old.topic.as_deref(), Some("recordatorios/canal"));
-        f.hedy.read_memory_for_agent(&moira, None, "").unwrap();
+        f.hedy.read_memory_for_agent(&agenda, None, "").unwrap();
 
         let change = f
             .hedy
             .propose_note(
-                &moira,
+                &agenda,
                 "Los recordatorios se envían por WhatsApp y, si falla, por SMS",
                 Category::Decision,
                 "Codex",
                 Some("recordatorios/canal"),
             )
             .unwrap();
-        let view = f.hedy.memory(&moira).unwrap();
+        let view = f.hedy.memory(&agenda).unwrap();
         assert_eq!(
             view.proposed[0].replaces.as_ref().map(|n| n.id),
             Some(old.id)
@@ -892,14 +892,14 @@ mod tests {
         // Agents keep reading the approved version until the user decides.
         assert!(
             f.hedy
-                .read_memory_for_agent(&moira, None, "SMS")
+                .read_memory_for_agent(&agenda, None, "SMS")
                 .unwrap()
                 .is_empty()
         );
 
         // Rejecting changes nothing.
         f.hedy.reject_note(change.id).unwrap();
-        let view = f.hedy.memory(&moira).unwrap();
+        let view = f.hedy.memory(&agenda).unwrap();
         assert!(view.proposed.is_empty());
         assert_eq!(view.notes, vec![f.hedy.note_or_error(old.id).unwrap()]);
         assert_eq!(
@@ -911,7 +911,7 @@ mod tests {
         let change = f
             .hedy
             .propose_note(
-                &moira,
+                &agenda,
                 "Los recordatorios se envían por SMS",
                 Category::Rule,
                 "Codex",
@@ -927,7 +927,7 @@ mod tests {
         );
         assert_eq!(updated.uses, 1);
         assert!(updated.updated_at.is_some_and(|at| at > old.created_at));
-        let view = f.hedy.memory(&moira).unwrap();
+        let view = f.hedy.memory(&agenda).unwrap();
         assert_eq!(view.notes.len(), 1);
         assert!(view.proposed.is_empty());
         assert!(matches!(
@@ -943,10 +943,10 @@ mod tests {
     #[test]
     fn topics_belong_to_their_project() {
         let f = setup();
-        let moira = f.dir("/code/moira");
+        let agenda = f.dir("/code/agenda");
         let other = f.dir("/code/otro");
         f.hedy.use_account(&other, "personal", None).unwrap();
-        approved_with_topic(&f, &moira, "Pagos con Stripe", "pagos");
+        approved_with_topic(&f, &agenda, "Pagos con Stripe", "pagos");
         let proposal = f
             .hedy
             .propose_note(
@@ -965,7 +965,7 @@ mod tests {
         let approved = f.hedy.approve_note(proposal.id).unwrap();
         assert_eq!(approved.id, proposal.id, "a new note in the other project");
         assert_eq!(
-            f.hedy.memory(&moira).unwrap().notes[0].text,
+            f.hedy.memory(&agenda).unwrap().notes[0].text,
             "Pagos con Stripe"
         );
     }
@@ -973,17 +973,17 @@ mod tests {
     #[test]
     fn similar_notes_are_shown_next_to_a_proposal() {
         let f = setup();
-        let moira = f.dir("/code/moira");
+        let agenda = f.dir("/code/agenda");
         let prices = f
             .hedy
             .add_note(
-                Some(&moira),
+                Some(&agenda),
                 "Los precios se guardan en USD y se muestran también en Bs",
                 Category::Decision,
             )
             .unwrap();
         f.hedy
-            .add_note(Some(&moira), "Tests con pytest", Category::Convention)
+            .add_note(Some(&agenda), "Tests con pytest", Category::Convention)
             .unwrap();
         let global = f
             .hedy
@@ -992,7 +992,7 @@ mod tests {
         let usd = f
             .hedy
             .propose_note(
-                &moira,
+                &agenda,
                 "Los precios se guardan en USD",
                 Category::Decision,
                 "Codex",
@@ -1002,14 +1002,14 @@ mod tests {
         let zod = f
             .hedy
             .propose_note(
-                &moira,
+                &agenda,
                 "Los formularios validan con zod",
                 Category::Convention,
                 "Codex",
                 None,
             )
             .unwrap();
-        let view = f.hedy.memory(&moira).unwrap();
+        let view = f.hedy.memory(&agenda).unwrap();
         let proposal = |id: i64| view.proposed.iter().find(|p| p.note.id == id).unwrap();
         let similar: Vec<i64> = proposal(usd.id).similar.iter().map(|n| n.id).collect();
         assert!(similar.contains(&prices.id) && similar.contains(&global.id));
@@ -1021,7 +1021,7 @@ mod tests {
         assert_eq!(replaced.id, prices.id);
         assert_eq!(replaced.text, "Los precios se guardan en USD");
         assert!(replaced.updated_at.is_some());
-        let view = f.hedy.memory(&moira).unwrap();
+        let view = f.hedy.memory(&agenda).unwrap();
         assert_eq!(view.proposed.len(), 1);
         assert_eq!(view.notes.len(), 3);
 
@@ -1039,19 +1039,25 @@ mod tests {
     #[test]
     fn agents_search_compactly_and_read_whole_notes() {
         let f = setup();
-        let moira = f.dir("/code/moira");
+        let agenda = f.dir("/code/agenda");
         let long = "Los pagos se procesan con Stripe. ".repeat(8);
-        let pay = approved_with_topic(&f, &moira, &long, "arquitectura/pagos");
+        let pay = approved_with_topic(&f, &agenda, &long, "arquitectura/pagos");
         let short = f
             .hedy
-            .add_note(Some(&moira), "Tests con pytest", Category::Convention)
+            .add_note(Some(&agenda), "Tests con pytest", Category::Convention)
             .unwrap();
         f.hedy
-            .propose_note(&moira, "Pagos secretos", Category::Rule, "Codex", Some("x"))
+            .propose_note(
+                &agenda,
+                "Pagos secretos",
+                Category::Rule,
+                "Codex",
+                Some("x"),
+            )
             .unwrap();
         let tools = f
             .hedy
-            .memory_tools(&moira, Some(&TaskId::new("t-1")), "Codex")
+            .memory_tools(&agenda, Some(&TaskId::new("t-1")), "Codex")
             .unwrap();
 
         let found = tools.search("");
@@ -1100,7 +1106,7 @@ mod tests {
     #[test]
     fn memory_can_be_turned_off_per_account() {
         let f = setup();
-        let moira = f.dir("/code/moira");
+        let agenda = f.dir("/code/agenda");
         let f2 = f.hedy.clone().with_memory_server(MemoryServerCommand {
             program: "/opt/hedy".into(),
             args: vec!["memory-mcp".into(), "--data-dir".into(), "/data".into()],
@@ -1108,7 +1114,7 @@ mod tests {
         let account = f2.account("personal").unwrap();
         let link = f2
             .memory_link(
-                &f2.project_at(&moira).unwrap(),
+                &f2.project_at(&agenda).unwrap(),
                 &TaskId::new("t-9"),
                 &account,
             )
@@ -1122,7 +1128,7 @@ mod tests {
                 "--data-dir",
                 "/data",
                 "--project",
-                "/code/moira",
+                "/code/agenda",
                 "--task",
                 "t-9",
                 "--agent",
@@ -1130,12 +1136,12 @@ mod tests {
             ]
         );
 
-        f2.set_memory_reader(&moira, "personal", false).unwrap();
-        let project = f2.project_at(&moira).unwrap();
+        f2.set_memory_reader(&agenda, "personal", false).unwrap();
+        let project = f2.project_at(&agenda).unwrap();
         assert!(
             f2.memory_link(&project, &TaskId::new("t"), &account)
                 .is_none()
         );
-        assert!(!f2.memory(&moira).unwrap().readers[0].1);
+        assert!(!f2.memory(&agenda).unwrap().readers[0].1);
     }
 }

@@ -646,7 +646,7 @@ mod tests {
     /// `app.py`; a big file, an image, a binary and an `.env`.
     fn repo() -> (tempfile::TempDir, std::path::PathBuf) {
         let tmp = tempfile::tempdir().unwrap();
-        let repo = tmp.path().join("moira");
+        let repo = tmp.path().join("agenda");
         fs::create_dir_all(&repo).unwrap();
         for args in [
             &["init", "-q", "-b", "main"][..],

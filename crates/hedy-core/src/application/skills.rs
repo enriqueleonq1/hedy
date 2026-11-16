@@ -601,16 +601,16 @@ mod tests {
     use crate::domain::TaskMode;
     use crate::domain::skill::MANAGED_MARKER;
 
-    const CLAUDE_FILE: &str = "/code/moira/.claude/skills/run-e2e-tests/SKILL.md";
-    const AGENTS_FILE: &str = "/code/moira/.agents/skills/run-e2e-tests/SKILL.md";
+    const CLAUDE_FILE: &str = "/code/agenda/.claude/skills/run-e2e-tests/SKILL.md";
+    const AGENTS_FILE: &str = "/code/agenda/.agents/skills/run-e2e-tests/SKILL.md";
 
     fn setup() -> Fixture {
         let f = Fixture::new();
         f.add_claude("Personal");
         f.add_claude("Trabajo");
-        f.fs.add_git_root("/code/moira");
+        f.fs.add_git_root("/code/agenda");
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
         f
     }
@@ -618,7 +618,7 @@ mod tests {
     fn propose(f: &Fixture, body: &str) -> Skill {
         f.hedy
             .propose_skill(
-                &f.dir("/code/moira"),
+                &f.dir("/code/agenda"),
                 "Run E2E tests",
                 "Run the end-to-end tests before a release.",
                 body,
@@ -631,11 +631,11 @@ mod tests {
     #[test]
     fn proposals_wait_and_approval_writes_each_cli_folder() {
         let f = setup();
-        let moira = f.dir("/code/moira");
+        let agenda = f.dir("/code/agenda");
         let proposal = propose(&f, "1. npm run build\n2. npm run test:e2e");
         assert_eq!(proposal.name, "run-e2e-tests");
         assert_eq!(proposal.source_task, Some(TaskId::new("t-1")));
-        let tools = f.hedy.skill_tools(&moira, None, "Codex").unwrap();
+        let tools = f.hedy.skill_tools(&agenda, None, "Codex").unwrap();
         assert!(
             tools.list().contains("no hay habilidades"),
             "proposals stay hidden"
@@ -678,7 +678,7 @@ mod tests {
     #[test]
     fn a_proposal_with_the_name_of_an_approved_skill_updates_it() {
         let f = setup();
-        let moira = f.dir("/code/moira");
+        let agenda = f.dir("/code/agenda");
         let old = f
             .hedy
             .approve_skill(propose(&f, "1. npm test").id)
@@ -686,7 +686,7 @@ mod tests {
             .skill;
         let tools = f
             .hedy
-            .skill_tools(&moira, Some(&TaskId::new("t-2")), "Codex")
+            .skill_tools(&agenda, Some(&TaskId::new("t-2")), "Codex")
             .unwrap();
         let answer = tools.propose(
             "run-e2e-tests",
@@ -697,7 +697,7 @@ mod tests {
             answer.contains("actualización de la habilidad «run-e2e-tests»"),
             "{answer}"
         );
-        let view = f.hedy.skills(&moira).unwrap();
+        let view = f.hedy.skills(&agenda).unwrap();
         assert_eq!(
             view.proposed[0].replaces.as_ref().map(|s| s.id),
             Some(old.id)
@@ -709,14 +709,14 @@ mod tests {
 
         // Rejecting changes nothing.
         f.hedy.reject_skill(view.proposed[0].skill.id).unwrap();
-        assert!(f.hedy.skills(&moira).unwrap().proposed.is_empty());
+        assert!(f.hedy.skills(&agenda).unwrap().proposed.is_empty());
 
         tools.propose(
             "run-e2e-tests",
             "Headless now.",
             "1. npm run test:e2e -- --headless",
         );
-        let update = f.hedy.skills(&moira).unwrap().proposed[0].skill.clone();
+        let update = f.hedy.skills(&agenda).unwrap().proposed[0].skill.clone();
         let change = f.hedy.approve_skill(update.id).unwrap();
         assert_eq!(change.skill.id, old.id);
         assert_eq!(
@@ -728,7 +728,7 @@ mod tests {
         );
         assert!(change.skill.updated_at.is_some());
         assert!(f.fs.file(AGENTS_FILE).unwrap().contains("--headless"));
-        let view = f.hedy.skills(&moira).unwrap();
+        let view = f.hedy.skills(&agenda).unwrap();
         assert_eq!((view.approved.len(), view.proposed.len()), (1, 0));
     }
 
@@ -749,12 +749,12 @@ mod tests {
         assert!(f.fs.file(CLAUDE_FILE).is_some(), "still the user's");
         assert_eq!(f.fs.file(AGENTS_FILE), None);
         let removed = f.fs.removed_dirs();
-        assert!(removed.contains(&f.dir("/code/moira/.agents/skills/run-e2e-tests")));
-        assert!(removed.contains(&f.dir("/code/moira/.agents")));
-        assert!(!removed.contains(&f.dir("/code/moira")));
+        assert!(removed.contains(&f.dir("/code/agenda/.agents/skills/run-e2e-tests")));
+        assert!(removed.contains(&f.dir("/code/agenda/.agents")));
+        assert!(!removed.contains(&f.dir("/code/agenda")));
         assert!(
             f.hedy
-                .skills(&f.dir("/code/moira"))
+                .skills(&f.dir("/code/agenda"))
                 .unwrap()
                 .approved
                 .is_empty()
@@ -766,7 +766,7 @@ mod tests {
         let f = setup();
         let tools = f
             .hedy
-            .skill_tools(&f.dir("/code/moira"), None, "Kimi")
+            .skill_tools(&f.dir("/code/agenda"), None, "Kimi")
             .unwrap();
         let answer = tools.propose(
             "deploy",
@@ -793,7 +793,11 @@ mod tests {
                 .contains("Propuesta guardada como «deploy»")
         );
         assert_eq!(
-            f.hedy.skills(&f.dir("/code/moira")).unwrap().proposed.len(),
+            f.hedy
+                .skills(&f.dir("/code/agenda"))
+                .unwrap()
+                .proposed
+                .len(),
             1
         );
     }
@@ -801,19 +805,19 @@ mod tests {
     #[test]
     fn global_skills_live_only_in_hedy_and_stay_out_of_protected_projects() {
         let f = setup();
-        let moira = f.dir("/code/moira");
+        let agenda = f.dir("/code/agenda");
         let draft = |name: &str, global| SkillDraft {
             name: name.into(),
             description: "Write commit messages in English.".into(),
             body: "Small commits, imperative mood.".into(),
             global,
         };
-        let change = f.hedy.add_skill(&moira, &draft("commits", true)).unwrap();
+        let change = f.hedy.add_skill(&agenda, &draft("commits", true)).unwrap();
         assert_eq!(change.skill.project, None);
         assert_eq!(change.skill.author, "user");
         assert!(change.files.written.is_empty() && f.fs.files().is_empty());
         assert!(matches!(
-            f.hedy.add_skill(&moira, &draft("commits", true)),
+            f.hedy.add_skill(&agenda, &draft("commits", true)),
             Err(AppError::SkillNameTaken(_))
         ));
 
@@ -839,7 +843,7 @@ mod tests {
             Err(AppError::SkillNotFound(_))
         ));
         assert_eq!(
-            f.hedy.skill_named(&moira, "Commits").unwrap().id,
+            f.hedy.skill_named(&agenda, "Commits").unwrap().id,
             change.skill.id
         );
     }
@@ -847,7 +851,7 @@ mod tests {
     #[test]
     fn editing_an_approved_skill_moves_its_files() {
         let f = setup();
-        let moira = f.dir("/code/moira");
+        let agenda = f.dir("/code/agenda");
         let skill = f
             .hedy
             .approve_skill(propose(&f, "1. npm test").id)
@@ -859,13 +863,13 @@ mod tests {
             body: "1. npm run e2e".into(),
             global: false,
         };
-        let change = f.hedy.edit_skill(skill.id, &moira, &draft).unwrap();
+        let change = f.hedy.edit_skill(skill.id, &agenda, &draft).unwrap();
         assert_eq!(change.skill.name, "e2e");
         assert_eq!(change.skill.author, "Claude", "the author stays");
         assert_eq!(change.files.removed.len(), 2);
         assert!(f.fs.file(AGENTS_FILE).is_none());
         let renamed =
-            f.fs.file("/code/moira/.agents/skills/e2e/SKILL.md")
+            f.fs.file("/code/agenda/.agents/skills/e2e/SKILL.md")
                 .unwrap();
         assert!(renamed.contains("npm run e2e"));
 
@@ -874,23 +878,23 @@ mod tests {
             global: true,
             ..draft
         };
-        let change = f.hedy.edit_skill(skill.id, &moira, &global).unwrap();
+        let change = f.hedy.edit_skill(skill.id, &agenda, &global).unwrap();
         assert_eq!(change.files.removed.len(), 2);
         assert!(f.fs.files().is_empty());
-        let tools = f.hedy.skill_tools(&moira, None, "x").unwrap();
+        let tools = f.hedy.skill_tools(&agenda, None, "x").unwrap();
         assert!(tools.list().contains("e2e [global]"));
     }
 
     #[test]
     fn task_worktrees_get_the_approved_skills() {
         let f = setup();
-        let moira = f.dir("/code/moira");
+        let agenda = f.dir("/code/agenda");
         f.hedy.approve_skill(propose(&f, "1. npm test").id).unwrap();
         let task = f
             .hedy
             .start_task(NewTask {
                 images: Vec::new(),
-                project: moira.clone(),
+                project: agenda.clone(),
                 prompt: "Arregla el login".into(),
                 mode: TaskMode::Project,
                 model: None,
@@ -911,7 +915,7 @@ mod tests {
         let lint = f
             .hedy
             .propose_skill(
-                &moira,
+                &agenda,
                 "lint",
                 "Lint first.",
                 "1. npm run lint",
@@ -930,8 +934,8 @@ mod tests {
     #[test]
     fn memory_links_carry_the_skill_tools() {
         let f = setup();
-        let moira = f.dir("/code/moira");
-        let project = f.hedy.project_at(&moira).unwrap();
+        let agenda = f.dir("/code/agenda");
+        let project = f.hedy.project_at(&agenda).unwrap();
         let account = f.hedy.account("personal").unwrap();
         let link = f
             .hedy
@@ -943,7 +947,7 @@ mod tests {
                 .propose("lint", "Lint first.", "npm run lint")
                 .contains("Propuesta")
         );
-        let proposal = &f.hedy.skills(&moira).unwrap().proposed[0].skill;
+        let proposal = &f.hedy.skills(&agenda).unwrap().proposed[0].skill;
         assert_eq!(proposal.author, "Claude");
         assert_eq!(proposal.source_task, Some(TaskId::new("t-7")));
     }

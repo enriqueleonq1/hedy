@@ -121,9 +121,9 @@ describe("Status", () => {
     const input = screen.getByLabelText("Cliente de hedy");
     expect(input).toHaveAccessibleDescription(/agrupa proyectos del mismo cliente para ver cuánto uso lleva cada uno/);
     await user.clear(input);
-    await user.type(input, "Moira SA");
+    await user.type(input, "Taller Sur");
     await user.tab();
-    expect((await api.overview()).projects.find((p) => p.name === "hedy")?.client).toBe("Moira SA");
+    expect((await api.overview()).projects.find((p) => p.name === "hedy")?.client).toBe("Taller Sur");
   });
 
   it("shows the week per client only once a project has a client", async () => {

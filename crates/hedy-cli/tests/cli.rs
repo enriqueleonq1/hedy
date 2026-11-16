@@ -331,7 +331,7 @@ fn completions_for_every_shell() {
 #[test]
 fn client_and_summary() {
     let env = Env::new();
-    let repo = env.repo("code/moira");
+    let repo = env.repo("code/agenda");
     env.hedy(&["-C", repo.to_str().unwrap(), "client", "Estudio Norte"])
         .assert()
         .failure()
@@ -345,7 +345,7 @@ fn client_and_summary() {
     env.hedy(&["-C", repo.to_str().unwrap(), "client", "Estudio Norte"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("moira es para Estudio Norte"));
+        .stdout(predicate::str::contains("agenda es para Estudio Norte"));
     env.hedy(&["summary", "--week"])
         .assert()
         .success()
@@ -374,12 +374,12 @@ fn speaks_english_when_asked() {
     en(&["account", "list"])
         .stdout(predicate::str::contains("system keyring"))
         .stdout(predicate::str::contains(" · default"));
-    let repo = env.repo("code/moira");
+    let repo = env.repo("code/agenda");
     en(&["-C", repo.to_str().unwrap(), "use", "claude-personal"])
-        .stdout(predicate::str::contains("moira"))
+        .stdout(predicate::str::contains("agenda"))
         .stdout(predicate::str::contains(" uses "));
     en(&["-C", repo.to_str().unwrap(), "status"])
-        .stdout(predicate::str::contains("Project moira"))
+        .stdout(predicate::str::contains("Project agenda"))
         .stdout(predicate::str::contains("signed in · max"))
         .stdout(predicate::str::contains("Accounts"));
     en(&["summary", "--week"]).stdout(predicate::str::contains("No usage recorded this week."));
@@ -490,7 +490,7 @@ fn seed_memory(env: &Env, repo: &Path) -> (i64, i64, i64) {
 #[test]
 fn memory_lists_approves_and_rejects_proposals() {
     let env = Env::new();
-    let repo = env.repo("code/moira");
+    let repo = env.repo("code/agenda");
     env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
         .assert()
         .success();
@@ -602,7 +602,7 @@ fn seed_skills(env: &Env, repo: &Path) -> (i64, i64) {
 #[test]
 fn skills_list_show_approve_reject_and_remove() {
     let env = Env::new();
-    let repo = git_repo(&env, "code/moira");
+    let repo = git_repo(&env, "code/agenda");
     env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
         .assert()
         .success();
@@ -679,7 +679,7 @@ fn skills_list_show_approve_reject_and_remove() {
 #[test]
 fn skills_speak_english() {
     let env = Env::new();
-    let repo = git_repo(&env, "code/moira");
+    let repo = git_repo(&env, "code/agenda");
     env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
         .assert()
         .success();
@@ -717,7 +717,7 @@ fn skills_speak_english() {
 #[test]
 fn templates_are_added_listed_and_removed_per_scope() {
     let env = Env::new();
-    let repo = env.repo("code/moira");
+    let repo = env.repo("code/agenda");
     env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
         .assert()
         .success();
@@ -744,7 +744,7 @@ fn templates_are_added_listed_and_removed_per_scope() {
     )
     .assert()
     .success()
-    .stdout(predicate::str::contains("guardada para moira"))
+    .stdout(predicate::str::contains("guardada para agenda"))
     .stdout(predicate::str::contains("te pedirá: {tabla}"));
     env.hedy(&[
         "template",
@@ -764,7 +764,7 @@ fn templates_are_added_listed_and_removed_per_scope() {
     env.hedy_in(&repo, &["template", "list"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Del proyecto moira"))
+        .stdout(predicate::str::contains("Del proyecto agenda"))
         .stdout(predicate::str::contains("Migración  {tabla}"))
         .stdout(predicate::str::contains("Desplegar"));
     // Outside the project only the global ones show.

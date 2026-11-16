@@ -1035,14 +1035,14 @@ mod tests {
 
     fn new_task(f: &Fixture, prompt: &str, plan_first: bool) -> Task {
         f.add_claude("Personal");
-        f.fs.add_git_root("/code/moira");
+        f.fs.add_git_root("/code/agenda");
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
         f.hedy
             .start_task(NewTask {
                 images: Vec::new(),
-                project: f.dir("/code/moira"),
+                project: f.dir("/code/agenda"),
                 prompt: prompt.into(),
                 mode: TaskMode::Project,
                 model: Some("opus".into()),
@@ -1067,7 +1067,7 @@ mod tests {
 
         let ws = task.workspace.clone().unwrap();
         assert_eq!(task.title, "Agrega recordatorios por WhatsApp");
-        assert!(ws.worktree.starts_with("/code/moira/.hedy/worktrees"));
+        assert!(ws.worktree.starts_with("/code/agenda/.hedy/worktrees"));
         assert!(ws.branch.starts_with("hedy/agrega-recordatorios"));
         assert_eq!(
             (ws.base_branch.as_str(), ws.base_commit.as_str()),
@@ -1092,14 +1092,14 @@ mod tests {
     #[test]
     fn ignored_dependency_folders_are_shared_with_the_worktree() {
         let f = Fixture::new();
-        f.fs.add_existing("/code/moira/node_modules");
-        f.fs.add_existing("/code/moira/vendor");
+        f.fs.add_existing("/code/agenda/node_modules");
+        f.fs.add_existing("/code/agenda/vendor");
         f.git.ignore("node_modules");
         let task = new_task(&f, "Hola", false);
         let wt = task.workspace.unwrap().worktree;
         assert_eq!(
             f.fs.symlinks(),
-            vec![(f.dir("/code/moira/node_modules"), wt.join("node_modules"))]
+            vec![(f.dir("/code/agenda/node_modules"), wt.join("node_modules"))]
         );
         assert_eq!(f.git.excluded(), vec!["/.hedy/", "/node_modules"]);
     }
@@ -1317,13 +1317,13 @@ mod tests {
         let f = Fixture::new();
         f.add_claude("Personal");
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
         let task = f
             .hedy
             .start_task(NewTask {
                 images: Vec::new(),
-                project: f.dir("/code/moira"),
+                project: f.dir("/code/agenda"),
                 prompt: "¿Dónde se crean las citas?".into(),
                 mode: TaskMode::Ask,
                 model: None,
@@ -1332,7 +1332,7 @@ mod tests {
             .unwrap();
         assert!(task.workspace.is_none());
         let request = f.agents.last_request();
-        assert_eq!(request.launch.cwd, Some(f.dir("/code/moira")));
+        assert_eq!(request.launch.cwd, Some(f.dir("/code/agenda")));
         assert!(!request.plan_first, "plans only apply to changes");
         assert!(matches!(
             f.hedy.task_diff(&task.id),
@@ -1347,9 +1347,9 @@ mod tests {
         f.add_codex("ChatGPT");
         f.add_kimi("Kimi");
         f.hedy.set_api_key("kimi", "sk").unwrap();
-        f.fs.add_git_root("/code/moira");
+        f.fs.add_git_root("/code/agenda");
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
         let assign = |account: &str, model: Option<&str>| Assignment {
             account: crate::domain::AccountId::new(account).unwrap(),
@@ -1357,7 +1357,7 @@ mod tests {
         };
         f.hedy
             .set_project_phases(
-                &f.dir("/code/moira"),
+                &f.dir("/code/agenda"),
                 PhasePlan::from([
                     (Phase::Plan, assign("personal", Some("opus"))),
                     (Phase::Implement, assign("chatgpt", None)),
@@ -1368,7 +1368,7 @@ mod tests {
         f.hedy
             .start_task(NewTask {
                 images: Vec::new(),
-                project: f.dir("/code/moira"),
+                project: f.dir("/code/agenda"),
                 prompt: "Recordatorios".into(),
                 mode: TaskMode::Project,
                 model: None,

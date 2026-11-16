@@ -338,16 +338,16 @@ mod tests {
     fn deleting_a_conversation_removes_its_folder_and_history_only() {
         let f = Fixture::new();
         with_default(&f);
-        f.fs.add_git_root("/code/moira");
+        f.fs.add_git_root("/code/agenda");
         f.hedy
-            .use_account(&f.dir("/code/moira"), "personal", None)
+            .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
         let chat = f.hedy.start_conversation(ask("Hola")).unwrap();
         let project_task = f
             .hedy
             .start_task(NewTask {
                 images: Vec::new(),
-                project: f.dir("/code/moira"),
+                project: f.dir("/code/agenda"),
                 prompt: "¿Dónde se crean las citas?".into(),
                 mode: TaskMode::Ask,
                 model: None,

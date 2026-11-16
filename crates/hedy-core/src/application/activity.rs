@@ -112,14 +112,14 @@ mod tests {
     fn the_board_puts_what_needs_you_first_across_projects() {
         let f = Fixture::new();
         f.add_claude("Personal");
-        let finished = start(&f, "/code/moira", "Traduce los correos", false);
+        let finished = start(&f, "/code/agenda", "Traduce los correos", false);
         f.agents.emit(AgentEvent::Finished {
             ok: true,
             summary: "Listo".into(),
             duration_ms: None,
         });
         let working = start(&f, "/code/tienda", "Arregla el carrito", false);
-        let waiting = start(&f, "/code/moira", "Agrega recordatorios", true);
+        let waiting = start(&f, "/code/agenda", "Agrega recordatorios", true);
         f.agents.emit(AgentEvent::Plan {
             text: "1. Hacerlo".into(),
             request_id: Some("p1".into()),
@@ -133,9 +133,9 @@ mod tests {
         assert_eq!(
             rows,
             vec![
-                (waiting.id.clone(), TaskState::Plan, "moira"),
+                (waiting.id.clone(), TaskState::Plan, "agenda"),
                 (working.id.clone(), TaskState::Working, "tienda"),
-                (finished.id.clone(), TaskState::Review, "moira"),
+                (finished.id.clone(), TaskState::Review, "agenda"),
             ]
         );
         assert_eq!(board[0].phase, Phase::Plan);
@@ -147,7 +147,7 @@ mod tests {
     fn a_limit_shows_on_the_board_and_never_switches_accounts() {
         let f = Fixture::new();
         f.add_claude("Personal");
-        let task = start(&f, "/code/moira", "Hola", false);
+        let task = start(&f, "/code/agenda", "Hola", false);
         f.agents.emit(AgentEvent::RateLimit {
             status: "rejected".into(),
             utilization: None,
@@ -206,7 +206,7 @@ mod tests {
         f.hedy
             .set_setting(crate::application::Setting::Notifications, Some("off"))
             .unwrap();
-        start(&f, "/code/moira", "Hola", false);
+        start(&f, "/code/agenda", "Hola", false);
         f.agents.emit(AgentEvent::Finished {
             ok: true,
             summary: "Listo".into(),

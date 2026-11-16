@@ -257,7 +257,7 @@ mod tests {
         Task {
             images: Vec::new(),
             id: crate::domain::TaskId::new("t1"),
-            project: PathBuf::from("/code/moira"),
+            project: PathBuf::from("/code/agenda"),
             mode,
             title: "Recordatorios".into(),
             prompt: "Recordatorios".into(),
@@ -409,25 +409,25 @@ mod tests {
             "Claude necesita tu aprobación · tienda-online"
         );
         let english = with_language(Language::English, || {
-            Notice::new(NoticeKind::Finished { changes: true }, "Codex", "moira")
+            Notice::new(NoticeKind::Finished { changes: true }, "Codex", "agenda")
         });
-        assert_eq!(english.title, "Codex finished · moira");
+        assert_eq!(english.title, "Codex finished · agenda");
         assert_eq!(english.body, "There are changes to review.");
         let renewed = with_language(Language::Spanish, || {
             Notice::new(
                 NoticeKind::LimitRenewed { resumed: false },
                 "Claude",
-                "moira",
+                "agenda",
             )
         });
-        assert_eq!(renewed.title, "Ya puedes continuar · moira");
+        assert_eq!(renewed.title, "Ya puedes continuar · agenda");
         let resumed = with_language(Language::English, || {
             Notice::new(
                 NoticeKind::LimitRenewed { resumed: true },
                 "Claude",
-                "moira",
+                "agenda",
             )
         });
-        assert_eq!(resumed.title, "Claude is back on the task · moira");
+        assert_eq!(resumed.title, "Claude is back on the task · agenda");
     }
 }

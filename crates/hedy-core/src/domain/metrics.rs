@@ -123,7 +123,7 @@ mod tests {
             usage: usage(tokens, cost),
         };
         let clients = by_client(&[
-            project("moira", Some("Estudio Norte"), 100, Some(1.0)),
+            project("agenda", Some("Estudio Norte"), 100, Some(1.0)),
             project("hedy", None, 900, None),
             project("tienda", Some("Café Aurora"), 500, None),
             project("citas", Some("Estudio Norte"), 50, Some(0.5)),

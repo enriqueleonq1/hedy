@@ -1986,7 +1986,7 @@ mod tests {
 
     #[test]
     fn summary_talks_about_tokens_and_hides_unused_parts() {
-        let text = report(vec![usage_of("moira", None, 4_000, None)]);
+        let text = report(vec![usage_of("agenda", None, 4_000, None)]);
         assert!(text.contains("Uso esta semana  4 k tokens"), "{text}");
         assert!(!text.contains('$'), "no cost without an API key: {text}");
         assert!(!text.contains("Por cliente"), "no client set: {text}");
@@ -1997,7 +1997,7 @@ mod tests {
     #[test]
     fn summary_shows_the_api_key_cost_as_an_estimate() {
         let text = report(vec![
-            usage_of("moira", Some("Estudio Norte"), 4_000, Some(1.5)),
+            usage_of("agenda", Some("Estudio Norte"), 4_000, Some(1.5)),
             usage_of("citas", None, 2_000, None),
         ]);
         assert!(text.contains("$1,50 de costo estimado (API key)"), "{text}");

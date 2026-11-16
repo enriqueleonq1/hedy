@@ -241,23 +241,23 @@ mod tests {
         add(&f, None, "Desplegar", "Prepara el despliegue").unwrap();
         add(
             &f,
-            Some("/code/moira"),
+            Some("/code/agenda"),
             "Migración",
             "Escribe la migración de {tabla}",
         )
         .unwrap();
         add(&f, Some("/code/otro"), "Otra", "x").unwrap();
 
-        let moira = f
+        let agenda = f
             .hedy
-            .templates(TemplateScope::For(Some(Path::new("/code/moira"))))
+            .templates(TemplateScope::For(Some(Path::new("/code/agenda"))))
             .unwrap();
-        assert_eq!(&names(&moira)[..2], ["Migración", "Desplegar"]);
-        assert!(!names(&moira).contains(&"Otra".to_owned()));
+        assert_eq!(&names(&agenda)[..2], ["Migración", "Desplegar"]);
+        assert!(!names(&agenda).contains(&"Otra".to_owned()));
         assert_eq!(f.hedy.templates(TemplateScope::All).unwrap().len(), 8);
         assert_eq!(
             f.hedy
-                .template_named(Some(Path::new("/code/moira")), "migración")
+                .template_named(Some(Path::new("/code/agenda")), "migración")
                 .unwrap()
                 .text,
             "Escribe la migración de {tabla}"
@@ -280,7 +280,7 @@ mod tests {
             add(&f, None, "Escribir pruebas", "y"),
             Err(AppError::TemplateExists(_))
         ));
-        add(&f, Some("/code/moira"), "Desplegar", "solo aquí").unwrap();
+        add(&f, Some("/code/agenda"), "Desplegar", "solo aquí").unwrap();
         assert!(add(&f, None, " ", "x").is_err());
         assert!(add(&f, None, "Vacía", " ").is_err());
     }

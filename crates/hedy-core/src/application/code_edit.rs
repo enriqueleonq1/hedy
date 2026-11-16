@@ -273,7 +273,7 @@ mod tests {
     use crate::application::testing::Fixture;
     use crate::domain::{AgentEvent, Task, TaskMode};
 
-    const ROOT: &str = "/code/moira";
+    const ROOT: &str = "/code/agenda";
 
     fn project(f: &Fixture) {
         f.add_claude("Personal");

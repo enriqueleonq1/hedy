@@ -250,7 +250,7 @@ mod tests {
 
     fn repo() -> (tempfile::TempDir, PathBuf) {
         let tmp = tempfile::tempdir().unwrap();
-        let repo = tmp.path().join("moira");
+        let repo = tmp.path().join("agenda");
         fs::create_dir_all(&repo).unwrap();
         for args in [
             &["init", "-q", "-b", "main"][..],
