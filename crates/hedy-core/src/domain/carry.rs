@@ -231,9 +231,9 @@ pub fn clean_summary(raw: &str) -> Option<String> {
 /// Words left out of a suggested project name.
 const NAME_STOPWORDS: &[&str] = &[
     "a", "al", "an", "and", "are", "can", "como", "con", "cual", "cuales", "de", "del", "do",
-    "does", "el", "en", "es", "for", "how", "i", "in", "is", "la", "las", "lo", "los", "me", "mi",
-    "my", "o", "of", "or", "para", "por", "que", "se", "should", "su", "the", "to", "un", "una",
-    "uno", "unos", "what", "which", "y",
+    "does", "el", "en", "entre", "es", "for", "hay", "how", "i", "in", "is", "la", "las", "lo",
+    "los", "me", "mi", "my", "o", "of", "or", "para", "por", "que", "se", "should", "su", "the",
+    "to", "un", "una", "uno", "unos", "what", "which", "y",
 ];
 
 /// A project name from a conversation's title, already a safe folder name:
@@ -407,6 +407,10 @@ mod tests {
             "parse-toml-rust"
         );
         assert_eq!(suggested_project_name("¿Qué es?"), "que-es");
+        assert_eq!(
+            suggested_project_name("¿Qué diferencia hay entre OAuth y OpenID Connect?"),
+            "diferencia-oauth-openid-connect"
+        );
         assert_eq!(suggested_project_name("¿¿??"), "proyecto");
     }
 

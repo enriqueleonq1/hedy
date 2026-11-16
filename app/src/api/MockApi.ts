@@ -1464,7 +1464,7 @@ export class MockApi implements HedyApi {
       .toLowerCase()
       .split(/[^a-z0-9_]+/)
       .filter(Boolean);
-    const stop = new Set(["a", "al", "an", "and", "como", "con", "cual", "de", "del", "do", "el", "en", "es", "hay", "how", "i", "is", "la", "las", "los", "me", "of", "para", "por", "que", "the", "to", "un", "una", "what", "y"]);
+    const stop = new Set(["a", "al", "an", "and", "como", "con", "cual", "de", "del", "do", "el", "en", "entre", "es", "hay", "how", "i", "is", "la", "las", "los", "me", "of", "para", "por", "que", "the", "to", "un", "una", "what", "y"]);
     const words = slug.filter((w) => !stop.has(w)).slice(0, 4);
     return {
       conversation: task.id,
