@@ -394,6 +394,12 @@ pub trait Git: Send + Sync {
     /// The repository's files, relative to `repo`: tracked ones and
     /// untracked ones git does not ignore (`.gitignore`, `.git/info/exclude`).
     fn list_files(&self, repo: &Path) -> PortResult<Vec<String>>;
+    /// What is staged in `repo` (`git diff --cached`); nothing is staged here.
+    fn staged_diff(&self, repo: &Path) -> PortResult<Vec<FileDiff>>;
+    /// `git commit -F <file with message>` (`-e` too when `edit`: git opens
+    /// the user's editor) on what is staged, with the user's own hooks and
+    /// signing settings, and git's output on the terminal (for `hedy commit`).
+    fn commit_staged(&self, repo: &Path, message: &str, edit: bool) -> PortResult<()>;
 }
 
 /// Receives the agent's events, on the adapter's own thread.

@@ -6,6 +6,7 @@ mod attachments;
 mod carry;
 mod code;
 mod code_edit;
+mod commit;
 mod conversations;
 mod detect;
 mod doctor;
@@ -46,6 +47,7 @@ pub use code::{
     MAX_DIFF_CONTEXT, TaskTouch,
 };
 pub use code_edit::{Saved, WriteOutcome};
+pub use commit::StagedSuggestion;
 pub use conversations::NewConversation;
 pub use detect::DetectedCli;
 pub use doctor::{Check, CheckArea, CheckLevel, DoctorReport};

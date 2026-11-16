@@ -241,6 +241,40 @@ impl Git for GitCli {
             })
             .collect())
     }
+
+    fn staged_diff(&self, repo: &Path) -> PortResult<Vec<FileDiff>> {
+        let patch = git(
+            repo,
+            &["diff", "--cached", "--no-color", "--no-ext-diff", "-M"],
+        )?;
+        Ok(parse_unified(&patch))
+    }
+
+    fn commit_staged(&self, repo: &Path, message: &str, edit: bool) -> PortResult<()> {
+        // In the repository's own git folder, so nothing shows up as a change.
+        let file = git(repo, &["rev-parse", "--git-path", "HEDY_COMMIT_MSG"])?;
+        let file = repo.join(file.trim());
+        fs::write(&file, message)
+            .map_err(|e| PortError::new(format!("{}: {e}", file.display())))?;
+        let file_arg = file.to_string_lossy().into_owned();
+        let mut args = vec!["commit", "-F", file_arg.as_str()];
+        if edit {
+            args.push("--edit");
+        }
+        // The terminal stays git's: hooks print, the editor and a signing
+        // passphrase prompt can ask.
+        let status = Command::new("git").arg("-C").arg(repo).args(&args).status();
+        let _ = fs::remove_file(&file);
+        let status = status.map_err(|e| PortError::new(format!("no se pudo ejecutar git: {e}")))?;
+        if status.success() {
+            return Ok(());
+        }
+        let code = status.code().map_or("?".into(), |c| c.to_string());
+        Err(PortError::new(tr!(
+            "git commit terminó con código {code}; no se hizo el commit",
+            "git commit ended with code {code}; nothing was committed"
+        )))
+    }
 }
 
 #[cfg(test)]
@@ -588,5 +622,45 @@ mod tests {
         git(tmp.path(), &["init", "-q", "-b", "main"]).unwrap();
         let err = GitCli.head_commit(tmp.path()).unwrap_err();
         assert!(err.message.contains("no tiene commits"));
+    }
+
+    #[test]
+    fn commits_only_what_is_staged_and_runs_the_users_hooks() {
+        let (_tmp, repo) = repo();
+        let g = GitCli;
+        assert!(g.staged_diff(&repo).unwrap().is_empty());
+        fs::write(repo.join("app.py"), "def crear():\n    avisar()\n").unwrap();
+        fs::write(repo.join("notas.txt"), "sin preparar\n").unwrap();
+        git(&repo, &["add", "app.py"]).unwrap();
+        let staged = g.staged_diff(&repo).unwrap();
+        assert_eq!(
+            staged.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(),
+            ["app.py"]
+        );
+
+        // A hook that leaves a mark: git runs it as for any commit.
+        let hook = repo.join(".git/hooks/commit-msg");
+        fs::write(
+            &hook,
+            "#!/bin/sh\necho hook >> \"$(dirname \"$0\")/../hook-ran\"\n",
+        )
+        .unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        g.commit_staged(&repo, "feat: avisa al crear\n", false)
+            .unwrap();
+        assert!(repo.join(".git/hook-ran").exists());
+        assert!(!repo.join(".git/HEDY_COMMIT_MSG").exists());
+        assert_eq!(
+            g.recent_commits(&repo, 1).unwrap()[0].subject,
+            "feat: avisa al crear"
+        );
+        // The rest stays as it was, unstaged.
+        let status = git(&repo, &["status", "--porcelain"]).unwrap();
+        assert_eq!(status.trim(), "?? notas.txt");
+        // Nothing staged: git refuses and says nothing was committed.
+        assert!(g.commit_staged(&repo, "otra", false).is_err());
     }
 }

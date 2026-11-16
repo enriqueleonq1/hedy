@@ -422,6 +422,51 @@ pub fn commit_message_prompt(title: &str, recent: &[String], diff: &str) -> Stri
     )
 }
 
+/// What `hedy commit` asks for the staged changes: Conventional Commits when
+/// most recent subjects use them, otherwise the repository's own style.
+/// `secrets` are staged files whose contents were left out (only named).
+pub fn staged_commit_prompt(recent: &[String], diff: &str, secrets: &[String]) -> String {
+    let format = if uses_conventional_commits(recent.iter().map(String::as_str)) {
+        tr!(
+            "en formato Conventional Commits (`tipo(ámbito): mensaje`, en imperativo)",
+            "in Conventional Commits format (`type(scope): message`, imperative)"
+        )
+    } else if recent.is_empty() {
+        tr!("en imperativo", "in the imperative")
+    } else {
+        tr!(
+            "con el mismo estilo que los últimos commits",
+            "in the same style as the recent commits"
+        )
+    };
+    let examples = if recent.is_empty() {
+        String::new()
+    } else {
+        let list = recent
+            .iter()
+            .map(|s| format!("- {s}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        tr!(
+            "\n\nÚltimos commits del repositorio (sigue su idioma y su estilo):\n{list}",
+            "\n\nRecent commits of the repository (follow their language and style):\n{list}"
+        )
+    };
+    let hidden = if secrets.is_empty() {
+        String::new()
+    } else {
+        let list = secrets.join(", ");
+        tr!(
+            "\n\nTambién cambian estos archivos privados, cuyo contenido no se muestra: {list}",
+            "\n\nThese private files change too; their contents are not shown: {list}"
+        )
+    };
+    tr!(
+        "Escribe un mensaje de commit de una sola línea, {format}, 72 caracteres como mucho, para los cambios preparados (staged) de este repositorio. No uses herramientas ni leas archivos: todo lo que necesitas está aquí. Responde solo con el mensaje, sin comillas ni explicaciones.{examples}\n\nCambios:\n{diff}{hidden}",
+        "Write a one-line commit message, {format}, at most 72 characters, for the staged changes of this repository. Do not use tools or read files: everything you need is here. Reply with the message only, without quotes or explanations.{examples}\n\nChanges:\n{diff}{hidden}"
+    )
+}
+
 /// The one-line message from an agent's answer: the first line that is not
 /// a code fence, without quotes, backticks or a "Commit message:" label,
 /// at most 100 characters. `None` when nothing is left.
