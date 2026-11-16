@@ -1430,6 +1430,43 @@ export class MockApi implements HedyApi {
       .map((t) => ({ ...t }));
   }
 
+  /**
+   * A conversation another Hedy process stored (`hedy ask` in a terminal):
+   * it is in the store, but no event or update reaches this app (test helper).
+   */
+  storeOutsideConversation(prompt: string, events: AgentEvent[], status: Task["status"] = "review"): Task {
+    const account = this.state.defaultAccount ?? this.state.accounts[0]?.id ?? "claude-personal";
+    const id = `t${++this.nextTask}`;
+    const task: Task = {
+      id,
+      project: `${this.state.dataDir}/chats/${id}`,
+      mode: "ask",
+      title: (prompt.split("\n")[0] ?? "").slice(0, 60),
+      prompt,
+      account,
+      model: null,
+      workspace: null,
+      sessionId: `s-${id}`,
+      status,
+      createdAt: Math.floor(Date.now() / 1000) + this.nextTask,
+      stages: [{ phase: "implement", account, model: null }],
+      stage: 0,
+      live: false,
+      conversation: true,
+    };
+    this.tasksById.set(id, task);
+    this.eventsById.set(id, [{ kind: "userMessage", text: prompt }, ...events]);
+    this.diffs.set(id, []);
+    return { ...task };
+  }
+
+  /** Another process adds to a task's history and status, silently (test helper). */
+  updateOutside(id: string, events: AgentEvent[], status?: Task["status"]): void {
+    this.eventsById.get(id)?.push(...events);
+    const task = this.tasksById.get(id);
+    if (task && status) task.status = status;
+  }
+
   // ------------------------------------------------ carrying a conversation
   // Like the backend: questions with their final answers, a delimited context
   // that opens the task's prompt, a summary by the conversation's own account.

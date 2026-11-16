@@ -1,5 +1,6 @@
 //! `hedy`: driving adapter over `hedy-core`.
 
+mod ask;
 mod cli;
 mod commands;
 mod commit;
@@ -19,6 +20,10 @@ use cli::{
 use style::Style;
 
 fn main() -> ExitCode {
+    // Claude Code runs this binary as its `PreToolUse` hook for `hedy ask`.
+    if std::env::args().skip(1).eq(adapters::hook::HOOK_ARGS) {
+        return ExitCode::from(u8::try_from(adapters::hook::run()).unwrap_or(1));
+    }
     // The help is shown while parsing, before the database is open: it follows
     // `HEDY_LANGUAGE` or the system locale. Once `adapters::system` opens the
     // database, the `ui.language` setting (if any) applies to everything else.
@@ -45,7 +50,14 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Some(dir) => dir,
         None => std::env::current_dir()?,
     };
-    let hedy = adapters::system(&HedyPaths::detect()?)?;
+    let paths = HedyPaths::detect()?;
+    // The only command that runs an agent headless: with the hook that keeps
+    // it off protected files, as in the app.
+    if let Command::Ask(args) = command {
+        let hedy = adapters::system_with_hook(&paths, &std::env::current_exe()?)?;
+        return ask::ask(&hedy, args);
+    }
+    let hedy = adapters::system(&paths)?;
 
     // The only command whose findings (not a failure) set the exit code.
     if let Command::Doctor = command {
@@ -154,7 +166,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
             ConfigCommand::Set { key, value } => commands::config_set(&hedy, &key, Some(&value)),
             ConfigCommand::Unset { key } => commands::config_set(&hedy, &key, None),
         },
-        Command::Completions { .. } | Command::Doctor => unreachable!("handled above"),
+        Command::Completions { .. } | Command::Doctor | Command::Ask(_) => {
+            unreachable!("handled above")
+        }
     }?;
     Ok(ExitCode::SUCCESS)
 }

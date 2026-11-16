@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::{Value, json};
 
 use super::paths::relative;
-use super::process::{command, launch_error, wait_unlocked};
+use super::process::{headless_command, launch_error, wait_unlocked};
 use crate::application::ports::{
     AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
@@ -126,7 +126,7 @@ impl AgentLauncher for CodexLauncher {
         spec.args.extend(mcp_overrides(&request));
         spec.args
             .extend(["app-server", "--listen", "stdio://"].map(String::from));
-        let mut child = command(&spec)
+        let mut child = headless_command(&spec)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

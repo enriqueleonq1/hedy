@@ -23,6 +23,7 @@ import {
   listKeyFor,
   tasksKey,
   useConversations,
+  useFollowElsewhere,
   useQueue,
   useSetQueue,
   useTaskDiff,
@@ -174,6 +175,8 @@ export function Workspace({
   useReviewTask(task);
 
   const events = useTaskEvents(task?.id ?? null);
+  // A conversation answering in `hedy ask`: its history comes from the store.
+  useFollowElsewhere(task);
   const history = useMemo(() => events.data ?? [], [events.data]);
   const items = useMemo(() => buildTimeline(history, t), [history, t]);
   const queue = useQueue(task?.id ?? null).data ?? [];

@@ -43,6 +43,7 @@ impl Cli {
                 "Sin subcomando muestra el estado del proyecto actual.",
                 "Without a subcommand, shows the status of the current project."
             ))
+            .mut_subcommand("ask", |ask| ask.after_help(ask_examples()))
             .mut_subcommand("config", |config| {
                 ["get", "set", "unset"]
                     .into_iter()
@@ -78,6 +79,28 @@ impl Cli {
     pub fn parse_args() -> Self {
         Self::from_arg_matches(&Self::full_command().get_matches()).unwrap_or_else(|e| e.exit())
     }
+}
+
+/// Examples at the end of `hedy ask --help`.
+fn ask_examples() -> String {
+    let examples = [
+        tr!(
+            "hedy ask \"¿qué hace esta regex: ^\\d{{3}}$?\"",
+            "hedy ask \"what does this regex do: ^\\d{{3}}$\""
+        ),
+        "git diff | hedy ask -m sonnet".to_owned(),
+        tr!(
+            "hedy ask -c \"¿y en Python?\"",
+            "hedy ask -c \"and in Python?\""
+        ),
+        tr!(
+            "hedy ask --json \"resume este error\" > respuesta.json",
+            "hedy ask --json \"summarize this error\" > answer.json"
+        ),
+    ];
+    let examples: Vec<String> = examples.iter().map(|e| format!("  {e}")).collect();
+    let examples = examples.join("\n");
+    tr!("Ejemplos:\n{examples}", "Examples:\n{examples}")
 }
 
 /// Every help text: `(command path, argument id, text)`, where an empty id is
@@ -320,6 +343,62 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             "commit",
             "yes",
             tr!("Hace el commit sin preguntar", "Commit without asking"),
+        ),
+        (
+            "ask",
+            "",
+            tr!(
+                "Pregunta rápida desde la terminal; también queda en Hedy → Conversaciones",
+                "Ask a quick question from the terminal; it also shows in Hedy → Conversations"
+            ),
+        ),
+        (
+            "ask",
+            "question",
+            tr!(
+                "La pregunta (las palabras se unen con espacios); con «-», o sin pregunta y con una tubería, se lee de la entrada",
+                "The question (words are joined with spaces); with \"-\", or none and a pipe, it is read from stdin"
+            ),
+        ),
+        (
+            "ask",
+            "account",
+            tr!(
+                "Cuenta a usar (por defecto, la predeterminada; Hedy nunca elige otra)",
+                "Account to use (by default, the default one; Hedy never picks another)"
+            ),
+        ),
+        (
+            "ask",
+            "model",
+            tr!(
+                "Modelo, p. ej. fable, opus, sonnet o haiku con Claude",
+                "Model, e.g. fable, opus, sonnet or haiku with Claude"
+            ),
+        ),
+        (
+            "ask",
+            "research",
+            tr!(
+                "Investiga (también en la web) y cita las fuentes, en vez de solo responder",
+                "Research (on the web too) and cite the sources, instead of just answering"
+            ),
+        ),
+        (
+            "ask",
+            "follow",
+            tr!(
+                "Sigue la conversación más reciente, o la indicada con --continue=<ID>",
+                "Follow up on the most recent conversation, or on --continue=<ID>"
+            ),
+        ),
+        (
+            "ask",
+            "json",
+            tr!(
+                "Al terminar, imprime la respuesta como JSON (id, title, account, answer)",
+                "When done, print the answer as JSON (id, title, account, answer)"
+            ),
         ),
         (
             "doctor",
@@ -707,6 +786,7 @@ fn value_names() -> Vec<(&'static str, String)> {
         ("key", tr!("CLAVE", "KEY")),
         ("value", tr!("VALOR", "VALUE")),
         ("text", tr!("TEXTO", "TEXT")),
+        ("question", tr!("PREGUNTA", "QUESTION")),
         ("model", tr!("MODELO", "MODEL")),
     ]
 }
@@ -843,6 +923,8 @@ pub enum Command {
         args: Vec<String>,
     },
 
+    Ask(AskArgs),
+
     Doctor,
 
     Usage {
@@ -967,6 +1049,31 @@ pub enum ConfigCommand {
     Get { key: String },
     Set { key: String, value: String },
     Unset { key: String },
+}
+
+#[derive(Debug, Args)]
+pub struct AskArgs {
+    pub question: Vec<String>,
+    #[arg(long, short, conflicts_with = "follow")]
+    pub account: Option<String>,
+    #[arg(long, short, conflicts_with = "follow")]
+    pub model: Option<String>,
+    #[arg(long, short, conflicts_with = "follow")]
+    pub research: bool,
+    /// `Some("")`: the most recent conversation. An id needs `=`, so that
+    /// `-c "question"` stays a question.
+    #[arg(
+        long = "continue",
+        short = 'c',
+        id = "follow",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "",
+        value_name = "ID"
+    )]
+    pub follow: Option<String>,
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -1210,6 +1317,38 @@ mod tests {
                 command: Some(TemplateCommand::Remove { project: false, .. })
             })
         ));
+    }
+
+    #[test]
+    fn ask_takes_words_and_an_optional_conversation_to_follow() {
+        let ask = |args: &[&str]| {
+            let mut argv = vec!["hedy", "ask"];
+            argv.extend_from_slice(args);
+            match Cli::try_parse_from(argv).map(|c| c.command) {
+                Ok(Some(Command::Ask(ask))) => Ok(ask),
+                Ok(other) => panic!("expected ask, got {other:?}"),
+                Err(e) => Err(e),
+            }
+        };
+        let plain = ask(&["-m", "haiku", "¿qué", "es?"]).unwrap();
+        assert_eq!(plain.question, vec!["¿qué", "es?"]);
+        assert_eq!(plain.model.as_deref(), Some("haiku"));
+        assert_eq!(plain.follow, None);
+
+        // `-c` never takes the question as an id.
+        let latest = ask(&["-c", "¿y en Python?"]).unwrap();
+        assert_eq!(latest.follow.as_deref(), Some(""));
+        assert_eq!(latest.question, vec!["¿y en Python?"]);
+        let given = ask(&["--continue=t1", "más"]).unwrap();
+        assert_eq!(given.follow.as_deref(), Some("t1"));
+        assert_eq!(given.question, vec!["más"]);
+
+        assert_eq!(ask(&["-"]).unwrap().question, vec!["-"]);
+        assert!(ask(&[]).unwrap().question.is_empty());
+        // A follow-up keeps the conversation's account, model and mode.
+        assert!(ask(&["-c", "-a", "x", "q"]).is_err());
+        assert!(ask(&["-c", "-r", "q"]).is_err());
+        assert!(ask(&["-c", "-m", "opus", "q"]).is_err());
     }
 
     #[test]

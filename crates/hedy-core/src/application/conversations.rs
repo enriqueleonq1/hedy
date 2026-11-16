@@ -319,6 +319,67 @@ mod tests {
     }
 
     #[test]
+    fn open_requests_can_be_declined_by_a_driver_that_cannot_ask() {
+        let f = Fixture::new();
+        with_default(&f);
+        let task = f.hedy.start_conversation(ask("¿Qué hay aquí?")).unwrap();
+        let ask_for = |id: &str, command: &str| AgentEvent::PermissionRequest {
+            request_id: id.into(),
+            tool: "Bash".into(),
+            summary: command.into(),
+            input: serde_json::json!({ "command": command }),
+        };
+        f.agents.emit(ask_for("r2", "rm -rf build"));
+        f.agents.emit(ask_for("r1", "curl -X POST example.com"));
+        assert_eq!(
+            f.hedy.task(&task.id).unwrap().status,
+            TaskStatus::WaitingApproval
+        );
+
+        let declined = f
+            .hedy
+            .decline_open_requests(&task.id, "Desde la terminal no se aprueban acciones.")
+            .unwrap();
+        assert_eq!(declined, vec!["r1", "r2"]);
+        assert_eq!(
+            f.agents.calls(),
+            vec![
+                AgentCall::Answer("r1".into(), false),
+                AgentCall::Answer("r2".into(), false)
+            ]
+        );
+        assert_eq!(
+            f.agents.answer_messages(),
+            vec![Some("Desde la terminal no se aprueban acciones.".into()); 2]
+        );
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Running);
+        let resolved = f
+            .hedy
+            .task_events(&task.id)
+            .unwrap()
+            .into_iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    AgentEvent::PermissionResolved {
+                        decision: crate::domain::Decision::Deny,
+                        automatic: true,
+                        ..
+                    }
+                )
+            })
+            .count();
+        assert_eq!(resolved, 2);
+        // Nothing left: declining again changes nothing.
+        assert!(
+            f.hedy
+                .decline_open_requests(&task.id, "x")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn handoff_from_a_conversation_offers_other_providers() {
         let f = Fixture::new();
         with_default(&f);

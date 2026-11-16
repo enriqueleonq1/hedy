@@ -19,7 +19,7 @@ use std::time::Instant;
 use serde_json::{Value, json};
 
 use super::paths::relative;
-use super::process::{command, launch_error, wait_unlocked};
+use super::process::{headless_command, launch_error, wait_unlocked};
 use crate::application::ports::{
     AgentBackend, AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
@@ -217,7 +217,7 @@ impl AgentLauncher for AcpLauncher {
         if let (Some(flag), Some(model)) = (model_flag, &request.model) {
             spec.args.splice(0..0, [flag.to_string(), model.clone()]);
         }
-        let mut child = command(&spec)
+        let mut child = headless_command(&spec)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

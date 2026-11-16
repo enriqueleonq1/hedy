@@ -22,14 +22,38 @@ if [ "$1" = -p ] && [ "$2" = /usage ] && [ "$3" = --output-format ] && [ "$4" = 
   echo '{"type":"result","subtype":"success","is_error":false,"num_turns":0,"total_cost_usd":0,"local_command":"usage","result":"You are currently using your subscription to power your Claude Code usage\n\nCurrent session: 34% used · resets Nov 14, 7pm (America/Caracas)\nCurrent week (all models): 29% used · resets Nov 20, 12am (America/Caracas)\nCurrent week (Fable): 0% used · resets Nov 20, 12am (America/Caracas)\n\nWhat is contributing to your limits usage?\n  98%  Give subagents a cheaper model\n"}'
   exit 0
 fi
+# Headless (`hedy ask`): one turn per user message, in stream-json.
 if [ "$1" = -p ] && [ "$2" = --input-format ]; then
+  case "$*" in *"--resume s-42"*) resumed=1 ;; *) resumed= ;; esac
   while IFS= read -r line; do
-    case "$line" in
-      *'"type":"user"'*)
-        [ -n "$FAKE_PROMPT_LOG" ] && printf '%s\n' "$line" >> "$FAKE_PROMPT_LOG"
-        echo '{"type":"result","subtype":"success","is_error":false,"result":"'"${FAKE_ANSWER:-feat: add a greeting}"'","usage":{"input_tokens":5,"output_tokens":2}}'
-        ;;
+    case "$line" in *'"type":"user"'*) ;; *) continue ;; esac
+    case "$line" in *[Cc]ommit*)
+      # A one-shot commit message request (`hedy commit`).
+      [ -n "$FAKE_PROMPT_LOG" ] && printf '%s\n' "$line" >> "$FAKE_PROMPT_LOG"
+      echo '{"type":"result","subtype":"success","is_error":false,"result":"'"${FAKE_ANSWER:-feat: add a greeting}"'","usage":{"input_tokens":5,"output_tokens":2}}'
+      continue ;;
     esac
+    echo '{"type":"system","subtype":"init","session_id":"s-42","model":"claude-fake"}'
+    if [ "$FAKE_CLAUDE_MODE" = limit ]; then
+      echo '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1800000000}}'
+      echo '{"type":"result","subtype":"error","is_error":true,"result":"You have hit your limit","duration_ms":5}'
+      continue
+    fi
+    if [ "$FAKE_CLAUDE_MODE" = slow ]; then
+      echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Pensando..."}]}}'
+      exec sleep 30
+    fi
+    if [ "$FAKE_CLAUDE_MODE" = permission ]; then
+      echo '{"type":"control_request","request_id":"req-1","request":{"subtype":"can_use_tool","tool_name":"Bash","tool_use_id":"tu1","input":{"command":"rm -rf build"}}}'
+      IFS= read -r answer
+      case "$answer" in *'"deny"'*) echo '{"type":"assistant","message":{"content":[{"type":"text","text":"No pude borrar nada."}]}}' ;; esac
+    elif [ -n "$resumed" ]; then
+      echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Sigo en la misma sesión."}]}}'
+    else
+      echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Un monad es un patrón.\"},{\"type\":\"tool_use\",\"id\":\"tu0\",\"name\":\"WebSearch\",\"input\":{\"query\":\"monad\"}}]}}"
+      echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Sirve para encadenar pasos."}]}}'
+    fi
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"ok","duration_ms":5,"usage":{"input_tokens":7,"output_tokens":3}}'
   done
   exit 0
 fi
@@ -1516,4 +1540,274 @@ fn commit_yes_commits_with_the_users_git_and_hooks() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("nothing is staged"));
+}
+
+/// An `Env` with a default Claude account ("personal") for `hedy ask`.
+fn ask_env() -> Env {
+    let env = Env::new();
+    env.hedy(&["account", "add", "Personal", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy(&["account", "default", "personal"])
+        .assert()
+        .success();
+    env
+}
+
+/// The core over the same data folder, as the app reads it.
+fn core(env: &Env) -> hedy_core::application::Hedy {
+    hedy_core::adapters::system(&hedy_core::adapters::HedyPaths::at(env.path("data"))).unwrap()
+}
+
+fn messages(hedy: &hedy_core::application::Hedy, chat: &hedy_core::domain::Task) -> Vec<String> {
+    hedy.task_events(&chat.id)
+        .unwrap()
+        .into_iter()
+        .filter_map(|e| match e {
+            hedy_core::domain::AgentEvent::Message { text } => Some(text),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn ask_streams_the_answer_and_stores_a_conversation_the_app_lists() {
+    let env = ask_env();
+    let output = env
+        .hedy(&["ask", "¿Qué", "es", "un", "monad?"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let (stdout, stderr) = (
+        String::from_utf8(output.stdout).unwrap(),
+        String::from_utf8(output.stderr).unwrap(),
+    );
+    // Only the answer on stdout; status lines and the footer on stderr.
+    assert_eq!(
+        stdout,
+        "Un monad es un patrón.\n\nSirve para encadenar pasos.\n"
+    );
+    assert!(stderr.contains("▶ ● Personal"), "{stderr}");
+    assert!(stderr.contains("Abierta también en Hedy → Conversaciones"));
+    assert!(stderr.contains("hedy ask -c \"…\""));
+
+    let hedy = core(&env);
+    let conversations = hedy.conversations().unwrap();
+    assert_eq!(conversations.len(), 1);
+    let chat = &conversations[0];
+    assert!(chat.conversation);
+    assert_eq!(chat.prompt, "¿Qué es un monad?");
+    assert_eq!(chat.account.as_str(), "personal");
+    assert_eq!(chat.session_id.as_deref(), Some("s-42"));
+    assert_eq!(
+        chat.status,
+        hedy_core::domain::TaskStatus::Review,
+        "answered, not running"
+    );
+    let chats = env.path("data/chats").canonicalize().unwrap();
+    assert_eq!(chat.project.parent(), Some(chats.as_path()));
+    // The whole answer is stored, as when asked in the app.
+    assert_eq!(
+        messages(&hedy, chat),
+        vec!["Un monad es un patrón.", "Sirve para encadenar pasos."]
+    );
+}
+
+#[test]
+fn ask_continue_follows_up_on_the_latest_conversation() {
+    let env = ask_env();
+    env.hedy(&["ask", "Primera"]).assert().success();
+    env.hedy(&["ask", "Segunda"]).assert().success();
+    env.hedy(&["ask", "-c", "¿y", "después?"])
+        .assert()
+        .success()
+        .stdout("Sigo en la misma sesión.\n");
+
+    let hedy = core(&env);
+    let conversations = hedy.conversations().unwrap();
+    assert_eq!(conversations.len(), 2, "no new conversation");
+    let latest = &conversations[0];
+    assert_eq!(latest.prompt, "Segunda");
+    let asked: Vec<String> = hedy
+        .task_events(&latest.id)
+        .unwrap()
+        .into_iter()
+        .filter_map(|e| match e {
+            hedy_core::domain::AgentEvent::UserMessage { text, .. } => Some(text),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(asked, vec!["Segunda", "¿y después?"]);
+    assert_eq!(
+        messages(&hedy, latest).last().map(String::as_str),
+        Some("Sigo en la misma sesión.")
+    );
+
+    // A given one, by id.
+    let first = conversations[1].id.to_string();
+    env.hedy(&["ask", &format!("--continue={first}"), "Otra"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(format!(
+            "hedy ask --continue={first}"
+        )));
+    env.hedy(&["ask", "--continue=t-nada", "Otra"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no existe la tarea t-nada"));
+    // A follow-up keeps the conversation's account: no other one is picked.
+    env.hedy(&["ask", "-c", "-a", "personal", "Otra"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn ask_without_conversations_cannot_continue() {
+    let env = ask_env();
+    env.hedy_lang("en", &["ask", "-c", "Hello"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("there are no conversations yet"));
+}
+
+#[test]
+fn ask_json_prints_only_the_answer_object() {
+    let env = ask_env();
+    let output = env
+        .hedy_lang("en", &["ask", "--json", "What is a monad?"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let chat = core(&env).conversations().unwrap().remove(0);
+    assert_eq!(json["id"], chat.id.as_str());
+    assert_eq!(json["title"], "What is a monad?");
+    assert_eq!(json["account"], "personal");
+    assert_eq!(
+        json["answer"],
+        "Un monad es un patrón.\n\nSirve para encadenar pasos."
+    );
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("Also in Hedy → Conversations"), "{stderr}");
+}
+
+#[test]
+fn ask_reads_the_question_from_stdin() {
+    let env = ask_env();
+    env.hedy(&["ask", "-"])
+        .write_stdin("  ¿Qué hace este diff?\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Un monad es un patrón."));
+    env.hedy(&["ask", "--research"])
+        .write_stdin("Investiga esto\n")
+        .assert()
+        .success();
+    let conversations = core(&env).conversations().unwrap();
+    assert_eq!(conversations[1].prompt, "¿Qué hace este diff?");
+    assert_eq!(conversations[0].prompt, "Investiga esto");
+    assert_eq!(conversations[0].mode, hedy_core::domain::TaskMode::Research);
+}
+
+#[test]
+fn ask_at_a_limit_fails_without_trying_another_account() {
+    let env = ask_env();
+    env.hedy(&["account", "add", "Otra", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy(&["ask", "Hola"])
+        .env("FAKE_CLAUDE_MODE", "limit")
+        .assert()
+        .code(1)
+        .stdout("")
+        .stderr(predicate::str::contains("Personal llegó a su límite"))
+        .stderr(predicate::str::contains("Hedy no cambia de cuenta solo"));
+
+    let chat = core(&env).conversations().unwrap().remove(0);
+    assert_eq!(chat.account.as_str(), "personal", "never switched");
+    assert!(chat.stages.iter().all(|s| s.account.as_str() == "personal"));
+}
+
+#[test]
+fn ask_declines_permission_requests_it_cannot_ask_about() {
+    let env = ask_env();
+    env.hedy(&["ask", "Borra build"])
+        .env("FAKE_CLAUDE_MODE", "permission")
+        .assert()
+        .success()
+        .stdout("No pude borrar nada.\n")
+        .stderr(predicate::str::contains(
+            "Pidió permiso para «rm -rf build» y Hedy lo rechazó",
+        ));
+}
+
+#[test]
+fn ask_with_an_unknown_account_says_so() {
+    let env = ask_env();
+    env.hedy(&["ask", "-a", "nadie", "Hola"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no existe la cuenta «nadie»"));
+    assert!(core(&env).conversations().unwrap().is_empty());
+}
+
+#[test]
+fn ask_stops_cleanly_on_ctrl_c() {
+    use std::io::{BufRead, BufReader};
+    use std::process::Stdio;
+
+    let env = ask_env();
+    let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("hedy"))
+        .env("HEDY_DATA_DIR", env.path("data"))
+        .env("NO_COLOR", "1")
+        .env("HEDY_LANGUAGE", "es")
+        .env("FAKE_CLAUDE_MODE", "slow")
+        .env_remove("CLAUDE_CONFIG_DIR")
+        .args(["ask", "Piensa despacio"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut first = String::new();
+    BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut first)
+        .unwrap();
+    assert_eq!(first, "Pensando...\n");
+    std::process::Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .unwrap();
+    let status = child.wait().unwrap();
+    assert_eq!(status.code(), Some(130));
+
+    let chat = core(&env).conversations().unwrap().remove(0);
+    assert_eq!(
+        chat.status,
+        hedy_core::domain::TaskStatus::Review,
+        "neither left running nor failed"
+    );
+}
+
+#[test]
+fn ask_is_in_the_help_and_the_completions() {
+    let env = Env::new();
+    env.hedy_lang("en", &["--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Ask a quick question from the terminal; it also shows in Hedy → Conversations",
+        ));
+    env.hedy(&["--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Pregunta rápida desde la terminal; también queda en Hedy → Conversaciones",
+        ));
+    env.hedy(&["completions", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--continue"));
 }

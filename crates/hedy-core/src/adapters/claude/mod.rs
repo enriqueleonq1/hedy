@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 
-use super::process::{command, launch_error, wait_unlocked};
+use super::process::{headless_command, launch_error, wait_unlocked};
 use crate::application::ports::{
     AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
@@ -187,7 +187,7 @@ impl AgentLauncher for ClaudeCodeLauncher {
     fn start(&self, request: AgentRequest, events: EventSink) -> PortResult<Box<dyn AgentSession>> {
         let mut spec = request.launch.clone();
         spec.args.extend(args(&request, self.hook.as_deref()));
-        let mut child = command(&spec)
+        let mut child = headless_command(&spec)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
