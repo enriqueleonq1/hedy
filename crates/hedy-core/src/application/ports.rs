@@ -101,8 +101,8 @@ pub trait UsageRepository: Send + Sync {
     fn record_usage(&self, record: &UsageRecord) -> PortResult<()>;
     /// Sum of everything recorded for `account` since `since` (seconds).
     fn usage_since(&self, account: &AccountId, since: i64) -> PortResult<UsageSample>;
-    /// Totals per project since `since`.
-    fn usage_by_project(&self, since: i64) -> PortResult<Vec<(PathBuf, UsageSample)>>;
+    /// Totals per project and account since `since`.
+    fn usage_by_project(&self, since: i64) -> PortResult<Vec<(PathBuf, AccountId, UsageSample)>>;
     /// Every record of a project since `since`, oldest first, as (time, usage).
     fn usage_points(&self, project: &Path, since: i64) -> PortResult<Vec<(i64, UsageSample)>>;
     fn set_rate_limit(&self, account: &AccountId, limit: &RateLimit) -> PortResult<()>;

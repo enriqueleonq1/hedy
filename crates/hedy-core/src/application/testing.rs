@@ -365,12 +365,18 @@ impl UsageRepository for MemoryStore {
         }
         Ok(total)
     }
-    fn usage_by_project(&self, since: i64) -> PortResult<Vec<(PathBuf, UsageSample)>> {
-        let mut totals: BTreeMap<PathBuf, UsageSample> = BTreeMap::new();
+    fn usage_by_project(&self, since: i64) -> PortResult<Vec<(PathBuf, AccountId, UsageSample)>> {
+        let mut totals: BTreeMap<(PathBuf, AccountId), UsageSample> = BTreeMap::new();
         for r in self.usage.lock().unwrap().iter().filter(|r| r.at >= since) {
-            totals.entry(r.project.clone()).or_default().add(&r.sample);
+            totals
+                .entry((r.project.clone(), r.account.clone()))
+                .or_default()
+                .add(&r.sample);
         }
-        Ok(totals.into_iter().collect())
+        Ok(totals
+            .into_iter()
+            .map(|((project, account), usage)| (project, account, usage))
+            .collect())
     }
     fn usage_points(&self, project: &Path, since: i64) -> PortResult<Vec<(i64, UsageSample)>> {
         Ok(self

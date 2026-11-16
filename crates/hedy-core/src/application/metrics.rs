@@ -1,11 +1,14 @@
 //! Project status and usage per project and client.
 
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use super::{AppResult, Hedy, Setting};
 use crate::domain::memory::is_stale;
 use crate::domain::metrics::{ClientUsage, ProjectUsage, by_client};
-use crate::domain::{Account, AgentEvent, NoteStatus, Project, UsageSample};
+use crate::domain::{
+    Account, AccountId, AgentEvent, Credentials, NoteStatus, Project, UsageSample,
+};
 use crate::tr;
 
 const DAY_SECS: i64 = 24 * 60 * 60;
@@ -56,24 +59,33 @@ impl Hedy {
     }
 
     /// Usage of the last `days` days, per project and per client.
+    ///
+    /// Tokens count every account; the cost only API-key accounts, where usage
+    /// is really paid. A subscription's cost is the CLI's guess, not a bill.
     pub fn usage_summary(&self, days: u32) -> AppResult<UsageSummary> {
         let since = self.now_secs() - i64::from(days) * DAY_SECS;
         let registered = self.projects()?;
+        let paid: Vec<AccountId> = self
+            .accounts()?
+            .into_iter()
+            .filter(|a| matches!(a.credentials, Credentials::ApiKey))
+            .map(|a| a.id)
+            .collect();
         // Conversations outside any project add up to one row, with no client.
         let chats = self.fs.chats_dir();
-        let mut rows = Vec::new();
-        let mut conversations: Option<UsageSample> = None;
-        for (path, usage) in self.store.usage_by_project(since)? {
-            if path.starts_with(&chats) {
-                conversations
-                    .get_or_insert_with(UsageSample::default)
-                    .add(&usage);
-            } else {
-                rows.push((path, usage));
+        let mut totals: BTreeMap<PathBuf, UsageSample> = BTreeMap::new();
+        for (path, account, mut usage) in self.store.usage_by_project(since)? {
+            if !paid.contains(&account) {
+                usage.cost_usd = None;
             }
+            let path = if path.starts_with(&chats) {
+                chats.clone()
+            } else {
+                path
+            };
+            totals.entry(path).or_default().add(&usage);
         }
-        rows.extend(conversations.map(|usage| (chats.clone(), usage)));
-        let mut projects: Vec<ProjectUsage> = rows
+        let mut projects: Vec<ProjectUsage> = totals
             .into_iter()
             .map(|(path, usage)| {
                 if path == chats {
@@ -211,8 +223,27 @@ mod tests {
         );
         assert_eq!(summary.clients.len(), 1);
         assert_eq!(summary.clients[0].client.as_deref(), Some("León Blanco"));
-        assert_eq!(summary.clients[0].usage.cost_usd, Some(1.0));
+        assert_eq!(
+            summary.clients[0].usage.cost_usd, None,
+            "a subscription's cost is only the CLI's guess"
+        );
         assert_eq!(f.hedy.project_usage(&moira, 30).unwrap().len(), 2);
+
+        // An API key is really paid: its cost adds up, the tokens of both too.
+        let kimi = f.add_kimi("Kimi API");
+        f.store
+            .record_usage(&UsageRecord {
+                at: now,
+                account: kimi.id,
+                project: moira.clone(),
+                task: TaskId::new("t"),
+                sample: usage(10, Some(0.25)),
+            })
+            .unwrap();
+        let summary = f.hedy.usage_summary(7).unwrap();
+        assert_eq!(summary.projects[0].usage.total_tokens(), 110);
+        assert_eq!(summary.projects[0].usage.cost_usd, Some(0.25));
+        assert_eq!(summary.clients[0].usage.cost_usd, Some(0.25));
 
         f.hedy.set_project_client(&citas, Some("  ")).unwrap();
         assert_eq!(f.hedy.project_at(&citas).unwrap().client, None);

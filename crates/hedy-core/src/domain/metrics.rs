@@ -1,7 +1,8 @@
 //! Usage and cost per project and per client.
 //!
-//! Costs are estimates: for subscriptions it is what the CLI reports (not what
-//! is billed), for API keys it comes from the price the user configured.
+//! Usage is tokens. The cost in a summary only counts API-key accounts, where
+//! usage is really paid, and is an estimate from the price the user configured;
+//! a subscription's CLI-reported cost is not a bill and is left out.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
