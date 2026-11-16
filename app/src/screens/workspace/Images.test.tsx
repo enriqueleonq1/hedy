@@ -107,7 +107,7 @@ describe("Images in the composer", () => {
 
   it("does not let images wait in the queue while the agent works", async () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity());
-    await user.click(await screen.findByRole("button", { name: /^homming/ }));
+    await user.click(await screen.findByRole("button", { name: /^tienda/ }));
     await screen.findByRole("region", { name: "Mensajes en cola" });
     const attach = screen.getByRole("button", { name: "Adjuntar imágenes" });
     await waitFor(() => expect(attach).toHaveAttribute("aria-disabled", "true"));

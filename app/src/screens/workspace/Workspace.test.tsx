@@ -75,8 +75,8 @@ describe("Workspace", () => {
     api.delayMs = 0;
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    // The running sample task in homming last searched the code (Grep).
-    await openProject(user, /^homming/);
+    // The running sample task in tienda last searched the code (Grep).
+    await openProject(user, /^tienda/);
     const word = await screen.findByText("Rastreando");
     const live = word.closest(".agent-row--live");
     expect(live).toHaveAttribute("aria-hidden");
@@ -87,7 +87,7 @@ describe("Workspace", () => {
 
     await user.click(screen.getByRole("button", { name: "Más acciones" }));
     await user.click(screen.getByRole("menuitem", { name: "Estado" }));
-    expect(await screen.findByRole("heading", { name: "homming" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "tienda" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByText("Rastreando").length).toBeGreaterThanOrEqual(2));
   });
 
@@ -137,7 +137,7 @@ describe("Workspace", () => {
     expect(localStorage.getItem("hedy.mode./code/hedy")).toBe("research");
 
     // Another project keeps its own mode; coming back finds the one chosen here.
-    await openProject(user, /^homming/);
+    await openProject(user, /^tienda/);
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Proyecto"));
     await openProject(user, /^hedy/);
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Investigar"));
@@ -271,7 +271,7 @@ describe("Workspace", () => {
     api.delayMs = 0;
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await openProject(user, /^homming/);
+    await openProject(user, /^tienda/);
     const composer = await screen.findByLabelText(/^Escribe mientras Claude Opus trabaja/);
     await user.type(composer, "Una cosa más");
 
@@ -350,7 +350,7 @@ describe("Workspace", () => {
     expect(await screen.findByRole("region", { name: /^Te necesitan/ })).toBeInTheDocument();
     history.forward();
     expect(await screen.findByRole("heading", { name: title })).toBeInTheDocument();
-    expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/homming")}&t=s2`);
+    expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/tienda")}&t=s2`);
   });
 
   it("refreshes a stopped task even when its status stays the same", async () => {
@@ -483,7 +483,7 @@ describe("Composer", () => {
     const stop = vi.spyOn(api, "stopTask");
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await openProject(user, /^homming/);
+    await openProject(user, /^tienda/);
     const composer = await screen.findByLabelText(/^Escribe mientras Claude Opus trabaja/);
     expect(composer).toHaveAttribute("placeholder", "Escribe; se lo paso cuando termine su turno…");
 

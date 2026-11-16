@@ -19,7 +19,7 @@ applyTheme("dark");
 // leaves it empty); `?theme=light|dark` forces a theme there.
 function browserApi(): MockApi {
   const api = MockApi.withSampleData().withSampleTemplates();
-  // The running sample task (homming) changes tools over time, so its mascot cycles.
+  // The running sample task (tienda) changes tools over time, so its mascot cycles.
   if (new URLSearchParams(window.location.search).get("activity") !== "none") api.withSampleActivity().withLiveTools();
   const theme = new URLSearchParams(window.location.search).get("theme");
   if (theme === "light" || theme === "dark") void api.setSetting("ui.theme", theme);

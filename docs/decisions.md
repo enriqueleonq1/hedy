@@ -1136,7 +1136,7 @@ claude -p /usage --output-format json --no-session-persistence --safe-mode
   macOS).
 - **UI contract:** `app/src/files/navigator.tsx` (`FileNavigatorProvider`, mounted once
   in `App`; `useFileNavigator().open({ copy, path, line?, rev?, view? })`) and
-  `codeKeys` for shared query keys. `MockApi` serves `/code/hedy` and `/code/homming`
+  `codeKeys` for shared query keys. `MockApi` serves `/code/hedy` and `/code/tienda`
   from `mockCodeSamples.ts`; task s5's review diff is computed from the same sample.
 - **Review comments** (`app/src/review/comments.tsx`, `ReviewCommentsProvider` in `App`,
   the workspace names its task with `useReviewTask`) live only in the browser storage,

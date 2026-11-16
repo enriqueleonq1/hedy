@@ -739,7 +739,7 @@ mod tests {
                 Some("personal"),
             )
             .unwrap();
-        let work = f.dir("/code/homming");
+        let work = f.dir("/code/tienda");
         f.hedy.use_account(&work, "trabajo", Some(true)).unwrap();
         f.hedy
             .add_note(None, "Preferencia personal", Category::Preference)

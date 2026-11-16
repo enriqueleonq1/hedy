@@ -47,7 +47,7 @@ describe("Shell", () => {
   it("jumps to the Nth sidebar project with Alt+digit, and the palette still switches projects", async () => {
     const { user } = setup();
     await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
-    const projects = within(sidebar()).getAllByRole("button").filter((b) => b.closest("section") && /^(hedy|homming)/.test(b.textContent ?? ""));
+    const projects = within(sidebar()).getAllByRole("button").filter((b) => b.closest("section") && /^(hedy|tienda)/.test(b.textContent ?? ""));
     expect(projects.length).toBeGreaterThan(1);
     await user.keyboard("{Alt>}2{/Alt}");
     expect(projects[1]).toHaveAttribute("aria-current", "page");
@@ -58,9 +58,9 @@ describe("Shell", () => {
     expect(projects[0]).toHaveAttribute("aria-current", "page");
 
     await user.keyboard("{Control>}k{/Control}");
-    await user.type(screen.getByRole("combobox", { name: "Paleta de comandos" }), "hmng");
+    await user.type(screen.getByRole("combobox", { name: "Paleta de comandos" }), "tnda");
     await user.keyboard("{Enter}");
-    expect(within(sidebar()).getByRole("button", { name: /^homming/ })).toHaveAttribute("aria-current", "page");
+    expect(within(sidebar()).getByRole("button", { name: /^tienda/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("hides the sidebar in focus mode with Ctrl+\\ or from the palette, and leaves it from the top bar", async () => {

@@ -1645,10 +1645,10 @@ mod tests {
             .set_setting(super::super::Setting::DefaultAccount, Some("personal"))
             .unwrap();
         f.hedy
-            .use_account(&f.dir("/code/homming"), "trabajo", Some(true))
+            .use_account(&f.dir("/code/tienda"), "trabajo", Some(true))
             .unwrap();
         let err = f.hedy.set_project_phases(
-            &f.dir("/code/homming"),
+            &f.dir("/code/tienda"),
             PhasePlan::from([(
                 Phase::Tests,
                 Assignment {

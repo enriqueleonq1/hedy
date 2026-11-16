@@ -113,7 +113,7 @@ describe("Status", () => {
     await user.click(await screen.findByRole("button", { name: "Cuentas y modelos" }));
     const spend = await screen.findByRole("region", { name: "Uso de la semana por cliente" });
     expect(await within(spend).findByText("León Blanco")).toBeInTheDocument();
-    expect(within(spend).getByText("Homming")).toBeInTheDocument();
+    expect(within(spend).getByText("Café Aurora")).toBeInTheDocument();
     // Only subscriptions worked: usage in tokens, no cost (the CLI's guess is not a bill).
     expect(within(spend).queryByRole("columnheader", { name: /Costo estimado/ })).not.toBeInTheDocument();
     expect(within(spend).queryByText(/\$/)).not.toBeInTheDocument();
@@ -130,7 +130,7 @@ describe("Status", () => {
     const api = MockApi.withSampleData();
     api.delayMs = 0;
     await api.setProjectClient("/code/hedy", null);
-    await api.setProjectClient("/code/homming", null);
+    await api.setProjectClient("/code/tienda", null);
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Cuentas y modelos" }));

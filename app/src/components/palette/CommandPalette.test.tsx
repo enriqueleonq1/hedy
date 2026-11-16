@@ -34,12 +34,12 @@ describe("Command palette", () => {
     const field = screen.getByRole("combobox", { name: "Paleta de comandos" });
     expect(field).toHaveFocus();
     expect(screen.getByRole("dialog", { name: "Paleta de comandos" })).toBeInTheDocument();
-    await user.type(field, "hmng");
-    expect(options()[0]).toBe("homming");
+    await user.type(field, "tnda");
+    expect(options()[0]).toBe("tienda");
     expect(field).toHaveAttribute("aria-activedescendant", screen.getAllByRole("option")[0]!.id);
     await user.keyboard("{Enter}");
     expect(screen.queryByRole("dialog", { name: "Paleta de comandos" })).not.toBeInTheDocument();
-    expect(within(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).getByRole("button", { name: /^homming/ })).toHaveAttribute("aria-current", "page");
+    expect(within(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).getByRole("button", { name: /^tienda/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("moves with the arrows, wraps around and lists the groups with no query", async () => {
@@ -99,10 +99,10 @@ describe("Command palette", () => {
     const assign = vi.spyOn(api, "useAccount");
     await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
     await user.keyboard("{Control>}k{/Control}");
-    await user.type(screen.getByRole("combobox"), "cambiar cuenta homming");
+    await user.type(screen.getByRole("combobox"), "cambiar cuenta tienda");
     // Nothing matches; what was typed can still be asked outside any project.
-    expect(options()).toEqual(["Preguntar «cambiar cuenta homming»"]);
-    expect(screen.getByText("Nada coincide con «cambiar cuenta homming».")).toBeInTheDocument();
+    expect(options()).toEqual(["Preguntar «cambiar cuenta tienda»"]);
+    expect(screen.getByText("Nada coincide con «cambiar cuenta tienda».")).toBeInTheDocument();
 
     await user.clear(screen.getByRole("combobox"));
     await user.type(screen.getByRole("combobox"), "cambiar cuenta hedy");

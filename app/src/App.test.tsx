@@ -17,10 +17,10 @@ describe("Welcome", () => {
     renderApp();
     expect(await screen.findByRole("heading", { name: /¡Hola, Enrique!/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Hedy te saluda" })).toHaveAttribute("data-state", "idle");
-    const homming = screen.getByRole("heading", { name: "homming" }).closest("article")!;
-    expect(within(homming).getByText("Claude trabajo")).toBeInTheDocument();
-    expect(within(homming).getByText("Protegido")).toBeInTheDocument();
-    // The week of sample usage: 166k tokens in hedy and 50k in homming, all on
+    const tienda = screen.getByRole("heading", { name: "tienda" }).closest("article")!;
+    expect(within(tienda).getByText("Claude trabajo")).toBeInTheDocument();
+    expect(within(tienda).getByText("Protegido")).toBeInTheDocument();
+    // The week of sample usage: 166k tokens in hedy and 50k in tienda, all on
     // subscriptions, so no cost (the CLI's guess is not a bill).
     expect(
       await screen.findByText(/^En Hedy: 216k tokens esta semana; hedy fue el proyecto más activo\.$/),
@@ -108,9 +108,9 @@ describe("Welcome", () => {
   it("shows each project's live state and keeps its secondary actions in a menu", async () => {
     const { user } = renderApp(MockApi.withSampleData().withSampleActivity());
     const hedy = (await screen.findByRole("article", { name: "hedy" }));
-    const homming = screen.getByRole("article", { name: "homming" });
+    const tienda = screen.getByRole("article", { name: "tienda" });
     expect(await within(hedy).findByText("2 tareas te esperan")).toHaveClass("project-card__live--needs");
-    expect(within(homming).getByText("1 tarea te espera · trabajando")).toBeInTheDocument();
+    expect(within(tienda).getByText("1 tarea te espera · trabajando")).toBeInTheDocument();
     // One primary action; the rest behind "⋯".
     expect(within(hedy).getByRole("button", { name: "Trabajar aquí" })).toBeInTheDocument();
     expect(within(hedy).queryByRole("button", { name: "Abrir en VS Code" })).not.toBeInTheDocument();
@@ -165,7 +165,7 @@ describe("Accounts", () => {
     expect(within(card).getByText("Anthropic · Team")).toBeInTheDocument();
     expect(within(card).getByText("Conectada")).toBeInTheDocument();
     expect(within(card).getByText(/carpeta por defecto de la CLI/)).toBeInTheDocument();
-    expect(within(card).getByRole("listitem")).toHaveTextContent("homming");
+    expect(within(card).getByRole("listitem")).toHaveTextContent("tienda");
     const personal = screen.getByRole("article", { name: "Claude personal" });
     expect(within(personal).getByText("182k tokens")).toBeInTheDocument();
     expect(within(personal).getByText("Tokens en Hedy esta semana")).toBeInTheDocument();
@@ -255,7 +255,7 @@ describe("Accounts", () => {
     expect(options).not.toContain("trabajo");
     expect(options).toContain("personal");
     await user.keyboard("{Escape}");
-    expect(screen.getByRole("combobox", { name: "Cuenta de homming" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Cuenta de tienda" })).toBeDisabled();
   });
 });
 

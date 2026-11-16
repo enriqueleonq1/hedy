@@ -66,7 +66,7 @@ describe("Activity", () => {
     // What it is doing, as a word next to the state (decorative).
     const word = await within(running).findByText("Rastreando");
     expect(word.closest(".working-word")).toHaveAttribute("aria-hidden");
-    expect(within(running).getByText("homming")).toBeInTheDocument();
+    expect(within(running).getByText("tienda")).toBeInTheDocument();
 
     const recent = screen.getByRole("region", { name: "Últimas 24 h (5)" });
     expect(titles(recent)).toEqual([
@@ -90,8 +90,8 @@ describe("Activity", () => {
     const needs = await screen.findByRole("region", { name: "Te necesitan (8)" });
     await user.click(within(needs).getByRole("button", { name: /Migra el reporte de comisiones/ }));
     expect(await screen.findByRole("heading", { name: "Migra el reporte de comisiones a la API nueva" })).toBeInTheDocument();
-    expect(within(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).getByRole("button", { name: /^homming/ })).toHaveAttribute("aria-current", "page");
-    expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/homming")}&t=s2`);
+    expect(within(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).getByRole("button", { name: /^tienda/ })).toHaveAttribute("aria-current", "page");
+    expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/tienda")}&t=s2`);
   });
 
   it("answers a permission from its row, once or no, and never for the whole task", async () => {

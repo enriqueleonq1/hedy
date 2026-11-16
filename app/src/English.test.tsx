@@ -70,12 +70,12 @@ describe("English", () => {
     expect(screen.getByRole("button", { name: "Accounts and models" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
     expect(within(screen.getByRole("complementary", { name: "Projects and accounts" })).getByRole("button", { name: /^hedy/ })).toBeInTheDocument();
-    const homming = screen.getByRole("heading", { name: "homming" }).closest("article")!;
-    expect(within(homming).getByText("Protected")).toBeInTheDocument();
-    expect(await within(homming).findByText("No activity in the last 24 h")).toBeInTheDocument();
+    const tienda = screen.getByRole("heading", { name: "tienda" }).closest("article")!;
+    expect(within(tienda).getByText("Protected")).toBeInTheDocument();
+    expect(await within(tienda).findByText("No activity in the last 24 h")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "5 proposed notes or skills to approve" })).toBeInTheDocument();
-    expect(within(homming).getByRole("button", { name: "More actions for homming" })).toBeInTheDocument();
-    expect(within(homming).getByRole("button", { name: "Work here" })).toBeInTheDocument();
+    expect(within(tienda).getByRole("button", { name: "More actions for tienda" })).toBeInTheDocument();
+    expect(within(tienda).getByRole("button", { name: "Work here" })).toBeInTheDocument();
     const plans = screen.getByRole("heading", { name: "Your plans" }).closest("section")!;
     expect(within(plans).getByRole("button", { name: "Claude trabajo: 5-hour session · 34%, Week · 29%" })).toBeInTheDocument();
     expect(
@@ -126,7 +126,7 @@ describe("English", () => {
 
   it("queues messages and picks templates in English", async () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity().withSampleTemplates());
-    await user.click(await screen.findByRole("button", { name: /^homming/ }));
+    await user.click(await screen.findByRole("button", { name: /^tienda/ }));
     const queue = await screen.findByRole("region", { name: "Queued messages" });
     expect(within(queue).getAllByText("Queued")).toHaveLength(2);
     expect(within(queue).getByText(/goes as a single message when Claude Opus finishes its turn/)).toBeInTheDocument();

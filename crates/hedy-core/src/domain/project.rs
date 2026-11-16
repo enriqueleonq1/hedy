@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn name_comes_from_folder() {
-        assert_eq!(Project::new("/home/e/code/homming".into()).name, "homming");
+        assert_eq!(Project::new("/home/e/code/tienda".into()).name, "tienda");
     }
 
     #[test]

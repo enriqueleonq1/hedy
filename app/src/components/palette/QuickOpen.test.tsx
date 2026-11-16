@@ -142,7 +142,7 @@ describe("Quick open (Ctrl P)", () => {
     await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
     await quickOpen(user);
     expect(screen.getByText("Abre un proyecto para buscar en sus archivos.")).toBeInTheDocument();
-    expect(options()).toEqual(["hedy", "homming"]);
+    expect(options()).toEqual(["hedy", "tienda"]);
     await user.click(screen.getAllByRole("option")[0]!);
     expect(screen.getByRole("dialog", { name: "Paleta de comandos" })).toBeInTheDocument();
     expect(await screen.findByRole("group", { name: "Todos los archivos" }, SLOW)).toBeInTheDocument();

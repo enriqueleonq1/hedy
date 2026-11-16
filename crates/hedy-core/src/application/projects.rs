@@ -336,7 +336,7 @@ mod tests {
             .set_setting(Setting::DefaultAccount, Some("personal"))
             .unwrap();
         f.hedy
-            .use_account(&f.dir("/code/homming"), "trabajo", Some(true))
+            .use_account(&f.dir("/code/tienda"), "trabajo", Some(true))
             .unwrap();
         let reserved = f.hedy.new_project(NewProject {
             account: Some("trabajo".into()),
@@ -428,7 +428,7 @@ mod tests {
         f.add_claude("Personal");
         f.add_claude("Trabajo");
         f.hedy
-            .use_account(&f.dir("/code/homming"), "trabajo", Some(true))
+            .use_account(&f.dir("/code/tienda"), "trabajo", Some(true))
             .unwrap();
         let ids = |dir: &str| -> Vec<String> {
             f.hedy
@@ -438,13 +438,13 @@ mod tests {
                 .map(ToString::to_string)
                 .collect()
         };
-        assert_eq!(ids("/code/homming"), vec!["trabajo"]);
+        assert_eq!(ids("/code/tienda"), vec!["trabajo"]);
         assert_eq!(ids("/elsewhere"), vec!["personal"]);
 
         let color = crate::domain::Color::nth_in_palette(4);
         let p = f
             .hedy
-            .set_project_color(&f.dir("/code/homming"), Some(color))
+            .set_project_color(&f.dir("/code/tienda"), Some(color))
             .unwrap();
         assert_eq!(p.color, Some(color));
         assert!(matches!(
@@ -452,7 +452,7 @@ mod tests {
             Err(AppError::ProjectNotFound(_))
         ));
 
-        f.hedy.remove_project(&f.dir("/code/homming")).unwrap();
+        f.hedy.remove_project(&f.dir("/code/tienda")).unwrap();
         assert!(f.hedy.projects().unwrap().is_empty());
         assert_eq!(ids("/elsewhere"), vec!["personal", "trabajo"]);
     }
@@ -462,7 +462,7 @@ mod tests {
         let f = Fixture::new();
         f.add_claude("Trabajo");
         f.hedy
-            .use_account(&f.dir("/code/homming"), "trabajo", Some(true))
+            .use_account(&f.dir("/code/tienda"), "trabajo", Some(true))
             .unwrap();
         let err = f
             .hedy

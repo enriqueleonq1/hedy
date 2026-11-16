@@ -125,11 +125,11 @@ mod tests {
         let clients = by_client(&[
             project("moira", Some("León Blanco"), 100, Some(1.0)),
             project("hedy", None, 900, None),
-            project("homming", Some("Homming"), 500, None),
+            project("tienda", Some("Café Aurora"), 500, None),
             project("citas", Some("León Blanco"), 50, Some(0.5)),
         ]);
         let names: Vec<_> = clients.iter().map(|c| c.client.as_deref()).collect();
-        assert_eq!(names, [Some("Homming"), Some("León Blanco"), None]);
+        assert_eq!(names, [Some("Café Aurora"), Some("León Blanco"), None]);
         assert_eq!(clients[1].projects, 2);
         assert_eq!(clients[1].usage.total_tokens(), 150);
         assert_eq!(clients[1].usage.cost_usd, Some(1.5));

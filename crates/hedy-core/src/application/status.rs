@@ -100,7 +100,7 @@ mod tests {
         f.add_claude("Personal");
         f.add_claude("Trabajo");
         f.hedy
-            .use_account(&f.dir("/code/homming"), "trabajo", Some(true))
+            .use_account(&f.dir("/code/tienda"), "trabajo", Some(true))
             .unwrap();
         f.runner.reply(r#"{"loggedIn":false}"#, 1);
 
@@ -112,8 +112,8 @@ mod tests {
         assert_eq!(trabajo.login, LoginState::LoggedOut);
         assert!(outside.accounts[0].available);
 
-        let inside = f.hedy.status(&f.dir("/code/homming/src")).unwrap();
-        assert_eq!(inside.current_project.unwrap().name, "homming");
+        let inside = f.hedy.status(&f.dir("/code/tienda/src")).unwrap();
+        assert_eq!(inside.current_project.unwrap().name, "tienda");
         assert!(inside.accounts[1].available);
         assert!(
             !inside.accounts[0].available,

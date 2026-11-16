@@ -32,7 +32,7 @@ describe("Opening an account from the shell", () => {
   });
 
   it("names the project's account in its screens, not the one closest to its limit", async () => {
-    history.replaceState(null, "", "#p=%2Fcode%2Fhomming");
+    history.replaceState(null, "", "#p=%2Fcode%2Ftienda");
     render(<App api={MockApi.withSampleData()} queryClient={new QueryClient()} />);
     const user = userEvent.setup();
     const account = await within(await screen.findByRole("contentinfo", { name: "Barra de estado" })).findByRole(

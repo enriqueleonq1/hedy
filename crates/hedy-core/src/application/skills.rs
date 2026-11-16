@@ -823,7 +823,7 @@ mod tests {
                 Some("personal"),
             )
             .unwrap();
-        let work = f.dir("/code/homming");
+        let work = f.dir("/code/tienda");
         f.hedy.use_account(&work, "trabajo", Some(true)).unwrap();
         let view = f.hedy.skills(&work).unwrap();
         assert!(view.protected && view.approved.is_empty());
