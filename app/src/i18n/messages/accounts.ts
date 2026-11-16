@@ -135,9 +135,10 @@ const es = {
   "accounts.table.removeConfirm": "¿Quitar de Hedy?",
 
   "accounts.spend.title": "Uso de la semana por cliente",
-  "accounts.spend.cost": "Costo estimado",
-  "accounts.spend.note":
-    "Tokens que Hedy registró en sus tareas. El costo es una estimación: en suscripciones es lo que calcula la CLI (no lo que se cobra); en API keys, según el precio que pongas en Ajustes.",
+  "accounts.spend.cost": "Costo estimado (API key)",
+  "accounts.spend.note": "Tokens que Hedy registró en sus tareas.",
+  "accounts.spend.costNote":
+    "El costo es una estimación y solo cuenta las cuentas con API key, según el precio que pongas en Ajustes.",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -274,9 +275,9 @@ const en: Record<keyof typeof es, string> = {
   "accounts.table.removeConfirm": "Remove from Hedy?",
 
   "accounts.spend.title": "This week's usage by client",
-  "accounts.spend.cost": "Estimated cost",
-  "accounts.spend.note":
-    "Tokens Hedy recorded in its tasks. The cost is an estimate: for subscriptions it's what the CLI calculates (not what you're billed); for API keys, it uses the price you set in Settings.",
+  "accounts.spend.cost": "Estimated cost (API key)",
+  "accounts.spend.note": "Tokens Hedy recorded in its tasks.",
+  "accounts.spend.costNote": "The cost is an estimate and only counts API-key accounts, from the price you set in Settings.",
 };
 
 export default { es, en };

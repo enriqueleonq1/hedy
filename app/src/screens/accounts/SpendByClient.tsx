@@ -1,26 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { useApi } from "../../api/context";
-import type { Spend } from "../../api/types";
 import { formatTokens, formatUsd } from "../../format";
 import { useLanguage, useT } from "../../i18n";
 
-function Cells({ spend }: { spend: Spend }) {
-  const language = useLanguage();
-  return (
-    <>
-      <td className="num">{formatTokens(spend.tokens)}</td>
-      <td className="num">{formatUsd(spend.costUsd, language)}</td>
-    </>
-  );
-}
-
-/** Usage of the week per client and per project (spec phase 6). */
+/**
+ * Usage of the week per client and per project (spec phase 6). Usage is
+ * tokens; the cost column only appears when an API key spent something, the
+ * one usage really paid.
+ */
 export function SpendByClient() {
   const api = useApi();
   const t = useT();
+  const language = useLanguage();
   const summary = useQuery({ queryKey: ["usageSummary", 7], queryFn: () => api.usageSummary(7) });
   const data = summary.data;
+  const paid = !!data?.clients.some((c) => c.costUsd !== null);
   return (
     <section className="card table-card" aria-labelledby="spend-title">
       <div className="section-head">
@@ -36,7 +31,7 @@ export function SpendByClient() {
                 <th>{t("common.client")}</th>
                 <th>{t("common.projects")}</th>
                 <th className="num">Tokens</th>
-                <th className="num">{t("accounts.spend.cost")}</th>
+                {paid && <th className="num">{t("accounts.spend.cost")}</th>}
               </tr>
             </thead>
             <tbody>
@@ -49,14 +44,18 @@ export function SpendByClient() {
                       .map((p) => `${p.name} (${formatTokens(p.tokens)})`)
                       .join(" · ")}
                   </td>
-                  <Cells spend={c} />
+                  <td className="num">{formatTokens(c.tokens)}</td>
+                  {paid && <td className="num">{formatUsd(c.costUsd, language)}</td>}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      <p className="small muted">{t("accounts.spend.note")}</p>
+      <p className="small muted">
+        {t("accounts.spend.note")}
+        {paid && ` ${t("accounts.spend.costNote")}`}
+      </p>
     </section>
   );
 }

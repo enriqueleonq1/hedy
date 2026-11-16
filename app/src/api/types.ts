@@ -35,11 +35,14 @@ export interface Project {
   offerableAccounts: string[];
   /** Who plans, implements, writes tests and reviews. */
   phases: PhasePlan;
-  /** Who the work is for, to add up cost per client. */
+  /** Who the work is for, to group usage per client. */
   client: string | null;
 }
 
-/** Tokens and estimated cost (CLI estimate or configured API price). */
+/**
+ * Tokens and, only for API-key accounts (the usage really paid), the
+ * estimated cost from the configured price. `null`: nothing paid by API key.
+ */
 export interface Spend {
   tokens: number;
   costUsd: number | null;

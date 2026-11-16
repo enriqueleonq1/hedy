@@ -20,9 +20,10 @@ describe("Welcome", () => {
     const homming = screen.getByRole("heading", { name: "homming" }).closest("article")!;
     expect(within(homming).getByText("Claude trabajo")).toBeInTheDocument();
     expect(within(homming).getByText("Protegido")).toBeInTheDocument();
-    // The week of sample usage: 166k tokens in hedy and 50k in homming.
+    // The week of sample usage: 166k tokens in hedy and 50k in homming, all on
+    // subscriptions, so no cost (the CLI's guess is not a bill).
     expect(
-      await screen.findByText(/^En Hedy: 216k tokens esta semana \(unos \$4,1\d\); hedy fue el proyecto más activo\.$/),
+      await screen.findByText(/^En Hedy: 216k tokens esta semana; hedy fue el proyecto más activo\.$/),
     ).toBeInTheDocument();
   });
 

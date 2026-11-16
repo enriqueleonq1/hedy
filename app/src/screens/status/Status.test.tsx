@@ -114,11 +114,46 @@ describe("Status", () => {
     const spend = await screen.findByRole("region", { name: "Uso de la semana por cliente" });
     expect(await within(spend).findByText("León Blanco")).toBeInTheDocument();
     expect(within(spend).getByText("Homming")).toBeInTheDocument();
+    // Only subscriptions worked: usage in tokens, no cost (the CLI's guess is not a bill).
+    expect(within(spend).queryByRole("columnheader", { name: /Costo estimado/ })).not.toBeInTheDocument();
+    expect(within(spend).queryByText(/\$/)).not.toBeInTheDocument();
 
     const input = screen.getByLabelText("Cliente de hedy");
+    expect(input).toHaveAccessibleDescription(/agrupa proyectos del mismo cliente para ver cuánto uso lleva cada uno/);
     await user.clear(input);
     await user.type(input, "Moira SA");
     await user.tab();
     expect((await api.overview()).projects.find((p) => p.name === "hedy")?.client).toBe("Moira SA");
+  });
+
+  it("shows the week per client only once a project has a client", async () => {
+    const api = MockApi.withSampleData();
+    api.delayMs = 0;
+    await api.setProjectClient("/code/hedy", null);
+    await api.setProjectClient("/code/homming", null);
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Cuentas y modelos" }));
+    const input = await screen.findByLabelText("Cliente de hedy");
+    expect(screen.queryByRole("region", { name: "Uso de la semana por cliente" })).not.toBeInTheDocument();
+
+    await user.type(input, "León Blanco");
+    await user.tab();
+    const spend = await screen.findByRole("region", { name: "Uso de la semana por cliente" });
+    expect(await within(spend).findByText("León Blanco")).toBeInTheDocument();
+  });
+
+  it("adds an estimated cost only for what an API key spent", async () => {
+    const api = MockApi.withSampleData();
+    api.delayMs = 0;
+    api.recordUsage({ project: "/code/hedy", account: "kimi", at: Math.floor(Date.now() / 1000), tokens: 1000, costUsd: 0.5 });
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Cuentas y modelos" }));
+    const spend = await screen.findByRole("region", { name: "Uso de la semana por cliente" });
+    expect(await within(spend).findByRole("columnheader", { name: "Costo estimado (API key)" })).toBeInTheDocument();
+    const leon = within(spend).getByRole("row", { name: /^León Blanco/ });
+    expect(within(leon).getByText("$0,50")).toBeInTheDocument();
+    expect(within(spend).getByText(/solo cuenta las cuentas con API key/)).toBeInTheDocument();
   });
 });
