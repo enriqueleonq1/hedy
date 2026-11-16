@@ -3,6 +3,7 @@
 mod accounts;
 mod activity;
 mod attachments;
+mod carry;
 mod code;
 mod code_edit;
 mod conversations;
@@ -13,6 +14,7 @@ mod files;
 mod launch;
 mod memory;
 mod metrics;
+mod one_shot;
 mod plan_usage;
 pub mod ports;
 mod projects;
@@ -37,6 +39,7 @@ use std::sync::{Arc, Mutex};
 pub use accounts::NewAccount;
 pub use activity::{MAX_FINISHED, RECENT_HOURS, TaskActivity};
 pub use attachments::NewImage;
+pub use carry::{Carry, ConversationContext};
 pub use code::{
     BASE_REV, CodeCopy, CodeDiff, CodeTree, CopyInfo, FileContent, FileHistory, HistoryCommit,
     MAX_DIFF_CONTEXT, TaskTouch,
