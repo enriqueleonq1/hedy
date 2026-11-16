@@ -11,7 +11,7 @@ without mixing them up.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-7c5cff)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Linux-555)
-![Status](https://img.shields.io/badge/status-early-orange)
+[![Release](https://img.shields.io/github/v/release/enriqueleonq1/hedy?color=7c5cff)](https://github.com/enriqueleonq1/hedy/releases)
 
 <a href="docs/media/hedy-intro.mp4">
   <img src="docs/media/hedy-intro.gif" width="860" alt="Hedy in 60 seconds: accounts, parallel tasks, review and shipping">
@@ -51,6 +51,10 @@ what they changed and ship it.
   used until you say yes.
 - **Quick questions.** Ask something outside any project, and if it turns into work, carry the
   conversation into a project with its context.
+- **Make it look like your editor.** One Dark Pro, Dracula, Catppuccin, Nord, GitHub,
+  Solarized and Hedy's own. Click one and the whole app previews it before you commit. You can
+  also import a VS Code theme file, or describe what you want and let one of your accounts draft
+  it. Hedy fixes any color that wouldn't be readable.
 
 <table>
   <tr>
@@ -80,13 +84,19 @@ The details, including what was verified about each CLI and why, are in
 
 ## Install
 
-Hedy is early and Linux-only for now. It's built with Tauri, so macOS and Windows are on the
-table, but I haven't tested them.
+Hedy is Linux-only for now. It's built with Tauri, so macOS and Windows are on the table, but I
+haven't tested them.
 
 You'll need the CLIs you want to use already installed (`claude`, `codex`, `gemini`…), plus `git`.
 `gh` is optional and only used to open pull requests.
 
-**Arch / CachyOS / Manjaro**
+**Download**
+
+Each [release](https://github.com/enriqueleonq1/hedy/releases) has a `.deb`, an AppImage, an Arch
+package and the `hedy` command on its own. The `.deb` and the AppImage include the app only; for
+the command, take `hedy-cli-*.tar.gz` and put `hedy` somewhere on your `PATH`.
+
+**Arch / CachyOS / Manjaro, from source**
 
 ```sh
 git clone https://github.com/enriqueleonq1/hedy
