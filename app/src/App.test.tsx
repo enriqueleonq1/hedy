@@ -196,6 +196,8 @@ describe("Accounts", () => {
     // The sidebar shows a name and a quiet figure, warning-colored only near the limit; the window is in its name.
     const personalRow = within(sidebar).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" });
     expect(within(personalRow).getByText("83%")).toHaveClass("level--warning");
+    // Its tooltip says how old the reading is.
+    expect(personalRow).toHaveAttribute("title", "Claude personal · Semana · 83% · actualizado hace 2 min");
     expect(personalRow.querySelector(".bar")).toBeNull();
     const workRow = within(sidebar).getByRole("button", { name: "Claude trabajo: Sesión 5 h · 34%. Abrir la cuenta" });
     expect(within(workRow).getByText("34%")).not.toHaveClass("level--warning");

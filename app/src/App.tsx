@@ -10,6 +10,7 @@ import { ReviewCommentsProvider } from "./review/comments";
 import { Shell, Sidebar, taskView, Topbar, viewProject, type View } from "./components/Layout";
 import { Mascot } from "./components/Mascot/Mascot";
 import { CommandPalette } from "./components/palette/CommandPalette";
+import { PlanUsageProvider } from "./components/planUsage";
 import { ShortcutsProvider, useProjectShortcuts } from "./components/shortcuts";
 import { StatusBar } from "./components/statusbar/StatusBar";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
@@ -208,6 +209,8 @@ function Root() {
         <CreateProvider overview={data} onNavigate={navigate}>
         <FocusModeProvider>
         <ShortcutsProvider>
+        {/* The sidebar and status bar show every account's plan usage: keep it fresh while they are on screen. */}
+        <PlanUsageProvider accounts={data.accounts} screen={current.screen}>
         <Shell
           topbar={
             <Topbar
@@ -276,6 +279,7 @@ function Root() {
           )}
         </Shell>
         <CommandPalette open={palette} onOpenChange={setPalette} overview={data} view={current} onNavigate={navigate} />
+        </PlanUsageProvider>
         </ShortcutsProvider>
         </FocusModeProvider>
         </CreateProvider>
