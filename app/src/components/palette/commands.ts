@@ -59,11 +59,14 @@ export function usePaletteCommands({
   open,
   onNavigate,
   t,
+  view,
 }: {
   overview: Overview;
   open: boolean;
   onNavigate: (view: View) => void;
   t: Translate;
+  /** The screen on screen: a conversation offers to be carried into a project. */
+  view?: View;
 }): Command[] {
   const api = useApi();
   const toast = useToast();
@@ -159,7 +162,7 @@ export function usePaletteCommands({
         group: "actions",
         label: t("create.newProject"),
         detail: t("create.newProjectHint"),
-        run: create.newProject,
+        run: () => create.newProject(),
       },
       {
         id: "create:folder",
@@ -176,6 +179,39 @@ export function usePaletteCommands({
         run: () => create.quickQuestion(),
       },
     );
+  }
+
+  // "Llevar a un proyecto": the conversation on screen, once it answered.
+  const conversation =
+    view?.screen === "conversation" && view.task ? conversations?.data?.find((c) => c.id === view.task) : undefined;
+  if (conversation && conversation.status !== "running" && conversation.status !== "waitingApproval") {
+    commands.push({
+      id: "carry:conversation",
+      group: "actions",
+      label: t("carry.palette"),
+      detail: conversation.title,
+      page: () => ({
+        title: t("carry.paletteTitle"),
+        hint: t("carry.paletteHint"),
+        commands: [
+          {
+            id: "carry:new",
+            group: "actions",
+            label: t("carry.newProject"),
+            run: () => create.newProject({ carry: conversation.id }),
+          },
+          ...overview.projects
+            .filter((p) => p.account)
+            .map((p) => ({
+              id: `carry:${p.path}`,
+              group: "projects" as const,
+              label: p.name,
+              color: projectColor(p, overview.accounts),
+              run: () => onNavigate({ screen: "workspace", project: p.path, task: null, carry: conversation.id }),
+            })),
+        ],
+      }),
+    });
   }
 
   for (const project of overview.projects) {
