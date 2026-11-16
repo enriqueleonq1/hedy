@@ -32,6 +32,16 @@ pub(crate) fn command(spec: &LaunchSpec) -> Command {
     cmd
 }
 
+/// Like [`command`], for an agent driven over pipes (no terminal): it gets its
+/// own process group, so a Ctrl+C in the terminal that runs Hedy (`hedy ask`)
+/// reaches Hedy only, and Hedy stops the session cleanly.
+pub(crate) fn headless_command(spec: &LaunchSpec) -> Command {
+    let mut cmd = command(spec);
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    cmd
+}
+
 pub(crate) fn launch_error(spec: &LaunchSpec, err: std::io::Error) -> PortError {
     if err.kind() == ErrorKind::NotFound {
         let program = &spec.program;
