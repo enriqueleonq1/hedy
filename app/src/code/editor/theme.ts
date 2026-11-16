@@ -154,18 +154,18 @@ export const hedyEditorTheme = EditorView.theme({
 });
 
 /**
- * Syntax colors from the semantic tokens: violet keywords, green strings, amber
- * numbers and constants, teal functions, muted comments. Calm on purpose.
+ * Syntax colors from the theme's `syn*` tokens (in Hedy's own themes: violet keywords,
+ * green strings, amber numbers and constants, teal functions, muted comments). Calm on purpose.
  */
 export const hedyHighlightStyle = HighlightStyle.define([
-  { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword, t.definitionKeyword, t.modifier], color: "var(--accent)" },
-  { tag: [t.string, t.special(t.string), t.regexp, t.character, t.attributeValue], color: "var(--success)" },
-  { tag: [t.number, t.bool, t.null, t.atom, t.constant(t.variableName), t.unit], color: "var(--warning)" },
-  { tag: [t.function(t.variableName), t.function(t.propertyName), t.macroName], color: "var(--activity)" },
-  { tag: [t.typeName, t.className, t.namespace, t.definition(t.typeName)], color: "var(--activity)", fontStyle: "italic" },
-  { tag: [t.tagName, t.angleBracket], color: "var(--danger)" },
+  { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword, t.definitionKeyword, t.modifier], color: "var(--syn-keyword)" },
+  { tag: [t.string, t.special(t.string), t.regexp, t.character, t.attributeValue], color: "var(--syn-string)" },
+  { tag: [t.number, t.bool, t.null, t.atom, t.constant(t.variableName), t.unit], color: "var(--syn-number)" },
+  { tag: [t.function(t.variableName), t.function(t.propertyName), t.macroName], color: "var(--syn-function)" },
+  { tag: [t.typeName, t.className, t.namespace, t.definition(t.typeName)], color: "var(--syn-type)", fontStyle: "italic" },
+  { tag: [t.tagName, t.angleBracket], color: "var(--syn-tag)" },
   { tag: [t.attributeName, t.propertyName], color: "var(--ink)" },
-  { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: "var(--muted)", fontStyle: "italic" },
+  { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: "var(--syn-comment)", fontStyle: "italic" },
   { tag: [t.meta, t.processingInstruction, t.annotation], color: "var(--muted)" },
   { tag: [t.operator, t.punctuation, t.separator, t.bracket], color: "var(--muted)" },
   { tag: t.heading, color: "var(--accent)", fontWeight: "700" },

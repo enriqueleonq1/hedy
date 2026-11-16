@@ -80,6 +80,7 @@ export interface Assignment {
 export type PhasePlan = Partial<Record<Phase, Assignment>>;
 
 export type ThemeSetting = "system" | "light" | "dark";
+export type ThemeBase = "dark" | "light";
 
 export interface Overview {
   userName: string;
