@@ -101,7 +101,20 @@ pub fn handoff_candidates<'a>(
     accounts: &'a [Account],
     projects: &[Project],
 ) -> Vec<&'a Account> {
-    offerable(Some(project), accounts, projects)
+    limit_alternatives(current, Some(project), accounts, projects)
+}
+
+/// What Hedy may offer instead of `current` when it nears its limit, in a
+/// project or outside any (rule 3): another provider or a paid API key,
+/// never another subscription of the same provider, and nothing in a
+/// protected project. Only offered: the user chooses.
+pub fn limit_alternatives<'a>(
+    current: &Account,
+    project: Option<&Project>,
+    accounts: &'a [Account],
+    projects: &[Project],
+) -> Vec<&'a Account> {
+    offerable(project, accounts, projects)
         .into_iter()
         .filter(|a| a.id != current.id)
         .filter(|a| a.provider != current.provider || !a.is_subscription())

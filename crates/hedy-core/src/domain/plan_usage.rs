@@ -8,6 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::LimitLevel;
+
 /// What a limit window covers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -583,9 +585,222 @@ pub fn resolve_windows(
     }
 }
 
+/// From this percentage of any window, Hedy warns before starting a CLI
+/// (the same level as a task's limit card).
+pub const LIMIT_ALERT_PERCENT: f64 = 90.0;
+
+/// A window close to or at its limit, worth a word before starting work.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LimitAlert {
+    pub level: LimitLevel,
+    pub window: UsageWindow,
+}
+
+impl PlanUsage {
+    /// The window to warn about before starting work, if any: one at
+    /// [`LIMIT_ALERT_PERCENT`] or more whose reset is not already past (a
+    /// window that renewed since the reading says nothing now). A full window
+    /// shared by every model is [`LimitLevel::Reached`]; a full per-model
+    /// window only warns, since other models still work. The most serious
+    /// one wins: reached, then the fullest, then a shared one.
+    pub fn limit_alert(&self, now: i64) -> Option<LimitAlert> {
+        let level = |w: &UsageWindow| {
+            if w.percent >= 100.0 && w.model.is_none() {
+                LimitLevel::Reached
+            } else {
+                LimitLevel::Warning
+            }
+        };
+        let reached = |w: &UsageWindow| level(w) == LimitLevel::Reached;
+        self.windows
+            .iter()
+            .filter(|w| w.percent >= LIMIT_ALERT_PERCENT)
+            .filter(|w| w.resets_at.is_none_or(|at| at > now))
+            .max_by(|a, b| {
+                reached(a)
+                    .cmp(&reached(b))
+                    .then(a.percent.total_cmp(&b.percent))
+                    .then(b.model.is_some().cmp(&a.model.is_some()))
+            })
+            .map(|w| LimitAlert {
+                level: level(w),
+                window: w.clone(),
+            })
+    }
+}
+
+/// Short, stable labels for a prompt or a status bar, one per account name
+/// and in the same order: the initials of several words ("Claude personal"
+/// → `CP`), a word of up to six letters as it is ("Codex"), the capitals of a longer one
+/// ("ChatGPT" → `GPT`) or its first three letters ("Personal" → `Per`).
+/// A repeated label gets a number (`CP`, `CP2`).
+pub fn short_names(names: &[&str]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(names.len());
+    for name in names {
+        let base = short_name(name);
+        let mut label = base.clone();
+        let mut n = 2;
+        while out.contains(&label) {
+            label = format!("{base}{n}");
+            n += 1;
+        }
+        out.push(label);
+    }
+    out
+}
+
+fn short_name(name: &str) -> String {
+    let words: Vec<&str> = name
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    match words.as_slice() {
+        [] => "?".into(),
+        [word] => {
+            let chars: Vec<char> = word.chars().collect();
+            if chars.len() <= 6 {
+                return (*word).to_owned();
+            }
+            // The longest run of two or more capitals ("ChatGPT" → "GPT").
+            let mut best: &[char] = &[];
+            for run in chars.split(|c| !c.is_uppercase()) {
+                if run.len() >= 2 && run.len() > best.len() {
+                    best = run;
+                }
+            }
+            if best.is_empty() {
+                chars[..3].iter().collect()
+            } else {
+                best.iter().take(4).collect()
+            }
+        }
+        words => words
+            .iter()
+            .take(3)
+            .filter_map(|w| w.chars().next())
+            .flat_map(char::to_uppercase)
+            .collect(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn window(
+        kind: WindowKind,
+        model: Option<&str>,
+        percent: f64,
+        resets_at: Option<i64>,
+    ) -> UsageWindow {
+        UsageWindow {
+            kind,
+            minutes: None,
+            model: model.map(str::to_owned),
+            percent,
+            resets_text: None,
+            resets_at,
+        }
+    }
+
+    fn usage(windows: Vec<UsageWindow>) -> PlanUsage {
+        PlanUsage {
+            windows,
+            checked_at: 1_000,
+            source: UsageSource::ClaudeUsage,
+            balance: None,
+        }
+    }
+
+    #[test]
+    fn limit_alerts_start_at_ninety_percent() {
+        let now = 2_000;
+        let quiet = usage(vec![
+            window(WindowKind::Session, None, 89.9, Some(5_000)),
+            window(WindowKind::Week, None, 40.0, Some(9_000)),
+        ]);
+        assert_eq!(quiet.limit_alert(now), None);
+
+        let close = usage(vec![
+            window(WindowKind::Session, None, 20.0, Some(5_000)),
+            window(WindowKind::Week, None, 92.0, Some(9_000)),
+        ]);
+        let alert = close.limit_alert(now).unwrap();
+        assert_eq!(alert.level, LimitLevel::Warning);
+        assert_eq!(
+            (alert.window.kind, alert.window.percent),
+            (WindowKind::Week, 92.0)
+        );
+    }
+
+    #[test]
+    fn a_full_shared_window_is_reached_but_a_full_model_window_only_warns() {
+        let now = 2_000;
+        let full = usage(vec![
+            window(WindowKind::Week, Some("Fable"), 100.0, Some(9_000)),
+            window(WindowKind::Session, None, 100.0, Some(5_000)),
+        ]);
+        let alert = full.limit_alert(now).unwrap();
+        assert_eq!(alert.level, LimitLevel::Reached);
+        assert_eq!(alert.window.model, None);
+
+        let model_only = usage(vec![
+            window(WindowKind::Week, Some("Fable"), 100.0, Some(9_000)),
+            window(WindowKind::Session, None, 95.0, Some(5_000)),
+        ]);
+        let alert = model_only.limit_alert(now).unwrap();
+        assert_eq!(alert.level, LimitLevel::Warning);
+        assert_eq!(alert.window.model.as_deref(), Some("Fable"));
+
+        // Same figure: the window every model shares is the one named.
+        let tie = usage(vec![
+            window(WindowKind::Week, Some("Fable"), 93.0, None),
+            window(WindowKind::Week, None, 93.0, None),
+        ]);
+        assert_eq!(tie.limit_alert(now).unwrap().window.model, None);
+    }
+
+    #[test]
+    fn a_window_that_already_renewed_says_nothing() {
+        let stale = usage(vec![window(WindowKind::Session, None, 100.0, Some(1_500))]);
+        assert_eq!(stale.limit_alert(2_000), None);
+        assert!(stale.limit_alert(1_000).is_some());
+        // Unknown reset: the reading is all there is.
+        let unknown = usage(vec![window(WindowKind::Other, None, 97.0, None)]);
+        assert_eq!(
+            unknown.limit_alert(2_000).unwrap().level,
+            LimitLevel::Warning
+        );
+    }
+
+    #[test]
+    fn short_names_are_compact_and_stable() {
+        assert_eq!(
+            short_names(&[
+                "Claude personal",
+                "Claude trabajo",
+                "ChatGPT",
+                "Codex",
+                "Personal",
+                "Claude"
+            ]),
+            ["CP", "CT", "GPT", "Codex", "Per", "Claude"]
+        );
+        assert_eq!(
+            short_names(&["Kimi Code", "kimi-code", "Claude 2", "Mi cuenta de Claude"]),
+            ["KC", "KC2", "C2", "MCD"]
+        );
+        assert_eq!(
+            short_names(&["Claude personal", "Claude Pro", "Claude pro"]),
+            ["CP", "CP2", "CP3"]
+        );
+        assert_eq!(short_names(&["", "Ñandú rápido"]), ["?", "ÑR"]);
+        // The same names give the same labels.
+        assert_eq!(
+            short_names(&["ChatGPT", "Codex"]),
+            short_names(&["ChatGPT", "Codex"])
+        );
+    }
 
     const SAMPLE: &str = "You are currently using your subscription to power your Claude Code usage\n\nCurrent session: 34% used · resets Nov 14, 7pm (America/Caracas)\nCurrent week (all models): 29% used · resets Nov 20, 12am (America/Caracas)\nCurrent week (Fable): 0% used · resets Nov 20, 12am (America/Caracas)\n\nWhat's contributing to your limits usage?\nApproximate · sessions on this machine only · shares overlap\n\nLast 24h · 3232 requests · 17 sessions\n  98%  Give \"general-purpose\" subagents a cheaper model\n  83%  Start fresh when you switch tasks · run /clear\n  Top skills: /dataviz 1%\n";
 

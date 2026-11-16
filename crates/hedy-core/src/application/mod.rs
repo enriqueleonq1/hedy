@@ -51,12 +51,12 @@ pub use detect::DetectedCli;
 pub use doctor::{Check, CheckArea, CheckLevel, DoctorReport};
 pub use error::{AppError, AppResult, UndoBlocked};
 pub use files::MAX_PROJECT_FILES;
-pub use launch::Resolved;
+pub use launch::{Resolved, RunLimitWarning};
 pub use memory::{
     MemoryServerCommand, MemoryView, Proposal, format_note, format_notes, format_topics,
 };
 pub use metrics::{ProjectStatus, TestRun, UsageSummary};
-pub use plan_usage::{PLAN_USAGE_MIN_INTERVAL_SECS, PlanUsageState};
+pub use plan_usage::{LimitCheck, PLAN_USAGE_MIN_INTERVAL_SECS, PlanUsageState};
 pub use projects::NewProject;
 pub use review::AcceptPreview;
 pub use settings::{CUSTOM_THEME_PREFIX, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, Setting, THEMES};
