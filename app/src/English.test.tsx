@@ -54,7 +54,7 @@ describe("English", () => {
   it("catches Spanish chrome (the check itself)", async () => {
     const api = MockApi.withSampleData();
     render(<App api={api} queryClient={new QueryClient()} />);
-    expect(await screen.findByRole("heading", { name: /¡Hola, Enrique!/ })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /¡Hola, Alex!/ })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual(expect.arrayContaining(["Cuentas y modelos", "Tus planes"]));
   });
 
@@ -63,7 +63,7 @@ describe("English", () => {
     // An API key spent something: the one cost worth adding up.
     api.recordUsage({ project: "/code/hedy", account: "kimi", at: Math.floor(Date.now() / 1000), tokens: 400, costUsd: 1.25 });
     setup(api);
-    expect(await screen.findByRole("heading", { name: /Hi, Enrique!/ })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /Hi, Alex!/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Your plans" })).toBeInTheDocument();
     expect(screen.getByText(/has room to spare\./)).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Hedy says hi" })).toBeInTheDocument();
@@ -256,7 +256,7 @@ describe("English", () => {
 
   it("shows the command palette and the status bar in English", async () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity());
-    await screen.findByRole("heading", { name: /Hi, Enrique!/ });
+    await screen.findByRole("heading", { name: /Hi, Alex!/ });
     const bar = screen.getByRole("contentinfo", { name: "Status bar" });
     const account = within(bar).getByRole("button", { name: "Claude personal: Week · 83%. Open the account" });
     expect(account.title).toMatch(/^Claude personal · Week · 83% · updated 2 min ago\n[^]*\nRight-click: refresh now$/);
@@ -364,7 +364,7 @@ describe("English", () => {
 
   it("starts a new project in English", async () => {
     const { user } = setup();
-    await screen.findByRole("heading", { name: /Hi, Enrique!/ });
+    await screen.findByRole("heading", { name: /Hi, Alex!/ });
     await user.click(screen.getByRole("button", { name: "Start something new" }));
     expect(screen.getByRole("menuitem", { name: /Quick question.*No project: just ask or research/ })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
@@ -383,7 +383,7 @@ describe("English", () => {
 
   it("asks a quick question in English", async () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity());
-    await screen.findByRole("heading", { name: /Hi, Enrique!/ });
+    await screen.findByRole("heading", { name: /Hi, Alex!/ });
     await user.click(screen.getByRole("button", { name: "Quick question" }));
     expect(await screen.findByRole("heading", { name: "Quick question" })).toBeInTheDocument();
     expect(screen.getByText("No project · never touches your files")).toBeInTheDocument();

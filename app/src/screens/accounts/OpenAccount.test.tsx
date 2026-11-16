@@ -15,7 +15,7 @@ describe("Opening an account from the shell", () => {
   it("opens that account's card from the sidebar and from the status bar", async () => {
     render(<App api={MockApi.withSampleData()} queryClient={new QueryClient()} />);
     const user = userEvent.setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
 
     const sidebar = screen.getByRole("complementary");
     await user.click(within(sidebar).getByRole("button", { name: /^Claude trabajo: .*Abrir la cuenta$/ }));

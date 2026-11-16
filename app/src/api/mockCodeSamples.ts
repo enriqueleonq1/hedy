@@ -121,11 +121,11 @@ uv run pytest
 export const HEDY_REPO: SampleRepo = {
   branch: "main",
   commits: [
-    { hash: "a3f9c1e", author: "Enrique León", date: T0 - 2 * DAY, subject: "Arreglo del envío" },
-    { hash: "7bd20aa", author: "Enrique León", date: T0 - 5 * DAY, subject: "Plantillas de correo" },
+    { hash: "a3f9c1e", author: "Alex Ortega", date: T0 - 2 * DAY, subject: "Arreglo del envío" },
+    { hash: "7bd20aa", author: "Alex Ortega", date: T0 - 5 * DAY, subject: "Plantillas de correo" },
     { hash: "5c81d02", author: "Camila Rojas", date: T0 - 9 * DAY, subject: "Facturas con IVA" },
-    { hash: "2e4b7a9", author: "Enrique León", date: T0 - 15 * DAY, subject: "Citas y recordatorios" },
-    { hash: "0f12ab3", author: "Enrique León", date: T0 - 30 * DAY, subject: "Inicio" },
+    { hash: "2e4b7a9", author: "Alex Ortega", date: T0 - 15 * DAY, subject: "Citas y recordatorios" },
+    { hash: "0f12ab3", author: "Alex Ortega", date: T0 - 30 * DAY, subject: "Inicio" },
   ],
   files: {
     ".env.example": { kind: "locked", commits: ["0f12ab3"] },

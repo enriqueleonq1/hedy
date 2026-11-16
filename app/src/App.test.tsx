@@ -15,7 +15,7 @@ function renderApp(api = MockApi.withSampleData()) {
 describe("Welcome", () => {
   it("greets the user and lists projects with their accounts", async () => {
     renderApp();
-    expect(await screen.findByRole("heading", { name: /¡Hola, Enrique!/ })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /¡Hola, Alex!/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Hedy te saluda" })).toHaveAttribute("data-state", "idle");
     const tienda = screen.getByRole("heading", { name: "tienda" }).closest("article")!;
     expect(within(tienda).getByText("Claude trabajo")).toBeInTheDocument();

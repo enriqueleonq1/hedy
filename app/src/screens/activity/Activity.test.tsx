@@ -208,7 +208,7 @@ describe("Activity", () => {
 
   it("opens the task of a clicked desktop notification", async () => {
     const { api } = setup();
-    expect(await screen.findByRole("heading", { name: /¡Hola, Enrique!/ })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /¡Hola, Alex!/ })).toBeInTheDocument();
     api.simulateNotificationClick("s3");
     expect(await screen.findByRole("heading", { name: "Traduce los correos de confirmación" })).toBeInTheDocument();
   });

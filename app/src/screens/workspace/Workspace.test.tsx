@@ -345,7 +345,7 @@ describe("Workspace", () => {
     expect(await screen.findByRole("region", { name: /^Te necesitan/ })).toBeInTheDocument();
     expect(window.location.hash).toBe("#activity");
     history.back();
-    expect(await screen.findByRole("heading", { name: /¡Hola, Enrique!/ })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /¡Hola, Alex!/ })).toBeInTheDocument();
     history.forward();
     expect(await screen.findByRole("region", { name: /^Te necesitan/ })).toBeInTheDocument();
     history.forward();

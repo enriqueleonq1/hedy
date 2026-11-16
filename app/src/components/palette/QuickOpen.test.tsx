@@ -139,7 +139,7 @@ describe("Quick open (Ctrl P)", () => {
 
   it("without a project, says so and offers the projects, staying open to search there", async () => {
     const { user } = setup("#");
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     await quickOpen(user);
     expect(screen.getByText("Abre un proyecto para buscar en sus archivos.")).toBeInTheDocument();
     expect(options()).toEqual(["hedy", "tienda"]);
@@ -375,7 +375,7 @@ describe("Palette modes", () => {
 
   it("lists the new shortcuts in the ? overlay", async () => {
     const { user } = setup("#");
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     await act(async () => {
       await user.keyboard("?");
     });

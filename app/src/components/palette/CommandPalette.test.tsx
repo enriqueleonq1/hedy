@@ -29,7 +29,7 @@ describe("Command palette", () => {
 
   it("opens with Ctrl K and goes to a project typed loosely", async () => {
     const { user } = setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     await user.keyboard("{Control>}k{/Control}");
     const field = screen.getByRole("combobox", { name: "Paleta de comandos" });
     expect(field).toHaveFocus();
@@ -44,7 +44,7 @@ describe("Command palette", () => {
 
   it("moves with the arrows, wraps around and lists the groups with no query", async () => {
     const { user } = setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     await user.click(screen.getByRole("button", { name: "Buscar y ejecutar comandos (Ctrl K)" }));
     const field = screen.getByRole("combobox");
     const list = screen.getByRole("listbox", { name: "Comandos" });
@@ -64,7 +64,7 @@ describe("Command palette", () => {
 
   it("jumps to what waits for an answer", async () => {
     const { user } = setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     await user.keyboard("{Control>}k{/Control}");
     await user.type(screen.getByRole("combobox"), "responder migra");
     await waitFor(() => expect(options()[0]).toBe("Responder: Migra el reporte de comisiones a la API nueva"));
@@ -74,7 +74,7 @@ describe("Command palette", () => {
 
   it("starts a new task in a project", async () => {
     const { user } = setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     await user.keyboard("{Control>}k{/Control}");
     await user.type(screen.getByRole("combobox"), "nueva tarea hedy");
     expect(options()[0]).toBe("Nueva tarea en hedy");
@@ -85,7 +85,7 @@ describe("Command palette", () => {
 
   it("opens an account's card", async () => {
     const { user } = setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     await user.keyboard("{Control>}k{/Control}");
     await user.type(screen.getByRole("combobox"), "cuenta trabajo");
     expect(options()[0]).toBe("Cuenta Claude trabajo");
@@ -97,7 +97,7 @@ describe("Command palette", () => {
   it("changes a project's account only when asked, and never a protected one", async () => {
     const { api, user } = setup();
     const assign = vi.spyOn(api, "useAccount");
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     await user.keyboard("{Control>}k{/Control}");
     await user.type(screen.getByRole("combobox"), "cambiar cuenta tienda");
     // Nothing matches; what was typed can still be asked outside any project.
@@ -120,7 +120,7 @@ describe("Command palette", () => {
 
   it("reads every plan's usage again on demand", async () => {
     const { api, user } = setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     const refresh = vi.spyOn(api, "refreshPlanUsage");
     await user.keyboard("{Control>}k{/Control}");
     await user.type(screen.getByRole("combobox"), "actualizar uso");
@@ -133,7 +133,7 @@ describe("Command palette", () => {
 
   it("goes back from a page with Escape, then closes and gives the focus back", async () => {
     const { user } = setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     const hint = screen.getByRole("button", { name: "Buscar y ejecutar comandos (Ctrl K)" });
     await user.click(hint);
     await user.type(screen.getByRole("combobox"), "cambiar cuenta hedy");
@@ -148,7 +148,7 @@ describe("Command palette", () => {
 
   it("puts recent commands first", async () => {
     const { user } = setup();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     await user.keyboard("{Control>}k{/Control}");
     await user.type(screen.getByRole("combobox"), "ajustes");
     await user.keyboard("{Enter}");
@@ -161,7 +161,7 @@ describe("Command palette", () => {
 
   it("speaks English", async () => {
     const { user } = setup(undefined, "en");
-    await screen.findByRole("heading", { name: /Hi, Enrique!/ });
+    await screen.findByRole("heading", { name: /Hi, Alex!/ });
     await user.click(screen.getByRole("button", { name: "Search and run commands (Ctrl K)" }));
     expect(screen.getByRole("combobox", { name: "Command palette" })).toHaveAttribute(
       "placeholder",

@@ -34,7 +34,7 @@ describe("Sidebar rail", () => {
   it("folds into an icon rail and remembers it", async () => {
     const user = userEvent.setup();
     const { unmount } = renderApp();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
     const toggle = within(sidebar).getByRole("button", { name: "Contraer la barra lateral" });
     expect(toggle).toHaveAttribute("aria-expanded", "true");
@@ -51,7 +51,7 @@ describe("Sidebar rail", () => {
 
     unmount();
     renderApp();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     expect(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).toHaveClass("sidebar--rail");
   });
 
@@ -59,7 +59,7 @@ describe("Sidebar rail", () => {
     mockWidth(true);
     const user = userEvent.setup();
     const { unmount } = renderApp();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
     expect(sidebar).toHaveClass("sidebar--rail");
     await user.click(within(sidebar).getByRole("button", { name: "Expandir la barra lateral" }));
@@ -68,7 +68,7 @@ describe("Sidebar rail", () => {
 
     unmount();
     renderApp();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     expect(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).not.toHaveClass("sidebar--rail");
   });
 
@@ -78,7 +78,7 @@ describe("Sidebar rail", () => {
       throw new Error("blocked");
     });
     renderApp();
-    await screen.findByRole("heading", { name: /¡Hola, Enrique!/ });
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
     await user.click(within(sidebar).getByRole("button", { name: "Contraer la barra lateral" }));
     expect(sidebar).toHaveClass("sidebar--rail");

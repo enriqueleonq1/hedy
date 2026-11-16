@@ -332,7 +332,7 @@ fn completions_for_every_shell() {
 fn client_and_summary() {
     let env = Env::new();
     let repo = env.repo("code/moira");
-    env.hedy(&["-C", repo.to_str().unwrap(), "client", "León Blanco"])
+    env.hedy(&["-C", repo.to_str().unwrap(), "client", "Estudio Norte"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("no es un proyecto"));
@@ -342,10 +342,10 @@ fn client_and_summary() {
     env.hedy(&["-C", repo.to_str().unwrap(), "use", "personal"])
         .assert()
         .success();
-    env.hedy(&["-C", repo.to_str().unwrap(), "client", "León Blanco"])
+    env.hedy(&["-C", repo.to_str().unwrap(), "client", "Estudio Norte"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("moira es para León Blanco"));
+        .stdout(predicate::str::contains("moira es para Estudio Norte"));
     env.hedy(&["summary", "--week"])
         .assert()
         .success()

@@ -242,7 +242,7 @@ export class MockApi implements HedyApi {
 
   constructor(initial?: Partial<Overview>) {
     this.state = {
-      userName: "Enrique",
+      userName: "Alex",
       theme: "system",
       language: "es",
       onboarded: true,
@@ -309,7 +309,7 @@ export class MockApi implements HedyApi {
       }),
     ];
     api.state.projects = [
-      project("/code/hedy", "claude-personal", { color: "#73DACA", client: "León Blanco" }),
+      project("/code/hedy", "claude-personal", { color: "#73DACA", client: "Estudio Norte" }),
       project("/code/tienda", "claude-trabajo", { protected: true, color: "#FF9E64", client: "Café Aurora" }),
     ];
     api.recomputeOffers();
@@ -912,7 +912,7 @@ export class MockApi implements HedyApi {
 
   async setSetting(key: string, value: string | null): Promise<void> {
     if (key === "ui.theme") this.state.theme = (value ?? "system") as Overview["theme"];
-    if (key === "ui.name") this.state.userName = value ?? "Enrique";
+    if (key === "ui.name") this.state.userName = value ?? "Alex";
     if (key === "ui.language") this.state.language = (value ?? "system") as Overview["language"];
     if (key === "ui.onboarded") this.state.onboarded = value === "true";
     if (key === "ui.notifications") this.state.notifications = value !== "off";
@@ -2128,7 +2128,7 @@ export class MockApi implements HedyApi {
     this.prFailure = null;
     if (failure) throw failure;
     this.pullRequests.push({ task: taskId, input });
-    const pr: PullRequest = { url: "https://github.com/enrique/hedy/pull/42", number: 42, draft: input.draft };
+    const pr: PullRequest = { url: "https://github.com/alex/hedy/pull/42", number: 42, draft: input.draft };
     ship.pullRequest = pr;
     this.notifyTask(task);
     return pr;

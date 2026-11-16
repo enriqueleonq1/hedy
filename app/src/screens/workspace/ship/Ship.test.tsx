@@ -77,7 +77,7 @@ describe("Ship: commit, push and pull request", () => {
     expect(api.pullRequests[0]?.input).toMatchObject({ title: "fix(facturas): IVA por línea", base: "main", draft: true });
     expect(within(done).getByText(`Publicado en origin/${BRANCH}.`)).toBeInTheDocument();
     await user.click(within(done).getByRole("button", { name: /Abrir PR #42/ }));
-    expect(openLink).toHaveBeenCalledWith("https://github.com/enrique/hedy/pull/42");
+    expect(openLink).toHaveBeenCalledWith("https://github.com/alex/hedy/pull/42");
     await user.click(within(done).getByRole("button", { name: "Listo" }));
     expect(screen.queryByRole("dialog")).toBeNull();
 
