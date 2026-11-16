@@ -29,10 +29,13 @@ function useSettled<T>(value: T, ms: number): T {
  */
 export function NewProjectDialog({
   overview,
+  initialName,
   onClose,
   onCreated,
 }: {
   overview: Overview;
+  /** What the name starts with (a name suggested from a conversation). */
+  initialName?: string;
   onClose: () => void;
   /** After the project exists (not on cancel). */
   onCreated: (path: string, name: string) => void;
@@ -42,7 +45,7 @@ export function NewProjectDialog({
   const toast = useToast();
   const moreId = useId();
   const previewId = useId();
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName ?? "");
   const [picked, setPicked] = useState<string | null>(null);
   const [more, setMore] = useState(false);
   const [chosen, setChosen] = useState("");

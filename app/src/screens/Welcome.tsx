@@ -464,7 +464,7 @@ export function Welcome({ overview, onNavigate }: { overview: Overview; onNaviga
           {overview.projects.length === 0 ? (
             hasAccounts ? (
               <div className="start-choices">
-                <button type="button" className="card start-choice" onClick={create.newProject}>
+                <button type="button" className="card start-choice" onClick={() => create.newProject()}>
                   <strong>{t("create.newProject")}</strong>
                   <span className="muted small">{t("create.newProjectHint")}</span>
                 </button>
