@@ -7,9 +7,9 @@ use std::sync::Arc;
 use crate::domain::code::{Blame, CommitInfo, FileBytes, LineMatch, PathChange, TextQuery};
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, ImageSupport,
-    LaunchSpec, Note, NoteStatus, Notice, Phase, PlanUsage, Project, PromptImage, QueuedMessage,
-    Skill, SkillStatus, Task, TaskId, TaskMode, UsageProblem, UsageSample, plan_usage::WallTime,
-    theme::CustomTheme,
+    KnownCommands, LaunchSpec, Note, NoteStatus, Notice, Phase, PlanUsage, Project, PromptImage,
+    QueuedMessage, Skill, SkillStatus, Task, TaskId, TaskMode, UsageProblem, UsageSample,
+    plan_usage::WallTime, theme::CustomTheme,
 };
 
 /// Failure in an adapter. The message is user-facing (Spanish).
@@ -237,6 +237,23 @@ pub trait TemplateRepository: Send + Sync {
     fn reset_builtin_templates(&self) -> PortResult<()>;
 }
 
+/// The slash commands each account's CLI last reported (docs/decisions.md §32).
+pub trait CommandRepository: Send + Sync {
+    /// Replaces the list of `account` for `project` (`None`: outside any
+    /// project, e.g. a conversation).
+    fn set_agent_commands(
+        &self,
+        account: &AccountId,
+        project: Option<&Path>,
+        known: &KnownCommands,
+    ) -> PortResult<()>;
+    /// Every list stored for `account`, with its project, newest first.
+    fn agent_commands(
+        &self,
+        account: &AccountId,
+    ) -> PortResult<Vec<(Option<PathBuf>, KnownCommands)>>;
+}
+
 /// Health of the storage itself, for `hedy doctor`.
 pub trait StoreHealth: Send + Sync {
     /// The folder holding the database, when it lives on disk.
@@ -257,6 +274,7 @@ pub trait Store:
     + SkillRepository
     + QueueRepository
     + TemplateRepository
+    + CommandRepository
     + StoreHealth
 {
 }
@@ -270,6 +288,7 @@ impl<T> Store for T where
         + SkillRepository
         + QueueRepository
         + TemplateRepository
+        + CommandRepository
         + StoreHealth
 {
 }

@@ -7,19 +7,20 @@ use std::sync::{Arc, Mutex};
 
 use super::ports::{
     AccountRepository, AgentBackend, AgentLauncher, AgentRequest, AgentSession, CapturedOutput,
-    Clock, EventSink, FileSystem, Git, MemoryRepository, MergeOutcome, NewNote, NewSkill,
-    NoteRevision, PlanUsageRecord, PortError, PortResult, ProcessRunner, ProjectRepository,
-    QueueRepository, RateLimit, SecretStore, SettingsRepository, SkillRepository, SkillRevision,
-    StoreHealth, TaskEvents, TaskRepository, TemplateRecord, TemplateRepository, ThemeStore,
-    UsageProbe, UsageRecord, UsageRepository,
+    Clock, CommandRepository, EventSink, FileSystem, Git, MemoryRepository, MergeOutcome, NewNote,
+    NewSkill, NoteRevision, PlanUsageRecord, PortError, PortResult, ProcessRunner,
+    ProjectRepository, QueueRepository, RateLimit, SecretStore, SettingsRepository,
+    SkillRepository, SkillRevision, StoreHealth, TaskEvents, TaskRepository, TemplateRecord,
+    TemplateRepository, ThemeStore, UsageProbe, UsageRecord, UsageRepository,
 };
 use super::{Hedy, NewAccount, Ports};
 
 mod ship;
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, ImageSupport,
-    LaunchSpec, Note, NoteStatus, Notice, NoticeKind, Project, PromptImage, Provider,
-    QueuedMessage, Skill, SkillStatus, Task, TaskId, TaskStatus, UsageSample, theme::CustomTheme,
+    KnownCommands, LaunchSpec, Note, NoteStatus, Notice, NoticeKind, Project, PromptImage,
+    Provider, QueuedMessage, Skill, SkillStatus, Task, TaskId, TaskStatus, UsageSample,
+    theme::CustomTheme,
 };
 pub use ship::{FakeHost, FakeSource};
 
@@ -40,6 +41,7 @@ pub struct MemoryStore {
     integrity: Mutex<Vec<String>>,
     queue: Mutex<Vec<QueuedMessage>>,
     templates: Mutex<Vec<TemplateRecord>>,
+    commands: Mutex<Vec<(AccountId, Option<PathBuf>, KnownCommands)>>,
 }
 
 impl MemoryStore {
@@ -1441,6 +1443,36 @@ impl QueueRepository for MemoryStore {
             m.held = reason.and(m.held.or(reason));
         }
         Ok(())
+    }
+}
+
+impl CommandRepository for MemoryStore {
+    fn set_agent_commands(
+        &self,
+        account: &AccountId,
+        project: Option<&Path>,
+        known: &KnownCommands,
+    ) -> PortResult<()> {
+        let mut lists = self.commands.lock().unwrap();
+        let project = project.map(Path::to_path_buf);
+        lists.retain(|(a, p, _)| !(a == account && *p == project));
+        lists.push((account.clone(), project, known.clone()));
+        Ok(())
+    }
+    fn agent_commands(
+        &self,
+        account: &AccountId,
+    ) -> PortResult<Vec<(Option<PathBuf>, KnownCommands)>> {
+        let mut found: Vec<_> = self
+            .commands
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(a, _, _)| a == account)
+            .map(|(_, p, k)| (p.clone(), k.clone()))
+            .collect();
+        found.sort_by_key(|(_, k)| std::cmp::Reverse(k.seen_at));
+        Ok(found)
     }
 }
 

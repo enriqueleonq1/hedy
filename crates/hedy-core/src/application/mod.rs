@@ -6,6 +6,7 @@ mod attachments;
 mod carry;
 mod code;
 mod code_edit;
+mod commands;
 mod commit;
 mod conversations;
 mod detect;
