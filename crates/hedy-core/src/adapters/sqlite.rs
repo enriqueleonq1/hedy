@@ -213,8 +213,20 @@ const MIGRATIONS: &[&str] = &[
         problem       TEXT
     );
 "#,
+    r#"
+    -- The slash commands each account's CLI last reported, per project
+    -- ('' outside any project), as JSON. Only what the CLI said.
+    CREATE TABLE agent_commands (
+        account_id  TEXT NOT NULL,
+        project     TEXT NOT NULL DEFAULT '',
+        commands    TEXT NOT NULL,
+        seen_at     INTEGER NOT NULL,
+        PRIMARY KEY (account_id, project)
+    );
+"#,
 ];
 
+mod commands;
 mod queue;
 mod templates;
 

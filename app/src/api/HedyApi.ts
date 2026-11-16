@@ -55,6 +55,7 @@ import type {
   NewTemplateInput,
   OpenTaskRequest,
   PromptTemplate,
+  AccountCommands,
   QueuedMessage,
   Overview,
   PlanState,
@@ -192,6 +193,11 @@ export interface HedyApi {
   /** Releases a queue on hold and sends it now, unless the agent is mid-turn. */
   sendQueuedNow(id: string): Promise<QueuedMessage[]>;
 
+  /**
+   * The slash commands `account` offers in `project` (`null`: outside any), as
+   * its CLI last reported them; unknown until it answers once in Hedy.
+   */
+  accountCommands(account: string, project: string | null): Promise<AccountCommands>;
   /** What the composer of `project` offers: its templates, then the global ones. */
   templates(project: string | null): Promise<PromptTemplate[]>;
   /** Every template, of every project. */

@@ -103,6 +103,11 @@ pub enum AgentEvent {
     Error {
         message: String,
     },
+    /// The slash commands the agent's CLI offers in this session, as it
+    /// reports them. Kept per account, never in a task's history.
+    Commands {
+        commands: Vec<super::AgentCommand>,
+    },
 }
 
 impl AgentEvent {

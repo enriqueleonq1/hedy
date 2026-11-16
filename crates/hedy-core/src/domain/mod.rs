@@ -7,6 +7,7 @@ pub mod attachment;
 pub mod carry;
 pub mod code;
 pub mod color;
+pub mod command;
 pub mod diff;
 pub mod env;
 pub mod error;
@@ -35,6 +36,7 @@ pub use agent::{AgentEvent, Decision, LimitLevel, PlanStep, StepStatus, UsageSam
 pub use attachment::{Attachment, ImageSupport, ImageType, PromptImage};
 pub use carry::{ContextTurn, TaskOrigin};
 pub use color::Color;
+pub use command::{AgentCommand, CommandSource, KnownCommands};
 pub use diff::{Commit, FileDiff};
 pub use error::DomainError;
 pub use launch::{LaunchPurpose, LaunchSpec};

@@ -73,6 +73,8 @@ import type {
   SkillFiles,
   SkillsView,
   PromptTemplate,
+  AccountCommands,
+  AgentCommand,
   QueuedMessage,
   HoldReason,
   UsagePoint,
@@ -242,6 +244,34 @@ function encode(text: string): string {
  * In-memory `HedyApi` for tests and for running the UI in a browser
  * (`npm run dev` without Tauri). Applies only the rules the UI relies on.
  */
+/** Commands like the ones each CLI reports, for the sample data. */
+function sampleCommands(provider: string): AgentCommand[] {
+  if (provider !== "claude") {
+    return [
+      { name: "init", description: "Create a context file for this project", source: "unknown", argumentHint: null },
+      { name: "web", description: "Search the web", source: "unknown", argumentHint: "query to search for" },
+    ];
+  }
+  return [
+    {
+      name: "design",
+      description: "Design a screen or a component with the studio's style",
+      source: "plugin",
+      argumentHint: "<screen>",
+    },
+    { name: "deploy-notes", description: "Write release notes from the last tag", source: "custom", argumentHint: "[tag]" },
+    { name: "brand-voice", description: "Rewrite a text in the brand's voice", source: "skill", argumentHint: null },
+    {
+      name: "code-review",
+      description: "Review the current diff for correctness bugs",
+      source: "builtin",
+      argumentHint: "[low|medium|high]",
+    },
+    { name: "compact", description: "Free up context by summarizing the conversation so far", source: "builtin", argumentHint: null },
+    { name: "usage", description: "Show session cost, plan usage, and what's contributing to your limits", source: "builtin", argumentHint: null },
+  ];
+}
+
 export class MockApi implements HedyApi {
   private state: Overview;
 
@@ -315,6 +345,7 @@ export class MockApi implements HedyApi {
         usage: { ...NO_USAGE, plan: { ...NO_PLAN, supported: true } },
       }),
     ];
+    api.setAccountCommands("claude-personal", null, sampleCommands("claude"));
     api.state.projects = [
       project("/code/hedy", "claude-personal", { color: "#73DACA", client: "Estudio Norte" }),
       project("/code/tienda", "claude-trabajo", { protected: true, color: "#FF9E64", client: "Café Aurora" }),
@@ -1086,6 +1117,44 @@ export class MockApi implements HedyApi {
   async terminalResize(): Promise<void> {}
   async terminalClose(): Promise<void> {}
 
+  // ---------------------------------------------------------------- commands
+
+  /** What each account's CLI reported, by account and project ("" outside any). */
+  private knownCommands = new Map<string, { commands: AgentCommand[]; seenAt: number }>();
+
+  /** As the backend: Codex and API keys tell Hedy no commands. */
+  private reportsCommands(account: string): boolean {
+    const found = this.account(account);
+    return found.kind === "subscription" && found.provider !== "codex";
+  }
+
+  /** Sets what `account` reported (tests and the sample data). */
+  setAccountCommands(account: string, project: string | null, commands: AgentCommand[] | null): void {
+    const key = `${account}\u0000${project ?? ""}`;
+    if (commands) this.knownCommands.set(key, { commands, seenAt: Math.floor(Date.now() / 1000) });
+    else this.knownCommands.delete(key);
+  }
+
+  /** An account's first answer brings its commands, as the CLI reports them. */
+  private learnCommands(account: string, project: string | null): void {
+    if (!this.reportsCommands(account)) return;
+    const mine = [...this.knownCommands.keys()].some((k) => k.startsWith(`${account}\u0000`));
+    if (!mine) this.setAccountCommands(account, project, sampleCommands(this.account(account).provider));
+  }
+
+  async accountCommands(account: string, project: string | null): Promise<AccountCommands> {
+    const supported = this.reportsCommands(account);
+    const prefix = `${account}\u0000`;
+    const known =
+      (project !== null ? this.knownCommands.get(prefix + project) : undefined) ??
+      this.knownCommands.get(prefix) ??
+      [...this.knownCommands.entries()]
+        .filter(([k]) => k.startsWith(prefix))
+        .map(([, v]) => v)
+        .sort((a, b) => b.seenAt - a.seenAt)[0];
+    return { supported, commands: known?.commands ?? null, seenAt: known?.seenAt ?? null };
+  }
+
   // ---------------------------------------------------------------- templates
 
   private templateRows: TemplateRow[] = [];
@@ -1319,6 +1388,7 @@ export class MockApi implements HedyApi {
     const project = this.project(input.project);
     if (!project.account) throw "este proyecto no tiene cuenta";
     if (!input.prompt.trim()) throw "escribe qué quieres que haga";
+    this.learnCommands(project.account, project.path);
     const carried = input.carry ? await this.carried(input.carry, project.account, input.images?.length ?? 0) : null;
     const id = `t${++this.nextTask}`;
     const own = await this.storeImages(id, project.account, input.images);
@@ -1380,6 +1450,7 @@ export class MockApi implements HedyApi {
     const account = input.account ?? this.state.defaultAccount;
     if (!account) throw "no hay cuenta para esta conversación";
     const name = this.account(account).name;
+    this.learnCommands(account, null);
     const id = `t${++this.nextTask}`;
     const images = await this.storeImages(id, account, input.images);
     const task: Task = {

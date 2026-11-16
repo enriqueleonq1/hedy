@@ -308,6 +308,23 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
         ),
         ("usage", "json", tr!("Salida en JSON", "JSON output")),
         (
+            "commands",
+            "",
+            tr!(
+                "Los comandos con «/» y las habilidades que tiene una cuenta, según su CLI",
+                "The slash commands and skills an account has, as its CLI reports them"
+            ),
+        ),
+        (
+            "commands",
+            "account",
+            tr!(
+                "Cuenta (por defecto, la del proyecto o la predeterminada)",
+                "Account (by default, the project's or the default one)"
+            ),
+        ),
+        ("commands", "json", tr!("Salida en JSON", "JSON output")),
+        (
             "commit",
             "",
             tr!(
@@ -938,6 +955,13 @@ pub enum Command {
         json: bool,
     },
 
+    Commands {
+        #[arg(long, short)]
+        account: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+
     Commit {
         #[arg(long, short)]
         account: Option<String>,
@@ -1365,6 +1389,23 @@ mod tests {
                 .unwrap()
                 .command,
             Some(Command::Run { yes: true, .. })
+        ));
+    }
+
+    #[test]
+    fn commands_takes_an_account_and_json() {
+        assert!(matches!(
+            Cli::try_parse_from(["hedy", "commands", "-a", "personal", "--json"])
+                .unwrap()
+                .command,
+            Some(Command::Commands { account: Some(a), json: true }) if a == "personal"
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["hedy", "commands"]).unwrap().command,
+            Some(Command::Commands {
+                account: None,
+                json: false
+            })
         ));
     }
 

@@ -145,6 +145,7 @@ hedy usage              # how much plan each account has left
 hedy usage --short      # one line for your prompt: CP 83% · CT 34%
 hedy commit             # a commit message for what you staged
 hedy ask "what does this regex do: ^\d{3}$"   # a quick question, also listed in the app
+hedy commands           # the slash commands and skills an account has
 ```
 
 `hedy doctor` checks your CLIs, accounts and versions if something looks off. `hedy --help` lists

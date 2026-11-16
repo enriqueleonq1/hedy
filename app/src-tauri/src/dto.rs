@@ -13,8 +13,9 @@ use hedy_core::application::{
     SkillDraft, SkillFiles, SkillsView, TaskActivity, TestRun, UsageSummary,
 };
 use hedy_core::domain::{
-    Account, ConfigFolder, Credentials, LoginState, Note, Phase, PhasePlan, PlanUsage, Project,
-    PromptTemplate, Provider, Skill, Task, TaskMode, TaskState, UsageProblem, UsageSample,
+    Account, AgentCommand, ConfigFolder, Credentials, KnownCommands, LoginState, Note, Phase,
+    PhasePlan, PlanUsage, Project, PromptTemplate, Provider, Skill, Task, TaskMode, TaskState,
+    UsageProblem, UsageSample,
 };
 use serde::{Deserialize, Serialize};
 
@@ -398,6 +399,28 @@ pub struct NewConversationInput {
     pub model: Option<String>,
     #[serde(default)]
     pub images: Vec<ImageInput>,
+}
+
+/// What the composer knows of an account's slash commands.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountCommandsDto {
+    /// The account's agent tells Hedy its commands (Codex and API keys do not).
+    pub supported: bool,
+    /// `None` until the account answers once in Hedy.
+    pub commands: Option<Vec<AgentCommand>>,
+    /// When they were reported (Unix seconds).
+    pub seen_at: Option<i64>,
+}
+
+impl AccountCommandsDto {
+    pub fn new(supported: bool, known: Option<KnownCommands>) -> Self {
+        Self {
+            supported,
+            seen_at: known.as_ref().map(|k| k.seen_at),
+            commands: known.map(|k| k.commands),
+        }
+    }
 }
 
 /// A prompt template with its placeholders (`{archivo}` → `archivo`).

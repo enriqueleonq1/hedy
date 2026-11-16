@@ -9,6 +9,7 @@ use hedy_core::application::{
     TemplateScope,
 };
 use hedy_core::domain::ImageSupport;
+use hedy_core::domain::command::reports_commands;
 use hedy_core::domain::{
     AgentEvent, Category, Color, Commit, Decision, FileDiff, Note, PhasePlan, QueuedMessage,
     TaskId, TemplateId,
@@ -18,10 +19,10 @@ use tauri::ipc::Channel;
 
 use crate::AppState;
 use crate::dto::{
-    self, AcceptPreviewDto, ActivityDto, ImageInput, MemoryDto, NewAccountInput,
-    NewConversationInput, NewProjectInput, NewTaskInput, NewTemplateInput, OverviewDto, PlanDto,
-    ProjectStatusDto, SkillChangeDto, SkillDraftInput, SkillFilesDto, SkillsDto, TaskDto,
-    TemplateDto, UsagePointDto, UsageSummaryDto,
+    self, AcceptPreviewDto, AccountCommandsDto, ActivityDto, ImageInput, MemoryDto,
+    NewAccountInput, NewConversationInput, NewProjectInput, NewTaskInput, NewTemplateInput,
+    OverviewDto, PlanDto, ProjectStatusDto, SkillChangeDto, SkillDraftInput, SkillFilesDto,
+    SkillsDto, TaskDto, TemplateDto, UsagePointDto, UsageSummaryDto,
 };
 use crate::terminal::{TerminalEvent, TerminalRequest, Terminals};
 
@@ -840,6 +841,22 @@ pub async fn templates(
     blocking(&state, move |h| {
         let list = h.templates(TemplateScope::For(project.as_deref()))?;
         Ok(list.into_iter().map(TemplateDto::from).collect())
+    })
+    .await
+}
+
+/// The slash commands `account` offers in `project` (or outside any), as its
+/// CLI last reported them; unknown until it answers once in Hedy.
+#[tauri::command]
+pub async fn account_commands(
+    state: State<'_, AppState>,
+    account: String,
+    project: Option<PathBuf>,
+) -> CommandResult<AccountCommandsDto> {
+    blocking(&state, move |h| {
+        let reports = reports_commands(&h.account(&account)?);
+        let known = h.account_commands(&account, project.as_deref())?;
+        Ok(AccountCommandsDto::new(reports, known))
     })
     .await
 }

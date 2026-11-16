@@ -1607,3 +1607,109 @@ Three things the app already did, now in `hedy` (§30 is the parallel `hedy ask`
 a fake `claude` speaking stream-json), the interactive prompts (`[S/n]`, the commit
 menu) and GPG/SSH signing prompts through `hedy commit` (hooks were checked against a
 real git).
+
+
+## 32. The account's own slash commands: `/design`, `/review`, custom commands, skills (Nov 16, 2026)
+
+The user wanted the commands their account's CLI has (a plugin's `/design`, `/review`, their
+`.claude/commands`, their skills) in Hedy's chat and in `hedy ask`, not only in `hedy run`
+(which already has them: it opens the official CLI with the account's folder).
+
+### What was verified
+
+**Claude Code 2.1.306.** Checked against an **empty, logged-out** `CLAUDE_CONFIG_DIR`
+(`account.tokenSource: "none"`: no credentials, so nothing could reach a model or spend
+tokens) holding a user command, a user skill, a project command and a `--plugin-dir` plugin,
+in Hedy's exact mode (`-p --input-format stream-json --output-format stream-json --verbose`);
+and against the docs: [Commands in Agent SDK
+sessions](https://code.claude.com/docs/en/agent-sdk/slash-commands).
+
+- **The `initialize` answer** (the `control_response` to Hedy's `hedy-init` request, §3)
+  carries `commands: [{name, description, argumentHint, aliases?, builtin?}]` before any
+  prompt. The user's own end their description with ` (user)` or ` (project)`; a plugin's
+  are named `plugin:command` and their description starts with `(plugin)`; built-ins and
+  bundled skills have `builtin: true`. This is the control protocol, not publicly
+  documented (§3, route 1), so Hedy uses it when it comes and falls back to `init`.
+- **The `system`/`init` message** of the first turn lists `slash_commands` (names only;
+  documented), `skills`, `plugins` (`{name, path, source, version}`), `agents`, and an
+  undocumented `terminal_slash_commands` (here: `doctor`, `color`, `focus`,
+  `reload-plugins`), which Hedy leaves out. The docs say commands that need a terminal
+  (`/theme`, `/terminal-setup`) are not listed; `/clear`, `/config` and `/model` are.
+- **Dispatch.** A stream-json user message whose text starts with `/name args` runs it, as
+  `claude -p "/usage"` does (§20). With `--replay-user-messages`, `/hello world` came back
+  expanded (`<command-name>/hello</command-name><command-args>world</command-args>`), and so
+  did the plugin's `/studio:mockup login screen`. Built-ins answer locally without a model:
+  `/context` (a table), `/config` (its usage), `/color red`, `/compact` ("No messages to
+  compact"), `/clear` (an empty result). `/login` answers "/login isn't available in this
+  environment." An unknown `/nonexistent foo` goes to the model as plain text (the docs: since
+  2.1.274 an unmatched `/name` costs a model turn, with a note that no command ran).
+- Hedy passes neither `--disable-slash-commands` nor `--bare`.
+
+**ACP** ([slash commands](https://agentclientprotocol.com/protocol/slash-commands)): a
+`session/update` with `sessionUpdate: "available_commands_update"` and `availableCommands:
+[{name, description, input?: {hint}}]`, names without the slash, sent again whenever they
+change; a command runs when a `session/prompt`'s text starts with `/name …`. ACP does not
+say where a command comes from (source "unknown").
+
+**Codex** ([app server](https://learn.chatgpt.com/docs/app-server.md)): no slash commands and
+no custom-prompt method. Skills exist (`skills/list`) but run with a `$name` mention plus a
+`skill` input item, not `/`. Codex stays without commands, like API keys
+(`domain::command::reports_commands`).
+
+**Not verified:** a real command's answer with a logged-in account (it spends tokens); MCP
+prompts as commands (assumed named `mcp__…`, shown as "unknown"); Gemini CLI, Kimi Code and
+Antigravity sending `available_commands_update` for real (none installed, §14: tested with
+the fake ACP agent).
+
+### Design
+
+- **Only what the CLI says** (rule 1): Hedy never reads `~/.claude/commands`, skills or
+  plugin folders. `AgentCommand {name, description, source, argument_hint}` with
+  `source` = builtin, custom, skill, plugin or unknown. Agents report them as
+  `AgentEvent::Commands`; the core stores them and never puts them in a task's history (nor
+  sends them to the UI as a task event).
+- **Claude:** the translator keeps the `initialize` list and reports the commands with the
+  session's first `init`: the described ones, then names only in `slash_commands` (an older
+  CLI, MCP prompts that came later). Source: `plugin:` prefix of a loaded plugin (or a
+  `(plugin)` description) → plugin; `builtin` → builtin; in `skills` → skill; otherwise a
+  command file → custom; without the `initialize` list, unknown. The ` (user)` / ` (project)`
+  / `(plugin)` tags are taken off the description.
+- **ACP:** each `available_commands_update` replaces the list, also while a loaded session
+  replays its history. A prompt that is a command goes **alone**: the guidance that opens
+  an ACP session's first prompt (§14) is left out, or the command would not be at the start;
+  the mode is still enforced by Hedy's refusals.
+- **Storage:** table `agent_commands` (the 12th migration): account, project (`''` outside
+  any project), the list as JSON, `seen_at`. Per project because Claude adds the project's
+  `.claude/commands` and skills (from the cwd); a conversation's folder is empty, so its
+  list is the account's own (user commands, plugins, built-ins). Lookup: the project's list,
+  else the one seen outside any project, else the newest anywhere (it may hold another
+  project's own commands; anything typed is sent as is, so the worst case is a model turn).
+- **Deny-list** (`domain::command::HEADLESS_DENIED`), hidden from the lists: `login`,
+  `logout`, `config`/`settings`, `resume`/`continue`, `clear`/`reset`/`new`, `exit`/`quit`,
+  `vim`, `terminal-setup`, `theme`, `model`, `permissions`, plus internal `__name` ones and
+  the CLI's `terminal_slash_commands`. They log in or out, change the CLI's settings, the
+  session Hedy keeps (resume ids, the model it shows) or need a terminal. Typed by hand they
+  still go verbatim and the CLI answers. `/usage`, `/compact` and `/context` stay: they
+  answer in `-p` (Hedy itself runs `/usage`, §20).
+- **Composer:** `/` opens the picker with two groups, "Plantillas" and "Comandos de
+  <cuenta>" (name, argument hint, description, a badge: plugin, habilidad, tuyo, incluido),
+  filtered by the same query (name prefix, then substring, then letters in order, then the
+  description; nothing once a space starts the arguments). One active option across both,
+  through `aria-activedescendant`. A command goes in as `/name ` with "`/name` espera:
+  `<hint>`" above the text, and the message is sent verbatim. Before the account's first
+  answer the group says "Los comandos de esta cuenta aparecen después de su primera
+  respuesta" and any `/command` can still be typed. Codex and API accounts show templates only.
+  The list is read when a message starts with `/` and is at most 5 s old.
+- **Quick questions** stay read-only in an empty folder. A command is sent anyway; a denied
+  write shows the usual denial. When the message starts with one of the user's commands
+  (plugin, skill or custom) a quiet note under the composer says "En una pregunta rápida los
+  comandos no pueden escribir archivos. ¿Necesita escribir? Llévalo a un proyecto.", with
+  "Llevar a un proyecto…" once the conversation exists.
+- **CLI:** `hedy ask "/design …"` already sent the text untouched (tested through the fake
+  `claude`). `hedy commands [-a <cuenta>] [--json]`: the account given, else the project's,
+  else the default one (no protection check: it only lists), grouped by source with the
+  list's age; with none known, it says they appear after the account's first answer in Hedy,
+  or that Codex/API keys do not report them.
+
+**Not verified live:** the picker inside the Tauri window and a real command through each
+provider (tested with the fake `claude`, the fake ACP agent, the agent double and `MockApi`).

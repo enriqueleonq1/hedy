@@ -32,6 +32,18 @@ const es = {
   "templates.fill": "Completa «{name}»",
   "templates.insert": "Usar plantilla",
   "templates.placeholders": "Pide: {list}",
+  "commands.group": "Comandos de {account}",
+  "commands.pickerLabel": "Plantillas y comandos",
+  "commands.unknown": "Los comandos de esta cuenta aparecen después de su primera respuesta",
+  "commands.pickerHint": "↑ ↓ para elegir · Enter para usar · Esc para cerrar",
+  "commands.noMatch": "Ninguna plantilla ni comando se llama así: se enviará tal cual.",
+  "commands.source.plugin": "plugin",
+  "commands.source.skill": "habilidad",
+  "commands.source.custom": "tuyo",
+  "commands.source.builtin": "incluido",
+  "commands.takes": "/{name} espera: {hint}",
+  "commands.readOnly":
+    "En una pregunta rápida los comandos no pueden escribir archivos. ¿Necesita escribir? Llévalo a un proyecto.",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -66,6 +78,18 @@ const en: Record<keyof typeof es, string> = {
   "templates.fill": "Fill in “{name}”",
   "templates.insert": "Use template",
   "templates.placeholders": "Asks for: {list}",
+  "commands.group": "{account} commands",
+  "commands.pickerLabel": "Templates and commands",
+  "commands.unknown": "This account's commands show up after its first answer",
+  "commands.pickerHint": "↑ ↓ to choose · Enter to use · Esc to close",
+  "commands.noMatch": "No template or command has that name: it goes as typed.",
+  "commands.source.plugin": "plugin",
+  "commands.source.skill": "skill",
+  "commands.source.custom": "yours",
+  "commands.source.builtin": "built in",
+  "commands.takes": "/{name} takes: {hint}",
+  "commands.readOnly":
+    "In a quick question, commands cannot write files. Does it need to? Carry it into a project.",
 };
 
 export default { es, en };

@@ -477,6 +477,18 @@ impl Hedy {
 
     /// Called on the adapter's thread for every event of a session.
     fn on_agent_event(&self, id: &TaskId, number: u64, spender: &AccountId, event: AgentEvent) {
+        // What the account's CLI offers, not part of the conversation.
+        if let AgentEvent::Commands { commands } = event {
+            if let Err(error) = self.remember_commands(id, spender, commands) {
+                let _ = self.record(
+                    id,
+                    AgentEvent::Error {
+                        message: error.to_string(),
+                    },
+                );
+            }
+            return;
+        }
         if let AgentEvent::Usage(sample) = &event {
             // Recorded even from a replaced session: the tokens were spent.
             if let Err(error) = self.handle_usage(id, spender, sample) {

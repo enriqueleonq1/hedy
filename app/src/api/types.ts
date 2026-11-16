@@ -652,6 +652,29 @@ export interface PromptTemplate {
   placeholders: string[];
 }
 
+/** Where a slash command comes from, as far as the account's CLI says. */
+export type CommandSource = "builtin" | "custom" | "skill" | "plugin" | "unknown";
+
+/** A slash command the account's CLI offers (`/design`, `/review`…). */
+export interface AgentCommand {
+  /** Without the leading `/`. */
+  name: string;
+  description: string | null;
+  source: CommandSource;
+  /** What it takes, e.g. `<screen>`. */
+  argumentHint: string | null;
+}
+
+/** What is known of an account's slash commands. */
+export interface AccountCommands {
+  /** The account's agent tells Hedy its commands (Codex and API keys do not). */
+  supported: boolean;
+  /** `null` until the account answers once in Hedy. */
+  commands: AgentCommand[] | null;
+  /** When they were reported (Unix seconds). */
+  seenAt: number | null;
+}
+
 export interface NewTemplateInput {
   project: string | null;
   name: string;

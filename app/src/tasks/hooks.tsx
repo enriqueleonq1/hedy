@@ -123,6 +123,23 @@ export function useTemplates(project: string | null) {
   return useQuery({ queryKey: [...TEMPLATES_KEY, project ?? ""], queryFn: () => api.templates(project) });
 }
 
+export const COMMANDS_KEY = ["accountCommands"] as const;
+
+/**
+ * The slash commands of `account` in `project`, as its CLI last reported them.
+ * Read again when asked (the "/" picker opens) and not older than a few
+ * seconds, so a first answer shows up the next time.
+ */
+export function useAccountCommands(account: string | null, project: string | null, enabled: boolean) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...COMMANDS_KEY, account ?? "", project ?? ""],
+    queryFn: () => api.accountCommands(account ?? "", project),
+    enabled: enabled && !!account,
+    staleTime: 5_000,
+  });
+}
+
 /** Every template of every project, for Settings. */
 export function useAllTemplates() {
   const api = useApi();
