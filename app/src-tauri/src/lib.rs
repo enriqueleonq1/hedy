@@ -90,6 +90,7 @@ pub fn run() {
             commands::remove_queued,
             commands::send_queued_now,
             commands::templates,
+            commands::account_commands,
             commands::all_templates,
             commands::add_template,
             commands::update_template,

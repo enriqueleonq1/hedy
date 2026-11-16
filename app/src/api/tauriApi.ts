@@ -143,6 +143,7 @@ export const tauriApi: HedyApi = {
   editQueued: (message, text) => invoke("edit_queued", { message, text }),
   removeQueued: (message) => invoke("remove_queued", { message }),
   sendQueuedNow: (id) => invoke("send_queued_now", { id }),
+  accountCommands: (account, project) => invoke("account_commands", { account, project }),
   templates: (project) => invoke("templates", { project }),
   allTemplates: () => invoke("all_templates"),
   addTemplate: (input) => invoke("add_template", { input }),
