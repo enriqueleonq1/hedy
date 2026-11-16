@@ -6,6 +6,17 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-16
+
+### Fixed
+
+- Claude's Fable model is offered in the model menus, next to Opus, Sonnet and Haiku.
+
+### Changed
+
+- The install section of the README points Debian, Ubuntu and Linux Mint users to the
+  `.deb` and the AppImage from the releases page.
+
 ## [1.0.0] - 2026-11-16
 
 The first public release. Linux only for now.
@@ -57,5 +68,6 @@ The first public release. Linux only for now.
 - `hedy account`, `hedy use`, `hedy run`, `hedy status`, `hedy tasks`, `hedy doctor`,
   `hedy skills` and `hedy template`.
 
-[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/enriqueleonq1/hedy/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/enriqueleonq1/hedy/releases/tag/v1.0.0
