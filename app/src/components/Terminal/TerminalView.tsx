@@ -6,8 +6,8 @@ import "@xterm/xterm/css/xterm.css";
 import { useApi } from "../../api/context";
 import type { TerminalRequest } from "../../api/types";
 import { useT } from "../../i18n";
-import { useThemeName } from "../../theme/ThemeProvider";
-import { terminalTheme, themes } from "../../theme/tokens";
+import { useThemeTokens } from "../../theme/ThemeProvider";
+import { terminalTheme } from "../../theme/tokens";
 
 function decode(base64: string): Uint8Array {
   return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
@@ -22,7 +22,7 @@ interface TerminalViewProps {
 /** One xterm.js instance bound to one backend PTY for its whole lifetime. */
 export function TerminalView({ request, active, onExit }: TerminalViewProps) {
   const api = useApi();
-  const theme = useThemeName();
+  const theme = useThemeTokens();
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<Terminal | null>(null);
   const fit = useRef<FitAddon | null>(null);
@@ -41,7 +41,7 @@ export function TerminalView({ request, active, onExit }: TerminalViewProps) {
       fontFamily: "'JetBrains Mono Variable', monospace",
       fontSize: 13,
       cursorBlink: true,
-      theme: terminalTheme(themes[theme]),
+      theme: terminalTheme(theme),
       allowProposedApi: false,
     });
     const fitAddon = new FitAddon();
@@ -97,7 +97,7 @@ export function TerminalView({ request, active, onExit }: TerminalViewProps) {
   }, [api]);
 
   useEffect(() => {
-    if (term.current) term.current.options.theme = terminalTheme(themes[theme]);
+    if (term.current) term.current.options.theme = terminalTheme(theme);
   }, [theme]);
 
   useEffect(() => {

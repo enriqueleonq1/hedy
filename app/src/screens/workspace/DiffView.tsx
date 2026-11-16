@@ -30,7 +30,7 @@ import {
   type Side,
   type SplitRow,
 } from "../../review/diffModel";
-import { useThemeName } from "../../theme/ThemeProvider";
+import { useCodeTheme } from "../../theme/ThemeProvider";
 import { highlightLines, highlightText } from "./highlight";
 
 export type DiffLayout = "unified" | "split";
@@ -66,7 +66,7 @@ function useLines(copy: CodeCopy, file: FileDiff) {
 
 /** Syntax colors per line index (each side highlighted as a whole file when it is known). */
 function useTokens(lines: DiffLine[], whole: boolean, path: string) {
-  const theme = useThemeName();
+  const theme = useCodeTheme();
   const [state, setState] = useState<{ lines: DiffLine[]; theme: string; tokens: Map<number, ThemedToken[]> } | null>(null);
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useT, type LanguageSetting, type MessageKey } from "../i18n";
@@ -12,6 +12,7 @@ import { ACTIVITY_LABEL, ACTIVITY_WORDS, WORKING_ACTIVITIES } from "../component
 import { ColorPicker, Field, Segmented, Switch } from "../components/ui/controls";
 import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 import { TemplatesSection } from "./templates/TemplatesSection";
+import { ThemeGallery } from "./themes/ThemeGallery";
 
 const CLIS: { id: CliProviderId; name: string }[] = [
   { id: "claude", name: "Claude Code" },
@@ -21,13 +22,21 @@ const CLIS: { id: CliProviderId; name: string }[] = [
   { id: "antigravity", name: "Antigravity" },
 ];
 
-export function Settings({ overview }: { overview: Overview }) {
+export function Settings({ overview, focus }: { overview: Overview; focus?: { section?: "themes" } }) {
   const setSetting = useAction((api, vars: { key: SettingKey; value: string | null }) =>
     api.setSetting(vars.key, vars.value),
   );
   const t = useT();
   const setColor = useAction((api, vars: { id: string; color: string }) => api.setAccountColor(vars.id, vars.color));
   const [preview, setPreview] = useState(overview.accounts[0]?.color ?? DEFAULT_ACCOUNT_COLOR);
+
+  // "Cambiar tema…" in the palette: straight to the gallery.
+  useEffect(() => {
+    if (focus?.section !== "themes") return;
+    const gallery = document.getElementById("theme-gallery");
+    gallery?.scrollIntoView?.({ block: "start" });
+    gallery?.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
+  }, [focus]);
 
   return (
     <div className="screen settings">
@@ -36,9 +45,9 @@ export function Settings({ overview }: { overview: Overview }) {
       <section className="card settings__section">
         <h2>{t("settings.appearance")}</h2>
         <div className="field">
-          <span className="field__label">{t("settings.theme")}</span>
+          <span className="field__label">{t("theme.mode")}</span>
           <Segmented<ThemeSetting>
-            label={t("settings.theme")}
+            label={t("theme.mode")}
             value={overview.theme}
             onChange={(value) => setSetting.mutate({ key: "ui.theme", value })}
             options={[
@@ -48,6 +57,7 @@ export function Settings({ overview }: { overview: Overview }) {
             ]}
           />
         </div>
+        <ThemeGallery overview={overview} />
         <div className="field">
           <span className="field__label">{t("common.language")}</span>
           <Segmented<LanguageSetting>

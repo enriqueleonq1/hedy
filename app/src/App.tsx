@@ -23,6 +23,7 @@ import { ActivityScreen } from "./screens/activity/ActivityScreen";
 import { MemoryScreen } from "./screens/memory/MemoryScreen";
 import { Onboarding } from "./screens/onboarding/Onboarding";
 import { Settings } from "./screens/Settings";
+import { ThemeStudio } from "./screens/themes/ThemeStudio";
 import { StatusScreen } from "./screens/status/StatusScreen";
 import { Welcome } from "./screens/Welcome";
 import { Workspace } from "./screens/workspace/Workspace";
@@ -196,7 +197,7 @@ function Root() {
 
   if (!data.onboarded) {
     return (
-      <ThemeProvider setting={data.theme}>
+      <ThemeProvider setting={data.theme} dark={data.themeDark} light={data.themeLight}>
         <TerminalProvider>
           <Onboarding
             overview={data}
@@ -208,13 +209,15 @@ function Root() {
   }
 
   return (
-    <ThemeProvider setting={data.theme}>
+    <ThemeProvider setting={data.theme} dark={data.themeDark} light={data.themeLight}>
       <TerminalProvider>
         <CreateProvider overview={data} onNavigate={navigate}>
         <FocusModeProvider>
         <ShortcutsProvider>
         {/* The sidebar and status bar show every account's plan usage: keep it fresh while they are on screen. */}
         <PlanUsageProvider accounts={data.accounts} screen={current.screen}>
+        {/* Theme previews and the dialogs that make themes, over every screen. */}
+        <ThemeStudio overview={data}>
         <Shell
           topbar={
             <Topbar
@@ -230,7 +233,7 @@ function Root() {
         >
           {current.screen === "welcome" && <Welcome overview={data} onNavigate={navigate} />}
           {current.screen === "accounts" && <AccountsScreen overview={data} focus={current.account} />}
-          {current.screen === "settings" && <Settings overview={data} />}
+          {current.screen === "settings" && <Settings overview={data} focus={current} />}
           {current.screen === "activity" && (
             <ActivityScreen
               overview={data}
@@ -286,6 +289,7 @@ function Root() {
           )}
         </Shell>
         <CommandPalette open={palette} onOpenChange={setPalette} overview={data} view={current} onNavigate={navigate} />
+        </ThemeStudio>
         </PlanUsageProvider>
         </ShortcutsProvider>
         </FocusModeProvider>

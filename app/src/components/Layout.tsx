@@ -24,7 +24,8 @@ export type View =
   | { screen: "welcome" }
   /** `account`: scroll to that account's card and highlight it. */
   | { screen: "accounts"; account?: string }
-  | { screen: "settings" }
+  /** `section: "themes"`: scroll to the theme gallery ("Cambiar tema…"). */
+  | { screen: "settings"; section?: "themes" }
   | { screen: "activity" }
   /**
    * `task`: open that task instead of the most recent open one; `null`: a new task,

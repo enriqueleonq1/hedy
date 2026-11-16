@@ -40,6 +40,16 @@ export function SettingsIcon() {
   );
 }
 
+/** An eye: something shown but not saved yet (a theme preview). */
+export function EyeIcon() {
+  return (
+    <svg {...common} className="icon">
+      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
 /** A speech bubble: a quick question outside any project. */
 export function QuestionIcon() {
   return (
