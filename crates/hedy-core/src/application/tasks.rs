@@ -760,6 +760,37 @@ impl Hedy {
         self.resolved(id, request_id, decision, waiting)
     }
 
+    /// Declines every permission card the task waits on, telling the agent
+    /// `reason`, and lets it go on. For a driver that cannot ask anyone (a
+    /// question from the terminal). Returns the declined requests.
+    pub fn decline_open_requests(&self, id: &TaskId, reason: &str) -> AppResult<Vec<String>> {
+        let declined = self.with_session(id, |running| {
+            let mut open: Vec<String> = running.pending.keys().cloned().collect();
+            open.sort();
+            for request_id in &open {
+                running.session.answer(request_id, false, Some(reason))?;
+                running.pending.remove(request_id);
+            }
+            Ok(open)
+        })?;
+        for request_id in &declined {
+            self.record(
+                id,
+                AgentEvent::PermissionResolved {
+                    request_id: request_id.clone(),
+                    decision: Decision::Deny,
+                    automatic: true,
+                    reason: Some(reason.to_owned()),
+                },
+            )?;
+        }
+        let mut task = self.task(id)?;
+        if !declined.is_empty() && task.status == TaskStatus::WaitingApproval {
+            self.set_status(&mut task, TaskStatus::Running)?;
+        }
+        Ok(declined)
+    }
+
     /// Approves the proposed plan, or sends it back with the user's feedback.
     /// An approved plan goes on with the same agent when it also implements;
     /// otherwise the implementer starts with the plan as context.
