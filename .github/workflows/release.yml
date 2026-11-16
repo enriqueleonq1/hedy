@@ -1,0 +1,110 @@
+# Builds Hedy for Linux when a version tag is pushed (git tag v1.0.0 && git push origin v1.0.0)
+# and opens a draft GitHub release with the notes from CHANGELOG.md. Review it, then publish.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  bundles:
+    name: deb, AppImage and CLI
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the app version
+        run: |
+          version="$(jq -r .version app/src-tauri/tauri.conf.json)"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match tauri.conf.json version $version" >&2
+            exit 1
+          fi
+
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libdbus-1-dev libxdo-dev patchelf file pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Desktop app
+        working-directory: app
+        run: |
+          npm ci
+          npm run tauri build
+
+      - name: CLI
+        run: |
+          cargo build --release --locked -p hedy-cli
+          tar -czf "hedy-cli-${GITHUB_REF_NAME}-x86_64-linux.tar.gz" -C target/release hedy
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundles
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
+            hedy-cli-*.tar.gz
+          if-no-files-found: error
+
+  arch:
+    name: Arch package
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Build tools and libraries
+        run: pacman -Syu --noconfirm --needed git nodejs npm rust webkit2gtk-4.1 gtk3 libsoup3
+
+      - uses: actions/checkout@v4
+
+      - name: makepkg
+        run: |
+          useradd -m builder
+          chown -R builder "$GITHUB_WORKSPACE"
+          su builder -c "cd '$GITHUB_WORKSPACE/packaging/arch' && makepkg -f --noconfirm"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch
+          path: packaging/arch/*.pkg.tar.zst
+          if-no-files-found: error
+
+  release:
+    name: Draft release
+    needs: [bundles, arch]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^(## )?\[/ { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          test -s notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Hedy ${{ github.ref_name }}
+          body_path: notes.md
+          files: dist/**/*
