@@ -336,6 +336,9 @@ pub struct NewTaskInput {
     pub plan_first: bool,
     #[serde(default)]
     pub images: Vec<ImageInput>,
+    /// A conversation carried into the task ("Llevar a un proyecto").
+    #[serde(default)]
+    pub carry: Option<crate::carry::CarryInput>,
 }
 
 /// An image attached in the composer: its file name and its bytes in

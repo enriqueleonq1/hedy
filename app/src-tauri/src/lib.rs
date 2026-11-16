@@ -1,5 +1,6 @@
 //! Hedy desktop app: a driving adapter over `hedy-core`, like the CLI.
 
+mod carry;
 mod code;
 mod commands;
 mod dto;
@@ -69,6 +70,10 @@ pub fn run() {
             commands::conversations,
             commands::conversation_accounts,
             commands::delete_conversation,
+            carry::conversation_context,
+            carry::summarize_conversation,
+            carry::continuations,
+            carry::save_conversation_note,
             commands::tasks,
             commands::activity,
             commands::task_events,
