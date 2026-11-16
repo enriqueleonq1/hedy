@@ -1,0 +1,188 @@
+/* Fonts from the app's own packages (run `npm install` in app/ first). */
+@font-face {
+  font-family: "Sora";
+  src: url("../../../../app/node_modules/@fontsource-variable/sora/files/sora-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 800;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("../../../../app/node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../../../../app/node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 800;
+}
+
+/* Colors: the app's dark tokens (app/src/theme/tokens.ts) plus the brand violet. */
+:root {
+  --bg: #1a1b26;
+  --deep: #0e0f18;
+  --panel: #16161e;
+  --line: #2f334d;
+  --ink: #c0caf5;
+  --bright: #f4f2ff;
+  --muted: #9aa5ce;
+  --accent: #b4a0ff;
+  --violet: #7c5cff;
+  --action: #6847f5;
+  --green: #9ece6a;
+  --red: #f7768e;
+  --yellow: #e0af68;
+  --cyan: #7dcfff;
+  --teal: #73daca;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--deep); }
+body { font-family: "Inter", system-ui, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+#stage > * { position: absolute; }
+
+#bg {
+  inset: 0;
+  background:
+    radial-gradient(900px 700px at var(--gx, 28%) var(--gy, 18%), rgba(124, 92, 255, 0.22), transparent 70%),
+    radial-gradient(800px 600px at 85% 95%, rgba(115, 218, 202, 0.09), transparent 70%),
+    linear-gradient(180deg, #11121d, #0c0d15);
+}
+
+/* Cold open: terminals. */
+#terms { inset: 0; }
+.term {
+  position: absolute;
+  width: 560px;
+  border-radius: 14px;
+  background: #13141c;
+  border: 1px solid #2a2d44;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  font: 500 22px/1.5 "JetBrains Mono", monospace;
+  will-change: transform, opacity;
+}
+.term__bar { display: flex; align-items: center; gap: 9px; padding: 12px 16px; background: #1b1c28; border-bottom: 1px solid #262a40; }
+.term__bar i { width: 13px; height: 13px; border-radius: 50%; background: #3b3f5c; }
+.term__bar span { margin-left: 10px; font: 600 17px "Inter"; color: var(--muted); }
+.term__body { padding: 16px 20px 20px; color: var(--ink); white-space: pre; }
+.term__body .p { color: var(--green); }
+.term__body .w { color: var(--yellow); }
+.term__body .e { color: var(--red); }
+.term__body .m { color: #6b7399; }
+
+#limit {
+  left: 560px; top: 96px; width: 800px;
+  padding: 26px 32px 28px;
+  border-radius: 20px;
+  background: rgba(22, 22, 30, 0.94);
+  border: 1px solid #3a3150;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+}
+.limit__head { display: flex; align-items: center; gap: 14px; font: 600 28px "Inter"; color: var(--bright); }
+.limit__head b { margin-left: auto; font: 700 40px "Sora"; color: var(--yellow); }
+.limit__dot { width: 16px; height: 16px; border-radius: 50%; background: #bb9af7; }
+.limit__track { margin-top: 18px; height: 22px; border-radius: 11px; background: #2a2d44; overflow: hidden; }
+.limit__fill { height: 100%; width: 62%; border-radius: 11px; background: var(--yellow); }
+.limit__note { margin-top: 14px; font: 600 24px "Inter"; color: var(--red); opacity: 0; }
+
+#blob-wrap { left: 0; top: 0; width: 360px; height: 360px; will-change: transform; }
+#blob-wrap svg { width: 100%; height: 100%; overflow: visible; }
+
+#title { left: 0; top: 0; opacity: 0; }
+.title__word { font: 800 210px/1 "Sora"; color: var(--bright); letter-spacing: -6px; }
+.title__sub { margin-top: 18px; margin-left: 8px; font: 500 30px "Inter"; color: var(--muted); }
+
+/* The app window: 1600x1000 CSS px screenshots, moved by the camera. */
+#win {
+  left: 0; top: 0; width: 1600px; height: 1000px;
+  transform-origin: 0 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow: 0 0 0 1px rgba(180, 160, 255, 0.18), 0 50px 120px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  will-change: transform, opacity;
+}
+#screens img { position: absolute; left: 0; top: 0; width: 1600px; height: 1000px; opacity: 0; }
+#typing { position: absolute; left: 0; top: 0; width: 1600px; height: 1000px; opacity: 0; pointer-events: none; }
+#typing-clip { position: absolute; overflow: hidden; }
+#typing-clip img { position: absolute; width: 1600px; height: 1000px; }
+#typing-cover { position: absolute; background: #1a1b26; }
+#caret { position: absolute; width: 2px; background: var(--accent); }
+
+#marks { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.mark {
+  position: absolute;
+  border-radius: 10px;
+  border: 3px solid var(--accent);
+  box-shadow: 0 0 0 6px rgba(180, 160, 255, 0.16), 0 0 34px rgba(124, 92, 255, 0.45);
+  opacity: 0;
+}
+
+#chips { left: 0; top: 0; width: 1920px; display: flex; justify-content: center; gap: 14px; padding-top: 34px; }
+.chip {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 22px; border-radius: 999px;
+  background: rgba(22, 22, 30, 0.92); border: 1px solid #3a3a58;
+  font: 600 25px "Inter"; color: var(--bright);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+}
+.chip i { width: 13px; height: 13px; border-radius: 50%; }
+
+#graph {
+  left: 1150px; top: 150px; width: 700px; padding: 26px 30px 22px;
+  border-radius: 20px; background: rgba(19, 20, 30, 0.96); border: 1px solid #3a3150;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+}
+#graph svg { display: block; overflow: visible; }
+#graph text { font: 600 20px "JetBrains Mono"; fill: var(--ink); }
+#graph .lbl-main { fill: var(--muted); }
+
+#keys { left: 0; top: 0; display: flex; align-items: center; gap: 14px; opacity: 0; }
+.key {
+  min-width: 96px; padding: 16px 24px; text-align: center;
+  border-radius: 16px; background: #24263a; border: 2px solid #4a4e72; border-bottom-width: 7px;
+  font: 700 40px "Inter"; color: var(--bright);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+.key__plus { font: 700 40px "Inter"; color: var(--muted); }
+
+#cursor { left: 0; top: 0; width: 34px; height: 34px; opacity: 0; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5)); }
+#cursor svg { position: absolute; left: -4px; top: -2px; }
+#ripple { position: absolute; left: -26px; top: -26px; width: 52px; height: 52px; border-radius: 50%; border: 3px solid var(--accent); opacity: 0; }
+
+#outro { left: 0; top: 0; width: 1920px; height: 1080px; pointer-events: none; }
+.outro__line { position: absolute; left: 0; width: 1920px; top: 640px; text-align: center; font: 700 76px "Sora"; color: var(--bright); letter-spacing: -1.5px; }
+.outro__line .word { display: inline-block; margin: 0 14px; opacity: 0; }
+.outro__line .word.acc { color: var(--accent); }
+.outro__url {
+  position: absolute; left: 50%; top: 790px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 16px; padding: 18px 34px; border-radius: 999px;
+  background: #1d1b33; border: 1px solid #4b3f86; color: var(--bright);
+  font: 600 36px "JetBrains Mono"; opacity: 0; white-space: nowrap;
+}
+.outro__meta { position: absolute; left: 0; width: 1920px; top: 900px; text-align: center; font: 600 28px "Inter"; color: var(--muted); opacity: 0; }
+
+/* Kinetic captions. */
+#caption {
+  left: 0; top: 0; padding: 18px 40px 22px;
+  border-radius: 26px;
+  background: rgba(14, 14, 24, 0.9);
+  border: 1px solid rgba(180, 160, 255, 0.22);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  font: 700 58px/1.15 "Sora"; color: var(--bright); letter-spacing: -1px;
+  white-space: nowrap;
+  opacity: 0;
+}
+#caption .word { display: inline-block; margin-right: 0.25em; will-change: transform, opacity; }
+#caption .word:last-child { margin-right: 0; }
+#caption .acc { color: var(--accent); }
+#caption .ok { color: var(--green); }
+#caption .bad { color: var(--red); }
+#caption.small { font-size: 40px; font-weight: 500; font-style: italic; color: var(--muted); background: transparent; border-color: transparent; box-shadow: none; }
+
+#fade { inset: 0; background: #000; opacity: 0; pointer-events: none; }
