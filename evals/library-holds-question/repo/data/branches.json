@@ -1,0 +1,8 @@
+{
+  "branches": [
+    { "id": "centro", "name": "Sucursal Centro", "address": "Av. San Martín 1450", "opens": "09:00", "closes": "20:00" },
+    { "id": "norte", "name": "Sucursal Norte", "address": "Calle Los Álamos 233", "opens": "10:00", "closes": "19:00" },
+    { "id": "puerto", "name": "Sucursal Puerto", "address": "Costanera 88", "opens": "10:00", "closes": "18:00" }
+  ],
+  "transfer_days": { "centro-norte": 2, "centro-puerto": 3, "norte-puerto": 4 }
+}
