@@ -245,8 +245,8 @@ fn print_summary(results: &[RunResult]) {
         return;
     }
     println!(
-        "\n{:<26} {:<9} {:>5} {:>8} {:>8} {:>9} {:>9}  veredicto",
-        "variante", "capa", "casos", "tokens", "entrada", "pasaron", "base"
+        "\n{:<26} {:<9} {:>5} {:>8} {:>8} {:>13} {:>9} {:>9}  veredicto",
+        "variante", "capa", "casos", "tokens", "costo", "costo/resuelta", "pasaron", "base"
     );
     for c in &comparisons {
         let verdict = match c.verdict() {
@@ -255,17 +255,19 @@ fn print_summary(results: &[RunResult]) {
             Verdict::Drop => "se descarta",
         };
         println!(
-            "{:<26} {:<9} {:>5} {:>7.1}% {:>7.1}% {:>9} {:>9}  {verdict}",
+            "{:<26} {:<9} {:>5} {:>7.1}% {:>7.1}% {:>13} {:>9} {:>9}  {verdict}",
             c.variant,
             c.layer.as_str(),
             c.cases,
             c.token_change_pct,
-            c.input_change_pct,
+            c.cost_change_pct,
+            c.cost_per_pass_change_pct
+                .map_or_else(|| "—".into(), |p| format!("{p:.1}%")),
             format!("{}/{}", c.passed, c.runs),
             format!("{}/{}", c.base_passed, c.base_runs),
         );
     }
     println!(
-        "\nCambio de tokens: mediana por caso frente a la base. Regla: se queda con 10 % menos o más y sin bajar la tasa de aprobación."
+        "\nCambios: mediana por caso frente a la base; costo/resuelta, sobre todos los casos. Regla: se queda con 10 % menos de costo o más y sin bajar la tasa de aprobación."
     );
 }

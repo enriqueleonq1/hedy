@@ -123,6 +123,7 @@ struct Observed {
     /// Files read so far, to count the rereads.
     read: HashSet<String>,
     denied: u32,
+    subagents: u32,
     error: Option<String>,
 }
 
@@ -162,6 +163,7 @@ impl Runner {
             files_read: 0,
             rereads: 0,
             denied: 0,
+            subagents: 0,
             notes_read: 0,
             error: None,
             check_output: String::new(),
@@ -264,6 +266,7 @@ impl Runner {
         out.files_read = observed.files_read;
         out.rereads = observed.rereads;
         out.denied = observed.denied;
+        out.subagents = observed.subagents;
         out.error = observed.error;
         out.notes_read = self.hedy.memory(repo)?.used_last_task.len();
         if out.error.is_none() {
@@ -328,6 +331,11 @@ impl Runner {
                     if !seen.read.insert(summary.clone()) {
                         seen.rereads += 1;
                     }
+                    Ok(())
+                }
+                AgentEvent::ToolUsed { tool, .. } if tool == "Task" || tool == "Agent" => {
+                    seen.actions += 1;
+                    seen.subagents += 1;
                     Ok(())
                 }
                 AgentEvent::PermissionResolved {
