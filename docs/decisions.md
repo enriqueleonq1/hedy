@@ -1791,5 +1791,88 @@ The base passed 12/12.
   `price-format` runs where the agent never searched the memory (no denial involved). It is
   dropped. Extending it to shell reads would mean parsing commands and is not planned.
 
-**Confirmation:** the three optional ideas together (`trim+search-8+rank-usage+briefing`)
-against the base, 5 runs per case.
+**Tokens are not cost.** A 2026 study of billed Claude Code runs
+([arXiv 2607.12161](https://arxiv.org/abs/2607.12161)) found token cuts that raised the cost.
+Each kind of token has its own price: cache writes 2× on a subscription's 1-hour cache, cache
+reads 0.1×, output 5×. The CLI's cost estimate (`total_cost_usd`) weighs them that way.
+
+Weighted like that, the screening's spend splits into:
+
+| Part of the spend | Share |
+|---|---|
+| Cache writes | 49 % |
+| Output | 28 % |
+| Cache reads | 22 % |
+
+The same variants by cost:
+
+| Variant | Cost vs base |
+|---|---|
+| `briefing` | −5.0 % (cheaper in all 6 cases) |
+| `search-8+rank-usage` | −2.7 % |
+| `trim` | −1.8 % |
+
+Since then `hedy-evals` judges by **cost**: the median per case, plus the cost per solved
+task.
+
+**Confirmation** of the three together (`trim+search-8+rank-usage+briefing`) against the base,
+5 runs per case (60 runs):
+
+| Measure | Change |
+|---|---|
+| Tokens | −11.0 % |
+| Cost | −5.9 % |
+| Cost per solved task | −5.6 % |
+
+Both sides passed 30/30. Per case:
+
+| Case | Cost |
+|---|---|
+| `business-days` | −19 % |
+| `library-holds-question` | −13 % |
+| `library-holiday-fine` | −8 % |
+| `bakery-inscription` | −4 % |
+| `price-format` | ≈ 0 % |
+| `rename-field` | +1 % |
+
+The verdict is optional: the combination saves consistently on bugs and code questions, with
+no quality cost, but it is below the bar.
+
+### Third batch: Claude Code's own levers
+
+These were verified in the Claude Code 2.1.306 binary, and Hedy sets them only for its Claude
+sessions:
+
+- `lean-prompt`: `CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT=1`, `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS=1`
+  and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`.
+- `lean-tools`: `--tools` with 7 of the 22 built-in tools `-p` loads: `Task`, `Bash`, `Read`,
+  `Edit`, `Write`, `ToolSearch` and `Skill`, plus `ExitPlanMode` when planning and the web
+  tools in research. It drops the cron, worktree, workflow, messaging and design-sync tools.
+- `cache-5m`: `CLAUDE_CODE_PROMPT_CACHE_TTL=5m` (unset means 1 hour on a subscription) and
+  `--exclude-dynamic-system-prompt-sections`.
+- `explore-haiku`: `CLAUDE_CODE_SUBAGENT_MODEL=haiku` and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`.
+  On a subscription Explore otherwise runs on Opus.
+
+Screening, 2 runs per case and variant, 60 runs:
+
+| Variant | Tokens | Cost | Cost per solved task | Passed |
+|---|---|---|---|---|
+| `cache-5m` | +0.8 % | **−24.5 %** | −26.8 % | 12/12 |
+| `lean-prompt` | +10.0 % | −4.9 % | −4.2 % | 12/12 |
+| `lean-tools` | −18.8 % | −2.4 % | −4.3 % | 12/12 |
+| `explore-haiku` | −4.6 % | −1.5 % | −3.3 % | 12/12 |
+
+The base passed 12/12.
+
+- **`cache-5m` is cheaper in every case,** by −19 % to −33 %, with the same tokens: a 5-minute
+  write is priced 1.25×, a 1-hour one 2×. Two caveats:
+  - The figure is the CLI's price estimate. Whether a subscription's limits weigh the two
+    lifetimes the same way is not documented.
+  - The evals answer every card at once. A real task paused for more than 5 minutes (a
+    permission card, the plan, the review) writes its prefix again, where the 1-hour cache
+    would have read it.
+- **No run started a subagent** (`subagents` = 0), so `explore-haiku` changed nothing here.
+  Its −1.5 % shows the noise floor: a variant that does nothing still moves single cases by
+  ±15 %.
+- **`lean-tools` cuts tokens but barely the cost.** The tool definitions are mostly cache reads,
+  the cheap part.
