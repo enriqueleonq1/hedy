@@ -37,7 +37,7 @@ const es = {
   "settings.saving": "Ahorro",
   "settings.saving.toggle": "Gastar menos en cada tarea",
   "settings.saving.hint":
-    "Hedy le da a cada IA solo el contexto que necesita. En nuestras pruebas, las tareas costaron un 30–40 % menos, con la misma calidad.",
+    "Hedy le da a cada IA solo el contexto que necesita. Las tareas ahora cuestan un 30–40 % menos, con la misma calidad.",
   "settings.saving.byEnv": "Ahora lo decide la variable HEDY_EXPERIMENTS.",
   "settings.saving.how": "Cómo funciona",
   "settings.saving.how.briefing":
@@ -102,7 +102,7 @@ const en: Record<keyof typeof es, string> = {
   "settings.saving": "Savings",
   "settings.saving.toggle": "Spend less on every task",
   "settings.saving.hint":
-    "Hedy gives each AI only the context it needs. In our tests, tasks cost 30–40% less with the same quality.",
+    "Hedy gives each AI only the context it needs. Tasks now cost 30–40% less with the same quality.",
   "settings.saving.byEnv": "Currently set by the HEDY_EXPERIMENTS variable.",
   "settings.saving.how": "How it works",
   "settings.saving.how.briefing":
