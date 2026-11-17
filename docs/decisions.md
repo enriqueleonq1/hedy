@@ -1915,3 +1915,29 @@ and Opus ran at the same time, each comparing its own base and package):
 - No run used a subagent.
 - Sonnet also cut tokens. With the lean system prompt it took fewer turns, while the other
   models kept the same number of turns.
+
+### Decision (Nov 17, 2026)
+
+The user approved turning the package on: `Experiments::DEFAULT`.
+
+- **What is on.** Hedy runs with the package unless `HEDY_EXPERIMENTS` says otherwise:
+  - `none`: Hedy without any of them;
+  - `default`: the package;
+  - `default,read-guard`: the package plus another experiment.
+- **Every process agrees.** Hedy passes the variable to every process it starts (the CLIs,
+  their hooks, the memory server), `none` included. A `set` from a driver wins over the
+  environment even when another thread reads it first.
+- **The 5-minute cache is for tasks only.**
+  - A conversation (`AgentRequest::conversation`: a question outside any project, as in
+    `hedy ask`) keeps the hour-long cache, because the user comes back after a while.
+  - `--exclude-dynamic-system-prompt-sections` is passed only to a Claude Code at least
+    2.1.306. An older one would refuse the unknown option. The launcher asks
+    `claude --version` once per program.
+  - The environment variables need no check: older versions ignore them.
+- **Off, kept for later measurements:** `read-guard`, `lean-tools` and `explore-haiku`.
+- **Unmeasured on other providers.** Only Claude Code has the 5-minute cache and the lean
+  prompt. The briefing, the trimmed guidance and tools, and the shorter memory search also
+  reach Codex, Gemini CLI, Kimi Code, Antigravity and the API-key agent, which were not
+  measured.
+- **`hedy-evals` compares against `base`, which now means Hedy as it ships.** In the result
+  files of Nov 17, 2026, `base` was Hedy without the experiments (today's `none`).
