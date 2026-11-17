@@ -198,6 +198,7 @@ impl Hedy {
             None
         };
         let first = stages[0].clone();
+        let code_map = Some(!self.code_map_servers(&project.path)?.is_empty());
         let mut task = Task {
             id,
             project: project.path.clone(),
@@ -218,6 +219,7 @@ impl Hedy {
             conversation: false,
             ship: None,
             origin,
+            code_map,
             images: Vec::new(),
         };
         task.images = self.store_images(&task.id, &images)?;

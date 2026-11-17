@@ -978,6 +978,7 @@ fn seed_tasks(env: &Env, repo: &Path) {
         conversation: false,
         ship: None,
         origin: None,
+        code_map: None,
     };
     let mut plan = task(
         "t1",

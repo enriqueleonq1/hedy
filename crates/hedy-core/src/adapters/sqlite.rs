@@ -8,6 +8,7 @@ use crate::application::ports::{
     PortError, PortResult, ProjectRepository, RateLimit, SettingsRepository, SkillRepository,
     SkillRevision, StoreHealth, TaskRepository, UsageRecord, UsageRepository,
 };
+use crate::domain::recall::NoteUse;
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Color, ConfigFolder, Credentials, Note, NoteStatus,
     PlanUsage, Project, Skill, SkillStatus, Task, TaskId, UsageProblem, UsageSample,
@@ -682,6 +683,20 @@ impl UsageRepository for SqliteStore {
         })
     }
 
+    fn usage_by_task(&self, project: &Path, since: i64) -> PortResult<Vec<(TaskId, UsageSample)>> {
+        self.with(|c| {
+            c.prepare(&format!(
+                "SELECT task_id, {USAGE_SUMS} FROM usage
+                 WHERE project = ?1 AND at >= ?2 AND task_id != ''
+                 GROUP BY task_id ORDER BY task_id"
+            ))?
+            .query_map(params![project.to_string_lossy(), since], |r| {
+                Ok((TaskId::new(r.get::<_, String>(0)?), usage_from_row(r, 1)?))
+            })?
+            .collect()
+        })
+    }
+
     fn set_rate_limit(&self, account: &AccountId, l: &RateLimit) -> PortResult<()> {
         self.with(|c| {
             c.execute(
@@ -947,6 +962,39 @@ impl MemoryRepository for SqliteStore {
                  WHERE u.task_id = ?1 ORDER BY n.id"
             ))?
             .query_map([task.as_str()], note_from_row)?
+            .collect()
+        })
+    }
+
+    fn note_use_stats(&self, project: &Path) -> PortResult<Vec<(i64, NoteUse)>> {
+        self.with(|c| {
+            c.prepare(
+                "SELECT u.note_id, COUNT(DISTINCT u.task_id), MAX(u.at)
+                 FROM note_uses u JOIN tasks t ON t.id = u.task_id
+                 WHERE t.project = ?1 GROUP BY u.note_id",
+            )?
+            .query_map([project.to_string_lossy()], |r| {
+                Ok((
+                    r.get(0)?,
+                    NoteUse {
+                        tasks: r.get(1)?,
+                        last_used: r.get(2)?,
+                    },
+                ))
+            })?
+            .collect()
+        })
+    }
+
+    fn tasks_reading_notes(&self, project: &Path) -> PortResult<Vec<TaskId>> {
+        self.with(|c| {
+            c.prepare(
+                "SELECT DISTINCT u.task_id FROM note_uses u JOIN tasks t ON t.id = u.task_id
+                 WHERE t.project = ?1 ORDER BY u.task_id",
+            )?
+            .query_map([project.to_string_lossy()], |r| {
+                Ok(TaskId::new(r.get::<_, String>(0)?))
+            })?
             .collect()
         })
     }
@@ -1250,6 +1298,7 @@ mod tests {
             conversation: false,
             ship: None,
             origin: None,
+            code_map: None,
         };
         // Old but still running; old with a recent event; recent; old and done.
         let running = task("t1", "/code/a", 10, TaskStatus::Running);
@@ -1296,6 +1345,7 @@ mod tests {
             conversation: false,
             ship: None,
             origin: None,
+            code_map: None,
         };
         store.save_task(&task).unwrap();
         assert!(store.waiting_tasks().unwrap().is_empty());
@@ -1355,6 +1405,7 @@ mod tests {
             conversation,
             ship: None,
             origin: None,
+            code_map: None,
         };
         let (chat, other) = (task("c1", true), task("t1", false));
         store.save_task(&chat).unwrap();
@@ -1401,6 +1452,7 @@ mod tests {
             conversation: false,
             ship: None,
             origin,
+            code_map: None,
         };
         let origin = crate::domain::TaskOrigin {
             conversation: TaskId::new("c1"),
@@ -1458,6 +1510,7 @@ mod tests {
             conversation: false,
             ship: None,
             origin: None,
+            code_map: None,
         };
         let (old, new) = (task("t1", 10), task("t2", 20));
         store.save_task(&old).unwrap();

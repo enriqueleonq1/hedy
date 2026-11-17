@@ -14,6 +14,7 @@ use super::ports::{
     TemplateRepository, ThemeStore, UsageProbe, UsageRecord, UsageRepository,
 };
 use super::{Hedy, NewAccount, Ports};
+use crate::domain::recall::NoteUse;
 
 mod ship;
 use crate::domain::{
@@ -35,7 +36,8 @@ pub struct MemoryStore {
     limits: Mutex<HashMap<AccountId, RateLimit>>,
     plan_usage: Mutex<HashMap<AccountId, PlanUsageRecord>>,
     notes: Mutex<Vec<Note>>,
-    uses: Mutex<Vec<(i64, Option<TaskId>)>>,
+    /// (note, task, at).
+    uses: Mutex<Vec<(i64, Option<TaskId>, i64)>>,
     dismissed: Mutex<Vec<(i64, i64)>>,
     skills: Mutex<Vec<Skill>>,
     integrity: Mutex<Vec<String>>,
@@ -45,6 +47,16 @@ pub struct MemoryStore {
 }
 
 impl MemoryStore {
+    fn project_tasks(&self, project: &Path) -> HashSet<TaskId> {
+        self.tasks
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|t| t.project == project)
+            .map(|t| t.id.clone())
+            .collect()
+    }
+
     /// What the next integrity check finds.
     pub fn corrupt(&self, problem: &str) {
         self.integrity.lock().unwrap().push(problem.into());
@@ -157,7 +169,7 @@ impl MemoryRepository for MemoryStore {
                 n.uses += 1;
                 n.last_used = Some(at);
             }
-            self.uses.lock().unwrap().push((*id, task.cloned()));
+            self.uses.lock().unwrap().push((*id, task.cloned(), at));
         }
         Ok(())
     }
@@ -167,8 +179,8 @@ impl MemoryRepository for MemoryStore {
             .lock()
             .unwrap()
             .iter()
-            .filter(|(_, t)| t.as_ref() == Some(task))
-            .map(|(id, _)| *id)
+            .filter(|(_, t, _)| t.as_ref() == Some(task))
+            .map(|(id, _, _)| *id)
             .collect();
         Ok(self
             .notes
@@ -178,6 +190,39 @@ impl MemoryRepository for MemoryStore {
             .filter(|n| used.contains(&n.id))
             .cloned()
             .collect())
+    }
+    fn note_use_stats(&self, project: &Path) -> PortResult<Vec<(i64, NoteUse)>> {
+        let in_project = self.project_tasks(project);
+        let mut seen: HashMap<i64, (HashSet<TaskId>, i64)> = HashMap::new();
+        for (id, task, at) in self.uses.lock().unwrap().iter() {
+            let Some(task) = task.as_ref().filter(|t| in_project.contains(t)) else {
+                continue;
+            };
+            let entry = seen.entry(*id).or_default();
+            entry.0.insert(task.clone());
+            entry.1 = entry.1.max(*at);
+        }
+        Ok(seen
+            .into_iter()
+            .map(|(id, (tasks, last_used))| {
+                let tasks = tasks.len() as u32;
+                (id, NoteUse { tasks, last_used })
+            })
+            .collect())
+    }
+    fn tasks_reading_notes(&self, project: &Path) -> PortResult<Vec<TaskId>> {
+        let in_project = self.project_tasks(project);
+        let mut tasks: Vec<TaskId> = self
+            .uses
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|(_, t, _)| t.clone())
+            .filter(|t| in_project.contains(t))
+            .collect();
+        tasks.sort();
+        tasks.dedup();
+        Ok(tasks)
     }
     fn dismiss_pair(&self, a: i64, b: i64) -> PortResult<()> {
         self.dismissed.lock().unwrap().push((a.min(b), a.max(b)));
@@ -405,6 +450,15 @@ impl UsageRepository for MemoryStore {
             .filter(|r| r.project == project && r.at >= since)
             .map(|r| (r.at, r.sample.clone()))
             .collect())
+    }
+    fn usage_by_task(&self, project: &Path, since: i64) -> PortResult<Vec<(TaskId, UsageSample)>> {
+        let mut totals: BTreeMap<TaskId, UsageSample> = BTreeMap::new();
+        for r in self.usage.lock().unwrap().iter() {
+            if r.project == project && r.at >= since && !r.task.as_str().is_empty() {
+                totals.entry(r.task.clone()).or_default().add(&r.sample);
+            }
+        }
+        Ok(totals.into_iter().collect())
     }
     fn set_rate_limit(&self, account: &AccountId, limit: &RateLimit) -> PortResult<()> {
         self.limits

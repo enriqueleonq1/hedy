@@ -88,9 +88,106 @@ pub fn by_client(projects: &[ProjectUsage]) -> Vec<ClientUsage> {
     list
 }
 
+/// Fewer tasks than this on either side: too few to compare.
+pub const MIN_TASKS_TO_COMPARE: usize = 5;
+
+/// Tokens per task with and without one of Hedy's layers (the memory, the
+/// code map), as medians: one huge task does not move a median the way it
+/// moves an average.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerComparison {
+    /// Fewer than [`MIN_TASKS_TO_COMPARE`] tasks on one side: no figure.
+    NotEnough { with: usize, without: usize },
+    Medians {
+        with: u64,
+        without: u64,
+        with_tasks: usize,
+        without_tasks: usize,
+    },
+}
+
+/// The middle value (the mean of the two middle ones for an even count).
+pub fn median(values: &[u64]) -> Option<u64> {
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    let n = sorted.len();
+    match n {
+        0 => None,
+        _ if n % 2 == 1 => Some(sorted[n / 2]),
+        _ => Some((sorted[n / 2 - 1] + sorted[n / 2]) / 2),
+    }
+}
+
+/// Compares the tokens of tasks that had a layer (`true`) with those that
+/// did not.
+pub fn compare_layer(tasks: &[(bool, u64)]) -> LayerComparison {
+    let side = |had: bool| -> Vec<u64> {
+        tasks
+            .iter()
+            .filter(|(h, _)| *h == had)
+            .map(|(_, t)| *t)
+            .collect()
+    };
+    let (with, without) = (side(true), side(false));
+    match (median(&with), median(&without)) {
+        (Some(w), Some(wo))
+            if with.len() >= MIN_TASKS_TO_COMPARE && without.len() >= MIN_TASKS_TO_COMPARE =>
+        {
+            LayerComparison::Medians {
+                with: w,
+                without: wo,
+                with_tasks: with.len(),
+                without_tasks: without.len(),
+            }
+        }
+        _ => LayerComparison::NotEnough {
+            with: with.len(),
+            without: without.len(),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn medians_resist_one_huge_task() {
+        assert_eq!(median(&[]), None);
+        assert_eq!(median(&[7]), Some(7));
+        assert_eq!(median(&[5, 1, 900_000]), Some(5));
+        assert_eq!(median(&[4, 1, 3, 2]), Some(2));
+    }
+
+    #[test]
+    fn compares_only_with_enough_tasks_on_each_side() {
+        let mut tasks: Vec<(bool, u64)> = (1..=5).map(|i| (true, i * 100)).collect();
+        tasks.extend((1..=4).map(|i| (false, i * 1000)));
+        assert_eq!(
+            compare_layer(&tasks),
+            LayerComparison::NotEnough {
+                with: 5,
+                without: 4
+            }
+        );
+        tasks.push((false, 5000));
+        assert_eq!(
+            compare_layer(&tasks),
+            LayerComparison::Medians {
+                with: 300,
+                without: 3000,
+                with_tasks: 5,
+                without_tasks: 5
+            }
+        );
+        assert_eq!(
+            compare_layer(&[]),
+            LayerComparison::NotEnough {
+                with: 0,
+                without: 0
+            }
+        );
+    }
 
     fn usage(tokens: u64, cost: Option<f64>) -> UsageSample {
         UsageSample {

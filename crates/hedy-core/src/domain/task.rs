@@ -124,6 +124,10 @@ pub struct Task {
     /// prompt opens with that conversation's context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<super::TaskOrigin>,
+    /// Whether the code map was on when the task started, to compare tokens
+    /// with and without it (docs/decisions.md §33). `None`: an older task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_map: Option<bool>,
 }
 
 /// What "Aceptar" changed in the main checkout, kept so it can be undone

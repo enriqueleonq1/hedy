@@ -11,11 +11,13 @@ use std::sync::Arc;
 use super::ports::{NewSkill, SkillRevision, SkillTools};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::memory::{USER_AUTHOR, preview};
+use crate::domain::recall::{PageRequest, Paged, SKILLS_MAX, SKILLS_PAGE, paginate};
 use crate::domain::skill::{
     SkillFolder, find_secret, is_managed, normalize_body, normalize_description,
     normalize_skill_name, skill_file,
 };
 use crate::domain::{DomainError, Project, Skill, SkillStatus, TaskId};
+use crate::experiments::{self, Experiment};
 use crate::tr;
 
 /// Characters of each description an agent sees in `skill_list`.
@@ -512,6 +514,21 @@ pub fn format_skills(skills: &[Skill]) -> String {
         .join("\n")
 }
 
+/// One page of `skill_list` ([`SKILLS_PAGE`] by default), then how to ask
+/// for more when the page is not the end.
+pub fn format_skill_page(page: &Paged<Skill>) -> String {
+    let mut text = format_skills(&page.items);
+    if page.remaining > 0 && !page.items.is_empty() {
+        let (n, offset) = (page.remaining, page.next_offset());
+        text.push('\n');
+        text.push_str(&tr!(
+            "… {n} más: llama a skill_list con offset {offset}",
+            "… {n} more: call skill_list with offset {offset}"
+        ));
+    }
+    text
+}
+
 /// One whole skill, for `skill_get`.
 pub fn format_skill(skill: &Skill) -> String {
     format!(
@@ -533,7 +550,14 @@ struct TaskSkills {
 
 impl SkillTools for TaskSkills {
     fn list(&self) -> String {
+        self.list_page(PageRequest::default())
+    }
+
+    fn list_page(&self, page: PageRequest) -> String {
         match self.hedy.agent_skills(&self.project) {
+            Ok(skills) if experiments::on(Experiment::Search8) => {
+                format_skill_page(&paginate(skills, page, SKILLS_PAGE, SKILLS_MAX))
+            }
             Ok(skills) => format_skills(&skills),
             Err(e) => tr!(
                 "No se pudieron leer las habilidades: {e}",

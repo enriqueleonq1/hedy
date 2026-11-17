@@ -2,6 +2,7 @@
 //! between agents. Pure text, so it is easy to read and to test.
 
 use super::{Phase, TaskMode};
+use crate::experiments::{self, Experiment, Experiments};
 use crate::tr;
 
 /// For agents without a native plan mode.
@@ -30,7 +31,17 @@ pub fn plan_handed_off() -> String {
 /// For agents that have the project's memory (the `hedy-memory` tools).
 /// An agent that may change the project is also asked to sum up, when it
 /// finishes, the lasting decisions it made (as a proposal, and only if any).
+/// It is sent with every session: `domain::context` measures it, and the
+/// `trim-guidance` experiment swaps in a shorter text.
 pub fn memory_guidance(phase: Phase, mode: TaskMode) -> String {
+    memory_guidance_in(phase, mode, experiments::current())
+}
+
+/// [`memory_guidance`] with the experiments in `set` (to measure both texts).
+pub fn memory_guidance_in(phase: Phase, mode: TaskMode, set: Experiments) -> String {
+    if set.has(Experiment::TrimGuidance) {
+        return trimmed_memory_guidance(phase, mode);
+    }
     let mut text = tr!(
         "Este proyecto tiene una memoria compartida entre IAs: decisiones, convenciones y reglas aprobadas por el usuario. Antes de elegir una convención o tomar una decisión, búscala con memory_search: devuelve un resumen por nota (id, tema y el comienzo del texto); lee una nota completa con memory_get (por id o por tema) solo si la necesitas. Si tomas una decisión duradera o descubres una convención que otras IAs deberían seguir, propónla con memory_propose (una frase; el usuario decide si se guarda). Si trata un tema que ya está en la memoria (memory_topics los lista), pasa ese mismo topic: tu propuesta será un cambio de esa nota y no una nota nueva. No propongas secretos ni datos personales.",
         "This project has a memory shared between AIs: decisions, conventions and rules approved by the user. Before choosing a convention or making a decision, look it up with memory_search: it returns a summary per note (id, topic and the start of its text); read a whole note with memory_get (by id or topic) only when you need it. If you make a lasting decision or find a convention other AIs should follow, propose it with memory_propose (one sentence; the user decides whether it is kept). If it is about a topic already in the memory (memory_topics lists them), pass that same topic: your proposal becomes a change to that note instead of a new one. Never propose secrets or personal data."
@@ -67,6 +78,31 @@ fn task_summary_guidance() -> String {
     tr!(
         "Al terminar tu trabajo, antes de tu respuesta final: si tomaste decisiones duraderas que otras IAs deberían conocer y que aún no propusiste, propón una sola nota breve que las resuma con memory_propose (categoría decision). Si no decidiste nada duradero, no propongas nada ni lo menciones.",
         "When you finish your work, before your final answer: if you made lasting decisions other AIs should know about and have not proposed yet, propose one short note summing them up with memory_propose (category decision). If you decided nothing lasting, propose nothing and do not mention it."
+    )
+}
+
+/// The `trim-guidance` experiment: the same rules in about half the words
+/// (docs/decisions.md §33). Skills reading for everyone; the end-of-task
+/// proposals (summary note, at most one skill) only for writers.
+fn trimmed_memory_guidance(phase: Phase, mode: TaskMode) -> String {
+    let mut text = tr!(
+        "Memoria del proyecto (notas aprobadas): antes de decidir o elegir una convención, busca con memory_search (una línea por nota); memory_get (id o tema) da una entera si hace falta. Propón decisiones duraderas o convenciones con memory_propose (una frase; el usuario decide); si el tema ya existe (memory_topics), pasa ese topic para cambiar esa nota. Sin secretos ni datos personales. Habilidades (procedimientos aprobados): antes de averiguar cómo hacer algo, mira skill_list y lee la útil con skill_get.",
+        "Project memory (approved notes): before deciding or picking a convention, search it with memory_search (one line per note); memory_get (id or topic) gives a whole note if needed. Propose lasting decisions or conventions with memory_propose (one sentence; the user decides); if the topic exists (memory_topics), pass that topic to change that note. No secrets or personal data. Skills (approved procedures): before working out how to do something, check skill_list and read the one that fits with skill_get."
+    );
+    if !phase.read_only_in(mode) {
+        text.push(' ');
+        text.push_str(&end_of_task_guidance());
+    }
+    text
+}
+
+/// What a writer proposes when it finishes: a summary note of its lasting
+/// decisions and, after a task that went well, one non-obvious reusable
+/// procedure as a skill. Optional, quiet, and only ever proposals.
+fn end_of_task_guidance() -> String {
+    tr!(
+        "Al terminar, antes de tu respuesta final, solo si aplica: una nota con memory_propose (categoría decision) con las decisiones duraderas no propuestas; si la tarea salió bien y hallaste un procedimiento reutilizable no obvio, una habilidad con skill_propose (nombre-con-guiones, una línea de cuándo usarla, pasos en Markdown; un nombre existente la actualiza; sin secretos, claves ni valores de .env: usa $VARIABLE). Si no hay nada así, no propongas nada ni lo menciones.",
+        "When done, before your final answer, only if it applies: one memory_propose note (category decision) with lasting decisions not yet proposed; if the task went well and you found a non-obvious reusable procedure, one skill with skill_propose (dashed-lowercase-name, one line on when to use it, steps in Markdown; an existing name updates it; no secrets, keys or .env values: use $VARIABLE). If there is nothing like that, propose nothing and do not mention it."
     )
 }
 
@@ -211,6 +247,52 @@ mod tests {
             skills_guidance(Phase::Implement, TaskMode::Project)
         });
         assert!(english.contains("if, and only if") && english.contains("$VARIABLE_NAME"));
+    }
+
+    #[test]
+    fn trimmed_guidance_keeps_every_rule_in_fewer_words() {
+        use crate::experiments::with_experiments;
+        let trim = Experiments::NONE.with(Experiment::TrimGuidance);
+        let implement = with_experiments(trim, || {
+            memory_guidance(Phase::Implement, TaskMode::Project)
+        });
+        for part in [
+            "memory_search",
+            "memory_get",
+            "memory_topics",
+            "memory_propose",
+            "el usuario decide",
+            "Sin secretos",
+            "skill_list",
+            "skill_get",
+            "skill_propose",
+            "Al terminar",
+            "categoría decision",
+            "$VARIABLE",
+            "no propongas nada ni lo menciones",
+        ] {
+            assert!(implement.contains(part), "{part}");
+        }
+        let full = memory_guidance(Phase::Implement, TaskMode::Project);
+        assert!(implement.chars().count() * 2 <= full.chars().count());
+        for (phase, mode) in [
+            (Phase::Review, TaskMode::Project),
+            (Phase::Implement, TaskMode::Ask),
+            (Phase::Implement, TaskMode::Research),
+        ] {
+            let read_only = with_experiments(trim, || memory_guidance(phase, mode));
+            assert!(read_only.contains("memory_propose") && read_only.contains("skill_get"));
+            assert!(!read_only.contains("Al terminar") && !read_only.contains("skill_propose"));
+        }
+        let english = with_experiments(trim, || {
+            crate::i18n::with_language(crate::i18n::Language::English, || {
+                memory_guidance(Phase::Tests, TaskMode::Project)
+            })
+        });
+        assert!(english.contains("When done") && english.contains("No secrets or personal data"));
+        assert!(
+            english.contains("non-obvious reusable procedure") && english.contains("$VARIABLE")
+        );
     }
 
     #[test]

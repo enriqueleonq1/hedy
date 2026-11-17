@@ -104,6 +104,7 @@ impl Hedy {
             conversation: true,
             ship: None,
             origin: None,
+            code_map: None,
             images: Vec::new(),
         };
         task.images = self.store_images(&task.id, &request.images)?;
