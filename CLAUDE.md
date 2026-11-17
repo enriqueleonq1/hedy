@@ -30,7 +30,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Evals (real tasks, spend tokens): `cargo run -p hedy-evals -- --model haiku` (`--list`,
   `--case`, `--layers plain,memory,code-map,full`, `--repeat`); results in `evals/results/`
 - Context-saving switches (`crates/hedy-core/src/experiments.rs`, docs/decisions.md §33): on by
-  default; `HEDY_EXPERIMENTS=none` runs Hedy without them; compare them with
+  default; off with `hedy config set context_saving off` (or Ajustes → Ahorro);
+  `HEDY_EXPERIMENTS=none` overrides the setting; compare them with
   `hedy-evals --variants base,none,base+read-guard` (judged by cost, use `claude-personal`)
 - Install as a desktop app (Arch/CachyOS): `cd packaging/arch && makepkg -f`, then
   `sudo pacman -U hedy-*.pkg.tar.zst`

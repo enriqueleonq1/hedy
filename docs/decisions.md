@@ -1941,3 +1941,22 @@ The user approved turning the package on: `Experiments::DEFAULT`.
   measured.
 - **`hedy-evals` compares against `base`, which now means Hedy as it ships.** In the result
   files of Nov 17, 2026, `base` was Hedy without the experiments (today's `none`).
+
+**The switch.** The user can turn the package off without environment variables:
+
+- **Ajustes → Ahorro.** One switch, "Gastar menos en cada tarea", and one sentence of help. A
+  "Cómo funciona" disclosure lists the technical detail in five lines. The disclosure, not a
+  tooltip, because a tooltip does not work with the keyboard or on touch, and five lines are
+  too long for one.
+- **`hedy config set context_saving on|off`.** The setting is `context_saving`, on by default.
+  `Hedy::apply_context_saving` applies it at startup and whenever it changes.
+- **`HEDY_EXPERIMENTS` wins.** When the variable is set, it decides over the setting. The
+  switch is then disabled, with a line saying so.
+- **`hedy doctor` reports it** (area Hedy, "Ahorro"):
+  - on;
+  - off, with the fix;
+  - decided by the variable;
+  - a warning when the Claude Code it last saw is older than 2.1.306.
+
+It is one switch for the whole package, on purpose: what was confirmed is the package, and
+loose parts would make combinations nobody measured.
