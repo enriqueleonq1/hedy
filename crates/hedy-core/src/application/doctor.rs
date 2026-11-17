@@ -7,11 +7,12 @@ use std::time::Duration;
 
 use super::{AppResult, Hedy, Setting};
 use crate::domain::env;
-use crate::domain::version::parse_version;
+use crate::domain::version::{CLAUDE_SHARED_CACHE_SINCE, parse_version, version_at_least};
 use crate::domain::{
     Account, ConfigFolder, Credentials, LaunchPurpose, LaunchSpec, LoginState, Provider,
     UsageProblem, policy,
 };
+use crate::experiments;
 use crate::tr;
 
 /// What a check is about. Reports list areas in this order.
@@ -599,7 +600,45 @@ impl Hedy {
                 ));
             }
         }
+
+        checks.push(self.check_context_saving()?);
         Ok(checks)
+    }
+
+    /// The context-saving package: on, off, decided by `HEDY_EXPERIMENTS`,
+    /// or on with a Claude Code too old for all of it. Reads the version
+    /// [`Self::check_cli`] just saw, without asking the CLI again.
+    fn check_context_saving(&self) -> AppResult<Check> {
+        let check = |level, message: String| {
+            Check::new(CheckArea::Hedy, tr!("Ahorro", "Savings"), level, message)
+        };
+        if experiments::environment_decides() {
+            let names = experiments::current().names();
+            return Ok(check(
+                CheckLevel::Info,
+                tr!(
+                    "lo decide HEDY_EXPERIMENTS ({names})",
+                    "set by HEDY_EXPERIMENTS ({names})"
+                ),
+            ));
+        }
+        if !self.context_saving_on()? {
+            return Ok(check(CheckLevel::Info, tr!("apagado", "off"))
+                .fix("hedy config set context_saving on"));
+        }
+        let claude = self
+            .store
+            .get_setting(&seen_version_key(Provider::Claude))?;
+        Ok(match claude {
+            Some(v) if !version_at_least(&v, CLAUDE_SHARED_CACHE_SINCE) => check(
+                CheckLevel::Warning,
+                tr!(
+                    "activado, pero Claude Code {v} no admite todo; desde {CLAUDE_SHARED_CACHE_SINCE} sí",
+                    "on, but Claude Code {v} does not take all of it; {CLAUDE_SHARED_CACHE_SINCE} and later do"
+                ),
+            ),
+            _ => check(CheckLevel::Ok, tr!("activado", "on")),
+        })
     }
 
     /// Names only: a value may be a key. What a Claude Code session leaves
@@ -987,6 +1026,35 @@ mod tests {
         assert_eq!(env.len(), 2);
         assert_eq!(env[0].subject, "CLAUDE_CODE_OAUTH_TOKEN");
         assert!(env[1].message.starts_with("1 variable "));
+    }
+
+    #[test]
+    fn says_whether_context_saving_is_on() {
+        let f = Fixture::new();
+        let saving = |f: &Fixture| f.hedy.check_context_saving().unwrap();
+        assert_eq!(saving(&f).level, CheckLevel::Ok);
+        assert_eq!(saving(&f).message, "activado");
+
+        f.store
+            .set_setting(&seen_version_key(Provider::Claude), Some("2.1.200"))
+            .unwrap();
+        let old = saving(&f);
+        assert_eq!(old.level, CheckLevel::Warning);
+        assert!(old.message.contains("2.1.200") && old.message.contains("2.1.306"));
+
+        f.hedy
+            .set_setting(Setting::ContextSaving, Some("off"))
+            .unwrap();
+        let off = saving(&f);
+        assert_eq!(
+            (off.level, off.message.as_str()),
+            (CheckLevel::Info, "apagado")
+        );
+        assert_eq!(
+            off.fix.as_deref(),
+            Some("hedy config set context_saving on")
+        );
+        crate::experiments::set(crate::experiments::Experiments::NONE);
     }
 
     #[test]
