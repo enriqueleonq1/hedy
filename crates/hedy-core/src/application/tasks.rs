@@ -22,6 +22,7 @@ use crate::domain::{
     HoldReason, LaunchPurpose, LaunchSpec, LimitLevel, Notice, NoticeKind, Phase, PromptImage,
     Provider, Stage, Task, TaskId, TaskMode, TaskStatus, UsageSample, Workspace, policy,
 };
+use crate::experiments::{self, Experiment};
 use crate::tr;
 
 /// Worktrees live inside the repository, excluded locally from git.
@@ -231,9 +232,25 @@ impl Hedy {
                 images: task.images.clone(),
             },
         )?;
+        let prompt = self.with_briefing(&task, prompt);
         self.run_stage(&mut task, 0, prompt, None)?;
         self.events.task_updated(&task);
         Ok(task)
+    }
+
+    /// With the `briefing` experiment, a project task's first prompt ends
+    /// with what Hedy found locally for it (docs/decisions.md §33).
+    fn with_briefing(&self, task: &Task, prompt: String) -> String {
+        if task.mode != TaskMode::Project || !experiments::on(Experiment::Briefing) {
+            return prompt;
+        }
+        let Ok(account) = self.account(task.account.as_str()) else {
+            return prompt;
+        };
+        match self.briefing(task, &account) {
+            briefing if briefing.is_empty() => prompt,
+            briefing => format!("{prompt}\n\n{briefing}"),
+        }
     }
 
     /// A new, unique task id. The counter keeps ids unique when two tasks

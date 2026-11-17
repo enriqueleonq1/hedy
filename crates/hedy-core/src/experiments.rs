@@ -7,7 +7,7 @@
 //! eval runner ([`set`]). Hedy hands the same value to the memory MCP server
 //! it starts, so both processes agree.
 
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU16, Ordering};
 
 /// The environment variable that turns experiments on.
 pub const ENV_VAR: &str = "HEDY_EXPERIMENTS";
@@ -24,14 +24,24 @@ pub enum Experiment {
     /// Search results ranked with this project's note uses, notes "para
     /// revisar" last (`domain::recall::rank_notes`).
     RankUsage,
+    /// Claude's `PreToolUse` hook denies re-reading a file that has not
+    /// changed in the session, and reading lockfiles, minified files and big
+    /// files whole (`domain::read_guard`).
+    ReadGuard,
+    /// The first prompt of a project task ends with a short briefing Hedy
+    /// builds without AI: files that match the request, the notes that match
+    /// it and the test command (`domain::briefing`).
+    Briefing,
 }
 
 impl Experiment {
-    pub const ALL: [Experiment; 4] = [
+    pub const ALL: [Experiment; 6] = [
         Self::TrimGuidance,
         Self::TrimTools,
         Self::Search8,
         Self::RankUsage,
+        Self::ReadGuard,
+        Self::Briefing,
     ];
 
     pub fn name(self) -> &'static str {
@@ -40,6 +50,8 @@ impl Experiment {
             Self::TrimTools => "trim-tools",
             Self::Search8 => "search-8",
             Self::RankUsage => "rank-usage",
+            Self::ReadGuard => "read-guard",
+            Self::Briefing => "briefing",
         }
     }
 
@@ -49,14 +61,14 @@ impl Experiment {
             .find(|e| e.name() == name.trim().to_lowercase())
     }
 
-    fn bit(self) -> u8 {
+    fn bit(self) -> u16 {
         1 << (self as u8)
     }
 }
 
 /// A set of experiments. Empty: today's behavior.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct Experiments(u8);
+pub struct Experiments(u16);
 
 impl Experiments {
     pub const NONE: Experiments = Experiments(0);
@@ -119,8 +131,8 @@ impl FromIterator<Experiment> for Experiments {
 }
 
 /// High bit: the set was read or given.
-const READY: u8 = 0x80;
-static CURRENT: AtomicU8 = AtomicU8::new(0);
+const READY: u16 = 0x8000;
+static CURRENT: AtomicU16 = AtomicU16::new(0);
 
 #[cfg(test)]
 thread_local! {
@@ -214,7 +226,7 @@ mod tests {
             seen.1,
             Some((
                 ENV_VAR.into(),
-                "trim-guidance,trim-tools,search-8,rank-usage".into()
+                "trim-guidance,trim-tools,search-8,rank-usage,read-guard,briefing".into()
             ))
         );
         assert!(current().is_empty());

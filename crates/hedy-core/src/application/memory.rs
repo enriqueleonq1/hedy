@@ -81,7 +81,7 @@ impl Hedy {
         self
     }
 
-    fn with_global(project: &Project) -> bool {
+    pub(super) fn with_global(project: &Project) -> bool {
         !project.protected
     }
 

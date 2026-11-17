@@ -3,6 +3,7 @@
 mod accounts;
 mod activity;
 mod attachments;
+mod briefing;
 mod carry;
 mod code;
 mod code_edit;
