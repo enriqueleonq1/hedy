@@ -4,6 +4,7 @@ use super::ports::McpServer;
 use super::{AppError, AppResult, Hedy};
 use crate::domain::metrics::ApiPrice;
 use crate::domain::{AccountId, Provider, policy};
+use crate::experiments::{self, Experiments};
 
 /// User settings that are stored as plain key/value pairs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +37,9 @@ pub enum Setting {
     /// Code-map MCP server (codebase-memory-mcp) to register in every run.
     /// Unset: no code map.
     CodeMap,
+    /// The context-saving package (docs/decisions.md §33): `on` (default) or
+    /// `off`. `HEDY_EXPERIMENTS` wins over it when set.
+    ContextSaving,
 }
 
 pub const THEMES: [&str; 3] = ["system", "light", "dark"];
@@ -76,6 +80,7 @@ impl Setting {
             Self::Onboarded => "ui.onboarded".into(),
             Self::Notifications => "ui.notifications".into(),
             Self::CodeMap => "code_map.binary".into(),
+            Self::ContextSaving => "context_saving".into(),
         }
     }
 
@@ -100,6 +105,7 @@ impl Setting {
                 Self::Onboarded,
                 Self::Notifications,
                 Self::CodeMap,
+                Self::ContextSaving,
             ])
             .collect()
     }
@@ -150,7 +156,9 @@ impl Hedy {
                     value: language.to_owned(),
                 });
             }
-            (Setting::Notifications, Some(value)) if !SWITCH.contains(&value) => {
+            (Setting::Notifications | Setting::ContextSaving, Some(value))
+                if !SWITCH.contains(&value) =>
+            {
                 return Err(AppError::InvalidSettingValue {
                     key: setting.key(),
                     value: value.to_owned(),
@@ -161,6 +169,28 @@ impl Hedy {
         self.store.set_setting(&setting.key(), value)?;
         if setting == Setting::Language {
             self.apply_language()?;
+        }
+        if setting == Setting::ContextSaving {
+            self.apply_context_saving()?;
+        }
+        Ok(())
+    }
+
+    /// Whether the context-saving package is on (the default).
+    pub fn context_saving_on(&self) -> AppResult<bool> {
+        Ok(self.setting(Setting::ContextSaving)?.as_deref() != Some("off"))
+    }
+
+    /// Runs this process with the package or without it, as the setting
+    /// says, unless `HEDY_EXPERIMENTS` decides. Every process Hedy starts
+    /// from now on gets the same.
+    pub fn apply_context_saving(&self) -> AppResult<()> {
+        if !experiments::environment_decides() {
+            experiments::set(if self.context_saving_on()? {
+                Experiments::DEFAULT
+            } else {
+                Experiments::NONE
+            });
         }
         Ok(())
     }
@@ -309,6 +339,31 @@ mod tests {
         ));
         f.hedy.set_setting(Setting::Notifications, None).unwrap();
         assert!(f.hedy.notifications_on().unwrap());
+    }
+
+    #[test]
+    fn context_saving_is_on_by_default_and_switches_the_package() {
+        let f = Fixture::new();
+        assert!(f.hedy.context_saving_on().unwrap());
+        f.hedy.apply_context_saving().unwrap();
+        assert_eq!(experiments::current(), Experiments::DEFAULT);
+
+        f.hedy
+            .set_setting(Setting::ContextSaving, Some("off"))
+            .unwrap();
+        assert!(!f.hedy.context_saving_on().unwrap());
+        assert_eq!(experiments::current(), Experiments::NONE);
+        assert!(matches!(
+            f.hedy.set_setting(Setting::ContextSaving, Some("maybe")),
+            Err(AppError::InvalidSettingValue { .. })
+        ));
+        f.hedy.set_setting(Setting::ContextSaving, None).unwrap();
+        assert_eq!(experiments::current(), Experiments::DEFAULT);
+        assert_eq!(
+            "context_saving".parse::<Setting>().unwrap(),
+            Setting::ContextSaving
+        );
+        experiments::set(Experiments::NONE);
     }
 
     #[test]

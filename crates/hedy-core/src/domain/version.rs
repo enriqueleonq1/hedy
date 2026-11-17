@@ -12,6 +12,11 @@ pub fn parse_version(output: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// The first Claude Code verified to take
+/// `--exclude-dynamic-system-prompt-sections`, the part of the
+/// context-saving package an older one would refuse (docs/decisions.md §33).
+pub const CLAUDE_SHARED_CACHE_SINCE: &str = "2.1.306";
+
 /// Whether `version` is `min` or newer, by its numbers (`2.1.310` ≥
 /// `2.1.306`; a pre-release counts as its numbers). `false` when either is
 /// not a version.
