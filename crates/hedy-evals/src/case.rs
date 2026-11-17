@@ -146,8 +146,8 @@ impl fmt::Display for Layer {
 }
 
 /// A set of Hedy's experiments a run gets (docs/decisions.md §33), by the
-/// name it was asked with: `base` (none), `read-guard`,
-/// `trim-guidance+trim-tools`… `trim` stands for both trims.
+/// name it was asked with: `base` (Hedy as it ships), `none` (without any),
+/// `read-guard`, `base+read-guard`… `trim` stands for both trims.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
     pub name: String,
@@ -175,12 +175,10 @@ impl FromStr for Variant {
                 known.join(", ")
             ));
         }
-        let name = if experiments.is_empty() {
-            crate::report::BASE.to_owned()
-        } else {
-            s.trim().to_owned()
-        };
-        Ok(Self { name, experiments })
+        Ok(Self {
+            name: s.trim().to_owned(),
+            experiments,
+        })
     }
 }
 
@@ -249,7 +247,8 @@ mod tests {
     fn variants() {
         let base: Variant = "base".parse().unwrap();
         assert_eq!(base.name, "base");
-        assert!(base.experiments.is_empty());
+        assert_eq!(base.experiments, Experiments::DEFAULT);
+        assert!("none".parse::<Variant>().unwrap().experiments.is_empty());
         let trim: Variant = "trim".parse().unwrap();
         assert_eq!(trim.name, "trim");
         assert_eq!(trim.experiments.names(), "trim-guidance,trim-tools");

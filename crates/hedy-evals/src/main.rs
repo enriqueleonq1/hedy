@@ -37,9 +37,10 @@ struct Args {
     /// Modelo, por ejemplo haiku o sonnet.
     #[arg(long)]
     model: Option<String>,
-    /// Variantes a comparar, separadas por comas: base (sin experimentos),
-    /// un experimento (read-guard, briefing, trim-guidance, trim-tools,
-    /// search-8, rank-usage) o varios unidos con + (trim = los dos recortes).
+    /// Variantes a comparar, separadas por comas: base (Hedy tal como viene),
+    /// none (sin ningún experimento), un experimento (read-guard,
+    /// lean-tools…) o varios unidos con + (base+read-guard; trim = los dos
+    /// recortes). Las demás se comparan con base.
     #[arg(long, value_delimiter = ',', default_value = "base")]
     variants: Vec<Variant>,
     /// Corridas por caso, capa y variante.
