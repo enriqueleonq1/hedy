@@ -1714,3 +1714,82 @@ the fake ACP agent).
 
 **Not verified live:** the picker inside the Tauri window and a real command through each
 provider (tested with the fake `claude`, the fake ACP agent, the agent double and `MockApi`).
+
+## 33. Context-saving experiments, measured before adopting (Nov 17, 2026)
+
+The user wanted every idea to save tokens measured with evals before it changes Hedy's
+behavior. Each idea is an **experiment, off by default**: Hedy behaves as before unless
+`HEDY_EXPERIMENTS` names it (comma-separated, `crate::experiments`). Hedy hands the same value
+to every CLI it launches (so Claude's `PreToolUse` hook sees it) and to the memory MCP server.
+`hedy-evals --variants base,trim,read-guard,…` sets it per run.
+
+### The experiments
+
+- `trim-guidance`: the memory guidance appended to the system prompt in about half the words
+  (≈ 245 estimated tokens instead of ≈ 480 for a writer). Same rules.
+- `trim-tools`: the 7 memory and skill tool definitions in English with compact schemas
+  (≈ 510 tokens instead of ≈ 815). `domain::context` keeps both catalogs, measures them and
+  holds a budget test so the overhead cannot creep back silently.
+- `search-8`: `memory_search` returns 8 notes (not 30) and `skill_list` 20, with
+  `limit` / `offset` and a last line saying how to ask for more.
+- `rank-usage`: search results get a small lift for notes this project's tasks read, and notes
+  "para revisar" go last (`domain::recall`).
+- `read-guard`: the Claude hook denies re-reading a file that has not changed in the session
+  (same range), reading lockfiles and minified files whole, and reading whole files over
+  64 KB (`domain::read_guard`). A denied read goes through if the agent asks again. Each hook
+  call is a new process, so the reads of a session are kept in
+  `<temp>/hedy-read-guard/<session>.jsonl`.
+- `briefing`: a project task's first prompt ends with a few lines Hedy builds without AI: files
+  that mention the identifiers and paths named in the request (`git grep`), up to 3 approved
+  notes that match it, and the test command guessed from the files (`domain::briefing`). The
+  task's stored prompt stays what the user wrote.
+
+Not built, on purpose:
+- **Phase handoffs:** each phase already starts a clean session with only the request, the plan
+  and what was done (`prompts::stage_prompt`).
+- **A stable cache prefix:** what Hedy adds is already identical between sessions. The parts
+  that change (folder, date, git status) are Claude Code's own.
+- **A single context tool:** with the trimmed catalog it would save ≈ 300 tokens per turn,
+  1–2 % of a run, so `trim-tools` bounds it.
+- **Model per phase:** it spreads cost, it does not cut tokens. It waits for routing (§13).
+
+### How it was measured
+
+- **Runs.** Real runs with the user's personal account and haiku, in the `memory` layer, on 6
+  cases:
+  - the 3 small ones;
+  - a bug whose cause sits four files away from its symptom, in a 66-file repo with a 1 MB
+    generated JSON;
+  - a question about that repo answered in `RESPUESTA.md`;
+  - a feature that crosses 8 files.
+- **What each run records.** Input, output and cache tokens, `Read` calls, rereads, hook
+  denials, notes read, time, and whether the hidden checks passed.
+- **Order.** The variants of a case run back to back, so a slow hour weighs on all of them
+  alike.
+- **The rule, fixed before the results.** An idea is kept if the median over the cases of the
+  change in median tokens is −10 % or better and the pass rate does not drop. It is optional if
+  it saves less than that, and dropped otherwise (`hedy-evals --report` prints the verdicts).
+
+**Screening** (2 runs per case and variant, 60 runs, 16M tokens):
+
+| Variant | Tokens vs base | Passed |
+|---|---|---|
+| `search-8+rank-usage` | −6.7 % | 12/12 |
+| `trim` (guidance + tools) | −5.3 % | 12/12 |
+| `briefing` | −5.2 % | 12/12 |
+| `read-guard` | +14.1 % | 10/12 |
+
+The base passed 12/12.
+
+- **None reached the bar.** Identical runs differ by up to ~30 %, so 5–7 % is within the noise
+  at 2 runs.
+- **About 90 % of all tokens are cache reads** of Claude Code's own fixed context (≈ 14k tokens
+  re-sent every turn). Hedy's part is ≈ 1.3k, so trimming text has a low ceiling. What moves
+  the total is the number of turns.
+- **The read guard had nothing to do.** There were 0 rereads in 60 runs: haiku reads files
+  with `cat` and `grep` through Bash, which the guard does not see. Its two failures were
+  `price-format` runs where the agent never searched the memory (no denial involved). It is
+  dropped. Extending it to shell reads would mean parsing commands and is not planned.
+
+**Confirmation:** the three optional ideas together (`trim+search-8+rank-usage+briefing`)
+against the base, 5 runs per case.
