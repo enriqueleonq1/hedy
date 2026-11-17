@@ -1876,3 +1876,28 @@ The base passed 12/12.
   ±15 %.
 - **`lean-tools` cuts tokens but barely the cost.** The tool definitions are mostly cache reads,
   the cheap part.
+
+**Final confirmation of the package** (`cache-5m+briefing+trim+search-8+rank-usage+lean-prompt`)
+against the base, 5 runs per case (60 runs):
+
+| Measure | Change |
+|---|---|
+| Tokens | +3.8 % |
+| Cost (median per case) | **−29.9 %** |
+| Cost per solved task | −20.9 % |
+
+Both sides passed 30/30.
+
+The package was cheaper in every case:
+
+| Case | Cost |
+|---|---|
+| `business-days` | −45 % |
+| `rename-field` | −34 % |
+| `price-format` | −33 % |
+| `library-holds-question` | −27 % |
+| `bakery-inscription` | −16 % |
+| `library-holiday-fine` | −16 % |
+
+Time was unchanged. The cost per solved task saves less than the median because the big cases
+(the most expensive) save less. It passes the rule.
