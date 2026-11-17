@@ -1901,3 +1901,17 @@ The package was cheaper in every case:
 
 Time was unchanged. The cost per solved task saves less than the median because the big cases
 (the most expensive) save less. It passes the rule.
+
+**The same package on Sonnet and Opus** (3 runs per case and side, 36 runs per model; Sonnet
+and Opus ran at the same time, each comparing its own base and package):
+
+| Model | Tokens | Cost | Cost per solved task | Passed (base / package) |
+|---|---|---|---|---|
+| haiku (5 runs) | +3.8 % | −29.9 % | −20.9 % | 30/30 / 30/30 |
+| Sonnet | −32.1 % | **−41.3 %** | −43.1 % | 18/18 / 18/18 |
+| Opus | −2.5 % | −30.2 % | −29.1 % | 18/18 / 18/18 |
+
+- Every case was cheaper on every model: −39 to −50 % on Sonnet and −16 to −43 % on Opus.
+- No run used a subagent.
+- Sonnet also cut tokens. With the lean system prompt it took fewer turns, while the other
+  models kept the same number of turns.
