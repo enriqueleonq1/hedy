@@ -455,6 +455,7 @@ impl Hedy {
                 resume,
                 memory,
                 mcp,
+                conversation: task.conversation,
             },
             sink,
         )?;

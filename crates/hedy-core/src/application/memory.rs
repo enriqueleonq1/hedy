@@ -532,7 +532,7 @@ impl Hedy {
                 ])
                 .collect(),
             // The server runs with the same experiments (docs/decisions.md §33).
-            env: experiments::child_env().into_iter().collect(),
+            env: vec![experiments::child_env()],
         });
         Some(MemoryLink {
             server,

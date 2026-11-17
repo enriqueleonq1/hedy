@@ -948,6 +948,7 @@ for line in sys.stdin:
             resume: None,
             memory: None,
             mcp: vec![],
+            conversation: false,
         };
         let session = AcpLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
@@ -1140,6 +1141,7 @@ for line in sys.stdin:
             resume: None,
             memory: None,
             mcp: vec![],
+            conversation: false,
         };
         let mut session = AcpLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))

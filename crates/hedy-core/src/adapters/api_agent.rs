@@ -1096,6 +1096,7 @@ mod tests {
             resume: None,
             memory: None,
             mcp: vec![],
+            conversation: false,
         };
         let session = ApiAgentLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
@@ -1381,6 +1382,7 @@ mod tests {
             resume: None,
             memory: None,
             mcp: vec![],
+            conversation: false,
         };
         let mut session = ApiAgentLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))

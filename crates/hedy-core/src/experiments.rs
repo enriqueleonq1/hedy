@@ -1,11 +1,14 @@
-//! Experimental behavior, off by default until evals measure it and the user
-//! sees the results (docs/decisions.md §33).
+//! Behavior that can be switched, to measure it with evals before it becomes
+//! Hedy's own (docs/decisions.md §33). New ideas start off; the ones the evals
+//! showed are worth it and the user approved are on by default
+//! ([`Experiments::DEFAULT`]).
 //!
 //! One process-wide set, like the language ([`crate::i18n`]): read once from
 //! the `HEDY_EXPERIMENTS` environment variable (comma-separated names, e.g.
-//! `HEDY_EXPERIMENTS=trim-guidance,search-8`), or set by a driver such as the
-//! eval runner ([`set`]). Hedy hands the same value to the memory MCP server
-//! it starts, so both processes agree.
+//! `HEDY_EXPERIMENTS=default,read-guard`, or `none` for Hedy without any of
+//! them), or set by a driver such as the eval runner ([`set`]). Hedy hands the
+//! same value to every process it starts (the CLIs, their hooks, the memory
+//! MCP server), so they all agree.
 
 use std::sync::atomic::{AtomicU16, Ordering};
 
@@ -82,17 +85,31 @@ impl Experiment {
             .find(|e| e.name() == name.trim().to_lowercase())
     }
 
-    fn bit(self) -> u16 {
+    const fn bit(self) -> u16 {
         1 << (self as u8)
     }
 }
 
-/// A set of experiments. Empty: today's behavior.
+/// A set of experiments.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct Experiments(u16);
 
 impl Experiments {
+    /// Hedy without any of them (before Nov 17, 2026).
     pub const NONE: Experiments = Experiments(0);
+
+    /// What Hedy runs with unless told otherwise: the package confirmed on
+    /// haiku, Sonnet and Opus (−30 to −41 % cost at the same pass rate,
+    /// docs/decisions.md §33).
+    pub const DEFAULT: Experiments = Experiments(
+        Experiment::TrimGuidance.bit()
+            | Experiment::TrimTools.bit()
+            | Experiment::Search8.bit()
+            | Experiment::RankUsage.bit()
+            | Experiment::Briefing.bit()
+            | Experiment::LeanPrompt.bit()
+            | Experiment::Cache5m.bit(),
+    );
 
     pub fn all() -> Self {
         Experiment::ALL.into_iter().collect()
@@ -114,16 +131,21 @@ impl Experiments {
         Experiment::ALL.into_iter().filter(move |e| self.has(*e))
     }
 
-    /// `"trim-guidance,search-8"`; empty for none. [`Self::parse`] reads it back.
+    /// `"trim-guidance,search-8"`; `"none"` for none. [`Self::parse`] reads
+    /// it back.
     pub fn names(self) -> String {
+        if self.is_empty() {
+            return "none".into();
+        }
         self.iter()
             .map(Experiment::name)
             .collect::<Vec<_>>()
             .join(",")
     }
 
-    /// Names separated by commas or `+` (`all` for every one, `base` or
-    /// `none` for none). Unknown names come back apart.
+    /// Names separated by commas or `+`, added up: `default` (or `base`) for
+    /// [`Self::DEFAULT`], `all` for every one, `none` for nothing. Unknown
+    /// names come back apart.
     pub fn parse(text: &str) -> (Self, Vec<String>) {
         let mut set = Self::NONE;
         let mut unknown = Vec::new();
@@ -134,7 +156,8 @@ impl Experiments {
         {
             match name.to_lowercase().as_str() {
                 "all" => set = Self::all(),
-                "base" | "none" => {}
+                "default" | "base" => set = Self(set.0 | Self::DEFAULT.0),
+                "none" => {}
                 _ => match Experiment::from_name(name) {
                     Some(e) => set = set.with(e),
                     None => unknown.push(name.to_owned()),
@@ -180,14 +203,19 @@ pub fn current() -> Experiments {
     if value & READY != 0 {
         return Experiments(value & !READY);
     }
-    // Tests never read the developer's environment.
+    // Tests never read the developer's environment, and start from nothing:
+    // each one turns on what it checks.
     let set = if cfg!(test) {
         Experiments::NONE
     } else {
         from_environment()
     };
-    CURRENT.store(set.0 | READY, Ordering::Relaxed);
-    set
+    // Only if nobody got there first: a driver's `set` on another thread
+    // wins over the environment.
+    match CURRENT.compare_exchange(value, set.0 | READY, Ordering::Relaxed, Ordering::Relaxed) {
+        Ok(_) => set,
+        Err(now) => Experiments(now & !READY),
+    }
 }
 
 /// Whether `e` is on in this process.
@@ -200,18 +228,18 @@ pub fn set(set: Experiments) {
     CURRENT.store(set.0 | READY, Ordering::Relaxed);
 }
 
-/// What `HEDY_EXPERIMENTS` asks for; unknown names are ignored.
+/// What `HEDY_EXPERIMENTS` asks for ([`Experiments::DEFAULT`] when it is
+/// not set); unknown names are ignored.
 pub fn from_environment() -> Experiments {
     std::env::var(ENV_VAR)
         .map(|v| Experiments::parse(&v).0)
-        .unwrap_or_default()
+        .unwrap_or(Experiments::DEFAULT)
 }
 
-/// The variable to hand to a child process (the memory MCP server) so it
-/// runs with the same experiments; `None` when there are none.
-pub fn child_env() -> Option<(String, String)> {
-    let set = current();
-    (!set.is_empty()).then(|| (ENV_VAR.to_owned(), set.names()))
+/// The variable to hand to a child process (the CLIs, their hooks, the memory
+/// MCP server) so it runs with the same experiments, `none` included.
+pub fn child_env() -> (String, String) {
+    (ENV_VAR.to_owned(), current().names())
 }
 
 #[cfg(test)]
@@ -231,25 +259,33 @@ mod tests {
             "trim-tools,rank-usage"
         );
         assert_eq!(Experiments::parse("all").0, Experiments::all());
-        assert!(Experiments::parse("base").0.is_empty());
         assert!(Experiments::parse("").0.is_empty());
     }
 
     #[test]
-    fn off_by_default_and_overridable_per_thread() {
+    fn the_default_is_the_confirmed_package() {
+        let names = Experiments::DEFAULT.names();
+        assert_eq!(
+            names,
+            "trim-guidance,trim-tools,search-8,rank-usage,briefing,lean-prompt,cache-5m"
+        );
+        assert_eq!(Experiments::parse("default").0, Experiments::DEFAULT);
+        assert_eq!(Experiments::parse("base").0, Experiments::DEFAULT);
+        let more = Experiments::parse("default,read-guard").0;
+        assert!(more.has(Experiment::ReadGuard) && more.has(Experiment::Cache5m));
+        assert_eq!(Experiments::NONE.names(), "none");
+        assert!(Experiments::parse("none").0.is_empty());
+    }
+
+    #[test]
+    fn tests_start_from_none_and_override_per_thread() {
         assert!(current().is_empty());
-        assert_eq!(child_env(), None);
-        let seen = with_experiments(Experiments::all(), || {
+        assert_eq!(child_env(), (ENV_VAR.into(), "none".into()));
+        let seen = with_experiments(Experiments::DEFAULT, || {
             (on(Experiment::Search8), child_env())
         });
         assert!(seen.0);
-        assert_eq!(
-            seen.1,
-            Some((
-                ENV_VAR.into(),
-                "trim-guidance,trim-tools,search-8,rank-usage,read-guard,briefing,lean-prompt,lean-tools,cache-5m,explore-haiku".into()
-            ))
-        );
+        assert_eq!(seen.1.1, Experiments::DEFAULT.names());
         assert!(current().is_empty());
     }
 }

@@ -67,6 +67,7 @@ impl Hedy {
                 resume: None,
                 memory: None,
                 mcp: Vec::new(),
+                conversation: false,
             },
             sink,
         )?;

@@ -560,6 +560,9 @@ pub struct AgentRequest {
     pub memory: Option<MemoryLink>,
     /// Other MCP servers to register (the code map).
     pub mcp: Vec<McpServer>,
+    /// A conversation (a question outside any project): the user comes and
+    /// goes, so caches that outlive a pause pay off.
+    pub conversation: bool,
 }
 
 impl AgentRequest {

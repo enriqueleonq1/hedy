@@ -24,9 +24,8 @@ pub(crate) fn command(spec: &LaunchSpec) -> Command {
     cmd.env_clear().envs(allowed_env());
     cmd.env(crate::i18n::ENV_VAR, crate::i18n::language().code());
     // So the CLI's hooks run with Hedy's experiments (docs/decisions.md §33).
-    if let Some((name, value)) = crate::experiments::child_env() {
-        cmd.env(name, value);
-    }
+    let (name, value) = crate::experiments::child_env();
+    cmd.env(name, value);
     for (name, value) in &spec.env {
         cmd.env(name, value);
     }
