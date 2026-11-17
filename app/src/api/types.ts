@@ -112,6 +112,10 @@ export interface Overview {
   onboarded: boolean;
   /** Desktop notifications about tasks (`ui.notifications`, on by default). */
   notifications: boolean;
+  /** The context-saving package (`context_saving`, on by default). */
+  contextSaving: boolean;
+  /** `HEDY_EXPERIMENTS` decides instead of the setting. */
+  contextSavingByEnv: boolean;
   dataDir: string;
   defaultAccount: string | null;
   binaries: Record<CliProviderId, string | null>;
@@ -240,6 +244,7 @@ export type SettingKey =
   | "ui.language"
   | "ui.onboarded"
   | "ui.notifications"
+  | "context_saving"
   | "binary.claude"
   | "binary.codex"
   | "binary.gemini"

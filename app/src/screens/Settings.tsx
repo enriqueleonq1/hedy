@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useT, type LanguageSetting, type MessageKey } from "../i18n";
@@ -211,6 +211,8 @@ export function Settings({ overview, focus }: { overview: Overview; focus?: { se
         <p className="small muted">{t("settings.notifications.hint")}</p>
       </section>
 
+      <ContextSaving overview={overview} />
+
       <CodeMap overview={overview} />
 
       <section className="card settings__section">
@@ -319,6 +321,57 @@ function CodeMap({ overview }: { overview: Overview }) {
         </div>
       )}
       <p className="small muted">{t("settings.codeMap.note")}</p>
+    </section>
+  );
+}
+
+/** The context-saving package (docs/decisions.md §33): one switch, one
+ * sentence, and the technical detail one click away. */
+function ContextSaving({ overview }: { overview: Overview }) {
+  const t = useT();
+  const setSetting = useAction((api, vars: { key: SettingKey; value: string | null }) =>
+    api.setSetting(vars.key, vars.value),
+  );
+  const [open, setOpen] = useState(false);
+  const detailId = useId();
+  const points: MessageKey[] = [
+    "settings.saving.how.briefing",
+    "settings.saving.how.trim",
+    "settings.saving.how.search",
+    "settings.saving.how.claude",
+    "settings.saving.how.others",
+  ];
+  return (
+    <section className="card settings__section">
+      <h2>{t("settings.saving")}</h2>
+      <div className="row row--between">
+        <span>{t("settings.saving.toggle")}</span>
+        <Switch
+          label={t("settings.saving.toggle")}
+          checked={overview.contextSaving}
+          disabled={setSetting.isPending || overview.contextSavingByEnv}
+          onChange={(on) => setSetting.mutate({ key: "context_saving", value: on ? "on" : "off" })}
+        />
+      </div>
+      <p className="small muted">{t("settings.saving.hint")}</p>
+      {overview.contextSavingByEnv && <p className="small warning">{t("settings.saving.byEnv")}</p>}
+      <button
+        type="button"
+        className="disclosure disclosure--quiet"
+        aria-expanded={open}
+        aria-controls={detailId}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="disclosure__mark" aria-hidden>
+          ›
+        </span>
+        {t("settings.saving.how")}
+      </button>
+      <ul id={detailId} className="settings__how small muted" hidden={!open}>
+        {points.map((key) => (
+          <li key={key}>{t(key)}</li>
+        ))}
+      </ul>
     </section>
   );
 }

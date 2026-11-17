@@ -34,6 +34,19 @@ const es = {
   "settings.notifications.toggle": "Avisarme cuando una tarea me necesita o termina",
   "settings.notifications.hint":
     "Notificaciones del sistema cuando una IA espera tu aprobación, termina, falla o llega a su límite, solo si Hedy no está en primer plano. Dicen qué IA y en qué proyecto, nunca el contenido de tus archivos.",
+  "settings.saving": "Ahorro",
+  "settings.saving.toggle": "Gastar menos en cada tarea",
+  "settings.saving.hint":
+    "Hedy le da a cada IA solo el contexto que necesita. En nuestras pruebas, las tareas costaron un 30–40 % menos, con la misma calidad.",
+  "settings.saving.byEnv": "Ahora lo decide la variable HEDY_EXPERIMENTS.",
+  "settings.saving.how": "Cómo funciona",
+  "settings.saving.how.briefing":
+    "Pistas al empezar: Hedy busca en tu proyecto los archivos y las notas que menciona tu pedido y se los indica a la IA, para que no tenga que explorar.",
+  "settings.saving.how.trim": "Instrucciones más cortas: las reglas de la memoria y sus herramientas, en la mitad de palabras.",
+  "settings.saving.how.search": "Memoria enfocada: cada búsqueda trae las 8 notas más útiles, no 30.",
+  "settings.saving.how.claude":
+    "Con Claude Code: un prompt de sistema más corto y, en las tareas, un caché de 5 minutos, más barato que el de una hora. Las conversaciones mantienen el de una hora.",
+  "settings.saving.how.others": "Con Codex, Gemini y Kimi se aplican las tres primeras, así que el ahorro es menor.",
   "settings.data": "Datos",
   "settings.dataDir": "Hedy guarda todo en tu equipo:",
   "settings.dataHintBefore": "Para usar otra carpeta, abre Hedy con la variable",
@@ -86,6 +99,19 @@ const en: Record<keyof typeof es, string> = {
   "settings.notifications.toggle": "Tell me when a task needs me or finishes",
   "settings.notifications.hint":
     "System notifications when an AI waits for your approval, finishes, fails or hits its limit, only while Hedy is not in front. They say which AI and which project, never what is in your files.",
+  "settings.saving": "Savings",
+  "settings.saving.toggle": "Spend less on every task",
+  "settings.saving.hint":
+    "Hedy gives each AI only the context it needs. In our tests, tasks cost 30–40% less with the same quality.",
+  "settings.saving.byEnv": "Currently set by the HEDY_EXPERIMENTS variable.",
+  "settings.saving.how": "How it works",
+  "settings.saving.how.briefing":
+    "A head start: Hedy finds the files and notes your request mentions and points the AI to them, so it doesn't have to explore.",
+  "settings.saving.how.trim": "Shorter instructions: the memory rules and tools, in half the words.",
+  "settings.saving.how.search": "Focused memory: each search returns the 8 most useful notes, not 30.",
+  "settings.saving.how.claude":
+    "With Claude Code: a shorter system prompt and, in tasks, a 5-minute cache, cheaper than the one-hour one. Conversations keep the one-hour cache.",
+  "settings.saving.how.others": "Codex, Gemini and Kimi get the first three, so they save less.",
   "settings.data": "Data",
   "settings.dataDir": "Hedy keeps everything on your computer:",
   "settings.dataHintBefore": "To use another folder, start Hedy with the variable",

@@ -182,6 +182,8 @@ fn build(paths: &HedyPaths, claude: ClaudeCodeLauncher) -> PortResult<Hedy> {
     if hedy.apply_language().is_err() {
         crate::i18n::init(None);
     }
+    // Likewise, a failure keeps the default package.
+    let _ = hedy.apply_context_saving();
     Ok(hedy)
 }
 

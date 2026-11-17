@@ -17,7 +17,7 @@ use crate::application::ports::{
     AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
 use crate::domain::permissions::DEFAULT_BLOCKED;
-use crate::domain::version::{parse_version, version_at_least};
+use crate::domain::version::{CLAUDE_SHARED_CACHE_SINCE, parse_version, version_at_least};
 use crate::domain::{AgentEvent, Phase, PromptImage, TaskMode, prompts};
 use crate::experiments::{self, Experiment};
 use crate::tr;
@@ -31,11 +31,6 @@ pub struct ClaudeCodeLauncher {
     /// Each program's version, asked once (`claude --version`).
     versions: Mutex<HashMap<String, Option<String>>>,
 }
-
-/// The first Claude Code verified to take
-/// `--exclude-dynamic-system-prompt-sections` (docs/decisions.md §33). An
-/// older one would refuse to start with an unknown option.
-const DYNAMIC_SECTIONS_SINCE: &str = "2.1.306";
 
 impl ClaudeCodeLauncher {
     /// `program` must run [`hook::run`] when started with [`hook::HOOK_ARGS`].
@@ -275,7 +270,7 @@ impl AgentLauncher for ClaudeCodeLauncher {
     fn start(&self, request: AgentRequest, events: EventSink) -> PortResult<Box<dyn AgentSession>> {
         let mut spec = request.launch.clone();
         spec.args.extend(args(&request, self.hook.as_deref()));
-        if short_cache(&request) && self.at_least(&spec.program, DYNAMIC_SECTIONS_SINCE) {
+        if short_cache(&request) && self.at_least(&spec.program, CLAUDE_SHARED_CACHE_SINCE) {
             spec.args
                 .push("--exclude-dynamic-system-prompt-sections".into());
         }

@@ -292,6 +292,8 @@ export class MockApi implements HedyApi {
       projects: [],
       codeMap: { enabled: null, found: null },
       notifications: true,
+      contextSaving: true,
+      contextSavingByEnv: false,
       ...initial,
     };
   }
@@ -1010,6 +1012,7 @@ export class MockApi implements HedyApi {
     if (key === "ui.language") this.state.language = (value ?? "system") as Overview["language"];
     if (key === "ui.onboarded") this.state.onboarded = value === "true";
     if (key === "ui.notifications") this.state.notifications = value !== "off";
+    if (key === "context_saving") this.state.contextSaving = value !== "off";
     if (key.startsWith("api_price.")) {
       this.state.apiPrices[key.slice(10) as keyof Overview["apiPrices"]] = value;
     }

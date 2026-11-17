@@ -223,9 +223,18 @@ pub fn on(e: Experiment) -> bool {
     current().has(e)
 }
 
-/// Replaces the process's experiments (a driver such as the eval runner).
+/// Replaces the process's experiments (a driver such as the eval runner, or
+/// the user's "Ahorro" setting). In tests it changes this thread's only.
 pub fn set(set: Experiments) {
+    #[cfg(test)]
+    OVERRIDE.with(|o| o.set(Some(set)));
+    #[cfg(not(test))]
     CURRENT.store(set.0 | READY, Ordering::Relaxed);
+}
+
+/// Whether `HEDY_EXPERIMENTS` is set: then it decides, over the setting.
+pub fn environment_decides() -> bool {
+    !cfg!(test) && std::env::var_os(ENV_VAR).is_some()
 }
 
 /// What `HEDY_EXPERIMENTS` asks for ([`Experiments::DEFAULT`] when it is
