@@ -2,6 +2,7 @@
 //! card itself: plans are approved and permissions allowed. Hedy's own rules
 //! still apply (protected files, writes only inside the worktree).
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -12,9 +13,13 @@ use anyhow::{Context, Result, bail};
 use hedy_core::adapters::CODE_MAP_PROGRAM;
 use hedy_core::application::ports::TaskEvents;
 use hedy_core::application::{Hedy, NewTask, Setting};
-use hedy_core::domain::{AccountId, AgentEvent, Decision, Task, TaskId, TaskMode, TaskStatus};
+use hedy_core::domain::{
+    AccountId, AgentEvent, Decision, Task, TaskId, TaskMode, TaskStatus, UsageSample,
+};
 
-use crate::{Case, Layer, RunResult};
+use hedy_core::experiments;
+
+use crate::{Case, Layer, RunResult, Variant};
 
 enum Update {
     Event(TaskId, AgentEvent),
@@ -111,9 +116,14 @@ fn tail(text: &str, max: usize) -> String {
 /// What the runner saw of a task while it ran.
 #[derive(Default)]
 struct Observed {
-    tokens: u64,
-    cost_usd: Option<f64>,
+    usage: UsageSample,
     actions: u32,
+    files_read: u32,
+    rereads: u32,
+    /// Files read so far, to count the rereads.
+    read: HashSet<String>,
+    denied: u32,
+    subagents: u32,
     error: Option<String>,
 }
 
@@ -129,31 +139,44 @@ impl Runner {
         }
     }
 
-    /// One run. Whatever goes wrong (copying the repo, launching the agent,
-    /// running the check) fails this run only: it is recorded in
-    /// [`RunResult::error`] and the suite goes on.
-    pub fn run(&self, case: &Case, layer: Layer, attempt: u32) -> RunResult {
+    /// One run with `variant`'s experiments. Whatever goes wrong (copying
+    /// the repo, launching the agent, running the check) fails this run only:
+    /// it is recorded in [`RunResult::error`] and the suite goes on.
+    pub fn run(&self, case: &Case, layer: Layer, variant: &Variant, attempt: u32) -> RunResult {
         let started_at = now();
         let mut result = RunResult {
             case: case.name.clone(),
             layer,
+            variant: variant.name.clone(),
             attempt,
             account: self.options.account.as_str().to_owned(),
             model: self.options.model.clone(),
             passed: false,
             tokens: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
             cost_usd: None,
             duration_ms: 0,
             actions: 0,
+            files_read: 0,
+            rereads: 0,
+            denied: 0,
+            subagents: 0,
             notes_read: 0,
             error: None,
             check_output: String::new(),
             started_at,
         };
-        let repo = self
-            .options
-            .work_dir
-            .join(format!("{}-{layer}-{attempt}-{started_at}", case.name));
+        // Hedy, the agent's hooks and the memory server it starts all read
+        // this process's experiments.
+        experiments::set(variant.experiments);
+        let repo = self.options.work_dir.join(format!(
+            "{}-{layer}-{}-{attempt}-{started_at}",
+            case.name,
+            variant.name.replace('+', "_")
+        ));
         let _repo = RemoveOnDrop(repo.clone());
         if let Err(e) = self.run_in(case, layer, &repo, &mut result) {
             result.passed = false;
@@ -232,9 +255,18 @@ impl Runner {
     ) -> Result<()> {
         let observed = self.drive(id, Duration::from_secs(case.spec.timeout_secs));
         out.duration_ms = clock.elapsed().as_millis() as u64;
-        out.tokens = observed.tokens;
-        out.cost_usd = observed.cost_usd;
+        let usage = &observed.usage;
+        out.tokens = usage.total_tokens();
+        out.input_tokens = usage.input_tokens;
+        out.output_tokens = usage.output_tokens;
+        out.cache_read_tokens = usage.cache_read_tokens;
+        out.cache_write_tokens = usage.cache_write_tokens;
+        out.cost_usd = usage.cost_usd;
         out.actions = observed.actions;
+        out.files_read = observed.files_read;
+        out.rereads = observed.rereads;
+        out.denied = observed.denied;
+        out.subagents = observed.subagents;
         out.error = observed.error;
         out.notes_read = self.hedy.memory(repo)?.used_last_task.len();
         if out.error.is_none() {
@@ -290,10 +322,28 @@ impl Runner {
                     ..
                 } => self.hedy.answer_plan(id, request_id, true, None),
                 AgentEvent::Usage(sample) => {
-                    seen.tokens += sample.total_tokens();
-                    if let Some(cost) = sample.cost_usd {
-                        seen.cost_usd = Some(seen.cost_usd.unwrap_or(0.0) + cost);
+                    seen.usage.add(sample);
+                    Ok(())
+                }
+                AgentEvent::ToolUsed { tool, summary } if tool == "Read" => {
+                    seen.actions += 1;
+                    seen.files_read += 1;
+                    if !seen.read.insert(summary.clone()) {
+                        seen.rereads += 1;
                     }
+                    Ok(())
+                }
+                AgentEvent::ToolUsed { tool, .. } if tool == "Task" || tool == "Agent" => {
+                    seen.actions += 1;
+                    seen.subagents += 1;
+                    Ok(())
+                }
+                AgentEvent::PermissionResolved {
+                    decision: Decision::Deny,
+                    automatic: true,
+                    ..
+                } => {
+                    seen.denied += 1;
                     Ok(())
                 }
                 AgentEvent::FileEdited { .. }

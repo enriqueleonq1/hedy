@@ -3,6 +3,7 @@
 mod accounts;
 mod activity;
 mod attachments;
+mod briefing;
 mod carry;
 mod code;
 mod code_edit;
@@ -56,7 +57,8 @@ pub use error::{AppError, AppResult, UndoBlocked};
 pub use files::MAX_PROJECT_FILES;
 pub use launch::{Resolved, RunLimitWarning};
 pub use memory::{
-    MemoryServerCommand, MemoryView, Proposal, format_note, format_notes, format_topics,
+    MemoryServerCommand, MemoryView, Proposal, format_note, format_note_page, format_notes,
+    format_topics,
 };
 pub use metrics::{ProjectStatus, TestRun, UsageSummary};
 pub use plan_usage::{LimitCheck, PLAN_USAGE_MIN_INTERVAL_SECS, PlanUsageState};
@@ -67,7 +69,8 @@ pub use ship::{
     FolderStatus, NewPullRequest, PullRequestDraft, Pulled, Pushed, ShipError, ShipState,
 };
 pub use skills::{
-    SkillChange, SkillDraft, SkillFiles, SkillProposal, SkillsView, format_skill, format_skills,
+    SkillChange, SkillDraft, SkillFiles, SkillProposal, SkillsView, format_skill,
+    format_skill_page, format_skills,
 };
 pub use status::{AccountStatus, AccountUsage, Status};
 pub use tasks::NewTask;

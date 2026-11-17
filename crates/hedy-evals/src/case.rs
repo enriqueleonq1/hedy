@@ -4,6 +4,7 @@ use std::str::FromStr;
 
 use anyhow::{Context, Result, bail};
 use hedy_core::domain::Category;
+use hedy_core::experiments::{Experiment, Experiments};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -104,7 +105,9 @@ pub fn select_cases(mut cases: Vec<Case>, wanted: &[String]) -> Result<Vec<Case>
 }
 
 /// Which of Hedy's layers a run gets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Layer {
     /// The agent alone.
@@ -139,6 +142,43 @@ impl Layer {
 impl fmt::Display for Layer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+/// A set of Hedy's experiments a run gets (docs/decisions.md §33), by the
+/// name it was asked with: `base` (Hedy as it ships), `none` (without any),
+/// `read-guard`, `base+read-guard`… `trim` stands for both trims.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Variant {
+    pub name: String,
+    pub experiments: Experiments,
+}
+
+impl FromStr for Variant {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let expanded = s
+            .split('+')
+            .map(|part| match part.trim() {
+                "trim" => "trim-guidance+trim-tools",
+                other => other,
+            })
+            .collect::<Vec<_>>()
+            .join("+");
+        let (experiments, unknown) = Experiments::parse(&expanded);
+        if !unknown.is_empty() {
+            let known: Vec<&str> = Experiment::ALL.iter().map(|e| e.name()).collect();
+            return Err(format!(
+                "experimento desconocido: {} (base, trim, {})",
+                unknown.join(", "),
+                known.join(", ")
+            ));
+        }
+        Ok(Self {
+            name: s.trim().to_owned(),
+            experiments,
+        })
     }
 }
 
@@ -201,6 +241,26 @@ mod tests {
         assert_eq!(picked, vec![case("a")]);
         let error = select_cases(all, &names(&["a", "x", "y", "x"])).unwrap_err();
         assert_eq!(error.to_string(), "no encontré estos casos: x, y");
+    }
+
+    #[test]
+    fn variants() {
+        let base: Variant = "base".parse().unwrap();
+        assert_eq!(base.name, "base");
+        assert_eq!(base.experiments, Experiments::DEFAULT);
+        assert!("none".parse::<Variant>().unwrap().experiments.is_empty());
+        let trim: Variant = "trim".parse().unwrap();
+        assert_eq!(trim.name, "trim");
+        assert_eq!(trim.experiments.names(), "trim-guidance,trim-tools");
+        let both: Variant = "read-guard+briefing".parse().unwrap();
+        assert!(both.experiments.has(Experiment::ReadGuard));
+        assert!(both.experiments.has(Experiment::Briefing));
+        assert!(
+            "read-gard"
+                .parse::<Variant>()
+                .unwrap_err()
+                .contains("read-gard")
+        );
     }
 
     #[test]

@@ -13,7 +13,10 @@ use anyhow::{Context, Result, bail};
 use hedy_core::adapters::{self, HedyPaths, MEMORY_SERVER_ARG, hook};
 use hedy_core::application::ports::{MemoryTools, SkillTools};
 use hedy_core::domain::TaskId;
+use hedy_core::domain::context;
+use hedy_core::domain::recall::PageRequest;
 use rmcp::handler::server::wrapper::Parameters;
+use rmcp::model::JsonObject;
 use rmcp::{ServiceExt, schemars, tool, tool_router};
 use serde::Deserialize;
 
@@ -53,53 +56,72 @@ impl Options {
     }
 }
 
+/// A tool's description, from Hedy's catalog (`domain::context`): today's
+/// text, or the trimmed one with the `trim-tools` experiment.
+fn description(name: &str) -> String {
+    context::tool_definition(name)["description"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// A tool's input schema, from the same catalog (with `limit` / `offset`
+/// under the `search-8` experiment).
+fn schema(name: &str) -> Arc<JsonObject> {
+    Arc::new(rmcp::model::object(
+        context::tool_definition(name)["input_schema"].clone(),
+    ))
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SearchParams {
-    /// Words to look for. Empty: every note.
     #[serde(default)]
     pub query: String,
+    #[serde(default)]
+    pub limit: Option<i64>,
+    #[serde(default)]
+    pub offset: Option<i64>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetParams {
-    /// The note's id, from memory_search.
     #[serde(default)]
     pub id: Option<i64>,
-    /// Or its topic, such as arquitectura/pagos.
     #[serde(default)]
     pub topic: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ProposeParams {
-    /// The note, in one sentence.
     pub text: String,
-    /// decision, convention, rule or preference.
     pub category: String,
-    /// Optional stable topic, a lowercase path such as arquitectura/pagos.
-    /// Under the topic of an existing note, the proposal is a change to it.
     #[serde(default)]
     pub topic: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
+pub struct ListParams {
+    #[serde(default)]
+    pub limit: Option<i64>,
+    #[serde(default)]
+    pub offset: Option<i64>,
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SkillGetParams {
-    /// The skill's name, from skill_list.
     pub name: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SkillProposeParams {
-    /// Short lowercase name with dashes, such as run-e2e-tests. With the
-    /// name of an existing skill, the proposal is an update of it.
     pub name: String,
-    /// One line: when to use it.
     pub description: String,
-    /// The steps, in Markdown. No secrets, tokens or .env values.
     pub body: String,
 }
 
-/// Hedy's memory and skill tools for one project and task, over MCP.
+/// Hedy's memory and skill tools for one project and task, over MCP. The
+/// descriptions and schemas come from `domain::context`, so they are measured
+/// with the rest of Hedy's fixed context (docs/decisions.md §33).
 pub struct MemoryServer {
     tools: Arc<dyn MemoryTools>,
     skills: Arc<dyn SkillTools>,
@@ -109,15 +131,21 @@ pub struct MemoryServer {
 impl MemoryServer {
     #[tool(
         name = "memory_search",
-        description = "Busca en la memoria del proyecto: decisiones, convenciones, reglas y preferencias aprobadas por el usuario. Devuelve un resumen por nota (id, categoría, tema y el comienzo del texto); memory_get devuelve una completa. Sin texto devuelve todas."
+        description = description("memory_search"),
+        input_schema = schema("memory_search")
     )]
     fn memory_search(&self, Parameters(params): Parameters<SearchParams>) -> String {
-        self.tools.search(&params.query)
+        let page = PageRequest {
+            limit: params.limit,
+            offset: params.offset,
+        };
+        self.tools.search_page(&params.query, page)
     }
 
     #[tool(
         name = "memory_get",
-        description = "Devuelve una nota completa de la memoria del proyecto, por id (de memory_search) o por tema."
+        description = description("memory_get"),
+        input_schema = schema("memory_get")
     )]
     fn memory_get(&self, Parameters(params): Parameters<GetParams>) -> String {
         self.tools.get(params.id, params.topic.as_deref())
@@ -125,7 +153,8 @@ impl MemoryServer {
 
     #[tool(
         name = "memory_topics",
-        description = "Lista los temas de la memoria del proyecto (p. ej. arquitectura/pagos) con la nota de cada uno, para proponer cambios bajo el mismo tema."
+        description = description("memory_topics"),
+        input_schema = schema("memory_topics")
     )]
     fn memory_topics(&self) -> String {
         self.tools.topics()
@@ -133,7 +162,8 @@ impl MemoryServer {
 
     #[tool(
         name = "memory_propose",
-        description = "Propone una nota para la memoria del proyecto (una decisión duradera o una convención). No se guarda hasta que el usuario la apruebe. Con el tema de una nota existente, propone un cambio de esa nota."
+        description = description("memory_propose"),
+        input_schema = schema("memory_propose")
     )]
     fn memory_propose(&self, Parameters(params): Parameters<ProposeParams>) -> String {
         self.tools
@@ -142,15 +172,20 @@ impl MemoryServer {
 
     #[tool(
         name = "skill_list",
-        description = "Lista las habilidades aprobadas del proyecto: procedimientos reutilizables (correr los tests e2e, publicar una versión…), con el nombre y cuándo usar cada una. skill_get devuelve una completa."
+        description = description("skill_list"),
+        input_schema = schema("skill_list")
     )]
-    fn skill_list(&self) -> String {
-        self.skills.list()
+    fn skill_list(&self, Parameters(params): Parameters<ListParams>) -> String {
+        self.skills.list_page(PageRequest {
+            limit: params.limit,
+            offset: params.offset,
+        })
     }
 
     #[tool(
         name = "skill_get",
-        description = "Devuelve una habilidad aprobada completa (sus pasos), por nombre."
+        description = description("skill_get"),
+        input_schema = schema("skill_get")
     )]
     fn skill_get(&self, Parameters(params): Parameters<SkillGetParams>) -> String {
         self.skills.get(&params.name)
@@ -158,7 +193,8 @@ impl MemoryServer {
 
     #[tool(
         name = "skill_propose",
-        description = "Propone una habilidad: un procedimiento reutilizable que no es obvio, descubierto en una tarea que salió bien. No se guarda hasta que el usuario la apruebe. Con el nombre de una existente, propone su actualización. Nunca incluyas secretos."
+        description = description("skill_propose"),
+        input_schema = schema("skill_propose")
     )]
     fn skill_propose(&self, Parameters(params): Parameters<SkillProposeParams>) -> String {
         self.skills
@@ -226,6 +262,14 @@ mod tests {
             self.0.lock().unwrap().push(format!("search {query}"));
             "- #1 [decision · proyecto] pagos: Stripe".into()
         }
+        fn search_page(&self, query: &str, page: PageRequest) -> String {
+            let (limit, offset) = (page.limit, page.offset);
+            self.0
+                .lock()
+                .unwrap()
+                .push(format!("search_page {query} {limit:?} {offset:?}"));
+            "- #1 [decision · proyecto] pagos: Stripe".into()
+        }
         fn get(&self, id: Option<i64>, topic: Option<&str>) -> String {
             self.0.lock().unwrap().push(format!("get {id:?} {topic:?}"));
             "#1 [decision · proyecto]\nStripe".into()
@@ -248,6 +292,14 @@ mod tests {
             self.0.lock().unwrap().push("skill_list".into());
             "- run-tests [proyecto]: Antes de entregar".into()
         }
+        fn list_page(&self, page: PageRequest) -> String {
+            let (limit, offset) = (page.limit, page.offset);
+            self.0
+                .lock()
+                .unwrap()
+                .push(format!("skill_list {limit:?} {offset:?}"));
+            "- run-tests [proyecto]: Antes de entregar".into()
+        }
         fn get(&self, name: &str) -> String {
             self.0.lock().unwrap().push(format!("skill_get {name}"));
             "# run-tests".into()
@@ -263,6 +315,101 @@ mod tests {
 
     fn parameters<T: serde::de::DeserializeOwned>(json: serde_json::Value) -> Parameters<T> {
         Parameters(serde_json::from_value(json).unwrap())
+    }
+
+    fn served(server_tools: Vec<rmcp::model::Tool>) -> Vec<serde_json::Value> {
+        let mut served: Vec<serde_json::Value> = server_tools
+            .into_iter()
+            .map(|t| {
+                serde_json::json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "input_schema": serde_json::Value::Object((*t.input_schema).clone()),
+                })
+            })
+            .collect();
+        served.sort_by_key(|v| v["name"].as_str().unwrap_or_default().to_owned());
+        served
+    }
+
+    /// The only test that changes the process's experiments: every check
+    /// that depends on them lives here, so parallel tests never race.
+    #[test]
+    fn follows_the_experiments_end_to_end() {
+        use hedy_core::application::ports::ProjectRepository;
+        use hedy_core::domain::{Category, Project};
+        use hedy_core::experiments::{self, Experiment, Experiments};
+
+        // The catalog `domain::context` measures is what the server serves.
+        for set in [
+            Experiments::NONE,
+            Experiments::NONE.with(Experiment::Search8),
+            context::trimmed(),
+            Experiments::all(),
+        ] {
+            experiments::set(set);
+            let mut expected = context::tool_definitions(set);
+            expected.sort_by_key(|v| v["name"].as_str().unwrap_or_default().to_owned());
+            assert_eq!(
+                served(MemoryServer::tool_router().list_all()),
+                expected,
+                "{set:?}"
+            );
+        }
+
+        // A real memory: 12 approved notes about prices.
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("tienda");
+        std::fs::create_dir_all(&project).unwrap();
+        let project = project.canonicalize().unwrap();
+        let paths = HedyPaths::at(dir.path().join("data"));
+        std::fs::create_dir_all(paths.data_dir()).unwrap();
+        hedy_core::adapters::SqliteStore::open(&paths.database())
+            .unwrap()
+            .save_project(&Project::new(project.clone()))
+            .unwrap();
+        let hedy = adapters::system(&paths).unwrap();
+        for i in 1..=12 {
+            hedy.add_note(
+                Some(&project),
+                &format!("Precio {i} en USD"),
+                Category::Decision,
+            )
+            .unwrap();
+        }
+        let tools = hedy.memory_tools(&project, None, "Codex").unwrap();
+        let skills = hedy.skill_tools(&project, None, "Codex").unwrap();
+        let server = MemoryServer::new(tools, skills);
+        let lines = |text: &str| text.lines().filter(|l| l.starts_with("- #")).count();
+
+        // Today's behavior: up to 30 notes, no paging line.
+        experiments::set(Experiments::NONE);
+        let today = server.memory_search(parameters(
+            serde_json::json!({"query": "precio", "limit": 2}),
+        ));
+        assert_eq!(lines(&today), 12, "{today}");
+        assert!(!today.contains("offset"));
+
+        // search-8: 8 notes, then how to ask for the rest.
+        experiments::set(Experiments::NONE.with(Experiment::Search8));
+        let first = server.memory_search(parameters(serde_json::json!({"query": "precio"})));
+        assert_eq!(lines(&first), 8, "{first}");
+        assert!(
+            first.ends_with("… 4 más: llama a memory_search con offset 8"),
+            "{first}"
+        );
+        let rest = server.memory_search(parameters(
+            serde_json::json!({"query": "precio", "offset": 8}),
+        ));
+        assert_eq!(lines(&rest), 4, "{rest}");
+        assert!(!rest.contains("más:"));
+        let two = server.memory_search(parameters(serde_json::json!({"limit": 2, "offset": 3})));
+        assert_eq!(lines(&two), 2);
+        assert!(
+            two.contains("… 7 más: llama a memory_search con offset 5"),
+            "{two}"
+        );
+        experiments::set(Experiments::NONE);
     }
 
     #[test]
@@ -329,15 +476,19 @@ mod tests {
         server.memory_propose(parameters(serde_json::json!(
             {"text": "Pagos con Stripe", "category": "decision", "topic": "pagos"}
         )));
+        server.memory_search(parameters(
+            serde_json::json!({"query": "pagos", "limit": 3, "offset": 8}),
+        ));
         assert_eq!(
             *recorder.0.lock().unwrap(),
             [
-                "search ",
+                "search_page  None None",
                 "get Some(1) None",
                 "get None Some(\"pagos\")",
                 "topics",
                 "propose Precios en USD decision None",
                 "propose Pagos con Stripe decision Some(\"pagos\")",
+                "search_page pagos Some(3) Some(8)",
             ]
         );
     }
@@ -346,7 +497,12 @@ mod tests {
     fn skill_tools_reach_the_skills() {
         let recorder = Arc::new(Recorder::default());
         let server = MemoryServer::new(recorder.clone(), recorder.clone());
-        assert!(server.skill_list().contains("run-tests"));
+        assert!(
+            server
+                .skill_list(parameters(serde_json::json!({})))
+                .contains("run-tests")
+        );
+        server.skill_list(parameters(serde_json::json!({"offset": 20})));
         server.skill_get(parameters(serde_json::json!({"name": "run-tests"})));
         server.skill_propose(parameters(serde_json::json!(
             {"name": "lint", "description": "Antes de commit", "body": "npm run lint"}
@@ -354,7 +510,8 @@ mod tests {
         assert_eq!(
             *recorder.0.lock().unwrap(),
             [
-                "skill_list",
+                "skill_list None None",
+                "skill_list None Some(20)",
                 "skill_get run-tests",
                 "skill_propose lint | Antes de commit | npm run lint",
             ]

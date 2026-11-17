@@ -12,6 +12,23 @@ pub fn parse_version(output: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// Whether `version` is `min` or newer, by its numbers (`2.1.310` ≥
+/// `2.1.306`; a pre-release counts as its numbers). `false` when either is
+/// not a version.
+pub fn version_at_least(version: &str, min: &str) -> bool {
+    let numbers = |v: &str| -> Option<Vec<u64>> {
+        v.split(['-', '+'])
+            .next()?
+            .split('.')
+            .map(|p| p.parse().ok())
+            .collect()
+    };
+    match (numbers(version), numbers(min)) {
+        (Some(v), Some(m)) => v >= m,
+        _ => false,
+    }
+}
+
 /// `1.2`, `1.2.3`, `1.2.3-beta.1`, `1.2.3+build`.
 fn looks_like_version(word: &str) -> bool {
     let core = word.split(['-', '+']).next().unwrap_or("");
@@ -25,6 +42,16 @@ fn looks_like_version(word: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compares_versions_by_their_numbers() {
+        assert!(version_at_least("2.1.306", "2.1.306"));
+        assert!(version_at_least("2.1.310", "2.1.306"));
+        assert!(version_at_least("2.10.0", "2.9.9"));
+        assert!(version_at_least("3.0", "2.1.306"));
+        assert!(!version_at_least("2.1.99", "2.1.306"));
+        assert!(!version_at_least("abc", "2.1.306"));
+    }
 
     #[test]
     fn finds_the_version_in_each_cli_format() {

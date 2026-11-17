@@ -8,6 +8,7 @@ use crate::application::ports::{
     PortError, PortResult, ProjectRepository, RateLimit, SettingsRepository, SkillRepository,
     SkillRevision, StoreHealth, TaskRepository, UsageRecord, UsageRepository,
 };
+use crate::domain::recall::NoteUse;
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Color, ConfigFolder, Credentials, Note, NoteStatus,
     PlanUsage, Project, Skill, SkillStatus, Task, TaskId, UsageProblem, UsageSample,
@@ -951,6 +952,26 @@ impl MemoryRepository for SqliteStore {
         })
     }
 
+    fn note_use_stats(&self, project: &Path) -> PortResult<Vec<(i64, NoteUse)>> {
+        self.with(|c| {
+            c.prepare(
+                "SELECT u.note_id, COUNT(DISTINCT u.task_id), MAX(u.at)
+                 FROM note_uses u JOIN tasks t ON t.id = u.task_id
+                 WHERE t.project = ?1 GROUP BY u.note_id",
+            )?
+            .query_map([project.to_string_lossy()], |r| {
+                Ok((
+                    r.get(0)?,
+                    NoteUse {
+                        tasks: r.get(1)?,
+                        last_used: r.get(2)?,
+                    },
+                ))
+            })?
+            .collect()
+        })
+    }
+
     fn dismiss_pair(&self, a: i64, b: i64) -> PortResult<()> {
         self.with(|c| {
             c.execute(
@@ -1250,6 +1271,7 @@ mod tests {
             conversation: false,
             ship: None,
             origin: None,
+            code_map: None,
         };
         // Old but still running; old with a recent event; recent; old and done.
         let running = task("t1", "/code/a", 10, TaskStatus::Running);
@@ -1296,6 +1318,7 @@ mod tests {
             conversation: false,
             ship: None,
             origin: None,
+            code_map: None,
         };
         store.save_task(&task).unwrap();
         assert!(store.waiting_tasks().unwrap().is_empty());
@@ -1355,6 +1378,7 @@ mod tests {
             conversation,
             ship: None,
             origin: None,
+            code_map: None,
         };
         let (chat, other) = (task("c1", true), task("t1", false));
         store.save_task(&chat).unwrap();
@@ -1401,6 +1425,7 @@ mod tests {
             conversation: false,
             ship: None,
             origin,
+            code_map: None,
         };
         let origin = crate::domain::TaskOrigin {
             conversation: TaskId::new("c1"),
@@ -1458,6 +1483,7 @@ mod tests {
             conversation: false,
             ship: None,
             origin: None,
+            code_map: None,
         };
         let (old, new) = (task("t1", 10), task("t2", 20));
         store.save_task(&old).unwrap();

@@ -1,6 +1,7 @@
 //! Project memory: notes every AI of a project reads, which the user curates.
 //! Notes from AIs are proposals until the user approves them (spec rule 6).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -9,11 +10,15 @@ use super::{AppError, AppResult, Hedy};
 use crate::domain::memory::{
     USER_AUTHOR, contradictions, is_stale, key_words, normalize_topic, preview, similar,
 };
+use crate::domain::recall::{NOTES_MAX, NOTES_PAGE, PageRequest, Paged, paginate, rank_notes};
 use crate::domain::{Account, AccountId, Category, Note, NoteStatus, Project, TaskId};
+use crate::experiments::{self, Experiment};
 use crate::tr;
 
 /// At most this many similar notes are shown next to a proposal.
 const SIMILAR_MAX: usize = 3;
+/// Notes a search returns without the `search-8` experiment (today's).
+pub const LEGACY_SEARCH_MAX: usize = 30;
 /// Characters of each note an agent sees in search results.
 const PREVIEW_CHARS: usize = 140;
 
@@ -76,7 +81,7 @@ impl Hedy {
         self
     }
 
-    fn with_global(project: &Project) -> bool {
+    pub(super) fn with_global(project: &Project) -> bool {
         !project.protected
     }
 
@@ -383,24 +388,68 @@ impl Hedy {
         Ok(project)
     }
 
-    /// What an agent reads: approved notes matching `query` (all when empty).
-    /// Every note returned counts as used, by this task when known.
+    /// What an agent reads: the first page of approved notes matching
+    /// `query` (all when empty), best first. See [`Self::read_memory_page`].
     pub fn read_memory_for_agent(
         &self,
         path: &Path,
         task: Option<&TaskId>,
         query: &str,
     ) -> AppResult<Vec<Note>> {
-        let notes: Vec<Note> = self
-            .search_memory(path, query)?
+        Ok(self
+            .read_memory_page(path, task, query, PageRequest::default())?
+            .items)
+    }
+
+    /// One page of the approved notes matching `query` (all when empty), in
+    /// full-text order. Only the notes returned count as used, by this task
+    /// when known. By default it is the first [`LEGACY_SEARCH_MAX`] and `page`
+    /// is ignored; two experiments change that (docs/decisions.md §33):
+    /// - `search-8`: [`NOTES_PAGE`] by default, `page` honored up to
+    ///   [`NOTES_MAX`];
+    /// - `rank-usage`: ranked by [`rank_notes`] (a small lift for notes this
+    ///   project's tasks read, notes "para revisar" last).
+    pub fn read_memory_page(
+        &self,
+        path: &Path,
+        task: Option<&TaskId>,
+        query: &str,
+        page: PageRequest,
+    ) -> AppResult<Paged<Note>> {
+        let project = self.project_at(path)?;
+        let candidates: Vec<Note> = self
+            .store
+            .search_notes(Some(&project.path), Self::with_global(&project), query)?
             .into_iter()
             .filter(|n| n.status == NoteStatus::Approved)
-            .take(30)
             .collect();
-        let ids: Vec<i64> = notes.iter().map(|n| n.id).collect();
-        self.store
-            .record_uses(&ids, task, self.clock.now_ms() / 1000)?;
-        Ok(notes)
+        let uses: HashMap<_, _> = if experiments::on(Experiment::RankUsage) {
+            self.store
+                .note_use_stats(&project.path)?
+                .into_iter()
+                .collect()
+        } else {
+            HashMap::new()
+        };
+        let now = self.now_secs();
+        let ranked = if experiments::on(Experiment::RankUsage) {
+            rank_notes(candidates, &uses, now)
+        } else {
+            candidates
+        };
+        let page = if experiments::on(Experiment::Search8) {
+            paginate(ranked, page, NOTES_PAGE, NOTES_MAX)
+        } else {
+            paginate(
+                ranked,
+                PageRequest::default(),
+                LEGACY_SEARCH_MAX,
+                LEGACY_SEARCH_MAX,
+            )
+        };
+        let ids: Vec<i64> = page.items.iter().map(|n| n.id).collect();
+        self.store.record_uses(&ids, task, now)?;
+        Ok(page)
     }
 
     /// Approved notes an agent may read in the project containing `path`.
@@ -482,7 +531,8 @@ impl Hedy {
                     author.clone(),
                 ])
                 .collect(),
-            env: Vec::new(),
+            // The server runs with the same experiments (docs/decisions.md §33).
+            env: vec![experiments::child_env()],
         });
         Some(MemoryLink {
             server,
@@ -525,7 +575,22 @@ fn note_label(note: &Note) -> String {
 }
 
 /// What an agent reads for a search: one compact line per note (id, label,
-/// topic and the start of its text). [`format_note`] has the whole note.
+/// topic and the start of its text), then how to ask for more when the page
+/// is not the end. [`format_note`] has the whole note.
+pub fn format_note_page(page: &Paged<Note>) -> String {
+    let mut text = format_notes(&page.items);
+    if page.remaining > 0 && !page.items.is_empty() {
+        let (n, offset) = (page.remaining, page.next_offset());
+        text.push('\n');
+        text.push_str(&tr!(
+            "… {n} más: llama a memory_search con offset {offset}",
+            "… {n} more: call memory_search with offset {offset}"
+        ));
+    }
+    text
+}
+
+/// One compact line per note; see [`format_note_page`].
 pub fn format_notes(notes: &[Note]) -> String {
     if notes.is_empty() {
         return tr!(
@@ -595,11 +660,16 @@ struct TaskMemory {
 
 impl MemoryTools for TaskMemory {
     fn search(&self, query: &str) -> String {
+        self.search_page(query, PageRequest::default())
+    }
+
+    fn search_page(&self, query: &str, page: PageRequest) -> String {
         match self
             .hedy
-            .read_memory_for_agent(&self.project, self.task.as_ref(), query)
+            .read_memory_page(&self.project, self.task.as_ref(), query, page)
         {
-            Ok(notes) => format_notes(&notes),
+            Ok(page) if experiments::on(Experiment::Search8) => format_note_page(&page),
+            Ok(page) => format_notes(&page.items),
             Err(e) => tr!(
                 "No se pudo leer la memoria: {e}",
                 "Could not read the memory: {e}"

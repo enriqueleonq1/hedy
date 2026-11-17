@@ -1,0 +1,7 @@
+{
+  "title": "Explicar a quién se asigna un ejemplar devuelto",
+  "measures": "code-map",
+  "prompt": "Sofía Ramírez se quejó: reservó «El túnel» el 2 de mayo, antes que Tomás Herrera (que lo reservó el 5), pero cuando el ejemplar se devolvió el 8 de mayo se lo dieron a Tomás. Sofía no tiene multas. ¿Por qué pasó? ¿Dónde se decide en el código quién recibe un ejemplar devuelto? ¿En qué caso le habría tocado a Sofía? No cambies nada del código: escribe la respuesta en RESPUESTA.md, en la raíz del proyecto, citando los archivos y funciones.",
+  "check": "python3 check_answer.py",
+  "timeoutSecs": 900
+}

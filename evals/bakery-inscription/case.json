@@ -1,0 +1,13 @@
+{
+  "title": "Agregar la dedicatoria de las tortas de punta a punta",
+  "measures": "memory",
+  "prompt": "Los clientes empiezan a pedir dedicatoria en las tortas. En el archivo del pedido viene en el encabezado como «dedicatoria: Feliz cumple, Ana». Cobra 2.00 extra por cada pedido con dedicatoria, que la dedicatoria salga en el ticket y en el CSV de contabilidad, y que «bakery list» pueda mostrar solo los pedidos con dedicatoria, igual que los otros filtros. Agrega tests.",
+  "check": "python3 -m unittest -q test_hidden_inscription && python3 -m unittest discover -q -s tests -t .",
+  "notes": [
+    {
+      "text": "Cada filtro de «bakery list» se declara en bakery/filters.py (FILTERS) y la CLI crea solo la opción --solo-<nombre>; no se agregan opciones a mano en cli.py.",
+      "category": "convention"
+    }
+  ],
+  "timeoutSecs": 900
+}

@@ -1,0 +1,17 @@
+id,name,tier,home_branch,email,suspended
+M001,Laura Gómez,adult,centro,laura.gomez@example.org,
+M002,Sofía Ramírez,student,norte,sofia.ramirez@example.org,
+M003,Tomás Herrera,student,centro,tomas.herrera@example.org,
+M004,Carmen Ortiz,senior,puerto,carmen.ortiz@example.org,
+M005,Diego Fernández,adult,centro,diego.fernandez@example.org,
+M006,Lucía Navarro,staff,centro,lucia.navarro@example.org,
+M007,Martín Acosta,adult,norte,martin.acosta@example.org,
+M008,Valentina Ríos,student,puerto,valentina.rios@example.org,
+M009,Joaquín Molina,adult,centro,joaquin.molina@example.org,
+M010,Elena Castro,senior,norte,elena.castro@example.org,
+M011,Pablo Suárez,adult,puerto,pablo.suarez@example.org,sí
+M012,Ana Belén Duarte,student,centro,ana.duarte@example.org,
+M013,Ricardo Vidal,adult,norte,,
+M014,Marina Luna,senior,centro,marina.luna@example.org,
+M015,Federico Paredes,adult,puerto,federico.paredes@example.org,
+M016,Julia Medina,student,norte,julia.medina@example.org,

@@ -1,0 +1,8 @@
+id,member_id,title_id,pickup_branch,placed_on,status
+H0001,M002,T00002,norte,2025-05-02,waiting
+H0002,M003,T00002,centro,2025-05-05,collected
+H0003,M009,T00003,centro,2025-05-06,waiting
+H0004,M010,T00003,norte,2025-05-20,waiting
+H0005,M016,T00001,norte,2025-05-15,collected
+H0006,M007,T00009,norte,2025-06-10,cancelled
+H0007,M004,T00010,puerto,2025-06-11,waiting

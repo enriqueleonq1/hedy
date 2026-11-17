@@ -129,6 +129,7 @@ mod tests {
                 conversation: false,
                 ship: None,
                 origin: None,
+                code_map: None,
             })
             .unwrap();
         store

@@ -17,7 +17,9 @@ use crate::application::ports::{
     AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
 use crate::domain::permissions::DEFAULT_BLOCKED;
+use crate::domain::version::{parse_version, version_at_least};
 use crate::domain::{AgentEvent, Phase, PromptImage, TaskMode, prompts};
+use crate::experiments::{self, Experiment};
 use crate::tr;
 use translate::Translator;
 
@@ -26,18 +28,101 @@ use translate::Translator;
 #[derive(Default)]
 pub struct ClaudeCodeLauncher {
     hook: Option<String>,
+    /// Each program's version, asked once (`claude --version`).
+    versions: Mutex<HashMap<String, Option<String>>>,
 }
+
+/// The first Claude Code verified to take
+/// `--exclude-dynamic-system-prompt-sections` (docs/decisions.md §33). An
+/// older one would refuse to start with an unknown option.
+const DYNAMIC_SECTIONS_SINCE: &str = "2.1.306";
 
 impl ClaudeCodeLauncher {
     /// `program` must run [`hook::run`] when started with [`hook::HOOK_ARGS`].
     pub fn with_hook(program: &std::path::Path) -> Self {
         Self {
             hook: Some(hook::command(program)),
+            ..Self::default()
         }
+    }
+
+    /// Whether `program` is a Claude Code at least `since`; `false` when its
+    /// version cannot be read.
+    fn at_least(&self, program: &str, since: &str) -> bool {
+        let mut versions = self.versions.lock().unwrap();
+        let version = versions.entry(program.to_owned()).or_insert_with(|| {
+            let spec = crate::domain::LaunchSpec::program(program, vec!["--version".into()]);
+            super::process::command(&spec)
+                .stdin(Stdio::null())
+                .stderr(Stdio::null())
+                .output()
+                .ok()
+                .filter(|out| out.status.success())
+                .and_then(|out| parse_version(&String::from_utf8_lossy(&out.stdout)))
+        });
+        version
+            .as_deref()
+            .is_some_and(|v| version_at_least(v, since))
     }
 }
 
 const READ_ONLY_TOOLS_DENIED: &str = "Edit,Write,MultiEdit,NotebookEdit";
+
+/// The built-in tools a Hedy task uses (the `lean-tools` experiment), out of
+/// the 22 Claude Code 2.1.306 loads in `-p` (cron, worktrees, workflows,
+/// messaging, design sync…). `ToolSearch` loads MCP tools on demand; `Task`
+/// runs subagents; `Skill` runs the account's skills.
+const LEAN_TOOLS: &[&str] = &[
+    "Task",
+    "Bash",
+    "Read",
+    "Edit",
+    "Write",
+    "ToolSearch",
+    "Skill",
+];
+
+/// Whether a session uses the 5-minute prompt cache: tasks run on without
+/// pauses, so its cheaper writes pay off; a conversation keeps the hour, as
+/// the user comes back after a while.
+fn short_cache(request: &AgentRequest) -> bool {
+    experiments::on(Experiment::Cache5m) && !request.conversation
+}
+
+/// Environment variables for this process's experiments (docs/decisions.md
+/// §33), all read by Claude Code 2.1.306; older versions ignore them.
+pub fn experiment_env(request: &AgentRequest) -> Vec<(&'static str, &'static str)> {
+    let mut env = Vec::new();
+    if experiments::on(Experiment::LeanPrompt) {
+        env.extend([
+            ("CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT", "1"),
+            ("CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS", "1"),
+            ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1"),
+        ]);
+    }
+    if short_cache(request) {
+        env.push(("CLAUDE_CODE_PROMPT_CACHE_TTL", "5m"));
+    }
+    if experiments::on(Experiment::ExploreHaiku) {
+        env.extend([
+            ("CLAUDE_CODE_SUBAGENT_MODEL", "haiku"),
+            ("CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "1"),
+        ]);
+    }
+    env
+}
+
+/// `--tools` for the `lean-tools` experiment.
+fn lean_tools(request: &AgentRequest, mode: TaskMode) -> String {
+    let mut tools: Vec<&str> = LEAN_TOOLS.to_vec();
+    if request.plan_first {
+        tools.push("ExitPlanMode");
+    }
+    if mode == TaskMode::Research {
+        tools.extend(["WebSearch", "WebFetch"]);
+    }
+    tools.join(",")
+}
 
 /// Protected files as Claude Code's own `deny` rules. Claude runs some tools
 /// without asking (Read, read-only shell commands, plan files), so Hedy's
@@ -140,6 +225,9 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     if let Some(session) = &request.resume {
         args.extend(["--resume".into(), session.clone()]);
     }
+    if experiments::on(Experiment::LeanTools) {
+        args.extend(["--tools".into(), lean_tools(request, mode)]);
+    }
     args
 }
 
@@ -187,6 +275,15 @@ impl AgentLauncher for ClaudeCodeLauncher {
     fn start(&self, request: AgentRequest, events: EventSink) -> PortResult<Box<dyn AgentSession>> {
         let mut spec = request.launch.clone();
         spec.args.extend(args(&request, self.hook.as_deref()));
+        if short_cache(&request) && self.at_least(&spec.program, DYNAMIC_SECTIONS_SINCE) {
+            spec.args
+                .push("--exclude-dynamic-system-prompt-sections".into());
+        }
+        spec.env.extend(
+            experiment_env(&request)
+                .into_iter()
+                .map(|(name, value)| (name.to_owned(), value.into())),
+        );
         let mut child = headless_command(&spec)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -368,7 +465,50 @@ pub(crate) mod tests {
             resume: Some("s-1".into()),
             memory: None,
             mcp: vec![],
+            conversation: false,
         }
+    }
+
+    #[test]
+    fn experiments_add_flags_and_variables_only_when_on() {
+        use crate::experiments::{Experiments, with_experiments};
+        let plain = args(&request(TaskMode::Project, false), None);
+        assert!(!plain.contains(&"--tools".to_owned()));
+        assert!(experiment_env(&request(TaskMode::Project, false)).is_empty());
+
+        let set = Experiments::parse("lean-prompt,lean-tools,cache-5m,explore-haiku").0;
+        let (lean, research, env) = with_experiments(set, || {
+            (
+                args(&request(TaskMode::Project, true), None),
+                args(&request(TaskMode::Research, false), None),
+                experiment_env(&request(TaskMode::Project, false)),
+            )
+        });
+        let tools = |a: &[String]| a[a.iter().position(|x| x == "--tools").unwrap() + 1].clone();
+        assert_eq!(
+            tools(&lean),
+            "Task,Bash,Read,Edit,Write,ToolSearch,Skill,ExitPlanMode"
+        );
+        assert!(tools(&research).ends_with("Skill,WebSearch,WebFetch"));
+        for pair in [
+            ("CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT", "1"),
+            ("CLAUDE_CODE_PROMPT_CACHE_TTL", "5m"),
+            ("CLAUDE_CODE_SUBAGENT_MODEL", "haiku"),
+            ("CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "1"),
+        ] {
+            assert!(env.contains(&pair), "{pair:?}");
+        }
+        // A conversation keeps the hour-long cache.
+        let chat = AgentRequest {
+            conversation: true,
+            ..request(TaskMode::Ask, false)
+        };
+        let env = with_experiments(set, || experiment_env(&chat));
+        assert!(
+            !env.iter()
+                .any(|(name, _)| *name == "CLAUDE_CODE_PROMPT_CACHE_TTL")
+        );
+        assert!(env.contains(&("CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT", "1")));
     }
 
     struct NoMemory;

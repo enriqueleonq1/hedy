@@ -22,8 +22,12 @@ use crate::application::ports::{
 };
 use crate::domain::agent::looks_like_tests;
 use crate::domain::permissions::{normalize, protected_file_reason};
+use crate::domain::recall::PageRequest;
 use crate::domain::task::SHARED_DEPENDENCY_DIRS;
-use crate::domain::{AgentEvent, LaunchSpec, Phase, PromptImage, TaskMode, UsageSample, prompts};
+use crate::domain::{
+    AgentEvent, LaunchSpec, Phase, PromptImage, TaskMode, UsageSample, context, prompts,
+};
+use crate::experiments::{self, Experiment};
 use crate::tr;
 
 pub struct ApiAgentLauncher;
@@ -250,6 +254,52 @@ fn skill_tools() -> [Value; 3] {
     ]
 }
 
+const MEMORY_TOOL_NAMES: &[&str] = &[
+    "memory_search",
+    "memory_get",
+    "memory_topics",
+    "memory_propose",
+];
+const SKILL_TOOL_NAMES: &[&str] = &["skill_list", "skill_get", "skill_propose"];
+
+/// The memory or skill tools under this process's experiments: today's
+/// definitions, the shared trimmed catalog with `trim-tools`, and `limit` /
+/// `offset` on the searches with `search-8` (docs/decisions.md §33).
+fn experimental_tools<const N: usize>(today: [Value; N], names: &[&str]) -> Vec<Value> {
+    let set = experiments::current();
+    let catalog = context::tool_definitions(set);
+    let from_catalog = |name: &str| catalog.iter().find(|t| t["name"] == name).cloned();
+    today
+        .into_iter()
+        .map(|mut tool| {
+            let name = tool["function"]["name"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned();
+            let Some(shared) = from_catalog(&name).filter(|_| names.contains(&name.as_str()))
+            else {
+                return tool;
+            };
+            if set.has(Experiment::TrimTools) {
+                tool["function"]["description"] = shared["description"].clone();
+                tool["function"]["parameters"] = shared["input_schema"].clone();
+            } else if set.has(Experiment::Search8)
+                && let (Some(props), Some(paging)) = (
+                    tool["function"]["parameters"]["properties"].as_object_mut(),
+                    shared["input_schema"]["properties"].as_object(),
+                )
+            {
+                for key in ["limit", "offset"] {
+                    if let Some(p) = paging.get(key) {
+                        props.insert(key.into(), p.clone());
+                    }
+                }
+            }
+            tool
+        })
+        .collect()
+}
+
 fn tools(read_only: bool) -> Value {
     let path = json!({"type": "string", "description": "Ruta relativa a la carpeta de trabajo"});
     let mut list = vec![
@@ -331,12 +381,12 @@ impl Agent {
         if self.memory.is_some()
             && let Value::Array(list) = &mut list
         {
-            list.extend(memory_tools());
+            list.extend(experimental_tools(memory_tools(), MEMORY_TOOL_NAMES));
         }
         if self.skills.is_some()
             && let Value::Array(list) = &mut list
         {
-            list.extend(skill_tools());
+            list.extend(experimental_tools(skill_tools(), SKILL_TOOL_NAMES));
         }
         list
     }
@@ -641,6 +691,10 @@ impl Agent {
                 .unwrap_or(Value::Null);
         let id = call["id"].as_str().unwrap_or("call").to_owned();
         let arg = |key: &str| args[key].as_str().unwrap_or("").to_owned();
+        let page = || PageRequest {
+            limit: args["limit"].as_i64(),
+            offset: args["offset"].as_i64(),
+        };
         let writes = matches!(name, "write_file" | "edit_file" | "run_command");
         if writes && (self.read_only || self.planning) {
             return Ok(tr!(
@@ -661,7 +715,7 @@ impl Agent {
                 };
                 let topic = args["topic"].as_str();
                 match name {
-                    "memory_search" => memory.search(&arg("query")),
+                    "memory_search" => memory.search_page(&arg("query"), page()),
                     "memory_get" => memory.get(args["id"].as_i64(), topic),
                     "memory_topics" => memory.topics(),
                     _ => memory.propose(&arg("text"), &arg("category"), topic),
@@ -675,7 +729,7 @@ impl Agent {
                     ));
                 };
                 match name {
-                    "skill_list" => skills.list(),
+                    "skill_list" => skills.list_page(page()),
                     "skill_get" => skills.get(&arg("name")),
                     _ => skills.propose(&arg("name"), &arg("description"), &arg("body")),
                 }
@@ -1042,6 +1096,7 @@ mod tests {
             resume: None,
             memory: None,
             mcp: vec![],
+            conversation: false,
         };
         let session = ApiAgentLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
@@ -1327,6 +1382,7 @@ mod tests {
             resume: None,
             memory: None,
             mcp: vec![],
+            conversation: false,
         };
         let mut session = ApiAgentLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
