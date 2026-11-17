@@ -113,8 +113,6 @@ pub trait UsageRepository: Send + Sync {
     fn usage_by_project(&self, since: i64) -> PortResult<Vec<(PathBuf, AccountId, UsageSample)>>;
     /// Every record of a project since `since`, oldest first, as (time, usage).
     fn usage_points(&self, project: &Path, since: i64) -> PortResult<Vec<(i64, UsageSample)>>;
-    /// Totals per task of a project since `since`.
-    fn usage_by_task(&self, project: &Path, since: i64) -> PortResult<Vec<(TaskId, UsageSample)>>;
     fn set_rate_limit(&self, account: &AccountId, limit: &RateLimit) -> PortResult<()>;
     fn rate_limit(&self, account: &AccountId) -> PortResult<Option<RateLimit>>;
     fn set_plan_usage(&self, account: &AccountId, record: &PlanUsageRecord) -> PortResult<()>;
@@ -164,8 +162,6 @@ pub trait MemoryRepository: Send + Sync {
     fn notes_used_by(&self, task: &TaskId) -> PortResult<Vec<Note>>;
     /// How the tasks of `project` used each note they read, by note id.
     fn note_use_stats(&self, project: &Path) -> PortResult<Vec<(i64, NoteUse)>>;
-    /// The tasks of `project` that read at least one note.
-    fn tasks_reading_notes(&self, project: &Path) -> PortResult<Vec<TaskId>>;
     /// The user said both notes of a pair are valid.
     fn dismiss_pair(&self, a: i64, b: i64) -> PortResult<()>;
     fn dismissed_pairs(&self) -> PortResult<Vec<(i64, i64)>>;

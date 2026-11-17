@@ -683,20 +683,6 @@ impl UsageRepository for SqliteStore {
         })
     }
 
-    fn usage_by_task(&self, project: &Path, since: i64) -> PortResult<Vec<(TaskId, UsageSample)>> {
-        self.with(|c| {
-            c.prepare(&format!(
-                "SELECT task_id, {USAGE_SUMS} FROM usage
-                 WHERE project = ?1 AND at >= ?2 AND task_id != ''
-                 GROUP BY task_id ORDER BY task_id"
-            ))?
-            .query_map(params![project.to_string_lossy(), since], |r| {
-                Ok((TaskId::new(r.get::<_, String>(0)?), usage_from_row(r, 1)?))
-            })?
-            .collect()
-        })
-    }
-
     fn set_rate_limit(&self, account: &AccountId, l: &RateLimit) -> PortResult<()> {
         self.with(|c| {
             c.execute(
@@ -981,19 +967,6 @@ impl MemoryRepository for SqliteStore {
                         last_used: r.get(2)?,
                     },
                 ))
-            })?
-            .collect()
-        })
-    }
-
-    fn tasks_reading_notes(&self, project: &Path) -> PortResult<Vec<TaskId>> {
-        self.with(|c| {
-            c.prepare(
-                "SELECT DISTINCT u.task_id FROM note_uses u JOIN tasks t ON t.id = u.task_id
-                 WHERE t.project = ?1 ORDER BY u.task_id",
-            )?
-            .query_map([project.to_string_lossy()], |r| {
-                Ok(TaskId::new(r.get::<_, String>(0)?))
             })?
             .collect()
         })

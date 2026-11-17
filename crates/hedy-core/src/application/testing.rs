@@ -210,20 +210,6 @@ impl MemoryRepository for MemoryStore {
             })
             .collect())
     }
-    fn tasks_reading_notes(&self, project: &Path) -> PortResult<Vec<TaskId>> {
-        let in_project = self.project_tasks(project);
-        let mut tasks: Vec<TaskId> = self
-            .uses
-            .lock()
-            .unwrap()
-            .iter()
-            .filter_map(|(_, t, _)| t.clone())
-            .filter(|t| in_project.contains(t))
-            .collect();
-        tasks.sort();
-        tasks.dedup();
-        Ok(tasks)
-    }
     fn dismiss_pair(&self, a: i64, b: i64) -> PortResult<()> {
         self.dismissed.lock().unwrap().push((a.min(b), a.max(b)));
         Ok(())
@@ -450,15 +436,6 @@ impl UsageRepository for MemoryStore {
             .filter(|r| r.project == project && r.at >= since)
             .map(|r| (r.at, r.sample.clone()))
             .collect())
-    }
-    fn usage_by_task(&self, project: &Path, since: i64) -> PortResult<Vec<(TaskId, UsageSample)>> {
-        let mut totals: BTreeMap<TaskId, UsageSample> = BTreeMap::new();
-        for r in self.usage.lock().unwrap().iter() {
-            if r.project == project && r.at >= since && !r.task.as_str().is_empty() {
-                totals.entry(r.task.clone()).or_default().add(&r.sample);
-            }
-        }
-        Ok(totals.into_iter().collect())
     }
     fn set_rate_limit(&self, account: &AccountId, limit: &RateLimit) -> PortResult<()> {
         self.limits
