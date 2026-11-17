@@ -332,6 +332,31 @@ describe("Settings", () => {
     await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
   });
 
+  it("turns context saving off and explains how it works", async () => {
+    const { api, user } = renderApp();
+    await user.click(await screen.findByRole("button", { name: "Ajustes" }));
+    expect(screen.getByRole("heading", { name: "Ahorro" })).toBeInTheDocument();
+    const toggle = screen.getByRole("switch", { name: "Gastar menos en cada tarea" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    await user.click(toggle);
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"));
+    expect((await api.overview()).contextSaving).toBe(false);
+
+    const how = screen.getByRole("button", { name: "Cómo funciona" });
+    expect(how).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText(/Memoria enfocada/)).not.toBeVisible();
+    await user.click(how);
+    expect(how).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText(/Memoria enfocada/)).toBeVisible();
+  });
+
+  it("leaves context saving to HEDY_EXPERIMENTS when it is set", async () => {
+    const { user } = renderApp(new MockApi({ contextSavingByEnv: true }));
+    await user.click(await screen.findByRole("button", { name: "Ajustes" }));
+    expect(screen.getByRole("switch", { name: "Gastar menos en cada tarea" })).toBeDisabled();
+    expect(screen.getByText("Ahora lo decide la variable HEDY_EXPERIMENTS.")).toBeInTheDocument();
+  });
+
   it("previews the four mascot states", async () => {
     const { user } = renderApp();
     await user.click(await screen.findByRole("button", { name: "Ajustes" }));

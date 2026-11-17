@@ -35,6 +35,10 @@ pub struct OverviewDto {
     pub onboarded: bool,
     /// Desktop notifications about tasks (`ui.notifications`, on by default).
     pub notifications: bool,
+    /// The context-saving package (`context_saving`, on by default).
+    pub context_saving: bool,
+    /// `HEDY_EXPERIMENTS` decides instead of the setting.
+    pub context_saving_by_env: bool,
     pub data_dir: String,
     pub default_account: Option<String>,
     /// Custom binary path per CLI provider (`None` = found on `PATH`).
@@ -843,6 +847,8 @@ pub fn overview(hedy: &Hedy, data_dir: &Path) -> AppResult<OverviewDto> {
             .unwrap_or_else(|| "system".into()),
         onboarded: hedy.setting(Setting::Onboarded)?.as_deref() == Some("true"),
         notifications: hedy.notifications_on()?,
+        context_saving: hedy.context_saving_on()?,
+        context_saving_by_env: hedy_core::experiments::environment_decides(),
         data_dir: path_string(data_dir),
         default_account: status.default_account.as_ref().map(ToString::to_string),
         binaries,

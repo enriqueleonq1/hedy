@@ -949,6 +949,9 @@ button.popover__item:focus-visible { background: var(--selection); outline: none
 /* ---------------------------------------------------------------- settings */
 
 .settings__section { gap: 16px; }
+.settings__how { margin: -8px 0 0; padding-left: 18px; display: grid; gap: 6px; }
+.disclosure--quiet { min-height: 28px; margin-top: -8px; color: var(--muted); font-weight: 500; font-size: 12.5px; }
+.disclosure--quiet:hover { color: var(--ink); }
 .diagnosis { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .diagnosis__row { display: grid; grid-template-columns: auto minmax(110px, 160px) minmax(0, 1fr); align-items: baseline; gap: 10px; font-size: var(--text-callout); }
 .diagnosis__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); transform: translateY(-1px); }
