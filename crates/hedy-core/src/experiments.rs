@@ -32,16 +32,33 @@ pub enum Experiment {
     /// builds without AI: files that match the request, the notes that match
     /// it and the test command (`domain::briefing`).
     Briefing,
+    /// Claude Code's short system prompt, without its git instructions and
+    /// its own auto memory (environment variables).
+    LeanPrompt,
+    /// Claude Code with only the built-in tools a Hedy task uses (`--tools`):
+    /// no cron, worktree, workflow, messaging or web tools in project tasks.
+    LeanTools,
+    /// Claude Code's prompt cache for 5 minutes instead of an hour (cheaper
+    /// writes) and the per-machine parts of its system prompt moved out of
+    /// the cached prefix.
+    Cache5m,
+    /// Claude Code's subagents (Explore, Plan…) on haiku, whatever the
+    /// session's model (on a subscription Explore otherwise runs on Opus).
+    ExploreHaiku,
 }
 
 impl Experiment {
-    pub const ALL: [Experiment; 6] = [
+    pub const ALL: [Experiment; 10] = [
         Self::TrimGuidance,
         Self::TrimTools,
         Self::Search8,
         Self::RankUsage,
         Self::ReadGuard,
         Self::Briefing,
+        Self::LeanPrompt,
+        Self::LeanTools,
+        Self::Cache5m,
+        Self::ExploreHaiku,
     ];
 
     pub fn name(self) -> &'static str {
@@ -52,6 +69,10 @@ impl Experiment {
             Self::RankUsage => "rank-usage",
             Self::ReadGuard => "read-guard",
             Self::Briefing => "briefing",
+            Self::LeanPrompt => "lean-prompt",
+            Self::LeanTools => "lean-tools",
+            Self::Cache5m => "cache-5m",
+            Self::ExploreHaiku => "explore-haiku",
         }
     }
 
@@ -226,7 +247,7 @@ mod tests {
             seen.1,
             Some((
                 ENV_VAR.into(),
-                "trim-guidance,trim-tools,search-8,rank-usage,read-guard,briefing".into()
+                "trim-guidance,trim-tools,search-8,rank-usage,read-guard,briefing,lean-prompt,lean-tools,cache-5m,explore-haiku".into()
             ))
         );
         assert!(current().is_empty());

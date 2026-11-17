@@ -18,6 +18,7 @@ use crate::application::ports::{
 };
 use crate::domain::permissions::DEFAULT_BLOCKED;
 use crate::domain::{AgentEvent, Phase, PromptImage, TaskMode, prompts};
+use crate::experiments::{self, Experiment};
 use crate::tr;
 use translate::Translator;
 
@@ -38,6 +39,55 @@ impl ClaudeCodeLauncher {
 }
 
 const READ_ONLY_TOOLS_DENIED: &str = "Edit,Write,MultiEdit,NotebookEdit";
+
+/// The built-in tools a Hedy task uses (the `lean-tools` experiment), out of
+/// the 22 Claude Code 2.1.306 loads in `-p` (cron, worktrees, workflows,
+/// messaging, design sync…). `ToolSearch` loads MCP tools on demand; `Task`
+/// runs subagents; `Skill` runs the account's skills.
+const LEAN_TOOLS: &[&str] = &[
+    "Task",
+    "Bash",
+    "Read",
+    "Edit",
+    "Write",
+    "ToolSearch",
+    "Skill",
+];
+
+/// Environment variables for this process's experiments (docs/decisions.md
+/// §33), all read by Claude Code 2.1.306.
+pub fn experiment_env() -> Vec<(&'static str, &'static str)> {
+    let mut env = Vec::new();
+    if experiments::on(Experiment::LeanPrompt) {
+        env.extend([
+            ("CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT", "1"),
+            ("CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS", "1"),
+            ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1"),
+        ]);
+    }
+    if experiments::on(Experiment::Cache5m) {
+        env.push(("CLAUDE_CODE_PROMPT_CACHE_TTL", "5m"));
+    }
+    if experiments::on(Experiment::ExploreHaiku) {
+        env.extend([
+            ("CLAUDE_CODE_SUBAGENT_MODEL", "haiku"),
+            ("CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "1"),
+        ]);
+    }
+    env
+}
+
+/// `--tools` for the `lean-tools` experiment.
+fn lean_tools(request: &AgentRequest, mode: TaskMode) -> String {
+    let mut tools: Vec<&str> = LEAN_TOOLS.to_vec();
+    if request.plan_first {
+        tools.push("ExitPlanMode");
+    }
+    if mode == TaskMode::Research {
+        tools.extend(["WebSearch", "WebFetch"]);
+    }
+    tools.join(",")
+}
 
 /// Protected files as Claude Code's own `deny` rules. Claude runs some tools
 /// without asking (Read, read-only shell commands, plan files), so Hedy's
@@ -140,6 +190,12 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     if let Some(session) = &request.resume {
         args.extend(["--resume".into(), session.clone()]);
     }
+    if experiments::on(Experiment::LeanTools) {
+        args.extend(["--tools".into(), lean_tools(request, mode)]);
+    }
+    if experiments::on(Experiment::Cache5m) {
+        args.push("--exclude-dynamic-system-prompt-sections".into());
+    }
     args
 }
 
@@ -187,6 +243,11 @@ impl AgentLauncher for ClaudeCodeLauncher {
     fn start(&self, request: AgentRequest, events: EventSink) -> PortResult<Box<dyn AgentSession>> {
         let mut spec = request.launch.clone();
         spec.args.extend(args(&request, self.hook.as_deref()));
+        spec.env.extend(
+            experiment_env()
+                .into_iter()
+                .map(|(name, value)| (name.to_owned(), value.into())),
+        );
         let mut child = headless_command(&spec)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -368,6 +429,38 @@ pub(crate) mod tests {
             resume: Some("s-1".into()),
             memory: None,
             mcp: vec![],
+        }
+    }
+
+    #[test]
+    fn experiments_add_flags_and_variables_only_when_on() {
+        use crate::experiments::{Experiments, with_experiments};
+        let plain = args(&request(TaskMode::Project, false), None);
+        assert!(!plain.contains(&"--tools".to_owned()));
+        assert!(experiment_env().is_empty());
+
+        let set = Experiments::parse("lean-prompt,lean-tools,cache-5m,explore-haiku").0;
+        let (lean, research, env) = with_experiments(set, || {
+            (
+                args(&request(TaskMode::Project, true), None),
+                args(&request(TaskMode::Research, false), None),
+                experiment_env(),
+            )
+        });
+        let tools = |a: &[String]| a[a.iter().position(|x| x == "--tools").unwrap() + 1].clone();
+        assert_eq!(
+            tools(&lean),
+            "Task,Bash,Read,Edit,Write,ToolSearch,Skill,ExitPlanMode"
+        );
+        assert!(tools(&research).ends_with("Skill,WebSearch,WebFetch"));
+        assert!(lean.contains(&"--exclude-dynamic-system-prompt-sections".to_owned()));
+        for pair in [
+            ("CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT", "1"),
+            ("CLAUDE_CODE_PROMPT_CACHE_TTL", "5m"),
+            ("CLAUDE_CODE_SUBAGENT_MODEL", "haiku"),
+            ("CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "1"),
+        ] {
+            assert!(env.contains(&pair), "{pair:?}");
         }
     }
 
