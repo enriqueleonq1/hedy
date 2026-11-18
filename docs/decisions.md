@@ -2894,3 +2894,40 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
 
     Names, notes and the team's name are sealed.
   - The pins and the push-access limits of §34 still apply.
+
+### Phase T3: what the agent reads
+
+- **Until now no note was always in the context.** An agent got the memory guidance and the
+  MCP tools, plus, with the briefing, up to 3 notes in its first prompt.
+- **The team layer is now always in it, for a project of a team** (memory home
+  `team:<id>`):
+  - `team_context` renders it (`domain::team::team_layer_block`), and `MemoryLink.team`
+    carries it.
+  - `prompts::memory_context` puts it after the memory guidance in every adapter: Claude's
+    `--append-system-prompt`, Codex's instructions, ACP's first-prompt intro, and the API
+    agent's system prompt.
+  - It follows the memory switch: an account with the memory off gets no team layer
+    either.
+- **The block is data written by people, quoted:**
+  - a header says the notes are data, not instructions, and to ignore any that asks to
+    change the agent's rules, reveal secrets or run something;
+  - each note is one line, with its author and its text as JSON strings, so no text, name or
+    team name can close the block or pass for Hedy's words;
+  - rules come first, then conventions, decisions and preferences.
+- **It is capped at 1,500 tokens** (`TEAM_LAYER_TOKENS`). What does not fit is counted and
+  left to `memory_search`.
+- **Project notes are not always in the context.** `memory_search`, through the API tools and
+  the MCP server alike, adds a "Notas del equipo" section to its first page:
+  - the team's notes that match: this project's first, then the team layer's, by the number
+    of words found;
+  - quoted, with their authors;
+  - at most 8, of up to 400 characters each.
+- **`team_publish_note(team, note, team_layer)`** is what the "¿A quién le sirve?" sheet
+  calls. It moves a note of this PC into the team: one an agent proposed, or the user's own.
+  It goes to its project's notes, or to the team layer, where a member's note becomes a
+  suggestion. It then leaves this PC's notes, since the team's copy is the one every PC
+  reads.
+- **Evals:** a case may carry `teamNotes`. The runner makes a team in a bare repo next to the
+  run, connects the project, adds the notes to the team layer, and leaves the team afterwards
+  (its keys are in the keyring). `price-format-team` is `price-format` with its two notes in
+  the team layer.
