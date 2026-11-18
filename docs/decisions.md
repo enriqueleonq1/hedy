@@ -2036,8 +2036,13 @@ Only well-known constructions from RustCrypto and dalek, nothing home-made:
   - A removed PC is not a member of the new epoch. It cannot read what is written after, and
     it cannot sign an epoch that puts itself back, even with push access to the repo.
   - What remains: a member can still act before it is removed. If two PCs write the same
-    next epoch, git keeps only the first to push. The other PC sees a newer epoch it did not
-    expect and tells the user.
+    next epoch (two joins at once), git takes the first to push. The second sees a rebase
+    conflict, drops its clone and its new keys, and reports the error; a retry joins at the
+    next number.
+  - A joiner trusts the chain it finds. A removed PC that still has push access could offer
+    a fork from the epoch before its removal. The PCs that already saw the real epoch refuse
+    the fork (pins, below), but a new PC cannot tell. So removing a PC must also revoke its
+    git access.
 
 Crates: `chacha20poly1305`, `crypto_box` (`seal`), `ed25519-dalek`, `bip39` (`spanish`),
 `hkdf`, `hmac`, `sha2`, `zeroize` and `getrandom`. All MIT or Apache-2.0 (bip39: CC0).
@@ -2116,6 +2121,42 @@ other one here so the next sync sends it on top of the kept one.
   - a PC left out of the newest epoch.
 - Also two data folders with real SQLite through a real local bare git repo. The server is
   checked to never hold a note's text.
+
+### Housekeeping after phase 2 (two independent reviews, then fixes)
+
+The user asked that every phase close with a review and empirical checks. Two reviews
+(security; correctness and regressions) reproduced 10 problems with failing tests. All are
+fixed, and each has a regression test in `application::sync::tests`.
+
+| Problem found | Fix |
+|---|---|
+| Push access could replace an already trusted epoch and make the attacker a member (critical) | `sync.pins` keeps the SHA-256 of every epoch checked; one that changes stops the sync (`SyncTampered`) |
+| A removed PC could still write batches with an old key; a member could write as another | Every file a PC writes is signed (path and body) inside the seal; batches are read only from members of the newest epoch, checked against their key, and every version in a batch must carry that PC's stamp |
+| A symbolic link committed to the repo could make Hedy overwrite a file outside the clone | `core.symlinks=false`; every path part is checked with `symlink_metadata`; listing never follows links |
+| A failed sync could lose a local edit for good | The batch is kept as `sync.pending` (with its seq) before the replica changes, and written first by the next sync |
+| A new epoch re-scoped every project item and could override real edits | Projects are named with the first epoch's key, the same in every epoch |
+| A project kept local (or removed) and made personal again sent its stale rows back, reverting edits and reviving deletions; a failed write was skipped forever | Every link keeps its base: the version its row reflects. Edited here, changed elsewhere, or both are told apart; a row that only fell behind catches up. Synced items a PC never had are brought in when their project syncs |
+| Two themes with one name swapped between PCs | A theme's body has no id; each PC picks a free one |
+| A built-in template edited on two PCs stayed different | Its uid comes from the built-in's key and scope, so both edits are versions of one item |
+| A theme from a newer Hedy blocked every sync | An unreadable theme counts as present; one that does not validate waits |
+| Settling a conflict did not reach the other PC | Resolving writes a version on top of the kept one (`sync.outbox`); the other PC fast-forwards and its conflict clears |
+
+Also changed:
+- A rebase that fails is aborted, with `--autostash`.
+- No `GIT_*` variable of the environment reaches git, Git LFS filters are off, and the user's
+  SSH setup is no longer overridden.
+- A stamp more than a day ahead does not move the clock, and the counter cannot overflow.
+- Files over 16 MB are refused, and unknown files in `vault/epochs` are ignored.
+- The status lists the PCs of the pinned trusted epoch, with names signed by each PC.
+- A poisoned sync lock does not block later syncs.
+- The keyring entry hashes the canonical data folder.
+
+**Checked empirically:**
+- A random simulation: three PCs add, edit and delete notes and sync in random order, 12 seeds
+  × 150 steps, plus 6 seeds with real SQLite (which reuses the id of a deleted last row).
+  After everyone syncs, all PCs hold the same notes and none has anything left to send.
+- A real git test with two data folders.
+- Git tests for the symbolic-link attack and for a rebase conflict.
 
 **Next phases:**
 3. Projects.
