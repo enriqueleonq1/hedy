@@ -23,8 +23,8 @@ const PUSH_ATTEMPTS: usize = 4;
 #[derive(Default)]
 pub struct GitSyncRemote;
 
-/// Environment variables that would point git at another repo or config.
-fn redirects_git(name: &str) -> bool {
+/// Environment variables that would point git at another repo.
+fn redirects_repo(name: &str) -> bool {
     matches!(
         name,
         "GIT_DIR"
@@ -35,17 +35,29 @@ fn redirects_git(name: &str) -> bool {
             | "GIT_COMMON_DIR"
             | "GIT_NAMESPACE"
             | "GIT_CEILING_DIRECTORIES"
-    ) || name.starts_with("GIT_CONFIG")
+    )
 }
 
-/// Removes the environment variables that would point git at another repo
-/// or config (a git hook's `GIT_DIR`, `GIT_CONFIG_*`).
-pub(crate) fn clear_git_redirects(command: &mut Command) {
+fn remove_env(command: &mut Command, matches: fn(&str) -> bool) {
     for (name, _) in std::env::vars_os() {
-        if name.to_str().is_some_and(redirects_git) {
+        if name.to_str().is_some_and(matches) {
             command.env_remove(name);
         }
     }
+}
+
+/// Keeps git on the repo it is run in (not a hook's `GIT_DIR`), with the
+/// user's own config: for the user's projects.
+pub(crate) fn clear_repo_redirects(command: &mut Command) {
+    remove_env(command, redirects_repo);
+}
+
+/// Also leaves out the user's `GIT_CONFIG_*`: the sync repo is not the
+/// user's project and runs with a neutral setup.
+fn clear_git_redirects(command: &mut Command) {
+    remove_env(command, |name| {
+        redirects_repo(name) || name.starts_with("GIT_CONFIG")
+    });
 }
 
 fn git(dir: &Path, args: &[&str]) -> PortResult<Output> {
@@ -343,6 +355,20 @@ mod tests {
         // Commits never carry the user's identity.
         let author = run(&home, &["log", "-1", "--format=%an <%ae>"]).unwrap();
         assert_eq!(author, "Hedy <sync@hedy.invalid>");
+    }
+
+    #[test]
+    fn projects_keep_the_users_git_config_and_the_sync_clone_does_not() {
+        // Both refuse another repo.
+        assert!(redirects_repo("GIT_DIR") && redirects_repo("GIT_WORK_TREE"));
+        // Only the sync clone leaves out the user's config.
+        assert!(!redirects_repo("GIT_CONFIG_GLOBAL"));
+        let mut command = Command::new("git");
+        command.env("GIT_CONFIG_GLOBAL", "/x");
+        clear_git_redirects(&mut command);
+        let mut project = Command::new("git");
+        clear_repo_redirects(&mut project);
+        assert!(!redirects_repo("GIT_TERMINAL_PROMPT"));
     }
 
     #[test]

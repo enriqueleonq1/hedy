@@ -103,7 +103,15 @@ impl SourceControl for FakeSource {
             .find(|(b, _)| b == branch)
             .map(|(_, u)| u.clone()))
     }
-    fn remotes(&self, _: &Path) -> PortResult<Vec<String>> {
+    fn remotes(&self, repo: &Path) -> PortResult<Vec<String>> {
+        let own = self.remotes_of.lock().unwrap();
+        if own.iter().any(|(r, _, _)| r == repo) {
+            return Ok(own
+                .iter()
+                .filter(|(r, _, _)| r == repo)
+                .map(|(_, n, _)| n.clone())
+                .collect());
+        }
         Ok(self
             .remotes
             .lock()

@@ -87,8 +87,9 @@ fn run_timed(mut command: Command, input: Option<&str>, timeout: Duration) -> Po
 fn git_command(dir: &Path, args: &[&str]) -> Command {
     let mut command = Command::new("git");
     // The project's own repo, whatever the environment says (a hook's
-    // `GIT_DIR`): its remotes decide where its memory lives.
-    super::sync_git::clear_git_redirects(&mut command);
+    // `GIT_DIR`): its remotes decide where its memory lives. The user's git
+    // config (`GIT_CONFIG_*`) stays: commits and pushes are theirs.
+    super::sync_git::clear_repo_redirects(&mut command);
     command
         .arg("-C")
         .arg(dir)
