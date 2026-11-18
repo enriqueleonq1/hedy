@@ -3091,3 +3091,41 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
     - **The memory card** refreshes the teams when it changes a project's home.
     - **The background loop** refreshes the UI after a sync, not every 5 minutes with nothing
       set up.
+
+### Phase T6: real tests and closing
+
+- **On real git servers** (GitHub, three private repos at once, one account as transport: each
+  "person" is a data dir of their own, with their own keys):
+  - `scripts/team-e2e.sh`, the real `hedy` binary and keyring: three people, one with two PCs.
+  - `team_ipc_end_to_end`, the app's commands over IPC with the arguments the UI sends.
+  - `personal_sync_and_two_teams*`, personal sync and two teams on the same PCs: one person with
+    two PCs in personal sync and in two teams, each team with someone else. Each note reaches
+    only its own people; each agent reads only its project's team layer; the personal repo
+    holds only that person's PCs; leaving every team leaves personal sync as it was. It also
+    runs locally (real git and SQLite) in `cargo test`.
+  - Every repo's history was searched for notes, names and the teams' names: none.
+- **Cancelling a join** (`withdraw_join`): a PC that stops joining takes its request back, so
+  the inviting PC adds nobody.
+- **Housekeeping:**
+  - **Two reviews,** with nothing high.
+  - **Fixed:**
+    - **A join taken back while the inviting PC's answer had not gone out** still got a seat
+      (with nobody behind it), and its answer stayed in the repo. An accepted invite keeps its
+      files until its answer is out, in one push; so an accepted invite whose PC is not in and
+      whose request is gone was taken back: `team_seats` adds nobody and drops it.
+    - **Cancelling could remove a later invite's files** once the number was drawn again. It
+      now removes a request only if it opens with this PC's invite key.
+    - **The confirm said the invite stops working,** which is false once an answer is out. It
+      now says an admin must remove the PC in that case.
+    - **A crash in `finish_join`** between clearing the join and setting the team up left a
+      team neither listed nor forgettable, with its keys in the keyring. The URL is now set
+      first.
+    - **The IPC tests checked Spanish errors** but only passed on a Spanish locale.
+    - **docs/team.md** now says the git server sees which account pushed each change.
+  - **Known limits:**
+    - A cancel racing the inviting PC's push (between its fetch and its push) can still seat the
+      PC: an admin removes it.
+    - Cancelling without the network leaves the request: the PC is seated with nobody behind it
+      until an admin removes it.
+    - The cancel's fetch is best effort but waits for git's network timeout, holding the sync
+      lock, on a host that drops packets.
