@@ -3122,6 +3122,10 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
       first.
     - **The IPC tests checked Spanish errors** but only passed on a Spanish locale.
     - **docs/team.md** now says the git server sees which account pushed each change.
+    - **Re-verification** found that the inviting PC, dropping a withdrawn invite's files,
+      could remove a later invite's that drew the same number, and that a member's own-PC
+      answer cut short by a crash could look withdrawn. A withdrawn invite now needs no
+      request and no answer, and only its record goes: its files went with the withdrawal.
   - **Known limits:**
     - A cancel racing the inviting PC's push (between its fetch and its push) can still seat the
       PC: an admin removes it.
