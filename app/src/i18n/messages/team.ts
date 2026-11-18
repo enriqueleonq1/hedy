@@ -65,6 +65,7 @@ const es = {
   "team.join.waitingText": "Entras en cuanto la PC de quien te invitó sincronice. Suele ser menos de 5 min. Puedes cerrar esto.",
   "team.join.in": "Ya estás en el equipo.",
   "team.join.cancel": "Cancelar",
+  "team.join.cancelConfirm": "¿Dejar de entrar? La invitación ya no servirá",
 
   "team.invite.who": "Invitar a…",
   "team.invite.asAdmin": "como admin",
@@ -205,6 +206,7 @@ const en: Record<keyof typeof es, string> = {
   "team.join.waitingText": "You get in as soon as the PC that invited you syncs. It is usually under 5 min. You can close this.",
   "team.join.in": "You are in the team.",
   "team.join.cancel": "Cancel",
+  "team.join.cancelConfirm": "Stop joining? The invite will no longer work",
 
   "team.invite.who": "Invite…",
   "team.invite.asAdmin": "as an admin",

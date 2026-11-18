@@ -92,6 +92,7 @@ describe("Teams", () => {
     expect(await within(section()).findByText("Esperando para entrar")).toBeInTheDocument();
     // A join that never gets in can be cancelled.
     await user.click(within(section()).getByRole("button", { name: "Cancelar" }));
+    await user.click(within(section()).getByRole("button", { name: /Dejar de entrar/ }));
     await waitFor(() => expect(within(section()).queryByText("Esperando para entrar")).toBeNull());
   });
 

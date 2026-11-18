@@ -134,14 +134,14 @@ function TeamRow({ team, onOpen }: { team: TeamSummary; onOpen: () => void }) {
       {team.waiting && (
         <div className="team-row__waiting">
           {team.lastError && (
-            <span className="small sync-hero__error" role="alert">
+            <span className="small sync-hero__error" role="status">
               {team.lastError}
             </span>
           )}
           <span className="spacer" />
-          <Button small variant="ghost" disabled={cancel.isPending} onClick={() => cancel.mutate(undefined)}>
+          <ConfirmButton small disabled={cancel.isPending} confirmLabel={t("team.join.cancelConfirm")} onConfirm={() => cancel.mutate(undefined)}>
             {t("team.join.cancel")}
-          </Button>
+          </ConfirmButton>
         </div>
       )}
     </li>
