@@ -2541,6 +2541,8 @@ export class MockApi implements HedyApi {
   repoOwners = new Map<string, string>();
   /** Tests: the next sync fails with this message. */
   syncFailure: string | null = null;
+  /** Tests: setup waits for this before answering (a slow repo). */
+  syncGate: Promise<void> | null = null;
   private homes = new Map<string, MemoryHomeKind>();
   private owners = { mine: new Set<string>(), shared: new Set<string>() };
   private syncListeners = new Set<() => void>();
@@ -2573,6 +2575,7 @@ export class MockApi implements HedyApi {
   async syncSetup(url: string, name: string): Promise<string> {
     this.checkSyncUrl(url);
     if (this.sync) throw "la sincronización ya está configurada en esta PC";
+    await this.syncGate;
     this.sync = {
       url: url.trim(),
       lastSync: this.now(),
@@ -2633,14 +2636,23 @@ export class MockApi implements HedyApi {
     this.resolved.push({ id, useOther });
   }
 
+  /** The owner of each project's `origin` stands for all its remotes here. */
   private homeOf(path: string): MemoryHome {
     const owner = this.repoOwners.get(path) ?? null;
+    const status = (home: MemoryHomeKind | null, chosen: boolean, ask: string | null): MemoryHome => ({
+      path,
+      home,
+      chosen,
+      ask,
+      group: owner,
+      syncs: home?.kind === "personal" && owner !== null,
+    });
     const chosen = this.homes.get(path);
-    if (chosen) return { path, home: chosen, chosen: true, ask: null, group: owner };
-    if (!owner) return { path, home: null, chosen: false, ask: null, group: null };
-    if (this.owners.shared.has(owner)) return { path, home: { kind: "shared", group: owner }, chosen: false, ask: null, group: owner };
-    if (this.owners.mine.has(owner)) return { path, home: { kind: "personal" }, chosen: false, ask: null, group: owner };
-    return { path, home: null, chosen: false, ask: owner, group: owner };
+    if (chosen) return status(chosen, true, null);
+    if (!owner) return status(null, false, null);
+    if (this.owners.shared.has(owner)) return status({ kind: "shared", group: owner }, false, null);
+    if (this.owners.mine.has(owner)) return status({ kind: "personal" }, false, null);
+    return status(null, false, owner);
   }
 
   async memoryHome(project: string): Promise<MemoryHome> {

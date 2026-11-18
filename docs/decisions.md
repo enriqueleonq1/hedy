@@ -2290,7 +2290,90 @@ its clock is fixed. Members are trusted, and the local clock is protected.
   (`https::https://token@…`) and a query token, both now refused, and an scp URL with an `@`
   in its path wrongly refused, now accepted.
 
+### The app (phase 5)
+
+The views picked on the design canvas, built on the same use cases as the CLI:
+- **Ajustes, top card:**
+  - while sync is off, an invitation (1b) with "Configurar" and "Ya la uso en otra PC";
+  - once on, status first (2b):
+    - the state, with "Sincronizar ahora";
+    - the PCs;
+    - what syncs (personal projects plus the global layer) and what stays (shared and local
+      projects, and the ones waiting for an answer);
+    - the changes to review, side by side (8a): the version in use on the right, the newer one;
+    - the technical detail behind "Cómo funciona" (no tooltip);
+    - "Dejar de sincronizar en esta PC" (a second click confirms).
+- **Setup (3a, 4b):**
+  - three steps: the address, this PC's name, the 12 words;
+  - the dialog cannot be closed until word 7 is typed back (accents and case do not count);
+  - there is no ".txt" download: a plain file with the key is easy to forget on the disk, so
+    the words are copied to a password manager.
+- **Before setup, the repo is checked for anonymous read** (`SyncRemote::is_public`): `git
+  ls-remote` of its HTTPS form, with no git config and an empty home. No credential helper,
+  `insteadOf` or `~/.netrc` helps. A server that does not answer within 10 s counts as not
+  public.
+  - A public repo is warned about, not refused: everything in it is encrypted, but anyone can
+    see how many PCs sync and when.
+  - This is the only request Hedy makes outside the sync itself, and it goes to the user's own
+    git host.
+- **A project:**
+  - its status screen asks about its owner (5b) while sync is on;
+  - its memory screen has "Memoria de este proyecto" (6b): Personal, Compartido · group (the
+    first owner of its remotes that is not the user's), Solo en esta PC, or follow the owner;
+  - while it follows its owner, the choice shows what that gives now.
+- **Status bar (7a):** a dot and a word (Sincronizado, N para revisar, Sin sincronizar), with a
+  small panel: the state, the PCs, "Ajustes" and "Sincronizar ahora".
+- **The sync runs on its own** 20 s after the app opens, then every 5 minutes while it is
+  open. Each run ends with a `sync-updated` event that refreshes memory, skills, templates
+  and themes.
+  - A failure is kept in `sync.last_error` until a sync works, and it shows in the app and in
+    `hedy sync`.
+- **One sync at a time per PC, across processes:** besides the in-process mutex, every sync
+  operation holds a file lock (`<data>/sync/repo.lock`, released when the file closes, also if
+  the process dies). The app's background sync and `hedy sync now` wait for each other. With
+  the real binary, five pairs of concurrent `hedy sync now` each sent their batch once, with no
+  error.
+- **Removing a PC ("Quitar", 8b) is not shown yet:** it comes with phase 6.
+- **Every git command of the sync has a limit:**
+  - a stalled HTTP transfer gives up after 30 s;
+  - any command is killed after 3 minutes, so the lock is never held forever;
+  - no password window appears: no SSH askpass (`SSH_ASKPASS_REQUIRE=never`) and no credential
+    manager login (`GCM_INTERACTIVE=never`).
+- **The 12 words cannot be lost on the way:**
+  - the setup dialog cannot be closed while the repo takes the first epoch, nor before word 7
+    is typed back;
+  - meanwhile nothing navigates away: not the history, a project shortcut, the palette, nor a
+    click on a notification (`data-locked` on the dialog);
+  - when it finishes, Hedy clears the clipboard if it copied the words.
+- **A project is counted and shown as synced only when it really syncs:** personal, and with an
+  `origin` that names it (`MemoryHomeStatus::syncs`).
+  - A project with no remote shows that its memory stays on this PC, with no menu.
+  - A personal one without `origin` says why it does not sync.
+- **The last sync error is kept short:** one line, up to 300 characters, without terminal
+  escapes (a git server's `remote:` text can carry them).
+
+**Housekeeping:**
+- The security review reproduced:
+  - a stalled server held the sync lock forever (even `leave` waited);
+  - `is_public` sent the user's `~/.netrc` token, reporting a private repo as public;
+  - the setup dialog could lose the words (closed during setup, or a shortcut navigated away).
+- The correctness review also found:
+  - a notification click could unmount the dialog;
+  - a resolved conflict left the screens stale;
+  - the public check could hang for over 2 minutes;
+  - projects without `origin` were counted as synced;
+  - "Solo en esta PC" could not be chosen for a project with no remote;
+  - errors showed on the wrong step;
+  - a relative data dir broke `sync_guard`;
+  - several refreshes ran per background sync;
+  - a failed first sync showed "Todo al día";
+  - two conflict sides from one PC had the same label;
+  - the address placeholder was not translated.
+- All are fixed. The ones that can be tested have a test that fails without the fix: the
+  dialog lock, the shortcuts, the notification, no remote, the error line, `syncs`.
+- The `~/.netrc` fix was checked by hand: a server that asks for Basic auth got the token from
+  the user's home before, and gets nothing now.
+
 **Next phases:**
-5. The app.
 6. Removing a PC and compaction.
 7. A real test.

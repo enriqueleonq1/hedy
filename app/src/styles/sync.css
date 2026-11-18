@@ -68,6 +68,7 @@
 }
 .sync-hero--review .sync-hero__mark { background: var(--warn-bg); color: var(--warn-ink); }
 .sync-hero--error .sync-hero__mark { background: var(--diff-del-bg); color: var(--danger); }
+.sync-hero--pending .sync-hero__mark { background: var(--selection); color: var(--muted); }
 .sync-hero__text { display: grid; gap: 3px; flex: 1; min-width: 0; }
 .sync-hero__text strong { font-size: var(--text-headline); font-weight: 600; color: var(--ink); }
 .sync-hero__text .mono { font-size: 12px; }
@@ -136,6 +137,7 @@
 .sync-item__button--review { --sync-dot: var(--warning); }
 .sync-item__button--error { --sync-dot: var(--danger); }
 .sync-item__button--syncing { --sync-dot: var(--activity); }
+.sync-item__button--pending { --sync-dot: var(--muted); }
 .statusbar__dot.sync-item__dot { background: var(--sync-dot); }
 .sync-item__button--syncing .sync-item__dot { animation: statusbar-pulse 1.6s ease-in-out infinite; }
 .sync-pop {

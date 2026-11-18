@@ -53,7 +53,9 @@ function SyncButton({ status, onOpenSettings }: { status: SyncStatus; onOpenSett
         ? t("sync.bar.error")
         : state === "review"
           ? t("sync.bar.review", { n: status.conflicts })
-          : t("sync.bar.ok");
+          : state === "pending"
+            ? t("sync.bar.pending")
+            : t("sync.bar.ok");
   const last = status.lastSync === null ? t("sync.notYet") : timeAgo(status.lastSync, t);
 
   return (
@@ -79,7 +81,13 @@ function SyncButton({ status, onOpenSettings }: { status: SyncStatus; onOpenSett
           <div className="sync-pop__head">
             <span className={`sync-pop__dot sync-item__button--${state}`} aria-hidden />
             <div className="sync-pop__titles">
-              <strong>{state === "error" ? t("sync.failed") : state === "review" ? text : t("sync.upToDate")}</strong>
+              <strong>
+                {state === "error"
+                  ? t("sync.failed")
+                  : state === "review" || state === "pending"
+                    ? text
+                    : t("sync.upToDate")}
+              </strong>
               <span className="small muted">
                 {last} · {repoLabel(status.url)}
               </span>

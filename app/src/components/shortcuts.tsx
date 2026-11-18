@@ -34,6 +34,8 @@ export function useProjectShortcuts(projects: { path: string }[], open: (path: s
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof Element && e.target.closest(".xterm")) return;
+      // Not from behind a dialog: it may hold something that must finish.
+      if (document.querySelector('[aria-modal="true"]')) return;
       const n = projectShortcut(e);
       const project = n ? projects[n - 1] : undefined;
       if (!project) return;

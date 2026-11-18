@@ -843,6 +843,8 @@ export interface MemoryHome {
   ask: string | null;
   /** The group "Compartido" names. */
   group: string | null;
+  /** Its memory syncs now: personal, with an `origin` that names it. */
+  syncs: boolean;
 }
 
 export type * from "./codeTypes";

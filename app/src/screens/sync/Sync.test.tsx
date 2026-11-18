@@ -61,9 +61,14 @@ describe("Sync", () => {
     expect(await within(dialog).findByLabelText("Clave de recuperación")).toHaveTextContent(MockApi.SYNC_WORDS);
     const finish = within(dialog).getByRole("button", { name: "Terminar" });
     expect(finish).toBeDisabled();
-    // Escape does not lose the words.
+    // Neither Escape, a project shortcut nor the palette loses the words.
+    expect(within(dialog).queryByRole("button", { name: "Cerrar" })).toBeNull();
     await user.keyboard("{Escape}");
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await user.keyboard("{Alt>}1{/Alt}");
+    await user.keyboard("{Control>}k{/Control}");
+    expect(screen.getByRole("dialog", { name: "Configurar la sincronización" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /Buscar|Paleta/ })).toBeNull();
+    expect(window.location.hash).toBe("#sync");
     const check = within(dialog).getByLabelText("Para confirmar, escribe la palabra n.º 7");
     await user.type(check, "pasto");
     expect(within(dialog).getByText(/No coincide/)).toBeInTheDocument();
@@ -75,6 +80,36 @@ describe("Sync", () => {
     expect(await within(section()).findByText("Todo al día")).toBeInTheDocument();
     expect(api.sync?.devices.map((d) => d.name)).toEqual(["Casa"]);
     expect(within(bar()).getByRole("button", { name: "Sincronización: Sincronizado. Ver detalles" })).toBeInTheDocument();
+  });
+
+  it("keeps the words while the repo answers, and while a notification asks for another screen", async () => {
+    const api = offline().withSampleActivity();
+    let release = () => {};
+    api.syncGate = new Promise((resolve) => (release = resolve));
+    const { user } = renderAt("#sync", api);
+    await user.click(within(await waitFor(section)).getByRole("button", { name: "Configurar" }));
+    const dialog = screen.getByRole("dialog", { name: "Configurar la sincronización" });
+    await user.type(within(dialog).getByLabelText("Dirección"), "git@github.com:alex/hedy-memory.git");
+    await user.click(within(dialog).getByRole("button", { name: "Continuar" }));
+    await user.click(await within(dialog).findByRole("button", { name: "Configurar" }));
+    // The repo takes the first epoch: closing now would lose the words.
+    expect(within(dialog).getByRole("button", { name: "Configurando…" })).toBeDisabled();
+    expect(within(dialog).queryByRole("button", { name: "Cerrar" })).toBeNull();
+    await user.keyboard("{Escape}");
+    release();
+    expect(await within(dialog).findByLabelText("Clave de recuperación")).toHaveTextContent(MockApi.SYNC_WORDS);
+
+    api.simulateNotificationClick("s3");
+    expect(window.location.hash).toBe("#sync");
+    expect(screen.getByRole("dialog", { name: "Configurar la sincronización" })).toBeInTheDocument();
+  });
+
+  it("says a project without a remote keeps its memory here", async () => {
+    const api = MockApi.withSampleData();
+    api.repoOwners.delete("/code/hedy");
+    renderAt(`#m=${encodeURIComponent("/code/hedy")}`, api);
+    expect(await screen.findByText(/no tiene un repo remoto/)).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Memoria de este proyecto" })).toBeNull();
   });
 
   it("adds this PC with the same address and the 12 words", async () => {
@@ -169,6 +204,7 @@ describe("Sync", () => {
   it("compares recovery words as the core does, and names repos and projects briefly", () => {
     expect(foldWord(" Ábaco ")).toBe("abaco");
     expect(foldWord("PINGÜINO")).toBe("pinguino");
+    expect(foldWord("Ñandú")).toBe("ñandu");
     expect(repoLabel("git@github.com:alex/hedy-memory.git")).toBe("alex/hedy-memory");
     expect(repoLabel("https://gitlab.com/grupo/sub/memoria.git")).toBe("grupo/sub/memoria");
     expect(repoLabel("ssh://git@host:2222/u/m.git")).toBe("u/m");
@@ -178,16 +214,19 @@ describe("Sync", () => {
       chosen: false,
       ask: null,
       group: null,
+      syncs: false,
       ...extra,
     });
     expect(
       summarize([
-        home("/a", { home: { kind: "personal" } }),
+        home("/a", { home: { kind: "personal" }, syncs: true }),
+        // Personal, but without an origin: it does not sync.
+        home("/f", { home: { kind: "personal" } }),
         home("/b", { home: { kind: "shared", group: "github.com/empresa-org" } }),
         home("/c", { home: { kind: "shared", group: "gitlab.com/empresa-org" } }),
         home("/d", { ask: "github.com/cliente" }),
         home("/e", { home: { kind: "local" } }),
       ]),
-    ).toEqual({ personal: 1, stay: 4, groups: ["empresa-org"], waiting: 1 });
+    ).toEqual({ personal: 1, stay: 5, groups: ["empresa-org"], waiting: 1 });
   });
 });

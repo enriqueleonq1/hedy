@@ -95,13 +95,14 @@ function SyncOn({ status }: { status: SyncStatus }) {
   const state = syncState(status);
   const last = status.lastSync === null ? t("sync.notYet") : timeAgo(status.lastSync, t);
   const pcs = t(status.devices.length === 1 ? "sync.pcs.one" : "sync.pcs.other", { n: status.devices.length });
-  const headline =
-    now.isPending
-      ? t("sync.syncing")
-      : state === "error"
-        ? t("sync.failed")
-        : state === "review"
-          ? t(status.conflicts === 1 ? "sync.toReview.one" : "sync.toReview.other", { n: status.conflicts })
+  const headline = now.isPending
+    ? t("sync.syncing")
+    : state === "error"
+      ? t("sync.failed")
+      : state === "review"
+        ? t(status.conflicts === 1 ? "sync.toReview.one" : "sync.toReview.other", { n: status.conflicts })
+        : state === "pending"
+          ? t("sync.pending")
           : t("sync.upToDate");
 
   return (
@@ -118,7 +119,7 @@ function SyncOn({ status }: { status: SyncStatus }) {
 
       <div className={`sync-hero sync-hero--${state}`} role="status">
         <span className="sync-hero__mark" aria-hidden>
-          {state === "ok" ? "✓" : "!"}
+          {state === "ok" ? "✓" : state === "pending" ? "…" : "!"}
         </span>
         <div className="sync-hero__text">
           <strong>{headline}</strong>
@@ -175,7 +176,7 @@ function SyncOn({ status }: { status: SyncStatus }) {
 
 /** What travels and what stays, from every project's memory home. */
 export function summarize(homes: MemoryHome[]) {
-  const personal = homes.filter((h) => h.home?.kind === "personal").length;
+  const personal = homes.filter((h) => h.syncs).length;
   const stay = homes.length - personal;
   const groups = [
     ...new Set(homes.flatMap((h) => (h.home?.kind === "shared" ? [h.home.group.split("/").pop() ?? h.home.group] : []))),
@@ -239,15 +240,26 @@ const KIND_LABEL: Record<SyncConflict["kind"], MessageKey> = {
 export function ConflictCard({ conflict, status }: { conflict: SyncConflict; status: SyncStatus }) {
   const t = useT();
   const toast = useToast();
-  const resolve = useAction((api, useOther: boolean) => api.resolveSyncConflict(conflict.id, useOther), {
-    invalidate: [SYNC_KEY],
-    onSuccess: () => toast.info(t("sync.conflict.resolved")),
-  });
   // As in a diff: the other version first, the one in use (the newer) last.
-  const sides = [
+  const sides: { side: SyncConflict["kept"]; useOther: boolean; inUse: boolean }[] = [
     { side: conflict.other, useOther: true, inUse: false },
     { side: conflict.kept, useOther: false, inUse: true },
   ];
+  const client = useQueryClient();
+  // The chosen version is written here at once: what shows it is read again.
+  const resolve = useAction((api, useOther: boolean) => api.resolveSyncConflict(conflict.id, useOther), {
+    invalidate: [],
+    onSuccess: () => {
+      toast.info(t("sync.conflict.resolved"));
+      return refreshAfterSync(client);
+    },
+  });
+  // Two sides from the same PC are told apart by when they were written.
+  const samePc = pcName(status, conflict.kept.device, t) === pcName(status, conflict.other.device, t);
+  const label = (side: SyncConflict["kept"]) =>
+    samePc
+      ? t("sync.conflict.useAt", { when: timeAgo(side.at, t) })
+      : t("sync.conflict.use", { pc: pcName(status, side.device, t) });
   return (
     <article className="sync-conflict" aria-label={t(KIND_LABEL[conflict.kind])}>
       <header className="row">
@@ -274,7 +286,7 @@ export function ConflictCard({ conflict, status }: { conflict: SyncConflict; sta
             disabled={resolve.isPending}
             onClick={() => resolve.mutate(useOther)}
           >
-            {t("sync.conflict.use", { pc: pcName(status, side.device, t) })}
+            {label(side)}
           </Button>
         ))}
       </div>

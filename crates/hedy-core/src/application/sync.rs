@@ -189,6 +189,34 @@ struct SyncedProjects {
     project_ids: HashMap<PathBuf, String>,
 }
 
+/// The longest error kept for the status bar.
+const ERROR_MAX: usize = 300;
+
+/// An error as the app shows it: one line, without terminal escapes (a git
+/// server's own `remote:` text can carry them), and short.
+fn shown_error(error: &AppError) -> String {
+    let text = error.to_string();
+    let mut shown = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            // `ESC [ … letter`, or a lone escape.
+            if chars.next_if_eq(&'[').is_some() {
+                while chars.next().is_some_and(|c| !c.is_ascii_alphabetic()) {}
+            }
+        } else if c.is_control() {
+            shown.push(' ');
+        } else {
+            shown.push(c);
+        }
+    }
+    let shown = shown.split_whitespace().collect::<Vec<_>>().join(" ");
+    match shown.char_indices().nth(ERROR_MAX) {
+        Some((at, _)) => format!("{}…", &shown[..at]),
+        None => shown,
+    }
+}
+
 fn json<T: Serialize>(value: &T) -> String {
     serde_json::to_string(value).expect("sync records serialize")
 }
@@ -259,10 +287,12 @@ impl Hedy {
     /// The sync repo's clone, inside Hedy's data folder (never a relative
     /// path: a failed setup deletes it).
     fn sync_dir(&self) -> AppResult<PathBuf> {
-        match self.store.data_dir() {
-            Some(dir) if dir.is_absolute() => Ok(dir.join("sync").join("repo")),
-            _ => Err(corrupt("data dir")),
-        }
+        let dir = self
+            .store
+            .data_dir()
+            .and_then(|dir| std::path::absolute(dir).ok())
+            .ok_or_else(|| corrupt("data dir"))?;
+        Ok(dir.join("sync").join("repo"))
     }
 
     pub fn sync_is_set_up(&self) -> AppResult<bool> {
@@ -472,7 +502,7 @@ impl Hedy {
         if self.sync_is_set_up()? {
             match &result {
                 Ok(_) => self.store.set_setting(LAST_ERROR, None)?,
-                Err(error) => self.set_sync_setting(LAST_ERROR, &error.to_string())?,
+                Err(error) => self.set_sync_setting(LAST_ERROR, &shown_error(error))?,
             }
         }
         result

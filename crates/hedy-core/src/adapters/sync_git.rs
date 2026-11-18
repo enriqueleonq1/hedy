@@ -12,13 +12,22 @@
 //! path that crosses a symbolic link is refused.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Command;
+use std::time::Duration;
+
+use super::ship::{Ran, run_timed};
 
 use crate::application::ports::{PortError, PortResult, SyncLock, SyncRemote};
 use crate::tr;
 
 /// Tries to push this many times when another PC pushed first.
 const PUSH_ATTEMPTS: usize = 4;
+/// A git command that talks to a server that stopped answering is killed
+/// after this long, so the sync lock is never held forever.
+const GIT_TIMEOUT: Duration = Duration::from_secs(180);
+/// The anonymous read before setup: a server that does not answer soon
+/// (an SSH-only host behind a firewall) counts as not public.
+const PUBLIC_CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Default)]
 pub struct GitSyncRemote;
@@ -62,7 +71,7 @@ fn redirects_repo_or_config(name: &str) -> bool {
     redirects_repo(name) || name.starts_with("GIT_CONFIG")
 }
 
-fn git(dir: &Path, args: &[&str]) -> PortResult<Output> {
+fn git(dir: &Path, args: &[&str]) -> PortResult<Ran> {
     let mut command = Command::new("git");
     clear_git_redirects(&mut command);
     command
@@ -83,26 +92,29 @@ fn git(dir: &Path, args: &[&str]) -> PortResult<Output> {
             "filter.lfs.process=",
             "-c",
             "filter.lfs.required=false",
+            // An HTTP transfer that stalls gives up (SSH gets the timeout).
+            "-c",
+            "http.lowSpeedLimit=1000",
+            "-c",
+            "http.lowSpeedTime=30",
         ])
         .args(args)
         .current_dir(dir)
+        // Never a password window from a sync that runs on its own: no
+        // SSH askpass, no credential manager's browser login.
         .env("GIT_TERMINAL_PROMPT", "0")
-        .output()
-        .map_err(|e| {
-            PortError::new(tr!(
-                "no se pudo ejecutar git: {e}",
-                "could not run git: {e}"
-            ))
-        })
+        .env("SSH_ASKPASS_REQUIRE", "never")
+        .env("GCM_INTERACTIVE", "never");
+    run_timed(command, None, GIT_TIMEOUT)
 }
 
 /// Runs git and fails with its message.
 fn run(dir: &Path, args: &[&str]) -> PortResult<String> {
     let out = git(dir, args)?;
-    if out.status.success() {
-        Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    if out.ok {
+        Ok(out.stdout.trim().to_owned())
     } else {
-        let message = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+        let message = out.stderr.trim().to_owned();
         let command = args.first().copied().unwrap_or("");
         Err(PortError::new(tr!(
             "git {command} falló: {message}",
@@ -112,7 +124,7 @@ fn run(dir: &Path, args: &[&str]) -> PortResult<String> {
 }
 
 fn succeeds(dir: &Path, args: &[&str]) -> bool {
-    git(dir, args).is_ok_and(|out| out.status.success())
+    git(dir, args).is_ok_and(|out| out.ok)
 }
 
 /// Where an anonymous read of `url` goes: its HTTPS form, also for an SSH
@@ -191,12 +203,17 @@ impl SyncRemote for GitSyncRemote {
         Ok(SyncLock::new(file))
     }
 
-    /// An anonymous `ls-remote` of the HTTPS form, without the user's git
-    /// config (no credential helper, no `insteadOf` back to SSH).
+    /// An anonymous `ls-remote` of the HTTPS form, without anything of the
+    /// user's: no git config (credential helper, `insteadOf` back to SSH)
+    /// and an empty home (no `~/.netrc`).
     fn is_public(&self, url: &str) -> bool {
         let Some(https) = https_form(url) else {
             return false;
         };
+        let home = std::env::temp_dir().join(format!("hedy-anonymous-{}", std::process::id()));
+        if std::fs::create_dir_all(&home).is_err() {
+            return false;
+        }
         let mut command = Command::new("git");
         clear_git_redirects(&mut command);
         command
@@ -210,14 +227,18 @@ impl SyncRemote for GitSyncRemote {
                 "--",
                 &https,
             ])
-            .current_dir(std::env::temp_dir())
+            .current_dir(&home)
+            .env("HOME", &home)
+            .env("USERPROFILE", &home)
+            .env("GIT_CEILING_DIRECTORIES", &home)
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_TERMINAL_PROMPT", "0")
             .env_remove("GIT_ASKPASS")
-            .env_remove("SSH_ASKPASS")
-            .stdin(std::process::Stdio::null());
-        command.output().is_ok_and(|out| out.status.success())
+            .env_remove("SSH_ASKPASS");
+        let public = run_timed(command, None, PUBLIC_CHECK_TIMEOUT).is_ok_and(|out| out.ok);
+        let _ = std::fs::remove_dir_all(&home);
+        public
     }
 
     fn device_name(&self) -> String {

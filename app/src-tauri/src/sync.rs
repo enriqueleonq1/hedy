@@ -181,6 +181,8 @@ pub struct MemoryHomeDto {
     pub chosen: bool,
     pub ask: Option<String>,
     pub group: Option<String>,
+    /// Its memory syncs now (personal, with an `origin`).
+    pub syncs: bool,
 }
 
 fn home_dto(path: PathBuf, s: MemoryHomeStatus) -> MemoryHomeDto {
@@ -190,6 +192,7 @@ fn home_dto(path: PathBuf, s: MemoryHomeStatus) -> MemoryHomeDto {
         chosen: s.chosen,
         ask: s.ask,
         group: s.group,
+        syncs: s.syncs,
     }
 }
 

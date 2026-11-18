@@ -26,11 +26,16 @@ export function refreshAfterSync(client: QueryClient): Promise<unknown> {
   );
 }
 
-/** `null` while it is not set up. Refreshed when the sync that runs on its own finishes. */
-export function useSyncStatus() {
+/** Once, at the root: the sync that runs on its own finished, so what it may have changed is read again. */
+export function useSyncEvents() {
   const api = useApi();
   const client = useQueryClient();
   useEffect(() => api.onSyncUpdated(() => void refreshAfterSync(client)), [api, client]);
+}
+
+/** `null` while it is not set up. */
+export function useSyncStatus() {
+  const api = useApi();
   return useQuery({ queryKey: SYNC_STATUS_KEY, queryFn: () => api.syncStatus() });
 }
 
@@ -67,9 +72,10 @@ export function repoLabel(url: string): string {
   return path.replace(/\.git$/, "") || url;
 }
 
-/** The one-line state: failed, changes to review, or up to date. */
-export function syncState(status: SyncStatus): "error" | "review" | "ok" {
+/** The one-line state: failed, changes to review, not synced yet, or up to date. */
+export function syncState(status: SyncStatus): "error" | "review" | "pending" | "ok" {
   if (status.lastError) return "error";
   if (status.conflicts > 0) return "review";
+  if (status.lastSync === null) return "pending";
   return "ok";
 }

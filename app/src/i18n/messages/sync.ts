@@ -12,6 +12,8 @@ const es = {
   "sync.joinLink": "Ya la uso en otra PC",
 
   "sync.upToDate": "Todo al día",
+  "sync.pending": "Aún no sincroniza",
+  "sync.bar.pending": "Sin sincronizar aún",
   "sync.failed": "No se pudo sincronizar",
   "sync.syncing": "Sincronizando…",
   "sync.toReview.one": "1 cambio para revisar",
@@ -66,6 +68,7 @@ const es = {
   "sync.conflict.deleted": "Borrada",
   "sync.conflict.inUse": "en uso",
   "sync.conflict.use": "Usar la de {pc}",
+  "sync.conflict.useAt": "Usar la de {when}",
   "sync.conflict.side": "{pc} · {when}",
   "sync.conflict.resolved": "Listo; se envía con la próxima sincronización.",
 
@@ -76,6 +79,7 @@ const es = {
     "Un repo privado y vacío en GitHub, GitLab, Bitbucket o tu propio servidor. Hedy usa tu git de siempre y no guarda ninguna contraseña.",
   "sync.url.joinText": "La misma dirección que usas en tu otra PC.",
   "sync.url.label": "Dirección",
+  "sync.url.placeholder": "git@github.com:tu-usuario/hedy-memory.git",
   "sync.url.create": "¿Aún no lo tienes? Créalo en",
   "sync.url.checking": "Comprobando…",
   "sync.url.public":
@@ -87,7 +91,7 @@ const es = {
   "sync.setup.start": "Configurar",
   "sync.setup.starting": "Configurando…",
   "sync.words.title": "Guarda tu clave de recuperación",
-  "sync.words.text": "Sirve para sumar otra PC. Si la pierdes, nadie puede recuperarla, ni Hedy.",
+  "sync.words.text": "Sirve para sumar otra PC. Guárdala en tu gestor de contraseñas: si la pierdes, nadie puede recuperarla, ni Hedy. Al terminar, Hedy la borra del portapapeles.",
   "sync.words.label": "Clave de recuperación",
   "sync.words.copy": "Copiar",
   "sync.words.copied": "Copiada",
@@ -129,6 +133,8 @@ const es = {
   "sync.home.followDetail": "Ahora: {home}.",
   "sync.home.undecided": "sin decidir, se queda en esta PC",
   "sync.home.off": "La sincronización está desactivada; esto vale cuando la configures.",
+  "sync.home.noRemote": "Este proyecto no tiene un repo remoto, así que su memoria se queda en esta PC.",
+  "sync.home.noOrigin": "Sin un remoto «origin» no se puede reconocer en tus otras PCs, así que por ahora no se sincroniza.",
 
   "sync.bar.ok": "Sincronizado",
   "sync.bar.error": "Sin sincronizar",
@@ -149,6 +155,8 @@ const en: Record<keyof typeof es, string> = {
   "sync.joinLink": "I already use it on another PC",
 
   "sync.upToDate": "All up to date",
+  "sync.pending": "Not synced yet",
+  "sync.bar.pending": "Not synced yet",
   "sync.failed": "Could not sync",
   "sync.syncing": "Syncing…",
   "sync.toReview.one": "1 change to review",
@@ -203,6 +211,7 @@ const en: Record<keyof typeof es, string> = {
   "sync.conflict.deleted": "Deleted",
   "sync.conflict.inUse": "in use",
   "sync.conflict.use": "Use {pc}'s",
+  "sync.conflict.useAt": "Use the one from {when}",
   "sync.conflict.side": "{pc} · {when}",
   "sync.conflict.resolved": "Done; it goes out with the next sync.",
 
@@ -213,6 +222,7 @@ const en: Record<keyof typeof es, string> = {
     "An empty private repo on GitHub, GitLab, Bitbucket or your own server. Hedy uses your usual git and keeps no password.",
   "sync.url.joinText": "The same address you use on your other PC.",
   "sync.url.label": "Address",
+  "sync.url.placeholder": "git@github.com:your-user/hedy-memory.git",
   "sync.url.create": "Don't have one yet? Create it on",
   "sync.url.checking": "Checking…",
   "sync.url.public":
@@ -224,7 +234,7 @@ const en: Record<keyof typeof es, string> = {
   "sync.setup.start": "Set up",
   "sync.setup.starting": "Setting up…",
   "sync.words.title": "Keep your recovery key",
-  "sync.words.text": "You need it to add another PC. If you lose it, nobody can recover it, not even Hedy.",
+  "sync.words.text": "You need it to add another PC. Keep it in your password manager: if you lose it, nobody can recover it, not even Hedy. When you finish, Hedy clears it from the clipboard.",
   "sync.words.label": "Recovery key",
   "sync.words.copy": "Copy",
   "sync.words.copied": "Copied",
@@ -266,6 +276,8 @@ const en: Record<keyof typeof es, string> = {
   "sync.home.followDetail": "Now: {home}.",
   "sync.home.undecided": "not decided, it stays on this PC",
   "sync.home.off": "Sync is off; this applies once you set it up.",
+  "sync.home.noRemote": "This project has no remote repo, so its memory stays on this PC.",
+  "sync.home.noOrigin": "Without an \u201corigin\u201d remote your other PCs cannot recognize it, so it does not sync for now.",
 
   "sync.bar.ok": "Synced",
   "sync.bar.error": "Not synced",

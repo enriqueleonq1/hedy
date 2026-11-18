@@ -24,14 +24,18 @@ const GH_AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 const GH_READY_TTL: Duration = Duration::from_secs(600);
 const GH_LOGGED_OUT_TTL: Duration = Duration::from_secs(60);
 
-struct Ran {
-    ok: bool,
-    stdout: String,
-    stderr: String,
+pub(crate) struct Ran {
+    pub ok: bool,
+    pub stdout: String,
+    pub stderr: String,
 }
 
 /// Runs `command`, feeding `input` on stdin, and kills it after `timeout`.
-fn run_timed(mut command: Command, input: Option<&str>, timeout: Duration) -> PortResult<Ran> {
+pub(crate) fn run_timed(
+    mut command: Command,
+    input: Option<&str>,
+    timeout: Duration,
+) -> PortResult<Ran> {
     let name = command.get_program().to_string_lossy().into_owned();
     command
         .stdin(if input.is_some() {

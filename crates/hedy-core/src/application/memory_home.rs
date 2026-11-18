@@ -25,6 +25,9 @@ pub struct MemoryHomeStatus {
     /// The group "Compartido" would name: the first owner of its remotes
     /// that is not the user's (or the first one); `None` without remotes.
     pub group: Option<String>,
+    /// Its memory syncs now: personal, with an `origin` that says its
+    /// owner (what matches the project on another PC).
+    pub syncs: bool,
 }
 
 impl Hedy {
@@ -109,11 +112,15 @@ impl Hedy {
                 DerivedHome::NoRemote => (None, false, None),
             },
         };
+        let origin = self.source.remote_url(path, "origin").ok().flatten();
+        let syncs = home.as_ref().is_some_and(MemoryHome::syncs)
+            && origin.as_deref().and_then(RepoIdentity::from_url).is_some();
         Ok(MemoryHomeStatus {
             home,
             chosen,
             ask,
             group,
+            syncs,
         })
     }
 
@@ -210,6 +217,12 @@ mod tests {
             f.hedy.effective_memory_home(&fork).unwrap(),
             Some(MemoryHome::Shared("github.com/empresa-org".into()))
         );
+        assert!(!f.hedy.memory_home_status(&fork).unwrap().syncs);
+        // Personal by choice, it syncs: its origin names it.
+        f.hedy
+            .set_memory_home(&fork, Some(&MemoryHome::Personal))
+            .unwrap();
+        assert!(f.hedy.memory_home_status(&fork).unwrap().syncs);
     }
 
     #[test]
@@ -225,5 +238,21 @@ mod tests {
         );
         f.hedy.answer_owner("github.com/tu-usuario", true).unwrap();
         assert_eq!(f.hedy.effective_memory_home(&app).unwrap(), None);
+    }
+
+    #[test]
+    fn a_personal_project_without_an_origin_does_not_sync() {
+        let f = Fixture::new();
+        let app = project(
+            &f,
+            "/w/app",
+            &[("upstream", "git@github.com:tu-usuario/app.git")],
+        );
+        f.hedy
+            .set_memory_home(&app, Some(&MemoryHome::Personal))
+            .unwrap();
+        let status = f.hedy.memory_home_status(&app).unwrap();
+        assert_eq!(status.home, Some(MemoryHome::Personal));
+        assert!(!status.syncs);
     }
 }

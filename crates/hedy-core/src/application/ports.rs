@@ -957,9 +957,6 @@ pub trait CodeHost: Send + Sync {
     fn create_pull_request(&self, repo: &Path, spec: &PullRequestSpec) -> PortResult<String>;
 }
 
-/// The sync repo's working copy (docs/decisions.md §34), in `dir`. Paths are
-/// relative to the repo and made by `domain::sync::layout`. Any git server
-/// works: the user's own credentials, no token kept by Hedy.
 /// Held while one sync operation runs; dropping it lets the next one in.
 pub struct SyncLock {
     _held: Box<dyn Send>,
@@ -973,6 +970,9 @@ impl SyncLock {
     }
 }
 
+/// The sync repo's working copy (docs/decisions.md §34), in `dir`. Paths are
+/// relative to the repo and made by `domain::sync::layout`. Any git server
+/// works: the user's own credentials, no token kept by Hedy.
 pub trait SyncRemote: Send + Sync {
     /// Waits for, then holds, the lock next to `dir`: one sync operation
     /// at a time on this PC, also across processes (the app and `hedy`).

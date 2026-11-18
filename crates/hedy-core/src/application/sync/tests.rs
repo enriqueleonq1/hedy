@@ -1509,3 +1509,15 @@ fn a_failed_sync_is_remembered_until_one_works_and_a_public_repo_is_told() {
     );
     assert_eq!(home.hedy.default_device_name(), "PC de prueba");
 }
+
+#[test]
+fn an_error_is_kept_on_one_short_line_without_escapes() {
+    let error = AppError::Port(crate::application::ports::PortError::new(format!(
+        "git push falló:\nremote: \u{1b}[31mACCESO DENEGADO\u{1b}[0m\r\n{}",
+        "x".repeat(400)
+    )));
+    let shown = super::shown_error(&error);
+    assert!(shown.starts_with("git push falló: remote: ACCESO DENEGADO x"));
+    assert!(!shown.contains('\u{1b}') && !shown.contains('\n'));
+    assert_eq!(shown.chars().count(), super::ERROR_MAX + 1);
+}

@@ -27,6 +27,7 @@ import { ThemeStudio } from "./screens/themes/ThemeStudio";
 import { StatusScreen } from "./screens/status/StatusScreen";
 import { Welcome } from "./screens/Welcome";
 import { Workspace } from "./screens/workspace/Workspace";
+import { useSyncEvents } from "./sync/hooks";
 import { TaskEventsBridge } from "./tasks/hooks";
 import { ThemeProvider } from "./theme/ThemeProvider";
 import { I18nProvider, useT } from "./i18n";
@@ -111,6 +112,11 @@ function hashFor(view: View): string {
   return `#${view.screen}`;
 }
 
+/** A dialog that must finish first is open (the recovery words, a setup under way). */
+function lockedByDialog(): boolean {
+  return document.querySelector('[data-locked="true"]') !== null;
+}
+
 function Root() {
   const overview = useOverview();
   const t = useT();
@@ -129,6 +135,7 @@ function Root() {
         if (options?.replace) history.replaceState(null, "", hash);
         else if (hash !== window.location.hash) history.pushState(null, "", hash);
       };
+      if (lockedByDialog()) return;
       if (!unsaved.dirty) return go();
       void unsaved.confirmLeave().then((ok) => ok && go());
     },
@@ -143,6 +150,7 @@ function Root() {
   useEffect(() => {
     const onPop = () => {
       const next = viewFromHash();
+      if (lockedByDialog()) return history.pushState(null, "", hashFor(shown.current));
       if (!unsaved.dirty) return setView(next);
       // The URL already moved: put it back while asking.
       const target = window.location.hash;
@@ -174,6 +182,7 @@ function Root() {
   );
   const goToProject = useCallback((path: string) => navigate({ screen: "workspace", project: path }), [navigate]);
   useProjectShortcuts(shortcutProjects, goToProject);
+  useSyncEvents();
 
   if (overview.isPending) {
     return (

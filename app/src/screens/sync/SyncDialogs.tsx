@@ -20,9 +20,11 @@ const CREATE_REPO = [
   { name: "Bitbucket", url: "https://bitbucket.org/repo/create" },
 ];
 
-/** A recovery word as compared: any case, accents optional (as the core reads them). */
+const ACCENTS: Record<string, string> = { á: "a", é: "e", í: "i", ó: "o", ú: "u", ü: "u" };
+
+/** A recovery word as compared: any case, Spanish accents optional (as the core reads them; `ñ` stays). */
 export function foldWord(word: string): string {
-  return word.trim().toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
+  return [...word.trim().toLowerCase()].map((c) => ACCENTS[c] ?? c).join("");
 }
 
 function Steps({ step, total }: { step: number; total: number }) {
@@ -48,7 +50,15 @@ function Lead({ title, text }: { title: string; text: string }) {
   );
 }
 
-function UrlField({ value, onChange }: { value: string; onChange: (url: string) => void }) {
+function UrlField({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (url: string) => void;
+  disabled?: boolean;
+}) {
   const t = useT();
   return (
     <div className="field">
@@ -57,9 +67,10 @@ function UrlField({ value, onChange }: { value: string; onChange: (url: string) 
         id="sync-url"
         className="mono"
         value={value}
-        placeholder="git@github.com:tu-usuario/hedy-memory.git"
+        placeholder={t("sync.url.placeholder")}
         spellCheck={false}
         autoComplete="off"
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
       />
     </div>
@@ -113,6 +124,8 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
   const list = words.split(/\s+/).filter(Boolean);
   const confirmed = list.length >= CHECK_WORD && foldWord(typed) === foldWord(list[CHECK_WORD - 1] ?? "");
   const finish = () => {
+    // The key goes to a password manager, not stays in the clipboard.
+    if (copied) void navigator.clipboard?.writeText("").catch(() => {});
     toast.info(t("sync.setup.done"));
     onClose();
   };
@@ -134,7 +147,14 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
       </>
     ) : step === 2 ? (
       <>
-        <Button variant="ghost" disabled={setup.isPending} onClick={() => setStep(1)}>
+        <Button
+          variant="ghost"
+          disabled={setup.isPending}
+          onClick={() => {
+            setup.reset();
+            setStep(1);
+          }}
+        >
           {t("common.back")}
         </Button>
         <Button variant="primary" disabled={!name.trim() || setup.isPending} onClick={() => setup.mutate()}>
@@ -147,19 +167,27 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
       </Button>
     );
 
-  // The words are shown once: the dialog only closes with "Terminar".
+  // The words are shown once: the dialog only closes with "Terminar" (and
+  // not while the repo takes the first epoch, whose words would be lost).
   return (
-    <Dialog title={t("sync.setup.title")} onClose={step === 3 ? () => {} : onClose} footer={footer}>
+    <Dialog
+      title={t("sync.setup.title")}
+      onClose={onClose}
+      dismissible={step < 3 && !setup.isPending}
+      footer={footer}
+    >
       <Steps step={step} total={3} />
       {step === 1 && (
         <>
           <Lead title={t("sync.url.title")} text={t("sync.url.text")} />
           <UrlField
             value={url}
+            disabled={check.isPending}
             onChange={(next) => {
               setUrl(next);
               setPublicRepo(false);
               check.reset();
+              setup.reset();
             }}
           />
           {publicRepo && (
@@ -252,7 +280,15 @@ export function JoinDialog({ onClose }: { onClose: () => void }) {
 
   const footer = (
     <>
-      <Button variant="ghost" disabled={join.isPending} onClick={() => (step === 1 ? onClose() : setStep(step - 1))}>
+      <Button
+        variant="ghost"
+        disabled={join.isPending}
+        onClick={() => {
+          join.reset();
+          if (step === 1) onClose();
+          else setStep(step - 1);
+        }}
+      >
         {step === 1 ? t("common.cancel") : t("common.back")}
       </Button>
       <Button
@@ -266,7 +302,7 @@ export function JoinDialog({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <Dialog title={t("sync.join.title")} onClose={onClose} footer={footer}>
+    <Dialog title={t("sync.join.title")} onClose={onClose} dismissible={!join.isPending} footer={footer}>
       <Steps step={step} total={3} />
       {step === 1 && (
         <>
