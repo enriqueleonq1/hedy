@@ -3070,3 +3070,24 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
   - the 22 `invoke` calls in `tauriApi.ts` were checked against the Rust commands, by name and
     arguments;
   - screenshots in both themes with headless Chromium over CDP.
+- **Housekeeping:**
+  - **Two reviews,** with nothing high. They checked rendering (React text only, no HTML or
+    Markdown) and every DTO against its TS type.
+  - **Fixed:**
+    - **A PC still joining could not cancel**, and its error never showed. Its row now shows
+      the error and has Cancelar.
+    - **"N para revisar" counted a member's own suggestions.** `TeamStatus.to_review` now
+      counts only what this person may take or turn down, everywhere.
+    - **A proposal sent to the team layer as a suggestion stayed a proposal**, and approving it
+      again made a second suggestion. It is now approved here as well: an admin may turn the
+      suggestion down.
+    - **The sheet's button only said "Aprobar".** It now names where the note goes ("Compartir
+      con quien trabaje en …", "Enviar a todo el equipo").
+    - **The review followed a suggestion by its position**, which a refresh can change. It now
+      follows its id.
+    - **An admin's PC waiting to leave** can also forget the team here, as `leave --here`
+      does.
+    - **An invite's code** shows only when asked.
+    - **The memory card** refreshes the teams when it changes a project's home.
+    - **The background loop** refreshes the UI after a sync, not every 5 minutes with nothing
+      set up.
