@@ -1797,10 +1797,15 @@ impl Hedy {
             } else if self
                 .read_repo(&dir, &team_layout::request(*number))?
                 .is_none()
+                && self
+                    .read_repo(&dir, &team_layout::answer(*number))?
+                    .is_none()
             {
                 // Taken back before its answer was out (`withdraw_join`): the
                 // answer and the request's removal go in one push, so a
-                // missing request with no seat has nobody behind it.
+                // missing request with no answer and no seat has nobody
+                // behind it. Its files went with it; the number may be
+                // another invite's by now.
                 withdrawn.push(*number);
             } else if !fits(&request.device, &request.public, &added) {
                 failed.push(*number);
@@ -1972,7 +1977,7 @@ impl Hedy {
                     self.sync_remote.write(&dir, &path, &sealed)?;
                 }
             }
-            for number in answered.iter().chain(&failed).chain(&withdrawn) {
+            for number in answered.iter().chain(&failed) {
                 self.drop_invite_files(&session, *number)?;
             }
             for path in done.iter().chain(&stale) {

@@ -1986,9 +1986,14 @@ fn cancelling_a_join_leaves_a_later_invites_files_alone() {
         .unwrap();
     // A later invite draws the same number, and Marta answers it.
     server.put(&team_layout::offer(invite.number), b"later offer".to_vec());
+    // Well formed, but sealed with Marta's key, not Luis's.
+    let marta = serde_json::json!({
+        "message": "c3Bha2U=",
+        "sealed": BASE64.encode(b"sealed with Marta's own key"),
+    });
     server.put(
         &team_layout::request(invite.number),
-        b"Marta's request".to_vec(),
+        marta.to_string().into_bytes(),
     );
     luis.hedy.team_forget(&join.id).unwrap();
     assert!(server.file(&team_layout::request(invite.number)).is_some());
@@ -2041,8 +2046,11 @@ fn a_join_cancelled_while_its_inviter_could_not_push_lets_nobody_in() {
     ana.f.sync.fail_next_push();
     assert!(ana.f.hedy.team_sync(&ana.team).is_err());
     luis.hedy.team_forget(&join.id).unwrap();
+    // Meanwhile another invite draws the same number: its files stay.
+    server.put(&team_layout::offer(invite.number), b"later offer".to_vec());
     ana.sync();
     assert_eq!(people(&ana).len(), 1);
+    assert!(server.file(&team_layout::offer(invite.number)).is_some());
 }
 
 // ── T6: personal sync and teams together ────────────────────────────────
