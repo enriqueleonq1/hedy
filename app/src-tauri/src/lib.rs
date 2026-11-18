@@ -7,6 +7,7 @@ mod dto;
 mod events;
 mod ship;
 mod sync;
+mod team;
 mod terminal;
 mod themes;
 mod waits;
@@ -178,6 +179,28 @@ pub fn run() {
             sync::set_memory_home,
             sync::answer_owner,
             sync::forget_owner,
+            team::teams,
+            team::team_status,
+            team::team_create,
+            team::team_invite,
+            team::team_cancel_invite,
+            team::team_dismiss_failed_invite,
+            team::team_join,
+            team::team_sync,
+            team::team_link_project,
+            team::team_notes,
+            team::team_add_note,
+            team::team_edit_note,
+            team::team_publish_note,
+            team::team_suggestions,
+            team::team_accept_suggestion,
+            team::team_reject_suggestion,
+            team::team_set_role,
+            team::team_remove_person,
+            team::team_remove_pc,
+            team::team_rename,
+            team::team_rename_person,
+            team::team_leave,
         ])
         .run(tauri::generate_context!())
         .expect("error al ejecutar Hedy");

@@ -228,6 +228,9 @@ pub struct TeamStatus {
     pub invites: Vec<TeamInvite>,
     /// Invites a wrong code burned: someone has to ask for another.
     pub failed_invites: Vec<u32>,
+    /// What the team layer takes of every agent's context now, in tokens
+    /// (at most [`TEAM_LAYER_TOKENS`] is ever sent).
+    pub layer_tokens: usize,
 }
 
 /// A note of the team, as this PC has it.
@@ -590,6 +593,7 @@ impl Hedy {
             conflicts: status.conflicts,
             invites: self.team_invites(&space)?,
             failed_invites: self.sync_json(&space, FAILED)?.unwrap_or_default(),
+            layer_tokens: self.layer_tokens(&space),
         })
     }
 
@@ -1060,6 +1064,25 @@ impl Hedy {
         self.sync_crypto
             .project_id(&key, &identity.project_key())
             .ok()
+    }
+
+    /// The whole team layer's size in tokens, uncut: what the cap is
+    /// measured against.
+    fn layer_tokens(&self, space: &Space) -> usize {
+        let Some(notes) = self.team_note_bodies(space) else {
+            return 0;
+        };
+        let layer: Vec<LayerNote> = notes
+            .iter()
+            .filter(|(scope, _, _)| *scope == Scope::Global)
+            .map(|(_, author, n)| LayerNote {
+                author,
+                category: n.category,
+                text: &n.text,
+            })
+            .collect();
+        team_layer_block("", &layer, usize::MAX)
+            .map_or(0, |block| crate::domain::context::estimate_tokens(&block))
     }
 
     /// The team layer of the team that holds the project in `path`, as an

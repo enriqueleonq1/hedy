@@ -21,7 +21,8 @@ pub const SYNC_UPDATED: &str = "sync-updated";
 const FIRST: Duration = Duration::from_secs(20);
 const EVERY: Duration = Duration::from_secs(5 * 60);
 
-/// Syncs on its own while the app is open, when the sync is set up. A
+/// Syncs on its own while the app is open: personal sync when it is set
+/// up, and every team (a PC still joining looks whether it is in). A
 /// failure is kept by the core (`last_error`) and shown in the status bar.
 pub fn start(app: AppHandle, hedy: &Hedy) {
     let hedy = hedy.clone();
@@ -32,8 +33,11 @@ pub fn start(app: AppHandle, hedy: &Hedy) {
             loop {
                 if hedy.sync_is_set_up().unwrap_or(false) {
                     let _ = hedy.sync_now();
-                    let _ = app.emit(SYNC_UPDATED, ());
                 }
+                for team in hedy.teams().unwrap_or_default() {
+                    let _ = hedy.team_sync(&team.id);
+                }
+                let _ = app.emit(SYNC_UPDATED, ());
                 std::thread::sleep(EVERY);
             }
         });
