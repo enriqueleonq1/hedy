@@ -272,6 +272,15 @@ impl SyncRepository for SqliteStore {
         })
     }
 
+    fn clear_sync_state(&self) -> PortResult<()> {
+        self.with(|c| {
+            c.execute_batch(
+                "DELETE FROM sync_items; DELETE FROM sync_links; DELETE FROM sync_cursors;
+                 DELETE FROM sync_conflicts;",
+            )
+        })
+    }
+
     fn memory_home(&self, project: &Path) -> PortResult<Option<MemoryHome>> {
         self.with(|c| {
             c.query_row(

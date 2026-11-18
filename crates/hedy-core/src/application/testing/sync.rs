@@ -136,6 +136,15 @@ impl SyncRepository for MemoryStore {
         self.sync.lock().unwrap().conflicts.retain(|c| c.id != id);
         Ok(())
     }
+    fn clear_sync_state(&self) -> PortResult<()> {
+        let mut tables = self.sync.lock().unwrap();
+        let homes = std::mem::take(&mut tables.homes);
+        *tables = SyncTables {
+            homes,
+            ..SyncTables::default()
+        };
+        Ok(())
+    }
     fn memory_home(&self, project: &Path) -> PortResult<Option<MemoryHome>> {
         Ok(self.sync.lock().unwrap().homes.get(project).cloned())
     }

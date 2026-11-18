@@ -1367,3 +1367,67 @@ fn random_memory_homes_never_leak_a_shared_project() {
         }
     }
 }
+
+// Phase 4.
+
+#[test]
+fn leaving_keeps_the_notes_and_joining_again_starts_fresh() {
+    let (_server, (home, _), (office, _)) = two_pcs();
+    home.hedy
+        .add_note(None, "nota", Category::Decision)
+        .unwrap();
+    home.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+
+    office.hedy.sync_leave().unwrap();
+    assert!(!office.hedy.sync_is_set_up().unwrap());
+    assert_eq!(office.secrets.sync_keys().unwrap(), None);
+    assert!(office.store.sync_items().unwrap().is_empty());
+    assert_eq!(texts(&office, None), ["nota"]);
+    assert_eq!(office.hedy.sync_leave(), Err(AppError::SyncNotSetUp));
+    assert_eq!(office.hedy.sync_now(), Err(AppError::SyncNotSetUp));
+}
+
+#[test]
+fn a_pc_that_joins_with_the_same_notes_adopts_them() {
+    let server = SyncServer::default();
+    let (home, _) = pc(&server, "/a/tienda");
+    home.hedy
+        .add_note(None, "Usa tabs", Category::Convention)
+        .unwrap();
+    let words = home.hedy.sync_setup(URL, "Casa").unwrap();
+    // The office already has the same note (it left, or was copied).
+    let (office, _) = pc(&server, "/b/tienda");
+    office
+        .store
+        .write_synced_note(
+            None,
+            None,
+            &NoteBody {
+                text: "Usa tabs".into(),
+                ..serde_json::from_str(
+                    home.store.sync_items().unwrap()[0]
+                        .version
+                        .body
+                        .as_deref()
+                        .unwrap(),
+                )
+                .unwrap()
+            },
+        )
+        .unwrap();
+    office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+    home.hedy.sync_now().unwrap();
+    for f in [&home, &office] {
+        assert_eq!(texts(f, None), ["Usa tabs"]);
+    }
+    assert_eq!(office.hedy.sync_now().unwrap().sent, 0);
+
+    // It leaves and joins again: still one note everywhere.
+    office.hedy.sync_leave().unwrap();
+    office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+    home.hedy.sync_now().unwrap();
+    for f in [&home, &office] {
+        assert_eq!(texts(f, None), ["Usa tabs"]);
+    }
+}

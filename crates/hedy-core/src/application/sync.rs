@@ -20,6 +20,7 @@
 //! Nothing here reads a login or an API key, and only projects whose memory
 //! is personal take part.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::MutexGuard;
@@ -165,6 +166,9 @@ struct Session {
     project_ids: HashMap<PathBuf, String>,
     /// The PCs of the newest epoch and their public keys.
     members: HashMap<String, String>,
+    /// On a PC's first sync, its rows not synced yet by what they hold: a
+    /// synced item equal to one adopts that row instead of adding another.
+    twins: RefCell<HashMap<(ItemKind, Scope, String), Vec<String>>>,
 }
 
 /// The projects that sync here, both ways round (see [`Session`]).
@@ -425,6 +429,15 @@ impl Hedy {
         let mut report = SyncReport::default();
 
         self.write_pending(&session)?;
+        // A PC's first sync (a join, or after leaving) takes in what the repo
+        // has before looking for changes here: rows it already has are
+        // adopted, not sent again as new items.
+        if self.store.sync_items()?.is_empty() {
+            self.index_twins(&session)?;
+            self.apply_batches(&session, &mut report)?;
+            self.bring_waiting(&session)?;
+            session.twins.borrow_mut().clear();
+        }
         // What changed here first, so the other PCs' versions meet it.
         let mut outgoing: Vec<Outgoing> = self
             .sync_json::<Vec<Change>>(OUTBOX)?
@@ -624,6 +637,7 @@ impl Hedy {
             projects,
             project_ids,
             members: members.into_iter().collect(),
+            twins: RefCell::default(),
         })
     }
 
@@ -1106,6 +1120,34 @@ impl Hedy {
         Ok(())
     }
 
+    /// Indexes the rows here not synced yet, by what they hold.
+    fn index_twins(&self, session: &Session) -> AppResult<()> {
+        let mut twins = session.twins.borrow_mut();
+        for item in self.local_items(session)? {
+            if self
+                .store
+                .sync_link_of(item.kind, &item.local_id)?
+                .is_none()
+            {
+                twins
+                    .entry((item.kind, item.scope, item.body))
+                    .or_default()
+                    .push(item.local_id);
+            }
+        }
+        Ok(())
+    }
+
+    /// A row here equal to `change` and not synced yet, taken from the index.
+    fn take_twin(session: &Session, change: &Change) -> Option<String> {
+        let body = change.version.body.clone()?;
+        session
+            .twins
+            .borrow_mut()
+            .get_mut(&(change.kind, change.scope.clone(), body))?
+            .pop()
+    }
+
     /// The project a linked row is in now; `None` when the row is gone.
     fn row_project(&self, kind: ItemKind, local_id: &str) -> AppResult<Option<Option<PathBuf>>> {
         let row = local_id.parse::<i64>().ok();
@@ -1131,6 +1173,14 @@ impl Hedy {
             return Ok(false);
         }
         let link: Option<SyncLink> = self.store.sync_link(change.kind, &change.uid)?;
+        if link.is_none()
+            && let Some(local_id) = Self::take_twin(session, change)
+        {
+            // The same item, already here: adopt the row.
+            self.store
+                .link_sync_item(change.kind, &change.uid, &local_id, &change.version)?;
+            return Ok(true);
+        }
         let row_project = match &link {
             Some(link) => self.row_project(change.kind, &link.local_id)?,
             None => None,
@@ -1180,16 +1230,19 @@ impl Hedy {
                 let Ok(body) = serde_json::from_str::<TemplateBody>(body) else {
                     return Ok(false);
                 };
-                // An edited built-in here already has its row.
-                let row = row.or_else(|| {
-                    let builtin = body.builtin.as_ref()?;
-                    self.store
-                        .template_records()
-                        .ok()?
-                        .into_iter()
-                        .find(|r| r.builtin.as_ref() == Some(builtin) && r.project == project)
-                        .map(|r| r.id)
-                });
+                // A built-in edited here too, not synced yet (a first sync):
+                // its row is not overwritten; it is sent as this PC's edit,
+                // on top of this version.
+                if row.is_none()
+                    && let Some(builtin) = &body.builtin
+                    && self
+                        .store
+                        .template_records()?
+                        .iter()
+                        .any(|r| r.builtin.as_ref() == Some(builtin) && r.project == project)
+                {
+                    return Ok(false);
+                }
                 self.store
                     .save_template(&TemplateRecord {
                         id: row.unwrap_or(0),
@@ -1256,6 +1309,7 @@ impl Hedy {
                 projects: HashMap::new(),
                 project_ids: HashMap::new(),
                 members: members.iter().cloned().collect(),
+                twins: RefCell::default(),
                 keys: keys.epochs.values().cloned().collect(),
             };
             for (id, _) in members.into_iter().filter(|(id, _)| id != RECOVERY_MEMBER) {
@@ -1281,6 +1335,27 @@ impl Hedy {
             devices,
             conflicts: self.store.sync_conflicts()?.len(),
         }))
+    }
+
+    /// This PC stops syncing: its keys, the clone, the sync settings and
+    /// state go. Its notes, skills, templates and themes stay, and so does
+    /// the repo (the other PCs keep syncing). Joining again starts fresh.
+    pub fn sync_leave(&self) -> AppResult<()> {
+        let _guard = self.sync_guard();
+        if !self.sync_is_set_up()? {
+            return Err(AppError::SyncNotSetUp);
+        }
+        self.sync_remote.discard_local(&self.sync_dir()?)?;
+        self.secrets.delete_sync_keys()?;
+        self.store.clear_sync_state()?;
+        // URL first: what says the sync is set up.
+        for key in [
+            URL, DEVICE, NAME, RECOVERY, EPOCH, PINS, SEQ, PENDING, OUTBOX, CLOCK, LAST_SYNC,
+            INFO_AT,
+        ] {
+            self.store.set_setting(key, None)?;
+        }
+        Ok(())
     }
 
     pub fn sync_conflicts(&self) -> AppResult<Vec<SyncConflict>> {
@@ -1330,6 +1405,7 @@ impl Hedy {
             projects,
             project_ids,
             members: HashMap::new(),
+            twins: RefCell::default(),
             keys: Vec::new(),
         };
         self.materialize(&session, &change)?;

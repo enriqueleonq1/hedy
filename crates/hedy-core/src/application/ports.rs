@@ -331,6 +331,9 @@ pub trait SyncRepository: Send + Sync {
     ) -> PortResult<i64>;
     fn sync_conflicts(&self) -> PortResult<Vec<SyncConflict>>;
     fn delete_sync_conflict(&self, id: i64) -> PortResult<()>;
+    /// Forgets everything personal sync kept here (replica, links, cursors,
+    /// conflicts): this PC leaves the sync. Notes and the rest stay.
+    fn clear_sync_state(&self) -> PortResult<()>;
     /// `None`: not decided yet (its memory stays on this PC).
     fn memory_home(&self, project: &Path) -> PortResult<Option<MemoryHome>>;
     fn set_memory_home(&self, project: &Path, home: Option<&MemoryHome>) -> PortResult<()>;
