@@ -2750,6 +2750,7 @@ export class MockApi implements HedyApi {
       person: this.teamMe(team).person,
       people,
       suggestions: team.suggestions.length,
+      toReview: team.suggestions.filter((s) => s.canReview).length,
       conflicts: 0,
       invites: [...team.invites],
       failedInvites: [...team.failedInvites],

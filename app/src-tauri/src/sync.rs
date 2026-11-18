@@ -31,13 +31,18 @@ pub fn start(app: AppHandle, hedy: &Hedy) {
         .spawn(move || {
             std::thread::sleep(FIRST);
             loop {
+                // The UI refreshes after each sync, not when there is none.
                 if hedy.sync_is_set_up().unwrap_or(false) {
                     let _ = hedy.sync_now();
+                    let _ = app.emit(SYNC_UPDATED, ());
                 }
-                for team in hedy.teams().unwrap_or_default() {
+                let teams = hedy.teams().unwrap_or_default();
+                for team in &teams {
                     let _ = hedy.team_sync(&team.id);
                 }
-                let _ = app.emit(SYNC_UPDATED, ());
+                if !teams.is_empty() {
+                    let _ = app.emit(SYNC_UPDATED, ());
+                }
                 std::thread::sleep(EVERY);
             }
         });

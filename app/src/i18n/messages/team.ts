@@ -19,6 +19,8 @@ const es = {
   "team.leaveConfirm": "¿Salir? Sus notas se borran de esta PC",
   "team.leaveConfirmAdmin": "¿Salir? Otro admin te sacará en su próxima sincronización",
   "team.leaving": "Saliendo: esperando a que otro admin te saque del equipo.",
+  "team.forget": "Olvidar en esta PC",
+  "team.forgetConfirm": "¿Olvidarlo? Sigue en el equipo hasta que un admin lo quite",
 
   "team.role.admin": "Admin",
   "team.role.member": "Miembro",
@@ -62,6 +64,7 @@ const es = {
   "team.join.waiting": "Esperando al equipo",
   "team.join.waitingText": "Entras en cuanto la PC de quien te invitó sincronice. Suele ser menos de 5 min. Puedes cerrar esto.",
   "team.join.in": "Ya estás en el equipo.",
+  "team.join.cancel": "Cancelar",
 
   "team.invite.who": "Invitar a…",
   "team.invite.asAdmin": "como admin",
@@ -72,6 +75,7 @@ const es = {
   "team.invite.unused": "sin usar · caduca en {hours} h",
   "team.invite.answered": "respondida: entra con la próxima sincronización",
   "team.invite.copy": "Copiar",
+  "team.invite.show": "Mostrar",
   "team.invite.copied": "Código copiado.",
   "team.invite.cancel": "Anular",
   "team.invite.hint":
@@ -124,6 +128,9 @@ const es = {
   "team.who.team": "A todo el equipo {team}",
   "team.who.teamText": "La revisa un admin antes. Ocuparía {n} de los {free} tokens libres.",
   "team.who.share": "Compartir",
+  "team.who.approveMine": "Aprobar solo para mí",
+  "team.who.shareProject": "Compartir con quien trabaje en {project}",
+  "team.who.sendTeam": "Enviar a todo el equipo",
   "team.who.discard": "Descartar",
   "team.who.keptMine": "Aprobada en tu memoria.",
   "team.who.shared": "Compartida con quien trabaje en {project}.",
@@ -152,6 +159,8 @@ const en: Record<keyof typeof es, string> = {
   "team.leaveConfirm": "Leave? Its notes go from this PC",
   "team.leaveConfirmAdmin": "Leave? Another admin takes you out on their next sync",
   "team.leaving": "Leaving: waiting for another admin to take you out of the team.",
+  "team.forget": "Forget on this PC",
+  "team.forgetConfirm": "Forget it? It stays in the team until an admin removes it",
 
   "team.role.admin": "Admin",
   "team.role.member": "Member",
@@ -195,6 +204,7 @@ const en: Record<keyof typeof es, string> = {
   "team.join.waiting": "Waiting for the team",
   "team.join.waitingText": "You get in as soon as the PC that invited you syncs. It is usually under 5 min. You can close this.",
   "team.join.in": "You are in the team.",
+  "team.join.cancel": "Cancel",
 
   "team.invite.who": "Invite…",
   "team.invite.asAdmin": "as an admin",
@@ -205,6 +215,7 @@ const en: Record<keyof typeof es, string> = {
   "team.invite.unused": "unused · expires in {hours} h",
   "team.invite.answered": "answered: it gets in on the next sync",
   "team.invite.copy": "Copy",
+  "team.invite.show": "Show",
   "team.invite.copied": "Code copied.",
   "team.invite.cancel": "Cancel",
   "team.invite.hint":
@@ -257,6 +268,9 @@ const en: Record<keyof typeof es, string> = {
   "team.who.team": "The whole team {team}",
   "team.who.teamText": "An admin reviews it first. It would take {n} of the {free} free tokens.",
   "team.who.share": "Share",
+  "team.who.approveMine": "Approve for me only",
+  "team.who.shareProject": "Share with whoever works on {project}",
+  "team.who.sendTeam": "Send to the whole team",
   "team.who.discard": "Discard",
   "team.who.keptMine": "Approved in your memory.",
   "team.who.shared": "Shared with whoever works on {project}.",

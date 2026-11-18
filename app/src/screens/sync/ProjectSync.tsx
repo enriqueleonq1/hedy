@@ -81,7 +81,7 @@ export function MemoryHomeCard({ project }: { project: string }) {
   const sync = useSyncStatus();
   const home = useMemoryHome(project).data;
   const set = useAction((api, next: MemoryHomeKind | null) => api.setMemoryHome(project, next), {
-    invalidate: [SYNC_KEY],
+    invalidate: [SYNC_KEY, TEAMS_KEY],
   });
   // A team's project: its team notes go to the team's repo (docs/decisions.md §35).
   const teams = (useTeams().data ?? []).filter((team) => !team.waiting);

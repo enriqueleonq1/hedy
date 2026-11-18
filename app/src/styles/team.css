@@ -32,6 +32,8 @@
   text-align: left;
   cursor: pointer;
 }
+.team-row__item { display: grid; gap: var(--space-1); }
+.team-row__waiting { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); }
 .team-row:hover:not(:disabled) { border-color: var(--line-strong); }
 .team-row:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .team-row:disabled { cursor: default; }

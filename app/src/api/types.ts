@@ -903,6 +903,8 @@ export interface TeamStatus {
   /** Admins first. */
   people: TeamPerson[];
   suggestions: number;
+  /** The ones this person may take or turn down. */
+  toReview: number;
   conflicts: number;
   invites: TeamInvite[];
   /** Invites a wrong code burned. */

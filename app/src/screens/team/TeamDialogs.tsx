@@ -333,12 +333,18 @@ export function ReviewDialog({ team, onClose }: { team: TeamStatus; onClose: () 
   const id = team.summary.id;
   const list = useQuery({ queryKey: teamSuggestionsKey(id), queryFn: () => api.teamSuggestions(id) });
   const mine = (list.data ?? []).filter((s) => s.canReview);
-  const [index, setIndex] = useState(0);
-  const current: TeamSuggestion | undefined = mine[Math.min(index, mine.length - 1)];
+  // Followed by its id: a refresh may bring others before it.
+  const [uid, setUid] = useState<string | null>(null);
+  const found = mine.findIndex((s) => s.uid === uid);
+  const index = found >= 0 ? found : 0;
+  const current: TeamSuggestion | undefined = mine[index];
   const decide = useMutation({
-    mutationFn: (accept: boolean) =>
-      accept ? api.teamAcceptSuggestion(id, current?.uid ?? "") : api.teamRejectSuggestion(id, current?.uid ?? ""),
-    onSuccess: () => void refreshTeams(client),
+    mutationFn: ({ accept, target }: { accept: boolean; target: string }) =>
+      accept ? api.teamAcceptSuggestion(id, target) : api.teamRejectSuggestion(id, target),
+    onSuccess: () => {
+      setUid(mine[index + 1]?.uid ?? null);
+      void refreshTeams(client);
+    },
   });
 
   if (list.isSuccess && !current) {
@@ -359,10 +365,14 @@ export function ReviewDialog({ team, onClose }: { team: TeamStatus; onClose: () 
       footer={
         current && (
           <>
-            <Button variant="ghost" disabled={decide.isPending} onClick={() => decide.mutate(false)}>
+            <Button variant="ghost" disabled={decide.isPending} onClick={() => decide.mutate({ accept: false, target: current.uid })}>
               {t("common.reject")}
             </Button>
-            <Button variant="primary" disabled={decide.isPending || current.hidden} onClick={() => decide.mutate(true)}>
+            <Button
+              variant="primary"
+              disabled={decide.isPending || current.hidden}
+              onClick={() => decide.mutate({ accept: true, target: current.uid })}
+            >
               {t("team.review.accept")}
             </Button>
           </>
@@ -372,7 +382,7 @@ export function ReviewDialog({ team, onClose }: { team: TeamStatus; onClose: () 
       {current && (
         <div className="team-review">
           <p className="small muted">
-            {t("team.review.counter", { n: Math.min(index, mine.length - 1) + 1, total: mine.length, team: team.summary.name })}
+            {t("team.review.counter", { n: index + 1, total: mine.length, team: team.summary.name })}
           </p>
           <h3>{t(current.note ? "team.review.change" : "team.review.new", { name: current.author })}</h3>
           {current.before !== null && (
@@ -397,10 +407,15 @@ export function ReviewDialog({ team, onClose }: { team: TeamStatus; onClose: () 
           )}
           {mine.length > 1 && (
             <div className="row">
-              <button type="button" className="link-button" disabled={index === 0} onClick={() => setIndex(index - 1)}>
+              <button type="button" className="link-button" disabled={index === 0} onClick={() => setUid(mine[index - 1]?.uid ?? null)}>
                 {t("team.review.previous")}
               </button>
-              <button type="button" className="link-button" disabled={index >= mine.length - 1} onClick={() => setIndex(index + 1)}>
+              <button
+                type="button"
+                className="link-button"
+                disabled={index >= mine.length - 1}
+                onClick={() => setUid(mine[index + 1]?.uid ?? null)}
+              >
                 {t("team.review.next")}
               </button>
             </div>

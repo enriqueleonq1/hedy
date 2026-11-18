@@ -31,11 +31,14 @@ describe("Teams", () => {
     expect(within(card).getByText("Marta")).toBeInTheDocument();
     expect(within(card).getByText("Portátil de Ana")).toBeInTheDocument();
     expect(within(card).getByText(/Capa del equipo: \d+ de 1500 tokens/)).toBeInTheDocument();
-    // The open invite is a row of the people list.
+    // The open invite is a row of the people list; its code shows when asked.
+    expect(within(card).queryByText("7-tigre-lima-nube-faro")).toBeNull();
+    expect(within(card).getByText("7-••••")).toBeInTheDocument();
+    await user.click(within(card).getByRole("button", { name: "Mostrar" }));
     expect(within(card).getByText("7-tigre-lima-nube-faro")).toBeInTheDocument();
     await user.type(within(card).getByPlaceholderText("Invitar a…"), "Pepe");
     await user.click(within(card).getByRole("button", { name: "Crear invitación" }));
-    expect(await within(card).findByText("8-tigre-lima-nube-faro")).toBeInTheDocument();
+    expect(await within(card).findByText("8-••••")).toBeInTheDocument();
     expect(within(card).getAllByText("Pepe").length).toBeGreaterThan(0);
 
     // Removing Luis warns about git access.
@@ -87,6 +90,22 @@ describe("Teams", () => {
     expect(await within(dialog).findByText("Esperando al equipo")).toBeInTheDocument();
     await user.click(within(dialog).getAllByRole("button", { name: "Cerrar" }).at(-1)!);
     expect(await within(section()).findByText("Esperando para entrar")).toBeInTheDocument();
+    // A join that never gets in can be cancelled.
+    await user.click(within(section()).getByRole("button", { name: "Cancelar" }));
+    await waitFor(() => expect(within(section()).queryByText("Esperando para entrar")).toBeNull());
+  });
+
+  it("counts only the suggestions this person may review", async () => {
+    const api = MockApi.withSampleData();
+    // Luis's own suggestion: his to wait for, not to review.
+    for (const s of api.teamList[0]!.suggestions) s.canReview = false;
+    const { user } = renderAt("#teams", api);
+    const card = await waitFor(section);
+    const row = await within(card).findByRole("button", { name: /Plataforma/ });
+    expect(row).toHaveTextContent("Al día");
+    await user.click(row);
+    expect(await within(card).findByRole("heading", { name: "Plataforma" })).toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Revisar" })).toBeNull();
   });
 
   it("reviews suggestions one at a time, from the status bar", async () => {
@@ -134,7 +153,8 @@ describe("Teams", () => {
     const dialog = screen.getByRole("dialog", { name: "¿A quién le sirve?" });
     expect(within(dialog).getByText(/Solo a mí/)).toBeInTheDocument();
     expect(within(dialog).getByText(/A todo el equipo Plataforma/)).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "Aprobar" }));
+    // The button says where it goes.
+    await user.click(within(dialog).getByRole("button", { name: /^Compartir con quien trabaje en .*tienda/ }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect((await api.memory("/code/tienda")).proposed.some((p) => p.note.id === proposal.id)).toBe(false);
     expect(api.teamList[0]!.notes.some((n) => n.text === "Los webhooks del banco son idempotentes." && !n.teamLayer)).toBe(true);

@@ -106,7 +106,8 @@ function TeamRow({ team, onOpen }: { team: TeamSummary; onOpen: () => void }) {
   const homes = useQuery({ queryKey: MEMORY_HOMES_KEY, queryFn: () => api.memoryHomes() });
   const projects = (homes.data ?? []).filter((h) => h.home?.kind === "team" && h.home.team === team.id).length;
   const people = status.data?.people.length ?? 0;
-  const review = status.data?.suggestions ?? 0;
+  const review = status.data?.toReview ?? 0;
+  const cancel = useTeamAction((api) => api.teamLeave(team.id, true));
   const state = team.waiting
     ? t("team.state.waiting")
     : team.leaving
@@ -117,7 +118,7 @@ function TeamRow({ team, onOpen }: { team: TeamSummary; onOpen: () => void }) {
           ? t("team.state.review", { n: review })
           : t("team.state.ok");
   return (
-    <li>
+    <li className="team-row__item">
       <button type="button" className="team-row" onClick={onOpen} disabled={team.waiting}>
         <Initial name={teamLabel(team)} />
         <span className="team-row__text">
@@ -130,6 +131,19 @@ function TeamRow({ team, onOpen }: { team: TeamSummary; onOpen: () => void }) {
         </span>
         <span className={review > 0 || team.lastError ? "sync__pill team-pill--warn" : "sync__pill"}>{state}</span>
       </button>
+      {team.waiting && (
+        <div className="team-row__waiting">
+          {team.lastError && (
+            <span className="small sync-hero__error" role="alert">
+              {team.lastError}
+            </span>
+          )}
+          <span className="spacer" />
+          <Button small variant="ghost" disabled={cancel.isPending} onClick={() => cancel.mutate(undefined)}>
+            {t("team.join.cancel")}
+          </Button>
+        </div>
+      )}
     </li>
   );
 }
@@ -175,16 +189,24 @@ function TeamPanel({ id, onBack }: { id: string; onBack: () => void }) {
         </p>
       )}
       {team.summary.leaving && (
-        <p className="small warning" role="status">
-          {t("team.leaving")}
-        </p>
+        <div className="team-alert" role="status">
+          <span className="small">{t("team.leaving")}</span>
+          {/* It may wait a long while for another admin: it can still go here only. */}
+          <ConfirmButton
+            small
+            confirmLabel={t("team.forgetConfirm")}
+            onConfirm={() => leave.mutate(true, { onSuccess: onBack })}
+          >
+            {t("team.forget")}
+          </ConfirmButton>
+        </div>
       )}
       {team.failedInvites.map((number) => (
         <FailedInvite key={number} team={id} number={number} />
       ))}
-      {team.suggestions > 0 && (
+      {team.toReview > 0 && (
         <div className="team-review-bar">
-          <span>{t("team.state.review", { n: team.suggestions })}</span>
+          <span>{t("team.state.review", { n: team.toReview })}</span>
           <Button small variant="primary" onClick={() => setReviewing(true)}>
             {t("team.review.open")}
           </Button>
@@ -319,10 +341,19 @@ function InviteRow({
 }) {
   const t = useT();
   const hours = hoursLeft(invite.expiresAt);
+  // The code shows when asked: it is a secret until it is used.
+  const [shown, setShown] = useState(false);
   return (
     <li className="team-invite__row">
       <span className="team-invite__who">{who}</span>
-      <span className="mono team-invite__code">{invite.code}</span>
+      <span className="mono team-invite__code">
+        {shown ? invite.code : `${invite.number}-••••`}
+      </span>
+      {!shown && (
+        <Button small variant="ghost" onClick={() => setShown(true)}>
+          {t("team.invite.show")}
+        </Button>
+      )}
       <span className="small muted">
         {invite.answered ? t("team.invite.answered") : t("team.invite.unused", { hours })}
       </span>

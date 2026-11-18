@@ -109,6 +109,8 @@ pub struct TeamStatusDto {
     pub person: String,
     pub people: Vec<TeamPersonDto>,
     pub suggestions: usize,
+    /// The ones this person may take or turn down.
+    pub to_review: usize,
     pub conflicts: usize,
     pub invites: Vec<TeamInviteDto>,
     pub failed_invites: Vec<u32>,
@@ -125,6 +127,7 @@ impl From<TeamStatus> for TeamStatusDto {
             person: s.person.0,
             people: s.people.into_iter().map(Into::into).collect(),
             suggestions: s.suggestions,
+            to_review: s.to_review,
             conflicts: s.conflicts,
             invites: s.invites.into_iter().map(Into::into).collect(),
             failed_invites: s.failed_invites,

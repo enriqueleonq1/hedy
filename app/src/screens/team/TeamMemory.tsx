@@ -193,7 +193,11 @@ export function WhoForDialog({
     return run(
       async () => {
         const write = await api.teamPublishNote(team, note.id, everyone);
-        if (!write.published) toast.info(t("team.who.suggested"));
+        if (!write.published) {
+          // An admin may turn it down: until then it is the user's, approved here.
+          if (proposed) await api.approveNote(note.id);
+          toast.info(t("team.who.suggested"));
+        }
       },
       t(everyone ? "team.who.sentTeam" : "team.who.shared", { project: projectName }),
     );
@@ -222,7 +226,11 @@ export function WhoForDialog({
             </Button>
           )}
           <Button variant="primary" disabled={busy} onClick={() => void apply()}>
-            {t(proposed ? "memory.note.approve" : "team.who.share")}
+            {choice === "mine"
+              ? t(proposed ? "team.who.approveMine" : "common.cancel")
+              : choice === "project"
+                ? t("team.who.shareProject", { project: projectName })
+                : t("team.who.sendTeam")}
           </Button>
         </>
       }

@@ -223,6 +223,8 @@ pub struct TeamStatus {
     /// Admins first, then by name.
     pub people: Vec<TeamPerson>,
     pub suggestions: usize,
+    /// Of those, the ones this PC's person may take or turn down.
+    pub to_review: usize,
     pub conflicts: usize,
     /// Invites this PC made, still open.
     pub invites: Vec<TeamInvite>,
@@ -583,13 +585,16 @@ impl Hedy {
                 .cmp(&(b.role != Role::Admin, b.name.to_lowercase()))
         });
         // A PC removed from the team still shows what it last knew.
-        let suggestions = self.team_suggestions(team).map_or(0, |s| s.len());
+        let all = self.team_suggestions(team).unwrap_or_default();
+        let suggestions = all.len();
+        let to_review = all.iter().filter(|s| s.can_review).count();
         Ok(TeamStatus {
             summary,
             device: status.device,
             person: me,
             people,
             suggestions,
+            to_review,
             conflicts: status.conflicts,
             invites: self.team_invites(&space)?,
             failed_invites: self.sync_json(&space, FAILED)?.unwrap_or_default(),
