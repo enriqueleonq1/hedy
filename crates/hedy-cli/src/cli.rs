@@ -750,6 +750,188 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             ),
         ),
         (
+            "sync",
+            "",
+            tr!(
+                "Tu memoria, habilidades, plantillas y temas, iguales en todas tus PCs (por defecto, el estado)",
+                "Your memory, skills, templates and themes, the same on every PC (by default, the status)"
+            ),
+        ),
+        (
+            "sync status",
+            "",
+            tr!(
+                "Dónde sincroniza, tus PCs y los conflictos",
+                "Where it syncs, your PCs and the conflicts"
+            ),
+        ),
+        (
+            "sync setup",
+            "",
+            tr!(
+                "Configura la sincronización con un repo git privado y vacío, y muestra tu clave de recuperación",
+                "Set up sync with an empty private git repo, and show your recovery key"
+            ),
+        ),
+        (
+            "sync setup",
+            "url",
+            tr!(
+                "Dirección del repo (GitHub, GitLab, Bitbucket o tu propio servidor)",
+                "The repo's URL (GitHub, GitLab, Bitbucket or your own server)"
+            ),
+        ),
+        (
+            "sync setup",
+            "name",
+            tr!(
+                "Nombre de esta PC (por defecto, el del equipo)",
+                "This PC's name (by default, the machine's)"
+            ),
+        ),
+        (
+            "sync join",
+            "",
+            tr!(
+                "Suma esta PC con tu clave de recuperación",
+                "Add this PC with your recovery key"
+            ),
+        ),
+        (
+            "sync join",
+            "url",
+            tr!(
+                "Dirección del repo que ya usas en otra PC",
+                "The URL of the repo you already use on another PC"
+            ),
+        ),
+        (
+            "sync join",
+            "name",
+            tr!(
+                "Nombre de esta PC (por defecto, el del equipo)",
+                "This PC's name (by default, the machine's)"
+            ),
+        ),
+        ("sync now", "", tr!("Sincroniza ahora", "Sync now")),
+        (
+            "sync conflicts",
+            "",
+            tr!(
+                "Notas y habilidades editadas a la vez en dos PCs",
+                "Notes and skills edited at once on two PCs"
+            ),
+        ),
+        (
+            "sync resolve",
+            "",
+            tr!("Resuelve un conflicto", "Settle a conflict"),
+        ),
+        (
+            "sync resolve",
+            "id",
+            tr!(
+                "El número que muestra `hedy sync conflicts`",
+                "The number `hedy sync conflicts` shows"
+            ),
+        ),
+        (
+            "sync resolve",
+            "keep",
+            tr!("Quédate con la versión en uso", "Keep the version in use"),
+        ),
+        (
+            "sync resolve",
+            "other",
+            tr!("Usa la otra versión", "Use the other version"),
+        ),
+        (
+            "sync owner",
+            "",
+            tr!(
+                "Tus respuestas sobre los dueños de repos (o una respuesta nueva)",
+                "Your answers about repo owners (or a new one)"
+            ),
+        ),
+        (
+            "sync owner",
+            "owner",
+            tr!(
+                "Dueño con su servidor, p. ej. github.com/empresa-org",
+                "The owner with its server, e.g. github.com/empresa-org"
+            ),
+        ),
+        (
+            "sync owner",
+            "mine",
+            tr!(
+                "Su memoria es solo tuya: se sincroniza",
+                "Its memory is yours alone: it syncs"
+            ),
+        ),
+        (
+            "sync owner",
+            "shared",
+            tr!(
+                "Es de un grupo (empresa, cliente, comunidad): no sale de esta PC",
+                "It belongs to a group (company, client, community): it stays on this PC"
+            ),
+        ),
+        (
+            "sync owner",
+            "forget",
+            tr!(
+                "Olvida la respuesta: sus proyectos vuelven a preguntar",
+                "Forget the answer: its projects ask again"
+            ),
+        ),
+        (
+            "sync project",
+            "",
+            tr!(
+                "Dónde vive la memoria del proyecto actual (o cámbialo)",
+                "Where the current project's memory lives (or change it)"
+            ),
+        ),
+        (
+            "sync project",
+            "personal",
+            tr!(
+                "Personal: se sincroniza con todas tus PCs",
+                "Personal: synced to all your PCs"
+            ),
+        ),
+        (
+            "sync project",
+            "local",
+            tr!("Solo en esta PC", "On this PC only"),
+        ),
+        (
+            "sync project",
+            "shared",
+            tr!(
+                "Compartida con un grupo, p. ej. github.com/empresa-org",
+                "Shared with a group, e.g. github.com/empresa-org"
+            ),
+        ),
+        (
+            "sync project",
+            "follow",
+            tr!(
+                "Según el dueño de su repo otra vez",
+                "From its repo's owner again"
+            ),
+        ),
+        (
+            "sync leave",
+            "",
+            tr!(
+                "Deja de sincronizar en esta PC (tus notas se quedan)",
+                "Stop syncing on this PC (your notes stay)"
+            ),
+        ),
+        ("sync leave", "yes", tr!("Sin preguntar", "Without asking")),
+        (
             "config",
             "",
             tr!(
@@ -805,6 +987,10 @@ fn value_names() -> Vec<(&'static str, String)> {
         ("text", tr!("TEXTO", "TEXT")),
         ("question", tr!("PREGUNTA", "QUESTION")),
         ("model", tr!("MODELO", "MODEL")),
+        ("url", tr!("DIRECCIÓN", "URL")),
+        ("owner", tr!("DUEÑO", "OWNER")),
+        // `hedy sync project --shared <DUEÑO>` (a flag elsewhere, without one).
+        ("shared", tr!("DUEÑO", "OWNER")),
     ]
 }
 
@@ -991,6 +1177,11 @@ pub enum Command {
         command: Option<TemplateCommand>,
     },
 
+    Sync {
+        #[command(subcommand)]
+        command: Option<SyncCommand>,
+    },
+
     #[command(subcommand)]
     Config(ConfigCommand),
 
@@ -1065,6 +1256,65 @@ pub enum TemplateCommand {
         name: String,
         #[arg(long)]
         project: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SyncCommand {
+    Status,
+
+    Setup {
+        url: String,
+        #[arg(long)]
+        name: Option<String>,
+    },
+
+    Join {
+        url: String,
+        #[arg(long)]
+        name: Option<String>,
+    },
+
+    Now,
+
+    Conflicts,
+
+    #[command(group(clap::ArgGroup::new("choice").required(true).args(["keep", "other"])))]
+    Resolve {
+        id: i64,
+        #[arg(long)]
+        keep: bool,
+        #[arg(long)]
+        other: bool,
+    },
+
+    #[command(group(clap::ArgGroup::new("answer").args(["mine", "shared", "forget"])))]
+    Owner {
+        #[arg(required_if_eq_any([("mine", "true"), ("shared", "true"), ("forget", "true")]))]
+        owner: Option<String>,
+        #[arg(long)]
+        mine: bool,
+        #[arg(long)]
+        shared: bool,
+        #[arg(long)]
+        forget: bool,
+    },
+
+    #[command(group(clap::ArgGroup::new("home").args(["personal", "local", "shared", "follow"])))]
+    Project {
+        #[arg(long)]
+        personal: bool,
+        #[arg(long)]
+        local: bool,
+        #[arg(long)]
+        shared: Option<String>,
+        #[arg(long)]
+        follow: bool,
+    },
+
+    Leave {
+        #[arg(long, short)]
+        yes: bool,
     },
 }
 

@@ -1891,3 +1891,91 @@ fn commands_explains_accounts_without_commands() {
         .stdout(predicate::str::contains("no le pasa sus comandos a Hedy"));
     env.hedy(&["commands", "-a", "nadie"]).assert().failure();
 }
+
+/// A real git repo with `origin` (its remotes decide where its memory lives).
+fn git_repo_with_origin(env: &Env, rel: &str, origin: &str) -> PathBuf {
+    let dir = git_repo(env, rel);
+    let added = std::process::Command::new("git")
+        .args(["remote", "add", "origin", origin])
+        .current_dir(&dir)
+        .status()
+        .unwrap();
+    assert!(added.success());
+    dir
+}
+
+#[test]
+fn sync_without_setup_explains_how_and_refuses_the_rest() {
+    let env = Env::new();
+    env.hedy(&["sync"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no está configurada"))
+        .stdout(predicate::str::contains("hedy sync setup"));
+    for args in [["sync", "now"], ["sync", "conflicts"]] {
+        let cmd = env.hedy(&args).assert();
+        if args[1] == "now" {
+            cmd.failure()
+                .stderr(predicate::str::contains("no está configurada"));
+        } else {
+            cmd.success();
+        }
+    }
+    env.hedy(&["sync", "leave", "--yes"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no está configurada"));
+    // Without a terminal, leaving needs --yes.
+    env.hedy(&["sync", "leave"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--yes"));
+    env.hedy(&["sync", "resolve", "1"]).assert().failure();
+    env.hedy(&["sync", "owner", "--mine"]).assert().failure();
+    env.hedy(&["sync", "project", "--personal", "--local"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn sync_owner_answers_decide_where_a_projects_memory_lives() {
+    let env = Env::new();
+    let app = git_repo_with_origin(&env, "code/app", "git@github.com:Empresa-Org/app.git");
+    env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy_in(&app, &["use", "claude"]).assert().success();
+
+    env.hedy_in(&app, &["sync", "project"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Solo en esta PC"))
+        .stdout(predicate::str::contains(
+            "hedy sync owner github.com/empresa-org --mine",
+        ));
+    env.hedy(&["sync", "owner", "github.com/empresa-org", "--shared"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("github.com/empresa-org"))
+        .stdout(predicate::str::contains("solo en esta PC"));
+    env.hedy_in(&app, &["sync", "project"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Compartida · github.com/empresa-org",
+        ));
+
+    // The project's own choice wins, until it follows its owner again.
+    env.hedy_in(&app, &["sync", "project", "--personal"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Personal · se sincroniza"));
+    env.hedy_in(&app, &["sync", "project", "--follow"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Compartida"));
+    env.hedy(&["sync", "owner", "github.com/empresa-org", "--forget"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Todavía no respondiste"));
+}

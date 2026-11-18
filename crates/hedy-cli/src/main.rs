@@ -8,6 +8,7 @@ mod mascot;
 mod slash;
 mod spinner;
 mod style;
+mod sync;
 mod usage;
 
 use std::process::ExitCode;
@@ -16,7 +17,8 @@ use anyhow::Result;
 use hedy_core::adapters::{self, HedyPaths};
 
 use cli::{
-    AccountCommand, Cli, Command, ConfigCommand, MemoryCommand, SkillsCommand, TemplateCommand,
+    AccountCommand, Cli, Command, ConfigCommand, MemoryCommand, SkillsCommand, SyncCommand,
+    TemplateCommand,
 };
 use style::Style;
 
@@ -164,6 +166,44 @@ fn run(cli: Cli) -> Result<ExitCode> {
             TemplateCommand::Remove { name, project } => {
                 commands::template_remove(&hedy, &dir, &name, project)
             }
+        },
+        Command::Sync { command } => match command.unwrap_or(SyncCommand::Status) {
+            SyncCommand::Status => sync::status(&hedy),
+            SyncCommand::Setup { url, name } => sync::setup(&hedy, &url, name.as_deref()),
+            SyncCommand::Join { url, name } => sync::join(&hedy, &url, name.as_deref()),
+            SyncCommand::Now => sync::now_sync(&hedy),
+            SyncCommand::Conflicts => sync::conflicts(&hedy),
+            SyncCommand::Resolve { id, other, .. } => sync::resolve(&hedy, id, other),
+            SyncCommand::Owner {
+                owner,
+                mine,
+                shared,
+                forget,
+            } => {
+                let choice = match (mine, shared, forget) {
+                    (true, _, _) => Some(sync::OwnerChoice::Mine),
+                    (_, true, _) => Some(sync::OwnerChoice::Shared),
+                    (_, _, true) => Some(sync::OwnerChoice::Forget),
+                    _ => None,
+                };
+                sync::owner(&hedy, owner.as_deref(), choice)
+            }
+            SyncCommand::Project {
+                personal,
+                local,
+                shared,
+                follow,
+            } => {
+                let choice = match (personal, local, shared, follow) {
+                    (true, ..) => Some(sync::HomeChoice::Personal),
+                    (_, true, ..) => Some(sync::HomeChoice::Local),
+                    (_, _, Some(owner), _) => Some(sync::HomeChoice::Shared(owner)),
+                    (.., true) => Some(sync::HomeChoice::Follow),
+                    _ => None,
+                };
+                sync::project(&hedy, &dir, choice)
+            }
+            SyncCommand::Leave { yes } => sync::leave(&hedy, yes),
         },
         Command::Config(sub) => match sub {
             ConfigCommand::Get { key } => commands::config_get(&hedy, &key),
