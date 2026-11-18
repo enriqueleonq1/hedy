@@ -6,6 +6,9 @@ use std::sync::Arc;
 
 use crate::domain::code::{Blame, CommitInfo, FileBytes, LineMatch, PathChange, TextQuery};
 use crate::domain::recall::{NoteUse, PageRequest};
+use crate::domain::sync::{
+    Change, DeviceId, ItemKind, MemoryHome, NoteBody, Scope, SkillBody, Version,
+};
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, ImageSupport,
     KnownCommands, LaunchSpec, Note, NoteStatus, Notice, Phase, PlanUsage, Project, PromptImage,
@@ -267,6 +270,68 @@ pub trait StoreHealth: Send + Sync {
 }
 
 /// Persistent state. One adapter usually implements every repository.
+/// A conflict waiting for the user: two versions of a note or skill made
+/// apart on two PCs (docs/decisions.md §34).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncConflict {
+    pub id: i64,
+    pub kind: ItemKind,
+    pub uid: String,
+    /// The version that won (the newer), in use on every PC.
+    pub kept: Version,
+    /// The other one, offered to the user.
+    pub other: Version,
+    pub at: i64,
+}
+
+/// The local side of personal sync (docs/decisions.md §34): the replica of
+/// every synced item as last known, the link between items here and their
+/// global ids, how far each other PC was read, and conflicts.
+pub trait SyncRepository: Send + Sync {
+    fn sync_item(&self, kind: ItemKind, uid: &str) -> PortResult<Option<(Scope, Version)>>;
+    fn sync_items(&self) -> PortResult<Vec<Change>>;
+    fn put_sync_item(&self, change: &Change) -> PortResult<()>;
+    /// The global id of a local item (a note's or template's row id, a
+    /// theme's id).
+    fn sync_uid(&self, kind: ItemKind, local_id: &str) -> PortResult<Option<String>>;
+    fn sync_local_id(&self, kind: ItemKind, uid: &str) -> PortResult<Option<String>>;
+    /// Every linked item of `kind`, as (uid, local id).
+    fn sync_links(&self, kind: ItemKind) -> PortResult<Vec<(String, String)>>;
+    fn link_sync_item(&self, kind: ItemKind, uid: &str, local_id: &str) -> PortResult<()>;
+    fn unlink_sync_item(&self, kind: ItemKind, uid: &str) -> PortResult<()>;
+    /// The last batch read from `device` (0: none).
+    fn sync_cursor(&self, device: &DeviceId) -> PortResult<u64>;
+    fn set_sync_cursor(&self, device: &DeviceId, seq: u64) -> PortResult<()>;
+    fn add_sync_conflict(
+        &self,
+        kind: ItemKind,
+        uid: &str,
+        kept: &Version,
+        other: &Version,
+        at: i64,
+    ) -> PortResult<i64>;
+    fn sync_conflicts(&self) -> PortResult<Vec<SyncConflict>>;
+    fn delete_sync_conflict(&self, id: i64) -> PortResult<()>;
+    /// `None`: not decided yet (its memory stays on this PC).
+    fn memory_home(&self, project: &Path) -> PortResult<Option<MemoryHome>>;
+    fn set_memory_home(&self, project: &Path, home: Option<&MemoryHome>) -> PortResult<()>;
+    /// Writes a note that came from another PC: `id` to replace one, `None`
+    /// to add it. Returns its id.
+    fn write_synced_note(
+        &self,
+        id: Option<i64>,
+        project: Option<&Path>,
+        body: &NoteBody,
+    ) -> PortResult<i64>;
+    /// Likewise for a skill.
+    fn write_synced_skill(
+        &self,
+        id: Option<i64>,
+        project: Option<&Path>,
+        body: &SkillBody,
+    ) -> PortResult<i64>;
+}
+
 pub trait Store:
     AccountRepository
     + ProjectRepository
@@ -278,6 +343,7 @@ pub trait Store:
     + QueueRepository
     + TemplateRepository
     + CommandRepository
+    + SyncRepository
     + StoreHealth
 {
 }
@@ -292,6 +358,7 @@ impl<T> Store for T where
         + QueueRepository
         + TemplateRepository
         + CommandRepository
+        + SyncRepository
         + StoreHealth
 {
 }
@@ -866,4 +933,59 @@ pub trait CodeHost: Send + Sync {
     /// `gh pr create`; returns what it printed (the link). The error
     /// carries gh's own message.
     fn create_pull_request(&self, repo: &Path, spec: &PullRequestSpec) -> PortResult<String>;
+}
+
+/// The sync repo's working copy (docs/decisions.md §34), in `dir`. Paths are
+/// relative to the repo and made by `domain::sync::layout`. Any git server
+/// works: the user's own credentials, no token kept by Hedy.
+pub trait SyncRemote: Send + Sync {
+    /// Clones `url` into `dir`, or opens the clone already there.
+    fn open(&self, url: &str, dir: &Path) -> PortResult<()>;
+    /// Brings in what other PCs pushed.
+    fn pull(&self, dir: &Path) -> PortResult<()>;
+    /// Files under `prefix`, sorted.
+    fn files(&self, dir: &Path, prefix: &str) -> PortResult<Vec<String>>;
+    fn read(&self, dir: &Path, path: &str) -> PortResult<Option<Vec<u8>>>;
+    fn write(&self, dir: &Path, path: &str, bytes: &[u8]) -> PortResult<()>;
+    fn remove(&self, dir: &Path, path: &str) -> PortResult<()>;
+    /// Commits what changed (if anything) and pushes it; when another PC
+    /// pushed first, pulls and tries again.
+    fn push(&self, dir: &Path, message: &str) -> PortResult<()>;
+}
+
+/// The sync vault's cryptography (`adapters::vault`), with keys and epoch
+/// files as opaque text: secrets never take another shape here.
+pub trait SyncCrypto: Send + Sync {
+    /// `bytes` random bytes, as lowercase hex.
+    fn random_hex(&self, bytes: usize) -> PortResult<String>;
+    /// New keys for this PC.
+    fn new_member(&self) -> PortResult<String>;
+    /// A new recovery key: (its 12 words, its keys).
+    fn new_recovery(&self) -> PortResult<(String, String)>;
+    /// The recovery key's keys from its words.
+    fn recover(&self, words: &str) -> PortResult<String>;
+    /// A member's public keys (as epoch files list them).
+    fn member_public(&self, secrets: &str) -> PortResult<String>;
+    /// A new epoch with a new key for `members` (id, public keys), signed by
+    /// `signer`: (the epoch file, its key).
+    fn new_epoch(
+        &self,
+        epoch: u32,
+        members: &[(String, String)],
+        signer_id: &str,
+        signer: &str,
+    ) -> PortResult<(String, String)>;
+    /// Whether `file` is epoch 1, signed by the recovery key `recovery`.
+    fn verify_first_epoch(&self, file: &str, recovery: &str) -> PortResult<()>;
+    /// Whether `next` may follow `previous`.
+    fn verify_next_epoch(&self, previous: &str, next: &str) -> PortResult<()>;
+    /// An epoch file's number and members (id, public keys).
+    fn epoch_members(&self, file: &str) -> PortResult<(u32, Vec<(String, String)>)>;
+    /// The epoch's key, for member `id`.
+    fn open_epoch(&self, file: &str, id: &str, secrets: &str) -> PortResult<String>;
+    fn seal(&self, key: &str, path: &str, plaintext: &[u8]) -> PortResult<Vec<u8>>;
+    /// Opens with whichever of `keys` sealed it.
+    fn open(&self, keys: &[String], path: &str, sealed: &[u8]) -> PortResult<Vec<u8>>;
+    /// The sealed name of a project in the repo.
+    fn project_id(&self, key: &str, project_key: &str) -> PortResult<String>;
 }

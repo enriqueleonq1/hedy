@@ -153,6 +153,22 @@ pub enum AppError {
     ThemeDescriptionFailed(Option<String>),
     #[error("{}", self.message())]
     ThemeDescriptionTimedOut,
+    /// Personal sync is not set up on this PC.
+    #[error("{}", self.message())]
+    SyncNotSetUp,
+    #[error("{}", self.message())]
+    SyncAlreadySetUp,
+    /// The repo already holds another sync: join it instead.
+    #[error("{}", self.message())]
+    SyncRepoInUse,
+    /// Joining a repo where no sync was set up.
+    #[error("{}", self.message())]
+    SyncRepoEmpty,
+    /// The newest key epoch leaves this PC out.
+    #[error("{}", self.message())]
+    SyncRemoved,
+    #[error("{}", self.message())]
+    SyncConflictNotFound(i64),
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -263,6 +279,30 @@ impl AppError {
                 "note {id} is not a proposal: it is already approved"
             ),
             Self::EmptyNote => tr!("la nota está vacía", "the note is empty"),
+            Self::SyncNotSetUp => tr!(
+                "la sincronización no está configurada en esta PC",
+                "sync is not set up on this PC"
+            ),
+            Self::SyncAlreadySetUp => tr!(
+                "esta PC ya sincroniza con un repo",
+                "this PC already syncs with a repo"
+            ),
+            Self::SyncRepoInUse => tr!(
+                "ese repo ya tiene una sincronización: elige «Ya la uso en otra PC»",
+                "that repo already holds a sync: choose «I already use it on another PC»"
+            ),
+            Self::SyncRepoEmpty => tr!(
+                "ese repo todavía no tiene una sincronización: configúrala primero en tu otra PC",
+                "that repo holds no sync yet: set it up on your other PC first"
+            ),
+            Self::SyncRemoved => tr!(
+                "esta PC fue quitada de la sincronización",
+                "this PC was removed from sync"
+            ),
+            Self::SyncConflictNotFound(id) => tr!(
+                "no existe el conflicto {id}",
+                "conflict {id} does not exist"
+            ),
             Self::SkillNotFound(skill) => tr!(
                 "no existe la habilidad «{skill}» en este proyecto",
                 "there is no skill «{skill}» in this project"

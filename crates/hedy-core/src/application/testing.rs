@@ -17,6 +17,7 @@ use super::{Hedy, NewAccount, Ports};
 use crate::domain::recall::NoteUse;
 
 mod ship;
+mod sync;
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, ImageSupport,
     KnownCommands, LaunchSpec, Note, NoteStatus, Notice, NoticeKind, Project, PromptImage,
@@ -24,6 +25,7 @@ use crate::domain::{
     theme::CustomTheme,
 };
 pub use ship::{FakeHost, FakeSource};
+pub use sync::{FakeSyncRemote, SyncServer};
 
 #[derive(Default)]
 pub struct MemoryStore {
@@ -44,6 +46,7 @@ pub struct MemoryStore {
     queue: Mutex<Vec<QueuedMessage>>,
     templates: Mutex<Vec<TemplateRecord>>,
     commands: Mutex<Vec<(AccountId, Option<PathBuf>, KnownCommands)>>,
+    sync: Mutex<sync::SyncTables>,
 }
 
 impl MemoryStore {
@@ -1332,6 +1335,7 @@ pub struct Fixture {
     pub source: Arc<FakeSource>,
     pub host: Arc<FakeHost>,
     pub themes: Arc<FakeThemes>,
+    pub sync: Arc<FakeSyncRemote>,
 }
 
 /// Themes kept in memory, by id.
@@ -1363,6 +1367,11 @@ impl ThemeStore for FakeThemes {
 
 impl Fixture {
     pub fn new() -> Self {
+        Self::with_server(SyncServer::default())
+    }
+
+    /// A PC that syncs through `server`, shared with other fixtures (PCs).
+    pub fn with_server(server: SyncServer) -> Self {
         let secrets = Arc::new(MemorySecrets::default());
         let runner = Arc::new(FakeRunner::default());
         let fs = Arc::new(FakeFs::default());
@@ -1375,6 +1384,7 @@ impl Fixture {
         let source = Arc::new(FakeSource::default());
         let host = Arc::new(FakeHost::default());
         let themes = Arc::new(FakeThemes::default());
+        let sync = Arc::new(FakeSyncRemote::new(server));
         let hedy = Hedy::new(Ports {
             store: store.clone(),
             secrets: secrets.clone(),
@@ -1389,6 +1399,8 @@ impl Fixture {
             source: source.clone(),
             host: host.clone(),
             themes: themes.clone(),
+            sync_remote: sync.clone(),
+            sync_crypto: Arc::new(crate::adapters::VaultCrypto),
         });
         let notices = Arc::new(RecordedNotices::default());
         let hedy = hedy.with_task_events(notices.clone());
@@ -1407,7 +1419,34 @@ impl Fixture {
             source,
             host,
             themes,
+            sync,
         }
+    }
+
+    /// This fixture's fakes around a real `store` and sync remote: what the
+    /// sync tests run against SQLite and git.
+    pub fn hedy_on(
+        &self,
+        store: Arc<dyn super::ports::Store>,
+        sync: Arc<dyn super::ports::SyncRemote>,
+    ) -> Hedy {
+        Hedy::new(Ports {
+            store,
+            secrets: self.secrets.clone(),
+            runner: self.runner.clone(),
+            fs: self.fs.clone(),
+            git: self.git.clone(),
+            code: self.code.clone(),
+            writer: self.code.clone(),
+            agents: self.agents.clone(),
+            clock: self.clock.clone(),
+            usage: self.probe.clone(),
+            source: self.source.clone(),
+            host: self.host.clone(),
+            themes: self.themes.clone(),
+            sync_remote: sync,
+            sync_crypto: Arc::new(crate::adapters::VaultCrypto),
+        })
     }
 
     pub fn dir(&self, path: &str) -> PathBuf {

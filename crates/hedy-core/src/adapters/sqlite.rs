@@ -225,10 +225,47 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (account_id, project)
     );
 "#,
+    r#"
+    -- Personal sync (docs/decisions.md §34). The replica: the newest version
+    -- known of every synced item (JSON scope and version).
+    CREATE TABLE sync_items (
+        kind     TEXT NOT NULL,
+        uid      TEXT NOT NULL,
+        scope    TEXT NOT NULL,
+        version  TEXT NOT NULL,
+        PRIMARY KEY (kind, uid)
+    );
+    -- Which local item (a row id, a theme id) each synced item is.
+    CREATE TABLE sync_links (
+        kind      TEXT NOT NULL,
+        uid       TEXT NOT NULL,
+        local_id  TEXT NOT NULL,
+        PRIMARY KEY (kind, uid),
+        UNIQUE (kind, local_id)
+    );
+    -- The last batch read from each other PC.
+    CREATE TABLE sync_cursors (
+        device  TEXT PRIMARY KEY,
+        seq     INTEGER NOT NULL
+    );
+    -- Two versions made apart, waiting for the user (JSON versions).
+    CREATE TABLE sync_conflicts (
+        id     INTEGER PRIMARY KEY,
+        kind   TEXT NOT NULL,
+        uid    TEXT NOT NULL,
+        kept   TEXT NOT NULL,
+        other  TEXT NOT NULL,
+        at     INTEGER NOT NULL
+    );
+    -- Where the project's memory lives: 'personal', 'shared:<owner>', 'local';
+    -- NULL until decided.
+    ALTER TABLE projects ADD COLUMN memory_home TEXT;
+"#,
 ];
 
 mod commands;
 mod queue;
+mod sync;
 mod templates;
 
 pub struct SqliteStore {

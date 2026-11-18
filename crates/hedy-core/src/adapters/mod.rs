@@ -15,6 +15,7 @@ mod process;
 mod pty;
 mod ship;
 mod sqlite;
+mod sync_git;
 mod themes;
 mod usage_probe;
 pub mod vault;
@@ -35,8 +36,10 @@ pub use process::find_program;
 pub use pty::{PtyOutput, PtySession};
 pub use ship::{GhCli, GitSourceControl};
 pub use sqlite::SqliteStore;
+pub use sync_git::GitSyncRemote;
 pub use themes::JsonThemeStore;
 pub use usage_probe::SystemUsageProbe;
+pub use vault::VaultCrypto;
 
 use crate::application::ports::{
     AgentBackend, AgentLauncher, AgentRequest, AgentSession, Clock, EventSink, PortResult,
@@ -178,6 +181,8 @@ fn build(paths: &HedyPaths, claude: ClaudeCodeLauncher) -> PortResult<Hedy> {
         source: Arc::new(GitSourceControl),
         host: Arc::new(GhCli::default()),
         themes: Arc::new(JsonThemeStore::new(paths.themes_dir())),
+        sync_remote: Arc::new(GitSyncRemote),
+        sync_crypto: Arc::new(VaultCrypto),
     });
     // The setting is read from the store: a failure keeps the system language.
     if hedy.apply_language().is_err() {

@@ -19,6 +19,9 @@ use serde::{Deserialize, Serialize};
 /// keep snapshots light.
 pub const HISTORY_MAX: usize = 8;
 
+/// The recovery key's member id in key epochs (every other member is a PC).
+pub const RECOVERY_MEMBER: &str = "recovery";
+
 /// A PC in the sync repo: random, never derived from the machine.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -200,6 +203,86 @@ pub fn merge(local: Option<&Version>, incoming: &Version) -> Merge {
     }
     Merge::Conflict {
         incoming_wins: incoming.stamp > local.stamp,
+    }
+}
+
+/// What a note carries between PCs: everything but its local id, its uses
+/// (each PC's own) and its project (the change's [`Scope`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteBody {
+    pub text: String,
+    pub category: super::Category,
+    pub author: String,
+    pub status: super::NoteStatus,
+    pub created_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<i64>,
+}
+
+/// What a skill carries between PCs (not the task it came from: tasks stay
+/// on their PC).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillBody {
+    pub name: String,
+    pub description: String,
+    pub body: String,
+    pub status: super::SkillStatus,
+    pub author: String,
+    pub created_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<i64>,
+}
+
+/// What a prompt template carries between PCs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TemplateBody {
+    pub name: String,
+    pub text: String,
+    /// The built-in example it edits (or deletes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub builtin: Option<String>,
+    #[serde(default)]
+    pub deleted: bool,
+}
+
+/// Where a project's memory lives.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MemoryHome {
+    /// The user's own: synced to every PC.
+    Personal,
+    /// A group's (a company, a client, an open-source community), named by
+    /// the repo owner: never in the personal sync repo.
+    Shared(String),
+    /// Neither synced nor shared.
+    Local,
+}
+
+impl MemoryHome {
+    /// How it is stored: `personal`, `shared:<owner>`, `local`.
+    pub fn as_stored(&self) -> String {
+        match self {
+            Self::Personal => "personal".into(),
+            Self::Shared(owner) => format!("shared:{owner}"),
+            Self::Local => "local".into(),
+        }
+    }
+
+    /// Reads [`Self::as_stored`]; anything else is `None` (not decided).
+    pub fn from_stored(text: &str) -> Option<Self> {
+        match text {
+            "personal" => Some(Self::Personal),
+            "local" => Some(Self::Local),
+            _ => text
+                .strip_prefix("shared:")
+                .filter(|owner| !owner.is_empty())
+                .map(|owner| Self::Shared(owner.to_owned())),
+        }
+    }
+
+    pub fn syncs(&self) -> bool {
+        matches!(self, Self::Personal)
     }
 }
 
@@ -438,6 +521,20 @@ mod tests {
         assert!(json.contains(r#""kind":"note""#) && json.contains(r#""project":"abc""#));
         assert_eq!(serde_json::from_str::<Batch>(&json).unwrap(), batch);
         assert!(ItemKind::Skill.asks_on_conflict() && !ItemKind::Theme.asks_on_conflict());
+    }
+
+    #[test]
+    fn memory_homes_are_stored_as_text() {
+        for home in [
+            MemoryHome::Personal,
+            MemoryHome::Shared("empresa-org".into()),
+            MemoryHome::Local,
+        ] {
+            assert_eq!(MemoryHome::from_stored(&home.as_stored()), Some(home));
+        }
+        assert_eq!(MemoryHome::from_stored("shared:"), None);
+        assert_eq!(MemoryHome::from_stored("work"), None);
+        assert!(MemoryHome::Personal.syncs() && !MemoryHome::Local.syncs());
     }
 
     #[test]

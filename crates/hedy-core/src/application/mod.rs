@@ -27,6 +27,7 @@ mod settings;
 mod ship;
 mod skills;
 mod status;
+mod sync;
 mod tasks;
 mod templates;
 #[cfg(test)]
@@ -80,7 +81,8 @@ pub use themes::NewTheme;
 use crate::domain::TaskId;
 use ports::{
     AgentLauncher, Clock, CodeHost, CodeReader, CodeWriter, FileSystem, Git, NoTaskEvents,
-    ProcessRunner, SecretStore, SourceControl, Store, TaskEvents, ThemeStore, UsageProbe,
+    ProcessRunner, SecretStore, SourceControl, Store, SyncCrypto, SyncRemote, TaskEvents,
+    ThemeStore, UsageProbe,
 };
 
 /// Everything the use cases need from the outside world.
@@ -98,6 +100,8 @@ pub struct Ports {
     pub source: Arc<dyn SourceControl>,
     pub host: Arc<dyn CodeHost>,
     pub themes: Arc<dyn ThemeStore>,
+    pub sync_remote: Arc<dyn SyncRemote>,
+    pub sync_crypto: Arc<dyn SyncCrypto>,
 }
 
 /// Application facade used by every driving adapter (the CLI and the app).
@@ -116,6 +120,8 @@ pub struct Hedy {
     source: Arc<dyn SourceControl>,
     host: Arc<dyn CodeHost>,
     themes: Arc<dyn ThemeStore>,
+    sync_remote: Arc<dyn SyncRemote>,
+    sync_crypto: Arc<dyn SyncCrypto>,
     events: Arc<dyn TaskEvents>,
     /// Running agent sessions, by task.
     live: Arc<Mutex<HashMap<TaskId, tasks::LiveTask>>>,
@@ -123,6 +129,8 @@ pub struct Hedy {
     sessions: Arc<AtomicU64>,
     /// Serializes changes to message queues with their delivery.
     queue_lock: Arc<Mutex<()>>,
+    /// One personal sync at a time (the timer, "Sincronizar ahora").
+    sync_lock: Arc<Mutex<()>>,
     /// How to start the memory MCP server for CLI agents.
     memory_server: Option<MemoryServerCommand>,
 }
@@ -143,10 +151,13 @@ impl Hedy {
             source: ports.source,
             host: ports.host,
             themes: ports.themes,
+            sync_remote: ports.sync_remote,
+            sync_crypto: ports.sync_crypto,
             events: Arc::new(NoTaskEvents),
             live: Arc::default(),
             sessions: Arc::default(),
             queue_lock: Arc::default(),
+            sync_lock: Arc::default(),
             memory_server: None,
         }
     }

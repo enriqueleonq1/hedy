@@ -30,10 +30,11 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use zeroize::Zeroize;
 
+use crate::application::ports::{PortError, PortResult, SyncCrypto};
 use crate::tr;
 
 /// The member id of the recovery key in epoch files.
-pub const RECOVERY_ID: &str = "recovery";
+pub const RECOVERY_ID: &str = crate::domain::sync::RECOVERY_MEMBER;
 /// Version of the epoch and sealed-file formats.
 const FORMAT: u32 = 1;
 /// Sealed files start with this, then the format byte and the epoch.
@@ -328,6 +329,19 @@ impl VaultKey {
         self.epoch
     }
 
+    /// For the keyring: `<epoch>:<base64>`. [`Self::decode`] reads it back.
+    pub fn encode(&self) -> String {
+        format!("{}:{}", self.epoch, BASE64.encode(self.key.0))
+    }
+
+    pub fn decode(text: &str) -> Result<Self> {
+        let (epoch, key) = text.split_once(':').ok_or(VaultError::Corrupt)?;
+        Ok(Self {
+            epoch: epoch.parse().map_err(|_| VaultError::Corrupt)?,
+            key: Secret(decode32(key)?),
+        })
+    }
+
     fn subkey(&self, purpose: &[u8]) -> Secret {
         hkdf32(b"hedy-sync-vault-v1", &self.key.0, purpose)
     }
@@ -559,6 +573,120 @@ fn unwrap_payload(payload: &[u8], epoch: u32) -> Result<VaultKey> {
         epoch,
         key: Secret(payload[4..].try_into().expect("32 bytes")),
     })
+}
+
+/// [`SyncCrypto`] over this module:
+/// keys, secrets and epoch files travel as text.
+#[derive(Default)]
+pub struct VaultCrypto;
+
+fn port(error: VaultError) -> PortError {
+    PortError::new(error.to_string())
+}
+
+fn epoch_file(text: &str) -> Result<EpochFile> {
+    serde_json::from_str(text).map_err(|_| VaultError::Corrupt)
+}
+
+fn member_public(text: &str) -> Result<MemberPublic> {
+    serde_json::from_str(text).map_err(|_| VaultError::Corrupt)
+}
+
+impl SyncCrypto for VaultCrypto {
+    fn random_hex(&self, bytes: usize) -> PortResult<String> {
+        let mut buf = vec![0u8; bytes];
+        getrandom::fill(&mut buf).map_err(|_| port(VaultError::Random))?;
+        Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
+    }
+
+    fn new_member(&self) -> PortResult<String> {
+        Ok(MemberSecrets::generate().map_err(port)?.encode())
+    }
+
+    fn new_recovery(&self) -> PortResult<(String, String)> {
+        let (words, keys) = new_recovery().map_err(port)?;
+        Ok((words, keys.encode()))
+    }
+
+    fn recover(&self, words: &str) -> PortResult<String> {
+        Ok(recover(words).map_err(port)?.encode())
+    }
+
+    fn member_public(&self, secrets: &str) -> PortResult<String> {
+        let public = MemberSecrets::decode(secrets).map_err(port)?.public();
+        Ok(serde_json::to_string(&public).expect("public keys serialize"))
+    }
+
+    fn new_epoch(
+        &self,
+        epoch: u32,
+        members: &[(String, String)],
+        signer_id: &str,
+        signer: &str,
+    ) -> PortResult<(String, String)> {
+        let key = VaultKey::generate(epoch).map_err(port)?;
+        let members = members
+            .iter()
+            .map(|(id, public)| Ok((id.clone(), member_public(public)?)))
+            .collect::<Result<Vec<_>>>()
+            .map_err(port)?;
+        let signer = MemberSecrets::decode(signer).map_err(port)?;
+        let file = EpochFile::create(&key, &members, signer_id, &signer).map_err(port)?;
+        let text = serde_json::to_string_pretty(&file).expect("an epoch file serializes");
+        Ok((text, key.encode()))
+    }
+
+    fn verify_first_epoch(&self, file: &str, recovery: &str) -> PortResult<()> {
+        epoch_file(file)
+            .and_then(|f| f.verify_first(&member_public(recovery)?))
+            .map_err(port)
+    }
+
+    fn verify_next_epoch(&self, previous: &str, next: &str) -> PortResult<()> {
+        epoch_file(previous)
+            .and_then(|p| p.verify_next(&epoch_file(next)?))
+            .map_err(port)
+    }
+
+    fn epoch_members(&self, file: &str) -> PortResult<(u32, Vec<(String, String)>)> {
+        let file = epoch_file(file).map_err(port)?;
+        let members = file
+            .members
+            .iter()
+            .map(|m| {
+                let public = serde_json::to_string(&m.public).expect("public keys serialize");
+                (m.id.clone(), public)
+            })
+            .collect();
+        Ok((file.epoch, members))
+    }
+
+    fn open_epoch(&self, file: &str, id: &str, secrets: &str) -> PortResult<String> {
+        let secrets = MemberSecrets::decode(secrets).map_err(port)?;
+        let key = epoch_file(file)
+            .and_then(|f| f.open(id, &secrets))
+            .map_err(port)?;
+        Ok(key.encode())
+    }
+
+    fn seal(&self, key: &str, path: &str, plaintext: &[u8]) -> PortResult<Vec<u8>> {
+        VaultKey::decode(key)
+            .and_then(|k| k.seal(path, plaintext))
+            .map_err(port)
+    }
+
+    fn open(&self, keys: &[String], path: &str, sealed: &[u8]) -> PortResult<Vec<u8>> {
+        let keys = keys
+            .iter()
+            .map(|k| VaultKey::decode(k))
+            .collect::<Result<Vec<_>>>()
+            .map_err(port)?;
+        open(&keys, path, sealed).map_err(port)
+    }
+
+    fn project_id(&self, key: &str, project_key: &str) -> PortResult<String> {
+        Ok(VaultKey::decode(key).map_err(port)?.project_id(project_key))
+    }
 }
 
 #[cfg(test)]
