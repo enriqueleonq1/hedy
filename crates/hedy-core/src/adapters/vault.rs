@@ -34,6 +34,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use zeroize::Zeroize;
 
+use crate::adapters::invite;
 use crate::application::ports::{PortError, PortResult, SyncCrypto};
 use crate::domain::sync::{DeviceId, EpochMember, fold_word};
 use crate::domain::team::{PersonId, Role, Seat};
@@ -325,6 +326,14 @@ impl VaultKey {
             epoch,
             key: Secret(random()?),
         })
+    }
+
+    /// A key derived (HKDF-SHA256) from another secret: an invite's.
+    pub(crate) fn derive(epoch: u32, salt: &[u8], secret: &[u8]) -> Self {
+        Self {
+            epoch,
+            key: hkdf32(salt, secret, b"key"),
+        }
     }
 
     pub fn epoch(&self) -> u32 {
@@ -823,6 +832,29 @@ impl SyncCrypto for VaultCrypto {
             })
             .map_err(port)
     }
+
+    fn invite_code(&self, nameplate: u32) -> PortResult<String> {
+        invite::new_code(nameplate).map_err(port)
+    }
+
+    fn parse_invite_code(&self, typed: &str) -> Option<String> {
+        invite::parse_code(typed)
+    }
+
+    fn invite_start(&self, code: &str) -> PortResult<(String, String)> {
+        invite::start(code).map_err(port)
+    }
+
+    fn invite_accept(&self, secret: &str, code: &str, message: &str) -> PortResult<String> {
+        Ok(invite::accept(secret, code, message)
+            .map_err(port)?
+            .encode())
+    }
+
+    fn invite_join(&self, code: &str, message: &str) -> PortResult<(String, String)> {
+        let (message, key) = invite::join(code, message).map_err(port)?;
+        Ok((message, key.encode()))
+    }
 }
 
 #[cfg(test)]
@@ -1111,6 +1143,28 @@ mod tests {
 
         let json = serde_json::to_string(&e1).unwrap();
         assert_eq!(serde_json::from_str::<EpochFile>(&json).unwrap(), e1);
+    }
+
+    #[test]
+    fn an_invite_through_the_port_seals_like_an_epoch_key() {
+        let crypto = VaultCrypto;
+        let code = crypto.invite_code(4).unwrap();
+        assert_eq!(
+            crypto.parse_invite_code(&code.to_uppercase()),
+            Some(code.clone())
+        );
+        let (secret, invite) = crypto.invite_start(&code).unwrap();
+        let (request, joiner) = crypto.invite_join(&code, &invite).unwrap();
+        let inviter = crypto.invite_accept(&secret, &code, &request).unwrap();
+        let sealed = crypto
+            .seal(&joiner, "invites/4/request.hedy", b"hola")
+            .unwrap();
+        assert_eq!(
+            crypto
+                .open(&[inviter], "invites/4/request.hedy", &sealed)
+                .unwrap(),
+            b"hola"
+        );
     }
 
     #[test]

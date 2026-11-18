@@ -1039,4 +1039,22 @@ pub trait SyncCrypto: Send + Sync {
     fn sign(&self, secrets: &str, bytes: &[u8]) -> PortResult<String>;
     /// Whether `signature` is `public`'s over `bytes`.
     fn verify(&self, public: &str, bytes: &[u8], signature: &str) -> PortResult<()>;
+
+    // Team invites (`adapters::invite`). The shared key they give seals and
+    // opens like an epoch key.
+
+    /// A new code for invite number `nameplate` (`7-tigre-lima-nube-mar`).
+    fn invite_code(&self, nameplate: u32) -> PortResult<String>;
+    /// A code as typed, in the form both PCs use; `None` when it is not one
+    /// (a mistyped word), so a typo never burns an invite.
+    fn parse_invite_code(&self, typed: &str) -> Option<String>;
+    /// The inviting PC's side: (its secret, to keep until the invite is
+    /// used; its message, for the invite file).
+    fn invite_start(&self, code: &str) -> PortResult<(String, String)>;
+    /// The inviting PC reads the joiner's message: the key they share. With
+    /// a wrong code it is another key, which opens nothing the joiner sealed.
+    fn invite_accept(&self, secret: &str, code: &str, message: &str) -> PortResult<String>;
+    /// The joiner's side: (its message, the key it shares if the code was
+    /// right).
+    fn invite_join(&self, code: &str, message: &str) -> PortResult<(String, String)>;
 }

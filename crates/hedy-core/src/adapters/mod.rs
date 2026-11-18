@@ -9,6 +9,7 @@ mod fs;
 mod git;
 mod git_code;
 mod images;
+pub mod invite;
 mod keyring;
 mod paths;
 mod process;
