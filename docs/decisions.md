@@ -1960,3 +1960,93 @@ The user approved turning the package on: `Experiments::DEFAULT`.
 
 It is one switch for the whole package, on purpose: what was confirmed is the package, and
 loose parts would make combinations nobody measured.
+
+## 34. Personal sync: the same Hedy on every PC (Nov 17, 2026)
+
+The user wants their Hedy at home and at the office to be the same Hedy. Synced:
+- notes and skills (approved and proposed);
+- templates;
+- themes;
+- deletions.
+
+Never synced: logins, API keys, account folders, task history and usage (rules 1 and 5).
+Each project's memory is **Personal** (synced), **Compartido · <grupo>** (a company, a client,
+an open-source community: never in the personal repo; later, the group's collective memory)
+or **Solo en esta PC**. The views were chosen on a design canvas (1b, 2b, 3a, 4b, 5b, 6b, 7a,
+8a, 8b).
+
+### Transport
+
+Transport is a private repo on **any git server**: GitHub, GitLab, Bitbucket, Gitea or
+self-hosted SSH.
+- Hedy runs `git` with the user's own credentials and stores no token.
+- It tells a public repo by trying to read it without credentials.
+- No Hedy server (rule 8).
+
+### Format (phase 1, `domain::sync`)
+
+- **Each PC only appends its own files.** It writes `devices/<id>/changes/<seq>.hedy` and,
+  now and then, `devices/<id>/snapshot.hedy`, so git never merges. The README and
+  `vault/epochs/<n>.json` are the only plain files, and no path names a project or an item:
+  projects are an HMAC of their `owner/name`.
+- **A change** is an item kind, a global uid, a scope (global, or a sealed project id) and a
+  version.
+  - The version carries a hybrid logical clock (`Stamp`: wall ms, counter, PC) and the stamps
+    of the up to 8 versions it replaced.
+  - A body of `None` is a deletion.
+- **`merge`:**
+  - a version that builds on the local one applies;
+  - one the local one already contains is ignored;
+  - two made apart are a conflict where the newer stamp wins. For notes and skills, the loser
+    is offered to the user, side by side (8a).
+  - Two deletions made apart agree.
+  - An edit made more than 8 versions after a common one reads as a conflict. It is a false
+    alarm, never a silent loss.
+- **Projects match by their remote:** `RepoIdentity::from_url` reads https, ssh, scp-like
+  and `git://` URLs, with GitLab subgroups and `~user`. The match uses `owner/name` without
+  the host, so an SSH host alias (`github-work`) matches the real host (§ plan of
+  Nov 16, 2026).
+
+### Cryptography (phase 1, `adapters::vault`)
+
+Only well-known constructions from RustCrypto and dalek, nothing home-made:
+
+- **Data:** XChaCha20-Poly1305 under an HKDF-SHA256 subkey of the epoch's vault key.
+  - A file is bound to its path, the format and the epoch (the associated data), so a file
+    moved, swapped or altered does not open.
+  - The file starts `HEDY`, then the format byte, the epoch and a 24-byte random nonce.
+- **The vault key** is random per epoch.
+  - `vault/epochs/<n>.json` wraps it for every member in a sealed box (`crypto_box_seal`:
+    X25519 + XSalsa20-Poly1305).
+  - The wrapped payload starts with the epoch, so a wrapped key copied into another epoch's
+    file does not open.
+- **Members** are the PCs plus the recovery key, each with a box key pair and an Ed25519
+  signing key pair.
+  - A PC's secrets live in the OS keyring (`SecretStore::sync_keys`), in an entry per data
+    folder, so a Hedy tried with `HEDY_DATA_DIR` never overwrites the real one.
+- **The recovery key** is 12 BIP39 words (128 bits), in the interface's language.
+  - Its keys are HKDF over the BIP39 seed, and they are never stored.
+  - Typed back, the words may have numbers, any case, extra spaces and, in Spanish, missing
+    accents.
+- **Trust:**
+  - Epoch 1 must be signed by the recovery key.
+  - Every later epoch must be the next number, signed by a member of the epoch before.
+  - A PC that joins with the words checks the whole chain from the recovery key
+    (`verify_chain`).
+  - A removed PC is not a member of the new epoch. It cannot read what is written after, and
+    it cannot sign an epoch that puts itself back, even with push access to the repo.
+  - What remains: a member can still act before it is removed. If two PCs write the same
+    next epoch, git keeps only the first to push. The other PC sees a newer epoch it did not
+    expect and tells the user.
+
+Crates: `chacha20poly1305`, `crypto_box` (`seal`), `ed25519-dalek`, `bip39` (`spanish`),
+`hkdf`, `hmac`, `sha2`, `zeroize` and `getrandom`. All MIT or Apache-2.0 (bip39: CC0).
+
+**Next phases:**
+2. The engine: recording changes, applying other PCs' changes and conflicts, tested with two
+   Hedy and a local bare repo.
+3. Projects.
+4. `hedy sync`.
+5. The app.
+6. Removing a PC and compaction.
+7. A real test.
