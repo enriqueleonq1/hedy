@@ -1778,6 +1778,11 @@ fn an_agent_in_a_team_project_always_reads_the_team_layer_quoted() {
     assert!(!team.contains("tests/"));
     let found = request.memory.as_ref().unwrap().tools.search("tests");
     assert!(found.contains(r#""Los tests van en tests/""#), "{found}");
+    // Found only in the team: no "no notes" next to it.
+    assert!(
+        !found.contains("no tiene notas") && !found.contains("has no notes"),
+        "{found}"
+    );
     assert!(found.contains(r#""Ana""#), "{found}");
     // Nothing of the team in a project that is not the team's.
     luis.f

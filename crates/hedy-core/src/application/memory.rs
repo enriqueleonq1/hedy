@@ -666,12 +666,11 @@ impl MemoryTools for TaskMemory {
 
     fn search_page(&self, query: &str, page: PageRequest) -> String {
         let first = page.offset.unwrap_or(0) == 0;
-        let text = match self
+        let page = match self
             .hedy
             .read_memory_page(&self.project, self.task.as_ref(), query, page)
         {
-            Ok(page) if experiments::on(Experiment::Search8) => format_note_page(&page),
-            Ok(page) => format_notes(&page.items),
+            Ok(page) => page,
             Err(e) => {
                 return tr!(
                     "No se pudo leer la memoria: {e}",
@@ -679,12 +678,18 @@ impl MemoryTools for TaskMemory {
                 );
             }
         };
+        let text = match experiments::on(Experiment::Search8) {
+            true => format_note_page(&page),
+            false => format_notes(&page.items),
+        };
         // The team's notes (a project of a team) open the first page, so its
-        // paging footer stays last.
+        // paging footer stays last; without notes of its own, they are the
+        // answer.
         match first
             .then(|| self.hedy.team_search(&self.project, query))
             .flatten()
         {
+            Some(team) if page.items.is_empty() => team,
             Some(team) => format!("{team}\n\n{text}"),
             None => text,
         }
