@@ -2854,6 +2854,27 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
     - the app's sync over IPC;
     - the team flow over real git;
     - the random three-person simulation. No PC refuses anything legitimate.
+- **Re-verification** (both reviewers, proofs of concept rerun): the fixes held. Six more
+  findings, fixed with a test each:
+  - **A stale suggestion after compaction.** A suggestion removed by the note's owner
+    stayed pending on a PC that never had the note: the owner's snapshot keeps only its
+    removal. A suggestion now names its note's owner as it was then. Naming the wrong one
+    only lets that person turn the suggestion down.
+  - **A promoted member's pending PC.** A member promoted while their PC waited never added
+    it. An admin's PC now adds its own pending asks.
+  - **Names lost with the admin who wrote them.** Any admin's PC now writes again the names
+    that are missing from the repo.
+  - **A new person's name** came straight from their request. It is now shown with any
+    hidden character visible, and told apart from a name already taken (`Ana (2)`). Admins
+    rename people and the team (`team_rename_person`, `team_rename`).
+  - **A member could move their accepted note out of the team layer,** and the owner of a
+    team-layer note could drop suggestions on it. A member never changes an item's scope, and
+    the team layer's suggestions are the admins' to review.
+  - **Two admins leaving at once left none behind.**
+    - An admin's PC now stays until another admin's takes it out (`leaving`).
+    - A removal that would leave no admin is dropped on its own, and its PC is told
+      (`TeamLastAdmin`) and stays.
+    - A stuck request no longer blocks the rest.
 - **Known limits:**
   - **Hiding someone's batches.** A member who hides another's batches can keep that
     person's work from a PC that never saw it. They need push access, and they cannot put
