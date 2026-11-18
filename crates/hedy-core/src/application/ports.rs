@@ -960,7 +960,27 @@ pub trait CodeHost: Send + Sync {
 /// The sync repo's working copy (docs/decisions.md §34), in `dir`. Paths are
 /// relative to the repo and made by `domain::sync::layout`. Any git server
 /// works: the user's own credentials, no token kept by Hedy.
+/// Held while one sync operation runs; dropping it lets the next one in.
+pub struct SyncLock {
+    _held: Box<dyn Send>,
+}
+
+impl SyncLock {
+    pub fn new(held: impl Send + 'static) -> Self {
+        Self {
+            _held: Box::new(held),
+        }
+    }
+}
+
 pub trait SyncRemote: Send + Sync {
+    /// Waits for, then holds, the lock next to `dir`: one sync operation
+    /// at a time on this PC, also across processes (the app and `hedy`).
+    fn lock(&self, dir: &Path) -> PortResult<SyncLock>;
+    /// Whether anyone can read `url` without credentials (a public repo).
+    fn is_public(&self, url: &str) -> bool;
+    /// This machine's own name, for the list of PCs.
+    fn device_name(&self) -> String;
     /// Clones `url` into `dir`, or opens the clone already there.
     fn open(&self, url: &str, dir: &Path) -> PortResult<()>;
     /// Brings in what other PCs pushed.

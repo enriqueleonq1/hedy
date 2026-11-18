@@ -4,7 +4,7 @@
 //! covers every repo of that owner, on this PC and in later projects. Nobody
 //! is the user's until the user says so.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::{AppResult, Hedy};
 use crate::domain::sync::{DerivedHome, MemoryHome, Owners, RepoIdentity, derive_home};
@@ -22,6 +22,9 @@ pub struct MemoryHomeStatus {
     /// The owner to ask about ("¿La memoria de … es solo tuya?"), as its
     /// owner key (`github.com/empresa-org`).
     pub ask: Option<String>,
+    /// The group "Compartido" would name: the first owner of its remotes
+    /// that is not the user's (or the first one); `None` without remotes.
+    pub group: Option<String>,
 }
 
 impl Hedy {
@@ -73,29 +76,44 @@ impl Hedy {
 
     pub fn memory_home_status(&self, project: &Path) -> AppResult<MemoryHomeStatus> {
         let project = self.project_at(project)?;
-        if let Some(home) = self.store.memory_home(&project.path)? {
-            return Ok(MemoryHomeStatus {
-                home: Some(home),
-                chosen: true,
-                ask: None,
-            });
-        }
-        Ok(match self.derived_home(&project.path)? {
-            DerivedHome::Known(home) => MemoryHomeStatus {
-                home: Some(home),
-                chosen: false,
-                ask: None,
+        self.home_status(&project.path)
+    }
+
+    /// Every project's, for the sync's summary.
+    pub fn memory_homes(&self) -> AppResult<Vec<(PathBuf, MemoryHomeStatus)>> {
+        self.store
+            .list_projects()?
+            .into_iter()
+            .map(|p| Ok((p.path.clone(), self.home_status(&p.path)?)))
+            .collect()
+    }
+
+    fn home_status(&self, path: &Path) -> AppResult<MemoryHomeStatus> {
+        let remotes = self.remote_owners(path);
+        let owners = self.repo_owners()?;
+        let keys: Vec<String> = remotes
+            .iter()
+            .flatten()
+            .map(RepoIdentity::owner_key)
+            .collect();
+        let group = keys
+            .iter()
+            .find(|k| !owners.mine.contains(*k))
+            .or(keys.first())
+            .cloned();
+        let (home, chosen, ask) = match self.store.memory_home(path)? {
+            Some(home) => (Some(home), true, None),
+            None => match derive_home(&remotes, &owners) {
+                DerivedHome::Known(home) => (Some(home), false, None),
+                DerivedHome::Ask(owner) => (None, false, Some(owner)),
+                DerivedHome::NoRemote => (None, false, None),
             },
-            DerivedHome::Ask(owner) => MemoryHomeStatus {
-                home: None,
-                chosen: false,
-                ask: Some(owner),
-            },
-            DerivedHome::NoRemote => MemoryHomeStatus {
-                home: None,
-                chosen: false,
-                ask: None,
-            },
+        };
+        Ok(MemoryHomeStatus {
+            home,
+            chosen,
+            ask,
+            group,
         })
     }
 
@@ -142,6 +160,7 @@ mod tests {
         let status = f.hedy.memory_home_status(&app).unwrap();
         assert_eq!(status.ask.as_deref(), Some("github.com/empresa-org"));
         assert_eq!(status.home, None);
+        assert_eq!(status.group.as_deref(), Some("github.com/empresa-org"));
 
         f.hedy
             .answer_owner("github.com/empresa-org", false)
@@ -181,6 +200,9 @@ mod tests {
         f.hedy.answer_owner("github.com/tu-usuario", true).unwrap();
         let status = f.hedy.memory_home_status(&fork).unwrap();
         assert_eq!(status.ask.as_deref(), Some("github.com/empresa-org"));
+        // "Compartido" names the group, not the user.
+        assert_eq!(status.group.as_deref(), Some("github.com/empresa-org"));
+        assert_eq!(f.hedy.memory_homes().unwrap().len(), 1);
         f.hedy
             .answer_owner("github.com/empresa-org", false)
             .unwrap();

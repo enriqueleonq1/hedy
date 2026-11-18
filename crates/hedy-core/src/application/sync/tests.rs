@@ -1482,3 +1482,30 @@ fn a_url_with_a_token_is_refused_and_a_cut_short_setup_can_be_cleared() {
     assert_eq!(home.hedy.sync_leave(), Ok(false));
     assert_eq!(home.secrets.sync_keys().unwrap(), None);
 }
+
+#[test]
+fn a_failed_sync_is_remembered_until_one_works_and_a_public_repo_is_told() {
+    let (_server, (home, _), _) = two_pcs();
+    home.sync.fail_next_push();
+    home.hedy
+        .add_note(None, "nota", Category::Decision)
+        .unwrap();
+    assert!(home.hedy.sync_now().is_err());
+    let error = home.hedy.sync_status().unwrap().unwrap().last_error;
+    assert!(error.is_some_and(|e| e.contains("sin conexión")));
+    home.hedy.sync_now().unwrap();
+    assert_eq!(home.hedy.sync_status().unwrap().unwrap().last_error, None);
+
+    assert_eq!(home.hedy.sync_repo_is_public(URL), Ok(false));
+    assert_eq!(
+        home.hedy
+            .sync_repo_is_public("https://github.com/u/public-memory.git"),
+        Ok(true)
+    );
+    assert_eq!(
+        home.hedy
+            .sync_repo_is_public("https://tok@github.com/u/m.git"),
+        Err(AppError::SyncUrlWithCredentials)
+    );
+    assert_eq!(home.hedy.default_device_name(), "PC de prueba");
+}

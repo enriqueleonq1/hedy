@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Result, bail};
 use hedy_core::application::ports::SyncConflict;
 use hedy_core::application::{Hedy, SyncReport};
-use hedy_core::domain::sync::{MemoryHome, fold_word};
+use hedy_core::domain::sync::{MemoryHome, Version, fold_word, item_preview};
 use hedy_core::tr;
 
 use crate::commands::age_label;
@@ -36,21 +36,6 @@ fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64)
-}
-
-/// This PC's name when none is given: the machine's.
-fn default_name() -> String {
-    std::fs::read_to_string("/etc/hostname")
-        .ok()
-        .or_else(|| std::env::var("HOSTNAME").ok())
-        .or_else(|| std::env::var("COMPUTERNAME").ok())
-        .or_else(|| {
-            let out = std::process::Command::new("hostname").output().ok()?;
-            String::from_utf8(out.stdout).ok()
-        })
-        .map(|n| n.trim().to_owned())
-        .filter(|n| !n.is_empty())
-        .unwrap_or_else(|| "PC".into())
 }
 
 fn interactive() -> bool {
@@ -121,6 +106,13 @@ pub fn status(hedy: &Hedy) -> Result<()> {
         s.muted(tr!("última: {last}", "last: {last}"))
     );
     println!("  {}", s.muted(&status.url));
+    if let Some(error) = &status.last_error {
+        println!(
+            "  {} {}",
+            s.warn("!"),
+            tr!("la última falló: {error}", "the last one failed: {error}")
+        );
+    }
     println!("\n{}", s.section(&tr!("PCs", "PCs")));
     for pc in &status.devices {
         let name = if pc.name.is_empty() {
@@ -157,7 +149,7 @@ pub fn status(hedy: &Hedy) -> Result<()> {
 /// for one of them back, so they are not lost.
 pub fn setup(hedy: &Hedy, url: &str, name: Option<&str>) -> Result<()> {
     let s = Style::for_stdout();
-    let name = name.map_or_else(default_name, str::to_owned);
+    let name = name.map_or_else(|| hedy.default_device_name(), str::to_owned);
     let words = hedy.sync_setup(url, &name)?;
     println!(
         "\n{} {}\n",
@@ -213,7 +205,7 @@ pub fn setup(hedy: &Hedy, url: &str, name: Option<&str>) -> Result<()> {
 /// `hedy sync join <url>`: asks for the 12 words (or reads them from stdin).
 pub fn join(hedy: &Hedy, url: &str, name: Option<&str>) -> Result<()> {
     let s = Style::for_stdout();
-    let name = name.map_or_else(default_name, str::to_owned);
+    let name = name.map_or_else(|| hedy.default_device_name(), str::to_owned);
     // Typed in a terminal, the words never echo (even with stdout piped).
     let words = if std::io::stdin().is_terminal() {
         rpassword::prompt_password(tr!(
@@ -251,26 +243,16 @@ pub fn now_sync(hedy: &Hedy) -> Result<()> {
 }
 
 fn conflict_line(conflict: &SyncConflict) -> String {
-    let preview = |body: Option<&str>| -> String {
-        let Some(body) = body else {
-            return tr!("(borrada)", "(deleted)");
-        };
-        let text = serde_json::from_str::<serde_json::Value>(body)
-            .ok()
-            .and_then(|v| {
-                ["text", "name"]
-                    .iter()
-                    .find_map(|k| v[k].as_str().map(str::to_owned))
-            })
-            .unwrap_or_else(|| body.to_owned());
-        let text: String = text.chars().take(70).collect();
-        format!("«{text}»")
+    let preview = |version: &Version| -> String {
+        match item_preview(conflict.kind, version.body.as_deref()) {
+            Some(text) => {
+                let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                format!("«{}»", text.chars().take(70).collect::<String>())
+            }
+            None => tr!("(borrada)", "(deleted)"),
+        }
     };
-    format!(
-        "{} → {}",
-        preview(conflict.kept.body.as_deref()),
-        preview(conflict.other.body.as_deref())
-    )
+    format!("{} → {}", preview(&conflict.kept), preview(&conflict.other))
 }
 
 pub fn conflicts(hedy: &Hedy) -> Result<()> {

@@ -27,7 +27,7 @@ use std::sync::MutexGuard;
 
 use serde::{Deserialize, Serialize};
 
-use super::ports::{SyncConflict, SyncLink, TemplateRecord};
+use super::ports::{SyncConflict, SyncLink, SyncLock, TemplateRecord};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::sync::{
     Batch, Change, DeviceId, ItemKind, Merge, NoteBody, RECOVERY_MEMBER, RepoIdentity, Scope,
@@ -56,6 +56,8 @@ const OUTBOX: &str = "sync.outbox";
 /// The newest stamp made or seen (JSON), so new ones are always later.
 const CLOCK: &str = "sync.clock";
 const LAST_SYNC: &str = "sync.last_sync";
+/// Why the last sync failed; cleared by the next one that works.
+const LAST_ERROR: &str = "sync.last_error";
 /// When this PC last wrote its name and last sync to the repo.
 const INFO_AT: &str = "sync.info_at";
 
@@ -136,6 +138,8 @@ pub struct SyncStatus {
     pub url: String,
     pub device: DeviceId,
     pub last_sync: Option<i64>,
+    /// Why the last sync failed, until one works.
+    pub last_error: Option<String>,
     /// The PCs of the trusted key epoch, this one first.
     pub devices: Vec<SyncDevice>,
     pub conflicts: usize,
@@ -174,6 +178,11 @@ struct Session {
     made: RefCell<HashSet<(ItemKind, String)>>,
 }
 
+struct SyncGuard<'a> {
+    _process: MutexGuard<'a, ()>,
+    _machine: SyncLock,
+}
+
 /// The projects that sync here, both ways round (see [`Session`]).
 struct SyncedProjects {
     projects: HashMap<String, Vec<PathBuf>>,
@@ -197,12 +206,33 @@ fn signed_bytes(path: &str, body: &str) -> Vec<u8> {
 }
 
 impl Hedy {
-    /// One sync operation at a time; a panic in another does not block the
-    /// next.
-    fn sync_guard(&self) -> MutexGuard<'_, ()> {
-        self.sync_lock
+    /// One sync operation at a time, in this process and on this PC (the
+    /// app and `hedy`); a panic in another does not block the next.
+    fn sync_guard(&self) -> AppResult<SyncGuard<'_>> {
+        let process = self
+            .sync_lock
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let machine = self.sync_remote.lock(&self.sync_dir()?)?;
+        Ok(SyncGuard {
+            _process: process,
+            _machine: machine,
+        })
+    }
+
+    /// Whether anyone can read the repo at `url` without credentials. A
+    /// public repo still syncs (all of it is encrypted), but anyone can see
+    /// how many PCs sync and when; the app warns before using one.
+    pub fn sync_repo_is_public(&self, url: &str) -> AppResult<bool> {
+        if url_has_credentials(url) {
+            return Err(AppError::SyncUrlWithCredentials);
+        }
+        Ok(self.sync_remote.is_public(url))
+    }
+
+    /// The name this PC takes when the user gives none: the machine's.
+    pub fn default_device_name(&self) -> String {
+        self.sync_remote.device_name()
     }
 
     fn sync_setting(&self, key: &str) -> AppResult<Option<String>> {
@@ -292,7 +322,7 @@ impl Hedy {
     /// words, to show the user once. Nothing is kept here until the repo
     /// accepted the first epoch.
     pub fn sync_setup(&self, url: &str, device_name: &str) -> AppResult<String> {
-        let _guard = self.sync_guard();
+        let _guard = self.sync_guard()?;
         self.starting_sync(url, || self.setup_locked(url, device_name))
     }
 
@@ -350,7 +380,7 @@ impl Hedy {
     /// epoch from the recovery key, adds this PC in a new epoch, then syncs
     /// (which brings everything in).
     pub fn sync_join(&self, url: &str, words: &str, device_name: &str) -> AppResult<SyncReport> {
-        let _guard = self.sync_guard();
+        let _guard = self.sync_guard()?;
         self.starting_sync(url, || self.join_locked(url, words, device_name))
     }
 
@@ -437,8 +467,15 @@ impl Hedy {
 
     /// One sync, now.
     pub fn sync_now(&self) -> AppResult<SyncReport> {
-        let _guard = self.sync_guard();
-        self.sync_locked()
+        let _guard = self.sync_guard()?;
+        let result = self.sync_locked();
+        if self.sync_is_set_up()? {
+            match &result {
+                Ok(_) => self.store.set_setting(LAST_ERROR, None)?,
+                Err(error) => self.set_sync_setting(LAST_ERROR, &error.to_string())?,
+            }
+        }
+        result
     }
 
     fn sync_locked(&self) -> AppResult<SyncReport> {
@@ -1378,6 +1415,7 @@ impl Hedy {
             url,
             device,
             last_sync: self.sync_setting(LAST_SYNC)?.and_then(|v| v.parse().ok()),
+            last_error: self.sync_setting(LAST_ERROR)?,
             devices,
             conflicts: self.store.sync_conflicts()?.len(),
         }))
@@ -1390,7 +1428,7 @@ impl Hedy {
     /// whether the sync was set up. This PC stays a member of the key epoch
     /// until it is removed from another PC.
     pub fn sync_leave(&self) -> AppResult<bool> {
-        let _guard = self.sync_guard();
+        let _guard = self.sync_guard()?;
         let was_set_up = self.sync_is_set_up()?;
         self.sync_remote.discard_local(&self.sync_dir()?)?;
         self.secrets.delete_sync_keys()?;
@@ -1398,7 +1436,7 @@ impl Hedy {
         // URL first: what says the sync is set up.
         for key in [
             URL, DEVICE, NAME, RECOVERY, EPOCH, PINS, SEQ, PENDING, OUTBOX, CLOCK, LAST_SYNC,
-            INFO_AT,
+            LAST_ERROR, INFO_AT,
         ] {
             self.store.set_setting(key, None)?;
         }
@@ -1414,7 +1452,7 @@ impl Hedy {
     /// sent with the next sync, which also clears the conflict on the other
     /// PCs.
     pub fn resolve_sync_conflict(&self, id: i64, use_other: bool) -> AppResult<()> {
-        let _guard = self.sync_guard();
+        let _guard = self.sync_guard()?;
         let conflict = self
             .store
             .sync_conflicts()?

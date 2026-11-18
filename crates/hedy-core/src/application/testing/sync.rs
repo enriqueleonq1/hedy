@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use super::MemoryStore;
-use crate::application::ports::{PortResult, SyncConflict, SyncLink, SyncRemote, SyncRepository};
+use crate::application::ports::{
+    PortResult, SyncConflict, SyncLink, SyncLock, SyncRemote, SyncRepository,
+};
 use crate::domain::sync::{
     Change, DeviceId, ItemKind, MemoryHome, NoteBody, Scope, SkillBody, Version,
 };
@@ -264,6 +266,16 @@ impl FakeSyncRemote {
 }
 
 impl SyncRemote for FakeSyncRemote {
+    fn lock(&self, _dir: &Path) -> PortResult<SyncLock> {
+        Ok(SyncLock::new(()))
+    }
+    /// A URL that says "public" is.
+    fn is_public(&self, url: &str) -> bool {
+        url.contains("public")
+    }
+    fn device_name(&self) -> String {
+        "PC de prueba".into()
+    }
     fn open(&self, _url: &str, dir: &Path) -> PortResult<()> {
         self.pull(dir)
     }

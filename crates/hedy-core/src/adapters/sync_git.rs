@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use crate::application::ports::{PortError, PortResult, SyncRemote};
+use crate::application::ports::{PortError, PortResult, SyncLock, SyncRemote};
 use crate::tr;
 
 /// Tries to push this many times when another PC pushed first.
@@ -115,6 +115,30 @@ fn succeeds(dir: &Path, args: &[&str]) -> bool {
     git(dir, args).is_ok_and(|out| out.status.success())
 }
 
+/// Where an anonymous read of `url` goes: its HTTPS form, also for an SSH
+/// address (`git@host:owner/repo`, `ssh://git@host/owner/repo`); `None` for
+/// a local path.
+fn https_form(url: &str) -> Option<String> {
+    let url = url.trim();
+    let lower = url.to_lowercase();
+    if lower.starts_with("https://") || lower.starts_with("http://") {
+        return Some(url.to_owned());
+    }
+    let (host, path) =
+        if let Some(rest) = lower.starts_with("ssh://").then(|| &url["ssh://".len()..]) {
+            let (authority, path) = rest.split_once('/')?;
+            let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+            (host.split(':').next()?, path)
+        } else if !url.contains("://") {
+            let (head, path) = url.split_once(':')?;
+            let host = head.rsplit_once('@').map_or(head, |(_, h)| h);
+            (host, path.trim_start_matches('/'))
+        } else {
+            return None;
+        };
+    (!host.is_empty() && !path.is_empty()).then(|| format!("https://{host}/{path}"))
+}
+
 /// The branch the sync uses: the clone's own, or `main` in an empty repo.
 fn branch(dir: &Path) -> PortResult<String> {
     run(dir, &["symbolic-ref", "--short", "HEAD"])
@@ -151,6 +175,66 @@ fn inside(dir: &Path, path: &str) -> PortResult<PathBuf> {
 }
 
 impl SyncRemote for GitSyncRemote {
+    fn lock(&self, dir: &Path) -> PortResult<SyncLock> {
+        let path = dir.with_extension("lock");
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| PortError::new(e.to_string()))?;
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(&path)
+            .map_err(|e| PortError::new(e.to_string()))?;
+        // Released when the file closes, also if the process dies.
+        file.lock().map_err(|e| PortError::new(e.to_string()))?;
+        Ok(SyncLock::new(file))
+    }
+
+    /// An anonymous `ls-remote` of the HTTPS form, without the user's git
+    /// config (no credential helper, no `insteadOf` back to SSH).
+    fn is_public(&self, url: &str) -> bool {
+        let Some(https) = https_form(url) else {
+            return false;
+        };
+        let mut command = Command::new("git");
+        clear_git_redirects(&mut command);
+        command
+            .args([
+                "-c",
+                "http.lowSpeedLimit=1",
+                "-c",
+                "http.lowSpeedTime=15",
+                "ls-remote",
+                "--quiet",
+                "--",
+                &https,
+            ])
+            .current_dir(std::env::temp_dir())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env_remove("GIT_ASKPASS")
+            .env_remove("SSH_ASKPASS")
+            .stdin(std::process::Stdio::null());
+        command.output().is_ok_and(|out| out.status.success())
+    }
+
+    fn device_name(&self) -> String {
+        let command = || {
+            let out = Command::new("hostname").output().ok()?;
+            String::from_utf8(out.stdout).ok()
+        };
+        std::fs::read_to_string("/etc/hostname")
+            .ok()
+            .or_else(|| std::env::var("HOSTNAME").ok())
+            .or_else(|| std::env::var("COMPUTERNAME").ok())
+            .or_else(command)
+            .map(|n| n.trim().to_owned())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| "PC".into())
+    }
+
     fn open(&self, url: &str, dir: &Path) -> PortResult<()> {
         if dir.join(".git").is_dir() {
             // As configured, not as `url.*.insteadOf` rewrites it.
@@ -305,6 +389,49 @@ mod tests {
         run(&bare, &["init", "--quiet", "--bare", &initial]).unwrap();
         let url = bare.to_string_lossy().into_owned();
         (tmp, url)
+    }
+
+    #[test]
+    fn an_anonymous_read_goes_to_the_https_form() {
+        for (url, https) in [
+            (
+                "git@github.com:u/hedy-memory.git",
+                "https://github.com/u/hedy-memory.git",
+            ),
+            (
+                "ssh://git@gitlab.com:2222/u/m.git",
+                "https://gitlab.com/u/m.git",
+            ),
+            (
+                "https://bitbucket.org/u/m.git",
+                "https://bitbucket.org/u/m.git",
+            ),
+        ] {
+            assert_eq!(https_form(url).as_deref(), Some(https), "{url}");
+        }
+        assert_eq!(https_form("/srv/git/m.git"), None);
+        assert_eq!(https_form("file:///srv/git/m.git"), None);
+        // A local repo is never public, and a missing server is not either.
+        let (_tmp, url) = server();
+        assert!(!GitSyncRemote.is_public(&url));
+    }
+
+    #[test]
+    fn the_lock_waits_for_the_other_holder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("sync").join("repo");
+        let held = GitSyncRemote.lock(&dir).unwrap();
+        let waiter = {
+            let dir = dir.clone();
+            std::thread::spawn(move || {
+                let started = std::time::Instant::now();
+                drop(GitSyncRemote.lock(&dir).unwrap());
+                started.elapsed()
+            })
+        };
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        drop(held);
+        assert!(waiter.join().unwrap() >= std::time::Duration::from_millis(150));
     }
 
     #[test]

@@ -431,6 +431,24 @@ pub fn derive_home(remotes: &[Option<RepoIdentity>], owners: &Owners) -> Derived
     DerivedHome::Known(MemoryHome::Personal)
 }
 
+/// What a synced item says, to show it in a list or side by side: a note's
+/// text, a skill's or template's name and text, a theme's name. `None` for
+/// a deletion (or a body this version cannot read).
+pub fn item_preview(kind: ItemKind, body: Option<&str>) -> Option<String> {
+    let body = body?;
+    match kind {
+        ItemKind::Note => serde_json::from_str::<NoteBody>(body).ok().map(|n| n.text),
+        ItemKind::Skill => serde_json::from_str::<SkillBody>(body)
+            .ok()
+            .map(|s| format!("{}\n\n{}", s.name, s.body)),
+        ItemKind::Template => serde_json::from_str::<TemplateBody>(body)
+            .ok()
+            .filter(|t| !t.deleted)
+            .map(|t| format!("{}\n\n{}", t.name, t.text)),
+        ItemKind::Theme => serde_json::from_str::<ThemeBody>(body).ok().map(|t| t.name),
+    }
+}
+
 /// A recovery word as compared: lower case, without Spanish accents (the
 /// user may type `abaco` for `ábaco`).
 pub fn fold_word(word: &str) -> String {
@@ -754,6 +772,29 @@ mod tests {
             layout::batch_seq("devices/abababababababab/changes/1.hedy"),
             None
         );
+    }
+
+    #[test]
+    fn a_preview_says_what_each_item_holds() {
+        let template = TemplateBody {
+            name: "Revisar".into(),
+            text: "Revisa el diff".into(),
+            builtin: None,
+            deleted: false,
+        };
+        let body = serde_json::to_string(&template).unwrap();
+        assert_eq!(
+            item_preview(ItemKind::Template, Some(&body)).as_deref(),
+            Some("Revisar\n\nRevisa el diff")
+        );
+        let deleted = serde_json::to_string(&TemplateBody {
+            deleted: true,
+            ..template
+        })
+        .unwrap();
+        assert_eq!(item_preview(ItemKind::Template, Some(&deleted)), None);
+        assert_eq!(item_preview(ItemKind::Note, None), None);
+        assert_eq!(item_preview(ItemKind::Note, Some("{not json")), None);
     }
 
     #[test]
