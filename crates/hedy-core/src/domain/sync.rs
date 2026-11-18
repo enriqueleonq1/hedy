@@ -75,10 +75,18 @@ impl Stamp {
     /// even when the wall clock went back.
     pub fn next(last: Option<&Stamp>, now_ms: i64, device: &DeviceId) -> Stamp {
         match last {
-            Some(last) if last.ms >= now_ms => Stamp {
-                ms: last.ms,
-                counter: last.counter + 1,
-                device: device.clone(),
+            Some(last) if last.ms >= now_ms => match last.counter.checked_add(1) {
+                Some(counter) => Stamp {
+                    ms: last.ms,
+                    counter,
+                    device: device.clone(),
+                },
+                // The counter ran out: the next millisecond.
+                None => Stamp {
+                    ms: last.ms + 1,
+                    counter: 0,
+                    device: device.clone(),
+                },
             },
             _ => Stamp {
                 ms: now_ms,
@@ -245,6 +253,17 @@ pub struct TemplateBody {
     pub builtin: Option<String>,
     #[serde(default)]
     pub deleted: bool,
+}
+
+/// What a theme carries between PCs: everything but its id, which each PC
+/// picks (two PCs may have made different themes with the same name).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeBody {
+    pub name: String,
+    pub base: super::theme::ThemeBase,
+    pub colors: std::collections::BTreeMap<String, String>,
+    pub origin: super::theme::ThemeOrigin,
 }
 
 /// Where a project's memory lives.
@@ -442,6 +461,8 @@ mod tests {
         let seen = stamp(500, 3, 2);
         assert_eq!(Stamp::next(Some(&seen), 200, &a), stamp(500, 4, 1));
         assert_eq!(Stamp::next(Some(&seen), 900, &a), stamp(900, 0, 1));
+        let full = stamp(700, u32::MAX, 2);
+        assert_eq!(Stamp::next(Some(&full), 100, &a), stamp(701, 0, 1));
     }
 
     #[test]

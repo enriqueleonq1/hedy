@@ -7,7 +7,7 @@ use std::path::Path;
 use rusqlite::{OptionalExtension, params};
 
 use super::{SqliteStore, skill_status_str, status_str};
-use crate::application::ports::{PortResult, SyncConflict, SyncRepository};
+use crate::application::ports::{PortResult, SyncConflict, SyncLink, SyncRepository};
 use crate::domain::sync::{
     Change, DeviceId, ItemKind, MemoryHome, NoteBody, Scope, SkillBody, Version,
 };
@@ -41,6 +41,17 @@ fn from_json<T: serde::de::DeserializeOwned>(index: usize, text: &str) -> rusqli
 
 fn to_json<T: serde::Serialize>(value: &T) -> String {
     serde_json::to_string(value).expect("sync records serialize")
+}
+
+const LINK_COLUMNS: &str = "uid, local_id, base_stamp, base_body";
+
+fn link_from_row(r: &rusqlite::Row) -> rusqlite::Result<SyncLink> {
+    Ok(SyncLink {
+        uid: r.get(0)?,
+        local_id: r.get(1)?,
+        base_stamp: from_json(2, &r.get::<_, String>(2)?)?,
+        base_body: r.get(3)?,
+    })
 }
 
 fn path_text(path: Option<&Path>) -> Option<String> {
@@ -109,46 +120,62 @@ impl SyncRepository for SqliteStore {
         })
     }
 
-    fn sync_uid(&self, kind: ItemKind, local_id: &str) -> PortResult<Option<String>> {
+    fn sync_link(&self, kind: ItemKind, uid: &str) -> PortResult<Option<SyncLink>> {
         self.with(|c| {
             c.query_row(
-                "SELECT uid FROM sync_links WHERE kind = ?1 AND local_id = ?2",
-                params![kind_str(kind), local_id],
-                |r| r.get(0),
-            )
-            .optional()
-        })
-    }
-
-    fn sync_local_id(&self, kind: ItemKind, uid: &str) -> PortResult<Option<String>> {
-        self.with(|c| {
-            c.query_row(
-                "SELECT local_id FROM sync_links WHERE kind = ?1 AND uid = ?2",
+                &format!("SELECT {LINK_COLUMNS} FROM sync_links WHERE kind = ?1 AND uid = ?2"),
                 params![kind_str(kind), uid],
-                |r| r.get(0),
+                link_from_row,
             )
             .optional()
         })
     }
 
-    fn sync_links(&self, kind: ItemKind) -> PortResult<Vec<(String, String)>> {
+    fn sync_link_of(&self, kind: ItemKind, local_id: &str) -> PortResult<Option<SyncLink>> {
         self.with(|c| {
-            c.prepare("SELECT uid, local_id FROM sync_links WHERE kind = ?1 ORDER BY uid")?
-                .query_map([kind_str(kind)], |r| Ok((r.get(0)?, r.get(1)?)))?
-                .collect()
+            c.query_row(
+                &format!("SELECT {LINK_COLUMNS} FROM sync_links WHERE kind = ?1 AND local_id = ?2"),
+                params![kind_str(kind), local_id],
+                link_from_row,
+            )
+            .optional()
         })
     }
 
-    fn link_sync_item(&self, kind: ItemKind, uid: &str, local_id: &str) -> PortResult<()> {
+    fn sync_links(&self, kind: ItemKind) -> PortResult<Vec<SyncLink>> {
+        self.with(|c| {
+            c.prepare(&format!(
+                "SELECT {LINK_COLUMNS} FROM sync_links WHERE kind = ?1 ORDER BY uid"
+            ))?
+            .query_map([kind_str(kind)], link_from_row)?
+            .collect()
+        })
+    }
+
+    fn link_sync_item(
+        &self,
+        kind: ItemKind,
+        uid: &str,
+        local_id: &str,
+        base: &Version,
+    ) -> PortResult<()> {
         self.with(|c| {
             c.execute(
-                "DELETE FROM sync_links WHERE kind = ?1 AND local_id = ?2",
-                params![kind_str(kind), local_id],
+                "DELETE FROM sync_links WHERE kind = ?1 AND local_id = ?2 AND uid != ?3",
+                params![kind_str(kind), local_id, uid],
             )?;
             c.execute(
-                "INSERT INTO sync_links (kind, uid, local_id) VALUES (?1, ?2, ?3)
-                 ON CONFLICT (kind, uid) DO UPDATE SET local_id = ?3",
-                params![kind_str(kind), uid, local_id],
+                "INSERT INTO sync_links (kind, uid, local_id, base_stamp, base_body)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT (kind, uid) DO UPDATE SET local_id = ?3, base_stamp = ?4,
+                     base_body = ?5",
+                params![
+                    kind_str(kind),
+                    uid,
+                    local_id,
+                    to_json(&base.stamp),
+                    base.body
+                ],
             )
             .map(drop)
         })
@@ -411,19 +438,19 @@ mod tests {
         );
         assert_eq!(store.sync_items().unwrap(), vec![newer]);
 
-        store.link_sync_item(ItemKind::Note, "u1", "7").unwrap();
+        store
+            .link_sync_item(ItemKind::Note, "u1", "7", &version(1))
+            .unwrap();
         // Relinking a local row moves it to the new uid.
-        store.link_sync_item(ItemKind::Note, "u2", "7").unwrap();
-        assert_eq!(
-            store.sync_uid(ItemKind::Note, "7").unwrap().as_deref(),
-            Some("u2")
-        );
-        assert_eq!(store.sync_local_id(ItemKind::Note, "u1").unwrap(), None);
-        assert_eq!(store.sync_uid(ItemKind::Skill, "7").unwrap(), None);
-        assert_eq!(
-            store.sync_links(ItemKind::Note).unwrap(),
-            [("u2".into(), "7".into())]
-        );
+        store
+            .link_sync_item(ItemKind::Note, "u2", "7", &version(2))
+            .unwrap();
+        let link = store.sync_link_of(ItemKind::Note, "7").unwrap().unwrap();
+        assert_eq!((link.uid.as_str(), link.base_stamp.ms), ("u2", 2));
+        assert_eq!(link.base_body.as_deref(), Some("{}"));
+        assert_eq!(store.sync_link(ItemKind::Note, "u1").unwrap(), None);
+        assert_eq!(store.sync_link_of(ItemKind::Skill, "7").unwrap(), None);
+        assert_eq!(store.sync_links(ItemKind::Note).unwrap(), [link]);
         store.unlink_sync_item(ItemKind::Note, "u2").unwrap();
         assert!(store.sync_links(ItemKind::Note).unwrap().is_empty());
 

@@ -1,25 +1,38 @@
 //! Personal sync (docs/decisions.md §34): the same notes, skills, templates
-//! and themes on every PC of the user, through a private git repo, sealed on
-//! this PC before they leave it.
+//! and themes on every PC of the user, through a private git repo, sealed and
+//! signed on this PC before they leave it.
 //!
-//! A sync is: pull; check any new key epoch; turn what changed here since
-//! the last sync into versions (comparing each item with the replica); apply
-//! the other PCs' new batches ([`merge`]); write this PC's batch; push.
+//! A sync is:
+//! 1. pull;
+//! 2. check the key epochs (the ones already checked are pinned by their
+//!    hash; a new one must be signed by a member of the one before);
+//! 3. finish a batch an earlier sync could not write;
+//! 4. turn what changed here into versions: each local row is compared with
+//!    the version it reflects (its link's base), so an edit made here, one
+//!    made elsewhere and both are told apart;
+//! 5. write this PC's batch (kept as pending first, so a failure loses
+//!    nothing);
+//! 6. apply the other PCs' new batches ([`merge`]), only from PCs that are
+//!    members of the newest epoch and signed by them;
+//! 7. bring in synced items this PC never had (a project made personal);
+//! 8. push.
+//!
 //! Nothing here reads a login or an API key, and only projects whose memory
 //! is personal take part.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::MutexGuard;
 
 use serde::{Deserialize, Serialize};
 
-use super::ports::{SyncConflict, TemplateRecord};
+use super::ports::{SyncConflict, SyncLink, TemplateRecord};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::sync::{
     Batch, Change, DeviceId, ItemKind, MemoryHome, Merge, NoteBody, RECOVERY_MEMBER, RepoIdentity,
-    Scope, SkillBody, Stamp, TemplateBody, Version, layout, merge,
+    Scope, SkillBody, Stamp, TemplateBody, ThemeBody, Version, layout, merge,
 };
-use crate::domain::theme::CustomTheme;
+use crate::domain::theme::{CustomTheme, new_theme_id};
 use crate::tr;
 
 /// Settings of this PC's sync (plain, not secret).
@@ -30,8 +43,15 @@ const NAME: &str = "sync.device_name";
 const RECOVERY: &str = "sync.recovery";
 /// The newest epoch checked and trusted.
 const EPOCH: &str = "sync.epoch";
+/// SHA-256 of every epoch file checked (JSON map): a checked epoch never
+/// changes.
+const PINS: &str = "sync.pins";
 /// This PC's last batch.
 const SEQ: &str = "sync.seq";
+/// A batch decided but not yet written to the clone (JSON [`Pending`]).
+const PENDING: &str = "sync.pending";
+/// Versions made outside a sync (a settled conflict), sent with the next.
+const OUTBOX: &str = "sync.outbox";
 /// The newest stamp made or seen (JSON), so new ones are always later.
 const CLOCK: &str = "sync.clock";
 const LAST_SYNC: &str = "sync.last_sync";
@@ -41,6 +61,11 @@ const INFO_AT: &str = "sync.info_at";
 /// This PC writes its name and last sync at most this often (seconds), so
 /// a sync with nothing new does not make a commit.
 const INFO_EVERY: i64 = 3600;
+/// A stamp further ahead than this (ms) does not move the clock: a PC with
+/// a wrong date must not pin every PC's clock in the future.
+const CLOCK_AHEAD_MAX: i64 = 24 * 3600 * 1000;
+/// Files in the repo bigger than this are refused, not read.
+const FILE_MAX: usize = 16 * 1024 * 1024;
 
 const KINDS: [ItemKind; 4] = [
     ItemKind::Note,
@@ -56,11 +81,33 @@ struct Keys {
     epochs: BTreeMap<u32, String>,
 }
 
-/// A PC's name and last sync, as it writes them to the repo (sealed).
+/// A PC's name and last sync, as it writes them to the repo.
 #[derive(Serialize, Deserialize)]
 struct DeviceInfo {
     name: String,
     last_sync: i64,
+}
+
+/// What a PC writes, signed with its key: inside the seal, so only members
+/// read it, and signed, so no member can write as another.
+#[derive(Serialize, Deserialize)]
+struct Signed {
+    body: String,
+    signature: String,
+}
+
+/// A version to send and the local row it comes from (to link).
+#[derive(Clone, Serialize, Deserialize)]
+struct Outgoing {
+    change: Change,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    local_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Pending {
+    seq: u64,
+    outgoing: Vec<Outgoing>,
 }
 
 /// What one sync did.
@@ -88,7 +135,7 @@ pub struct SyncStatus {
     pub url: String,
     pub device: DeviceId,
     pub last_sync: Option<i64>,
-    /// The PCs of the newest key epoch, this one first.
+    /// The PCs of the trusted key epoch, this one first.
     pub devices: Vec<SyncDevice>,
     pub conflicts: usize,
 }
@@ -105,12 +152,18 @@ struct LocalItem {
 struct Session {
     dir: PathBuf,
     device: DeviceId,
-    /// Every epoch key this PC has, oldest first.
+    /// This PC's secrets (to sign).
+    me: String,
+    /// Every epoch key this PC has.
     keys: Vec<String>,
-    /// The newest one: what this PC seals with.
+    /// The newest: what this PC seals with.
     current: String,
-    /// Sealed project id → the project here.
-    projects: HashMap<String, PathBuf>,
+    /// The first epoch's key: what names projects, the same in every epoch.
+    name_key: String,
+    /// Sealed project id → the projects here with that remote.
+    projects: HashMap<String, Vec<PathBuf>>,
+    /// The PCs of the newest epoch and their public keys.
+    members: HashMap<String, String>,
 }
 
 fn json<T: Serialize>(value: &T) -> String {
@@ -124,13 +177,32 @@ fn corrupt(what: &str) -> AppError {
     )))
 }
 
+/// What a signature covers: the path, then the body.
+fn signed_bytes(path: &str, body: &str) -> Vec<u8> {
+    [path.as_bytes(), b"\n", body.as_bytes()].concat()
+}
+
 impl Hedy {
+    /// One sync operation at a time; a panic in another does not block the
+    /// next.
+    fn sync_guard(&self) -> MutexGuard<'_, ()> {
+        self.sync_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn sync_setting(&self, key: &str) -> AppResult<Option<String>> {
         Ok(self.store.get_setting(key)?)
     }
 
     fn set_sync_setting(&self, key: &str, value: &str) -> AppResult<()> {
         Ok(self.store.set_setting(key, Some(value))?)
+    }
+
+    fn sync_json<T: serde::de::DeserializeOwned>(&self, key: &str) -> AppResult<Option<T>> {
+        Ok(self
+            .sync_setting(key)?
+            .and_then(|text| serde_json::from_str(&text).ok()))
     }
 
     fn sync_number(&self, key: &str) -> AppResult<u64> {
@@ -162,16 +234,35 @@ impl Hedy {
         Ok(self.secrets.set_sync_keys(&json(keys))?)
     }
 
-    /// The epoch files in the repo, by number.
+    /// A file of the repo, refused when it is too big to be Hedy's.
+    fn read_repo(&self, dir: &Path, path: &str) -> AppResult<Option<Vec<u8>>> {
+        let bytes = self.sync_remote.read(dir, path)?;
+        if bytes.as_ref().is_some_and(|b| b.len() > FILE_MAX) {
+            return Err(corrupt(path));
+        }
+        Ok(bytes)
+    }
+
+    /// The epoch files in the repo, by number. Files with other names are
+    /// not Hedy's and are left alone.
     fn epochs(&self, dir: &Path) -> AppResult<Vec<(u32, String)>> {
         let mut epochs = Vec::new();
         for path in self.sync_remote.files(dir, layout::EPOCHS_DIR)? {
-            let Some(bytes) = self.sync_remote.read(dir, &path)? else {
+            let Some(number) = path
+                .strip_prefix(layout::EPOCHS_DIR)
+                .and_then(|p| p.strip_prefix('/'))
+                .and_then(|p| p.strip_suffix(".json"))
+                .filter(|n| n.len() == 6 && n.bytes().all(|b| b.is_ascii_digit()))
+                .and_then(|n| n.parse::<u32>().ok())
+            else {
+                continue;
+            };
+            let Some(bytes) = self.read_repo(dir, &path)? else {
                 continue;
             };
             let text = String::from_utf8(bytes).map_err(|_| corrupt(&path))?;
-            let (number, _) = self.sync_crypto.epoch_members(&text)?;
-            if path != layout::epoch(number) {
+            let (inside, _) = self.sync_crypto.epoch_members(&text)?;
+            if inside != number {
                 return Err(corrupt(&path));
             }
             epochs.push((number, text));
@@ -182,15 +273,16 @@ impl Hedy {
 
     /// Starts syncing with the empty repo at `url`: this PC's keys, a new
     /// recovery key and the first epoch, then a first sync. Returns the 12
-    /// words, to show the user once.
+    /// words, to show the user once. Nothing is kept here until the repo
+    /// accepted the first epoch.
     pub fn sync_setup(&self, url: &str, device_name: &str) -> AppResult<String> {
-        let _lock = self.sync_lock.lock().unwrap();
+        let _guard = self.sync_guard();
         if self.sync_is_set_up()? {
             return Err(AppError::SyncAlreadySetUp);
         }
         let dir = self.sync_dir();
         self.sync_remote.open(url, &dir)?;
-        if !self.sync_remote.files(&dir, layout::EPOCHS_DIR)?.is_empty() {
+        if !self.epochs(&dir)?.is_empty() {
             return Err(AppError::SyncRepoInUse);
         }
         let device = DeviceId(self.sync_crypto.random_hex(8)?);
@@ -208,11 +300,13 @@ impl Hedy {
             .write(&dir, &layout::epoch(1), file.as_bytes())?;
         self.sync_remote
             .write(&dir, layout::README, readme().as_bytes())?;
-        self.save_keys(&Keys {
+        let keys = Keys {
             device: me,
             epochs: BTreeMap::from([(1, key)]),
-        })?;
-        self.remember_sync(url, &device, device_name, &recovery_public, 1)?;
+        };
+        self.publish_epoch(&dir, &keys)?;
+        let pins = BTreeMap::from([(1, self.sync_crypto.digest(file.as_bytes()))]);
+        self.remember_sync(url, &device, device_name, &recovery_public, 1, &pins)?;
         self.sync_locked()?;
         Ok(words)
     }
@@ -221,7 +315,7 @@ impl Hedy {
     /// epoch from the recovery key, adds this PC in a new epoch, then syncs
     /// (which brings everything in).
     pub fn sync_join(&self, url: &str, words: &str, device_name: &str) -> AppResult<SyncReport> {
-        let _lock = self.sync_lock.lock().unwrap();
+        let _guard = self.sync_guard();
         if self.sync_is_set_up()? {
             return Err(AppError::SyncAlreadySetUp);
         }
@@ -238,16 +332,18 @@ impl Hedy {
         }
         self.sync_crypto
             .verify_first_epoch(first, &recovery_public)?;
-        let mut keys = BTreeMap::new();
+        let mut epoch_keys = BTreeMap::new();
+        let mut pins = BTreeMap::new();
         for (i, (number, file)) in epochs.iter().enumerate() {
             if i > 0 {
                 self.sync_crypto.verify_next_epoch(&epochs[i - 1].1, file)?;
             }
-            keys.insert(
+            epoch_keys.insert(
                 *number,
                 self.sync_crypto
                     .open_epoch(file, RECOVERY_MEMBER, &recovery)?,
             );
+            pins.insert(*number, self.sync_crypto.digest(file.as_bytes()));
         }
         let (last, last_file) = epochs.last().expect("not empty");
         let device = DeviceId(self.sync_crypto.random_hex(8)?);
@@ -260,13 +356,28 @@ impl Hedy {
             .new_epoch(next, &members, RECOVERY_MEMBER, &recovery)?;
         self.sync_remote
             .write(&dir, &layout::epoch(next), file.as_bytes())?;
-        keys.insert(next, key);
-        self.save_keys(&Keys {
+        epoch_keys.insert(next, key);
+        pins.insert(next, self.sync_crypto.digest(file.as_bytes()));
+        let keys = Keys {
             device: me,
-            epochs: keys,
-        })?;
-        self.remember_sync(url, &device, device_name, &recovery_public, next)?;
+            epochs: epoch_keys,
+        };
+        self.publish_epoch(&dir, &keys)?;
+        self.remember_sync(url, &device, device_name, &recovery_public, next, &pins)?;
         self.sync_locked()
+    }
+
+    /// Keeps this PC's keys and pushes the new epoch; when the repo refuses
+    /// it (another PC wrote the same epoch first), forgets both, so a retry
+    /// starts clean.
+    fn publish_epoch(&self, dir: &Path, keys: &Keys) -> AppResult<()> {
+        self.save_keys(keys)?;
+        if let Err(error) = self.sync_remote.push(dir, "hedy sync") {
+            let _ = self.secrets.delete_sync_keys();
+            let _ = self.sync_remote.discard_local(dir);
+            return Err(error.into());
+        }
+        Ok(())
     }
 
     fn remember_sync(
@@ -276,18 +387,21 @@ impl Hedy {
         name: &str,
         recovery_public: &str,
         epoch: u32,
+        pins: &BTreeMap<u32, String>,
     ) -> AppResult<()> {
-        self.set_sync_setting(URL, url)?;
         self.set_sync_setting(DEVICE, device.as_str())?;
         self.set_sync_setting(NAME, name.trim())?;
         self.set_sync_setting(RECOVERY, recovery_public)?;
         self.set_sync_setting(EPOCH, &epoch.to_string())?;
-        self.set_sync_setting(SEQ, "0")
+        self.set_sync_setting(PINS, &json(pins))?;
+        self.set_sync_setting(SEQ, "0")?;
+        // Last: what says the sync is set up.
+        self.set_sync_setting(URL, url)
     }
 
     /// One sync, now.
     pub fn sync_now(&self) -> AppResult<SyncReport> {
-        let _lock = self.sync_lock.lock().unwrap();
+        let _guard = self.sync_guard();
         self.sync_locked()
     }
 
@@ -296,40 +410,44 @@ impl Hedy {
         let device = DeviceId(self.sync_setting(DEVICE)?.ok_or(AppError::SyncNotSetUp)?);
         let dir = self.sync_dir();
         self.sync_remote.open(&url, &dir)?;
-        let mut session = self.sync_session(dir, device)?;
+        let session = self.sync_session(dir, device)?;
         let mut report = SyncReport::default();
 
+        self.write_pending(&session)?;
         // What changed here first, so the other PCs' versions meet it.
-        let mine = self.local_changes(&session)?;
-        report.sent = mine.len();
-        self.apply_batches(&mut session, &mut report)?;
+        let mut outgoing: Vec<Outgoing> = self
+            .sync_json::<Vec<Change>>(OUTBOX)?
+            .unwrap_or_default()
+            .into_iter()
+            .map(|change| Outgoing {
+                change,
+                local_id: None,
+            })
+            .collect();
+        outgoing.extend(self.local_changes(&session, &mut report)?);
+        report.sent = outgoing.len();
+        if !outgoing.is_empty() {
+            let seq = self.sync_number(SEQ)? + 1;
+            self.set_sync_setting(PENDING, &json(&Pending { seq, outgoing }))?;
+            self.set_sync_setting(SEQ, &seq.to_string())?;
+            self.store.set_setting(OUTBOX, None)?;
+            self.write_pending(&session)?;
+        }
+        self.apply_batches(&session, &mut report)?;
+        self.bring_waiting(&session)?;
 
         let now = self.now_secs();
-        if !mine.is_empty() {
-            let seq = self.sync_number(SEQ)? + 1;
-            let path = layout::batch(&session.device, seq);
-            let batch = Batch {
-                device: session.device.clone(),
-                seq,
-                changes: mine,
-            };
-            let sealed = self
-                .sync_crypto
-                .seal(&session.current, &path, json(&batch).as_bytes())?;
-            self.sync_remote.write(&session.dir, &path, &sealed)?;
-            self.set_sync_setting(SEQ, &seq.to_string())?;
-        }
         let info_at = self.sync_number(INFO_AT)? as i64;
         if report.sent > 0 || now - info_at >= INFO_EVERY {
             let info = DeviceInfo {
                 name: self.sync_setting(NAME)?.unwrap_or_default(),
                 last_sync: now,
             };
-            let path = layout::device_info(&session.device);
-            let sealed = self
-                .sync_crypto
-                .seal(&session.current, &path, json(&info).as_bytes())?;
-            self.sync_remote.write(&session.dir, &path, &sealed)?;
+            self.write_signed(
+                &session,
+                &layout::device_info(&session.device),
+                &json(&info),
+            )?;
             self.set_sync_setting(INFO_AT, &now.to_string())?;
         }
         self.sync_remote.push(&session.dir, "hedy sync")?;
@@ -337,13 +455,90 @@ impl Hedy {
         Ok(report)
     }
 
-    /// Checks any epoch newer than the trusted one (each signed by a member
-    /// of the one before), keeps its key, and fails when the newest leaves
-    /// this PC out.
+    /// Seals `body` for `path`, signed by this PC, and writes it.
+    fn write_signed(&self, session: &Session, path: &str, body: &str) -> AppResult<()> {
+        let signature = self
+            .sync_crypto
+            .sign(&session.me, &signed_bytes(path, body))?;
+        let envelope = json(&Signed {
+            body: body.to_owned(),
+            signature,
+        });
+        let sealed = self
+            .sync_crypto
+            .seal(&session.current, path, envelope.as_bytes())?;
+        Ok(self.sync_remote.write(&session.dir, path, &sealed)?)
+    }
+
+    /// Opens a file `device` wrote: sealed with one of the keys, signed by
+    /// that PC as a member of the newest epoch. `None`: not a member (a
+    /// removed PC, or a forged one).
+    fn open_signed(
+        &self,
+        session: &Session,
+        device: &DeviceId,
+        path: &str,
+    ) -> AppResult<Option<String>> {
+        let Some(public) = session.members.get(device.as_str()) else {
+            return Ok(None);
+        };
+        let Some(sealed) = self.read_repo(&session.dir, path)? else {
+            return Ok(None);
+        };
+        let plain = self.sync_crypto.open(&session.keys, path, &sealed)?;
+        let signed: Signed = serde_json::from_slice(&plain).map_err(|_| corrupt(path))?;
+        self.sync_crypto
+            .verify(public, &signed_bytes(path, &signed.body), &signed.signature)?;
+        Ok(Some(signed.body))
+    }
+
+    /// Writes the pending batch (if any) and records what it sends: the
+    /// replica, and the links of the local rows it comes from.
+    fn write_pending(&self, session: &Session) -> AppResult<()> {
+        let Some(pending) = self.sync_json::<Pending>(PENDING)? else {
+            return Ok(());
+        };
+        for out in &pending.outgoing {
+            let change = &out.change;
+            self.store.put_sync_item(change)?;
+            match (&out.local_id, change.version.is_deletion()) {
+                (Some(_), true) => self.store.unlink_sync_item(change.kind, &change.uid)?,
+                (Some(local), false) => {
+                    self.store
+                        .link_sync_item(change.kind, &change.uid, local, &change.version)?
+                }
+                (None, _) => {}
+            }
+        }
+        let batch = Batch {
+            device: session.device.clone(),
+            seq: pending.seq,
+            changes: pending.outgoing.into_iter().map(|o| o.change).collect(),
+        };
+        self.write_signed(
+            session,
+            &layout::batch(&session.device, batch.seq),
+            &json(&batch),
+        )?;
+        Ok(self.store.set_setting(PENDING, None)?)
+    }
+
+    /// Checks the key epochs: every one already checked must be unchanged
+    /// (its pinned hash), and any newer one signed by a member of the one
+    /// before. Keeps the new keys; fails when the newest leaves this PC out.
     fn sync_session(&self, dir: PathBuf, device: DeviceId) -> AppResult<Session> {
         let mut keys = self.keys()?;
         let trusted = self.sync_number(EPOCH)? as u32;
+        let mut pins: BTreeMap<u32, String> = self.sync_json(PINS)?.unwrap_or_default();
         let epochs = self.epochs(&dir)?;
+        for (number, file) in epochs.iter().filter(|(n, _)| *n <= trusted) {
+            if pins
+                .get(number)
+                .is_some_and(|pin| *pin != self.sync_crypto.digest(file.as_bytes()))
+            {
+                return Err(AppError::SyncTampered(*number));
+            }
+        }
         let Some(mut previous) = epochs
             .iter()
             .find(|(n, _)| *n == trusted)
@@ -351,9 +546,12 @@ impl Hedy {
         else {
             return Err(corrupt(&layout::epoch(trusted)));
         };
+        pins.entry(trusted)
+            .or_insert_with(|| self.sync_crypto.digest(previous.as_bytes()));
         let mut newest = trusted;
         for (number, file) in epochs.iter().filter(|(n, _)| *n > trusted) {
             self.sync_crypto.verify_next_epoch(&previous, file)?;
+            pins.insert(*number, self.sync_crypto.digest(file.as_bytes()));
             match self
                 .sync_crypto
                 .open_epoch(file, device.as_str(), &keys.device)
@@ -373,34 +571,44 @@ impl Hedy {
             self.save_keys(&keys)?;
             self.set_sync_setting(EPOCH, &newest.to_string())?;
         }
+        self.set_sync_setting(PINS, &json(&pins))?;
         let current = keys
             .epochs
             .get(&newest)
             .cloned()
             .ok_or(AppError::SyncRemoved)?;
-        let all: Vec<String> = keys.epochs.values().cloned().collect();
-        let projects = self.synced_projects(&all)?;
+        let name_key = keys
+            .epochs
+            .values()
+            .next()
+            .cloned()
+            .ok_or(AppError::SyncRemoved)?;
+        let (_, members) = self.sync_crypto.epoch_members(&previous)?;
+        let projects = self.synced_projects(&name_key)?;
         Ok(Session {
             dir,
             device,
-            keys: all,
+            me: keys.device.clone(),
+            keys: keys.epochs.into_values().collect(),
             current,
+            name_key,
             projects,
+            members: members.into_iter().collect(),
         })
     }
 
-    /// Projects whose memory is personal, by their sealed id under every key
-    /// (so batches sealed under an older epoch still find them).
-    fn synced_projects(&self, keys: &[String]) -> AppResult<HashMap<String, PathBuf>> {
-        let mut projects = HashMap::new();
+    /// Projects whose memory is personal, by their sealed id. Two projects
+    /// here with the same remote share one.
+    fn synced_projects(&self, name_key: &str) -> AppResult<HashMap<String, Vec<PathBuf>>> {
+        let mut projects: HashMap<String, Vec<PathBuf>> = HashMap::new();
         for project in self.store.list_projects()? {
             let Some(identity) = self.synced_identity(&project.path)? else {
                 continue;
             };
-            for key in keys {
-                let id = self.sync_crypto.project_id(key, &identity.project_key())?;
-                projects.insert(id, project.path.clone());
-            }
+            let id = self
+                .sync_crypto
+                .project_id(name_key, &identity.project_key())?;
+            projects.entry(id).or_default().push(project.path);
         }
         Ok(projects)
     }
@@ -420,7 +628,7 @@ impl Hedy {
     }
 
     /// The scope a local item syncs under; `None` when it stays here.
-    fn scope_of(&self, project: Option<&Path>, current: &str) -> AppResult<Option<Scope>> {
+    fn scope_of(&self, project: Option<&Path>, name_key: &str) -> AppResult<Option<Scope>> {
         let Some(project) = project else {
             return Ok(Some(Scope::Global));
         };
@@ -429,12 +637,20 @@ impl Hedy {
         };
         Ok(Some(Scope::Project(
             self.sync_crypto
-                .project_id(current, &identity.project_key())?,
+                .project_id(name_key, &identity.project_key())?,
         )))
     }
 
+    /// Whether items of `scope` sync on this PC now.
+    fn scope_here(session: &Session, scope: &Scope) -> bool {
+        match scope {
+            Scope::Global => true,
+            Scope::Project(id) => session.projects.contains_key(id),
+        }
+    }
+
     /// Every local item that syncs, as it is now.
-    fn local_items(&self, current: &str) -> AppResult<Vec<LocalItem>> {
+    fn local_items(&self, session: &Session) -> AppResult<Vec<LocalItem>> {
         let mut items = Vec::new();
         let mut places: Vec<Option<PathBuf>> = vec![None];
         places.extend(
@@ -444,7 +660,7 @@ impl Hedy {
                 .map(|p| Some(p.path)),
         );
         for place in &places {
-            let Some(scope) = self.scope_of(place.as_deref(), current)? else {
+            let Some(scope) = self.scope_of(place.as_deref(), &session.name_key)? else {
                 continue;
             };
             for note in self.store.notes(place.as_deref(), false)? {
@@ -483,7 +699,7 @@ impl Hedy {
             }
         }
         for record in self.store.template_records()? {
-            let Some(scope) = self.scope_of(record.project.as_deref(), current)? else {
+            let Some(scope) = self.scope_of(record.project.as_deref(), &session.name_key)? else {
                 continue;
             };
             let body = TemplateBody {
@@ -500,25 +716,32 @@ impl Hedy {
             });
         }
         for theme in self.themes.list()? {
+            let body = ThemeBody {
+                name: theme.name,
+                base: theme.base,
+                colors: theme.colors,
+                origin: theme.origin,
+            };
             items.push(LocalItem {
                 kind: ItemKind::Theme,
-                local_id: theme.id.clone(),
+                local_id: theme.id,
                 scope: Scope::Global,
-                body: json(&theme),
+                body: json(&body),
             });
         }
         Ok(items)
     }
 
-    /// Whether the local item is still here (whatever its scope).
+    /// Whether the local item is still here (whatever its scope). A theme
+    /// this version cannot read (from a newer Hedy) is still there.
     fn local_exists(&self, kind: ItemKind, local_id: &str) -> AppResult<bool> {
-        let row = || local_id.parse::<i64>().ok();
+        let row = local_id.parse::<i64>().ok();
         Ok(match kind {
-            ItemKind::Note => match row() {
+            ItemKind::Note => match row {
                 Some(id) => self.store.note(id)?.is_some(),
                 None => false,
             },
-            ItemKind::Skill => match row() {
+            ItemKind::Skill => match row {
                 Some(id) => self.store.skill(id)?.is_some(),
                 None => false,
             },
@@ -526,98 +749,217 @@ impl Hedy {
                 .store
                 .template_records()?
                 .iter()
-                .any(|r| Some(r.id) == row()),
-            ItemKind::Theme => self.themes.get(local_id)?.is_some(),
+                .any(|r| Some(r.id) == row),
+            ItemKind::Theme => !matches!(self.themes.get(local_id), Ok(None)),
         })
+    }
+
+    /// A new uid for a local item. An edited built-in template gets one made
+    /// from its key and scope, so the same built-in edited on two PCs is one
+    /// item.
+    fn new_uid(&self, item: &LocalItem) -> AppResult<String> {
+        if item.kind == ItemKind::Template
+            && let Ok(body) = serde_json::from_str::<TemplateBody>(&item.body)
+            && let Some(builtin) = body.builtin
+        {
+            let key = format!("{builtin}\n{}", json(&item.scope));
+            return Ok(format!(
+                "builtin-{}",
+                &self.sync_crypto.digest(key.as_bytes())[..32]
+            ));
+        }
+        Ok(self.sync_crypto.random_hex(16)?)
     }
 
     /// A new stamp, later than any made or seen here.
     fn next_stamp(&self, device: &DeviceId) -> AppResult<Stamp> {
-        let last: Option<Stamp> = self
-            .sync_setting(CLOCK)?
-            .and_then(|t| serde_json::from_str(&t).ok());
+        let last: Option<Stamp> = self.sync_json(CLOCK)?;
         let stamp = Stamp::next(last.as_ref(), self.clock.now_ms(), device);
         self.set_sync_setting(CLOCK, &json(&stamp))?;
         Ok(stamp)
     }
 
-    /// Keeps the clock ahead of a stamp from another PC.
+    /// Keeps the clock ahead of a stamp from another PC (not one far in the
+    /// future: a PC with a wrong date).
     fn observe_stamp(&self, seen: &Stamp) -> AppResult<()> {
-        let last: Option<Stamp> = self
-            .sync_setting(CLOCK)?
-            .and_then(|t| serde_json::from_str(&t).ok());
+        if seen.ms > self.clock.now_ms() + CLOCK_AHEAD_MAX {
+            return Ok(());
+        }
+        let last: Option<Stamp> = self.sync_json(CLOCK)?;
         if last.as_ref().is_none_or(|l| seen > l) {
             self.set_sync_setting(CLOCK, &json(seen))?;
         }
         Ok(())
     }
 
-    /// What changed here since the last sync, as new versions (already in
-    /// the replica): new and edited items, then deleted ones.
-    fn local_changes(&self, session: &Session) -> AppResult<Vec<Change>> {
-        let mut changes = Vec::new();
-        for item in self.local_items(&session.current)? {
-            let uid = match self.store.sync_uid(item.kind, &item.local_id)? {
-                Some(uid) => uid,
-                None => {
-                    let uid = self.sync_crypto.random_hex(16)?;
-                    self.store.link_sync_item(item.kind, &uid, &item.local_id)?;
-                    uid
+    /// What changed here since each row last matched its synced version:
+    /// new items, edits (a conflict when the item also changed elsewhere and
+    /// this row had not caught up), and deletions. A row that only fell
+    /// behind (its project was not synced for a while) catches up instead.
+    fn local_changes(
+        &self,
+        session: &Session,
+        report: &mut SyncReport,
+    ) -> AppResult<Vec<Outgoing>> {
+        let mut out = Vec::new();
+        for item in self.local_items(session)? {
+            let link = self.store.sync_link_of(item.kind, &item.local_id)?;
+            let known = match &link {
+                Some(link) => self.store.sync_item(item.kind, &link.uid)?,
+                None => None,
+            };
+            let (link, (known_scope, known)) = match (link, known) {
+                (Some(link), Some(known)) => (link, known),
+                (link, _) => {
+                    if let Some(link) = link {
+                        self.store.unlink_sync_item(item.kind, &link.uid)?;
+                    }
+                    if let Some(new) = self.new_item(session, item)? {
+                        out.push(new);
+                    }
+                    continue;
                 }
             };
-            let known = self.store.sync_item(item.kind, &uid)?;
-            if let Some((scope, version)) = &known
-                && *scope == item.scope
-                && version.body.as_deref() == Some(item.body.as_str())
+            // SQLite gives a deleted last row's id to the next row: another
+            // birth means another item, so the linked one was deleted here.
+            if let Some(base) = &link.base_body
+                && birth(item.kind, base) != birth(item.kind, &item.body)
             {
+                self.store.unlink_sync_item(item.kind, &link.uid)?;
+                if !known.is_deletion() {
+                    let stamp = self.next_stamp(&session.device)?;
+                    out.push(Outgoing {
+                        change: Change {
+                            kind: item.kind,
+                            uid: link.uid.clone(),
+                            scope: known_scope,
+                            version: known.replaced(stamp, None),
+                        },
+                        local_id: None,
+                    });
+                }
+                if let Some(new) = self.new_item(session, item)? {
+                    out.push(new);
+                }
+                continue;
+            }
+            let edited_here =
+                link.base_body.as_deref() != Some(item.body.as_str()) || known_scope != item.scope;
+            let changed_elsewhere = known.stamp != link.base_stamp;
+            if !edited_here {
+                if changed_elsewhere {
+                    let change = Change {
+                        kind: item.kind,
+                        uid: link.uid,
+                        scope: known_scope,
+                        version: known,
+                    };
+                    self.materialize(session, &change)?;
+                }
                 continue;
             }
             let stamp = self.next_stamp(&session.device)?;
-            let version = match known {
-                Some((_, version)) => version.replaced(stamp, Some(item.body)),
-                None => Version::new(stamp, Some(item.body)),
-            };
-            let change = Change {
+            let version = known.replaced(stamp, Some(item.body.clone()));
+            if changed_elsewhere
+                && item.kind.asks_on_conflict()
+                && known.body.is_some()
+                && known.body.as_deref() != Some(item.body.as_str())
+            {
+                self.store.add_sync_conflict(
+                    item.kind,
+                    &link.uid,
+                    &version,
+                    &known,
+                    self.now_secs(),
+                )?;
+                report.conflicts += 1;
+            }
+            out.push(Outgoing {
+                change: Change {
+                    kind: item.kind,
+                    uid: link.uid,
+                    scope: item.scope,
+                    version,
+                },
+                local_id: Some(item.local_id),
+            });
+        }
+        for kind in KINDS {
+            for link in self.store.sync_links(kind)? {
+                if self.local_exists(kind, &link.local_id)? {
+                    continue;
+                }
+                let Some((scope, known)) = self.store.sync_item(kind, &link.uid)? else {
+                    self.store.unlink_sync_item(kind, &link.uid)?;
+                    continue;
+                };
+                // A project not synced here now deletes nothing elsewhere.
+                if !Self::scope_here(session, &scope) {
+                    continue;
+                }
+                if known.is_deletion() {
+                    self.store.unlink_sync_item(kind, &link.uid)?;
+                    continue;
+                }
+                let stamp = self.next_stamp(&session.device)?;
+                let version = known.replaced(stamp, None);
+                if known.stamp != link.base_stamp && kind.asks_on_conflict() {
+                    self.store.add_sync_conflict(
+                        kind,
+                        &link.uid,
+                        &version,
+                        &known,
+                        self.now_secs(),
+                    )?;
+                    report.conflicts += 1;
+                }
+                out.push(Outgoing {
+                    change: Change {
+                        kind,
+                        uid: link.uid,
+                        scope,
+                        version,
+                    },
+                    local_id: Some(link.local_id),
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    /// A local item not synced yet. `None` when the replica already holds
+    /// it as it is here (a built-in edited the same way elsewhere): it is
+    /// only linked.
+    fn new_item(&self, session: &Session, item: LocalItem) -> AppResult<Option<Outgoing>> {
+        let uid = self.new_uid(&item)?;
+        let version = match self.store.sync_item(item.kind, &uid)? {
+            Some((_, known)) if known.body.as_deref() == Some(item.body.as_str()) => {
+                self.store
+                    .link_sync_item(item.kind, &uid, &item.local_id, &known)?;
+                return Ok(None);
+            }
+            Some((_, known)) => known.replaced(self.next_stamp(&session.device)?, Some(item.body)),
+            None => Version::new(self.next_stamp(&session.device)?, Some(item.body)),
+        };
+        Ok(Some(Outgoing {
+            change: Change {
                 kind: item.kind,
                 uid,
                 scope: item.scope,
                 version,
-            };
-            self.store.put_sync_item(&change)?;
-            changes.push(change);
-        }
-        for kind in KINDS {
-            for (uid, local_id) in self.store.sync_links(kind)? {
-                if self.local_exists(kind, &local_id)? {
-                    continue;
-                }
-                self.store.unlink_sync_item(kind, &uid)?;
-                let Some((scope, version)) = self.store.sync_item(kind, &uid)? else {
-                    continue;
-                };
-                if version.is_deletion() {
-                    continue;
-                }
-                let stamp = self.next_stamp(&session.device)?;
-                let change = Change {
-                    kind,
-                    uid,
-                    scope,
-                    version: version.replaced(stamp, None),
-                };
-                self.store.put_sync_item(&change)?;
-                changes.push(change);
-            }
-        }
-        Ok(changes)
+            },
+            local_id: Some(item.local_id),
+        }))
     }
 
-    /// Reads the other PCs' batches this PC has not read yet, in order.
-    fn apply_batches(&self, session: &mut Session, report: &mut SyncReport) -> AppResult<()> {
+    /// Reads the batches of the newest epoch's PCs not read yet, in order.
+    /// A PC not in it (removed, or never added) is not read.
+    fn apply_batches(&self, session: &Session, report: &mut SyncReport) -> AppResult<()> {
         let mut pending: BTreeMap<DeviceId, Vec<(u64, String)>> = BTreeMap::new();
         for path in self.sync_remote.files(&session.dir, layout::DEVICES_DIR)? {
             if let Some((device, seq)) = layout::batch_seq(&path)
                 && device != session.device
+                && session.members.contains_key(device.as_str())
             {
                 pending.entry(device).or_default().push((seq, path));
             }
@@ -626,12 +968,18 @@ impl Hedy {
             batches.sort();
             let read = self.store.sync_cursor(&device)?;
             for (seq, path) in batches.into_iter().filter(|(seq, _)| *seq > read) {
-                let Some(sealed) = self.sync_remote.read(&session.dir, &path)? else {
+                let Some(body) = self.open_signed(session, &device, &path)? else {
                     continue;
                 };
-                let plain = self.sync_crypto.open(&session.keys, &path, &sealed)?;
-                let batch: Batch = serde_json::from_slice(&plain).map_err(|_| corrupt(&path))?;
-                if batch.device != device || batch.seq != seq {
+                let batch: Batch = serde_json::from_str(&body).map_err(|_| corrupt(&path))?;
+                // A PC writes only its own versions.
+                if batch.device != device
+                    || batch.seq != seq
+                    || batch
+                        .changes
+                        .iter()
+                        .any(|c| c.version.stamp.device != device)
+                {
                     return Err(corrupt(&path));
                 }
                 for change in &batch.changes {
@@ -690,30 +1038,71 @@ impl Hedy {
         Ok(())
     }
 
+    /// Brings in synced items this PC never had: a project that became
+    /// personal here, or one added later.
+    fn bring_waiting(&self, session: &Session) -> AppResult<()> {
+        for change in self.store.sync_items()? {
+            if change.version.is_deletion()
+                || !Self::scope_here(session, &change.scope)
+                || self.store.sync_link(change.kind, &change.uid)?.is_some()
+            {
+                continue;
+            }
+            self.materialize(session, &change)?;
+        }
+        Ok(())
+    }
+
+    /// The project a linked row is in now; `None` when the row is gone.
+    fn row_project(&self, kind: ItemKind, local_id: &str) -> AppResult<Option<Option<PathBuf>>> {
+        let row = local_id.parse::<i64>().ok();
+        Ok(match (kind, row) {
+            (ItemKind::Note, Some(id)) => self.store.note(id)?.map(|n| n.project),
+            (ItemKind::Skill, Some(id)) => self.store.skill(id)?.map(|s| s.project),
+            (ItemKind::Template, Some(id)) => self
+                .store
+                .template_records()?
+                .into_iter()
+                .find(|r| r.id == id)
+                .map(|r| r.project),
+            _ => None,
+        })
+    }
+
     /// Writes a synced version into this PC's notes, skills, templates or
-    /// themes. A project this PC does not have (or keeps local) waits in
-    /// the replica.
-    fn materialize(&self, session: &Session, change: &Change) -> AppResult<()> {
-        let project = match &change.scope {
-            Scope::Global => None,
-            Scope::Project(id) => match session.projects.get(id) {
-                Some(path) => Some(path.clone()),
-                None => return Ok(()),
+    /// themes, and links the row to it. Nothing is written for a project not
+    /// synced here (or two projects here with its remote and no row yet):
+    /// the version waits in the replica. Returns whether it was written.
+    fn materialize(&self, session: &Session, change: &Change) -> AppResult<bool> {
+        if !Self::scope_here(session, &change.scope) {
+            return Ok(false);
+        }
+        let link: Option<SyncLink> = self.store.sync_link(change.kind, &change.uid)?;
+        let row_project = match &link {
+            Some(link) => self.row_project(change.kind, &link.local_id)?,
+            None => None,
+        };
+        let project = match (&change.scope, row_project) {
+            (Scope::Global, _) => None,
+            // A row stays in the project it is in.
+            (Scope::Project(_), Some(project)) => project,
+            (Scope::Project(id), None) => match session.projects.get(id).map(Vec::as_slice) {
+                Some([only]) => Some(only.clone()),
+                _ => return Ok(false),
             },
         };
-        let local = self.store.sync_local_id(change.kind, &change.uid)?;
-        let row = local.as_deref().and_then(|l| l.parse::<i64>().ok());
+        let row = link.as_ref().and_then(|l| l.local_id.parse::<i64>().ok());
         let Some(body) = &change.version.body else {
-            if let Some(local) = &local {
+            if let Some(link) = &link {
                 match change.kind {
                     ItemKind::Note => self.store.delete_note(row.unwrap_or(-1))?,
                     ItemKind::Skill => self.store.delete_skill(row.unwrap_or(-1))?,
                     ItemKind::Template => self.store.delete_template(row.unwrap_or(-1))?,
-                    ItemKind::Theme => self.themes.delete(local)?,
+                    ItemKind::Theme => self.themes.delete(&link.local_id)?,
                 }
                 self.store.unlink_sync_item(change.kind, &change.uid)?;
             }
-            return Ok(());
+            return Ok(true);
         };
         let bad = || corrupt(&change.uid);
         let local_id = match change.kind {
@@ -731,6 +1120,16 @@ impl Hedy {
             }
             ItemKind::Template => {
                 let body: TemplateBody = serde_json::from_str(body).map_err(|_| bad())?;
+                // An edited built-in here already has its row.
+                let row = row.or_else(|| {
+                    let builtin = body.builtin.as_ref()?;
+                    self.store
+                        .template_records()
+                        .ok()?
+                        .into_iter()
+                        .find(|r| r.builtin.as_ref() == Some(builtin) && r.project == project)
+                        .map(|r| r.id)
+                });
                 self.store
                     .save_template(&TemplateRecord {
                         id: row.unwrap_or(0),
@@ -743,36 +1142,67 @@ impl Hedy {
                     .to_string()
             }
             ItemKind::Theme => {
-                let theme: CustomTheme = serde_json::from_str(body).map_err(|_| bad())?;
+                let body: ThemeBody = serde_json::from_str(body).map_err(|_| bad())?;
+                // Each PC picks the id: two themes made apart with one name
+                // are two themes.
+                let id = match &link {
+                    Some(link) => link.local_id.clone(),
+                    None => new_theme_id(&body.name, |id| !matches!(self.themes.get(id), Ok(None))),
+                };
+                // One this version cannot read (a newer Hedy's) waits.
+                let Ok(theme) =
+                    CustomTheme::new(id, &body.name, body.base, body.colors, body.origin)
+                else {
+                    return Ok(false);
+                };
                 self.themes.save(&theme)?;
                 theme.id
             }
         };
         self.store
-            .link_sync_item(change.kind, &change.uid, &local_id)
-            .map_err(Into::into)
+            .link_sync_item(change.kind, &change.uid, &local_id, &change.version)?;
+        Ok(true)
     }
 
     /// The sync's state for the status bar and Ajustes; `None` when it is
-    /// not set up. Reads the PCs' names from the clone (no network).
+    /// not set up. Reads the clone only (no network): the trusted epoch's
+    /// PCs, and their names as each signed them.
     pub fn sync_status(&self) -> AppResult<Option<SyncStatus>> {
         let Some(url) = self.sync_setting(URL)? else {
             return Ok(None);
         };
         let device = DeviceId(self.sync_setting(DEVICE)?.unwrap_or_default());
         let dir = self.sync_dir();
-        let keys: Vec<String> = self.keys()?.epochs.into_values().collect();
+        let keys = self.keys()?;
+        let trusted = self.sync_number(EPOCH)? as u32;
+        let pins: BTreeMap<u32, String> = self.sync_json(PINS)?.unwrap_or_default();
         let mut devices = Vec::new();
-        if let Some((_, newest)) = self.epochs(&dir)?.pop() {
-            let (_, members) = self.sync_crypto.epoch_members(&newest)?;
+        let trusted_file = self
+            .epochs(&dir)?
+            .into_iter()
+            .find(|(n, f)| {
+                *n == trusted && pins.get(n) == Some(&self.sync_crypto.digest(f.as_bytes()))
+            })
+            .map(|(_, f)| f);
+        if let Some(file) = trusted_file {
+            let (_, members) = self.sync_crypto.epoch_members(&file)?;
+            let session = Session {
+                dir: dir.clone(),
+                device: device.clone(),
+                me: keys.device.clone(),
+                current: String::new(),
+                name_key: String::new(),
+                projects: HashMap::new(),
+                members: members.iter().cloned().collect(),
+                keys: keys.epochs.values().cloned().collect(),
+            };
             for (id, _) in members.into_iter().filter(|(id, _)| id != RECOVERY_MEMBER) {
                 let id = DeviceId(id);
-                let path = layout::device_info(&id);
                 let info: Option<DeviceInfo> = self
-                    .sync_remote
-                    .read(&dir, &path)?
-                    .and_then(|sealed| self.sync_crypto.open(&keys, &path, &sealed).ok())
-                    .and_then(|plain| serde_json::from_slice(&plain).ok());
+                    .open_signed(&session, &id, &layout::device_info(&id))
+                    .ok()
+                    .flatten()
+                    .and_then(|body| serde_json::from_str(&body).ok());
                 devices.push(SyncDevice {
                     this_pc: id == device,
                     name: info.as_ref().map(|i| i.name.clone()).unwrap_or_default(),
@@ -795,37 +1225,51 @@ impl Hedy {
         Ok(self.store.sync_conflicts()?)
     }
 
-    /// Settles a conflict: keep the version in use, or use the other one
-    /// (written here, so the next sync sends it on top of the kept one).
+    /// Settles a conflict with a new version on top of the one in use: the
+    /// other one (`use_other`) or the same again. It is written here and
+    /// sent with the next sync, which also clears the conflict on the other
+    /// PCs.
     pub fn resolve_sync_conflict(&self, id: i64, use_other: bool) -> AppResult<()> {
-        let _lock = self.sync_lock.lock().unwrap();
+        let _guard = self.sync_guard();
         let conflict = self
             .store
             .sync_conflicts()?
             .into_iter()
             .find(|c| c.id == id)
             .ok_or(AppError::SyncConflictNotFound(id))?;
-        if use_other {
-            let (scope, _) = self
-                .store
-                .sync_item(conflict.kind, &conflict.uid)?
-                .ok_or(AppError::SyncConflictNotFound(id))?;
-            let keys: Vec<String> = self.keys()?.epochs.into_values().collect();
-            let session = Session {
-                dir: self.sync_dir(),
-                device: DeviceId(self.sync_setting(DEVICE)?.unwrap_or_default()),
-                current: keys.last().cloned().unwrap_or_default(),
-                projects: self.synced_projects(&keys)?,
-                keys,
-            };
-            let change = Change {
-                kind: conflict.kind,
-                uid: conflict.uid.clone(),
-                scope,
-                version: conflict.other.clone(),
-            };
-            self.materialize(&session, &change)?;
-        }
+        let (scope, known) = self
+            .store
+            .sync_item(conflict.kind, &conflict.uid)?
+            .ok_or(AppError::SyncConflictNotFound(id))?;
+        let device = DeviceId(self.sync_setting(DEVICE)?.ok_or(AppError::SyncNotSetUp)?);
+        let body = if use_other {
+            conflict.other.body.clone()
+        } else {
+            known.body.clone()
+        };
+        let change = Change {
+            kind: conflict.kind,
+            uid: conflict.uid.clone(),
+            scope,
+            version: known.replaced(self.next_stamp(&device)?, body),
+        };
+        self.store.put_sync_item(&change)?;
+        let keys = self.keys()?;
+        let name_key = keys.epochs.values().next().cloned().unwrap_or_default();
+        let session = Session {
+            dir: self.sync_dir(),
+            device,
+            me: keys.device.clone(),
+            current: String::new(),
+            projects: self.synced_projects(&name_key)?,
+            name_key,
+            members: HashMap::new(),
+            keys: Vec::new(),
+        };
+        self.materialize(&session, &change)?;
+        let mut outbox: Vec<Change> = self.sync_json(OUTBOX)?.unwrap_or_default();
+        outbox.push(change);
+        self.set_sync_setting(OUTBOX, &json(&outbox))?;
         Ok(self.store.delete_sync_conflict(id)?)
     }
 
@@ -841,11 +1285,25 @@ impl Hedy {
     }
 }
 
+/// When an item was created, for kinds whose rows can be reused (notes and
+/// skills): what tells a new item in an old row from an edit.
+fn birth(kind: ItemKind, body: &str) -> Option<i64> {
+    match kind {
+        ItemKind::Note => serde_json::from_str::<NoteBody>(body)
+            .ok()
+            .map(|b| b.created_at),
+        ItemKind::Skill => serde_json::from_str::<SkillBody>(body)
+            .ok()
+            .map(|b| b.created_at),
+        ItemKind::Template | ItemKind::Theme => None,
+    }
+}
+
 /// The repo's only plain file besides the key epochs.
 fn readme() -> String {
     "# Hedy\n\nPersonal sync of Hedy (notes, skills, templates and themes), sealed with \
-     XChaCha20-Poly1305 on each PC before it is pushed. Nothing here can be read without \
-     the owner's keys.\n"
+     XChaCha20-Poly1305 and signed on each PC before it is pushed. Nothing here can be read \
+     without the owner's keys.\n"
         .into()
 }
 

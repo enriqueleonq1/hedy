@@ -235,11 +235,15 @@ const MIGRATIONS: &[&str] = &[
         version  TEXT NOT NULL,
         PRIMARY KEY (kind, uid)
     );
-    -- Which local item (a row id, a theme id) each synced item is.
+    -- Which local item (a row id, a theme id) each synced item is, and the
+    -- version the row reflects (JSON stamp, body): what tells an edit made
+    -- here from one made elsewhere.
     CREATE TABLE sync_links (
-        kind      TEXT NOT NULL,
-        uid       TEXT NOT NULL,
-        local_id  TEXT NOT NULL,
+        kind        TEXT NOT NULL,
+        uid         TEXT NOT NULL,
+        local_id    TEXT NOT NULL,
+        base_stamp  TEXT NOT NULL,
+        base_body   TEXT,
         PRIMARY KEY (kind, uid),
         UNIQUE (kind, local_id)
     );

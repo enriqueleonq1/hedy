@@ -416,3 +416,515 @@ fn two_hedy_folders_sync_through_a_real_git_repo() {
             .any(|n| n.text == "Responde en español")
     );
 }
+
+/// A small deterministic random source for the simulation.
+struct Lcg(u64);
+
+impl Lcg {
+    fn next(&mut self, below: usize) -> usize {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((self.0 >> 33) % below as u64) as usize
+    }
+}
+
+/// Three PCs add, edit and delete notes and sync in random order; once all
+/// of them sync, they hold the same notes and have nothing left to send.
+#[test]
+fn random_edits_on_three_pcs_converge() {
+    for seed in 1..=12u64 {
+        simulate(seed, false);
+    }
+}
+
+/// The same with SQLite, which reuses the id of a deleted last row.
+#[test]
+fn random_edits_converge_with_sqlite() {
+    for seed in 1..=6u64 {
+        simulate(seed, true);
+    }
+}
+
+fn simulate(seed: u64, sqlite: bool) {
+    use std::sync::Arc;
+
+    use crate::adapters::SqliteStore;
+    use crate::application::testing::FakeSyncRemote;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let server = SyncServer::default();
+    // (fixture, the Hedy under test, its store, the project)
+    let mut pcs = Vec::new();
+    for (i, path) in ["/a/tienda", "/b/tienda", "/c/tienda"].iter().enumerate() {
+        let (f, project) = pc(&server, path);
+        let (hedy, store): (Hedy, Arc<dyn crate::application::ports::Store>) = if sqlite {
+            let dir = tmp.path().join(format!("pc{i}"));
+            std::fs::create_dir_all(&dir).unwrap();
+            let store = Arc::new(SqliteStore::open(&dir.join("hedy.db")).unwrap());
+            let hedy = f.hedy_on(store.clone(), Arc::new(FakeSyncRemote::new(server.clone())));
+            hedy.add_account(crate::application::NewAccount {
+                name: "Personal".into(),
+                provider: crate::domain::Provider::Claude,
+                api_key: false,
+                default_folder: false,
+                color: None,
+            })
+            .unwrap();
+            hedy.use_account(&project, "personal", None).unwrap();
+            (hedy, store)
+        } else {
+            (f.hedy.clone(), f.store.clone())
+        };
+        hedy.set_memory_home(&project, Some(&MemoryHome::Personal))
+            .unwrap();
+        pcs.push((f, hedy, store, project));
+    }
+    let words = pcs[0].1.sync_setup(URL, "pc0").unwrap();
+    for (i, (_, hedy, _, _)) in pcs.iter().enumerate().skip(1) {
+        hedy.sync_join(URL, &words, &format!("pc{i}")).unwrap();
+    }
+
+    let texts = |store: &Arc<dyn crate::application::ports::Store>, project: Option<&Path>| {
+        let mut texts: Vec<String> = store
+            .notes(project, false)
+            .unwrap()
+            .into_iter()
+            .map(|n| n.text)
+            .collect();
+        texts.sort();
+        texts
+    };
+    let mut rng = Lcg(seed);
+    let mut written = 0;
+    for _ in 0..150 {
+        let (f, hedy, store, project) = &pcs[rng.next(pcs.len())];
+        f.clock.advance(rng.next(5) as i64);
+        let scope = if rng.next(2) == 0 {
+            None
+        } else {
+            Some(project.as_path())
+        };
+        let notes = store.notes(scope, false).unwrap();
+        match rng.next(6) {
+            0 | 1 => {
+                written += 1;
+                hedy.add_note(scope, &format!("nota {seed}-{written}"), Category::Decision)
+                    .unwrap();
+            }
+            2 if !notes.is_empty() => {
+                written += 1;
+                let note = &notes[rng.next(notes.len())];
+                hedy.edit_note(
+                    note.id,
+                    &format!("editada {seed}-{written}"),
+                    Category::Decision,
+                )
+                .unwrap();
+            }
+            3 if !notes.is_empty() => {
+                // The newest note: SQLite gives its id to the next one.
+                hedy.forget_note(notes[0].id).unwrap();
+            }
+            _ => {
+                hedy.sync_now().unwrap();
+            }
+        }
+    }
+
+    // Everyone syncs twice, in turn: the second round settles what the first
+    // one brought.
+    for _ in 0..2 {
+        for (_, hedy, _, _) in &pcs {
+            hedy.sync_now().unwrap();
+        }
+    }
+    let state = |(_, _, store, project): &(
+        Fixture,
+        Hedy,
+        Arc<dyn crate::application::ports::Store>,
+        PathBuf,
+    )| { (texts(store, None), texts(store, Some(project))) };
+    let first = state(&pcs[0]);
+    for pc in &pcs[1..] {
+        assert_eq!(
+            state(pc),
+            first,
+            "seed {seed} (sqlite: {sqlite}): the PCs disagree"
+        );
+    }
+    for (i, (_, hedy, _, _)) in pcs.iter().enumerate() {
+        let report = hedy.sync_now().unwrap();
+        assert_eq!(
+            report,
+            SyncReport::default(),
+            "seed {seed}: pc{i} still sends"
+        );
+    }
+}
+
+/// SQLite gives a deleted last row's id to the next one: deleting a note and
+/// writing another before syncing is a deletion and a new note, not an edit.
+#[test]
+fn a_reused_row_id_is_a_new_note() {
+    use std::sync::Arc;
+
+    use crate::adapters::SqliteStore;
+    use crate::application::testing::FakeSyncRemote;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let server = SyncServer::default();
+    let (f, _) = pc(&server, "/a/tienda");
+    let store = Arc::new(SqliteStore::open(&tmp.path().join("hedy.db")).unwrap());
+    let home = f.hedy_on(store.clone(), Arc::new(FakeSyncRemote::new(server.clone())));
+    let (office, _) = pc(&server, "/b/tienda");
+
+    let old = home
+        .add_note(None, "Nota vieja", Category::Decision)
+        .unwrap();
+    let words = home.sync_setup(URL, "Casa").unwrap();
+    office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+
+    // Home deletes it and writes another, which gets the same row id.
+    home.forget_note(old.id).unwrap();
+    f.clock.advance(5);
+    let new = home
+        .add_note(None, "Nota nueva", Category::Decision)
+        .unwrap();
+    assert_eq!(new.id, old.id);
+    // Meanwhile the office edits the old one.
+    office.clock.advance(10);
+    let there = office.store.notes(None, false).unwrap()[0].id;
+    office
+        .hedy
+        .edit_note(there, "Nota vieja editada", Category::Decision)
+        .unwrap();
+
+    home.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+    home.sync_now().unwrap();
+    // The new note is its own item: it reaches the office whatever happens
+    // to the old one, and nobody's edit turns into another note.
+    let office_texts = texts(&office, None);
+    assert!(
+        office_texts.contains(&"Nota nueva".to_owned()),
+        "{office_texts:?}"
+    );
+    let home_texts: Vec<String> = {
+        let mut t: Vec<String> = store
+            .notes(None, false)
+            .unwrap()
+            .into_iter()
+            .map(|n| n.text)
+            .collect();
+        t.sort();
+        t
+    };
+    assert_eq!(home_texts, office_texts);
+}
+
+// Regressions from the phase-2 review (docs/decisions.md §34).
+
+#[test]
+fn an_edit_survives_a_sync_that_fails() {
+    let (_server, (home, _), (office, _)) = two_pcs();
+    let note = home.hedy.add_note(None, "v1", Category::Decision).unwrap();
+    home.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+    let there = office.store.notes(None, false).unwrap()[0].id;
+
+    // The push fails (no network): the edit is not lost.
+    office
+        .hedy
+        .edit_note(there, "v2", Category::Decision)
+        .unwrap();
+    office.sync.fail_next_push();
+    assert!(office.hedy.sync_now().is_err());
+    office.hedy.sync_now().unwrap();
+    home.hedy.sync_now().unwrap();
+    assert_eq!(texts(&home, None), ["v2"]);
+
+    // A batch that does not open stops the sync before anything is lost.
+    let home_id = home.hedy.sync_status().unwrap().unwrap().device;
+    let junk = layout::batch(&home_id, 99);
+    home.sync.write(Path::new("/"), &junk, b"junk").unwrap();
+    home.sync.push(Path::new("/"), "junk").unwrap();
+    office
+        .hedy
+        .edit_note(there, "v3", Category::Decision)
+        .unwrap();
+    assert!(office.hedy.sync_now().is_err());
+    home.sync.remove(Path::new("/"), &junk).unwrap();
+    home.sync.push(Path::new("/"), "clean").unwrap();
+    office.hedy.sync_now().unwrap();
+    home.hedy.sync_now().unwrap();
+    assert_eq!(texts(&home, None), ["v3"]);
+    assert_eq!(note.text, "v1");
+}
+
+#[test]
+fn a_new_epoch_does_not_resend_or_override_anything() {
+    let server = SyncServer::default();
+    let (home, home_tienda) = pc(&server, "/a/tienda");
+    home.hedy
+        .set_memory_home(&home_tienda, Some(&MemoryHome::Personal))
+        .unwrap();
+    home.hedy
+        .add_template(NewTemplate {
+            project: Some(home_tienda.clone()),
+            name: "Revisar".into(),
+            text: "v1".into(),
+        })
+        .unwrap();
+    let words = home.hedy.sync_setup(URL, "Casa").unwrap();
+    let (office, office_tienda) = pc(&server, "/b/tienda");
+    office
+        .hedy
+        .set_memory_home(&office_tienda, Some(&MemoryHome::Personal))
+        .unwrap();
+    office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+    // The office edits right after joining; home only then sees epoch 2.
+    let record = office.store.template_records().unwrap()[0].clone();
+    office
+        .hedy
+        .update_template(
+            &crate::domain::TemplateId::Saved(record.id),
+            "Revisar",
+            "v2",
+        )
+        .unwrap();
+    office.clock.advance(1);
+    office.hedy.sync_now().unwrap();
+    home.clock.advance(5);
+    let report = home.hedy.sync_now().unwrap();
+    assert_eq!(report.sent, 0, "home re-sent its items under the new epoch");
+    let text = |f: &Fixture| f.store.template_records().unwrap()[0].text.clone();
+    assert_eq!(text(&home), "v2");
+    office.hedy.sync_now().unwrap();
+    assert_eq!(text(&office), "v2");
+}
+
+#[test]
+fn a_project_kept_local_for_a_while_catches_up() {
+    let (_server, (home, home_tienda), (office, office_tienda)) = two_pcs();
+    let note = home
+        .hedy
+        .add_note(Some(&home_tienda), "v1", Category::Decision)
+        .unwrap();
+    let other = home
+        .hedy
+        .add_note(Some(&home_tienda), "se borra", Category::Decision)
+        .unwrap();
+    home.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+    assert_eq!(texts(&office, Some(&office_tienda)), ["se borra", "v1"]);
+
+    // The office keeps the project local while home edits and deletes.
+    office
+        .hedy
+        .set_memory_home(&office_tienda, Some(&MemoryHome::Local))
+        .unwrap();
+    home.hedy
+        .edit_note(note.id, "v2", Category::Decision)
+        .unwrap();
+    home.hedy.forget_note(other.id).unwrap();
+    home.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+    assert_eq!(texts(&office, Some(&office_tienda)), ["se borra", "v1"]);
+
+    // Personal again: it catches up, and sends nothing old back.
+    office
+        .hedy
+        .set_memory_home(&office_tienda, Some(&MemoryHome::Personal))
+        .unwrap();
+    let report = office.hedy.sync_now().unwrap();
+    assert_eq!(report.sent, 0);
+    assert_eq!(texts(&office, Some(&office_tienda)), ["v2"]);
+    home.hedy.sync_now().unwrap();
+    assert_eq!(texts(&home, Some(&home_tienda)), ["v2"]);
+}
+
+#[test]
+fn a_project_made_personal_later_brings_its_notes() {
+    let (_server, (home, home_tienda), (office, office_tienda)) = two_pcs();
+    office.hedy.set_memory_home(&office_tienda, None).unwrap();
+    home.hedy
+        .add_note(Some(&home_tienda), "de casa", Category::Decision)
+        .unwrap();
+    office
+        .hedy
+        .add_note(Some(&office_tienda), "de la oficina", Category::Decision)
+        .unwrap();
+    home.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+    assert_eq!(texts(&office, Some(&office_tienda)), ["de la oficina"]);
+
+    office
+        .hedy
+        .set_memory_home(&office_tienda, Some(&MemoryHome::Personal))
+        .unwrap();
+    office.hedy.sync_now().unwrap();
+    home.hedy.sync_now().unwrap();
+    for (f, project) in [(&home, &home_tienda), (&office, &office_tienda)] {
+        assert_eq!(texts(f, Some(project)), ["de casa", "de la oficina"]);
+    }
+}
+
+#[test]
+fn two_themes_with_one_name_stay_two_themes() {
+    let (_server, (home, _), (office, _)) = two_pcs();
+    let theme = |f: &Fixture, bg: &str| {
+        f.hedy
+            .save_theme(NewTheme {
+                id: None,
+                name: "Noche".into(),
+                base: ThemeBase::Dark,
+                colors: BTreeMap::from([
+                    ("bg".to_owned(), bg.to_owned()),
+                    ("ink".to_owned(), "#f8f8f2".to_owned()),
+                ]),
+                origin: ThemeOrigin::Vscode,
+            })
+            .unwrap()
+    };
+    theme(&home, "#111111");
+    theme(&office, "#222222");
+    home.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+    home.hedy.sync_now().unwrap();
+    for f in [&home, &office] {
+        let mut colors: Vec<String> = f
+            .hedy
+            .list_themes()
+            .unwrap()
+            .into_iter()
+            .map(|t| t.colors["bg"].clone())
+            .collect();
+        colors.sort();
+        assert_eq!(colors, ["#111111", "#222222"]);
+    }
+    assert_eq!(home.hedy.sync_now().unwrap().sent, 0);
+    assert_eq!(office.hedy.sync_now().unwrap().sent, 0);
+}
+
+#[test]
+fn a_builtin_template_edited_on_both_pcs_is_one_template() {
+    let (_server, (home, _), (office, _)) = two_pcs();
+    let builtin: crate::domain::TemplateId = "builtin:tests".parse().unwrap();
+    home.hedy
+        .update_template(&builtin, "Tests", "versión de casa")
+        .unwrap();
+    office.clock.advance(10);
+    office
+        .hedy
+        .update_template(&builtin, "Tests", "versión de la oficina")
+        .unwrap();
+    home.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+    home.hedy.sync_now().unwrap();
+    for f in [&home, &office] {
+        let rows = f.store.template_records().unwrap();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].text, "versión de la oficina");
+    }
+}
+
+#[test]
+fn a_changed_key_epoch_stops_the_sync() {
+    let (server, (home, _), (office, _)) = two_pcs();
+    home.hedy.sync_now().unwrap();
+    // Someone with push access rewrites epoch 2 (here, only its spacing).
+    let path = layout::epoch(2);
+    let file = String::from_utf8(server.file(&path).unwrap()).unwrap();
+    office
+        .sync
+        .write(Path::new("/"), &path, file.replace('\n', "\n ").as_bytes())
+        .unwrap();
+    office.sync.push(Path::new("/"), "tamper").unwrap();
+    assert_eq!(home.hedy.sync_now(), Err(AppError::SyncTampered(2)));
+}
+
+#[test]
+fn a_removed_pc_cannot_write_and_no_pc_writes_as_another() {
+    use crate::application::ports::SyncCrypto;
+
+    let (server, (home, _), (office, _)) = two_pcs();
+    home.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+    let crypto = crate::adapters::VaultCrypto;
+    let office_keys: Keys =
+        serde_json::from_str(&office.secrets.sync_keys().unwrap().unwrap()).unwrap();
+    let home_id = home.hedy.sync_status().unwrap().unwrap().device;
+    let office_id = office.hedy.sync_status().unwrap().unwrap().device;
+
+    // Batches written with keys the PC does not own.
+    let forged = |device: &DeviceId, seq: u64, signer: &str| {
+        let stamp = Stamp {
+            ms: 1,
+            counter: 0,
+            device: device.clone(),
+        };
+        let body = NoteBody {
+            text: "inyectada".into(),
+            category: Category::Rule,
+            author: "Usuario".into(),
+            status: NoteStatus::Approved,
+            created_at: 1,
+            topic: None,
+            updated_at: None,
+        };
+        let batch = Batch {
+            device: device.clone(),
+            seq,
+            changes: vec![Change {
+                kind: ItemKind::Note,
+                uid: "x".into(),
+                scope: Scope::Global,
+                version: Version::new(stamp, Some(json(&body))),
+            }],
+        };
+        let path = layout::batch(device, seq);
+        let body = json(&batch);
+        let signature = crypto.sign(signer, &signed_bytes(&path, &body)).unwrap();
+        let envelope = json(&Signed { body, signature });
+        let key = office_keys.epochs.values().last().unwrap();
+        let sealed = crypto.seal(key, &path, envelope.as_bytes()).unwrap();
+        office.sync.write(Path::new("/"), &path, &sealed).unwrap();
+        office.sync.push(Path::new("/"), "forged").unwrap();
+    };
+    // As the office (a member) but signed by a key that is not its own:
+    // refused, nothing applied.
+    let stranger = crypto.new_member().unwrap();
+    forged(&office_id, 30, &stranger);
+    assert!(home.hedy.sync_now().is_err());
+    assert!(!texts(&home, None).contains(&"inyectada".to_owned()));
+    office
+        .sync
+        .remove(Path::new("/"), &layout::batch(&office_id, 30))
+        .unwrap();
+    office.sync.push(Path::new("/"), "clean").unwrap();
+    home.hedy.sync_now().unwrap();
+
+    // Home removes the office (epoch 3), which then writes as a new PC
+    // with the keys it still has.
+    let keys: Keys = serde_json::from_str(&home.secrets.sync_keys().unwrap().unwrap()).unwrap();
+    let epoch2 = String::from_utf8(server.file(&layout::epoch(2)).unwrap()).unwrap();
+    let (_, members) = crypto.epoch_members(&epoch2).unwrap();
+    let kept: Vec<(String, String)> = members
+        .into_iter()
+        .filter(|(id, _)| id != office_id.as_str())
+        .collect();
+    let (file, _) = crypto
+        .new_epoch(3, &kept, home_id.as_str(), &keys.device)
+        .unwrap();
+    home.sync
+        .write(Path::new("/"), &layout::epoch(3), file.as_bytes())
+        .unwrap();
+    home.sync.push(Path::new("/"), "remove office").unwrap();
+    home.hedy.sync_now().unwrap();
+    forged(&DeviceId::from_bytes([7; 8]), 1, &office_keys.device);
+    forged(&office_id, 40, &office_keys.device);
+    home.hedy.sync_now().unwrap();
+    assert!(!texts(&home, None).contains(&"inyectada".to_owned()));
+}

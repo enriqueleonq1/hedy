@@ -169,6 +169,9 @@ pub enum AppError {
     SyncRemoved,
     #[error("{}", self.message())]
     SyncConflictNotFound(i64),
+    /// A key epoch this PC already checked changed in the repo.
+    #[error("{}", self.message())]
+    SyncTampered(u32),
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -298,6 +301,10 @@ impl AppError {
             Self::SyncRemoved => tr!(
                 "esta PC fue quitada de la sincronización",
                 "this PC was removed from sync"
+            ),
+            Self::SyncTampered(epoch) => tr!(
+                "el repo de sincronización fue alterado: la época de llaves {epoch}, que esta PC ya había verificado, cambió. No se sincroniza hasta revisarlo",
+                "the sync repo was tampered with: key epoch {epoch}, which this PC had already checked, changed. Sync stops until it is looked at"
             ),
             Self::SyncConflictNotFound(id) => tr!(
                 "no existe el conflicto {id}",

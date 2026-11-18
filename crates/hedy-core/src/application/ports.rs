@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::domain::code::{Blame, CommitInfo, FileBytes, LineMatch, PathChange, TextQuery};
 use crate::domain::recall::{NoteUse, PageRequest};
 use crate::domain::sync::{
-    Change, DeviceId, ItemKind, MemoryHome, NoteBody, Scope, SkillBody, Version,
+    Change, DeviceId, ItemKind, MemoryHome, NoteBody, Scope, SkillBody, Stamp, Version,
 };
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, ImageSupport,
@@ -284,6 +284,18 @@ pub struct SyncConflict {
     pub at: i64,
 }
 
+/// A local item synced as `uid`, and the version its row reflects (its
+/// base): what tells an edit made here from one made elsewhere.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncLink {
+    pub uid: String,
+    /// A note's or template's row id, a theme's id.
+    pub local_id: String,
+    pub base_stamp: Stamp,
+    /// `None`: the row was linked to a deletion (never kept).
+    pub base_body: Option<String>,
+}
+
 /// The local side of personal sync (docs/decisions.md §34): the replica of
 /// every synced item as last known, the link between items here and their
 /// global ids, how far each other PC was read, and conflicts.
@@ -291,13 +303,20 @@ pub trait SyncRepository: Send + Sync {
     fn sync_item(&self, kind: ItemKind, uid: &str) -> PortResult<Option<(Scope, Version)>>;
     fn sync_items(&self) -> PortResult<Vec<Change>>;
     fn put_sync_item(&self, change: &Change) -> PortResult<()>;
-    /// The global id of a local item (a note's or template's row id, a
-    /// theme's id).
-    fn sync_uid(&self, kind: ItemKind, local_id: &str) -> PortResult<Option<String>>;
-    fn sync_local_id(&self, kind: ItemKind, uid: &str) -> PortResult<Option<String>>;
-    /// Every linked item of `kind`, as (uid, local id).
-    fn sync_links(&self, kind: ItemKind) -> PortResult<Vec<(String, String)>>;
-    fn link_sync_item(&self, kind: ItemKind, uid: &str, local_id: &str) -> PortResult<()>;
+    fn sync_link(&self, kind: ItemKind, uid: &str) -> PortResult<Option<SyncLink>>;
+    /// The link of a local item (a note's or template's row id, a theme's
+    /// id).
+    fn sync_link_of(&self, kind: ItemKind, local_id: &str) -> PortResult<Option<SyncLink>>;
+    fn sync_links(&self, kind: ItemKind) -> PortResult<Vec<SyncLink>>;
+    /// Links `uid` to the local item, which now reflects `base`. A local id
+    /// linked to another uid is moved.
+    fn link_sync_item(
+        &self,
+        kind: ItemKind,
+        uid: &str,
+        local_id: &str,
+        base: &Version,
+    ) -> PortResult<()>;
     fn unlink_sync_item(&self, kind: ItemKind, uid: &str) -> PortResult<()>;
     /// The last batch read from `device` (0: none).
     fn sync_cursor(&self, device: &DeviceId) -> PortResult<u64>;
@@ -951,6 +970,9 @@ pub trait SyncRemote: Send + Sync {
     /// Commits what changed (if anything) and pushes it; when another PC
     /// pushed first, pulls and tries again.
     fn push(&self, dir: &Path, message: &str) -> PortResult<()>;
+    /// Forgets everything not pushed (the clone is made again on the next
+    /// `open`): a setup or join the repo refused.
+    fn discard_local(&self, dir: &Path) -> PortResult<()>;
 }
 
 /// The sync vault's cryptography (`adapters::vault`), with keys and epoch
@@ -988,4 +1010,10 @@ pub trait SyncCrypto: Send + Sync {
     fn open(&self, keys: &[String], path: &str, sealed: &[u8]) -> PortResult<Vec<u8>>;
     /// The sealed name of a project in the repo.
     fn project_id(&self, key: &str, project_key: &str) -> PortResult<String>;
+    /// SHA-256 of `bytes`, as lowercase hex: what pins a verified epoch.
+    fn digest(&self, bytes: &[u8]) -> String;
+    /// Signs `bytes` with a member's signing key.
+    fn sign(&self, secrets: &str, bytes: &[u8]) -> PortResult<String>;
+    /// Whether `signature` is `public`'s over `bytes`.
+    fn verify(&self, public: &str, bytes: &[u8], signature: &str) -> PortResult<()>;
 }

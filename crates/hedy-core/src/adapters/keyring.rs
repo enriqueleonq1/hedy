@@ -27,6 +27,10 @@ impl Default for KeyringSecretStore {
 impl KeyringSecretStore {
     /// The store for the Hedy whose data lives in `data_dir`.
     pub fn for_data_dir(data_dir: &Path) -> Self {
+        // The same folder however it is written (`/x`, `/x/`, a link to it).
+        let data_dir = data_dir
+            .canonicalize()
+            .unwrap_or_else(|_| data_dir.to_owned());
         let hash = Sha256::digest(data_dir.to_string_lossy().as_bytes());
         let short: String = hash[..6].iter().map(|b| format!("{b:02x}")).collect();
         Self {

@@ -536,7 +536,7 @@ impl EpochFile {
     /// Whether `next` may follow `self`: the next epoch, signed by a member
     /// of this one.
     pub fn verify_next(&self, next: &EpochFile) -> Result<()> {
-        if next.format != FORMAT || next.epoch != self.epoch + 1 {
+        if next.format != FORMAT || Some(next.epoch) != self.epoch.checked_add(1) {
             return Err(VaultError::Untrusted(Distrust::Sequence));
         }
         let signer = self
@@ -686,6 +686,33 @@ impl SyncCrypto for VaultCrypto {
 
     fn project_id(&self, key: &str, project_key: &str) -> PortResult<String> {
         Ok(VaultKey::decode(key).map_err(port)?.project_id(project_key))
+    }
+
+    fn digest(&self, bytes: &[u8]) -> String {
+        use sha2::Digest;
+        Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
+    fn sign(&self, secrets: &str, bytes: &[u8]) -> PortResult<String> {
+        Ok(MemberSecrets::decode(secrets).map_err(port)?.sign(bytes))
+    }
+
+    fn verify(&self, public: &str, bytes: &[u8], signature: &str) -> PortResult<()> {
+        let signature: [u8; 64] = BASE64
+            .decode(signature)
+            .ok()
+            .and_then(|b| b.try_into().ok())
+            .ok_or_else(|| port(VaultError::Untrusted(Distrust::Signature)))?;
+        member_public(public)
+            .and_then(|p| p.sign_key())
+            .and_then(|key| {
+                key.verify_strict(bytes, &Signature::from_bytes(&signature))
+                    .map_err(|_| VaultError::Untrusted(Distrust::Signature))
+            })
+            .map_err(port)
     }
 }
 

@@ -3,9 +3,13 @@
 //! credential helper): Hedy never asks for or keeps a token.
 //!
 //! Commits use a neutral identity ("Hedy", `sync@hedy.invalid`), so the
-//! user's email never lands in the sync repo, and never ask for a password
-//! (`GIT_TERMINAL_PROMPT=0`, SSH in batch mode): a missing credential fails
-//! fast instead of waiting on a prompt nobody sees.
+//! user's email never lands in the sync repo, and never ask for an HTTPS
+//! password (`GIT_TERMINAL_PROMPT=0`). The user's SSH setup is left alone.
+//!
+//! The repo is not trusted: git checks out symbolic links as plain files
+//! (`core.symlinks=false`), Git LFS filters are off, no `GIT_*` variable of
+//! the environment (a hook's `GIT_DIR`, `GIT_CONFIG_*`) reaches git, and a
+//! path that crosses a symbolic link is refused.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -19,8 +23,29 @@ const PUSH_ATTEMPTS: usize = 4;
 #[derive(Default)]
 pub struct GitSyncRemote;
 
+/// Environment variables that would point git at another repo or config.
+fn redirects_git(name: &str) -> bool {
+    matches!(
+        name,
+        "GIT_DIR"
+            | "GIT_WORK_TREE"
+            | "GIT_INDEX_FILE"
+            | "GIT_OBJECT_DIRECTORY"
+            | "GIT_ALTERNATE_OBJECT_DIRECTORIES"
+            | "GIT_COMMON_DIR"
+            | "GIT_NAMESPACE"
+            | "GIT_CEILING_DIRECTORIES"
+    ) || name.starts_with("GIT_CONFIG")
+}
+
 fn git(dir: &Path, args: &[&str]) -> PortResult<Output> {
-    Command::new("git")
+    let mut command = Command::new("git");
+    for (name, _) in std::env::vars_os() {
+        if name.to_str().is_some_and(redirects_git) {
+            command.env_remove(name);
+        }
+    }
+    command
         .args([
             "-c",
             "user.name=Hedy",
@@ -30,11 +55,18 @@ fn git(dir: &Path, args: &[&str]) -> PortResult<Output> {
             "commit.gpgsign=false",
             "-c",
             "core.hooksPath=/dev/null",
+            "-c",
+            "core.symlinks=false",
+            "-c",
+            "filter.lfs.smudge=",
+            "-c",
+            "filter.lfs.process=",
+            "-c",
+            "filter.lfs.required=false",
         ])
         .args(args)
         .current_dir(dir)
         .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
         .output()
         .map_err(|e| {
             PortError::new(tr!(
@@ -68,21 +100,34 @@ fn branch(dir: &Path) -> PortResult<String> {
     run(dir, &["symbolic-ref", "--short", "HEAD"])
 }
 
-/// A path inside `dir`, refusing anything that would leave it.
+/// A path inside `dir`, refusing anything that would leave it: `..`,
+/// absolute paths, `.git`, and any part that is a symbolic link.
 fn inside(dir: &Path, path: &str) -> PortResult<PathBuf> {
+    let invalid = || {
+        PortError::new(tr!(
+            "ruta de sincronización inválida: {path}",
+            "invalid sync path: {path}"
+        ))
+    };
     let safe = !path.is_empty()
         && !path.starts_with('/')
         && path
             .split('/')
             .all(|part| !part.is_empty() && part != ".." && part != "." && part != ".git");
-    if safe {
-        Ok(dir.join(path))
-    } else {
-        Err(PortError::new(tr!(
-            "ruta de sincronización inválida: {path}",
-            "invalid sync path: {path}"
-        )))
+    if !safe {
+        return Err(invalid());
     }
+    let mut current = dir.to_owned();
+    for part in path.split('/') {
+        current.push(part);
+        match std::fs::symlink_metadata(&current) {
+            Ok(meta) if meta.file_type().is_symlink() => return Err(invalid()),
+            Ok(_) => {}
+            // What does not exist yet cannot be a link.
+            Err(_) => break,
+        }
+    }
+    Ok(dir.join(path))
 }
 
 impl SyncRemote for GitSyncRemote {
@@ -116,8 +161,14 @@ impl SyncRemote for GitSyncRemote {
             return Ok(());
         }
         if succeeds(dir, &["rev-parse", "--verify", "--quiet", "HEAD"]) {
-            // Each PC only adds its own files: a rebase never conflicts.
-            run(dir, &["rebase", "--quiet", &remote]).map(drop)
+            // Each PC only writes its own files, so a rebase only conflicts
+            // when two PCs wrote the same key epoch, or someone wrote here:
+            // leave the clone as it was and say so.
+            run(dir, &["rebase", "--quiet", "--autostash", &remote])
+                .map(drop)
+                .inspect_err(|_| {
+                    let _ = git(dir, &["rebase", "--abort"]);
+                })
         } else {
             run(dir, &["reset", "--quiet", "--hard", &remote]).map(drop)
         }
@@ -137,10 +188,14 @@ impl SyncRemote for GitSyncRemote {
             };
             for entry in entries.flatten() {
                 let path = entry.path();
-                if entry.file_name() == ".git" {
+                // Never follow a link, wherever it points.
+                let Ok(kind) = entry.file_type() else {
+                    continue;
+                };
+                if entry.file_name() == ".git" || kind.is_symlink() {
                     continue;
                 }
-                if path.is_dir() {
+                if kind.is_dir() {
                     pending.push(path);
                 } else if let Ok(relative) = path.strip_prefix(dir) {
                     found.push(relative.to_string_lossy().replace('\\', "/"));
@@ -199,6 +254,14 @@ impl SyncRemote for GitSyncRemote {
             }
         }
         Err(last.expect("at least one attempt"))
+    }
+
+    fn discard_local(&self, dir: &Path) -> PortResult<()> {
+        match std::fs::remove_dir_all(dir) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(PortError::new(e.to_string())),
+        }
     }
 }
 
@@ -274,6 +337,78 @@ mod tests {
         // Commits never carry the user's identity.
         let author = run(&home, &["log", "-1", "--format=%an <%ae>"]).unwrap();
         assert_eq!(author, "Hedy <sync@hedy.invalid>");
+    }
+
+    #[test]
+    fn a_symbolic_link_in_the_repo_never_leads_outside() {
+        let (tmp, url) = server();
+        let git = GitSyncRemote;
+        let (attacker, victim) = (tmp.path().join("attacker"), tmp.path().join("victim"));
+        let target = tmp.path().join("bashrc");
+        std::fs::write(&target, "mine").unwrap();
+
+        // The attacker commits links: a file and a folder pointing outside.
+        git.open(&url, &attacker).unwrap();
+        std::fs::create_dir_all(attacker.join("devices/v")).unwrap();
+        std::os::unix::fs::symlink(&target, attacker.join("devices/v/device.hedy")).unwrap();
+        std::os::unix::fs::symlink(tmp.path(), attacker.join("devices/w")).unwrap();
+        git.push(&attacker, "links").unwrap();
+
+        // The victim gets plain files, never links.
+        git.open(&url, &victim).unwrap();
+        let file = victim.join("devices/v/device.hedy");
+        assert!(
+            !std::fs::symlink_metadata(&file)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        git.write(&victim, "devices/v/device.hedy", b"sealed")
+            .unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "mine");
+
+        // A link made in the clone by other means is refused and not listed.
+        std::fs::create_dir_all(victim.join("devices/x")).unwrap();
+        std::os::unix::fs::symlink(&target, victim.join("devices/x/device.hedy")).unwrap();
+        assert!(git.write(&victim, "devices/x/device.hedy", b"x").is_err());
+        assert!(git.read(&victim, "devices/x/device.hedy").is_err());
+        assert!(
+            !git.files(&victim, "devices/")
+                .unwrap()
+                .contains(&"devices/x/device.hedy".to_owned())
+        );
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "mine");
+    }
+
+    #[test]
+    fn a_rebase_conflict_leaves_the_clone_usable() {
+        let (tmp, url) = server();
+        let git = GitSyncRemote;
+        let (home, office) = (tmp.path().join("home"), tmp.path().join("office"));
+        git.open(&url, &home).unwrap();
+        git.write(&home, "README.md", b"x").unwrap();
+        git.push(&home, "first").unwrap();
+        git.open(&url, &office).unwrap();
+        // Both write the same epoch file.
+        git.write(&home, "vault/epochs/000002.json", b"home")
+            .unwrap();
+        git.push(&home, "home epoch").unwrap();
+        git.write(&office, "vault/epochs/000002.json", b"office")
+            .unwrap();
+        assert!(git.push(&office, "office epoch").is_err());
+        assert!(
+            !office.join(".git/rebase-merge").exists()
+                && !office.join(".git/rebase-apply").exists()
+        );
+        // Throwing the clone away and opening it again gets the server's.
+        git.discard_local(&office).unwrap();
+        git.open(&url, &office).unwrap();
+        assert_eq!(
+            git.read(&office, "vault/epochs/000002.json")
+                .unwrap()
+                .unwrap(),
+            b"home"
+        );
     }
 
     #[test]

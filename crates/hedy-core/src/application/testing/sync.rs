@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use super::MemoryStore;
-use crate::application::ports::{PortResult, SyncConflict, SyncRemote, SyncRepository};
+use crate::application::ports::{PortResult, SyncConflict, SyncLink, SyncRemote, SyncRepository};
 use crate::domain::sync::{
     Change, DeviceId, ItemKind, MemoryHome, NoteBody, Scope, SkillBody, Version,
 };
@@ -15,8 +15,7 @@ use crate::domain::{Note, Skill};
 #[derive(Default)]
 pub struct SyncTables {
     items: BTreeMap<(ItemKind, String), Change>,
-    /// (kind, uid) → local id.
-    links: BTreeMap<(ItemKind, String), String>,
+    links: BTreeMap<(ItemKind, String), SyncLink>,
     cursors: BTreeMap<DeviceId, u64>,
     conflicts: Vec<SyncConflict>,
     homes: BTreeMap<PathBuf, MemoryHome>,
@@ -41,35 +40,47 @@ impl SyncRepository for MemoryStore {
             .insert((change.kind, change.uid.clone()), change.clone());
         Ok(())
     }
-    fn sync_uid(&self, kind: ItemKind, local_id: &str) -> PortResult<Option<String>> {
+    fn sync_link(&self, kind: ItemKind, uid: &str) -> PortResult<Option<SyncLink>> {
+        let tables = self.sync.lock().unwrap();
+        Ok(tables.links.get(&(kind, uid.to_owned())).cloned())
+    }
+    fn sync_link_of(&self, kind: ItemKind, local_id: &str) -> PortResult<Option<SyncLink>> {
         let tables = self.sync.lock().unwrap();
         Ok(tables
             .links
             .iter()
-            .find(|((k, _), local)| *k == kind && local.as_str() == local_id)
-            .map(|((_, uid), _)| uid.clone()))
+            .find(|((k, _), link)| *k == kind && link.local_id == local_id)
+            .map(|(_, link)| link.clone()))
     }
-    fn sync_local_id(&self, kind: ItemKind, uid: &str) -> PortResult<Option<String>> {
-        let tables = self.sync.lock().unwrap();
-        Ok(tables.links.get(&(kind, uid.to_owned())).cloned())
-    }
-    fn sync_links(&self, kind: ItemKind) -> PortResult<Vec<(String, String)>> {
+    fn sync_links(&self, kind: ItemKind) -> PortResult<Vec<SyncLink>> {
         let tables = self.sync.lock().unwrap();
         Ok(tables
             .links
             .iter()
             .filter(|((k, _), _)| *k == kind)
-            .map(|((_, uid), local)| (uid.clone(), local.clone()))
+            .map(|(_, link)| link.clone())
             .collect())
     }
-    fn link_sync_item(&self, kind: ItemKind, uid: &str, local_id: &str) -> PortResult<()> {
+    fn link_sync_item(
+        &self,
+        kind: ItemKind,
+        uid: &str,
+        local_id: &str,
+        base: &Version,
+    ) -> PortResult<()> {
         let mut tables = self.sync.lock().unwrap();
         tables
             .links
-            .retain(|(k, _), local| *k != kind || local != local_id);
-        tables
-            .links
-            .insert((kind, uid.to_owned()), local_id.to_owned());
+            .retain(|(k, u), link| *k != kind || link.local_id != local_id || u == uid);
+        tables.links.insert(
+            (kind, uid.to_owned()),
+            SyncLink {
+                uid: uid.to_owned(),
+                local_id: local_id.to_owned(),
+                base_stamp: base.stamp.clone(),
+                base_body: base.body.clone(),
+            },
+        );
         Ok(())
     }
     fn unlink_sync_item(&self, kind: ItemKind, uid: &str) -> PortResult<()> {
@@ -213,6 +224,8 @@ pub struct FakeSyncRemote {
     /// Written (`Some`) or removed (`None`) since the last push.
     pending: Mutex<BTreeMap<String, Option<Vec<u8>>>>,
     pushes: Mutex<Vec<String>>,
+    /// The next push fails (the network went down).
+    fail_push: Mutex<bool>,
 }
 
 impl FakeSyncRemote {
@@ -222,7 +235,12 @@ impl FakeSyncRemote {
             local: Mutex::default(),
             pending: Mutex::default(),
             pushes: Mutex::default(),
+            fail_push: Mutex::default(),
         }
+    }
+
+    pub fn fail_next_push(&self) {
+        *self.fail_push.lock().unwrap() = true;
     }
 
     /// The commit messages pushed so far.
@@ -275,7 +293,14 @@ impl SyncRemote for FakeSyncRemote {
         self.pending.lock().unwrap().insert(path.into(), None);
         Ok(())
     }
+    fn discard_local(&self, dir: &Path) -> PortResult<()> {
+        self.pending.lock().unwrap().clear();
+        self.pull(dir)
+    }
     fn push(&self, _dir: &Path, message: &str) -> PortResult<()> {
+        if std::mem::take(&mut *self.fail_push.lock().unwrap()) {
+            return Err(crate::application::ports::PortError::new("sin conexión"));
+        }
         let pending = std::mem::take(&mut *self.pending.lock().unwrap());
         if pending.is_empty() {
             return Ok(());
