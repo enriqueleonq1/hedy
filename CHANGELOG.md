@@ -6,6 +6,25 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Personal sync: the same Hedy on every PC you use. Notes, proposals, skills, templates and
+  themes travel through a private git repo of yours (GitHub, GitLab, Bitbucket, Gitea or your
+  own server), encrypted and signed on each PC; the server never sees a note. Set it up in
+  Ajustes → Sincronización or with `hedy sync setup <url>`; another PC joins with the 12 words.
+  You choose, per project, whether its memory is yours, a group's or stays on one PC. Edits
+  made apart are shown side by side to pick one, and a lost PC can be removed. See
+  [docs/sync.md](docs/sync.md).
+- Team memory: a team's shared decisions, conventions and rules that every agent in the team's
+  projects follows, in a private git repo of the team's. It has three layers: the team's
+  (always in the agent's context, quoted with its author), each project's, and your own.
+  People join with a one-time invite code, members suggest changes and admins review them, and
+  removing someone changes the key. Every PC checks who was allowed to write what. In
+  Ajustes → Equipos or with `hedy team`. See [docs/team.md](docs/team.md).
+- A context-saving package, on by default, measured on real tasks before turning it on: it cut
+  cost by 30–41 %. Turn it off in Ajustes → Ahorro or with
+  `hedy config set context_saving off`; `hedy doctor` says whether it is on.
+
 ## [1.2.0] - 2026-11-16
 
 ### Added
