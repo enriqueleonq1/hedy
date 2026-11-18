@@ -2181,8 +2181,55 @@ its clock is fixed. Members are trusted, and the local clock is protected.
 - A real git test with two data folders.
 - Git tests for the symbolic-link attack and for a rebase conflict.
 
+### Projects: where each memory lives (phase 3, `application::memory_home`)
+
+- **Where a project's memory lives:**
+  - the user's own choice for the project (`projects.memory_home`, the 6b menu) wins;
+  - otherwise `domain::sync::derive_home` decides from the owners of **every** remote of the
+    project and the user's answers per owner (setting `memory.owners`).
+- **The rule**, on the safe side at every step:
+  - any owner the user called shared makes the project that group's;
+  - any owner not answered yet means asking ("¿La memoria de … es solo tuya?", the 5b banner),
+    and meanwhile it stays here;
+  - only when every owner is the user's is it personal;
+  - a remote that does not say its owner (a local path, `file://`, a server without owners)
+    keeps the project here.
+  - Every remote counts because a fork's parent remote can have any name.
+- **Owners are kept with their server** (`github.com/tu-usuario`). The same name on a company's
+  GitLab is another owner, and an SSH host alias (`github-work`) costs one extra question.
+  Matching a project across PCs still ignores the host (`project_key`).
+- **Nobody is the user's until the user says so.** An earlier draft made the sync repo's owner
+  the user's at setup. The reviews showed the leak: a sync repo inside a company org made
+  every company repo personal, even over a "shared" answer. One question per owner is the
+  price.
+- **Answers are per PC.** "Shared" on one PC does not stop another PC that answered "mine".
+  The app should say so.
+- **The engine works out where each project lives once per sync** (`Session::project_ids`).
+  A memory home this version cannot read counts as local.
+- **Reading project remotes ignores the environment's `GIT_*` variables,** like the sync
+  clone.
+- **Moving a project:**
+  - to shared or local sends nothing and deletes nothing elsewhere;
+  - back to personal catches up, and sends what was written meanwhile.
+
+**Housekeeping:**
+- Two reviews (privacy and security; correctness and regressions) reproduced two high-severity
+  leaks, both fixed with regression tests:
+  - the auto-answer;
+  - owners matched without their server.
+- They also found:
+  - only the remote named `upstream` was checked (a fork with another name for the parent
+    remote leaked);
+  - an unreadable remote was ignored;
+  - a company `origin` was overridden by a personal `upstream`;
+  - an unreadable stored home fell back to the owner;
+  - project remotes inherited `GIT_*`.
+- A random simulation (three PCs, 8 seeds × 150 steps) checks the main property at every step.
+  The PCs move their own project's memory between personal, local and following its owner
+  while they write in a client's project marked shared, and **no client note ever reaches
+  another PC**. Once the project is personal everywhere, the PCs agree on it.
+
 **Next phases:**
-3. Projects.
 4. `hedy sync`.
 5. The app.
 6. Removing a PC and compaction.
