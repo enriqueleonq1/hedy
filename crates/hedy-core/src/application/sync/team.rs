@@ -2848,4 +2848,6 @@ fn project_here(projects: &HashMap<String, Vec<PathBuf>>, scope: &Scope) -> Opti
 }
 
 #[cfg(test)]
+mod scenarios;
+#[cfg(test)]
 mod tests;
