@@ -7,7 +7,8 @@ use std::sync::Arc;
 use crate::domain::code::{Blame, CommitInfo, FileBytes, LineMatch, PathChange, TextQuery};
 use crate::domain::recall::{NoteUse, PageRequest};
 use crate::domain::sync::{
-    Change, DeviceId, EpochMember, ItemKind, MemoryHome, NoteBody, Scope, SkillBody, Stamp, Version,
+    Change, DeviceId, EpochInfo, EpochMember, ItemKind, MemoryHome, NoteBody, Scope, SkillBody,
+    Stamp, Version,
 };
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, ImageSupport,
@@ -1011,11 +1012,12 @@ pub trait SyncCrypto: Send + Sync {
     fn recover(&self, words: &str) -> PortResult<String>;
     /// A member's public keys (as epoch files list them).
     fn member_public(&self, secrets: &str) -> PortResult<String>;
-    /// A new epoch with a new key for `members`, signed by `signer`: (the
-    /// epoch file, its key).
+    /// A new epoch with a new key for `members` (of a team's vault, or a
+    /// personal one), signed by `signer`: (the epoch file, its key).
     fn new_epoch(
         &self,
         epoch: u32,
+        team: bool,
         members: &[EpochMember],
         signer_id: &str,
         signer: &str,
@@ -1024,8 +1026,8 @@ pub trait SyncCrypto: Send + Sync {
     fn verify_first_epoch(&self, file: &str, recovery: &str) -> PortResult<()>;
     /// Whether `next` may follow `previous`.
     fn verify_next_epoch(&self, previous: &str, next: &str) -> PortResult<()>;
-    /// An epoch file's number and members.
-    fn epoch_members(&self, file: &str) -> PortResult<(u32, Vec<EpochMember>)>;
+    /// An epoch file's number, kind and members.
+    fn epoch_members(&self, file: &str) -> PortResult<EpochInfo>;
     /// The epoch's key, for member `id`.
     fn open_epoch(&self, file: &str, id: &str, secrets: &str) -> PortResult<String>;
     fn seal(&self, key: &str, path: &str, plaintext: &[u8]) -> PortResult<Vec<u8>>;
@@ -1040,21 +1042,34 @@ pub trait SyncCrypto: Send + Sync {
     /// Whether `signature` is `public`'s over `bytes`.
     fn verify(&self, public: &str, bytes: &[u8], signature: &str) -> PortResult<()>;
 
-    // Team invites (`adapters::invite`). The shared key they give seals and
-    // opens like an epoch key.
+    // Team invites (`adapters::invite`). `context` names what the invite is
+    // for (the team repo), the same on both PCs. Invite keys are text of
+    // their own: they seal and open with `invite_seal` and `invite_open`
+    // only, never as a vault key.
 
     /// A new code for invite number `nameplate` (`7-tigre-lima-nube-mar`).
     fn invite_code(&self, nameplate: u32) -> PortResult<String>;
-    /// A code as typed, in the form both PCs use; `None` when it is not one
-    /// (a mistyped word), so a typo never burns an invite.
-    fn parse_invite_code(&self, typed: &str) -> Option<String>;
+    /// A code as typed: (the invite's number, the code in the form both PCs
+    /// use); `None` when it is not one (a mistyped word), so a typo never
+    /// burns an invite.
+    fn parse_invite_code(&self, typed: &str) -> Option<(u32, String)>;
     /// The inviting PC's side: (its secret, to keep until the invite is
     /// used; its message, for the invite file).
-    fn invite_start(&self, code: &str) -> PortResult<(String, String)>;
+    fn invite_start(&self, code: &str, context: &str) -> PortResult<(String, String)>;
     /// The inviting PC reads the joiner's message: the key they share. With
     /// a wrong code it is another key, which opens nothing the joiner sealed.
-    fn invite_accept(&self, secret: &str, code: &str, message: &str) -> PortResult<String>;
+    /// Each call is one guess: burn the invite before making it.
+    fn invite_accept(
+        &self,
+        secret: &str,
+        code: &str,
+        context: &str,
+        message: &str,
+    ) -> PortResult<String>;
     /// The joiner's side: (its message, the key it shares if the code was
     /// right).
-    fn invite_join(&self, code: &str, message: &str) -> PortResult<(String, String)>;
+    fn invite_join(&self, code: &str, context: &str, message: &str)
+    -> PortResult<(String, String)>;
+    fn invite_seal(&self, key: &str, path: &str, plaintext: &[u8]) -> PortResult<Vec<u8>>;
+    fn invite_open(&self, key: &str, path: &str, sealed: &[u8]) -> PortResult<Vec<u8>>;
 }

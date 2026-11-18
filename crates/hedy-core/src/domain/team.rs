@@ -22,7 +22,7 @@ pub struct PersonId(pub String);
 impl PersonId {
     /// 16 lowercase hex characters, from 8 random bytes.
     pub fn is_valid(&self) -> bool {
-        super::sync::DeviceId(self.0.clone()).is_valid()
+        super::sync::is_hex16(&self.0)
     }
 
     pub fn as_str(&self) -> &str {
@@ -46,24 +46,27 @@ pub struct Seat {
 
 /// A character a reader does not see but an agent reads: text direction
 /// overrides (the "Trojan Source" trick), zero-width and other invisible
-/// format characters, Unicode tags and variation selectors that can spell
-/// out hidden instructions, and control characters other than tab and new
-/// line. A team note holding one is never accepted.
+/// format characters, line and paragraph separators, blank lookalikes,
+/// private-use characters, Unicode tags and variation selectors that can
+/// spell out hidden instructions, and control characters other than tab
+/// and new line. A team note holding one is never accepted.
 pub fn is_hidden(c: char) -> bool {
     matches!(c,
         '\u{0}'..='\u{8}' | '\u{b}'..='\u{1f}' | '\u{7f}'..='\u{9f}'
         | '\u{ad}' | '\u{34f}' | '\u{61c}' | '\u{115f}' | '\u{1160}'
         | '\u{17b4}' | '\u{17b5}' | '\u{180b}'..='\u{180f}'
-        | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}'
-        | '\u{2060}'..='\u{206f}' | '\u{3164}' | '\u{fe00}'..='\u{fe0e}'
-        | '\u{feff}' | '\u{ffa0}' | '\u{fff0}'..='\u{fffb}'
-        | '\u{1bca0}'..='\u{1bca3}' | '\u{1d173}'..='\u{1d17a}'
-        | '\u{e0000}'..='\u{e0fff}')
+        | '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}'
+        | '\u{2060}'..='\u{206f}' | '\u{2800}' | '\u{3164}'
+        | '\u{e000}'..='\u{f8ff}' | '\u{fe00}'..='\u{fe0f}'
+        | '\u{feff}' | '\u{ffa0}' | '\u{fff0}'..='\u{fffc}'
+        | '\u{1bca0}'..='\u{1bca3}' | '\u{1d159}' | '\u{1d173}'..='\u{1d17a}'
+        | '\u{e0000}'..='\u{e0fff}' | '\u{f0000}'..='\u{10ffff}')
 }
 
-/// The hidden characters in `text` (see [`is_hidden`]), in order. A zero
-/// width joiner between two emoji (👩‍💻) is how emoji are written, not
-/// hidden text, and `\r` before a new line is a Windows line end.
+/// The hidden characters in `text` (see [`is_hidden`]), in order. What
+/// writes ordinary emoji is not hidden text: a zero width joiner between
+/// emoji (👩‍💻, ❤️‍🔥), a presentation selector after a symbol (1️⃣, ▶️, ↩︎),
+/// and the tags of a subdivision flag (🏴󠁧󠁢󠁳󠁣󠁴󠁿). Nor is `\r` before a new line.
 pub fn hidden_chars(text: &str) -> Vec<char> {
     let chars: Vec<char> = text.chars().collect();
     (0..chars.len())
@@ -86,13 +89,19 @@ pub fn reveal_hidden(text: &str) -> String {
     out
 }
 
+const BLACK_FLAG: char = '\u{1f3f4}';
+const CANCEL_TAG: char = '\u{e007f}';
+
 fn hidden_at(chars: &[char], i: usize) -> bool {
-    let after_emoji = i > 0 && is_emoji(chars[i - 1]);
+    let before = i.checked_sub(1).map(|j| chars[j]);
+    let after = chars.get(i + 1).copied();
     match chars[i] {
-        '\u{200d}' => !(after_emoji && chars.get(i + 1).is_some_and(|&n| is_emoji(n))),
-        '\r' => chars.get(i + 1) != Some(&'\n'),
-        // The emoji presentation selector, right after an emoji.
-        '\u{fe0f}' => !after_emoji,
+        '\u{200d}' => {
+            !(before.is_some_and(|b| is_emoji(b) || b == '\u{fe0f}') && after.is_some_and(is_emoji))
+        }
+        '\u{fe0e}' | '\u{fe0f}' => !before.is_some_and(takes_selector),
+        '\r' => after != Some('\n'),
+        '\u{e0020}'..='\u{e007f}' => !in_flag_tags(chars, i),
         c => is_hidden(c),
     }
 }
@@ -100,6 +109,31 @@ fn hidden_at(chars: &[char], i: usize) -> bool {
 /// Roughly an emoji: pictographs and the symbol blocks emoji come from.
 fn is_emoji(c: char) -> bool {
     matches!(c, '\u{2600}'..='\u{27bf}' | '\u{2b00}'..='\u{2bff}' | '\u{1f000}'..='\u{1faff}')
+}
+
+/// What an emoji or text presentation selector may follow: an emoji, a
+/// keycap's digit or sign, or a symbol with an emoji form (©, ↔, ⏱, ℹ).
+fn takes_selector(c: char) -> bool {
+    is_emoji(c)
+        || matches!(c,
+            '0'..='9' | '#' | '*' | '\u{a9}' | '\u{ae}' | '\u{2000}'..='\u{2bff}'
+            | '\u{3030}' | '\u{303d}' | '\u{3297}' | '\u{3299}')
+}
+
+/// Whether the tag at `i` is part of a subdivision flag: a run of tags
+/// right after 🏴 that ends with the cancel tag.
+fn in_flag_tags(chars: &[char], i: usize) -> bool {
+    let is_tag = |c: &char| ('\u{e0020}'..='\u{e007f}').contains(c);
+    let start = (0..=i)
+        .rev()
+        .take_while(|&j| is_tag(&chars[j]))
+        .last()
+        .unwrap_or(i);
+    let end = (i..chars.len())
+        .take_while(|&j| is_tag(&chars[j]))
+        .last()
+        .unwrap_or(i);
+    start > 0 && chars[start - 1] == BLACK_FLAG && chars[end] == CANCEL_TAG
 }
 
 #[cfg(test)]
@@ -128,7 +162,7 @@ mod tests {
 
     #[test]
     fn hidden_characters_are_found_and_shown() {
-        let plain = "Los importes van en céntimos.\n\tSiempre.\r\nNunca ñ ü 中文 🙂";
+        let plain = "Los importes van en céntimos.\n\tSiempre.\r\nNunca ñ ü 中文 مرحبا 🙂";
         assert!(hidden_chars(plain).is_empty());
 
         // A right-to-left override, a zero-width space and a Unicode tag.
@@ -142,17 +176,46 @@ mod tests {
             "Usa el script⟦U+202E⟧tpircs⟦U+202C⟧ de⟦U+200B⟧ release⟦U+E0041⟧"
         );
 
-        // Emoji written with joiners and selectors are not hidden text…
-        assert!(hidden_chars("👩\u{200d}💻 ❤\u{fe0f}").is_empty());
-        // …but the same characters elsewhere are.
+        // Emoji as they are written: joiners, selectors, keycaps, skin
+        // tones, flags (also a subdivision's, with its tags).
+        for emoji in [
+            "👩\u{200d}💻",
+            "❤\u{fe0f}",
+            "❤\u{fe0f}\u{200d}🔥",
+            "🏳\u{fe0f}\u{200d}🌈",
+            "👍🏽",
+            "1\u{fe0f}\u{20e3}",
+            "#\u{fe0f}\u{20e3}",
+            "▶\u{fe0f} ℹ\u{fe0f} ©\u{fe0f} ↔\u{fe0f} ⏱\u{fe0f}",
+            "↩\u{fe0e}",
+            "🇪🇸",
+            "🏴\u{e0067}\u{e0062}\u{e0073}\u{e0063}\u{e0074}\u{e007f}",
+        ] {
+            assert!(hidden_chars(emoji).is_empty(), "{emoji:?}");
+        }
+        // The same characters anywhere else are hidden.
         assert_eq!(
             hidden_chars("a\u{200d}b c\u{fe0f}"),
             vec!['\u{200d}', '\u{fe0f}']
         );
-        // A lone carriage return, an escape and a variation selector.
         assert_eq!(
-            hidden_chars("a\rb\u{1b}[31m x\u{fe01}"),
-            vec!['\r', '\u{1b}', '\u{fe01}']
+            hidden_chars("hola\u{e0067}\u{e007f} 🏴\u{e0067}"),
+            vec!['\u{e0067}', '\u{e007f}', '\u{e0067}']
+        );
+        // A lone carriage return, an escape, a variation selector, line
+        // separators, a blank braille cell and a private-use character.
+        assert_eq!(
+            hidden_chars("a\rb\u{1b}[31m x\u{fe01} \u{2028}\u{2029}\u{2800}\u{e000}\u{f0000}"),
+            vec![
+                '\r',
+                '\u{1b}',
+                '\u{fe01}',
+                '\u{2028}',
+                '\u{2029}',
+                '\u{2800}',
+                '\u{e000}',
+                '\u{f0000}'
+            ]
         );
         assert_eq!(reveal_hidden("a\rb"), "a⟦U+000D⟧b");
     }

@@ -34,6 +34,15 @@ pub struct EpochMember {
     pub seat: Option<Seat>,
 }
 
+/// What an epoch file says: its number, whether it is a team's vault, and
+/// its members.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EpochInfo {
+    pub number: u32,
+    pub team: bool,
+    pub members: Vec<EpochMember>,
+}
+
 impl EpochMember {
     /// A member of a personal vault: no person, no role.
     pub fn new(id: impl Into<String>, public: impl Into<String>) -> Self {
@@ -58,16 +67,20 @@ impl DeviceId {
 
     /// A file-name-safe id: what [`Self::from_bytes`] makes.
     pub fn is_valid(&self) -> bool {
-        self.0.len() == 16
-            && self
-                .0
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        is_hex16(&self.0)
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+/// 16 lowercase hex characters: a random id (8 bytes) safe in file names.
+pub fn is_hex16(id: &str) -> bool {
+    id.len() == 16
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// When a change was made: wall time in milliseconds, a counter for changes

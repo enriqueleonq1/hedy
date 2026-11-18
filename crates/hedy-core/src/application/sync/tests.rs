@@ -328,14 +328,14 @@ fn a_pc_left_out_of_the_newest_epoch_stops_syncing() {
     let crypto = crate::adapters::VaultCrypto;
     use crate::application::ports::SyncCrypto;
     let epoch2 = String::from_utf8(server.file(&layout::epoch(2)).unwrap()).unwrap();
-    let (_, members) = crypto.epoch_members(&epoch2).unwrap();
+    let members = crypto.epoch_members(&epoch2).unwrap().members;
     let home_id = home.hedy.sync_status().unwrap().unwrap().device;
     let kept: Vec<EpochMember> = members
         .into_iter()
         .filter(|m| m.id == RECOVERY_MEMBER || m.id == home_id.as_str())
         .collect();
     let (file, _) = crypto
-        .new_epoch(3, &kept, home_id.as_str(), &keys.device)
+        .new_epoch(3, false, &kept, home_id.as_str(), &keys.device)
         .unwrap();
     home.sync
         .write(Path::new("/"), &layout::epoch(3), file.as_bytes())
@@ -933,13 +933,13 @@ fn a_removed_pc_cannot_write_and_no_pc_writes_as_another() {
     // with the keys it still has.
     let keys: Keys = serde_json::from_str(&home.secrets.sync_keys().unwrap().unwrap()).unwrap();
     let epoch2 = String::from_utf8(server.file(&layout::epoch(2)).unwrap()).unwrap();
-    let (_, members) = crypto.epoch_members(&epoch2).unwrap();
+    let members = crypto.epoch_members(&epoch2).unwrap().members;
     let kept: Vec<EpochMember> = members
         .into_iter()
         .filter(|m| m.id != office_id.as_str())
         .collect();
     let (file, _) = crypto
-        .new_epoch(3, &kept, home_id.as_str(), &keys.device)
+        .new_epoch(3, false, &kept, home_id.as_str(), &keys.device)
         .unwrap();
     home.sync
         .write(Path::new("/"), &layout::epoch(3), file.as_bytes())
@@ -1669,7 +1669,7 @@ fn a_member_cannot_add_a_hidden_member_and_a_bad_epoch_stops_no_sync() {
     let office_id = office.hedy.sync_status().unwrap().unwrap().device;
     let newest = *keys.epochs.keys().last().unwrap();
     let file = String::from_utf8(server.file(&layout::epoch(newest)).unwrap()).unwrap();
-    let (_, mut members) = crypto.epoch_members(&file).unwrap();
+    let mut members = crypto.epoch_members(&file).unwrap().members;
     // The (stolen) office signs an epoch that adds a member it controls.
     let phantom = crypto.new_member().unwrap();
     members.push(EpochMember::new(
@@ -1677,7 +1677,13 @@ fn a_member_cannot_add_a_hidden_member_and_a_bad_epoch_stops_no_sync() {
         crypto.member_public(&phantom).unwrap(),
     ));
     let (next, _) = crypto
-        .new_epoch(newest + 1, &members, office_id.as_str(), &keys.device)
+        .new_epoch(
+            newest + 1,
+            false,
+            &members,
+            office_id.as_str(),
+            &keys.device,
+        )
         .unwrap();
     office
         .sync
@@ -2113,13 +2119,13 @@ fn an_epoch_without_the_recovery_key_is_ignored_and_written_over() {
     let office_id = office.hedy.sync_status().unwrap().unwrap().device;
     let newest = *keys.epochs.keys().last().unwrap();
     let file = String::from_utf8(server.file(&layout::epoch(newest)).unwrap()).unwrap();
-    let (_, members) = crypto.epoch_members(&file).unwrap();
+    let members = crypto.epoch_members(&file).unwrap().members;
     let kept: Vec<_> = members
         .into_iter()
         .filter(|m| m.id != RECOVERY_MEMBER)
         .collect();
     let (next, _) = crypto
-        .new_epoch(newest + 1, &kept, office_id.as_str(), &keys.device)
+        .new_epoch(newest + 1, false, &kept, office_id.as_str(), &keys.device)
         .unwrap();
     office
         .sync
@@ -2191,4 +2197,40 @@ fn setup_refuses_a_repo_with_files() {
     );
     assert_eq!(server.file("README.md").unwrap(), b"# App");
     assert!(!home.hedy.sync_is_set_up().unwrap());
+}
+
+#[test]
+fn the_recovery_words_never_join_a_teams_repo() {
+    let server = SyncServer::default();
+    let (office, _) = pc(&server, "/a/tienda");
+    let crypto = crate::adapters::VaultCrypto;
+    use crate::application::ports::SyncCrypto;
+    // A team's repo (made by hand here: teams come in T2).
+    let (words, recovery) = crypto.new_recovery().unwrap();
+    let admin = crypto.new_member().unwrap();
+    let members = [
+        EpochMember::new(RECOVERY_MEMBER, crypto.member_public(&recovery).unwrap()),
+        EpochMember {
+            seat: Some(crate::domain::team::Seat {
+                person: crate::domain::team::PersonId("aaaaaaaaaaaaaaaa".into()),
+                role: crate::domain::team::Role::Admin,
+            }),
+            ..EpochMember::new("00000000000000a1", crypto.member_public(&admin).unwrap())
+        },
+    ];
+    let (file, _) = crypto
+        .new_epoch(1, true, &members, RECOVERY_MEMBER, &recovery)
+        .unwrap();
+    office
+        .sync
+        .write(Path::new("/"), &layout::epoch(1), file.as_bytes())
+        .unwrap();
+    office.sync.push(Path::new("/"), "team").unwrap();
+
+    assert_eq!(
+        office.hedy.sync_join(URL, &words, "Oficina"),
+        Err(AppError::SyncTeamRepo)
+    );
+    assert_eq!(server.paths(), [layout::epoch(1)]);
+    assert!(!office.hedy.sync_is_set_up().unwrap());
 }

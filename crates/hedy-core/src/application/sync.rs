@@ -30,9 +30,9 @@ use serde::{Deserialize, Serialize};
 use super::ports::{SyncConflict, SyncLink, SyncLock, TemplateRecord};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::sync::{
-    Batch, Change, DeviceId, EpochMember, Former, ItemKind, Merge, NoteBody, RECOVERY_MEMBER,
-    RepoIdentity, Scope, SkillBody, Snapshot, Stamp, TemplateBody, ThemeBody, Version, layout,
-    merge, url_has_credentials,
+    Batch, Change, DeviceId, EpochInfo, EpochMember, Former, ItemKind, Merge, NoteBody,
+    RECOVERY_MEMBER, RepoIdentity, Scope, SkillBody, Snapshot, Stamp, TemplateBody, ThemeBody,
+    Version, layout, merge, url_has_credentials,
 };
 use crate::domain::theme::{CustomTheme, new_theme_id};
 use crate::tr;
@@ -354,7 +354,7 @@ impl Hedy {
                 continue;
             };
             match self.sync_crypto.epoch_members(&text) {
-                Ok((inside, _)) if inside == number => epochs.push((number, text)),
+                Ok(info) if info.number == number => epochs.push((number, text)),
                 _ => continue,
             }
         }
@@ -405,9 +405,9 @@ impl Hedy {
             EpochMember::new(RECOVERY_MEMBER, recovery_public.clone()),
             EpochMember::new(device.as_str(), self.sync_crypto.member_public(&me)?),
         ];
-        let (file, key) = self
-            .sync_crypto
-            .new_epoch(1, &members, RECOVERY_MEMBER, &recovery)?;
+        let (file, key) =
+            self.sync_crypto
+                .new_epoch(1, false, &members, RECOVERY_MEMBER, &recovery)?;
         self.sync_remote
             .write(&dir, &layout::epoch(1), file.as_bytes())?;
         self.sync_remote
@@ -471,15 +471,21 @@ impl Hedy {
         let (last, last_file) = &epochs[trusted];
         let device = DeviceId(self.sync_crypto.random_hex(8)?);
         let me = self.sync_crypto.new_member()?;
-        let (_, mut members) = self.sync_crypto.epoch_members(last_file)?;
+        let EpochInfo {
+            team, mut members, ..
+        } = self.sync_crypto.epoch_members(last_file)?;
+        // A team's PCs join with an invite, as a person (§35).
+        if team {
+            return Err(AppError::SyncTeamRepo);
+        }
         members.push(EpochMember::new(
             device.as_str(),
             self.sync_crypto.member_public(&me)?,
         ));
         let next = last + 1;
-        let (file, key) = self
-            .sync_crypto
-            .new_epoch(next, &members, RECOVERY_MEMBER, &recovery)?;
+        let (file, key) =
+            self.sync_crypto
+                .new_epoch(next, false, &members, RECOVERY_MEMBER, &recovery)?;
         self.sync_remote
             .write(&dir, &layout::epoch(next), file.as_bytes())?;
         epoch_keys.insert(next, key);
@@ -713,7 +719,7 @@ impl Hedy {
             }
             // The recovery key stays a member (it is how a PC joins); one
             // without it is not trusted either.
-            let (_, members) = self.sync_crypto.epoch_members(file)?;
+            let members = self.sync_crypto.epoch_members(file)?.members;
             if !members
                 .iter()
                 .any(|m| m.id == RECOVERY_MEMBER && m.public == recovery)
@@ -752,7 +758,7 @@ impl Hedy {
             .next()
             .cloned()
             .ok_or(AppError::SyncRemoved)?;
-        let (_, members) = self.sync_crypto.epoch_members(&previous)?;
+        let members = self.sync_crypto.epoch_members(&previous)?.members;
         let SyncedProjects {
             projects,
             project_ids,
@@ -1687,7 +1693,7 @@ impl Hedy {
             })
             .map(|(_, f)| f);
         if let Some(file) = trusted_file {
-            let (_, members) = self.sync_crypto.epoch_members(&file)?;
+            let members = self.sync_crypto.epoch_members(&file)?.members;
             let session = Session {
                 dir: dir.clone(),
                 device: device.clone(),
@@ -1802,14 +1808,14 @@ impl Hedy {
         {
             return Err(AppError::SyncBusy);
         }
-        let (_, members) = self.sync_crypto.epoch_members(&file)?;
+        let EpochInfo { team, members, .. } = self.sync_crypto.epoch_members(&file)?;
         let remaining: Vec<EpochMember> = members
             .into_iter()
             .filter(|m| m.id != device.id.as_str())
             .collect();
         let (next, _) =
             self.sync_crypto
-                .new_epoch(newest + 1, &remaining, me.as_str(), &keys.device)?;
+                .new_epoch(newest + 1, team, &remaining, me.as_str(), &keys.device)?;
         self.sync_remote
             .write(&dir, &layout::epoch(newest + 1), next.as_bytes())?;
         // Its batches and snapshots go; its `device.hedy` stays, so a

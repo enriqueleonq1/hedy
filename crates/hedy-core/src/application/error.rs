@@ -173,6 +173,9 @@ pub enum AppError {
     /// The repo for a new sync already has files (not Hedy's).
     #[error("{}", self.message())]
     SyncRepoNotEmpty,
+    /// Personal sync pointed at a team's repo.
+    #[error("{}", self.message())]
+    SyncTeamRepo,
     /// Another PC changed the sync's keys at the same moment.
     #[error("{}", self.message())]
     SyncBusy,
@@ -327,6 +330,10 @@ impl AppError {
             Self::SyncRepoNotEmpty => tr!(
                 "ese repo ya tiene archivos: usa uno vacío, creado sin README",
                 "that repo already has files: use an empty one, created without a README"
+            ),
+            Self::SyncTeamRepo => tr!(
+                "ese repo es de un equipo: únete a él con una invitación",
+                "that repo belongs to a team: join it with an invite"
             ),
             Self::SyncBusy => tr!(
                 "otra PC acaba de cambiar las claves de la sincronización; vuelve a intentarlo",
