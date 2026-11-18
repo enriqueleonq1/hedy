@@ -12,7 +12,7 @@
 //! them. A note of the team layer that no admin wrote, or one in someone
 //! else's name, is never taken.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
@@ -23,7 +23,7 @@ use super::*;
 use crate::domain::memory::{Category, normalize_topic};
 use crate::domain::team::{
     INVITE_TTL_SECS, PersonId, Role, Seat, SuggestionBody, TeamNoteBody, TeamWrite, hidden_chars,
-    layout as team_layout, reveal_hidden,
+    item_uid, layout as team_layout, reveal_hidden, uid_person,
 };
 
 /// The teams this PC is in (JSON list of ids). Each one's own settings are
@@ -43,6 +43,12 @@ const INVITES: &str = "invites";
 const FAILED: &str = "failed_invites";
 /// While this PC joins (JSON [`Joining`]): set up only once it is in.
 const JOIN: &str = "join";
+/// A member's PC's asks for its person's new PCs (JSON [`SeatAsk`]s).
+const ASKS: &str = "asks";
+/// The people's names as admins wrote them (JSON person → name).
+const ROSTER: &str = "roster";
+/// An admin's PC has names to add to the team's file.
+const ROSTER_DUE: &str = "roster_due";
 
 /// The secret side of an invite this PC made, kept in the keyring.
 #[derive(Serialize, Deserialize)]
@@ -117,10 +123,23 @@ enum SeatRequest {
         device: DeviceId,
         public: String,
         person: PersonId,
+        /// The epoch it was asked in: only then is it signed.
+        epoch: u32,
     },
     Remove {
         device: DeviceId,
     },
+}
+
+/// A member's PC asking an admin's to add one of its person's PCs, until
+/// it is in: the request in the repo is for epoch `epoch`.
+#[derive(Serialize, Deserialize)]
+struct SeatAsk {
+    device: DeviceId,
+    public: String,
+    epoch: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
 }
 
 /// A PC joining a team, until it is in.
@@ -152,13 +171,17 @@ pub struct TeamJoin {
     pub joined: bool,
 }
 
-/// The team's name, as an admin's PC writes it in its folder (sealed and
-/// signed): the newest one any admin wrote is the team's.
+/// The team's name and its people's names, as an admin's PC writes them in
+/// its folder (sealed and signed): the newest name any admin wrote is the
+/// team's, and the people's names add up. A member's name is the one the
+/// admin who let them in wrote, never one they give themselves.
 #[derive(Serialize, Deserialize)]
 struct TeamInfo {
     name: String,
-    /// When it was named (ms).
+    /// When it was written (ms).
     at: i64,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    people: BTreeMap<PersonId, String>,
 }
 
 /// A team this PC is in.
@@ -297,7 +320,20 @@ impl Hedy {
             .unwrap_or_default())
     }
 
-    fn save_team_ids(&self, ids: &[String]) -> AppResult<()> {
+    /// Adds (`true`) or removes a team id from the list, holding a lock
+    /// of its own: the app and `hedy` may change the list at once, each
+    /// for another team.
+    fn edit_team_ids(&self, id: &str, add: bool) -> AppResult<()> {
+        let data = self
+            .store
+            .data_dir()
+            .and_then(|dir| std::path::absolute(dir).ok())
+            .ok_or_else(|| corrupt("data dir"))?;
+        let _lock = self.sync_remote.lock(&data.join("teams").join("list"))?;
+        let mut ids: Vec<String> = self.team_ids()?.into_iter().filter(|i| i != id).collect();
+        if add {
+            ids.push(id.to_owned());
+        }
         Ok(self.store.set_setting(TEAMS, Some(&json(&ids)))?)
     }
 
@@ -425,15 +461,13 @@ impl Hedy {
             ..Keys::default()
         };
         self.publish_epoch(space, &dir, &keys)?;
-        let mut ids = self.team_ids()?;
-        if !ids.contains(id) {
-            ids.push(id.clone());
-            self.save_team_ids(&ids)?;
-        }
+        self.edit_team_ids(id, true)?;
         self.set_sync_setting(space, PERSON, person.as_str())?;
         self.set_sync_setting(space, PERSON_NAME, person_name.trim())?;
         self.set_sync_setting(space, TEAM_NAME, team_name.trim())?;
         self.set_sync_setting(space, NEW_NAME, team_name.trim())?;
+        let roster = BTreeMap::from([(person.clone(), person_name.trim().to_owned())]);
+        self.set_sync_setting(space, ROSTER, &json(&roster))?;
         let pins = BTreeMap::from([(1, self.sync_crypto.digest(file.as_bytes()))]);
         self.remember_sync(space, url, &device, device_name, &recovery_public, 1, &pins)?;
         // Set up: the words must reach the user even if this sync fails.
@@ -496,6 +530,7 @@ impl Hedy {
             .space_status(&space)?
             .ok_or_else(|| AppError::TeamNotFound(team.to_owned()))?;
         let me = PersonId(self.sync_setting(&space, PERSON)?.unwrap_or_default());
+        let roster = self.roster(&space)?;
         let mut people: BTreeMap<PersonId, TeamPerson> = BTreeMap::new();
         for member in members {
             let Some(seat) = member.seat else { continue };
@@ -517,12 +552,21 @@ impl Hedy {
             }
             person.devices.push(member.device);
         }
-        let mut people: Vec<TeamPerson> = people.into_values().collect();
+        let mut people: Vec<TeamPerson> = people
+            .into_values()
+            .map(|mut p| {
+                if let Some(name) = roster.get(&p.person) {
+                    p.name = name.clone();
+                }
+                p
+            })
+            .collect();
         people.sort_by(|a, b| {
             (a.role != Role::Admin, a.name.to_lowercase())
                 .cmp(&(b.role != Role::Admin, b.name.to_lowercase()))
         });
-        let suggestions = self.team_suggestions(team)?.len();
+        // A PC removed from the team still shows what it last knew.
+        let suggestions = self.team_suggestions(team).map_or(0, |s| s.len());
         Ok(TeamStatus {
             summary,
             device: status.device,
@@ -566,6 +610,7 @@ impl Hedy {
             return Ok(false);
         };
         let team_layer = change.scope == Scope::Global;
+        let uid_owner = uid_person(&change.uid);
         Ok(match change.kind {
             ItemKind::Note => {
                 let owner = match &change.version.body {
@@ -592,14 +637,22 @@ impl Hedy {
                     owner: owner.as_ref(),
                     replaced_owner: replaced.as_ref(),
                     note_owner: None,
+                    uid_owner: uid_owner.as_ref(),
                 }
                 .note_allowed()
             }
             ItemKind::Suggestion => {
                 let new = match &change.version.body {
                     None => None,
+                    // Its text may hide characters (a reviewer sees them,
+                    // and it cannot be taken); its byline may not.
                     Some(_) => match suggestion_body(&change.version) {
-                        Some(s) if s.person.is_valid() => Some(s),
+                        Some(s)
+                            if s.person.is_valid()
+                                && note_is_clean("", &s.author, s.topic.as_deref()) =>
+                        {
+                            Some(s)
+                        }
                         _ => return Ok(false),
                     },
                 };
@@ -619,6 +672,7 @@ impl Hedy {
                     owner: new.as_ref().map(|s| &s.person),
                     replaced_owner: old.as_ref().map(|s| &s.person),
                     note_owner: note_owner.as_ref(),
+                    uid_owner: uid_owner.as_ref(),
                 }
                 .suggestion_allowed()
             }
@@ -628,28 +682,43 @@ impl Hedy {
     }
 
     /// What a team sync does after applying the other PCs' versions: an
-    /// admin's PC keeps the team's name in the repo; every PC keeps the
-    /// name it reads there.
+    /// admin's PC keeps the team's name and its people's names in the repo;
+    /// every PC keeps what it reads there.
     pub(super) fn team_duties(&self, session: &Session) -> AppResult<()> {
         let space = &session.space;
         let admin = session
             .seats
             .get(session.device.as_str())
             .is_some_and(|s| s.role == Role::Admin);
-        let info = self.read_team_info(session);
+        let infos = self.read_team_infos(session);
+        let mut roster: BTreeMap<PersonId, String> = BTreeMap::new();
+        for info in &infos {
+            roster.extend(info.people.clone());
+        }
+        let mine: BTreeMap<PersonId, String> = self.sync_json(space, ROSTER)?.unwrap_or_default();
+        for (person, name) in mine {
+            roster.entry(person).or_insert(name);
+        }
+        self.set_sync_setting(space, ROSTER, &json(&roster))?;
+        let newest = infos.last();
         // A new name; or, when no admin's name is left in the repo (the PC
         // that wrote it was removed), the one this PC knows.
-        let write = match (self.sync_setting(space, NEW_NAME)?, &info) {
-            (Some(name), _) if admin => Some(name),
-            (None, None) if admin => self
+        let name = match (self.sync_setting(space, NEW_NAME)?, newest) {
+            (Some(name), _) => Some(name),
+            (None, None) => self
                 .sync_setting(space, TEAM_NAME)?
                 .filter(|n| !n.is_empty()),
-            _ => None,
+            (None, Some(_)) => None,
         };
-        if let Some(name) = write {
+        let names_due = self.sync_setting(space, ROSTER_DUE)?.is_some();
+        if admin && (name.is_some() || names_due) {
+            let name = name
+                .or_else(|| newest.map(|i| i.name.clone()))
+                .unwrap_or_default();
             let info = TeamInfo {
                 name: name.clone(),
                 at: self.clock.now_ms(),
+                people: roster,
             };
             self.write_signed(
                 session,
@@ -658,16 +727,17 @@ impl Hedy {
             )?;
             self.set_sync_setting(space, TEAM_NAME, &name)?;
             self.clear_sync_setting(space, NEW_NAME)?;
-        } else if let Some(info) = info {
+            self.clear_sync_setting(space, ROSTER_DUE)?;
+        } else if let Some(info) = newest {
             self.set_sync_setting(space, TEAM_NAME, &info.name)?;
         }
         self.open_requests(session)
     }
 
-    /// The team's name in the repo: the newest that an admin's PC of the
-    /// newest epoch signed.
-    fn read_team_info(&self, session: &Session) -> Option<TeamInfo> {
-        session
+    /// What the admins' PCs of the newest epoch signed about the team,
+    /// oldest first.
+    fn read_team_infos(&self, session: &Session) -> Vec<TeamInfo> {
+        let mut infos: Vec<TeamInfo> = session
             .seats
             .iter()
             .filter(|(_, seat)| seat.role == Role::Admin)
@@ -679,7 +749,14 @@ impl Hedy {
                     .flatten()?;
                 serde_json::from_str::<TeamInfo>(&body).ok()
             })
-            .max_by(|a, b| (a.at, &a.name).cmp(&(b.at, &b.name)))
+            .collect();
+        infos.sort_by(|a, b| (a.at, &a.name).cmp(&(b.at, &b.name)));
+        infos
+    }
+
+    /// The people's names as admins wrote them.
+    fn roster(&self, space: &Space) -> AppResult<BTreeMap<PersonId, String>> {
+        Ok(self.sync_json(space, ROSTER)?.unwrap_or_default())
     }
 
     /// Writes a version of a team item here (the replica) and leaves it for
@@ -764,7 +841,7 @@ impl Hedy {
         check_clean(text)?;
         let scope = self.team_scope(&space, project)?;
         let now = self.now_secs();
-        let uid = self.sync_crypto.random_hex(16)?;
+        let uid = item_uid(&me.seat.person, &self.sync_crypto.random_hex(8)?);
         if scope == Scope::Global && me.seat.role != Role::Admin {
             let suggestion = SuggestionBody {
                 note: None,
@@ -806,13 +883,14 @@ impl Hedy {
     }
 
     /// Whether this PC's person may change a note (else they suggest).
-    fn may_edit(me: &Me, scope: &Scope, note: &TeamNoteBody) -> bool {
+    fn may_edit(me: &Me, scope: &Scope, uid: &str, note: &TeamNoteBody) -> bool {
         TeamWrite {
             writer: &me.seat,
             team_layer: *scope == Scope::Global,
             owner: Some(&note.person),
             replaced_owner: Some(&note.person),
             note_owner: None,
+            uid_owner: uid_person(uid).as_ref(),
         }
         .note_allowed()
     }
@@ -843,7 +921,7 @@ impl Hedy {
             Some(topic) => normalize_topic(topic)?,
             None => note.topic.clone(),
         };
-        if !Self::may_edit(&me, &scope, &note) {
+        if !Self::may_edit(&me, &scope, uid, &note) {
             let suggestion = SuggestionBody {
                 note: Some(uid.to_owned()),
                 text: text.map(str::to_owned),
@@ -853,7 +931,7 @@ impl Hedy {
                 author: me.name.clone(),
                 created_at: self.now_secs(),
             };
-            let sid = self.sync_crypto.random_hex(16)?;
+            let sid = item_uid(&me.seat.person, &self.sync_crypto.random_hex(8)?);
             self.team_write(
                 &me,
                 ItemKind::Suggestion,
@@ -880,6 +958,7 @@ impl Hedy {
     pub fn team_notes(&self, team: &str) -> AppResult<Vec<TeamNote>> {
         let space = self.team_space(team)?;
         let me = self.team_me(&space)?;
+        let roster = self.roster(&space)?;
         let projects = self.team_projects(&space)?;
         let mut notes: Vec<TeamNote> = self
             .store
@@ -888,7 +967,7 @@ impl Hedy {
             .filter(|c| c.kind == ItemKind::Note)
             .filter_map(|c| {
                 let note = note_body(&c.version)?;
-                let can_edit = Self::may_edit(&me, &c.scope, &note);
+                let can_edit = Self::may_edit(&me, &c.scope, &c.uid, &note);
                 Some(TeamNote {
                     uid: c.uid,
                     team_layer: c.scope == Scope::Global,
@@ -898,8 +977,12 @@ impl Hedy {
                     text: note.text,
                     category: note.category,
                     topic: note.topic,
-                    person: note.person,
-                    author: note.author,
+                    person: note.person.clone(),
+                    // The name an admin wrote for that person, if any.
+                    author: roster
+                        .get(&note.person)
+                        .cloned()
+                        .unwrap_or(note.author.clone()),
                     created_at: note.created_at,
                     updated_at: note.updated_at,
                 })
@@ -919,6 +1002,7 @@ impl Hedy {
     pub fn team_suggestions(&self, team: &str) -> AppResult<Vec<TeamSuggestion>> {
         let space = self.team_space(team)?;
         let me = self.team_me(&space)?;
+        let roster = self.roster(&space)?;
         let projects = self.team_projects(&space)?;
         let mut out = Vec::new();
         for change in self.store.sync_items(&space.id())? {
@@ -948,8 +1032,8 @@ impl Hedy {
                 after: s.text,
                 category: s.category,
                 topic: s.topic,
-                person: s.person,
-                author: s.author,
+                person: s.person.clone(),
+                author: roster.get(&s.person).cloned().unwrap_or(s.author),
                 can_review,
                 created_at: s.created_at,
             });
@@ -989,10 +1073,18 @@ impl Hedy {
         if let Some(text) = &s.text {
             check_clean(text)?;
         }
+        check_clean(&s.author)?;
+        if let Some(topic) = &s.topic {
+            check_clean(topic)?;
+        }
+        // The suggestion goes first: a PC that reads both meets it while its
+        // note is still there (whose owner may remove it).
+        self.team_write(&me, ItemKind::Suggestion, uid, scope.clone(), None)?;
         let now = self.now_secs();
         match (&s.note, note, s.text) {
             // A new note, in its author's name.
             (None, _, Some(text)) => {
+                let note_uid = item_uid(&s.person, &self.sync_crypto.random_hex(8)?);
                 let body = TeamNoteBody {
                     text,
                     category: s.category,
@@ -1002,7 +1094,6 @@ impl Hedy {
                     topic: s.topic,
                     updated_at: None,
                 };
-                let note_uid = self.sync_crypto.random_hex(16)?;
                 self.team_write(
                     &me,
                     ItemKind::Note,
@@ -1026,7 +1117,7 @@ impl Hedy {
             // Its note is gone, or it removes nothing: it only goes.
             _ => {}
         }
-        self.team_write(&me, ItemKind::Suggestion, uid, scope, None)
+        Ok(())
     }
 
     /// Turns a suggestion down (or, its author, takes it back).
@@ -1220,8 +1311,10 @@ impl Hedy {
 
     /// Opens the requests that answer this PC's invites (in a sync, before
     /// its push). Each request is one guess at the code: the invite burns
-    /// before it is checked, and one that does not open stays burned. An
-    /// expired invite goes.
+    /// before it is checked, and one that does not open stays burned (its
+    /// files go). One that opens keeps its files until its answer is out,
+    /// so the joiner never mistakes the wait for a failure. An invite whose
+    /// offer is gone, or that expired with no request, goes.
     fn open_requests(&self, session: &Session) -> AppResult<()> {
         let space = &session.space;
         let mut records = self.invite_records(space)?;
@@ -1235,13 +1328,14 @@ impl Hedy {
                 continue;
             }
             let offer = self.read_repo(&session.dir, &team_layout::offer(number))?;
-            if record.expires < now || offer.is_none() {
+            let request = self.read_repo(&session.dir, &team_layout::request(number))?;
+            if offer.is_none() || (record.expires < now && request.is_none()) {
                 self.drop_invite_files(session, number)?;
                 self.forget_invite(space, number)?;
                 records.remove(&number);
                 continue;
             }
-            let Some(request) = self.read_repo(&session.dir, &team_layout::request(number))? else {
+            let Some(request) = request else {
                 continue;
             };
             // Burn first: a crash after this leaves no second guess.
@@ -1265,10 +1359,12 @@ impl Hedy {
                     .ok()?;
                 let request: JoinRequest = serde_json::from_slice(&plain).ok()?;
                 (request.device.is_valid()
-                    && !session.members.contains_key(request.device.as_str()))
+                    && self
+                        .sync_crypto
+                        .check_member_public(&request.public)
+                        .is_ok())
                 .then_some((key, request))
             });
-            self.drop_invite_files(session, number)?;
             match opened {
                 Some((key, request)) => {
                     let mut keys = self.keys(space)?;
@@ -1285,16 +1381,21 @@ impl Hedy {
                     );
                 }
                 None => {
+                    self.drop_invite_files(session, number)?;
                     self.forget_invite(space, number)?;
                     records.remove(&number);
-                    let mut failed: Vec<u32> = self.sync_json(space, FAILED)?.unwrap_or_default();
-                    failed.push(number);
-                    self.set_sync_setting(space, FAILED, &json(&failed))?;
+                    self.note_failed_invite(space, number)?;
                 }
             }
             self.save_invite_records(space, &records)?;
         }
         self.save_invite_records(space, &records)
+    }
+
+    fn note_failed_invite(&self, space: &Space, number: u32) -> AppResult<()> {
+        let mut failed: Vec<u32> = self.sync_json(space, FAILED)?.unwrap_or_default();
+        failed.push(number);
+        self.set_sync_setting(space, FAILED, &json(&failed))
     }
 
     fn drop_invite_files(&self, session: &Session, number: u32) -> AppResult<()> {
@@ -1306,54 +1407,101 @@ impl Hedy {
         Ok(())
     }
 
+    /// Every PC id in the epochs up to `newest`: a PC once removed is never
+    /// added again (an old request of its own, replayed, must not bring it
+    /// back).
+    fn devices_ever(&self, dir: &Path, newest: u32) -> AppResult<HashSet<String>> {
+        let mut ids = HashSet::new();
+        for (number, file) in self.epochs(dir)? {
+            if number <= newest {
+                ids.extend(
+                    self.sync_crypto
+                        .epoch_members(&file)?
+                        .members
+                        .into_iter()
+                        .map(|m| m.id),
+                );
+            }
+        }
+        Ok(ids)
+    }
+
     /// After a sync: the seat changes this PC makes, in a commit of their
     /// own (another admin's PC may write the same epoch first; then they
     /// are made again on the next sync).
     /// - An admin's PC adds the PCs whose invites it answered, and signs
-    ///   what members' PCs asked about their own PCs.
-    /// - A member's PC asks an admin's to add the PC it invited.
+    ///   what members' PCs asked about their own PCs (an addition asked for
+    ///   the epoch in use only, so an old request replayed does nothing).
+    /// - A member's PC asks an admin's to add the PC it invited, again for
+    ///   each new epoch, until it is in.
     ///
-    /// Then each answered invite gets its answer.
+    /// Then each answered invite gets its answer, and its files go.
     fn team_seats(&self, space: &Space) -> AppResult<()> {
         let records = self.invite_records(space)?;
-        let accepted: Vec<(u32, JoinRequest)> = records
-            .iter()
-            .filter_map(|(n, r)| Some((*n, r.accepted.clone()?)))
-            .collect();
         let me = self.team_me(space)?;
         let dir = self.sync_dir(space)?;
         let session = self.sync_session(space, dir.clone(), me.device.clone())?;
+        let newest = self.sync_number(space, EPOCH)? as u32;
         let admin = me.seat.role == Role::Admin;
+        let ever = self.devices_ever(&dir, newest)?;
         let mut added: Vec<EpochMember> = Vec::new();
+        let mut names: Vec<(PersonId, String)> = Vec::new();
         let mut removed: Vec<String> = Vec::new();
         let mut done: Vec<String> = Vec::new();
-        if admin {
-            for (_, request) in &accepted {
-                let own = records.values().any(|r| {
-                    r.own_pc
-                        && r.accepted
-                            .as_ref()
-                            .is_some_and(|a| a.device == request.device)
-                });
-                let (person, role) = if own {
-                    (me.seat.person.clone(), me.seat.role)
+        let mut answered: Vec<u32> = Vec::new();
+        let mut failed: Vec<u32> = Vec::new();
+        // A new PC with keys of its own (no member's, no other new PC's).
+        let fits = |device: &DeviceId, public: &str, added: &[EpochMember]| {
+            device.is_valid()
+                && !ever.contains(device.as_str())
+                && !added
+                    .iter()
+                    .any(|m| m.id == device.as_str() || m.public == public)
+                && !session.members.values().any(|p| p == public)
+                && self.sync_crypto.check_member_public(public).is_ok()
+        };
+        let mut asks: Vec<SeatAsk> = self.sync_json(space, ASKS)?.unwrap_or_default();
+        for (number, record) in &records {
+            let Some(request) = &record.accepted else {
+                continue;
+            };
+            if session.members.contains_key(request.device.as_str()) {
+                // In already (an answer whose push was cut short).
+                answered.push(*number);
+            } else if !fits(&request.device, &request.public, &added) {
+                failed.push(*number);
+            } else if admin {
+                let person = if record.own_pc {
+                    me.seat.person.clone()
                 } else {
-                    let role = records
-                        .values()
-                        .find(|r| {
-                            r.accepted
-                                .as_ref()
-                                .is_some_and(|a| a.device == request.device)
-                        })
-                        .map_or(Role::Member, |r| r.role);
-                    (PersonId(self.sync_crypto.random_hex(8)?), role)
+                    let person = PersonId(self.sync_crypto.random_hex(8)?);
+                    names.push((person.clone(), request.person_name.clone()));
+                    person
+                };
+                let role = if record.own_pc {
+                    me.seat.role
+                } else {
+                    record.role
                 };
                 added.push(EpochMember {
                     id: request.device.as_str().to_owned(),
                     public: request.public.clone(),
                     seat: Some(Seat { person, role }),
                 });
+                answered.push(*number);
+            } else {
+                if !asks.iter().any(|a| a.device == request.device) {
+                    asks.push(SeatAsk {
+                        device: request.device.clone(),
+                        public: request.public.clone(),
+                        epoch: 0,
+                        path: None,
+                    });
+                }
+                answered.push(*number);
             }
+        }
+        if admin {
             for path in self.sync_remote.files(&dir, team_layout::REQUESTS_DIR)? {
                 done.push(path.clone());
                 let Some((signer, _)) = team_layout::seat_request_of(&path) else {
@@ -1370,9 +1518,10 @@ impl Hedy {
                         device,
                         public,
                         person,
+                        epoch,
                     }) if person == seat.person
-                        && device.is_valid()
-                        && !session.members.contains_key(device.as_str()) =>
+                        && epoch == newest
+                        && fits(&device, &public, &added) =>
                     {
                         added.push(EpochMember {
                             id: device.as_str().to_owned(),
@@ -1384,63 +1533,109 @@ impl Hedy {
                         if session
                             .seats
                             .get(device.as_str())
-                            .is_some_and(|s| s.person == seat.person) =>
+                            .is_some_and(|s| s.person == seat.person)
+                            && !removed.contains(&device.0) =>
                     {
-                        removed.push(device.as_str().to_owned());
+                        removed.push(device.0);
                     }
                     _ => {}
                 }
             }
-        } else {
-            for (number, request) in &accepted {
-                let ask = SeatRequest::Add {
-                    device: request.device.clone(),
-                    public: request.public.clone(),
-                    person: me.seat.person.clone(),
-                };
-                let path = team_layout::seat_request(&me.device, &number.to_string());
-                self.write_signed(&session, &path, &json(&ask))?;
+        }
+        // A member's asks: done once the PC is in; asked again for each
+        // new epoch (under a new name, so no file is ever written twice).
+        asks.retain(|a| !session.members.contains_key(a.device.as_str()));
+        let mut stale: Vec<String> = Vec::new();
+        let mut write_asks: Vec<(String, SeatRequest)> = Vec::new();
+        if !admin {
+            for ask in &mut asks {
+                if ask.epoch == newest && ask.path.is_some() {
+                    continue;
+                }
+                stale.extend(ask.path.take());
+                let path = team_layout::seat_request(&me.device, &self.sync_crypto.random_hex(8)?);
+                write_asks.push((
+                    path.clone(),
+                    SeatRequest::Add {
+                        device: ask.device.clone(),
+                        public: ask.public.clone(),
+                        person: me.seat.person.clone(),
+                        epoch: newest,
+                    },
+                ));
+                ask.epoch = newest;
+                ask.path = Some(path);
             }
         }
-        if accepted.is_empty() && added.is_empty() && removed.is_empty() && done.is_empty() {
+        let new_epoch = !added.is_empty() || !removed.is_empty();
+        if !new_epoch
+            && answered.is_empty()
+            && failed.is_empty()
+            && done.is_empty()
+            && write_asks.is_empty()
+        {
             return Ok(());
         }
-        let mut pins = self.pins(space)?;
-        let new_epoch = !added.is_empty() || !removed.is_empty();
-        if new_epoch {
-            if !removed.is_empty() {
+        let wrote = (|| -> AppResult<()> {
+            let mut pins = self.pins(space)?;
+            if new_epoch {
                 self.check_admins_stay(space, &removed, &[])?;
+                let (number, file) = self.next_team_epoch(space, &me, &added, &removed, &[])?;
+                pins.insert(number, self.sync_crypto.digest(file.as_bytes()));
+                self.drop_device_files(&dir, &removed)?;
+                // Restating is harmless if the push fails: same content.
+                self.take_over(&me, &removed, false)?;
             }
-            let (number, file) = self.next_team_epoch(space, &me, &added, &removed, &[])?;
-            pins.insert(number, self.sync_crypto.digest(file.as_bytes()));
-            self.drop_device_files(&dir, &removed)?;
-        }
-        let keys = self.keys(space)?;
-        let answer = JoinAnswer {
-            recovery: self.sync_setting(space, RECOVERY)?.unwrap_or_default(),
-            pins,
-        };
-        for (number, _) in &accepted {
-            let Some(key) = keys.invites.get(number).and_then(|i| i.key.clone()) else {
-                continue;
+            let keys = self.keys(space)?;
+            let answer = JoinAnswer {
+                recovery: self.sync_setting(space, RECOVERY)?.unwrap_or_default(),
+                pins,
             };
-            let path = team_layout::answer(*number);
-            let sealed = self
-                .sync_crypto
-                .invite_seal(&key, &path, json(&answer).as_bytes())?;
-            self.sync_remote.write(&dir, &path, &sealed)?;
-        }
-        for path in &done {
-            self.sync_remote.remove(&dir, path)?;
-        }
-        if let Err(error) = self.sync_remote.push(&dir, "hedy team") {
+            for number in &answered {
+                let request = records[number].accepted.as_ref().expect("answered");
+                let key = keys.invites.get(number).and_then(|i| i.key.clone());
+                // A PC already in has what it needs (and may have removed it).
+                if let Some(key) = key
+                    && !session.members.contains_key(request.device.as_str())
+                {
+                    let path = team_layout::answer(*number);
+                    let sealed =
+                        self.sync_crypto
+                            .invite_seal(&key, &path, json(&answer).as_bytes())?;
+                    self.sync_remote.write(&dir, &path, &sealed)?;
+                }
+            }
+            for number in answered.iter().chain(&failed) {
+                self.drop_invite_files(&session, *number)?;
+            }
+            for path in done.iter().chain(&stale) {
+                if self.read_repo(&dir, path)?.is_some() {
+                    self.sync_remote.remove(&dir, path)?;
+                }
+            }
+            for (path, ask) in &write_asks {
+                self.write_signed(&session, path, &json(ask))?;
+            }
+            Ok(self.sync_remote.push(&dir, "hedy team")?)
+        })();
+        if let Err(error) = wrote {
             let _ = self.sync_remote.discard_local(&dir);
-            return Err(error.into());
+            return Err(error);
         }
-        for (number, _) in &accepted {
+        for number in answered.iter().chain(&failed) {
             self.forget_invite(space, *number)?;
         }
-        self.take_over(&me, &removed, false)?;
+        for number in &failed {
+            self.note_failed_invite(space, *number)?;
+        }
+        self.set_sync_setting(space, ASKS, &json(&asks))?;
+        if !names.is_empty() {
+            let mut roster: BTreeMap<PersonId, String> =
+                self.sync_json(space, ROSTER)?.unwrap_or_default();
+            roster.extend(names);
+            self.set_sync_setting(space, ROSTER, &json(&roster))?;
+            self.set_sync_setting(space, ROSTER_DUE, "1")?;
+        }
         // Its own epoch, checked and in use here; and what it took over, sent.
         if new_epoch {
             self.sync_locked(space)?;
@@ -1544,24 +1739,25 @@ impl Hedy {
                 continue;
             }
             let key = keys.epochs.get(&epoch).cloned();
-            let files: Vec<&String> = epochs
-                .iter()
-                .filter(|(n, _)| *n == epoch || *n == before)
-                .map(|(_, f)| f)
-                .collect();
-            let Some(key) = key else { break };
+            let info = |n: u32| {
+                epochs
+                    .iter()
+                    .find(|(m, _)| *m == n)
+                    .and_then(|(_, f)| self.sync_crypto.epoch_members(f).ok())
+            };
+            let (Some(key), Some(this), Some(earlier)) = (key, info(epoch), info(before)) else {
+                break;
+            };
             let path = team_layout::key_history(epoch);
             let opened = self.read_repo(dir, &path)?.and_then(|sealed| {
                 let plain = self.sync_crypto.open(&[key], &path, &sealed).ok()?;
                 let signed: Signed = serde_json::from_slice(&plain).ok()?;
-                // An admin's PC of either epoch (one that left with it, too).
-                let members: Vec<EpochMember> = files
-                    .iter()
-                    .filter_map(|f| self.sync_crypto.epoch_members(f).ok())
-                    .flat_map(|info| info.members)
-                    .collect();
-                let signer = members.iter().any(|m| {
-                    m.seat.as_ref().is_some_and(|s| s.role == Role::Admin)
+                // Signed by the PC that signed the epoch (an admin's of the
+                // one before), and no other: a member who still holds the key
+                // cannot feed a joiner a wrong one.
+                let signer = earlier.members.iter().any(|m| {
+                    m.id == this.signer
+                        && m.seat.as_ref().is_some_and(|s| s.role == Role::Admin)
                         && self
                             .sync_crypto
                             .verify(
@@ -1611,9 +1807,7 @@ impl Hedy {
             }
             return result.map(|_| unreachable!());
         }
-        let mut ids = self.team_ids()?;
-        ids.push(id.clone());
-        self.save_team_ids(&ids)?;
+        self.edit_team_ids(&id, true)?;
         // The inviting PC may have answered already (it synced meanwhile).
         let joined = self.finish_join(&space).unwrap_or(false);
         Ok(TeamJoin { id, joined })
@@ -1875,13 +2069,19 @@ impl Hedy {
         }
         self.check_admins_stay(space, removed, roles)?;
         let dir = self.sync_dir(space)?;
-        self.next_team_epoch(space, &me, &[], removed, roles)?;
-        self.drop_device_files(&dir, removed)?;
-        if let Err(error) = self.sync_remote.push(&dir, "hedy team") {
+        // Nothing half written stays in the clone for the next sync to push.
+        let wrote = (|| -> AppResult<()> {
+            self.next_team_epoch(space, &me, &[], removed, roles)?;
+            self.drop_device_files(&dir, removed)?;
+            // Before the push: a crash after it must not lose the takeover
+            // (restating the same content is harmless if the push fails).
+            self.take_over(&me, take_over.0, take_over.1)?;
+            Ok(self.sync_remote.push(&dir, "hedy team")?)
+        })();
+        if let Err(error) = wrote {
             let _ = self.sync_remote.discard_local(&dir);
-            return Err(error.into());
+            return Err(error);
         }
-        self.take_over(&me, take_over.0, take_over.1)?;
         self.sync_locked(space).map(drop)
     }
 
@@ -1931,8 +2131,10 @@ impl Hedy {
             return Ok(());
         }
         let devices = self.person_devices(&space, person)?;
+        // Someone no longer an admin may have written what a member cannot
+        // (the team layer, others' notes): this PC answers for all of it.
         let demoted: &[String] = if role == Role::Admin { &[] } else { &devices };
-        self.change_seats(&space, &[], &[(person.clone(), role)], (demoted, true))
+        self.change_seats(&space, &[], &[(person.clone(), role)], (demoted, false))
     }
 
     /// Removes one PC: an admin removes any; a member, their own (an
@@ -1967,21 +2169,6 @@ impl Hedy {
         )
     }
 
-    /// An admin's PC writes itself out of the epoch (the team keeps the
-    /// rest of its people).
-    fn leave_as_admin(&self, space: &Space, me: &Me) -> AppResult<()> {
-        let (_, members) = self.space_status(space)?.ok_or(AppError::SyncNotSetUp)?;
-        if members.iter().all(|m| m.device.this_pc) {
-            return Ok(());
-        }
-        self.sync_locked(space)?;
-        let dir = self.sync_dir(space)?;
-        let mine = [me.device.as_str().to_owned()];
-        self.next_team_epoch(space, me, &[], &mine, &[])?;
-        self.sync_remote.push(&dir, "hedy team")?;
-        Ok(())
-    }
-
     /// A member's PC asks an admin's PC to sign `request`.
     fn ask_admin(&self, space: &Space, me: &Me, request: &SeatRequest) -> AppResult<()> {
         let dir = self.sync_dir(space)?;
@@ -1991,8 +2178,7 @@ impl Hedy {
         Ok(self.sync_remote.push(&dir, "hedy team")?)
     }
 
-    /// This PC leaves the team: it asks to be taken out (an admin's PC
-    /// writes itself out of the epoch; a member's asks an admin's), then
+    /// This PC leaves the team: it asks an admin's PC to take it out, then
     /// its keys, clone, settings and replica go here, and its projects'
     /// memory follows their owner again. The last admin of a team with
     /// other people cannot leave: they make someone else an admin first.
@@ -2002,23 +2188,31 @@ impl Hedy {
             unreachable!("a team's space");
         };
         let _guard = self.sync_guard(&space)?;
-        if self.space_is_set_up(&space)? {
-            let me = self.team_me(&space)?;
+        // A PC removed already just cleans up here.
+        let me = match self.space_is_set_up(&space)? {
+            true => match self.team_me(&space) {
+                Ok(me) => Some(me),
+                Err(AppError::SyncRemoved) => None,
+                Err(error) => return Err(error),
+            },
+            false => None,
+        };
+        if let Some(me) = me {
             let mine = [me.device.as_str().to_owned()];
             self.check_admins_stay(&space, &mine, &[])?;
-            // Without the network, it leaves here all the same; the others
-            // remove it from their side.
-            let _ = if me.seat.role == Role::Admin {
-                self.leave_as_admin(&space, &me)
-            } else {
-                self.ask_admin(
+            let (_, members) = self.space_status(&space)?.ok_or(AppError::SyncNotSetUp)?;
+            // Another PC takes this one out (an admin's, who also answers for
+            // what it wrote). Without the network, it leaves here all the
+            // same; the others remove it from their side.
+            if !members.iter().all(|m| m.device.this_pc) {
+                let _ = self.ask_admin(
                     &space,
                     &me,
                     &SeatRequest::Remove {
                         device: me.device.clone(),
                     },
-                )
-            };
+                );
+            }
         }
         self.sync_remote.discard_local(&self.sync_dir(&space)?)?;
         self.secrets.delete_sync_keys(&space.id())?;
@@ -2045,6 +2239,9 @@ impl Hedy {
             INVITES,
             FAILED,
             JOIN,
+            ASKS,
+            ROSTER,
+            ROSTER_DUE,
         ] {
             self.clear_sync_setting(&space, key)?;
         }
@@ -2054,8 +2251,7 @@ impl Hedy {
                 self.store.set_memory_home(&project.path, None)?;
             }
         }
-        let ids: Vec<String> = self.team_ids()?.into_iter().filter(|i| i != id).collect();
-        self.save_team_ids(&ids)
+        self.edit_team_ids(id, false)
     }
 }
 

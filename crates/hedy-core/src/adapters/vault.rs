@@ -797,8 +797,18 @@ impl SyncCrypto for VaultCrypto {
         let signer = MemberSecrets::decode(signer).map_err(port)?;
         let file =
             EpochFile::create_vault(&key, team, &members, signer_id, &signer).map_err(port)?;
+        // Never write an epoch every PC would refuse (two members with one
+        // key, a seat missing).
+        file.valid_members().map_err(port)?;
         let text = serde_json::to_string_pretty(&file).expect("an epoch file serializes");
         Ok((text, key.encode()))
+    }
+
+    fn check_member_public(&self, public: &str) -> PortResult<()> {
+        let public = member_public(public).map_err(port)?;
+        public.box_key().map_err(port)?;
+        public.sign_key().map_err(port)?;
+        Ok(())
     }
 
     fn verify_first_epoch(&self, file: &str, recovery: &str) -> PortResult<()> {
@@ -828,6 +838,7 @@ impl SyncCrypto for VaultCrypto {
             number: file.epoch,
             team: file.team,
             members,
+            signer: file.signer,
         })
     }
 

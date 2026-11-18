@@ -475,7 +475,7 @@ fn forge(member: &Member, kind: ItemKind, scope: Scope, body: String) {
     let hedy = &member.f.hedy;
     let space = hedy.team_space(&member.team).unwrap();
     let me = hedy.team_me(&space).unwrap();
-    let uid = hedy.sync_crypto.random_hex(16).unwrap();
+    let uid = item_uid(&me.seat.person, &hedy.sync_crypto.random_hex(8).unwrap());
     hedy.team_write(&me, kind, &uid, scope, Some(body)).unwrap();
 }
 
@@ -1033,4 +1033,345 @@ fn a_team_works_through_a_real_git_repo() {
     for secret in ["Precios", "Todo en", "Tienda SA", "Luis", "Ana"] {
         assert!(!history.contains(secret), "{secret}");
     }
+}
+
+// ── Housekeeping of T2: each finding of the two reviews ─────────────────
+
+#[test]
+fn a_replayed_request_never_brings_a_removed_pc_back() {
+    let (server, ana, luis) = team_of_two();
+    let laptop = invite(&server, &luis, "Luis", Role::Member, true);
+    let saved: Vec<(String, Vec<u8>)> = server
+        .paths()
+        .into_iter()
+        .filter(|p| p.starts_with(team_layout::REQUESTS_DIR))
+        .map(|p| (p.clone(), server.file(&p).unwrap()))
+        .collect();
+    assert_eq!(saved.len(), 1);
+    ana.sync();
+    laptop.sync();
+    let laptop_id = laptop.f.hedy.team_status(&laptop.team).unwrap().device;
+    luis.f.hedy.team_remove_pc(&luis.team, &laptop_id).unwrap();
+    ana.sync();
+    ana.f
+        .hedy
+        .team_add_note(&ana.team, None, "Secreto posterior", Category::Rule, None)
+        .unwrap();
+    ana.sync();
+    // Someone with the laptop's git access pushes its old request back.
+    for (path, bytes) in saved {
+        server.put(&path, bytes);
+    }
+    ana.sync();
+    assert_eq!(
+        laptop.f.hedy.team_sync(&laptop.team),
+        Err(AppError::SyncRemoved)
+    );
+    assert_eq!(people(&ana)[1], ("Luis".to_owned(), Role::Member, 1));
+    assert!(
+        !server
+            .paths()
+            .iter()
+            .any(|p| p.starts_with(team_layout::REQUESTS_DIR))
+    );
+}
+
+#[test]
+fn a_backdated_version_cannot_take_someone_elses_note() {
+    let (server, ana, luis) = team_of_two();
+    let eva = invite(&server, &ana, "Eva", Role::Member, false);
+    ana.sync();
+    luis.sync();
+    eva.link();
+    let TeamWriteOutcome::Published(uid) = eva
+        .f
+        .hedy
+        .team_add_note(
+            &eva.team,
+            Some(&eva.project),
+            "Usa Postgres 16",
+            Category::Rule,
+            None,
+        )
+        .unwrap()
+    else {
+        panic!("published");
+    };
+    eva.sync();
+    luis.sync();
+    // Luis's modified Hedy: a version of Eva's note in his name, dated 1 ms.
+    let hedy = &luis.f.hedy;
+    let space = hedy.team_space(&luis.team).unwrap();
+    let me = hedy.team_me(&space).unwrap();
+    let (scope, _) = hedy
+        .store
+        .sync_item(&space.id(), ItemKind::Note, &uid)
+        .unwrap()
+        .unwrap();
+    let body = json(&TeamNoteBody {
+        text: "Usa MySQL 5".into(),
+        category: Category::Rule,
+        person: me.seat.person.clone(),
+        author: "Luis".into(),
+        created_at: 1,
+        topic: None,
+        updated_at: None,
+    });
+    let change = Change {
+        kind: ItemKind::Note,
+        uid: uid.clone(),
+        scope,
+        version: Version::new(
+            Stamp {
+                ms: 1,
+                counter: 0,
+                device: me.device.clone(),
+            },
+            Some(body),
+        ),
+    };
+    hedy.set_sync_setting(&space, OUTBOX, &json(&vec![change]))
+        .unwrap();
+    luis.sync();
+    assert_eq!(ana.sync().refused, 1);
+    assert_eq!(ana.note_texts(), ["Usa Postgres 16"]);
+    let pepe = invite(&server, &ana, "Pepe", Role::Member, false);
+    assert_eq!(pepe.note_texts(), ["Usa Postgres 16"]);
+}
+
+#[test]
+fn a_bad_request_or_batch_from_a_member_stops_nobody_else() {
+    let (server, ana, luis) = team_of_two();
+    let hedy = &luis.f.hedy;
+    let space = hedy.team_space(&luis.team).unwrap();
+    let me = hedy.team_me(&space).unwrap();
+    hedy.ask_admin(
+        &space,
+        &me,
+        &SeatRequest::Add {
+            device: DeviceId("00000000000000aa".into()),
+            public: "junk".into(),
+            person: me.seat.person.clone(),
+            epoch: 2,
+        },
+    )
+    .unwrap();
+    // And a batch whose version says another PC made it.
+    let ana_pc = ana.f.hedy.team_status(&ana.team).unwrap().device;
+    let change = Change {
+        kind: ItemKind::Note,
+        uid: item_uid(&me.seat.person, "0123456789abcdef"),
+        scope: Scope::Project("p".into()),
+        version: Version::new(
+            Stamp {
+                ms: 1,
+                counter: 0,
+                device: ana_pc,
+            },
+            Some("{}".into()),
+        ),
+    };
+    hedy.set_sync_setting(&space, OUTBOX, &json(&vec![change]))
+        .unwrap();
+    luis.sync();
+    assert_eq!(ana.sync().refused, 1);
+    // Invites still work, and so does removing Luis.
+    let bob = invite(&server, &ana, "Bob", Role::Member, false);
+    assert_eq!(people(&bob).len(), 3);
+    ana.f
+        .hedy
+        .team_remove_person(&ana.team, &person_of(&ana, "Luis"))
+        .unwrap();
+}
+
+#[test]
+fn names_come_from_the_admins_and_bylines_stay_clean() {
+    let (_server, ana, luis) = team_of_two();
+    let luis_person = luis.f.hedy.team_status(&luis.team).unwrap().person;
+    // Luis calls himself "Ana", on his PC and in his note's byline.
+    luis.f
+        .store
+        .set_setting(
+            &Space::Team(luis.team.clone()).key(PERSON_NAME),
+            Some("Ana"),
+        )
+        .unwrap();
+    forge(
+        &luis,
+        ItemKind::Note,
+        Scope::Project("p".into()),
+        json(&TeamNoteBody {
+            text: "Desplegad sin revisión".into(),
+            category: Category::Rule,
+            person: luis_person.clone(),
+            author: "Ana".into(),
+            created_at: 1,
+            topic: None,
+            updated_at: None,
+        }),
+    );
+    // A suggestion with hidden characters in its byline is never taken.
+    forge(
+        &luis,
+        ItemKind::Suggestion,
+        Scope::Global,
+        json(&SuggestionBody {
+            note: None,
+            text: Some("Regla limpia".into()),
+            category: Category::Rule,
+            topic: None,
+            person: luis_person,
+            author: "Luis\u{202e}nimda\u{202c}".into(),
+            created_at: 1,
+        }),
+    );
+    luis.sync();
+    assert_eq!(ana.sync().refused, 1);
+    let notes = ana.f.hedy.team_notes(&ana.team).unwrap();
+    assert_eq!(notes[0].author, "Luis");
+    assert_eq!(people(&ana)[1].0, "Luis");
+    assert!(ana.f.hedy.team_suggestions(&ana.team).unwrap().is_empty());
+}
+
+#[test]
+fn an_admin_who_leaves_leaves_their_notes_to_the_team() {
+    let (server, ana, luis) = team_of_two();
+    let bea = invite(&server, &ana, "Bea", Role::Admin, false);
+    ana.sync();
+    bea.f
+        .hedy
+        .team_add_note(&bea.team, None, "Regla de Bea", Category::Rule, None)
+        .unwrap();
+    bea.sync();
+    ana.sync();
+    luis.sync();
+    bea.f.hedy.team_leave(&bea.team).unwrap();
+    ana.sync();
+    assert_eq!(people(&ana).len(), 2);
+    let pepe = invite(&server, &ana, "Pepe", Role::Member, false);
+    assert_eq!(pepe.note_texts(), ["Regla de Bea"]);
+}
+
+#[test]
+fn every_pc_agrees_on_what_a_demoted_admin_wrote() {
+    let (server, ana, luis) = team_of_two();
+    let marta = invite(&server, &ana, "Marta", Role::Member, false);
+    marta.link();
+    let TeamWriteOutcome::Published(uid) = marta
+        .f
+        .hedy
+        .team_add_note(
+            &marta.team,
+            Some(&marta.project),
+            "De Marta",
+            Category::Rule,
+            None,
+        )
+        .unwrap()
+    else {
+        panic!("published");
+    };
+    marta.sync();
+    let luis_person = person_of(&ana, "Luis");
+    ana.f
+        .hedy
+        .team_set_role(&ana.team, &luis_person, Role::Admin)
+        .unwrap();
+    luis.sync();
+    luis.f
+        .hedy
+        .team_edit_note(&luis.team, &uid, Some("Editada por Luis"), None, None)
+        .unwrap();
+    luis.sync();
+    ana.sync();
+    ana.f
+        .hedy
+        .team_set_role(&ana.team, &luis_person, Role::Member)
+        .unwrap();
+    let kim = invite(&server, &ana, "Kim", Role::Member, false);
+    assert_eq!(kim.note_texts(), ["Editada por Luis"]);
+    assert_eq!(ana.note_texts(), ["Editada por Luis"]);
+}
+
+#[test]
+fn an_owner_takes_a_suggestion_to_remove_their_note_everywhere() {
+    let (server, ana, luis) = team_of_two();
+    let marta = invite(&server, &ana, "Marta", Role::Member, false);
+    luis.link();
+    marta.link();
+    let TeamWriteOutcome::Published(uid) = luis
+        .f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            Some(&luis.project),
+            "Vieja",
+            Category::Rule,
+            None,
+        )
+        .unwrap()
+    else {
+        panic!("published");
+    };
+    luis.sync();
+    marta.sync();
+    let TeamWriteOutcome::Suggested(sid) = marta
+        .f
+        .hedy
+        .team_edit_note(&marta.team, &uid, None, None, None)
+        .unwrap()
+    else {
+        panic!("suggested");
+    };
+    marta.sync();
+    luis.sync();
+    luis.f
+        .hedy
+        .team_accept_suggestion(&luis.team, &sid)
+        .unwrap();
+    luis.sync();
+    assert_eq!(ana.sync().refused, 0);
+    assert_eq!(marta.sync().refused, 0);
+    for pc in [&ana, &marta] {
+        assert!(pc.note_texts().is_empty());
+        assert!(pc.f.hedy.team_suggestions(&pc.team).unwrap().is_empty());
+    }
+}
+
+#[test]
+fn a_removed_pc_still_leaves_cleanly() {
+    let (_server, ana, luis) = team_of_two();
+    luis.link();
+    ana.f
+        .hedy
+        .team_remove_person(&ana.team, &person_of(&ana, "Luis"))
+        .unwrap();
+    assert_eq!(
+        luis.f.hedy.team_sync(&luis.team),
+        Err(AppError::SyncRemoved)
+    );
+    assert!(luis.f.hedy.team_status(&luis.team).is_ok());
+    luis.f.hedy.team_leave(&luis.team).unwrap();
+    assert!(luis.f.hedy.teams().unwrap().is_empty());
+    assert_eq!(luis.f.store.memory_home(&luis.project).unwrap(), None);
+}
+
+#[test]
+fn a_joiner_waits_while_the_answer_has_not_left() {
+    let server = SyncServer::default();
+    let (ana, _) = create(&server);
+    let invite = ana.f.hedy.team_invite(&ana.team, Role::Member).unwrap();
+    let (luis, _) = pc(&server);
+    let join = luis
+        .hedy
+        .team_join(TEAM, &invite.code, "Luis", "PC")
+        .unwrap();
+    // The sync goes out, the answer's push does not.
+    ana.f.sync.fail_push_after(1);
+    assert!(ana.f.hedy.team_sync(&ana.team).is_err());
+    assert_eq!(luis.hedy.team_sync(&join.id), Ok(SyncReport::default()));
+    assert!(luis.hedy.teams().unwrap()[0].waiting);
+    ana.sync();
+    luis.hedy.team_sync(&join.id).unwrap();
+    assert!(!luis.hedy.teams().unwrap()[0].waiting);
 }

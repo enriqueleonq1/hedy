@@ -1032,6 +1032,9 @@ pub trait SyncCrypto: Send + Sync {
         signer_id: &str,
         signer: &str,
     ) -> PortResult<(String, String)>;
+    /// Whether `public` is a member's public keys as epoch files list
+    /// them (both keys well formed).
+    fn check_member_public(&self, public: &str) -> PortResult<()>;
     /// Whether `file` is epoch 1, signed by the recovery key `recovery`.
     fn verify_first_epoch(&self, file: &str, recovery: &str) -> PortResult<()>;
     /// Whether `next` may follow `previous`.

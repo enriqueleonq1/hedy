@@ -250,6 +250,11 @@ impl SyncServer {
     pub fn file(&self, path: &str) -> Option<Vec<u8>> {
         self.0.lock().unwrap().get(path).cloned()
     }
+
+    /// Writes a file straight into the repo (someone with push access).
+    pub fn put(&self, path: &str, bytes: Vec<u8>) {
+        self.0.lock().unwrap().insert(path.to_owned(), bytes);
+    }
 }
 
 /// One PC's working copies, one per folder (personal sync's, each team's):

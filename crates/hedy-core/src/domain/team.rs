@@ -260,6 +260,19 @@ pub struct SuggestionBody {
     pub created_at: i64,
 }
 
+/// A new item's uid in a team: its writer's person, then 16 random hex
+/// characters. A member writes only in their own person's uids, so nobody
+/// can claim another person's item by writing to its uid first.
+pub fn item_uid(person: &PersonId, random: &str) -> String {
+    format!("{}{random}", person.as_str())
+}
+
+/// The person whose uids `uid` is one of.
+pub fn uid_person(uid: &str) -> Option<PersonId> {
+    let person = PersonId(uid.get(..16)?.to_owned());
+    (uid.len() == 32 && person.is_valid() && super::sync::is_hex16(&uid[16..])).then_some(person)
+}
+
 /// One version a team PC wrote, as every PC that reads it checks it: never
 /// trusted because the writing PC checked it.
 #[derive(Debug, Clone, Copy)]
@@ -274,6 +287,8 @@ pub struct TeamWrite<'a> {
     pub replaced_owner: Option<&'a PersonId>,
     /// For a suggestion: whose note it changes, when known.
     pub note_owner: Option<&'a PersonId>,
+    /// Whose uids the item's is ([`uid_person`]).
+    pub uid_owner: Option<&'a PersonId>,
 }
 
 impl TeamWrite<'_> {
@@ -281,25 +296,33 @@ impl TeamWrite<'_> {
         person.is_none_or(|p| *p == self.writer.person)
     }
 
-    /// A note: an admin writes any; a member only their own notes of a
-    /// project (the team layer is what admins review).
-    pub fn note_allowed(&self) -> bool {
-        self.writer.role == Role::Admin
-            || (!self.team_layer && self.own(self.owner) && self.own(self.replaced_owner))
+    fn is(&self, person: Option<&PersonId>) -> bool {
+        person == Some(&self.writer.person)
     }
 
-    /// A suggestion: its author writes it; its author, the note's owner or
-    /// an admin removes it (takes it or turns it down). Removing one the
-    /// reader does not have, or has removed already, protects nothing: a
-    /// PC that compacted sends only that, and two PCs may remove it at
-    /// once.
+    /// A note: an admin writes any; a member only their own notes of a
+    /// project (the team layer is what admins review), in their own uids.
+    pub fn note_allowed(&self) -> bool {
+        self.writer.role == Role::Admin
+            || (!self.team_layer
+                && self.is(self.uid_owner)
+                && self.own(self.owner)
+                && self.own(self.replaced_owner))
+    }
+
+    /// A suggestion: its author writes it (in their own uids); its author,
+    /// the note's owner or an admin removes it (takes it or turns it down).
     pub fn suggestion_allowed(&self) -> bool {
         if self.writer.role == Role::Admin {
             return true;
         }
         match self.owner {
-            Some(_) => self.own(self.owner) && self.own(self.replaced_owner),
-            None => self.own(self.replaced_owner) || self.note_owner == Some(&self.writer.person),
+            Some(_) => {
+                self.is(self.uid_owner) && self.own(self.owner) && self.own(self.replaced_owner)
+            }
+            None => {
+                self.is(self.uid_owner) || self.is(self.replaced_owner) || self.is(self.note_owner)
+            }
         }
     }
 }
@@ -434,35 +457,51 @@ mod tests {
             person: luis.clone(),
             role: Role::Member,
         };
-        let write = |writer, team_layer, owner, replaced_owner, note_owner| TeamWrite {
+        let (lu, au) = (Some(&luis), Some(&ana));
+        let write = |writer, team_layer, uid_owner, owner, replaced_owner, note_owner| TeamWrite {
             writer,
             team_layer,
             owner,
             replaced_owner,
             note_owner,
+            uid_owner,
         };
         // Notes.
-        assert!(write(&member, false, Some(&luis), None, None).note_allowed());
-        assert!(write(&member, false, Some(&luis), Some(&luis), None).note_allowed());
-        assert!(write(&member, false, None, Some(&luis), None).note_allowed());
-        // Not in someone else's name, not over their note, not the team layer.
-        assert!(!write(&member, false, Some(&ana), None, None).note_allowed());
-        assert!(!write(&member, false, Some(&luis), Some(&ana), None).note_allowed());
-        assert!(!write(&member, false, None, Some(&ana), None).note_allowed());
-        assert!(!write(&member, true, Some(&luis), None, None).note_allowed());
-        assert!(write(&admin, true, Some(&luis), Some(&luis), None).note_allowed());
-        assert!(write(&admin, false, None, Some(&luis), None).note_allowed());
+        assert!(write(&member, false, lu, lu, None, None).note_allowed());
+        assert!(write(&member, false, lu, lu, lu, None).note_allowed());
+        assert!(write(&member, false, lu, None, lu, None).note_allowed());
+        assert!(write(&member, false, lu, None, None, None).note_allowed());
+        // Not in someone else's name or uids, not over their note, not the
+        // team layer.
+        assert!(!write(&member, false, lu, au, None, None).note_allowed());
+        assert!(!write(&member, false, au, lu, None, None).note_allowed());
+        assert!(!write(&member, false, au, None, None, None).note_allowed());
+        assert!(!write(&member, false, lu, lu, au, None).note_allowed());
+        assert!(!write(&member, false, None, lu, None, None).note_allowed());
+        assert!(!write(&member, true, lu, lu, None, None).note_allowed());
+        assert!(write(&admin, true, lu, lu, lu, None).note_allowed());
+        assert!(write(&admin, false, lu, None, lu, None).note_allowed());
 
         // Suggestions.
-        assert!(write(&member, true, Some(&luis), None, None).suggestion_allowed());
-        assert!(!write(&member, true, Some(&ana), None, None).suggestion_allowed());
-        assert!(!write(&member, false, Some(&luis), Some(&ana), None).suggestion_allowed());
-        // Removed by its author or by the note's owner, not by anyone else.
-        assert!(write(&member, false, None, Some(&luis), Some(&ana)).suggestion_allowed());
-        assert!(write(&member, false, None, Some(&ana), Some(&luis)).suggestion_allowed());
-        assert!(!write(&member, false, None, Some(&ana), Some(&ana)).suggestion_allowed());
-        assert!(write(&member, false, None, None, None).suggestion_allowed());
-        assert!(write(&admin, false, None, Some(&luis), None).suggestion_allowed());
+        assert!(write(&member, true, lu, lu, None, None).suggestion_allowed());
+        assert!(!write(&member, true, lu, au, None, None).suggestion_allowed());
+        assert!(!write(&member, true, au, lu, None, None).suggestion_allowed());
+        assert!(!write(&member, false, lu, lu, au, None).suggestion_allowed());
+        // Removed by its author or by the note's owner, not by anyone else
+        // (even where the reader does not have it).
+        assert!(write(&member, false, lu, None, None, None).suggestion_allowed());
+        assert!(write(&member, false, au, None, lu, au).suggestion_allowed());
+        assert!(write(&member, false, au, None, au, lu).suggestion_allowed());
+        assert!(!write(&member, false, au, None, au, au).suggestion_allowed());
+        assert!(!write(&member, false, au, None, None, None).suggestion_allowed());
+        assert!(write(&admin, false, lu, None, lu, None).suggestion_allowed());
+
+        // Uids name their person.
+        let uid = item_uid(&luis, "0123456789abcdef");
+        assert_eq!(uid_person(&uid), Some(luis.clone()));
+        assert_eq!(uid_person("0123456789abcdef"), None);
+        assert_eq!(uid_person(&format!("{uid}0")), None);
+        assert_eq!(uid_person("ZZZZZZZZZZZZZZZZ0123456789abcdef"), None);
     }
 
     #[test]

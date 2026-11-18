@@ -34,13 +34,14 @@ pub struct EpochMember {
     pub seat: Option<Seat>,
 }
 
-/// What an epoch file says: its number, whether it is a team's vault, and
-/// its members.
+/// What an epoch file says: its number, whether it is a team's vault, its
+/// members, and the member (of the epoch before) that signed it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EpochInfo {
     pub number: u32,
     pub team: bool,
     pub members: Vec<EpochMember>,
+    pub signer: String,
 }
 
 impl EpochMember {

@@ -880,17 +880,30 @@ impl Hedy {
             .get(&newest)
             .cloned()
             .ok_or(AppError::SyncRemoved)?;
-        let name_key = keys
-            .epochs
-            .values()
-            .next()
-            .cloned()
-            .ok_or(AppError::SyncRemoved)?;
         let members = self.sync_crypto.epoch_members(&previous)?.members;
+        // A team names projects with epoch 1's key, the same on every PC;
+        // without it, no project of the team is matched here.
         let SyncedProjects {
             projects,
             project_ids,
-        } = self.synced_projects(space, &name_key)?;
+        } = match space {
+            Space::Personal => {
+                let name_key = keys
+                    .epochs
+                    .values()
+                    .next()
+                    .cloned()
+                    .ok_or(AppError::SyncRemoved)?;
+                self.synced_projects(space, &name_key)?
+            }
+            Space::Team(_) => match keys.epochs.get(&1) {
+                Some(name_key) => self.synced_projects(space, name_key)?,
+                None => SyncedProjects {
+                    projects: HashMap::new(),
+                    project_ids: HashMap::new(),
+                },
+            },
+        };
         Ok(Session {
             space: space.clone(),
             dir,
@@ -1352,20 +1365,31 @@ impl Hedy {
                 if seq != read + 1 {
                     break;
                 }
-                let Some(body) = self.open_signed(session, &device, &path)? else {
-                    break;
+                // In a team, one PC's bad batch stops that PC's batches
+                // only: a member must not halt everyone's sync (and with it
+                // an admin's means to remove them).
+                let team = matches!(session.space, Space::Team(_));
+                let opened = match self.open_signed(session, &device, &path) {
+                    Ok(Some(body)) => serde_json::from_str::<Batch>(&body).ok(),
+                    Ok(None) => break,
+                    Err(_) if team => None,
+                    Err(error) => return Err(error),
                 };
-                let batch: Batch = serde_json::from_str(&body).map_err(|_| corrupt(&path))?;
                 // A PC writes only its own versions.
-                if batch.device != device
-                    || batch.seq != seq
-                    || batch
-                        .changes
-                        .iter()
-                        .any(|c| c.version.stamp.device != device)
-                {
+                let Some(batch) = opened.filter(|batch| {
+                    batch.device == device
+                        && batch.seq == seq
+                        && batch
+                            .changes
+                            .iter()
+                            .all(|c| c.version.stamp.device == device)
+                }) else {
+                    if team {
+                        report.refused += 1;
+                        break;
+                    }
                     return Err(corrupt(&path));
-                }
+                };
                 for change in batch.changes {
                     self.take_change(session, change, report, false)?;
                 }
