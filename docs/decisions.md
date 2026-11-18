@@ -2713,3 +2713,93 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
   - Pins are digests of the raw file, so whitespace or an explicit `null` changes them under
     the same signature. Anyone with push access could therefore stop a sync, which they can
     do by other means as well.
+
+### Phase T2: the team engine (`application::sync::team`)
+
+- **Spaces.** The sync engine now runs per space: personal sync, or a team. Each space has
+  its own:
+  - clone: `sync/repo`, or `teams/<id>/repo`;
+  - keyring entry: personal sync keeps its own, and a team's sits next to it with
+    `:team:<id>` added;
+  - settings: `sync.*`, or `team.<id>.*`;
+  - replica: a `space` column in `sync_items`, `sync_cursors` and `sync_conflicts`. The 14th
+    migration moves the existing rows to the personal space (`''`), and a test runs it.
+
+  Personal sync behaves exactly as before. Only it has links to local rows, and only it
+  writes into notes, skills, templates and themes.
+- **A team's notes live in its replica, never in this PC's notes.** Nothing of a team
+  can reach personal sync, not even a team-layer note with no project. They change only
+  through the team's use cases, which write the version to the replica and to the outbox.
+  A project joins a team through its memory home (`MemoryHome::Team(id)`, stored as
+  `team:<id>`), so its notes no longer sync personally. Leaving the team gives the project
+  back to its owner's rule.
+- **Items:**
+  - a note (`TeamNoteBody`): its scope is its layer (`Global` is the team layer, `Project` a
+    project's), and it carries its byline (`person`, `author`);
+  - a suggestion (`ItemKind::Suggestion`, `SuggestionBody`): a change to a note, removing a
+    note, or a new team-layer note. A member's team-layer note becomes one.
+
+  Personal sync refuses suggestions. A team refuses every other kind.
+- **Every PC checks what it reads** (`team_allows`, the rules in `domain::team::TeamWrite`).
+  The writer's seat is taken from the newest epoch.
+  - **Notes:**
+    - an admin writes any;
+    - a member writes only project notes in their own name, over versions that were theirs;
+    - a note with hidden characters (in its text, author or topic) is refused.
+  - **Suggestions:**
+    - their author writes them;
+    - their author, the note's owner or an admin removes them.
+  - **Order:** a team's batches and snapshots are read first and applied together in stamp
+    order, so a version meets the one it replaced whichever PC wrote it. Cursors are saved
+    afterwards.
+  - **Refusals** count in `SyncReport::refused`.
+- **Invites** (repo `invites/<n>/`):
+  - The inviting PC writes `offer.json`, with its SPAKE2 message and the expiry, and keeps
+    the secret in the keyring. The SPAKE2 context is the digest of epoch 1, which binds the
+    invite to the team.
+  - The joiner checks the code's words before anything else, then the expiry and that
+    nobody answered yet. It writes `request.json`: its message plus a sealed request (its PC
+    and public keys, its name and its PC's name), and waits.
+  - The inviting PC's sync burns the invite before it checks the request. A request that
+    does not open drops the invite, and the number shows in `failed_invites`. One that opens
+    is answered after the sync, in a commit of its own:
+    - an admin adds the PC in a new epoch (a new person, with the invite's role);
+    - a member's PC (`team_invite_pc`) signs a request in `requests/<pc>/` for an admin's PC.
+  - The answer (`answer.hedy`, sealed with the invite key) carries the root of trust: the
+    recovery key and the pins of every epoch. The joiner checks epoch 1 against that key and
+    every pinned file against its pin, then follows the chain itself. It is in once an
+    epoch lists it.
+- **Key history.** Each new epoch also writes `vault/history/<n>.hedy`, sealed with its own
+  key and signed by its admin's PC, holding the key before it. Whoever opens an epoch walks
+  back to every older key, so a new member reads what was written before they came. Someone
+  left out of an epoch gets nothing new. The project names use epoch 1's key, so they match
+  on every PC.
+- **People:**
+  - `team_remove_person`, `team_set_role` and `team_remove_pc` sync first, then write the
+    epoch in a commit of their own. The files of a removed PC go, except its `device.hedy`.
+  - The admin's PC takes over the versions of the people it removes, or the team-layer notes
+    of someone no longer an admin. It sends them again with the same content and bylines,
+    signed by itself, so the PCs that read them later still take them.
+  - A member removes their own PCs, and leaves, through a request an admin's PC signs.
+  - `check_admins_stay` refuses any change that would leave PCs without an admin.
+  - An admin's PC writes itself out when it leaves.
+- **Each PC still writes only its own files.** Two exceptions are kept safe:
+  - the team name is in each admin's folder (`devices/<pc>/team.hedy`), and the newest
+    signed one wins;
+  - offers, answers and epoch changes go in commits of their own, discarded and retried when
+    another PC pushed first.
+- **Checks:**
+  - 29 tests, among them a simulation where three people (two admins) work and sync in random
+    order across 8 seeds. No PC refuses what another wrote through the use cases, and all of
+    them converge.
+  - The simulation found that a PC refused a removed suggestion it did not have: it came in a
+    snapshot, where only the removal remains, or two PCs had removed it at once. Removing what
+    the reader does not have, or has already removed, protects nothing, so it is taken.
+  - The whole flow runs through real git and SQLite: three people, a second PC added
+    through an admin, a suggestion, and a removal. The repo's history (`git log -p`) holds
+    no name and no text.
+- **Known limits:**
+  - A member who hides another's batches could have their own version of that note taken
+    on a PC that never saw the original. They need push access and a member's seat, and the
+    note would show their name.
+  - The pins and the push-access limits of §34 still apply.
