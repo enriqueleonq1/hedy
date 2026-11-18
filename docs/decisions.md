@@ -2042,9 +2042,82 @@ Only well-known constructions from RustCrypto and dalek, nothing home-made:
 Crates: `chacha20poly1305`, `crypto_box` (`seal`), `ed25519-dalek`, `bip39` (`spanish`),
 `hkdf`, `hmac`, `sha2`, `zeroize` and `getrandom`. All MIT or Apache-2.0 (bip39: CC0).
 
+### The engine (phase 2, `application::sync`)
+
+**Ports.**
+- `SyncRepository` (SQLite: the 20th migration) holds:
+  - the replica, `sync_items`: the newest version known of every synced item;
+  - `sync_links`: the local row or theme id behind each global uid;
+  - `sync_cursors`: the last batch read from each PC;
+  - `sync_conflicts`;
+  - `projects.memory_home`.
+- `SyncRemote`: the clone. `GitSyncRemote` runs `git` with the user's credentials, a neutral
+  identity (`Hedy <sync@hedy.invalid>`), no prompts and no hooks.
+- `SyncCrypto`: `VaultCrypto` over `adapters::vault`. Keys and epoch files are opaque text.
+
+**Changes are found by comparing, not recorded where they happen.** Each sync builds every
+local item's body (`NoteBody`, `SkillBody`, `TemplateBody`, the theme) and compares it with the
+replica:
+- a different body, or a different scope, is a new version on top of the known one;
+- a linked item that no longer exists is a deletion.
+
+So no use case that writes notes, skills, templates or themes had to change. Uses, the source
+task and local ids never travel.
+
+**A sync:**
+1. Pull.
+2. Check any epoch newer than the trusted one: each must be signed by a member of the one
+   before. Keep its key, or fail with `SyncRemoved` when the newest leaves this PC out.
+3. Turn local changes into versions, first, so the other PCs' versions meet them.
+4. Apply every other PC's unread batches, in order, with `merge`.
+   - A conflict keeps the newer version on both PCs and records the other one for the user.
+   - A version that builds on the kept one (the user chose elsewhere) clears it.
+5. Write this PC's batch, sealed.
+6. Write its name and last sync, at most hourly or when something was sent, so an idle sync
+   makes no commit.
+7. Push. The commit message is just `hedy sync`, which names nothing.
+
+Stamps come from a hybrid clock kept in `sync.clock` that moves past every stamp seen.
+
+**Projects.**
+- Only projects whose memory home is `personal` and that have an `origin` take part. They
+  match across PCs by the sealed id of their `owner/name`, under every epoch key.
+- A version for a project this PC does not have, or keeps local, waits in the replica.
+- Phase 3 decides each project's home and brings in what waited when a project becomes
+  personal.
+
+**Setup and join.**
+- `sync_setup(url, name)`:
+  - refuses a repo that already has epochs;
+  - creates this PC's keys, the recovery key and epoch 1 (members: the recovery key and this
+    PC), plus a README;
+  - syncs, and returns the 12 words.
+- `sync_join(url, words, name)`:
+  - checks the whole chain from the recovery key;
+  - opens every epoch's key with it;
+  - writes the next epoch with this PC added, signed by the recovery key;
+  - syncs, which brings everything in.
+- The keyring keeps this PC's keys and every epoch key it has. Settings keep the URL, the PC's
+  id and name, the recovery key's public keys, the trusted epoch, the batch counter and the
+  clock.
+
+**Conflicts.** `resolve_sync_conflict(id, use_other)` keeps the version in use, or writes the
+other one here so the next sync sends it on top of the kept one.
+
+**Tested:**
+- Two fixtures share a fake server:
+  - setup, then joining with wrong and right words;
+  - the wrong repo;
+  - project notes that follow the repo, not the path;
+  - a project kept local;
+  - edits and deletions;
+  - proposals, templates and themes;
+  - a conflict resolved on one PC that clears on the other;
+  - a PC left out of the newest epoch.
+- Also two data folders with real SQLite through a real local bare git repo. The server is
+  checked to never hold a note's text.
+
 **Next phases:**
-2. The engine: recording changes, applying other PCs' changes and conflicts, tested with two
-   Hedy and a local bare repo.
 3. Projects.
 4. `hedy sync`.
 5. The app.
