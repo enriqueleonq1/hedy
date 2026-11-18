@@ -22,9 +22,12 @@ use crate::tr;
 
 /// Tries to push this many times when another PC pushed first.
 const PUSH_ATTEMPTS: usize = 4;
-/// A git command that talks to a server that stopped answering is killed
-/// after this long, so the sync lock is never held forever.
-const GIT_TIMEOUT: Duration = Duration::from_secs(180);
+/// A git command is killed after this long, so the sync lock is never held
+/// forever. Talking to the server gets more time (a first clone of a big
+/// repo on a slow link); an HTTP transfer that stalls gives up much sooner
+/// (`http.lowSpeedTime`).
+const NETWORK_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const LOCAL_TIMEOUT: Duration = Duration::from_secs(60);
 /// The anonymous read before setup: a server that does not answer soon
 /// (an SSH-only host behind a firewall) counts as not public.
 const PUBLIC_CHECK_TIMEOUT: Duration = Duration::from_secs(10);
@@ -105,7 +108,16 @@ fn git(dir: &Path, args: &[&str]) -> PortResult<Ran> {
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("SSH_ASKPASS_REQUIRE", "never")
         .env("GCM_INTERACTIVE", "never");
-    run_timed(command, None, GIT_TIMEOUT)
+    let network = matches!(args.first(), Some(&("clone" | "fetch" | "push")));
+    run_timed(
+        command,
+        None,
+        if network {
+            NETWORK_TIMEOUT
+        } else {
+            LOCAL_TIMEOUT
+        },
+    )
 }
 
 /// Runs git and fails with its message.

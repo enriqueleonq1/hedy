@@ -2336,7 +2336,13 @@ The views picked on the design canvas, built on the same use cases as the CLI:
 - **Removing a PC ("Quitar", 8b) is not shown yet:** it comes with phase 6.
 - **Every git command of the sync has a limit:**
   - a stalled HTTP transfer gives up after 30 s;
-  - any command is killed after 3 minutes, so the lock is never held forever;
+  - any command is killed after a limit (15 minutes when it talks to the server, so a first
+    clone of a big repo on a slow link still finishes; 1 minute otherwise), so the lock is never
+    held forever;
+  - a kill stops `git` only, not its `ssh` child. A kill in the middle of a fetch could leave a
+    ref lock file that makes later syncs fail; leaving and joining again makes a new clone.
+    That is rare: the limit almost always fires while git waits for the network, before any
+    ref is locked;
   - no password window appears: no SSH askpass (`SSH_ASKPASS_REQUIRE=never`) and no credential
     manager login (`GCM_INTERACTIVE=never`).
 - **The 12 words cannot be lost on the way:**
