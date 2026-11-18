@@ -32,7 +32,7 @@ pub enum OwnerChoice {
     Forget,
 }
 
-fn now() -> i64 {
+pub(crate) fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64)
@@ -45,11 +45,11 @@ fn hidden(c: char) -> bool {
         || matches!(c, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
 }
 
-fn interactive() -> bool {
+pub(crate) fn interactive() -> bool {
     std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
 }
 
-fn read_line(prompt: &str) -> Result<String> {
+pub(crate) fn read_line(prompt: &str) -> Result<String> {
     print!("{prompt}");
     std::io::stdout().flush()?;
     let mut line = String::new();
@@ -57,7 +57,29 @@ fn read_line(prompt: &str) -> Result<String> {
     Ok(line.trim().to_owned())
 }
 
-fn print_report(s: &Style, report: &SyncReport) {
+/// Whether to go on: `yes`, or the user said so in a terminal. Outside a
+/// terminal without `yes`, it fails and names `command` (with `--yes`).
+pub(crate) fn confirmed(yes: bool, question: &str, command: &str) -> Result<bool> {
+    if yes {
+        return Ok(true);
+    }
+    if !interactive() {
+        bail!(
+            "{}",
+            tr!(
+                "para seguir sin preguntar, usa `{command}`",
+                "to go on without asking, use `{command}`"
+            )
+        );
+    }
+    let answer = read_line(question)?;
+    Ok(matches!(
+        answer.to_lowercase().as_str(),
+        "s" | "si" | "sí" | "y" | "yes"
+    ))
+}
+
+pub(crate) fn print_report(s: &Style, report: &SyncReport) {
     let SyncReport {
         sent,
         received,

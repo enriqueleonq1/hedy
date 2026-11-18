@@ -9,6 +9,7 @@ mod slash;
 mod spinner;
 mod style;
 mod sync;
+mod team;
 mod usage;
 
 use std::process::ExitCode;
@@ -18,7 +19,7 @@ use hedy_core::adapters::{self, HedyPaths};
 
 use cli::{
     AccountCommand, Cli, Command, ConfigCommand, MemoryCommand, SkillsCommand, SyncCommand,
-    TemplateCommand,
+    TeamCommand, TemplateCommand,
 };
 use style::Style;
 
@@ -221,6 +222,50 @@ fn run(cli: Cli) -> Result<ExitCode> {
             SyncCommand::Remove { pc, yes } => sync::remove(&hedy, &pc, yes),
             SyncCommand::Leave { yes } => sync::leave(&hedy, yes),
         },
+        Command::Team { team, command } => {
+            let command = command.unwrap_or(TeamCommand::Status);
+            let pick = || team::pick(&hedy, &dir, team.as_deref());
+            match command {
+                TeamCommand::Status => team::status(&hedy, &dir, team.as_deref()),
+                TeamCommand::Create { url, name, me, pc } => {
+                    team::create(&hedy, &url, &name, me.as_deref(), pc.as_deref())
+                }
+                TeamCommand::Invite {
+                    cancel: Some(number),
+                    ..
+                } => team::cancel_invite(&hedy, &pick()?, number),
+                TeamCommand::Invite { admin, mine, .. } => {
+                    team::invite(&hedy, &pick()?, admin, mine)
+                }
+                TeamCommand::Join { url, code, me, pc } => {
+                    team::join(&hedy, &url, code.as_deref(), me.as_deref(), pc.as_deref())
+                }
+                TeamCommand::Now => team::now_sync(&hedy, &pick()?),
+                TeamCommand::Link => team::link(&hedy, &dir, &pick()?),
+                TeamCommand::Notes => team::notes(&hedy, &pick()?),
+                TeamCommand::Add {
+                    text,
+                    everyone,
+                    category,
+                } => team::add(&hedy, &dir, &pick()?, &text.join(" "), everyone, &category),
+                TeamCommand::Publish { id, everyone } => {
+                    team::publish(&hedy, &pick()?, id, everyone)
+                }
+                TeamCommand::Review { id, accept, reject } => {
+                    team::review(&hedy, &pick()?, id.as_deref(), accept, reject)
+                }
+                TeamCommand::Role { person, admin, .. } => {
+                    team::role(&hedy, &pick()?, &person, admin)
+                }
+                TeamCommand::Remove { who, pc, yes } => {
+                    team::remove(&hedy, &pick()?, &who, pc, yes)
+                }
+                TeamCommand::Rename { name, person } => {
+                    team::rename(&hedy, &pick()?, &name, person.as_deref())
+                }
+                TeamCommand::Leave { yes, here } => team::leave(&hedy, &pick()?, yes, here),
+            }
+        }
         Command::Config(sub) => match sub {
             ConfigCommand::Get { key } => commands::config_get(&hedy, &key),
             ConfigCommand::Set { key, value } => commands::config_set(&hedy, &key, Some(&value)),

@@ -229,6 +229,9 @@ pub enum AppError {
     TeamLastAdmin,
     #[error("{}", self.message())]
     TeamPersonNotFound(String),
+    /// An admin took this PC out of the team.
+    #[error("{}", self.message())]
+    TeamRemoved,
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -430,6 +433,10 @@ impl AppError {
             Self::TeamInviteFailed => tr!(
                 "la invitación no funcionó (el código no coincidió) y ya no sirve: pide otra",
                 "the invite did not work (the code did not match) and is no longer valid: ask for another"
+            ),
+            Self::TeamRemoved => tr!(
+                "esta PC ya no está en el equipo: un admin la quitó, y no puede leer lo nuevo. Lo que ya tenía sigue aquí; sal con `hedy team leave` (o desde Ajustes) y, para volver, pide otra invitación",
+                "this PC is no longer in the team: an admin removed it, and it cannot read what is new. What it had stays here; leave with `hedy team leave` (or from Settings) and, to come back, ask for another invite"
             ),
             Self::TeamLastAdmin => tr!(
                 "el equipo se quedaría sin admin: haz admin a otra persona primero",

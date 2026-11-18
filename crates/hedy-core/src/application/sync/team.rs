@@ -603,6 +603,11 @@ impl Hedy {
         if leaving {
             return self.finish_leaving(&space, result);
         }
+        // Said in a team's words (personal sync's speak of the 12 words).
+        let result = result.map_err(|error| match error {
+            AppError::SyncRemoved => AppError::TeamRemoved,
+            error => error,
+        });
         match &result {
             Ok(_) => self.clear_sync_setting(&space, LAST_ERROR)?,
             Err(error) => self.set_sync_setting(&space, LAST_ERROR, &shown_error(error))?,
@@ -2603,6 +2608,15 @@ impl Hedy {
                 }
             }
         }
+        self.forget_team(&space)
+    }
+
+    /// This PC forgets the team here only, asking nobody: a PC given away,
+    /// or one that cannot wait for an admin. It stays in the team's epoch
+    /// (with nothing behind it) until an admin removes it.
+    pub fn team_forget(&self, team: &str) -> AppResult<()> {
+        let space = self.team_space_or_joining(team)?;
+        let _guard = self.sync_guard(&space)?;
         self.forget_team(&space)
     }
 

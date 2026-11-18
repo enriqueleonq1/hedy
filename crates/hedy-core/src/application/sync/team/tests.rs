@@ -690,7 +690,7 @@ fn removing_someone_keeps_their_notes_and_shuts_them_out() {
     assert_eq!(people(&ana), [("Ana".to_owned(), Role::Admin, 1)]);
     assert_eq!(
         luis.f.hedy.team_sync(&luis.team),
-        Err(AppError::SyncRemoved)
+        Err(AppError::TeamRemoved)
     );
     // Someone who joins afterwards still gets Luis's note, under his name.
     let marta = invite(&server, &ana, "Marta", Role::Member, false);
@@ -790,7 +790,7 @@ fn a_member_removes_their_own_pc_and_leaves_through_an_admin() {
     ana.sync();
     assert_eq!(
         laptop.f.hedy.team_sync(&laptop.team),
-        Err(AppError::SyncRemoved)
+        Err(AppError::TeamRemoved)
     );
     assert_eq!(
         people(&ana),
@@ -1022,7 +1022,7 @@ fn a_team_works_through_a_real_git_repo() {
     let laptop_id = laptop.team_status(&laptop_team).unwrap().device;
     luis.team_remove_pc(&luis_team, &laptop_id).unwrap();
     ana.team_sync(&team).unwrap();
-    assert_eq!(laptop.team_sync(&laptop_team), Err(AppError::SyncRemoved));
+    assert_eq!(laptop.team_sync(&laptop_team), Err(AppError::TeamRemoved));
     let status = ana.team_status(&team).unwrap();
     assert_eq!(status.people.len(), 2);
     assert!(status.people.iter().all(|p| p.devices.len() == 1));
@@ -1069,7 +1069,7 @@ fn a_replayed_request_never_brings_a_removed_pc_back() {
     ana.sync();
     assert_eq!(
         laptop.f.hedy.team_sync(&laptop.team),
-        Err(AppError::SyncRemoved)
+        Err(AppError::TeamRemoved)
     );
     assert_eq!(people(&ana)[1], ("Luis".to_owned(), Role::Member, 1));
     assert!(
@@ -1353,7 +1353,7 @@ fn a_removed_pc_still_leaves_cleanly() {
         .unwrap();
     assert_eq!(
         luis.f.hedy.team_sync(&luis.team),
-        Err(AppError::SyncRemoved)
+        Err(AppError::TeamRemoved)
     );
     assert!(luis.f.hedy.team_status(&luis.team).is_ok());
     luis.f.hedy.team_leave(&luis.team).unwrap();
