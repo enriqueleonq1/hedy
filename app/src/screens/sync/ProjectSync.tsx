@@ -64,11 +64,14 @@ function homeLabel(home: MemoryHomeKind | null, t: Translate): string {
   if (!home) return t("sync.home.undecided");
   if (home.kind === "personal") return t("sync.home.personal");
   if (home.kind === "shared") return t("sync.home.sharedNamed", { group: ownerName(home.group) });
+  if (home.kind === "team") return t("sync.home.team");
   return t("sync.home.local");
 }
 
 export function homeChoice(home: MemoryHome): Choice {
-  return home.chosen && home.home ? home.home.kind : "follow";
+  if (!home.chosen || !home.home) return "follow";
+  // A team's memory is a group's; the team's own screens manage it.
+  return home.home.kind === "team" ? "shared" : home.home.kind;
 }
 
 /** "Memoria de este proyecto": personal, shared with a group, this PC only, or as its owner says. */

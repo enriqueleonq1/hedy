@@ -251,6 +251,7 @@ const KIND_LABEL: Record<SyncConflict["kind"], MessageKey> = {
   skill: "sync.conflict.kind.skill",
   template: "sync.conflict.kind.template",
   theme: "sync.conflict.kind.theme",
+  suggestion: "sync.conflict.kind.suggestion",
 };
 
 /** Both versions side by side; the one in use is marked, either can win. */

@@ -820,7 +820,7 @@ export interface SyncSide {
   at: number;
 }
 
-export type SyncItemKind = "note" | "skill" | "template" | "theme";
+export type SyncItemKind = "note" | "skill" | "template" | "theme" | "suggestion";
 
 export interface SyncConflict {
   id: number;
@@ -831,7 +831,12 @@ export interface SyncConflict {
 }
 
 /** Where a project's memory lives. */
-export type MemoryHomeKind = { kind: "personal" } | { kind: "shared"; group: string } | { kind: "local" };
+export type MemoryHomeKind =
+  | { kind: "personal" }
+  | { kind: "shared"; group: string }
+  | { kind: "local" }
+  /** A team's (its local id): its notes go to the team's repo. */
+  | { kind: "team"; team: string };
 
 export interface MemoryHome {
   path: string;
