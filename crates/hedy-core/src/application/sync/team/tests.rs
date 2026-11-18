@@ -1967,3 +1967,333 @@ fn a_join_cancelled_before_it_is_in_takes_its_request_back() {
             .is_empty()
     );
 }
+
+// ── T6: personal sync and teams together ────────────────────────────────
+
+/// A PC of the combined scenario, on real git and SQLite.
+struct RealPc {
+    f: Fixture,
+    hedy: Hedy,
+    store: std::sync::Arc<crate::adapters::SqliteStore>,
+}
+
+impl RealPc {
+    fn new(data: &Path) -> Self {
+        use std::sync::Arc;
+
+        use crate::adapters::{GitSyncRemote, SqliteStore};
+
+        let f = Fixture::new();
+        std::fs::create_dir_all(data).unwrap();
+        let store = Arc::new(SqliteStore::open(&data.join("hedy.db")).unwrap());
+        let hedy = f.hedy_on(store.clone(), Arc::new(GitSyncRemote));
+        hedy.add_account(crate::application::NewAccount {
+            name: "Claude".into(),
+            provider: crate::domain::Provider::Claude,
+            api_key: false,
+            default_folder: false,
+            color: None,
+        })
+        .unwrap();
+        for name in ["notas", "tienda", "portal"] {
+            let project = PathBuf::from(format!("/code/{name}"));
+            f.fs.add_git_root(&project.to_string_lossy());
+            let origin = format!("https://github.com/empresa-ejemplo/{name}");
+            f.source.set_remotes_of(&project, &[("origin", &origin)]);
+            hedy.use_account(&project, "claude", None).unwrap();
+        }
+        Self { f, hedy, store }
+    }
+
+    fn join(&self, url: &str, code: &str, person: &str) -> String {
+        let join = self
+            .hedy
+            .team_join(url, code, person, &format!("PC de {person}"))
+            .unwrap();
+        assert!(!join.joined);
+        join.id
+    }
+
+    /// The texts of this PC's own notes (personal memory), global and of
+    /// every project.
+    fn own_notes(&self) -> Vec<String> {
+        let mut texts: Vec<String> = ["notas", "tienda", "portal"]
+            .into_iter()
+            .flat_map(|p| {
+                let project = PathBuf::from(format!("/code/{p}"));
+                self.store.notes(Some(&project), false).unwrap()
+            })
+            .chain(self.store.notes(None, false).unwrap())
+            .map(|n| n.text)
+            .collect();
+        texts.sort();
+        texts
+    }
+
+    fn team_notes(&self, team: &str) -> Vec<String> {
+        let mut texts: Vec<String> = self
+            .hedy
+            .team_notes(team)
+            .unwrap()
+            .into_iter()
+            .map(|n| n.text)
+            .collect();
+        texts.sort();
+        texts
+    }
+
+    /// The team block an agent gets in `project`.
+    fn agent_team_block(&self, project: &str) -> String {
+        self.hedy
+            .start_task(crate::application::NewTask {
+                images: Vec::new(),
+                project: PathBuf::from(project),
+                prompt: "hola".into(),
+                mode: crate::domain::TaskMode::Project,
+                model: None,
+                plan_first: false,
+            })
+            .unwrap();
+        self.f
+            .agents
+            .last_request()
+            .memory
+            .and_then(|m| m.team)
+            .unwrap_or_default()
+    }
+
+    /// How many notes this PC keeps in a space's replica.
+    fn replica_notes(&self, space: &str) -> usize {
+        self.store
+            .sync_items(space)
+            .unwrap()
+            .iter()
+            .filter(|c| c.kind == ItemKind::Note)
+            .count()
+    }
+}
+
+/// Personal sync and two teams on the same PCs, through real git and
+/// SQLite: each note reaches only where it belongs. Ana has two PCs in her
+/// personal sync; her home PC is in two teams (Tienda with Luis, Cliente
+/// with Marta), and her office PC joins Tienda later.
+fn personal_sync_and_two_teams(dir: &Path, personal_url: &str, a_url: &str, b_url: &str) {
+    let casa = RealPc::new(&dir.join("ana-casa"));
+    let oficina = RealPc::new(&dir.join("ana-oficina"));
+    let luis = RealPc::new(&dir.join("luis"));
+    let marta = RealPc::new(&dir.join("marta"));
+    let (notas, tienda, portal) = (
+        PathBuf::from("/code/notas"),
+        PathBuf::from("/code/tienda"),
+        PathBuf::from("/code/portal"),
+    );
+
+    // Ana's personal memory: a global note and one of "notas".
+    for ana in [&casa, &oficina] {
+        ana.hedy
+            .set_memory_home(&notas, Some(&MemoryHome::Personal))
+            .unwrap();
+    }
+    casa.hedy
+        .add_note(None, "Responde en español", Category::Preference)
+        .unwrap();
+    casa.hedy
+        .add_note(Some(&notas), "Usa pnpm, no npm", Category::Convention)
+        .unwrap();
+    let words = casa.hedy.sync_setup(personal_url, "Casa").unwrap();
+    oficina
+        .hedy
+        .sync_join(personal_url, &words, "Oficina")
+        .unwrap();
+
+    // Two teams on Ana's home PC.
+    let (a, _) = casa
+        .hedy
+        .team_create(a_url, "Tienda", "Ana", "Casa")
+        .unwrap();
+    let (b, _) = casa
+        .hedy
+        .team_create(b_url, "Cliente", "Ana", "Casa")
+        .unwrap();
+    let code = casa.hedy.team_invite(&a, Role::Member).unwrap().code;
+    let luis_a = luis.join(a_url, &code, "Luis");
+    let code = casa.hedy.team_invite(&b, Role::Member).unwrap().code;
+    let marta_b = marta.join(b_url, &code, "Marta");
+    casa.hedy.team_sync(&a).unwrap();
+    casa.hedy.team_sync(&b).unwrap();
+    luis.hedy.team_sync(&luis_a).unwrap();
+    marta.hedy.team_sync(&marta_b).unwrap();
+    casa.hedy.team_link_project(&a, &tienda).unwrap();
+    casa.hedy.team_link_project(&b, &portal).unwrap();
+    luis.hedy.team_link_project(&luis_a, &tienda).unwrap();
+    marta.hedy.team_link_project(&marta_b, &portal).unwrap();
+
+    // Each team's notes, a member's project note, and one of Ana's own in a
+    // team project (it stays on this PC).
+    casa.hedy
+        .team_add_note(&a, None, "Tienda: precios en USD", Category::Rule, None)
+        .unwrap();
+    casa.hedy
+        .team_add_note(&b, None, "Cliente: todo en inglés", Category::Rule, None)
+        .unwrap();
+    luis.hedy
+        .team_add_note(
+            &luis_a,
+            Some(&tienda),
+            "Tienda: tests en tests/",
+            Category::Convention,
+            None,
+        )
+        .unwrap();
+    casa.hedy
+        .add_note(Some(&tienda), "Mi atajo en tienda", Category::Preference)
+        .unwrap();
+
+    // The office PC joins Tienda as another PC of Ana's.
+    let code = casa.hedy.team_invite_pc(&a).unwrap().code;
+    let oficina_a = oficina.join(a_url, &code, "Ana");
+    casa.hedy.team_sync(&a).unwrap();
+    oficina.hedy.team_sync(&oficina_a).unwrap();
+    oficina.hedy.team_link_project(&oficina_a, &tienda).unwrap();
+
+    // Everyone syncs everything, twice.
+    for _ in 0..2 {
+        casa.hedy.sync_now().unwrap();
+        oficina.hedy.sync_now().unwrap();
+        casa.hedy.team_sync(&a).unwrap();
+        casa.hedy.team_sync(&b).unwrap();
+        oficina.hedy.team_sync(&oficina_a).unwrap();
+        luis.hedy.team_sync(&luis_a).unwrap();
+        marta.hedy.team_sync(&marta_b).unwrap();
+    }
+
+    // Personal sync: Ana's two PCs, and nothing of any team.
+    assert_eq!(
+        oficina.own_notes(),
+        ["Responde en español", "Usa pnpm, no npm"]
+    );
+    assert_eq!(
+        casa.own_notes(),
+        [
+            "Mi atajo en tienda",
+            "Responde en español",
+            "Usa pnpm, no npm"
+        ]
+    );
+    assert!(luis.own_notes().is_empty() && marta.own_notes().is_empty());
+    assert_eq!(casa.replica_notes(""), 2);
+    assert_eq!(oficina.replica_notes(""), 2);
+
+    // Each team: its people, its notes.
+    let tienda_notes = ["Tienda: precios en USD", "Tienda: tests en tests/"];
+    assert_eq!(casa.team_notes(&a), tienda_notes);
+    assert_eq!(oficina.team_notes(&oficina_a), tienda_notes);
+    assert_eq!(luis.team_notes(&luis_a), tienda_notes);
+    assert_eq!(casa.team_notes(&b), ["Cliente: todo en inglés"]);
+    assert_eq!(marta.team_notes(&marta_b), ["Cliente: todo en inglés"]);
+    assert_eq!(casa.hedy.teams().unwrap().len(), 2);
+    assert_eq!(oficina.hedy.teams().unwrap().len(), 1);
+    assert_eq!(luis.hedy.teams().unwrap().len(), 1);
+    assert_eq!(marta.hedy.teams().unwrap().len(), 1);
+    assert_eq!(casa.replica_notes(&Space::Team(a.clone()).id()), 2);
+    assert_eq!(casa.replica_notes(&Space::Team(b.clone()).id()), 1);
+
+    // What each agent reads: its project's team layer, and nothing else.
+    let block = casa.agent_team_block("/code/tienda");
+    assert!(
+        block.contains("precios en USD") && !block.contains("inglés"),
+        "{block}"
+    );
+    let block = casa.agent_team_block("/code/portal");
+    assert!(
+        block.contains("inglés") && !block.contains("USD"),
+        "{block}"
+    );
+    assert_eq!(casa.agent_team_block("/code/notas"), "");
+    assert!(
+        oficina
+            .agent_team_block("/code/tienda")
+            .contains("precios en USD")
+    );
+    assert!(
+        luis.agent_team_block("/code/tienda")
+            .contains("precios en USD")
+    );
+    assert_eq!(luis.agent_team_block("/code/portal"), "");
+    assert!(marta.agent_team_block("/code/portal").contains("inglés"));
+    assert_eq!(marta.agent_team_block("/code/tienda"), "");
+
+    // A personal note written on the office PC still reaches home.
+    oficina
+        .hedy
+        .add_note(Some(&notas), "Commits en una línea", Category::Convention)
+        .unwrap();
+    oficina.hedy.sync_now().unwrap();
+    casa.hedy.sync_now().unwrap();
+    assert!(
+        casa.own_notes()
+            .contains(&"Commits en una línea".to_owned())
+    );
+    assert!(luis.team_notes(&luis_a).len() == 2);
+
+    // Leaving the teams leaves personal sync as it was.
+    oficina.hedy.team_leave(&oficina_a).unwrap();
+    casa.hedy.team_sync(&a).unwrap();
+    for (pc, team) in [(&luis, &luis_a), (&marta, &marta_b), (&oficina, &oficina_a)] {
+        pc.hedy.team_forget(team).unwrap();
+    }
+    casa.hedy.team_forget(&a).unwrap();
+    casa.hedy.team_forget(&b).unwrap();
+    assert!(casa.hedy.teams().unwrap().is_empty());
+    casa.hedy.sync_now().unwrap();
+    oficina.hedy.sync_now().unwrap();
+    assert_eq!(casa.replica_notes(""), 3);
+    assert_eq!(
+        oficina.own_notes(),
+        [
+            "Commits en una línea",
+            "Responde en español",
+            "Usa pnpm, no npm"
+        ]
+    );
+}
+
+/// A new empty bare repo in `dir`.
+fn bare_repo(dir: &Path, name: &str) -> String {
+    let bare = dir.join(name);
+    std::fs::create_dir_all(&bare).unwrap();
+    let init = std::process::Command::new("git")
+        .args(["init", "--quiet", "--bare", "--initial-branch=main"])
+        .current_dir(&bare)
+        .status()
+        .unwrap();
+    assert!(init.success());
+    bare.to_string_lossy().into_owned()
+}
+
+#[test]
+fn personal_sync_and_two_teams_keep_each_note_where_it_belongs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repos = tmp.path().join("repos");
+    personal_sync_and_two_teams(
+        tmp.path(),
+        &bare_repo(&repos, "personal.git"),
+        &bare_repo(&repos, "a.git"),
+        &bare_repo(&repos, "b.git"),
+    );
+}
+
+/// The same against real servers: three empty repos in `HEDY_E2E_PERSONAL`,
+/// `HEDY_E2E_TEAM_A` and `HEDY_E2E_TEAM_B`.
+#[test]
+#[ignore = "uses real git servers"]
+fn personal_sync_and_two_teams_on_real_repos() {
+    let var = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"));
+    let tmp = tempfile::tempdir().unwrap();
+    personal_sync_and_two_teams(
+        tmp.path(),
+        &var("HEDY_E2E_PERSONAL"),
+        &var("HEDY_E2E_TEAM_A"),
+        &var("HEDY_E2E_TEAM_B"),
+    );
+}

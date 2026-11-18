@@ -105,3 +105,8 @@ An admin's PC adds it on its next sync.
 - `HEDY_E2E_URL=<empty-repo-url> cargo test -p hedy-app -- --ignored team_ipc`: the app's
   Tauri commands over IPC, with the arguments the UI sends. Without `HEDY_E2E_URL` it uses a
   local bare repo.
+- Personal sync and teams together (`cargo test personal_sync_and_two_teams`): one person with
+  two PCs in personal sync and in two teams, each team with someone else. Each note reaches
+  only its own repo and its own people, and each agent reads only its project's team. Against
+  real servers: `HEDY_E2E_PERSONAL`, `HEDY_E2E_TEAM_A` and `HEDY_E2E_TEAM_B` (three empty
+  repos) and `cargo test -p hedy-core -- --ignored personal_sync_and_two_teams_on_real_repos`.
