@@ -2798,8 +2798,71 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
   - The whole flow runs through real git and SQLite: three people, a second PC added
     through an admin, a suggestion, and a removal. The repo's history (`git log -p`) holds
     no name and no text.
+- **Housekeeping:**
+  - **Two reviews:**
+    - security, with proofs of concept;
+    - correctness and regressions. No regression was found in personal sync: its settings and
+      keyring entry keep their names, what it stores is byte for byte the same, and the
+      migration keeps every row.
+  - **Fixed** (each with a test of its own):
+    - **A replayed request brought a removed PC back (high).** A member's request only named
+      its path, so the request that once added a laptop, pushed again after the laptop was
+      removed, added it again. Now:
+      - an addition names the epoch it was asked in and is signed only in that epoch;
+      - a PC once in an epoch is never added again;
+      - a member's PC asks again, under a new name, for each new epoch until its PC is in,
+        so no file is ever written twice.
+    - **One member could stop the team's sync (high).** A malformed batch made every PC's
+      sync fail, and with it the admins' means to remove that member. In a team it now counts
+      as refused and stops only that PC's batches.
+    - **A backdated version took someone else's note.** On a PC that had not read the note
+      yet, it applied first. A new item's uid now starts with its writer's person, and a
+      member writes only in their own uids: what a member writes in another person's uid is
+      refused, whatever its date.
+    - **A request with a key that does not read blocked every seat change.** Keys are now
+      checked (and duplicates refused) before the epoch, one request at a time, and
+      `new_epoch` never writes an epoch that `valid_members` refuses.
+    - **A suggestion's byline could carry hidden characters.** They are checked on read and
+      when the suggestion is taken.
+    - **A member could show any name on their notes.** A person's name is now the one the
+      admin who let them in wrote, in the admins' signed `team.hedy` (names add up across
+      admins), never one they give themselves.
+    - **A key history file was taken from any admin of either epoch,** so an admin demoted
+      since could feed a joiner a wrong key. Only the PC that signed the epoch counts now. A
+      team's project names come only from epoch 1's key; without it, no project matches.
+    - **Copies diverged after a demotion.** The admin now takes over everything the demoted
+      person's PCs wrote, not only the team layer.
+    - **A note's owner who took the suggestion to remove it left that suggestion pending
+      elsewhere.** The suggestion now goes before the note.
+    - **A removed PC could not leave, and its status failed.** Leaving now cleans up here
+      whatever the repo says.
+    - **An admin who left lost their notes for those who joined later.** Every PC, admin or
+      not, now leaves through a request that another admin's PC signs, taking over what it
+      wrote.
+    - **Crash windows:**
+      - the takeover happens before the push;
+      - a step that fails after writing discards the clone;
+      - an invite whose PC is in already is not added again;
+      - the invite's files stay until its answer leaves (a joiner who looked in between was
+        told the invite had failed);
+      - a request that arrived in time is checked even after the invite expires.
+    - **The team list** changes under a lock of its own, so the app and `hedy` never drop
+      each other's teams.
+    - **The app** knows the new memory home and item kind.
+  - **Checks:**
+    - the personal e2e script with the real binary and keyring;
+    - the app's sync over IPC;
+    - the team flow over real git;
+    - the random three-person simulation. No PC refuses anything legitimate.
 - **Known limits:**
-  - A member who hides another's batches could have their own version of that note taken
-    on a PC that never saw the original. They need push access and a member's seat, and the
-    note would show their name.
+  - **Hiding someone's batches.** A member who hides another's batches can keep that
+    person's work from a PC that never saw it. They need push access, and they cannot put
+    their own version in its place.
+  - **Key history files.** Anyone with push access can delete them, which cuts new members
+    off from older content. They cannot forge one.
+  - **What the git host sees in plain text:**
+    - the seats in the epochs: person ids, roles, and how many PCs each person has;
+    - the invites' offer and request files, and when they were made.
+
+    Names, notes and the team's name are sealed.
   - The pins and the push-access limits of §34 still apply.
