@@ -193,6 +193,8 @@ impl Runner {
         git(repo, &["commit", "-q", "-m", "Estado inicial del caso"])?;
         let repo = repo.canonicalize()?;
         let result = self.run_task(case, layer, &repo, out);
+        self.leave_teams();
+        let _ = std::fs::remove_dir_all(repo.with_extension("team.git"));
         let _ = self.hedy.remove_project(&repo);
         result
     }
@@ -204,6 +206,9 @@ impl Runner {
         if layer.memory() {
             for note in &case.spec.notes {
                 hedy.add_note(Some(repo), &note.text, note.category)?;
+            }
+            if !case.spec.team_notes.is_empty() {
+                self.join_team(case, repo)?;
             }
         } else {
             hedy.set_memory_reader(repo, account, false)?;
@@ -242,6 +247,28 @@ impl Runner {
             }
         }
         result
+    }
+
+    /// Puts the project in a team made for this run (in a bare repo next to
+    /// it), with the case's team-layer notes.
+    fn join_team(&self, case: &Case, repo: &Path) -> Result<()> {
+        let bare = repo.with_extension("team.git");
+        std::fs::create_dir_all(&bare)?;
+        git(&bare, &["init", "-q", "--bare", "-b", "main"])?;
+        let hedy = &self.hedy;
+        let (team, _) = hedy.team_create(&bare.to_string_lossy(), "Equipo", "Ana", "Evals")?;
+        hedy.team_link_project(&team, repo)?;
+        for note in &case.spec.team_notes {
+            hedy.team_add_note(&team, None, &note.text, note.category, None)?;
+        }
+        Ok(())
+    }
+
+    /// Leaves every team a run made (their keys are in the keyring).
+    fn leave_teams(&self) {
+        for team in self.hedy.teams().unwrap_or_default() {
+            let _ = self.hedy.team_leave(&team.id);
+        }
     }
 
     /// Waits for the task, then checks its work.
