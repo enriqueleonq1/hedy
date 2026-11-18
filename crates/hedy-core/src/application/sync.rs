@@ -1167,7 +1167,7 @@ impl Hedy {
                 // Newest first; one that does not check out (junk someone
                 // left) gives way to the next.
                 let mut candidates = snapshots.remove(&device).unwrap_or_default();
-                candidates.sort_by(|a, b| b.0.cmp(&a.0));
+                candidates.sort_by_key(|c| std::cmp::Reverse(c.0));
                 for (through, path) in candidates {
                     if through > read
                         && self.apply_snapshot(session, &device, through, &path, report)?
