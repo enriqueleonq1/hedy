@@ -2102,3 +2102,76 @@ fn an_edit_made_on_the_removed_pcs_version_wins_over_the_take_over() {
         assert!(f.hedy.sync_conflicts().unwrap().is_empty());
     }
 }
+
+#[test]
+fn an_epoch_without_the_recovery_key_is_ignored_and_written_over() {
+    use crate::application::ports::SyncCrypto;
+    let (server, home, office, laptop) = three_pcs();
+    office.hedy.sync_now().unwrap();
+    let crypto = crate::adapters::VaultCrypto;
+    let keys = office_keys(&office);
+    let office_id = office.hedy.sync_status().unwrap().unwrap().device;
+    let newest = *keys.epochs.keys().last().unwrap();
+    let file = String::from_utf8(server.file(&layout::epoch(newest)).unwrap()).unwrap();
+    let (_, members) = crypto.epoch_members(&file).unwrap();
+    let kept: Vec<_> = members
+        .into_iter()
+        .filter(|(id, _)| id != RECOVERY_MEMBER)
+        .collect();
+    let (next, _) = crypto
+        .new_epoch(newest + 1, &kept, office_id.as_str(), &keys.device)
+        .unwrap();
+    office
+        .sync
+        .write(Path::new("/"), &layout::epoch(newest + 1), next.as_bytes())
+        .unwrap();
+    office
+        .sync
+        .push(Path::new("/"), "sin recuperación")
+        .unwrap();
+    home.hedy.sync_now().unwrap();
+    laptop.hedy.sync_now().unwrap();
+    home.hedy.sync_remove_device("Oficina").unwrap();
+    laptop.hedy.sync_now().unwrap();
+    assert_eq!(names(&laptop), ["Portátil", "Casa"]);
+}
+
+#[test]
+fn junk_named_like_a_snapshot_never_replaces_the_real_one() {
+    let server = SyncServer::default();
+    let (home, _) = pc(&server, "/a/tienda");
+    let words = home.hedy.sync_setup(URL, "Casa").unwrap();
+    let (office, _) = pc(&server, "/b/tienda");
+    office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+    for i in 0..5 {
+        home.hedy
+            .add_note(None, &format!("nota {i}"), Category::Decision)
+            .unwrap();
+        home.hedy.sync_now().unwrap();
+    }
+    let home_id = home.hedy.sync_status().unwrap().unwrap().device;
+    let real = server
+        .paths()
+        .into_iter()
+        .filter_map(|p| layout::snapshot_seq(&p))
+        .map(|(_, s)| s)
+        .max()
+        .unwrap();
+    // Named above the real one (but within the PC's seq), and the lowest.
+    for junk in [real + 1, 0] {
+        let path = layout::snapshot(&home_id, junk);
+        office.sync.write(Path::new("/"), &path, b"junk").unwrap();
+    }
+    office.sync.push(Path::new("/"), "junk").unwrap();
+    // A new PC reading now gets past the junk to the real one.
+    let (laptop, _) = pc(&server, "/c/tienda");
+    laptop.hedy.sync_join(URL, &words, "Portátil").unwrap();
+    home.hedy.sync_now().unwrap();
+    assert!(server.paths().contains(&layout::snapshot(&home_id, real)));
+    let (desk, _) = pc(&server, "/d/tienda");
+    desk.hedy.sync_join(URL, &words, "Escritorio").unwrap();
+    let expected: Vec<String> = (0..5).map(|i| format!("nota {i}")).collect();
+    for f in [&laptop, &desk] {
+        assert_eq!(texts(f, None), expected);
+    }
+}

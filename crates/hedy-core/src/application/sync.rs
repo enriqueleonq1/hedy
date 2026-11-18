@@ -57,6 +57,8 @@ const OUTBOX: &str = "sync.outbox";
 /// The newest stamp made or seen (JSON), so new ones are always later.
 const CLOCK: &str = "sync.clock";
 const LAST_SYNC: &str = "sync.last_sync";
+/// The seq of this PC's own snapshot in the repo (0: none).
+const SNAPSHOT: &str = "sync.snapshot";
 /// Why the last sync failed; cleared by the next one that works.
 const LAST_ERROR: &str = "sync.last_error";
 /// When this PC last wrote its name and last sync to the repo.
@@ -699,13 +701,14 @@ impl Hedy {
             if self.sync_crypto.verify_next_epoch(&previous, file).is_err() {
                 break;
             }
-            // The recovery key stays a member: it is how a PC joins.
+            // The recovery key stays a member (it is how a PC joins); one
+            // without it is not trusted either.
             let (_, members) = self.sync_crypto.epoch_members(file)?;
             if !members
                 .iter()
                 .any(|(id, public)| id == RECOVERY_MEMBER && *public == recovery)
             {
-                return Err(corrupt(&layout::epoch(*number)));
+                break;
             }
             pins.insert(*number, self.sync_crypto.digest(file.as_bytes()));
             match self
@@ -1141,7 +1144,7 @@ impl Hedy {
     /// batch is gone (compacted), its snapshot stands for it.
     fn apply_batches(&self, session: &Session, report: &mut SyncReport) -> AppResult<()> {
         let mut pending: BTreeMap<DeviceId, Vec<(u64, String)>> = BTreeMap::new();
-        let mut snapshots: HashMap<DeviceId, (u64, String)> = HashMap::new();
+        let mut snapshots: HashMap<DeviceId, Vec<(u64, String)>> = HashMap::new();
         for path in self.sync_remote.files(&session.dir, layout::DEVICES_DIR)? {
             let member = |device: &DeviceId| {
                 *device != session.device && session.members.contains_key(device.as_str())
@@ -1152,23 +1155,27 @@ impl Hedy {
                 pending.entry(device).or_default().push((seq, path));
             } else if let Some((device, seq)) = layout::snapshot_seq(&path)
                 && member(&device)
-                && snapshots
-                    .get(&device)
-                    .is_none_or(|(newest, _)| seq > *newest)
             {
                 pending.entry(device.clone()).or_default();
-                snapshots.insert(device, (seq, path));
+                snapshots.entry(device).or_default().push((seq, path));
             }
         }
         for (device, mut batches) in pending {
             batches.sort();
             let mut read = self.store.sync_cursor(&device)?;
-            if let Some((through, path)) = snapshots.get(&device)
-                && *through > read
-                && !batches.iter().any(|(seq, _)| *seq == read + 1)
-                && self.apply_snapshot(session, &device, *through, path, report)?
-            {
-                read = *through;
+            if !batches.iter().any(|(seq, _)| *seq == read + 1) {
+                // Newest first; one that does not check out (junk someone
+                // left) gives way to the next.
+                let mut candidates = snapshots.remove(&device).unwrap_or_default();
+                candidates.sort_by(|a, b| b.0.cmp(&a.0));
+                for (through, path) in candidates {
+                    if through > read
+                        && self.apply_snapshot(session, &device, through, &path, report)?
+                    {
+                        read = through;
+                        break;
+                    }
+                }
             }
             let unread: Vec<(u64, String)> =
                 batches.into_iter().filter(|(seq, _)| *seq > read).collect();
@@ -1257,18 +1264,14 @@ impl Hedy {
         }
         let seq = self.sync_number(SEQ)?;
         let mut files = self.sync_remote.files(&session.dir, &own)?;
-        let mut newest_snapshot = 0;
-        for path in &files {
-            if let Some((_, through)) = layout::snapshot_seq(path)
-                && through <= seq
-            {
-                newest_snapshot = newest_snapshot.max(through);
-            }
-        }
+        // Its own snapshot is the one it remembers writing, not the
+        // highest name there (someone with push access can add one).
+        let newest_snapshot = self.sync_number(SNAPSHOT)?;
         let mine = |path: &str| {
             path == layout::device_info(&session.device)
                 || layout::batch_seq(path).is_some_and(|(_, s)| s <= seq)
-                || layout::snapshot_seq(path).is_some_and(|(_, s)| s == newest_snapshot)
+                || layout::snapshot_seq(path)
+                    .is_some_and(|(_, s)| newest_snapshot > 0 && s == newest_snapshot)
         };
         for path in files.iter().filter(|p| !mine(p)) {
             self.sync_remote.remove(&session.dir, path)?;
@@ -1302,6 +1305,7 @@ impl Hedy {
         }
         let path = layout::snapshot(&session.device, through_seq);
         self.write_signed(session, &path, &body)?;
+        self.set_sync_setting(SNAPSHOT, &through_seq.to_string())?;
         for old in files {
             let replaced = layout::batch_seq(&old).is_some_and(|(_, seq)| seq <= through_seq)
                 || layout::snapshot_seq(&old).is_some_and(|(_, seq)| seq < through_seq);
@@ -1729,7 +1733,7 @@ impl Hedy {
         // URL first: what says the sync is set up.
         for key in [
             URL, DEVICE, NAME, RECOVERY, EPOCH, PINS, SEQ, PENDING, OUTBOX, CLOCK, LAST_SYNC,
-            LAST_ERROR, INFO_AT,
+            LAST_ERROR, INFO_AT, SNAPSHOT,
         ] {
             self.store.set_setting(key, None)?;
         }

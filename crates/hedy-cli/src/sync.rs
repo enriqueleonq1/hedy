@@ -38,6 +38,13 @@ fn now() -> i64 {
         .map_or(0, |d| d.as_secs() as i64)
 }
 
+/// What a name another PC signed must not carry into the terminal:
+/// controls, and the marks that reorder text (a name posing as another).
+fn hidden(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+}
+
 fn interactive() -> bool {
     std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
 }
@@ -116,7 +123,7 @@ pub fn status(hedy: &Hedy) -> Result<()> {
     println!("\n{}", s.section(&tr!("PCs", "PCs")));
     for pc in &status.devices {
         // Each PC signs its own name: shown without terminal controls.
-        let name: String = pc.name.chars().filter(|c| !c.is_control()).collect();
+        let name: String = pc.name.chars().filter(|c| !hidden(*c)).collect();
         let name = if name.trim().is_empty() {
             pc.id.as_str().to_owned()
         } else {

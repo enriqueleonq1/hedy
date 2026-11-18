@@ -559,7 +559,10 @@ impl EpochFile {
             .members
             .iter()
             .all(|m| self.member(&m.id).is_some_and(|old| old.public == m.public));
-        if next.signer != RECOVERY_ID && !only_removes {
+        // The recovery key always stays, unchanged: it is how a PC joins.
+        let keeps_recovery = self.member(RECOVERY_ID).map(|m| &m.public)
+            == next.member(RECOVERY_ID).map(|m| &m.public);
+        if !keeps_recovery || (next.signer != RECOVERY_ID && !only_removes) {
             return Err(VaultError::Untrusted(Distrust::Members));
         }
         Ok(())

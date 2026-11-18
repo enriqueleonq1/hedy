@@ -2485,5 +2485,16 @@ each now fixed with a regression test (or, for the git case, a real run):
 A differential random simulation (4 PCs, 200 steps, 30 seeds, with and without compaction and a
 removal) found the notes and templates identical in every pair.
 
+**Re-check (security):** every repro now fails. Two more findings, both fixed with a test:
+- an epoch a member signed without the recovery key stopped every sync. The recovery key must
+  now stay, unchanged, in every epoch whoever signs it; one without it is ignored, and a
+  removal writes over it;
+- junk named like a snapshot made its owner delete its real one. A PC now remembers the seq
+  of its own snapshot (`sync.snapshot`), and a reader tries snapshots newest first until one
+  checks out.
+- The CLI also hides the marks that reorder text in PC names.
+- An epoch written by a newer Hedy (another format) is now ignored rather than fatal, like any
+  epoch this version cannot check.
+
 **Next phase:**
 7. A real test.
