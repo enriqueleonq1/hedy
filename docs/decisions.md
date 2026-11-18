@@ -2686,6 +2686,16 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
   - the lint blocked ordinary emoji (keycaps, ❤️‍🔥, subdivision flags) and missed some
     carriers;
   - joining a team with the words wrote an epoch that every PC refused.
+- **Re-verified** by both reviewers, with their proofs of concept rerun: the fixes hold. The
+  check found one new hole, opened by the emoji fix:
+  - any run of tags after 🏴 passed as a flag, so a note could hide a whole instruction in
+    them. Now only a subdivision code passes: 3 to 7 lowercase letters or digits, then the
+    cancel tag;
+  - a presentation selector passed after any symbol from U+2000 to U+2BFF, a dash or a quote
+    among them. Now it passes only after the characters that have an emoji form.
+
+  Not changed: the check that no two members share a key compares the keys' text. An X25519
+  key with its top bit flipped reads as another key, but it opens nothing of the original's.
 - **Left for T2:**
   - **Give the joiner its root of trust.** The inviting PC's answer, sealed with the shared
     key, carries the team's recovery public key and the pins of its epochs. Without them, a
