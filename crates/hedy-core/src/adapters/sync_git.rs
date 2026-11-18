@@ -55,9 +55,11 @@ pub(crate) fn clear_repo_redirects(command: &mut Command) {
 /// Also leaves out the user's `GIT_CONFIG_*`: the sync repo is not the
 /// user's project and runs with a neutral setup.
 fn clear_git_redirects(command: &mut Command) {
-    remove_env(command, |name| {
-        redirects_repo(name) || name.starts_with("GIT_CONFIG")
-    });
+    remove_env(command, redirects_repo_or_config);
+}
+
+fn redirects_repo_or_config(name: &str) -> bool {
+    redirects_repo(name) || name.starts_with("GIT_CONFIG")
 }
 
 fn git(dir: &Path, args: &[&str]) -> PortResult<Output> {
@@ -359,16 +361,19 @@ mod tests {
 
     #[test]
     fn projects_keep_the_users_git_config_and_the_sync_clone_does_not() {
-        // Both refuse another repo.
-        assert!(redirects_repo("GIT_DIR") && redirects_repo("GIT_WORK_TREE"));
-        // Only the sync clone leaves out the user's config.
-        assert!(!redirects_repo("GIT_CONFIG_GLOBAL"));
-        let mut command = Command::new("git");
-        command.env("GIT_CONFIG_GLOBAL", "/x");
-        clear_git_redirects(&mut command);
-        let mut project = Command::new("git");
-        clear_repo_redirects(&mut project);
-        assert!(!redirects_repo("GIT_TERMINAL_PROMPT"));
+        for var in ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"] {
+            assert!(
+                redirects_repo(var) && redirects_repo_or_config(var),
+                "{var}"
+            );
+        }
+        for var in ["GIT_CONFIG_GLOBAL", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0"] {
+            assert!(
+                !redirects_repo(var) && redirects_repo_or_config(var),
+                "{var}"
+            );
+        }
+        assert!(!redirects_repo_or_config("GIT_TERMINAL_PROMPT"));
     }
 
     #[test]
