@@ -443,6 +443,7 @@ fn hidden_characters_never_get_into_a_team_note() {
     let person = luis.f.hedy.team_status(&luis.team).unwrap().person;
     let suggestion = SuggestionBody {
         note: None,
+        note_owner: None,
         text: Some(sneaky.into()),
         category: Category::Rule,
         topic: None,
@@ -726,10 +727,13 @@ fn the_last_admin_cannot_leave_or_step_down() {
         luis.f.hedy.team_status(&luis.team).unwrap().summary.role,
         Some(Role::Admin)
     );
+    // An admin's PC leaves once another admin's takes it out.
     ana.f.hedy.team_leave(&ana.team).unwrap();
-    assert!(ana.f.hedy.teams().unwrap().is_empty());
+    assert!(ana.f.hedy.teams().unwrap()[0].leaving);
     luis.sync();
     assert_eq!(people(&luis), [("Luis".to_owned(), Role::Admin, 1)]);
+    ana.sync();
+    assert!(ana.f.hedy.teams().unwrap().is_empty());
     // The team keeps its name though Ana's PC wrote it.
     luis.sync();
     assert_eq!(
@@ -1217,6 +1221,7 @@ fn names_come_from_the_admins_and_bylines_stay_clean() {
         Scope::Global,
         json(&SuggestionBody {
             note: None,
+            note_owner: None,
             text: Some("Regla limpia".into()),
             category: Category::Rule,
             topic: None,
@@ -1374,4 +1379,297 @@ fn a_joiner_waits_while_the_answer_has_not_left() {
     ana.sync();
     luis.hedy.team_sync(&join.id).unwrap();
     assert!(!luis.hedy.teams().unwrap()[0].waiting);
+}
+
+#[test]
+fn a_suggestion_taken_away_stays_away_after_its_owner_compacts() {
+    let (server, ana, luis) = team_of_two();
+    let marta = invite(&server, &ana, "Marta", Role::Member, false);
+    luis.link();
+    marta.link();
+    let TeamWriteOutcome::Published(uid) = luis
+        .f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            Some(&luis.project),
+            "Vieja",
+            Category::Rule,
+            None,
+        )
+        .unwrap()
+    else {
+        panic!("published");
+    };
+    luis.sync();
+    marta.sync();
+    let TeamWriteOutcome::Suggested(sid) = marta
+        .f
+        .hedy
+        .team_edit_note(&marta.team, &uid, None, None, None)
+        .unwrap()
+    else {
+        panic!("suggested");
+    };
+    marta.sync();
+    luis.sync();
+    luis.f
+        .hedy
+        .team_accept_suggestion(&luis.team, &sid)
+        .unwrap();
+    // Luis keeps writing: his folder compacts, and keeps only the removal.
+    for i in 0..5 {
+        luis.f
+            .hedy
+            .team_add_note(
+                &luis.team,
+                Some(&luis.project),
+                &format!("n{i}"),
+                Category::Rule,
+                None,
+            )
+            .unwrap();
+        luis.sync();
+    }
+    marta.sync();
+    assert_eq!(ana.sync().refused, 0);
+    assert_eq!(replica(&ana), replica(&luis));
+    let kim = invite(&server, &ana, "Kim", Role::Member, false);
+    assert_eq!(replica(&kim), replica(&luis));
+}
+
+#[test]
+fn a_member_promoted_while_their_pc_waits_adds_it_themselves() {
+    let (server, ana, luis) = team_of_two();
+    let laptop = invite(&server, &luis, "Luis", Role::Member, true);
+    assert!(laptop.f.hedy.teams().unwrap()[0].waiting);
+    // Ana makes Luis an admin before her PC signs his request.
+    ana.f
+        .hedy
+        .team_set_role(&ana.team, &person_of(&ana, "Luis"), Role::Admin)
+        .unwrap();
+    ana.sync();
+    luis.sync();
+    laptop.sync();
+    assert!(!laptop.f.hedy.teams().unwrap()[0].waiting);
+    assert_eq!(people(&laptop)[1], ("Luis".to_owned(), Role::Admin, 2));
+}
+
+#[test]
+fn names_survive_the_admin_who_wrote_them() {
+    let (server, ana, _luis) = team_of_two();
+    let bea = invite(&server, &ana, "Bea", Role::Admin, false);
+    ana.sync();
+    let carl = invite(&server, &bea, "Carl", Role::Member, false);
+    bea.sync();
+    ana.sync();
+    // Carl calls himself something else on his PC.
+    carl.f
+        .store
+        .set_setting(
+            &Space::Team(carl.team.clone()).key(PERSON_NAME),
+            Some("Impostor"),
+        )
+        .unwrap();
+    carl.f.clock.advance(4000);
+    carl.sync();
+    bea.f.hedy.team_leave(&bea.team).unwrap();
+    ana.sync();
+    ana.sync();
+    let dan = invite(&server, &ana, "Dan", Role::Member, false);
+    dan.sync();
+    let names: Vec<String> = people(&dan).into_iter().map(|p| p.0).collect();
+    assert!(names.contains(&"Carl".to_owned()), "{names:?}");
+    assert!(!names.contains(&"Impostor".to_owned()), "{names:?}");
+}
+
+#[test]
+fn two_admins_leaving_at_once_leave_one_behind() {
+    let (server, ana, luis) = team_of_two();
+    let bea = invite(&server, &ana, "Bea", Role::Admin, false);
+    ana.sync();
+    bea.sync();
+    // Both ask before either is taken out.
+    ana.f.hedy.team_leave(&ana.team).unwrap();
+    bea.f.hedy.team_leave(&bea.team).unwrap();
+    // The one whose request is dropped is told why.
+    let results: Vec<_> = (0..2)
+        .flat_map(|_| [&ana, &bea])
+        .map(|pc| pc.f.hedy.team_sync(&pc.team))
+        .collect();
+    assert!(
+        results.contains(&Err(AppError::TeamLastAdmin)),
+        "{results:?}"
+    );
+    // One of them is out; the other learns it stays, and still is an admin.
+    let left: Vec<bool> = [&ana, &bea]
+        .iter()
+        .map(|pc| pc.f.hedy.teams().unwrap().is_empty())
+        .collect();
+    assert_eq!(left.iter().filter(|l| **l).count(), 1, "{left:?}");
+    luis.sync();
+    let admins = people(&luis)
+        .into_iter()
+        .filter(|p| p.1 == Role::Admin)
+        .count();
+    assert_eq!(admins, 1);
+}
+
+#[test]
+fn a_member_never_moves_a_note_out_of_the_team_layer() {
+    let (_server, ana, luis) = team_of_two();
+    luis.f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            None,
+            "De Luis para el equipo",
+            Category::Rule,
+            None,
+        )
+        .unwrap();
+    luis.sync();
+    ana.sync();
+    let sid = ana.f.hedy.team_suggestions(&ana.team).unwrap()[0]
+        .uid
+        .clone();
+    ana.f.hedy.team_accept_suggestion(&ana.team, &sid).unwrap();
+    ana.sync();
+    luis.sync();
+    let note = luis.f.hedy.team_notes(&luis.team).unwrap()[0].clone();
+    // His modified Hedy writes it as a project note, rewritten.
+    let hedy = &luis.f.hedy;
+    let space = hedy.team_space(&luis.team).unwrap();
+    let me = hedy.team_me(&space).unwrap();
+    let body = json(&TeamNoteBody {
+        text: "Cambiado sin revisión".into(),
+        category: Category::Rule,
+        person: note.person.clone(),
+        author: note.author.clone(),
+        created_at: note.created_at,
+        topic: None,
+        updated_at: None,
+    });
+    hedy.team_write(
+        &me,
+        ItemKind::Note,
+        &note.uid,
+        Scope::Project("p".into()),
+        Some(body),
+    )
+    .unwrap();
+    // And a team-layer suggestion on it from Ana goes, by its "owner".
+    luis.sync();
+    assert_eq!(ana.sync().refused, 1);
+    let notes = ana.f.hedy.team_notes(&ana.team).unwrap();
+    assert_eq!(
+        (notes[0].text.as_str(), notes[0].team_layer),
+        ("De Luis para el equipo", true)
+    );
+}
+
+#[test]
+fn only_admins_drop_suggestions_on_the_team_layer() {
+    let (_server, ana, luis) = team_of_two();
+    let marta_like = &luis;
+    marta_like
+        .f
+        .hedy
+        .team_add_note(&marta_like.team, None, "Regla", Category::Rule, None)
+        .unwrap();
+    marta_like.sync();
+    ana.sync();
+    let sid = ana.f.hedy.team_suggestions(&ana.team).unwrap()[0]
+        .uid
+        .clone();
+    ana.f.hedy.team_accept_suggestion(&ana.team, &sid).unwrap();
+    // Ana suggests a change to the team note that has Luis's name on it.
+    let uid = ana.f.hedy.team_notes(&ana.team).unwrap()[0].uid.clone();
+    let TeamWriteOutcome::Published(_) = ana
+        .f
+        .hedy
+        .team_edit_note(&ana.team, &uid, Some("Regla mejor"), None, None)
+        .unwrap()
+    else {
+        panic!("an admin edits it");
+    };
+    ana.sync();
+    luis.sync();
+    // Luis cannot drop a suggestion from someone else on it either.
+    let hedy = &luis.f.hedy;
+    let space = hedy.team_space(&luis.team).unwrap();
+    let me = hedy.team_me(&space).unwrap();
+    let theirs = SuggestionBody {
+        note: Some(uid.clone()),
+        note_owner: Some(me.seat.person.clone()),
+        text: Some("otra".into()),
+        category: Category::Rule,
+        topic: None,
+        person: person_of(&ana, "Ana"),
+        author: "Ana".into(),
+        created_at: 1,
+    };
+    let ana_space = ana.f.hedy.team_space(&ana.team).unwrap();
+    let ana_me = ana.f.hedy.team_me(&ana_space).unwrap();
+    let suid = item_uid(&ana_me.seat.person, "00000000000000aa");
+    ana.f
+        .hedy
+        .team_write(
+            &ana_me,
+            ItemKind::Suggestion,
+            &suid,
+            Scope::Global,
+            Some(json(&theirs)),
+        )
+        .unwrap();
+    ana.sync();
+    luis.sync();
+    hedy.team_write(&me, ItemKind::Suggestion, &suid, Scope::Global, None)
+        .unwrap();
+    luis.sync();
+    assert_eq!(ana.sync().refused, 1);
+    assert_eq!(ana.f.hedy.team_suggestions(&ana.team).unwrap().len(), 1);
+}
+
+#[test]
+fn a_new_persons_name_is_shown_plain_and_told_apart() {
+    let server = SyncServer::default();
+    let (ana, _) = create(&server);
+    let twin = invite(&server, &ana, "ana", Role::Member, false);
+    let sneaky = invite(
+        &server,
+        &ana,
+        "Pepe\u{202e}nimda\u{202c}",
+        Role::Member,
+        false,
+    );
+    ana.sync();
+    twin.sync();
+    sneaky.sync();
+    let names: Vec<String> = people(&twin).into_iter().map(|p| p.0).collect();
+    assert!(names.contains(&"ana (2)".to_owned()), "{names:?}");
+    assert!(
+        names.contains(&"Pepe⟦U+202E⟧nimda⟦U+202C⟧".to_owned()),
+        "{names:?}"
+    );
+    // An admin renames people; a member cannot.
+    let twin_person = person_of(&ana, "ana (2)");
+    assert_eq!(
+        twin.f
+            .hedy
+            .team_rename_person(&twin.team, &twin_person, "Ana B."),
+        Err(AppError::TeamNotAllowed)
+    );
+    ana.f
+        .hedy
+        .team_rename_person(&ana.team, &twin_person, "Ana B.")
+        .unwrap();
+    ana.f.hedy.team_rename(&ana.team, "Tienda S.A.").unwrap();
+    ana.sync();
+    twin.sync();
+    assert!(people(&twin).iter().any(|p| p.0 == "Ana B."));
+    assert_eq!(
+        twin.f.hedy.team_status(&twin.team).unwrap().summary.name,
+        "Tienda S.A."
+    );
 }

@@ -248,6 +248,12 @@ pub struct SuggestionBody {
     /// The note it changes (its uid); `None`: a new note.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Whose that note was when it was suggested: who else may remove the
+    /// suggestion, even on a PC that never had the note (its owner's PC
+    /// compacted after removing it). Claiming the wrong owner only lets
+    /// that person turn it down.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note_owner: Option<PersonId>,
     /// The text it proposes; `None`: removing the note.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -320,8 +326,11 @@ impl TeamWrite<'_> {
             Some(_) => {
                 self.is(self.uid_owner) && self.own(self.owner) && self.own(self.replaced_owner)
             }
+            // The team layer's suggestions are the admins' to review.
             None => {
-                self.is(self.uid_owner) || self.is(self.replaced_owner) || self.is(self.note_owner)
+                self.is(self.uid_owner)
+                    || self.is(self.replaced_owner)
+                    || (!self.team_layer && self.is(self.note_owner))
             }
         }
     }
@@ -492,6 +501,7 @@ mod tests {
         assert!(write(&member, false, lu, None, None, None).suggestion_allowed());
         assert!(write(&member, false, au, None, lu, au).suggestion_allowed());
         assert!(write(&member, false, au, None, au, lu).suggestion_allowed());
+        assert!(!write(&member, true, au, None, au, lu).suggestion_allowed());
         assert!(!write(&member, false, au, None, au, au).suggestion_allowed());
         assert!(!write(&member, false, au, None, None, None).suggestion_allowed());
         assert!(write(&admin, false, lu, None, lu, None).suggestion_allowed());

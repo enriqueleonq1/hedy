@@ -1632,7 +1632,9 @@ impl Hedy {
         // Checked here, by every PC that reads it.
         let allowed = match space {
             Space::Personal => change.kind != ItemKind::Suggestion,
-            Space::Team(_) => self.team_allows(session, change, known.as_ref().map(|(_, v)| v))?,
+            Space::Team(_) => {
+                self.team_allows(session, change, known.as_ref().map(|(s, v)| (s, v)))?
+            }
         };
         if !allowed {
             report.refused += 1;

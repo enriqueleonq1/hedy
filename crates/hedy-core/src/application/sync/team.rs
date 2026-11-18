@@ -47,8 +47,11 @@ const JOIN: &str = "join";
 const ASKS: &str = "asks";
 /// The people's names as admins wrote them (JSON person → name).
 const ROSTER: &str = "roster";
-/// An admin's PC has names to add to the team's file.
+/// Names an admin's PC gave, to write in the team's file (JSON person →
+/// name).
 const ROSTER_DUE: &str = "roster_due";
+/// An admin's PC asked to leave and waits to be taken out.
+const LEAVING: &str = "leaving";
 
 /// The secret side of an invite this PC made, kept in the keyring.
 #[derive(Serialize, Deserialize)]
@@ -192,6 +195,8 @@ pub struct TeamSummary {
     pub url: String,
     /// Joining: waiting for the inviting PC to let this one in.
     pub waiting: bool,
+    /// Leaving (an admin's PC): waiting for another admin's to take it out.
+    pub leaving: bool,
     /// This PC's role; `None` when the newest epoch left it out.
     pub role: Option<Role>,
     pub last_sync: Option<i64>,
@@ -466,8 +471,9 @@ impl Hedy {
         self.set_sync_setting(space, PERSON_NAME, person_name.trim())?;
         self.set_sync_setting(space, TEAM_NAME, team_name.trim())?;
         self.set_sync_setting(space, NEW_NAME, team_name.trim())?;
-        let roster = BTreeMap::from([(person.clone(), person_name.trim().to_owned())]);
+        let roster = BTreeMap::from([(person.clone(), shown_name(person_name))]);
         self.set_sync_setting(space, ROSTER, &json(&roster))?;
+        self.set_sync_setting(space, ROSTER_DUE, &json(&roster))?;
         let pins = BTreeMap::from([(1, self.sync_crypto.digest(file.as_bytes()))]);
         self.remember_sync(space, url, &device, device_name, &recovery_public, 1, &pins)?;
         // Set up: the words must reach the user even if this sync fails.
@@ -488,6 +494,7 @@ impl Hedy {
                     name: String::new(),
                     url: joining.url,
                     waiting: true,
+                    leaving: false,
                     role: None,
                     last_sync: None,
                     last_error: self.sync_setting(&space, LAST_ERROR)?,
@@ -514,6 +521,7 @@ impl Hedy {
             name: self.sync_setting(space, TEAM_NAME)?.unwrap_or_default(),
             url: status.url,
             waiting: false,
+            leaving: self.sync_setting(space, LEAVING)?.is_some(),
             role,
             last_sync: status.last_sync,
             last_error: status.last_error,
@@ -584,17 +592,50 @@ impl Hedy {
     pub fn team_sync(&self, team: &str) -> AppResult<SyncReport> {
         let space = self.team_space_or_joining(team)?;
         let _guard = self.sync_guard(&space)?;
+        let leaving = self.sync_setting(&space, LEAVING)?.is_some();
         let result = if self.space_is_set_up(&space)? {
             self.sync_locked(&space)
                 .and_then(|report| self.team_seats(&space).map(|()| report))
         } else {
             self.finish_join(&space).map(|_| SyncReport::default())
         };
+        if leaving {
+            return self.finish_leaving(&space, result);
+        }
         match &result {
             Ok(_) => self.clear_sync_setting(&space, LAST_ERROR)?,
             Err(error) => self.set_sync_setting(&space, LAST_ERROR, &shown_error(error))?,
         }
         result
+    }
+
+    /// An admin's PC that asked to leave: out now (it forgets the team), or
+    /// its request was dropped (leaving would have left no admin), or it
+    /// still waits.
+    fn finish_leaving(
+        &self,
+        space: &Space,
+        result: AppResult<SyncReport>,
+    ) -> AppResult<SyncReport> {
+        match result {
+            Err(AppError::SyncRemoved) => {
+                self.forget_team(space)?;
+                Ok(SyncReport::default())
+            }
+            Ok(report) => {
+                let me = self.team_me(space)?;
+                let dir = self.sync_dir(space)?;
+                let mine = format!("{}/{}/", team_layout::REQUESTS_DIR, me.device.as_str());
+                if self.sync_remote.files(&dir, &mine)?.is_empty() {
+                    self.clear_sync_setting(space, LEAVING)?;
+                    let error = AppError::TeamLastAdmin;
+                    self.set_sync_setting(space, LAST_ERROR, &shown_error(&error))?;
+                    return Err(error);
+                }
+                Ok(report)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     /// Whether a version another PC of the team wrote may be taken, by
@@ -604,11 +645,17 @@ impl Hedy {
         &self,
         session: &Session,
         change: &Change,
-        known: Option<&Version>,
+        known: Option<(&Scope, &Version)>,
     ) -> AppResult<bool> {
         let Some(writer) = session.seats.get(change.version.stamp.device.as_str()) else {
             return Ok(false);
         };
+        let (known_scope, known) = (known.map(|k| k.0), known.map(|k| k.1));
+        // A member never moves an item to another layer or project (out of
+        // the team layer, where admins review it).
+        if writer.role != Role::Admin && known_scope.is_some_and(|s| *s != change.scope) {
+            return Ok(false);
+        }
         let team_layer = change.scope == Scope::Global;
         let uid_owner = uid_person(&change.uid);
         Ok(match change.kind {
@@ -665,7 +712,12 @@ impl Hedy {
                         .and_then(|(_, v)| note_body(&v))
                         .map(|n| n.person),
                     None => None,
-                };
+                }
+                .or_else(|| {
+                    new.as_ref()
+                        .or(old.as_ref())
+                        .and_then(|s| s.note_owner.clone())
+                });
                 TeamWrite {
                     writer,
                     team_layer,
@@ -696,6 +748,9 @@ impl Hedy {
             roster.extend(info.people.clone());
         }
         let mine: BTreeMap<PersonId, String> = self.sync_json(space, ROSTER)?.unwrap_or_default();
+        // A name only this PC still holds (the admin who wrote it left):
+        // an admin's PC writes it again.
+        let missing = mine.keys().any(|p| !roster.contains_key(p));
         for (person, name) in mine {
             roster.entry(person).or_insert(name);
         }
@@ -710,7 +765,12 @@ impl Hedy {
                 .filter(|n| !n.is_empty()),
             (None, Some(_)) => None,
         };
-        let names_due = self.sync_setting(space, ROSTER_DUE)?.is_some();
+        // Names this admin's PC gave (a new person, a rename) win.
+        let given: BTreeMap<PersonId, String> =
+            self.sync_json(space, ROSTER_DUE)?.unwrap_or_default();
+        let names_due = missing || !given.is_empty();
+        roster.extend(given);
+        self.set_sync_setting(space, ROSTER, &json(&roster))?;
         if admin && (name.is_some() || names_due) {
             let name = name
                 .or_else(|| newest.map(|i| i.name.clone()))
@@ -845,6 +905,7 @@ impl Hedy {
         if scope == Scope::Global && me.seat.role != Role::Admin {
             let suggestion = SuggestionBody {
                 note: None,
+                note_owner: None,
                 text: Some(text.to_owned()),
                 category,
                 topic,
@@ -924,6 +985,7 @@ impl Hedy {
         if !Self::may_edit(&me, &scope, uid, &note) {
             let suggestion = SuggestionBody {
                 note: Some(uid.to_owned()),
+                note_owner: Some(note.person.clone()),
                 text: text.map(str::to_owned),
                 category,
                 topic,
@@ -1475,7 +1537,8 @@ impl Hedy {
                     me.seat.person.clone()
                 } else {
                     let person = PersonId(self.sync_crypto.random_hex(8)?);
-                    names.push((person.clone(), request.person_name.clone()));
+                    let name = self.new_name(space, &names, &request.person_name)?;
+                    names.push((person.clone(), name));
                     person
                 };
                 let role = if record.own_pc {
@@ -1502,6 +1565,18 @@ impl Hedy {
             }
         }
         if admin {
+            // What it asked for while a member (promoted since): its own.
+            for ask in &asks {
+                if !session.members.contains_key(ask.device.as_str())
+                    && fits(&ask.device, &ask.public, &added)
+                {
+                    added.push(EpochMember {
+                        id: ask.device.as_str().to_owned(),
+                        public: ask.public.clone(),
+                        seat: Some(me.seat.clone()),
+                    });
+                }
+            }
             for path in self.sync_remote.files(&dir, team_layout::REQUESTS_DIR)? {
                 done.push(path.clone());
                 let Some((signer, _)) = team_layout::seat_request_of(&path) else {
@@ -1529,12 +1604,21 @@ impl Hedy {
                             seat: Some(seat.clone()),
                         });
                     }
+                    // One that would leave no admin (two admins leaving at
+                    // once) is dropped on its own; its PC learns it stayed.
                     Ok(SeatRequest::Remove { device })
                         if session
                             .seats
                             .get(device.as_str())
                             .is_some_and(|s| s.person == seat.person)
-                            && !removed.contains(&device.0) =>
+                            && !removed.contains(&device.0)
+                            && self
+                                .check_admins_stay(
+                                    space,
+                                    &[removed.clone(), vec![device.0.clone()]].concat(),
+                                    &[],
+                                )
+                                .is_ok() =>
                     {
                         removed.push(device.0);
                     }
@@ -1630,11 +1714,7 @@ impl Hedy {
         }
         self.set_sync_setting(space, ASKS, &json(&asks))?;
         if !names.is_empty() {
-            let mut roster: BTreeMap<PersonId, String> =
-                self.sync_json(space, ROSTER)?.unwrap_or_default();
-            roster.extend(names);
-            self.set_sync_setting(space, ROSTER, &json(&roster))?;
-            self.set_sync_setting(space, ROSTER_DUE, "1")?;
+            self.name_people(space, names)?;
         }
         // Its own epoch, checked and in use here; and what it took over, sent.
         if new_epoch {
@@ -2178,15 +2258,78 @@ impl Hedy {
         Ok(self.sync_remote.push(&dir, "hedy team")?)
     }
 
+    /// A name for a new person: shown as typed but with any hidden
+    /// character visible, and told apart from a name someone has already.
+    fn new_name(
+        &self,
+        space: &Space,
+        pending: &[(PersonId, String)],
+        typed: &str,
+    ) -> AppResult<String> {
+        let roster = self.roster(space)?;
+        let taken = |name: &str| {
+            roster
+                .values()
+                .chain(pending.iter().map(|(_, n)| n))
+                .any(|n| n.to_lowercase() == name.to_lowercase())
+        };
+        let base = shown_name(typed);
+        let mut name = base.clone();
+        let mut n = 2;
+        while taken(&name) {
+            name = format!("{base} ({n})");
+            n += 1;
+        }
+        Ok(name)
+    }
+
+    /// Names (or renames) people: written in the admins' signed file on
+    /// the next sync.
+    fn name_people(&self, space: &Space, names: Vec<(PersonId, String)>) -> AppResult<()> {
+        let mut roster = self.roster(space)?;
+        let mut given: BTreeMap<PersonId, String> =
+            self.sync_json(space, ROSTER_DUE)?.unwrap_or_default();
+        for (person, name) in names {
+            roster.insert(person.clone(), name.clone());
+            given.insert(person, name);
+        }
+        self.set_sync_setting(space, ROSTER, &json(&roster))?;
+        self.set_sync_setting(space, ROSTER_DUE, &json(&given))
+    }
+
+    /// Renames a person (admins): the name everyone sees on their notes.
+    pub fn team_rename_person(&self, team: &str, person: &PersonId, name: &str) -> AppResult<()> {
+        let space = self.team_space(team)?;
+        let _guard = self.sync_guard(&space)?;
+        if self.team_me(&space)?.seat.role != Role::Admin {
+            return Err(AppError::TeamNotAllowed);
+        }
+        let name = name.trim();
+        check_clean(name)?;
+        if self.person_devices(&space, person)?.is_empty() {
+            return Err(AppError::TeamPersonNotFound(person.as_str().to_owned()));
+        }
+        self.name_people(&space, vec![(person.clone(), name.to_owned())])
+    }
+
+    /// Renames the team (admins).
+    pub fn team_rename(&self, team: &str, name: &str) -> AppResult<()> {
+        let space = self.team_space(team)?;
+        let _guard = self.sync_guard(&space)?;
+        if self.team_me(&space)?.seat.role != Role::Admin {
+            return Err(AppError::TeamNotAllowed);
+        }
+        let name = name.trim();
+        check_clean(name)?;
+        self.set_sync_setting(&space, NEW_NAME, name)
+    }
+
     /// This PC leaves the team: it asks an admin's PC to take it out, then
     /// its keys, clone, settings and replica go here, and its projects'
     /// memory follows their owner again. The last admin of a team with
     /// other people cannot leave: they make someone else an admin first.
     pub fn team_leave(&self, team: &str) -> AppResult<()> {
         let space = self.team_space_or_joining(team)?;
-        let Space::Team(id) = &space else {
-            unreachable!("a team's space");
-        };
         let _guard = self.sync_guard(&space)?;
         // A PC removed already just cleans up here.
         let me = match self.space_is_set_up(&space)? {
@@ -2205,15 +2348,31 @@ impl Hedy {
             // what it wrote). Without the network, it leaves here all the
             // same; the others remove it from their side.
             if !members.iter().all(|m| m.device.this_pc) {
-                let _ = self.ask_admin(
+                let asked = self.ask_admin(
                     &space,
                     &me,
                     &SeatRequest::Remove {
                         device: me.device.clone(),
                     },
                 );
+                // An admin's PC stays until it is out: two admins leaving
+                // at once must not leave the team with none behind.
+                if me.seat.role == Role::Admin {
+                    asked?;
+                    return self.set_sync_setting(&space, LEAVING, "1");
+                }
             }
         }
+        self.forget_team(&space)
+    }
+
+    /// This PC forgets the team: its keys, clone, settings and replica go,
+    /// and its projects' memory follows their owner again.
+    fn forget_team(&self, space: &Space) -> AppResult<()> {
+        let Space::Team(id) = space else {
+            unreachable!("a team's space");
+        };
+        let space = space.clone();
         self.sync_remote.discard_local(&self.sync_dir(&space)?)?;
         self.secrets.delete_sync_keys(&space.id())?;
         self.store.clear_sync_state(&space.id())?;
@@ -2242,6 +2401,7 @@ impl Hedy {
             ASKS,
             ROSTER,
             ROSTER_DUE,
+            LEAVING,
         ] {
             self.clear_sync_setting(&space, key)?;
         }
@@ -2253,6 +2413,13 @@ impl Hedy {
         }
         self.edit_team_ids(id, false)
     }
+}
+
+/// A person's name as shown: trimmed, any hidden character visible, never
+/// empty.
+fn shown_name(typed: &str) -> String {
+    let name = reveal_hidden(typed.trim());
+    if name.is_empty() { "?".into() } else { name }
 }
 
 /// A note or suggestion text with hidden characters is refused, showing
