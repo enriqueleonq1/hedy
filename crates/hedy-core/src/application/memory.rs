@@ -537,6 +537,7 @@ impl Hedy {
         Some(MemoryLink {
             server,
             skills: Some(self.task_skills(project, task, &author)),
+            team: self.team_context(&project.path),
             tools: Arc::new(TaskMemory {
                 hedy: self.clone(),
                 project: project.path.clone(),
@@ -664,16 +665,33 @@ impl MemoryTools for TaskMemory {
     }
 
     fn search_page(&self, query: &str, page: PageRequest) -> String {
-        match self
+        let first = page.offset.unwrap_or(0) == 0;
+        let page = match self
             .hedy
             .read_memory_page(&self.project, self.task.as_ref(), query, page)
         {
-            Ok(page) if experiments::on(Experiment::Search8) => format_note_page(&page),
-            Ok(page) => format_notes(&page.items),
-            Err(e) => tr!(
-                "No se pudo leer la memoria: {e}",
-                "Could not read the memory: {e}"
-            ),
+            Ok(page) => page,
+            Err(e) => {
+                return tr!(
+                    "No se pudo leer la memoria: {e}",
+                    "Could not read the memory: {e}"
+                );
+            }
+        };
+        let text = match experiments::on(Experiment::Search8) {
+            true => format_note_page(&page),
+            false => format_notes(&page.items),
+        };
+        // The team's notes (a project of a team) open the first page, so its
+        // paging footer stays last; without notes of its own, they are the
+        // answer.
+        match first
+            .then(|| self.hedy.team_search(&self.project, query))
+            .flatten()
+        {
+            Some(team) if page.items.is_empty() => team,
+            Some(team) => format!("{team}\n\n{text}"),
+            None => text,
         }
     }
 

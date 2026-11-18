@@ -19,6 +19,8 @@ import shell from "./messages/shell";
 import skills from "./messages/skills";
 import statusbar from "./messages/statusbar";
 import status from "./messages/status";
+import sync from "./messages/sync";
+import team from "./messages/team";
 import templates from "./messages/templates";
 import themes from "./messages/themes";
 import waits from "./messages/waits";
@@ -49,6 +51,8 @@ const AREAS = {
   skills,
   statusbar,
   status,
+  sync,
+  team,
   templates,
   themes,
   waits,

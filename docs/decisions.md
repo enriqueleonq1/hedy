@@ -1960,3 +1960,1177 @@ The user approved turning the package on: `Experiments::DEFAULT`.
 
 It is one switch for the whole package, on purpose: what was confirmed is the package, and
 loose parts would make combinations nobody measured.
+
+## 34. Personal sync: the same Hedy on every PC (Nov 17, 2026)
+
+The user wants their Hedy at home and at the office to be the same Hedy. Synced:
+- notes and skills (approved and proposed);
+- templates;
+- themes;
+- deletions.
+
+Never synced: logins, API keys, account folders, task history and usage (rules 1 and 5).
+Each project's memory is **Personal** (synced), **Compartido · <grupo>** (a company, a client,
+an open-source community: never in the personal repo; later, the group's collective memory)
+or **Solo en esta PC**. The views were chosen on a design canvas (1b, 2b, 3a, 4b, 5b, 6b, 7a,
+8a, 8b).
+
+### Transport
+
+Transport is a private repo on **any git server**: GitHub, GitLab, Bitbucket, Gitea or
+self-hosted SSH.
+- Hedy runs `git` with the user's own credentials and stores no token.
+- It tells a public repo by trying to read it without credentials.
+- No Hedy server (rule 8).
+
+### Format (phase 1, `domain::sync`)
+
+- **Each PC only appends its own files.** It writes `devices/<id>/changes/<seq>.hedy` and,
+  now and then, `devices/<id>/snapshot.hedy`, so git never merges. The README and
+  `vault/epochs/<n>.json` are the only plain files, and no path names a project or an item:
+  projects are an HMAC of their `owner/name`.
+- **A change** is an item kind, a global uid, a scope (global, or a sealed project id) and a
+  version.
+  - The version carries a hybrid logical clock (`Stamp`: wall ms, counter, PC) and the stamps
+    of the up to 8 versions it replaced.
+  - A body of `None` is a deletion.
+- **`merge`:**
+  - a version that builds on the local one applies;
+  - one the local one already contains is ignored;
+  - two made apart are a conflict where the newer stamp wins. For notes and skills, the loser
+    is offered to the user, side by side (8a).
+  - Two deletions made apart agree.
+  - An edit made more than 8 versions after a common one reads as a conflict. It is a false
+    alarm, never a silent loss.
+- **Projects match by their remote:** `RepoIdentity::from_url` reads https, ssh, scp-like
+  and `git://` URLs, with GitLab subgroups and `~user`. The match uses `owner/name` without
+  the host, so an SSH host alias (`github-work`) matches the real host (§ plan of
+  Nov 16, 2026).
+
+### Cryptography (phase 1, `adapters::vault`)
+
+Only well-known constructions from RustCrypto and dalek, nothing home-made:
+
+- **Data:** XChaCha20-Poly1305 under an HKDF-SHA256 subkey of the epoch's vault key.
+  - A file is bound to its path, the format and the epoch (the associated data), so a file
+    moved, swapped or altered does not open.
+  - The file starts `HEDY`, then the format byte, the epoch and a 24-byte random nonce.
+- **The vault key** is random per epoch.
+  - `vault/epochs/<n>.json` wraps it for every member in a sealed box (`crypto_box_seal`:
+    X25519 + XSalsa20-Poly1305).
+  - The wrapped payload starts with the epoch, so a wrapped key copied into another epoch's
+    file does not open.
+- **Members** are the PCs plus the recovery key, each with a box key pair and an Ed25519
+  signing key pair.
+  - A PC's secrets live in the OS keyring (`SecretStore::sync_keys`), in an entry per data
+    folder, so a Hedy tried with `HEDY_DATA_DIR` never overwrites the real one.
+- **The recovery key** is 12 BIP39 words (128 bits), in the interface's language.
+  - Its keys are HKDF over the BIP39 seed, and they are never stored.
+  - Typed back, the words may have numbers, any case, extra spaces and, in Spanish, missing
+    accents.
+- **Trust:**
+  - Epoch 1 must be signed by the recovery key.
+  - Every later epoch must be the next number, signed by a member of the epoch before.
+  - A PC that joins with the words checks the whole chain from the recovery key
+    (`verify_chain`).
+  - A removed PC is not a member of the new epoch. It cannot read what is written after, and
+    it cannot sign an epoch that puts itself back, even with push access to the repo.
+  - What remains: a member can still act before it is removed. If two PCs write the same
+    next epoch (two joins at once), git takes the first to push. The second sees a rebase
+    conflict, drops its clone and its new keys, and reports the error; a retry joins at the
+    next number.
+  - A joiner, and a PC that has not synced since a removal, trusts the chain it finds. A
+    removed PC that still has push access could offer a fork from the epoch before its
+    removal. The PCs that already pinned the real epoch refuse the fork (`SyncTampered`), but
+    those cannot tell. So removing a PC must also revoke its git access.
+  - Every epoch must keep the recovery key as a member, with the same public keys.
+
+Crates: `chacha20poly1305`, `crypto_box` (`seal`), `ed25519-dalek`, `bip39` (`spanish`),
+`hkdf`, `hmac`, `sha2`, `zeroize` and `getrandom`. All MIT or Apache-2.0 (bip39: CC0).
+
+### The engine (phase 2, `application::sync`)
+
+**Ports.**
+- `SyncRepository` (SQLite: the 13th migration) holds:
+  - the replica, `sync_items`: the newest version known of every synced item;
+  - `sync_links`: the local row or theme id behind each global uid;
+  - `sync_cursors`: the last batch read from each PC;
+  - `sync_conflicts`;
+  - `projects.memory_home`.
+- `SyncRemote`: the clone. `GitSyncRemote` runs `git` with the user's credentials, a neutral
+  identity (`Hedy <sync@hedy.invalid>`), no prompts and no hooks.
+- `SyncCrypto`: `VaultCrypto` over `adapters::vault`. Keys and epoch files are opaque text.
+
+**Changes are found by comparing, not recorded where they happen.** Each sync builds every
+local item's body (`NoteBody`, `SkillBody`, `TemplateBody`, the theme) and compares it with the
+replica:
+- a different body, or a different scope, is a new version on top of the known one;
+- a linked item that no longer exists is a deletion.
+
+So no use case that writes notes, skills, templates or themes had to change. Uses, the source
+task and local ids never travel.
+
+**A sync:**
+1. Pull.
+2. Check any epoch newer than the trusted one: each must be signed by a member of the one
+   before. Keep its key, or fail with `SyncRemoved` when the newest leaves this PC out.
+3. Turn local changes into versions, first, so the other PCs' versions meet them.
+4. Apply every other PC's unread batches, in order, with `merge`.
+   - A conflict keeps the newer version on both PCs and records the other one for the user.
+   - A version that builds on the kept one (the user chose elsewhere) clears it.
+5. Write this PC's batch, sealed.
+6. Write its name and last sync, at most hourly or when something was sent, so an idle sync
+   makes no commit.
+7. Push. The commit message is just `hedy sync`, which names nothing.
+
+Stamps come from a hybrid clock kept in `sync.clock` that moves past every stamp seen.
+
+**Projects.**
+- Only projects whose memory home is `personal` and that have an `origin` take part. They
+  match across PCs by the sealed id of their `owner/name`, under every epoch key.
+- A version for a project this PC does not have, or keeps local, waits in the replica.
+- Phase 3 decides each project's home and brings in what waited when a project becomes
+  personal.
+
+**Setup and join.**
+- `sync_setup(url, name)`:
+  - refuses a repo that already has epochs;
+  - creates this PC's keys, the recovery key and epoch 1 (members: the recovery key and this
+    PC), plus a README;
+  - syncs, and returns the 12 words.
+- `sync_join(url, words, name)`:
+  - checks the whole chain from the recovery key;
+  - opens every epoch's key with it;
+  - writes the next epoch with this PC added, signed by the recovery key;
+  - syncs, which brings everything in.
+- The keyring keeps this PC's keys and every epoch key it has. Settings keep the URL, the PC's
+  id and name, the recovery key's public keys, the trusted epoch, the batch counter and the
+  clock.
+
+**Conflicts.** `resolve_sync_conflict(id, use_other)` keeps the version in use, or writes the
+other one here so the next sync sends it on top of the kept one.
+
+**Tested:**
+- Two fixtures share a fake server:
+  - setup, then joining with wrong and right words;
+  - the wrong repo;
+  - project notes that follow the repo, not the path;
+  - a project kept local;
+  - edits and deletions;
+  - proposals, templates and themes;
+  - a conflict resolved on one PC that clears on the other;
+  - a PC left out of the newest epoch.
+- Also two data folders with real SQLite through a real local bare git repo. The server is
+  checked to never hold a note's text.
+
+### Housekeeping after phase 2 (two independent reviews, then fixes)
+
+The user asked that every phase close with a review and empirical checks. Two reviews
+(security; correctness and regressions) reproduced 10 problems with failing tests. All are
+fixed, and each has a regression test in `application::sync::tests`.
+
+| Problem found | Fix |
+|---|---|
+| Push access could replace an already trusted epoch and make the attacker a member (critical) | `sync.pins` keeps the SHA-256 of every epoch checked; one that changes stops the sync (`SyncTampered`) |
+| A removed PC could still write batches with an old key; a member could write as another | Every file a PC writes is signed (path and body) inside the seal; batches are read only from members of the newest epoch, checked against their key, and every version in a batch must carry that PC's stamp |
+| A symbolic link committed to the repo could make Hedy overwrite a file outside the clone | `core.symlinks=false`; every path part is checked with `symlink_metadata`; listing never follows links |
+| A failed sync could lose a local edit for good | The batch is kept as `sync.pending` (with its seq) before the replica changes, and written first by the next sync |
+| A new epoch re-scoped every project item and could override real edits | Projects are named with the first epoch's key, the same in every epoch |
+| A project kept local (or removed) and made personal again sent its stale rows back, reverting edits and reviving deletions; a failed write was skipped forever | Every link keeps its base: the version its row reflects. Edited here, changed elsewhere, or both are told apart; a row that only fell behind catches up. Synced items a PC never had are brought in when their project syncs |
+| Two themes with one name swapped between PCs | A theme's body has no id; each PC picks a free one |
+| A built-in template edited on two PCs stayed different | Its uid comes from the built-in's key and scope, so both edits are versions of one item |
+| A theme from a newer Hedy blocked every sync | An unreadable theme counts as present; one that does not validate waits |
+| Settling a conflict did not reach the other PC | Resolving writes a version on top of the kept one (`sync.outbox`); the other PC fast-forwards and its conflict clears |
+
+Also changed:
+- A rebase that fails is aborted, with `--autostash`.
+- No `GIT_*` variable of the environment reaches git, Git LFS filters are off, and the user's
+  SSH setup is no longer overridden.
+- A stamp more than a day ahead does not move the clock, and the counter cannot overflow.
+- Files over 16 MB are refused, and unknown files in `vault/epochs` are ignored.
+- The status lists the PCs of the pinned trusted epoch, with names signed by each PC.
+- A poisoned sync lock does not block later syncs.
+- The keyring entry hashes the canonical data folder.
+
+**Second review of the fixes.** Both reviewers re-ran their attacks on the fixed code: all
+blocked, and their six engine reproductions pass. They found five more problems, each now
+fixed with a regression test:
+
+| Problem | Fix |
+|---|---|
+| A git host could hide a member's batch for good (removing it for one sync moved the cursor past it) | Batches apply strictly in order; a gap stops that PC's batches until it is filled |
+| A failed first sync during setup lost the 12 words | Setup returns the words once the epoch is pushed, whatever the first sync does |
+| A body this version cannot read (a newer Hedy's) stopped reading and pushing, and the conflict repeated on every retry | It waits in the replica. This PC's batch is pushed even when applying fails, and a conflict is recorded once |
+| A remote renamed on one PC made both PCs re-send forever | Only the body counts as an edit, and edits keep the item's scope |
+| A crash between saving the pending batch and the counter could reuse a seq | Replaying a pending batch moves `sync.seq` past it |
+
+Also from that review:
+- A junk file in `vault/epochs` is ignored.
+- Pins that do not read fail closed.
+- The clone folder is never a relative path.
+- A reused row in a project not synced here sends no deletion.
+- An edit here over a deletion elsewhere is a conflict for the user.
+
+Still open, by design: a member with a wrong date (more than a day ahead) wins conflicts until
+its clock is fixed. Members are trusted, and the local clock is protected.
+
+**Checked empirically:**
+- A random simulation: three PCs add, edit and delete notes and sync in random order, 12 seeds
+  × 150 steps, plus 6 seeds with real SQLite (which reuses the id of a deleted last row).
+  After everyone syncs, all PCs hold the same notes and none has anything left to send.
+- A real git test with two data folders.
+- Git tests for the symbolic-link attack and for a rebase conflict.
+
+### Projects: where each memory lives (phase 3, `application::memory_home`)
+
+- **Where a project's memory lives:**
+  - the user's own choice for the project (`projects.memory_home`, the 6b menu) wins;
+  - otherwise `domain::sync::derive_home` decides from the owners of **every** remote of the
+    project and the user's answers per owner (setting `memory.owners`).
+- **The rule**, on the safe side at every step:
+  - any owner the user called shared makes the project that group's;
+  - any owner not answered yet means asking ("¿La memoria de … es solo tuya?", the 5b banner),
+    and meanwhile it stays here;
+  - only when every owner is the user's is it personal;
+  - a remote that does not say its owner (a local path, `file://`, a server without owners)
+    keeps the project here.
+  - Every remote counts because a fork's parent remote can have any name.
+- **Owners are kept with their server** (`github.com/tu-usuario`). The same name on a company's
+  GitLab is another owner, and an SSH host alias (`github-work`) costs one extra question.
+  Matching a project across PCs still ignores the host (`project_key`).
+- **Nobody is the user's until the user says so.** An earlier draft made the sync repo's owner
+  the user's at setup. The reviews showed the leak: a sync repo inside a company org made
+  every company repo personal, even over a "shared" answer. One question per owner is the
+  price.
+- **Answers are per PC.** "Shared" on one PC does not stop another PC that answered "mine".
+  The app should say so.
+- **The engine works out where each project lives once per sync** (`Session::project_ids`).
+  A memory home this version cannot read counts as local.
+- **Git in the user's projects ignores the variables that point it at another repo**
+  (`GIT_DIR`, `GIT_WORK_TREE`…) but keeps the user's own config (`GIT_CONFIG_*`): commits and
+  pushes are theirs. The sync clone leaves out both.
+- **Moving a project:**
+  - to shared or local sends nothing and deletes nothing elsewhere;
+  - back to personal catches up, and sends what was written meanwhile.
+
+**Housekeeping:**
+- Two reviews (privacy and security; correctness and regressions) reproduced two high-severity
+  leaks, both fixed with regression tests:
+  - the auto-answer;
+  - owners matched without their server.
+- They also found:
+  - only the remote named `upstream` was checked (a fork with another name for the parent
+    remote leaked);
+  - an unreadable remote was ignored;
+  - a company `origin` was overridden by a personal `upstream`;
+  - an unreadable stored home fell back to the owner;
+  - project remotes inherited `GIT_*`.
+- Their re-check found one regression in the fix: clearing every `GIT_CONFIG_*` for the user's
+  projects would have changed their commit identity or credentials. Now only repo redirects
+  are cleared there.
+- A random simulation (three PCs, 8 seeds × 150 steps) checks the main property at every step.
+  The PCs move their own project's memory between personal, local and following its owner
+  while they write in a client's project marked shared, and **no client note ever reaches
+  another PC**. Once the project is personal everywhere, the PCs agree on it.
+
+### The CLI (phase 4, `hedy sync`)
+
+- **Commands:**
+  - `hedy sync` shows the status: the repo, this PC's last sync, the PCs and their conflicts;
+  - `setup <url>` shows the 12 words and, in a terminal, asks for word 7 back (accents and case
+    do not count, as in `join`);
+  - `join <url>` reads the words hidden whenever stdin is a terminal, and from stdin otherwise;
+  - `now`, `conflicts`, `resolve <id> --keep|--other`;
+  - `owner [<server/owner> --mine|--shared|--forget]`;
+  - `project [--personal|--local|--shared <owner>|--follow]`;
+  - `leave [--yes]`.
+  The CLI only asks and prints; every rule lives in the use cases the app will use.
+- **A URL with a password or a token is refused**: any user over HTTP(S)/FTP(S)
+  (`https://user:token@…`, `https://token@…`), a query (`?access_token=…`), and
+  `user:secret@` over SSH, also behind git's `<transport>::` prefix. Hedy would otherwise keep
+  it in its settings and print it. The error points to SSH or git's credential helper (rule 1).
+- **The sync clone is compared with `remote.origin.url` as configured,** not as
+  `url.*.insteadOf` rewrites it (otherwise a common HTTPS→SSH rewrite broke every sync). A
+  server whose `HEAD` names another branch (`git init --bare` gives `master`) still shows `main`.
+- **A setup or join that fails before the sync is set up leaves no clone behind**, so another
+  URL can be tried. `leave` also clears what one cut short left (keys in the keyring), and works
+  when nothing is set up.
+- **A PC's first sync (a join, or after leaving) adopts what it already has:** a row equal to a
+  synced item is linked to it instead of being sent as a new one. Batches arrive oldest first,
+  so an item edited elsewhere first makes a row for its old version; its newest version then
+  moves the item onto the PC's own equal row and drops the one just made.
+- **Known limits, kept on purpose:**
+  - Joining again starts fresh. A note edited on a PC while it was out of sync is not equal to
+    any version of a synced one, so it comes back as a second note (both are kept; nothing is
+    lost). A note deleted elsewhere meanwhile is adopted and deleted, unless it was also edited
+    on that PC.
+  - Leaving does not revoke: the PC stays in the key epoch, and the other PCs keep listing it,
+    until it is removed from another PC (phase 6). The CLI says so.
+  - The sync lock is per process. The app and the CLI starting a setup at the same moment can
+    undo each other's clone (only inside `<data>/sync/repo`); a lock file comes with the app
+    (phase 5).
+
+**Housekeeping:**
+- Real run with the real binary, the real keyring and a bare repo, across two data dirs:
+  setup, join, templates both ways, wrong words refused, no plaintext on the server, neutral
+  commits, keyring empty after leave.
+- The security review reproduced:
+  - the URL with a token kept and printed;
+  - `insteadOf` breaking the sync;
+  - the words echoing with stdout piped.
+- The correctness review reproduced:
+  - **high:** after leaving, joining again duplicated a note edited elsewhere on every PC;
+  - a failed join's clone blocked any other URL and `leave` could not clear it;
+  - the first join against a `master` server failed once;
+  - setup's word check was stricter than join's;
+  - `hedy sync owner` accepted an owner without an answer or without its server.
+- Each one is fixed and has a regression test (engine, git adapter or CLI).
+- The re-check confirmed every fix, plus edge cases of the adoption (three versions, two items,
+  a delete after it, themes, built-in templates). It found one bypass of the token check
+  (`https::https://token@…`) and a query token, both now refused, and an scp URL with an `@`
+  in its path wrongly refused, now accepted.
+
+### The app (phase 5)
+
+The views picked on the design canvas, built on the same use cases as the CLI:
+- **Ajustes, top card:**
+  - while sync is off, an invitation (1b) with "Configurar" and "Ya la uso en otra PC";
+  - once on, status first (2b):
+    - the state, with "Sincronizar ahora";
+    - the PCs;
+    - what syncs (personal projects plus the global layer) and what stays (shared and local
+      projects, and the ones waiting for an answer);
+    - the changes to review, side by side (8a): the version in use on the right, the newer one;
+    - the technical detail behind "Cómo funciona" (no tooltip);
+    - "Dejar de sincronizar en esta PC" (a second click confirms).
+- **Setup (3a, 4b):**
+  - three steps: the address, this PC's name, the 12 words;
+  - the dialog cannot be closed until word 7 is typed back (accents and case do not count);
+  - there is no ".txt" download: a plain file with the key is easy to forget on the disk, so
+    the words are copied to a password manager.
+- **Before setup, the repo is checked for anonymous read** (`SyncRemote::is_public`): `git
+  ls-remote` of its HTTPS form, with no git config and an empty home. No credential helper,
+  `insteadOf`, `~/.netrc` or `$NETRC` helps. The empty home has a random name. A server that does
+  not answer within 10 s counts as not public.
+  - A public repo is warned about, not refused: everything in it is encrypted, but anyone can
+    see how many PCs sync and when.
+  - This is the only request Hedy makes outside the sync itself, and it goes to the user's own
+    git host.
+- **A project:**
+  - its status screen asks about its owner (5b) while sync is on;
+  - its memory screen has "Memoria de este proyecto" (6b): Personal, Compartido · group (the
+    first owner of its remotes that is not the user's), Solo en esta PC, or follow the owner;
+  - while it follows its owner, the choice shows what that gives now.
+- **Status bar (7a):** a dot and a word (Sincronizado, N para revisar, Sin sincronizar), with a
+  small panel: the state, the PCs, "Ajustes" and "Sincronizar ahora".
+- **The sync runs on its own** 20 s after the app opens, then every 5 minutes while it is
+  open. Each run ends with a `sync-updated` event that refreshes memory, skills, templates
+  and themes.
+  - A failure is kept in `sync.last_error` until a sync works, and it shows in the app and in
+    `hedy sync`.
+- **One sync at a time per PC, across processes:** besides the in-process mutex, every sync
+  operation holds a file lock (`<data>/sync/repo.lock`, released when the file closes, also if
+  the process dies). The app's background sync and `hedy sync now` wait for each other. With
+  the real binary, five pairs of concurrent `hedy sync now` each sent their batch once, with no
+  error.
+- **Removing a PC ("Quitar", 8b) is not shown yet:** it comes with phase 6.
+- **Every git command of the sync has a limit:**
+  - a stalled HTTP transfer gives up after 30 s;
+  - any command is killed after a limit (15 minutes when it talks to the server, so a first
+    clone of a big repo on a slow link still finishes; 1 minute otherwise), so the lock is never
+    held forever;
+  - without a controlling terminal (the app opened from the desktop), git runs in a process
+    group of its own, so a kill also stops its `ssh`. With one (even with stdin redirected, as in
+    `echo … | hedy sync join`) it stays in the terminal's foreground group, so `ssh` can still
+    ask for a key's passphrase;
+  - a kill in the middle of a fetch could leave a ref lock file that makes later syncs fail;
+    leaving and joining again makes a new clone. That is rare: the limit almost always fires
+    while git waits for the network, before any ref is locked;
+  - no password window appears: no SSH askpass (`SSH_ASKPASS_REQUIRE=never`) and no credential
+    manager login (`GCM_INTERACTIVE=never`).
+- **The 12 words cannot be lost on the way:**
+  - the setup dialog cannot be closed while the repo takes the first epoch, nor before word 7
+    is typed back;
+  - meanwhile nothing takes the words away: not the history, a project shortcut, the palette,
+    a click on a notification (`data-locked` on the dialog), closing the window (it asks to
+    finish first; Tauri closes the window after each of its listeners unless that listener
+    prevents it, so a single listener asks every guard), nor a failed refresh of the app's data (only a first load shows the error
+    screen);
+  - when it finishes, Hedy clears the clipboard if it copied the words.
+- **A project is counted and shown as synced only when it really syncs:** personal, and with an
+  `origin` that names it (`MemoryHomeStatus::syncs`).
+  - A project with no remote shows that its memory stays on this PC, with no menu.
+  - A personal one without `origin` says why it does not sync.
+- **The last sync error is kept short:** one line, up to 300 characters, without terminal
+  escapes (a git server's `remote:` text can carry them).
+
+**Housekeeping:**
+- The security review reproduced:
+  - a stalled server held the sync lock forever (even `leave` waited);
+  - `is_public` sent the user's `~/.netrc` token, reporting a private repo as public;
+  - the setup dialog could lose the words (closed during setup, or a shortcut navigated away).
+- The correctness review also found:
+  - a notification click could unmount the dialog;
+  - a resolved conflict left the screens stale;
+  - the public check could hang for over 2 minutes;
+  - projects without `origin` were counted as synced;
+  - "Solo en esta PC" could not be chosen for a project with no remote;
+  - errors showed on the wrong step;
+  - a relative data dir broke `sync_guard`;
+  - several refreshes ran per background sync;
+  - a failed first sync showed "Todo al día";
+  - two conflict sides from one PC had the same label;
+  - the address placeholder was not translated.
+- All are fixed. The ones that can be tested have a test that fails without the fix: the
+  dialog lock, the shortcuts, the notification, no remote, the error line, `syncs`.
+- The re-check confirmed the fixes. It found:
+  - stray `ssh` processes after a kill;
+  - `$NETRC`;
+  - a guessable temp folder;
+  - two more ways to lose the words: closing the window, and a failed refresh;
+  - a total limit that a slow first clone would always hit.
+  All of these are fixed too.
+- The `~/.netrc` fix was checked by hand: a server that asks for Basic auth got the token from
+  the user's home before, and gets nothing now.
+
+### Removing a PC and compaction (phase 6)
+
+- **Removing a PC** (`sync_remove_device`, "Quitar" in the PCs table with the 8b confirmation,
+  `hedy sync remove <name|id>`):
+  1. this PC syncs first, so it has everything the other one sent;
+  2. it signs a new key epoch without that PC (the recovery key stays): from then on that PC
+     reads nothing new, and its batches are no longer read;
+  3. its batches and snapshots go from the repo. Its `device.hedy` stays: a commit it had not
+     pushed yet changes that file, so it still rebases, and the PC then learns it was removed;
+  4. this PC takes over what that PC wrote last: a new version of each item whose newest
+     version was that PC's, with the same content. The other PCs get it even if they had not
+     read that PC's last batches. One that already had it applies the same text again,
+     nothing more.
+- **A PC removes others, never itself:** it leaves (`hedy sync leave`), and another PC removes it.
+  A removed PC gets `SyncRemoved` on its next sync: what it already has stays, and to come back
+  it leaves and joins again with the 12 words (as a new PC).
+- **Limits:**
+  - what a removed PC pushed after the remover's last pull is lost;
+  - two PCs removing at the same moment write the same epoch number: the second push is
+    refused, its clone is made again, and it can retry.
+- **Compaction:**
+  - once a PC has more than 100 batches of its own in the repo, it writes one snapshot
+    (`devices/<id>/snapshot-<seq>.hedy`, the seq in the name so a PC knows whether it needs it
+    without opening it) with the newest version it made of each item, then removes those
+    batches and older snapshots;
+  - a PC whose next batch is gone reads the snapshot instead, with the same checks as a batch:
+    signed by a member, only its own versions, its seq;
+  - a version replaced since by another PC's is left out: that one carries it in its history;
+  - a concurrent version that lost a conflict is not in the snapshot either. A PC catching up
+    through it does not see that conflict, and with compaction a losing version can end up
+    offered on no PC (both PCs have the same data; only the prompt goes);
+  - a snapshot also keeps digests of what each item held before (`Former`, up to 16 per item),
+    so a PC joining again with a row equal to an older version adopts it instead of adding a
+    duplicate (the phase-4 fix, after compaction);
+  - a PC far behind reads versions whose history no longer reaches what it has: through a
+    snapshot, that is taken as newer-wins with no conflict, unless what it has was made on
+    this PC;
+  - tests compact after 3 batches, so every sync test (the random simulations included) also
+    goes through snapshots.
+- **The git history keeps old files:** compaction keeps the working tree small. The server's
+  history still holds every encrypted batch ever written, a few KB each. Rewriting history
+  would break the other clones; a fresh repo is the way to start over.
+- **Real run** with the binary and a bare repo, across four data dirs:
+  - a PC removed after writing a template: its last template reached the third PC, the removed
+    PC got the error, and what it wrote afterwards reached nobody;
+  - 105 syncs left 5 batches and one snapshot: a PC that was behind and a new PC both got all
+    105 templates;
+  - the keyring was empty after leaving.
+
+**Housekeeping (security review):**
+- **High: the take-over moved the link base of rows that did not hold that version.** These were
+  rows of a project local for a while, or items waiting in the replica. Later the stale rows
+  counted as edits made here: an edit was reverted and a deletion revived on every PC, with no
+  conflict. Now a base moves only when the row reflects the version taken over.
+- **Medium-high: a member could add a hidden member** (its own keys) that outlived the member's
+  removal, read what came after and wrote as a member.
+  - Now only the recovery key adds a PC (a join, with the 12 words).
+  - A PC's epoch may only remove: every member it keeps, with the same keys.
+  - Member ids must be PC ids, each once: an empty id would have made "Quitar" delete every
+    PC's folder.
+- **An epoch that does not follow is ignored, not fatal.** Otherwise a stolen PC, or anyone with
+  push access, could stop every sync by writing a bad one.
+  - A sync and a join trust the chain up to it.
+  - Removing a PC writes over it.
+  - One that does follow and came in meanwhile (another PC's join or removal) is never written
+    over: the removal stops with "vuelve a intentarlo".
+- **The take-over keeps each version's time** (only the PC that answers for it changes), and its
+  versions are marked `restates`:
+  - an edit built on the removed PC's version wins over it with no conflict, even when it was
+    pushed late;
+  - a conflict waiting on another PC is not cleared by it.
+- **What the take-over will send is saved first**, so a failure halfway loses none of it.
+- **A snapshot that does not open or check out is skipped:** it stops only that PC's batches,
+  like a missing batch. A PC removes anything in its own folder it did not write (a junk
+  snapshot, a batch past its seq) on every sync.
+- **The confirmation and the CLI say to revoke a lost PC's git access too.** The CLI prints PC
+  names without terminal controls.
+- **A limit, kept on purpose:** the take-over re-sends what the removed PC wrote last,
+  approved notes included, under this PC's name. Without it, the PCs that had not read those
+  changes would never get them.
+
+**Housekeeping (correctness review):** it confirmed the take-over issues above. It also found,
+each now fixed with a regression test (or, for the git case, a real run):
+- a joining PC duplicated a note after compaction;
+- false conflicts for a PC far behind;
+- an edit made on the removed PC's version lost to the take-over;
+- a removed PC with an unpushed commit got a git rebase error forever instead of `SyncRemoved`;
+- small things: `last_error` after a removal, the CLI printing an id twice.
+
+A differential random simulation (4 PCs, 200 steps, 30 seeds, with and without compaction and a
+removal) found the notes and templates identical in every pair.
+
+**Re-check (security):** every repro now fails. Two more findings, both fixed with a test:
+- an epoch a member signed without the recovery key stopped every sync. The recovery key must
+  now stay, unchanged, in every epoch whoever signs it; one without it is ignored, and a
+  removal writes over it;
+- junk named like a snapshot made its owner delete its real one. A PC now remembers the seq
+  of its own snapshot (`sync.snapshot`), and a reader tries snapshots newest first until one
+  checks out.
+- The CLI also hides the marks that reorder text in PC names.
+- An epoch written by a newer Hedy (another format) is now ignored rather than fatal, like any
+  epoch this version cannot check.
+
+### A real test (phase 7)
+
+- **Against a real private GitHub repo**, with the user's own HTTPS credential in git's
+  credential cache (Hedy kept no token):
+  - **The app** (`sync_ipc_end_to_end`, `app/src-tauri/src/sync.rs`): the real Tauri commands
+    over IPC, with the app's own context and capabilities and the arguments `tauriApi.ts`
+    sends, on two PCs:
+    - a token URL is refused, and the repo is private;
+    - setup and join;
+    - the owner question and the memory homes;
+    - a project note and a global one;
+    - a conflict settled from the app;
+    - a project made local;
+    - a removal, and leaving.
+
+    49 s.
+  - **The CLI** (`scripts/sync-e2e.sh`), the real binary on four PCs:
+    - a token URL is refused, and wrong words leave no clone;
+    - three PCs join and templates travel;
+    - concurrent syncs from two PCs;
+    - leaving and joining again with nothing duplicated;
+    - a removed PC is told and is no longer listed;
+    - 105 syncs compact to 9 batches and one snapshot;
+    - a PC behind and a new one both get all 116 templates.
+
+    444 s, and the keyring was empty at the end.
+  - **Both repos**, across their whole history: no template name, note text, PC name, project
+    name or email of the user, and every commit is `Hedy <sync@hedy.invalid>`.
+- **The same runs against a local bare repo** need no network: the default of both.
+- **Not automated:** driving the real window (no WebKitWebDriver on the machine). The UI is
+  covered by its tests against `MockApi` and by headless screenshots, and its wiring to the
+  backend by the IPC test above.
+- **Also fixed:** `hedy … | head` panicked when the reader closed the pipe. Now a print to a
+  closed pipe ends the command without the panic message. SIGPIPE itself stays ignored: a first
+  version reset it for the whole process, and then a pipe to an agent that closed killed
+  `hedy ask` and `hedy usage` silently instead of reporting the error.
+
+**Housekeeping:** both reviews found that most of the script's checks could not fail
+(`[ … ] && ok` under `set -e`). They also found:
+- the process-wide SIGPIPE reset above;
+- `setup` writing into a repo that already had files (someone's code, at a mistyped address).
+  It is now refused with "ese repo ya tiene archivos";
+- `docs/sync.md` claiming the server sees less than it does: it also sees the plain key
+  files, the batch counts and when PCs join or are removed;
+- a keyring check that counted the user's own entries.
+
+All are fixed:
+- every check of the script now fails the run (shown by breaking one on purpose);
+- the script refuses a repo that is not empty, counts only sync keys, and checks the expected
+  number of templates;
+- a vitest pins the sync payloads `tauriApi.ts` sends to the names the IPC test uses.
+
+User guide: [sync.md](sync.md).
+
+## 35. Team memory: a team's shared memory on its own git repo (Nov 18, 2026)
+
+Team memory reuses personal sync's engine and vault (§34): a team is a key vault in a private
+repo on any git server, where each PC also belongs to a person with a role. The views were
+chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
+
+### Decisions
+
+- **One team is one repo with one key.** To keep a project apart, make another team. A
+  project belongs to one team at most. Keys per project were dropped: more to keep and
+  rotate, and a separate team gives the same isolation.
+- **Joining is a one-time invite**: the repo's address plus a code (`7-tigre-lima-nube-mar`)
+  that works once and expires after 48 h.
+  - The code is checked with a PAKE, so it never reaches the repo. Someone with a copy of the
+    repo cannot test guesses offline.
+  - A request that does not open burns the invite. When the code is right, the person gets in
+    on the inviting PC's next sync, with nobody approving by hand.
+  - The git server still decides who can read the repo. Hedy reminds the admin to give access
+    there, and to take it away when a person is removed.
+  - Rejected: a compared hash of a short code (any reader of the repo can brute-force it
+    offline), and SSH keys from `<host>/<user>.keys` (tied to one host, and not every user
+    has them).
+- **Two roles:**
+  - an **admin** invites, removes and reviews the team layer;
+  - a **member** adds or removes only their own PCs. Their PC asks, and an admin's PC signs
+    the change on its next sync, with nobody approving by hand (see T1).
+
+  The team has its own 12 recovery words, meant for the team's password manager. Without
+  them, a team whose admins all lose their PCs is locked forever.
+- **Three layers of memory:**
+  - **Equipo**: the agent always reads it. It is capped at 1,500 tokens, and admins review it.
+  - **Proyecto**: a note is published when someone approves it, with their name on it.
+  - **Solo tú**: personal, as today.
+
+  Changing someone else's note is a suggestion. There is no review mode per project: the
+  author's name and suggestions are enough, and the switch would be one more thing to explain.
+- **Team notes are untrusted input** for the agent:
+  - a note with hidden characters cannot be accepted;
+  - the author is always shown;
+  - the agent gets team notes quoted, as data.
+- **Removing someone** rotates the key forward. Their PCs keep what they already had, their
+  notes stay under their name, and the admin is taken to the repo to remove their access.
+- **Out of v1:**
+  - the weekly digest;
+  - public groups (open-source communities);
+  - keys per project;
+  - SSH signatures;
+  - access by GitHub username (the invite replaces it).
+- **The 1,500-token cap** is a starting point, to be tuned with evals before release (§33:
+  always-on context files cost about 20% more for little gain).
+
+### Phase T1: seats, roles and invites
+
+- **Seats** (`domain::team`, `adapters::vault`):
+  - A team's epoch says so (`"team": true`, signed). Each of its PCs carries `person`
+    (16 hex, random) and `role` (`admin`/`member`).
+  - A personal vault has neither, and its epoch files serialize byte for byte as before. A
+    test holds two files written by the code before teams (`adapters/testdata`).
+  - Seats must hold together:
+    - in a team, every PC has a seat; in a personal vault, none does;
+    - the recovery key has no seat;
+    - all of a person's PCs share one role;
+    - no two members share a key.
+  - A field the format does not know is refused, so nothing travels outside the signature.
+- **`verify_next`** keeps every earlier rule: the next number, a signer from the epoch
+  before, and the recovery key kept unchanged. Then:
+  - the recovery key may change anything else, even turn a vault into a team's;
+  - any other signer keeps the vault what it was, and every PC that stays keeps its keys and
+    its person;
+  - a personal PC (no seat) only removes, as before;
+  - an admin's PC adds, removes and changes roles;
+  - **a member's PC signs no epoch.** A first version let it add or remove its own person's
+    PCs. The security review showed that a PC writing an epoch re-wraps the key for
+    everyone, and nobody can check another member's wrapped key. A member could wrap junk
+    for an admin, or for the recovery key, and lock them out, which is a removal its role
+    forbids. A member's changes to their own PCs are now requests that an admin's PC signs
+    (T2).
+- **Invites** (`adapters::invite`):
+  - **The code:** a number naming the invite plus 4 BIP39 words (44 bits).
+    - The words are kept without accents but with their `ñ`, and both lists are read back.
+    - Words may be apart by spaces, dashes or any punctuation.
+    - A typo is caught before any attempt, so it never burns the invite.
+  - **The check:** SPAKE2 over Ed25519 (RustCrypto's `spake2` 0.4, the one Magic Wormhole's
+    Rust port uses).
+    - The inviting PC writes its message in the invite, and the joiner answers with its own.
+    - The inviting PC keeps a 32-byte seed in the keyring and rebuilds its side from it
+      after a restart (`ChaCha20Rng`).
+    - Both identities carry a context (the team repo), so an invite answers for one repo
+      only.
+  - **The shared key** is an `InviteKey`: HKDF of SPAKE2's output, written `invite:…`.
+    - It seals under epoch 0, which `vault::open` and `VaultKey::decode` refuse. What a
+      joiner seals, someone not trusted yet, never opens as a vault file.
+    - A wrong code gives a different key, so the request does not open.
+  - **Caveat:** `spake2` has never had an independent audit (its README says so). It is
+    built on `curve25519-dalek`, which has. It stays behind the `SyncCrypto` port, so it can
+    be swapped (CPace, for instance).
+- **Hidden characters** (`domain::team::hidden_chars`, `reveal_hidden`):
+  - Flagged:
+    - direction overrides (Trojan Source);
+    - zero-width and other invisible format characters;
+    - line and paragraph separators;
+    - blank lookalikes;
+    - private-use characters;
+    - Unicode tags and variation selectors;
+    - control characters.
+  - Allowed, because they are how ordinary emoji are written:
+    - joiners between emoji (❤️‍🔥);
+    - presentation selectors after a symbol (1️⃣, ▶️, ↩︎);
+    - the tags of a subdivision flag;
+    - `\r\n`.
+  - Still refused: ZWNJ and the direction marks that Persian or Arabic text uses. The author
+    rewrites the note.
+  - A reviewer sees each hidden character as `⟦U+202E⟧`.
+- **Personal sync never joins a team's repo with the 12 words** ("ese repo es de un equipo:
+  únete a él con una invitación"). Its epoch would have no seat, and every PC would refuse it.
+- **Found on the way:** Spanish recovery words typed without accents were refused. The
+  BIP39 list writes accents as separate marks, which `fold_word` did not remove. The app's
+  and the CLI's word checks had the same problem. All three are fixed, with tests.
+
+**Housekeeping:**
+- **Two reviews:**
+  - security, with proof-of-concept tests;
+  - correctness, which ran old and new binaries against one repo. A new PC joined an old
+    PC's repo with the words in capitals and without accents, both synced, and the new one
+    removed a PC that the old one then dropped.
+- **Fixed:**
+  - a member's PC could lock out an admin, or the recovery key, with a junk wrapped key
+    (high). Members now sign nothing;
+  - an admin's PC could turn a team into a personal vault, where any PC removes anyone. The
+    kind is now signed in the epoch, and only the recovery key changes it;
+  - the invite key opened like a vault key;
+  - a member could reuse another member's keys;
+  - unknown fields rode outside the signature;
+  - the lint blocked ordinary emoji (keycaps, ❤️‍🔥, subdivision flags) and missed some
+    carriers;
+  - joining a team with the words wrote an epoch that every PC refused.
+- **Re-verified** by both reviewers, with their proofs of concept rerun: the fixes hold. The
+  check found one new hole, opened by the emoji fix:
+  - any run of tags after 🏴 passed as a flag, so a note could hide a whole instruction in
+    them. A first fix allowed any subdivision code (3 to 7 lowercase letters or digits), but a
+    row of 🏴 could still spell out text a few letters at a time. Now only the three flags
+    that exist pass: England, Scotland and Wales;
+  - a presentation selector passed after any symbol from U+2000 to U+2BFF, a dash or a quote
+    among them, and after any digit. Now it passes only after the characters that have an
+    emoji form, and after a digit, `#` or `*` only as a keycap (1️⃣).
+
+  Not changed: the check that no two members share a key compares the keys' text. An X25519
+  key with its top bit flipped reads as another key, but it opens nothing of the original's.
+- **Left for T2:**
+  - **Give the joiner its root of trust.** The inviting PC's answer, sealed with the shared
+    key, carries the team's recovery public key and the pins of its epochs. Without them, a
+    git host could hand the joiner a chain of its own.
+  - **Burn the invite before `accept`.** Each call is one guess, so a crash in between must
+    not allow another.
+  - **Refuse to leave a team without admins:** warn before the last admin leaves or demotes
+    themselves.
+  - **Show team notes as raw text** when they are reviewed. Markdown hides HTML comments and
+    link definitions that the agent would still read.
+- **Known limits, unchanged from §34:**
+  - Someone who still has push access after being removed can race the removal epoch.
+  - Pins are digests of the raw file, so whitespace or an explicit `null` changes them under
+    the same signature. Anyone with push access could therefore stop a sync, which they can
+    do by other means as well.
+
+### Phase T2: the team engine (`application::sync::team`)
+
+- **Spaces.** The sync engine now runs per space: personal sync, or a team. Each space has
+  its own:
+  - clone: `sync/repo`, or `teams/<id>/repo`;
+  - keyring entry: personal sync keeps its own, and a team's sits next to it with
+    `:team:<id>` added;
+  - settings: `sync.*`, or `team.<id>.*`;
+  - replica: a `space` column in `sync_items`, `sync_cursors` and `sync_conflicts`. The 14th
+    migration moves the existing rows to the personal space (`''`), and a test runs it.
+
+  Personal sync behaves exactly as before. Only it has links to local rows, and only it
+  writes into notes, skills, templates and themes.
+- **A team's notes live in its replica, never in this PC's notes.** Nothing of a team
+  can reach personal sync, not even a team-layer note with no project. They change only
+  through the team's use cases, which write the version to the replica and to the outbox.
+  A project joins a team through its memory home (`MemoryHome::Team(id)`, stored as
+  `team:<id>`), so its notes no longer sync personally. Leaving the team gives the project
+  back to its owner's rule.
+- **Items:**
+  - a note (`TeamNoteBody`): its scope is its layer (`Global` is the team layer, `Project` a
+    project's), and it carries its byline (`person`, `author`);
+  - a suggestion (`ItemKind::Suggestion`, `SuggestionBody`): a change to a note, removing a
+    note, or a new team-layer note. A member's team-layer note becomes one.
+
+  Personal sync refuses suggestions. A team refuses every other kind.
+- **Every PC checks what it reads** (`team_allows`, the rules in `domain::team::TeamWrite`).
+  The writer's seat is taken from the newest epoch.
+  - **Notes:**
+    - an admin writes any;
+    - a member writes only project notes in their own name, over versions that were theirs;
+    - a note with hidden characters (in its text, author or topic) is refused.
+  - **Suggestions:**
+    - their author writes them;
+    - their author, the note's owner or an admin removes them.
+  - **Order:** a team's batches and snapshots are read first and applied together in stamp
+    order, so a version meets the one it replaced whichever PC wrote it. Cursors are saved
+    afterwards.
+  - **Refusals** count in `SyncReport::refused`.
+- **Invites** (repo `invites/<n>/`):
+  - The inviting PC writes `offer.json`, with its SPAKE2 message and the expiry, and keeps
+    the secret in the keyring. The SPAKE2 context is the digest of epoch 1, which binds the
+    invite to the team.
+  - The joiner checks the code's words before anything else, then the expiry and that
+    nobody answered yet. It writes `request.json`: its message plus a sealed request (its PC
+    and public keys, its name and its PC's name), and waits.
+  - The inviting PC's sync burns the invite before it checks the request. A request that
+    does not open drops the invite, and the number shows in `failed_invites`. One that opens
+    is answered after the sync, in a commit of its own:
+    - an admin adds the PC in a new epoch (a new person, with the invite's role);
+    - a member's PC (`team_invite_pc`) signs a request in `requests/<pc>/` for an admin's PC.
+  - The answer (`answer.hedy`, sealed with the invite key) carries the root of trust: the
+    recovery key and the pins of every epoch. The joiner checks epoch 1 against that key and
+    every pinned file against its pin, then follows the chain itself. It is in once an
+    epoch lists it.
+- **Key history.** Each new epoch also writes `vault/history/<n>.hedy`, sealed with its own
+  key and signed by its admin's PC, holding the key before it. Whoever opens an epoch walks
+  back to every older key, so a new member reads what was written before they came. Someone
+  left out of an epoch gets nothing new. The project names use epoch 1's key, so they match
+  on every PC.
+- **People:**
+  - `team_remove_person`, `team_set_role` and `team_remove_pc` sync first, then write the
+    epoch in a commit of their own. The files of a removed PC go, except its `device.hedy`.
+  - The admin's PC takes over the versions of the people it removes, or the team-layer notes
+    of someone no longer an admin. It sends them again with the same content and bylines,
+    signed by itself, so the PCs that read them later still take them.
+  - A member removes their own PCs, and leaves, through a request an admin's PC signs.
+  - `check_admins_stay` refuses any change that would leave PCs without an admin.
+  - An admin's PC writes itself out when it leaves.
+- **Each PC still writes only its own files.** Two exceptions are kept safe:
+  - the team name is in each admin's folder (`devices/<pc>/team.hedy`), and the newest
+    signed one wins;
+  - offers, answers and epoch changes go in commits of their own, discarded and retried when
+    another PC pushed first.
+- **Checks:**
+  - 29 tests, among them a simulation where three people (two admins) work and sync in random
+    order across 8 seeds. No PC refuses what another wrote through the use cases, and all of
+    them converge.
+  - The simulation found that a PC refused a removed suggestion it did not have: it came in a
+    snapshot, where only the removal remains, or two PCs had removed it at once. Removing what
+    the reader does not have, or has already removed, protects nothing, so it is taken.
+  - The whole flow runs through real git and SQLite: three people, a second PC added
+    through an admin, a suggestion, and a removal. The repo's history (`git log -p`) holds
+    no name and no text.
+- **Housekeeping:**
+  - **Two reviews:**
+    - security, with proofs of concept;
+    - correctness and regressions. No regression was found in personal sync: its settings and
+      keyring entry keep their names, what it stores is byte for byte the same, and the
+      migration keeps every row.
+  - **Fixed** (each with a test of its own):
+    - **A replayed request brought a removed PC back (high).** A member's request only named
+      its path, so the request that once added a laptop, pushed again after the laptop was
+      removed, added it again. Now:
+      - an addition names the epoch it was asked in and is signed only in that epoch;
+      - a PC once in an epoch is never added again;
+      - a member's PC asks again, under a new name, for each new epoch until its PC is in,
+        so no file is ever written twice.
+    - **One member could stop the team's sync (high).** A malformed batch made every PC's
+      sync fail, and with it the admins' means to remove that member. In a team it now counts
+      as refused and stops only that PC's batches.
+    - **A backdated version took someone else's note.** On a PC that had not read the note
+      yet, it applied first. A new item's uid now starts with its writer's person, and a
+      member writes only in their own uids: what a member writes in another person's uid is
+      refused, whatever its date.
+    - **A request with a key that does not read blocked every seat change.** Keys are now
+      checked (and duplicates refused) before the epoch, one request at a time, and
+      `new_epoch` never writes an epoch that `valid_members` refuses.
+    - **A suggestion's byline could carry hidden characters.** They are checked on read and
+      when the suggestion is taken.
+    - **A member could show any name on their notes.** A person's name is now the one the
+      admin who let them in wrote, in the admins' signed `team.hedy` (names add up across
+      admins), never one they give themselves.
+    - **A key history file was taken from any admin of either epoch,** so an admin demoted
+      since could feed a joiner a wrong key. Only the PC that signed the epoch counts now. A
+      team's project names come only from epoch 1's key; without it, no project matches.
+    - **Copies diverged after a demotion.** The admin now takes over everything the demoted
+      person's PCs wrote, not only the team layer.
+    - **A note's owner who took the suggestion to remove it left that suggestion pending
+      elsewhere.** The suggestion now goes before the note.
+    - **A removed PC could not leave, and its status failed.** Leaving now cleans up here
+      whatever the repo says.
+    - **An admin who left lost their notes for those who joined later.** Every PC, admin or
+      not, now leaves through a request that another admin's PC signs, taking over what it
+      wrote.
+    - **Crash windows:**
+      - the takeover happens before the push;
+      - a step that fails after writing discards the clone;
+      - an invite whose PC is in already is not added again;
+      - the invite's files stay until its answer leaves (a joiner who looked in between was
+        told the invite had failed);
+      - a request that arrived in time is checked even after the invite expires.
+    - **The team list** changes under a lock of its own, so the app and `hedy` never drop
+      each other's teams.
+    - **The app** knows the new memory home and item kind.
+  - **Checks:**
+    - the personal e2e script with the real binary and keyring;
+    - the app's sync over IPC;
+    - the team flow over real git;
+    - the random three-person simulation. No PC refuses anything legitimate.
+- **Re-verification** (both reviewers, proofs of concept rerun): the fixes held. Six more
+  findings, fixed with a test each:
+  - **A stale suggestion after compaction.** A suggestion removed by the note's owner
+    stayed pending on a PC that never had the note: the owner's snapshot keeps only its
+    removal. A suggestion now names its note's owner as it was then. Naming the wrong one
+    only lets that person turn the suggestion down.
+  - **A promoted member's pending PC.** A member promoted while their PC waited never added
+    it. An admin's PC now adds its own pending asks.
+  - **Names lost with the admin who wrote them.** Any admin's PC now writes again the names
+    that are missing from the repo.
+  - **A new person's name** came straight from their request. It is now shown with any
+    hidden character visible, and told apart from a name already taken (`Ana (2)`). Admins
+    rename people and the team (`team_rename_person`, `team_rename`).
+  - **A member could move their accepted note out of the team layer,** and the owner of a
+    team-layer note could drop suggestions on it. A member never changes an item's scope, and
+    the team layer's suggestions are the admins' to review.
+  - **Two admins leaving at once left none behind.**
+    - An admin's PC now stays until another admin's takes it out (`leaving`).
+    - A removal that would leave no admin is dropped on its own, and its PC is told
+      (`TeamLastAdmin`) and stays.
+    - A stuck request no longer blocks the rest.
+    - A PC never acts on its own requests: another admin's PC takes it out and answers for
+      what it wrote. A leaving admin's PC that synced first took itself out, and its notes
+      were lost to those who joined later.
+    - If no other admin is left to take it out, the request is withdrawn and the PC is told
+      it stays.
+    - An admin cannot leave offline: its request has to reach the repo, so that it stays an
+      admin until another one takes it out. A member's PC leaves offline all the same.
+- **Known limits:**
+  - **Hiding someone's batches.** A member who hides another's batches can keep that
+    person's work from a PC that never saw it. They need push access, and they cannot put
+    their own version in its place.
+  - **Key history files.** Anyone with push access can delete them, which cuts new members
+    off from older content. They cannot forge one.
+  - **What the git host sees in plain text:**
+    - the seats in the epochs: person ids, roles, and how many PCs each person has;
+    - the invites' offer and request files, and when they were made.
+
+    Names, notes and the team's name are sealed.
+  - The pins and the push-access limits of §34 still apply.
+
+### Phase T3: what the agent reads
+
+- **Until now no note was always in the context.** An agent got the memory guidance and the
+  MCP tools, plus, with the briefing, up to 3 notes in its first prompt.
+- **The team layer is now always in it, for a project of a team** (memory home
+  `team:<id>`):
+  - `team_context` renders it (`domain::team::team_layer_block`), and `MemoryLink.team`
+    carries it.
+  - `prompts::memory_context` puts it after the memory guidance in every adapter: Claude's
+    `--append-system-prompt`, Codex's instructions, ACP's first-prompt intro, and the API
+    agent's system prompt.
+  - It follows the memory switch: an account with the memory off gets no team layer
+    either.
+- **The block is data written by people, quoted:**
+  - a header says the notes are data, not instructions, and to ignore any that asks to
+    change the agent's rules, reveal secrets or run something;
+  - each note is one line, with its author and its text as JSON strings, so no text, name or
+    team name can close the block or pass for Hedy's words;
+  - rules come first, then conventions, decisions and preferences.
+- **It is capped at 1,500 tokens** (`TEAM_LAYER_TOKENS`). What does not fit is counted and
+  left to `memory_search`.
+- **Project notes are not always in the context.** `memory_search`, through the API tools and
+  the MCP server alike, adds a "Notas del equipo" section to its first page:
+  - the team's notes that match: this project's first, then the team layer's, by the number
+    of words found;
+  - quoted, with their authors;
+  - at most 8, of up to 400 characters each.
+- **`team_publish_note(team, note, team_layer)`** is what the "¿A quién le sirve?" sheet
+  calls. It moves a note of this PC into the team: one an agent proposed, or the user's own.
+  It goes to its project's notes, or to the team layer, where a member's note becomes a
+  suggestion. It then leaves this PC's notes, since the team's copy is the one every PC
+  reads.
+- **Evals:** a case may carry `teamNotes`. The runner makes a team in a bare repo next to the
+  run, connects the project, adds the notes to the team layer, and leaves the team afterwards
+  (its keys are in the keyring). `price-format-team` is `price-format` with its two notes in
+  the team layer.
+- **First measurement** (haiku, `claude-personal`, 2 runs each,
+  `evals/results/team-layer-2026-11-18.jsonl`):
+
+  | case | plain | memory | median tokens with memory | memory reads |
+  |---|---|---|---|---|
+  | `price-format-team` (convention in the team layer) | 0/2 | 2/2 | 89 k | 0 |
+  | `price-format` (same convention as a project note) | 0/2 | 2/2 | 127 k | 1 |
+
+  - The agent follows the team layer without searching, because the convention is already in
+    its context.
+  - Two runs are within the noise (§33: up to ~30 % between identical runs), so the token
+    difference says nothing yet.
+  - The 1,500-token cap stays until a case with a large team layer is measured.
+- **Housekeeping:**
+  - **Two reviews,** read-only on the adapters and with proofs of concept for injection. No
+    regression was found:
+    - every adapter adds the memory text only when the memory is on, in the same place as
+      before;
+    - quoting keeps every note and name on its own line.
+  - **Fixed** (each with a test of its own):
+    - **Every task and search ran git, even with no team.** The team's home was derived from
+      the project's remotes, and the team's projects were all read too. A team's home is
+      always stored, so now only the stored home is read. The team layer reads the replica
+      alone, and the search names only this project, with its `origin` and epoch 1's key.
+    - **A very long name could hide the team layer (medium).** The cut stopped at the first
+      line that did not fit, and rules come first. Now a line that does not fit gives way to
+      the shorter ones after it. A person's name is capped at 60 characters and a team's at
+      80, both when written and when read.
+    - **Names from the repo were not checked for hidden characters.** JSON quoting does not
+      escape bidi controls, so names and the team name are now shown with them revealed,
+      whoever wrote them.
+    - **`team_publish_note` took any note and deleted it even when it only became a
+      suggestion.** It now takes only a note of one of the team's projects, or a global one
+      for the team layer. A suggestion keeps the note here until an admin decides.
+    - **Search output:** the team's notes now open the search's first page, so its paging
+      footer stays last. A search that failed shows only the error.
+    - **Eval runs:** the bare repo goes however the run ends. A killed run can still leave
+      its team's keyring entry for that run's data folder.
+  - **Not changed:** `session_overhead` (§33) measures the guidance only. The team block is
+    measured by its own cap.
+
+### Phase T4: `hedy team`
+
+- **The same use cases as the app.** `crates/hedy-cli/src/team.rs` only asks and prints, in
+  the style of `hedy sync`:
+  - `hedy team` (the status, by default): the people with their roles and PCs, open invites,
+    burned invites and the suggestions waiting. With several teams and none chosen, it lists
+    them.
+  - `--team <name|id>` picks a team. By default it is the current project's, or the only one.
+  - **Creating and joining:**
+    - `create <url> --name <team> [--me] [--pc]` shows the 12 words and, in a terminal, asks
+      for one back;
+    - `invite [--admin|--mine] [--cancel <n>]` prints the code and reminds the admin to give
+      git access;
+    - `join <url> [code]` asks for the code without showing it when it is left out;
+    - `now` syncs, or looks whether a joining PC is in yet.
+  - **Notes:** `link` (the current project becomes the team's), `notes`, `add [--everyone]`,
+    `publish <id> [--everyone]` and `review [<id> --accept|--reject]`. In the review,
+    suggestions are named by the end of their id, and their hidden characters show.
+  - **People:**
+    - `role <person> --admin|--member`, `remove <person>|--pc <pc>`, and `rename <name>
+      [--person]`. People are named by their name or the start of their id.
+    - `remove` reminds the admin to take away the person's git access.
+  - **Leaving:**
+    - `leave` asks an admin's PC to take this one out; an admin's PC waits for that.
+    - `leave --here` only forgets the team on this PC, without asking anybody. It is for a PC
+      given away, or a run that has to clean up. The PC stays in the team's epoch, with
+      nothing behind it, until an admin removes it.
+- **A removed PC is told in a team's words** (`TeamRemoved`), not personal sync's, which
+  speak of the 12 words.
+- **`scripts/team-e2e.sh <url>`** runs the real binary and keyring against an empty repo:
+  - three people, one with two PCs, an admin among them;
+  - an invite burned by a wrong code;
+  - notes, a suggestion taken, and all four PCs equal;
+  - a repo with nothing readable, a person removed with their note kept, and everyone
+    leaving.
+
+  Its cleanup uses `--here`, so even a failed run leaves no team entry in the keyring.
+- **Housekeeping:**
+  - **Two reviews.** The security review ran the real binary against a local repo.
+  - **Fixed:**
+    - **Names other PCs sign reached the terminal raw (medium).** A joiner named
+      `Luis\n  ● Mallory  admin` with an escape in their PC's name faked a whole line in an
+      admin's `hedy team` and changed the terminal's title. Now:
+      - names and PC names are one line in the core, with their hidden characters revealed;
+      - the CLI also cleans everything it prints from other PCs;
+      - a note's lines are shown indented.
+    - **The invite code was an argument** of `hedy team join`, so it showed in `ps` and
+      stayed in the shell's history. It is now asked without echo, or read from stdin.
+    - **`--team <name>` was compared as if it were an id,** so a team still joining or
+      leaving went unnoticed. `pick` now always resolves to an id.
+    - **Several commands spoke of personal sync** to a PC taken out of the team. Every team
+      error now says it in the team's words.
+    - **Taking a suggestion by the end of its id** could take another one, since its author
+      writes their own ids and may change the text. `review --accept` shows the suggestion
+      and asks first (`--yes` skips it), and needs at least 4 characters of the id.
+    - **`remove`** finds the person or PC before asking, an exact id wins over a name, and the
+      question names who it resolved to.
+    - **`leave --here` from the only admin** warns that only the 12 words bring the team back.
+    - **`notes`** groups by project.
+
+### Phase T5: the app
+
+- **Tauri** (`app/src-tauri/src/team.rs`): one command per use case, with camelCase DTOs, and
+  every error comes back already in the user's language. The background sync of
+  `sync::start` syncs every team after personal sync; a PC still joining looks whether it is
+  in. Then it emits `sync-updated`, which also refreshes the teams.
+- **The nine views chosen on the canvas:**
+  - **1b, Ajustes → Equipos.** A card per team, with its projects here, its people, this PC's
+    role and its state ("2 para revisar", "Al día", "Esperando para entrar"). Below, creating
+    a team or joining one, and that personal memory never goes to a team.
+  - **2a, creating a team, in three steps:** the repo (private, empty, writable, and the
+    advice to protect `main`), then the names (the team's, the person's, the PC's), then the
+    12 words. As in personal sync, the window does not close until one word is typed back.
+  - **3b, the invite inline among the people.** Its code shows with Copiar and Anular, and
+    the reminder to give git access. A burned invite shows a notice.
+  - **4b, joining:** the address and the code as two fields, then the wait for the team.
+  - **5b, a team project's memory:** one list with a layer filter (Todas, Equipo, Proyecto,
+    Solo tú) and its counts. Each team note shows its layer and its author, with Editar or
+    Sugerir cambio, and the team layer's size against its cap is shown.
+  - **6a, "¿A quién le sirve?".** Approving an agent's proposal (or sharing a note of this PC)
+    in a team project offers three choices: only me, whoever works on the project, or the
+    whole team, which shows how much of the layer it would take and that an admin reviews it.
+  - **7b, suggestions one at a time:** now and with the change, side by side. It says how much
+    of the layer the change takes, and a suggestion with hidden characters cannot be accepted.
+  - **8b, a card per person** with their PCs as chips. An admin makes people admins or
+    members and removes them; anyone removes their own PCs.
+  - **9a, removing someone:** a dialog that says their notes stay and reminds the admin to
+    revoke their git access.
+- **Also:**
+  - "Equipo · N para revisar" in the status bar, counting only what this person may review. It
+    opens `#teams`.
+  - The memory card of a project with a remote offers its teams as one more home, which links
+    the project to the team. A project without a remote cannot be a team's.
+- **Checks:**
+  - seven UI tests run against the mock, which holds a team ("Plataforma");
+  - the 22 `invoke` calls in `tauriApi.ts` were checked against the Rust commands, by name and
+    arguments;
+  - screenshots in both themes with headless Chromium over CDP.
+- **Housekeeping:**
+  - **Two reviews,** with nothing high. They checked rendering (React text only, no HTML or
+    Markdown) and every DTO against its TS type.
+  - **Fixed:**
+    - **A PC still joining could not cancel**, and its error never showed. Its row now shows
+      the error and has Cancelar.
+    - **"N para revisar" counted a member's own suggestions.** `TeamStatus.to_review` now
+      counts only what this person may take or turn down, everywhere.
+    - **A proposal sent to the team layer as a suggestion stayed a proposal**, and approving it
+      again made a second suggestion. It is now approved here as well: an admin may turn the
+      suggestion down.
+    - **The sheet's button only said "Aprobar".** It now names where the note goes ("Compartir
+      con quien trabaje en …", "Enviar a todo el equipo").
+    - **The review followed a suggestion by its position**, which a refresh can change. It now
+      follows its id.
+    - **An admin's PC waiting to leave** can also forget the team here, as `leave --here`
+      does.
+    - **An invite's code** shows only when asked.
+    - **The memory card** refreshes the teams when it changes a project's home.
+    - **The background loop** refreshes the UI after a sync, not every 5 minutes with nothing
+      set up.
+
+### Phase T6: real tests and closing
+
+- **On real git servers** (GitHub, three private repos at once, one account as transport: each
+  "person" is a data dir of their own, with their own keys):
+  - `scripts/team-e2e.sh`, the real `hedy` binary and keyring: three people, one with two PCs.
+  - `team_ipc_end_to_end`, the app's commands over IPC with the arguments the UI sends.
+  - Fourteen scenarios (`application::sync::team::scenarios`), each PC a Hedy of its own on
+    SQLite and real git, locally in `cargo test` and on GitHub with `HEDY_E2E_REPOS`: five of
+    personal memory, seven of teams, and two of both (one person in personal sync and two
+    teams; a project moving from personal memory to a team and back). Each note reaches only
+    its own people, and each agent reads only its project's team layer. Making personal sync
+    take team projects fails both mixed scenarios.
+  - Every repo's history was searched for notes, names and the teams' names: none.
+- **Cancelling a join** (`withdraw_join`): a PC that stops joining takes its request back, so
+  the inviting PC adds nobody.
+- **Housekeeping:**
+  - **Two reviews,** with nothing high.
+  - **Fixed:**
+    - **A join taken back while the inviting PC's answer had not gone out** still got a seat
+      (with nobody behind it), and its answer stayed in the repo. An accepted invite keeps its
+      files until its answer is out, in one push; so an accepted invite whose PC is not in and
+      whose request is gone was taken back: `team_seats` adds nobody and drops it.
+    - **Cancelling could remove a later invite's files** once the number was drawn again. It
+      now removes a request only if it opens with this PC's invite key.
+    - **The confirm said the invite stops working,** which is false once an answer is out. It
+      now says an admin must remove the PC in that case.
+    - **A crash in `finish_join`** between clearing the join and setting the team up left a
+      team neither listed nor forgettable, with its keys in the keyring. The URL is now set
+      first.
+    - **The IPC tests checked Spanish errors** but only passed on a Spanish locale.
+    - **docs/team.md** now says the git server sees which account pushed each change.
+    - **Re-verification** found that the inviting PC, dropping a withdrawn invite's files,
+      could remove a later invite's that drew the same number, and that a member's own-PC
+      answer cut short by a crash could look withdrawn. A withdrawn invite now needs no
+      request and no answer, and only its record goes: its files went with the withdrawal.
+  - **Known limits:**
+    - A cancel racing the inviting PC's push (between its fetch and its push) can still seat the
+      PC: an admin removes it.
+    - Cancelling without the network leaves the request: the PC is seated with nobody behind it
+      until an admin removes it.
+    - The cancel's fetch is best effort but waits for git's network timeout, holding the sync
+      lock, on a host that drops packets.

@@ -153,6 +153,85 @@ pub enum AppError {
     ThemeDescriptionFailed(Option<String>),
     #[error("{}", self.message())]
     ThemeDescriptionTimedOut,
+    /// Personal sync is not set up on this PC.
+    #[error("{}", self.message())]
+    SyncNotSetUp,
+    #[error("{}", self.message())]
+    SyncAlreadySetUp,
+    /// The repo already holds another sync: join it instead.
+    #[error("{}", self.message())]
+    SyncRepoInUse,
+    /// Joining a repo where no sync was set up.
+    #[error("{}", self.message())]
+    SyncRepoEmpty,
+    /// The newest key epoch leaves this PC out.
+    #[error("{}", self.message())]
+    SyncRemoved,
+    /// No PC with that id or name syncs.
+    #[error("{}", self.message())]
+    SyncDeviceNotFound(String),
+    /// The repo for a new sync already has files (not Hedy's).
+    #[error("{}", self.message())]
+    SyncRepoNotEmpty,
+    /// Personal sync pointed at a team's repo.
+    #[error("{}", self.message())]
+    SyncTeamRepo,
+    /// Another PC changed the sync's keys at the same moment.
+    #[error("{}", self.message())]
+    SyncBusy,
+    /// Several PCs have that name.
+    #[error("{}", self.message())]
+    SyncDeviceAmbiguous(String),
+    /// A PC cannot remove itself (it leaves instead).
+    #[error("{}", self.message())]
+    SyncRemoveThisPc,
+    #[error("{}", self.message())]
+    SyncConflictNotFound(i64),
+    /// A key epoch this PC already checked changed in the repo.
+    #[error("{}", self.message())]
+    SyncTampered(u32),
+    /// The sync repo's URL carries a password or a token.
+    #[error("{}", self.message())]
+    SyncUrlWithCredentials,
+    /// This PC is in no team with that id or name.
+    #[error("{}", self.message())]
+    TeamNotFound(String),
+    /// A team note with hidden characters (shown as `⟦U+202E⟧`).
+    #[error("{}", self.message())]
+    TeamHiddenText(String),
+    /// No team note or suggestion with that id.
+    #[error("{}", self.message())]
+    TeamItemNotFound(String),
+    /// The team member's role does not allow it.
+    #[error("{}", self.message())]
+    TeamNotAllowed,
+    /// The project's memory is not this team's.
+    #[error("{}", self.message())]
+    TeamProjectNotLinked,
+    /// What was typed is not an invite code (caught before it burns one).
+    #[error("{}", self.message())]
+    TeamInviteCode,
+    #[error("{}", self.message())]
+    TeamInviteNotFound(u32),
+    #[error("{}", self.message())]
+    TeamInviteExpired,
+    /// Someone else already answered that invite.
+    #[error("{}", self.message())]
+    TeamInviteUsed,
+    /// The inviting PC burned the invite: the code did not match.
+    #[error("{}", self.message())]
+    TeamInviteFailed,
+    /// Joining a team in a repo that holds personal sync.
+    #[error("{}", self.message())]
+    TeamNotATeam,
+    /// The change would leave the team without an admin.
+    #[error("{}", self.message())]
+    TeamLastAdmin,
+    #[error("{}", self.message())]
+    TeamPersonNotFound(String),
+    /// An admin took this PC out of the team.
+    #[error("{}", self.message())]
+    TeamRemoved,
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -263,6 +342,115 @@ impl AppError {
                 "note {id} is not a proposal: it is already approved"
             ),
             Self::EmptyNote => tr!("la nota está vacía", "the note is empty"),
+            Self::SyncNotSetUp => tr!(
+                "la sincronización no está configurada en esta PC",
+                "sync is not set up on this PC"
+            ),
+            Self::SyncAlreadySetUp => tr!(
+                "esta PC ya sincroniza con un repo",
+                "this PC already syncs with a repo"
+            ),
+            Self::SyncRepoInUse => tr!(
+                "ese repo ya tiene una sincronización: elige «Ya la uso en otra PC»",
+                "that repo already holds a sync: choose «I already use it on another PC»"
+            ),
+            Self::SyncRepoEmpty => tr!(
+                "ese repo todavía no tiene una sincronización: configúrala primero en tu otra PC",
+                "that repo holds no sync yet: set it up on your other PC first"
+            ),
+            Self::SyncRemoved => tr!(
+                "esta PC se quitó de la sincronización desde otra PC: ya no puede leer lo nuevo. Tus notas siguen aquí; para volver, deja de sincronizar y súmala de nuevo con tus 12 palabras",
+                "this PC was removed from sync on another PC: it can no longer read what is new. Your notes stay here; to come back, stop syncing and add it again with your 12 words"
+            ),
+            Self::SyncDeviceNotFound(name) => tr!(
+                "no hay ninguna PC «{name}» en la sincronización",
+                "no PC \"{name}\" syncs"
+            ),
+            Self::SyncRepoNotEmpty => tr!(
+                "ese repo ya tiene archivos: usa uno vacío, creado sin README",
+                "that repo already has files: use an empty one, created without a README"
+            ),
+            Self::SyncTeamRepo => tr!(
+                "ese repo es de un equipo: únete a él con una invitación",
+                "that repo belongs to a team: join it with an invite"
+            ),
+            Self::SyncBusy => tr!(
+                "otra PC acaba de cambiar las claves de la sincronización; vuelve a intentarlo",
+                "another PC just changed the sync's keys; try again"
+            ),
+            Self::SyncDeviceAmbiguous(name) => tr!(
+                "hay varias PCs llamadas «{name}»: usa su id (`hedy sync` lo muestra)",
+                "several PCs are called \"{name}\": use its id (`hedy sync` shows it)"
+            ),
+            Self::SyncRemoveThisPc => tr!(
+                "esta PC no se quita a sí misma: deja de sincronizar en ella, y quítala desde otra",
+                "this PC does not remove itself: stop syncing on it, and remove it from another"
+            ),
+            Self::SyncUrlWithCredentials => tr!(
+                "esa dirección lleva una contraseña o un token, y Hedy no guarda ninguno: usa la dirección sin él (con SSH, o con el gestor de credenciales de git)",
+                "that URL carries a password or a token, and Hedy keeps none: use the URL without it (with SSH, or with git's credential helper)"
+            ),
+            Self::SyncTampered(epoch) => tr!(
+                "el repo de sincronización fue alterado: la época de llaves {epoch}, que esta PC ya había verificado, cambió. No se sincroniza hasta revisarlo",
+                "the sync repo was tampered with: key epoch {epoch}, which this PC had already checked, changed. Sync stops until it is looked at"
+            ),
+            Self::TeamNotFound(team) => tr!(
+                "esta PC no está en el equipo «{team}»",
+                "this PC is not in the team \"{team}\""
+            ),
+            Self::TeamHiddenText(shown) => tr!(
+                "la nota tiene caracteres ocultos que el agente leería y tú no ves: {shown}. Escríbela de nuevo sin ellos",
+                "the note has hidden characters the agent would read and you do not see: {shown}. Write it again without them"
+            ),
+            Self::TeamItemNotFound(uid) => tr!(
+                "el equipo no tiene la nota o sugerencia {uid}",
+                "the team has no note or suggestion {uid}"
+            ),
+            Self::TeamNotAllowed => tr!(
+                "tu rol en el equipo no lo permite: pídeselo a un admin",
+                "your role in the team does not allow it: ask an admin"
+            ),
+            Self::TeamProjectNotLinked => tr!(
+                "la memoria de este proyecto no es del equipo: conéctalo al equipo primero",
+                "this project's memory is not the team's: connect it to the team first"
+            ),
+            Self::TeamInviteCode => tr!(
+                "eso no es un código de invitación: revisa el número y las cuatro palabras",
+                "that is not an invite code: check the number and the four words"
+            ),
+            Self::TeamInviteNotFound(number) => tr!(
+                "el equipo no tiene la invitación {number}: puede que ya se usara o se cancelara",
+                "the team has no invite {number}: it may have been used or cancelled"
+            ),
+            Self::TeamInviteExpired => tr!(
+                "la invitación venció: pide otra",
+                "the invite expired: ask for another"
+            ),
+            Self::TeamInviteUsed => tr!(
+                "alguien ya usó esa invitación: pide otra",
+                "someone already used that invite: ask for another"
+            ),
+            Self::TeamInviteFailed => tr!(
+                "la invitación no funcionó (el código no coincidió) y ya no sirve: pide otra",
+                "the invite did not work (the code did not match) and is no longer valid: ask for another"
+            ),
+            Self::TeamRemoved => tr!(
+                "esta PC ya no está en el equipo: un admin la quitó, y no puede leer lo nuevo. Lo que ya tenía sigue aquí; sal con `hedy team leave` (o desde Ajustes) y, para volver, pide otra invitación",
+                "this PC is no longer in the team: an admin removed it, and it cannot read what is new. What it had stays here; leave with `hedy team leave` (or from Settings) and, to come back, ask for another invite"
+            ),
+            Self::TeamLastAdmin => tr!(
+                "el equipo se quedaría sin admin: haz admin a otra persona primero",
+                "the team would be left without an admin: make someone else an admin first"
+            ),
+            Self::TeamPersonNotFound(person) => tr!(
+                "nadie del equipo es «{person}»",
+                "nobody in the team is \"{person}\""
+            ),
+            Self::TeamNotATeam => tr!("ese repo no es de un equipo", "that repo is not a team's"),
+            Self::SyncConflictNotFound(id) => tr!(
+                "no existe el conflicto {id}",
+                "conflict {id} does not exist"
+            ),
             Self::SkillNotFound(skill) => tr!(
                 "no existe la habilidad «{skill}» en este proyecto",
                 "there is no skill «{skill}» in this project"

@@ -193,6 +193,8 @@ export function CommandPalette({
       if (e.target instanceof Element && e.target.closest(".xterm")) return;
       const shortcut = paletteShortcut(e);
       if (!shortcut) return;
+      // Not over another dialog (it may hold something that must finish).
+      if (!open && document.querySelector('[aria-modal="true"]')) return;
       e.preventDefault();
       if (shortcut !== "toggle") show(shortcut.base, shortcut.text);
       else if (open) close();

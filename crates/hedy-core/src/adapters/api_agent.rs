@@ -115,6 +115,7 @@ impl AgentLauncher for ApiAgentLauncher {
             stopped: Arc::clone(&stopped),
             memory: request.memory.as_ref().map(|m| Arc::clone(&m.tools)),
             skills: request.memory.as_ref().and_then(|m| m.skills.clone()),
+            team: request.memory.as_ref().and_then(|m| m.team.clone()),
         };
         let prompt = request.prompt.clone();
         let images = request.images.clone();
@@ -188,6 +189,8 @@ struct Agent {
     memory: Option<Arc<dyn MemoryTools>>,
     /// The learned skills, next to the memory.
     skills: Option<Arc<dyn SkillTools>>,
+    /// The team layer, for a project of a team.
+    team: Option<String>,
 }
 
 fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> Value {
@@ -410,7 +413,11 @@ impl Agent {
         }
         if self.memory.is_some() {
             prompt.push(' ');
-            prompt.push_str(&prompts::memory_guidance(self.phase, mode));
+            prompt.push_str(&prompts::memory_context(
+                self.phase,
+                mode,
+                self.team.as_deref(),
+            ));
         }
         if self.planning {
             prompt.push(' ');
@@ -1199,6 +1206,7 @@ mod tests {
             queued: VecDeque::new(),
             stopped: Arc::new(AtomicBool::new(false)),
             memory: None,
+            team: None,
             skills: None,
         }
     }

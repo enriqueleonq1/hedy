@@ -1,0 +1,32 @@
+{
+  "format": 1,
+  "epoch": 2,
+  "members": [
+    {
+      "id": "recovery",
+      "public": {
+        "box_key": "+FBtdX/LGNHvwXk2ZYLBIGC1ev991kd1DzVw9mcc3iU=",
+        "sign_key": "QZi9HIrj3VK29RflOJAfYGEB2/0cZ5JBNWp5YSbM27E="
+      },
+      "wrapped_key": "yuVlQ5cx5L4RQ/1p7n3I1HrXtAXM9Y4U5MS1vKaxthsc3Tagf3BU8k/lClGSb8CCk4ZKu/F4LpIq28CWvX7/Pfzk9f5RhaZm1U+bftAS7WLdTbKF"
+    },
+    {
+      "id": "b9e06d1afb2a763a",
+      "public": {
+        "box_key": "CNB6CJtOr1GJcVD6uL9eBPozrB59uk155OXR98blnQo=",
+        "sign_key": "jG61zlBBc2PUxnL/9Zm66i3wPwHReNuU0aF5GNvPnZw="
+      },
+      "wrapped_key": "OLli3Ffhm2layoT13wPTOKmUmywhxenpGVChSKU0gm+bWZTnsfAR7tr9zGO8RaLoX0mOmMJ+BV37NjOIcrcbQZ9++wLrDkkYmndIhGNFBZgV55r7"
+    },
+    {
+      "id": "2f238203473a3d12",
+      "public": {
+        "box_key": "rau2RY9kO/IO6UR4njHJ9YFmKN78OwChM9EdlsR8yWg=",
+        "sign_key": "JsQinwQYzVZwyEp4Qw8htSe+V+oQg8cniyczw7gfxtY="
+      },
+      "wrapped_key": "my7S7ObNDF5I5caQqDTcmcLbY8TDMGCVoTG6085zRGB6rXEarnsSmXeA3XZNwxINYgujjzDjqNzxClTsZBcfLj00UCk9xMCCDYkBnt7PggeW+Fum"
+    }
+  ],
+  "signer": "recovery",
+  "signature": "Klrfgr5Q2sh+0AlXSM1vMmrhpPY/jSh2VXvRWzM+VGRR3Wb+CkM1Oqh4zhUDk+YsZm13iirxB+uLodbXajTmCw=="
+}

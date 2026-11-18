@@ -26,6 +26,11 @@ pub struct CaseSpec {
     /// Project memory for the layers that include it.
     #[serde(default)]
     pub notes: Vec<NoteSpec>,
+    /// Team-layer notes (docs/decisions.md §35) for the layers with memory:
+    /// the project joins a team made for the run, and the agent reads them
+    /// always, quoted.
+    #[serde(default)]
+    pub team_notes: Vec<NoteSpec>,
     /// Which layer the case is meant to measure (informative).
     #[serde(default)]
     pub measures: Option<String>,
@@ -229,6 +234,7 @@ mod tests {
                 prompt: String::new(),
                 check: "true".into(),
                 notes: Vec::new(),
+                team_notes: Vec::new(),
                 measures: None,
                 timeout_secs: 1,
             },

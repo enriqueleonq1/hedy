@@ -7,7 +7,9 @@ run is a real agent session and spends tokens of the chosen account.
 Each case is a folder:
 
 - `case.json`: `title`, `prompt` (what the user asks), `check` (shell command; exit 0
-  passes), optional `notes` (memory for the `memory` and `full` layers), `measures` and
+  passes), optional `notes` (memory for the `memory` and `full` layers), optional
+  `teamNotes` (team-layer notes: the project joins a team made for the run, in a bare repo
+  next to it), `measures` and
   `timeoutSecs`.
 - `repo/`: the starting project. Each run copies it into a fresh git repo.
 - `check/`: hidden checks, copied into the worktree only after the agent finishes.

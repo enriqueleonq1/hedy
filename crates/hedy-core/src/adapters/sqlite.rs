@@ -225,10 +225,77 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (account_id, project)
     );
 "#,
+    r#"
+    -- Personal sync (docs/decisions.md §34). The replica: the newest version
+    -- known of every synced item (JSON scope and version).
+    CREATE TABLE sync_items (
+        kind     TEXT NOT NULL,
+        uid      TEXT NOT NULL,
+        scope    TEXT NOT NULL,
+        version  TEXT NOT NULL,
+        PRIMARY KEY (kind, uid)
+    );
+    -- Which local item (a row id, a theme id) each synced item is, and the
+    -- version the row reflects (JSON stamp, body): what tells an edit made
+    -- here from one made elsewhere.
+    CREATE TABLE sync_links (
+        kind        TEXT NOT NULL,
+        uid         TEXT NOT NULL,
+        local_id    TEXT NOT NULL,
+        base_stamp  TEXT NOT NULL,
+        base_body   TEXT,
+        PRIMARY KEY (kind, uid),
+        UNIQUE (kind, local_id)
+    );
+    -- The last batch read from each other PC.
+    CREATE TABLE sync_cursors (
+        device  TEXT PRIMARY KEY,
+        seq     INTEGER NOT NULL
+    );
+    -- Two versions made apart, waiting for the user (JSON versions).
+    CREATE TABLE sync_conflicts (
+        id     INTEGER PRIMARY KEY,
+        kind   TEXT NOT NULL,
+        uid    TEXT NOT NULL,
+        kept   TEXT NOT NULL,
+        other  TEXT NOT NULL,
+        at     INTEGER NOT NULL
+    );
+    -- Where the project's memory lives: 'personal', 'shared:<owner>', 'local';
+    -- NULL until decided.
+    ALTER TABLE projects ADD COLUMN memory_home TEXT;
+"#,
+    r#"
+    -- Teams (docs/decisions.md §35) sync like personal sync, each in its own
+    -- space: '' is personal sync, 'team:<id>' a team.
+    CREATE TABLE sync_items_spaced (
+        space    TEXT NOT NULL DEFAULT '',
+        kind     TEXT NOT NULL,
+        uid      TEXT NOT NULL,
+        scope    TEXT NOT NULL,
+        version  TEXT NOT NULL,
+        PRIMARY KEY (space, kind, uid)
+    );
+    INSERT INTO sync_items_spaced (kind, uid, scope, version)
+        SELECT kind, uid, scope, version FROM sync_items;
+    DROP TABLE sync_items;
+    ALTER TABLE sync_items_spaced RENAME TO sync_items;
+    CREATE TABLE sync_cursors_spaced (
+        space   TEXT NOT NULL DEFAULT '',
+        device  TEXT NOT NULL,
+        seq     INTEGER NOT NULL,
+        PRIMARY KEY (space, device)
+    );
+    INSERT INTO sync_cursors_spaced (device, seq) SELECT device, seq FROM sync_cursors;
+    DROP TABLE sync_cursors;
+    ALTER TABLE sync_cursors_spaced RENAME TO sync_cursors;
+    ALTER TABLE sync_conflicts ADD COLUMN space TEXT NOT NULL DEFAULT '';
+"#,
 ];
 
 mod commands;
 mod queue;
+mod sync;
 mod templates;
 
 pub struct SqliteStore {
@@ -1898,7 +1965,8 @@ mod tests {
     fn the_skills_migration_keeps_existing_data() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("hedy.db");
-        let before = MIGRATIONS.len() - 1;
+        // The skills migration was the 13th.
+        let before = 12;
         {
             // A database from before skills.
             let conn = Connection::open(&path).unwrap();

@@ -115,7 +115,12 @@ impl Shared {
         stdin
             .write_all(line.as_bytes())
             .and_then(|()| stdin.flush())
-            .map_err(|e| PortError::new(format!("el agente ya no responde: {e}")))
+            .map_err(|e| {
+                PortError::new(tr!(
+                    "el agente ya no responde: {e}",
+                    "the agent no longer answers: {e}"
+                ))
+            })
     }
 
     fn request(&self, method: &str, params: Value, kind: Pending) -> PortResult<()> {
@@ -248,8 +253,12 @@ impl AgentLauncher for AcpLauncher {
                 "Hedy's read-only mode: answer and investigate; do not modify files."
             ));
         }
-        if request.memory.is_some() {
-            intro.push(prompts::memory_guidance(request.phase, request.mode));
+        if let Some(memory) = &request.memory {
+            intro.push(prompts::memory_context(
+                request.phase,
+                request.mode,
+                memory.team.as_deref(),
+            ));
         }
         if request.plan_first {
             intro.push(prompts::plan_first());

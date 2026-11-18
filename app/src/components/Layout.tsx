@@ -24,8 +24,8 @@ export type View =
   | { screen: "welcome" }
   /** `account`: scroll to that account's card and highlight it. */
   | { screen: "accounts"; account?: string }
-  /** `section: "themes"`: scroll to the theme gallery ("Cambiar tema…"). */
-  | { screen: "settings"; section?: "themes" }
+  /** `section`: scroll to the theme gallery ("Cambiar tema…"), the sync card or the teams card. */
+  | { screen: "settings"; section?: "themes" | "sync" | "teams" }
   | { screen: "activity" }
   /**
    * `task`: open that task instead of the most recent open one; `null`: a new task,

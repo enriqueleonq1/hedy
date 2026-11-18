@@ -1891,3 +1891,178 @@ fn commands_explains_accounts_without_commands() {
         .stdout(predicate::str::contains("no le pasa sus comandos a Hedy"));
     env.hedy(&["commands", "-a", "nadie"]).assert().failure();
 }
+
+/// A real git repo with `origin` (its remotes decide where its memory lives).
+fn git_repo_with_origin(env: &Env, rel: &str, origin: &str) -> PathBuf {
+    let dir = git_repo(env, rel);
+    let added = std::process::Command::new("git")
+        .args(["remote", "add", "origin", origin])
+        .current_dir(&dir)
+        .status()
+        .unwrap();
+    assert!(added.success());
+    dir
+}
+
+#[test]
+fn sync_without_setup_explains_how_and_refuses_the_rest() {
+    let env = Env::new();
+    env.hedy(&["sync"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no está configurada"))
+        .stdout(predicate::str::contains("hedy sync setup"));
+    for args in [["sync", "now"], ["sync", "conflicts"]] {
+        let cmd = env.hedy(&args).assert();
+        if args[1] == "now" {
+            cmd.failure()
+                .stderr(predicate::str::contains("no está configurada"));
+        } else {
+            cmd.success();
+        }
+    }
+    env.hedy(&["sync", "leave", "--yes"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no estaba configurada"));
+    // Without a terminal, leaving needs --yes.
+    env.hedy(&["sync", "leave"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--yes"));
+    env.hedy(&["sync", "resolve", "1"]).assert().failure();
+    env.hedy(&["sync", "remove", "Oficina"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--yes"));
+    env.hedy(&["sync", "remove", "Oficina", "--yes"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no está configurada"));
+    env.hedy(&["sync", "owner", "--mine"]).assert().failure();
+    // An owner needs an answer, and its server.
+    env.hedy(&["sync", "owner", "github.com/x"])
+        .assert()
+        .failure();
+    env.hedy(&["sync", "owner", "empresa", "--mine"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("github.com/empresa"));
+    env.hedy(&[
+        "sync",
+        "setup",
+        "https://ghp_TOKEN@github.com/u/hedy-memory.git",
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("token"));
+    env.hedy(&["sync", "project", "--personal", "--local"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn sync_owner_answers_decide_where_a_projects_memory_lives() {
+    let env = Env::new();
+    let app = git_repo_with_origin(&env, "code/app", "git@github.com:Empresa-Org/app.git");
+    env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy_in(&app, &["use", "claude"]).assert().success();
+
+    env.hedy_in(&app, &["sync", "project"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Solo en esta PC"))
+        .stdout(predicate::str::contains(
+            "hedy sync owner github.com/empresa-org --mine",
+        ));
+    env.hedy(&["sync", "owner", "github.com/empresa-org", "--shared"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("github.com/empresa-org"))
+        .stdout(predicate::str::contains("solo en esta PC"));
+    env.hedy_in(&app, &["sync", "project"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Compartida · github.com/empresa-org",
+        ));
+
+    // The project's own choice wins, until it follows its owner again.
+    env.hedy_in(&app, &["sync", "project", "--personal"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Personal · se sincroniza"));
+    env.hedy_in(&app, &["sync", "project", "--follow"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Compartida"));
+    env.hedy(&["sync", "owner", "github.com/empresa-org", "--forget"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Todavía no respondiste"));
+}
+
+#[test]
+fn a_join_that_fails_leaves_no_clone_behind() {
+    let env = Env::new();
+    let bare = env.path("server.git");
+    std::fs::create_dir_all(&bare).unwrap();
+    let init = std::process::Command::new("git")
+        .args(["init", "--quiet", "--bare"])
+        .current_dir(&bare)
+        .status()
+        .unwrap();
+    assert!(init.success());
+    let url = format!("file://{}", bare.display());
+    env.hedy(&["sync", "join", &url])
+        .write_stdin("uno dos tres\n")
+        .assert()
+        .failure();
+    assert!(!env.path("data").join("sync").join("repo").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_closed_pipe_ends_quietly() {
+    let env = Env::new();
+    let out = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            // The reader closes its end at once: every print hits a closed pipe.
+            "{} sync | (exec <&-; sleep 0.5)",
+            assert_cmd::cargo::cargo_bin("hedy").display()
+        ))
+        .env("HEDY_DATA_DIR", env.path("data"))
+        .output()
+        .unwrap();
+    assert!(!String::from_utf8_lossy(&out.stderr).contains("panicked"));
+}
+
+#[test]
+fn team_without_a_team_explains_how_and_refuses_the_rest() {
+    let env = Env::new();
+    env.hedy(&["team"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no está en ningún equipo"))
+        .stdout(predicate::str::contains("hedy team create"));
+    for args in [["team", "now"], ["team", "notes"], ["team", "invite"]] {
+        env.hedy(&args)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("ningún equipo"));
+    }
+    // A typo in the code is caught before anything is cloned.
+    env.hedy(&["team", "join", "/no/existe.git", "--me", "Ana"])
+        .write_stdin("7-zzzz\n")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no es un código de invitación"));
+    // A role is one of the two.
+    env.hedy(&["team", "role", "Ana"]).assert().failure();
+    env.hedy(&["team", "role", "Ana", "--admin", "--member"])
+        .assert()
+        .failure();
+}

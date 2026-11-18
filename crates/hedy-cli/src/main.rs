@@ -8,6 +8,8 @@ mod mascot;
 mod slash;
 mod spinner;
 mod style;
+mod sync;
+mod team;
 mod usage;
 
 use std::process::ExitCode;
@@ -16,11 +18,27 @@ use anyhow::Result;
 use hedy_core::adapters::{self, HedyPaths};
 
 use cli::{
-    AccountCommand, Cli, Command, ConfigCommand, MemoryCommand, SkillsCommand, TemplateCommand,
+    AccountCommand, Cli, Command, ConfigCommand, MemoryCommand, SkillsCommand, SyncCommand,
+    TeamCommand, TemplateCommand,
 };
 use style::Style;
 
 fn main() -> ExitCode {
+    // `hedy … | head`: a print to a closed pipe ends the command without a
+    // panic message. Only the message: SIGPIPE stays ignored, so a pipe to
+    // an agent that closes still reads as an error the command handles.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let message = info
+            .payload()
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| info.payload().downcast_ref::<&str>().copied())
+            .unwrap_or("");
+        if !(message.starts_with("failed printing to std") && message.contains("Broken pipe")) {
+            default_hook(info);
+        }
+    }));
     // Claude Code runs this binary as its `PreToolUse` hook for `hedy ask`.
     if std::env::args().skip(1).eq(adapters::hook::HOOK_ARGS) {
         return ExitCode::from(u8::try_from(adapters::hook::run()).unwrap_or(1));
@@ -165,6 +183,92 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 commands::template_remove(&hedy, &dir, &name, project)
             }
         },
+        Command::Sync { command } => match command.unwrap_or(SyncCommand::Status) {
+            SyncCommand::Status => sync::status(&hedy),
+            SyncCommand::Setup { url, name } => sync::setup(&hedy, &url, name.as_deref()),
+            SyncCommand::Join { url, name } => sync::join(&hedy, &url, name.as_deref()),
+            SyncCommand::Now => sync::now_sync(&hedy),
+            SyncCommand::Conflicts => sync::conflicts(&hedy),
+            SyncCommand::Resolve { id, other, .. } => sync::resolve(&hedy, id, other),
+            SyncCommand::Owner {
+                owner,
+                mine,
+                shared,
+                forget,
+            } => {
+                let choice = match (mine, shared, forget) {
+                    (true, _, _) => Some(sync::OwnerChoice::Mine),
+                    (_, true, _) => Some(sync::OwnerChoice::Shared),
+                    (_, _, true) => Some(sync::OwnerChoice::Forget),
+                    _ => None,
+                };
+                sync::owner(&hedy, owner.as_deref(), choice)
+            }
+            SyncCommand::Project {
+                personal,
+                local,
+                shared,
+                follow,
+            } => {
+                let choice = match (personal, local, shared, follow) {
+                    (true, ..) => Some(sync::HomeChoice::Personal),
+                    (_, true, ..) => Some(sync::HomeChoice::Local),
+                    (_, _, Some(owner), _) => Some(sync::HomeChoice::Shared(owner)),
+                    (.., true) => Some(sync::HomeChoice::Follow),
+                    _ => None,
+                };
+                sync::project(&hedy, &dir, choice)
+            }
+            SyncCommand::Remove { pc, yes } => sync::remove(&hedy, &pc, yes),
+            SyncCommand::Leave { yes } => sync::leave(&hedy, yes),
+        },
+        Command::Team { team, command } => {
+            let command = command.unwrap_or(TeamCommand::Status);
+            let pick = || team::pick(&hedy, &dir, team.as_deref());
+            match command {
+                TeamCommand::Status => team::status(&hedy, &dir, team.as_deref()),
+                TeamCommand::Create { url, name, me, pc } => {
+                    team::create(&hedy, &url, &name, me.as_deref(), pc.as_deref())
+                }
+                TeamCommand::Invite {
+                    cancel: Some(number),
+                    ..
+                } => team::cancel_invite(&hedy, &pick()?, number),
+                TeamCommand::Invite { admin, mine, .. } => {
+                    team::invite(&hedy, &pick()?, admin, mine)
+                }
+                TeamCommand::Join { url, me, pc } => {
+                    team::join(&hedy, &url, me.as_deref(), pc.as_deref())
+                }
+                TeamCommand::Now => team::now_sync(&hedy, &pick()?),
+                TeamCommand::Link => team::link(&hedy, &dir, &pick()?),
+                TeamCommand::Notes => team::notes(&hedy, &pick()?),
+                TeamCommand::Add {
+                    text,
+                    everyone,
+                    category,
+                } => team::add(&hedy, &dir, &pick()?, &text.join(" "), everyone, &category),
+                TeamCommand::Publish { id, everyone } => {
+                    team::publish(&hedy, &pick()?, id, everyone)
+                }
+                TeamCommand::Review {
+                    id,
+                    accept,
+                    reject,
+                    yes,
+                } => team::review(&hedy, &pick()?, id.as_deref(), accept, reject, yes),
+                TeamCommand::Role { person, admin, .. } => {
+                    team::role(&hedy, &pick()?, &person, admin)
+                }
+                TeamCommand::Remove { who, pc, yes } => {
+                    team::remove(&hedy, &pick()?, &who, pc, yes)
+                }
+                TeamCommand::Rename { name, person } => {
+                    team::rename(&hedy, &pick()?, &name, person.as_deref())
+                }
+                TeamCommand::Leave { yes, here } => team::leave(&hedy, &pick()?, yes, here),
+            }
+        }
         Command::Config(sub) => match sub {
             ConfigCommand::Get { key } => commands::config_get(&hedy, &key),
             ConfigCommand::Set { key, value } => commands::config_set(&hedy, &key, Some(&value)),

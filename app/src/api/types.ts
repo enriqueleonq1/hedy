@@ -784,4 +784,192 @@ export interface DetectedCli {
 }
 
 // Code navigation and review: see codeTypes.ts.
+// ---------------------------------------------------------------- personal sync
+// docs/decisions.md §34: the same Hedy on every PC, through a private git repo.
+
+export interface SyncDevice {
+  id: string;
+  /** As that PC signed it; empty until it syncs once. */
+  name: string;
+  /** Unix seconds; `null` until it syncs once. */
+  lastSync: number | null;
+  thisPc: boolean;
+}
+
+export interface SyncStatus {
+  url: string;
+  lastSync: number | null;
+  /** Why the last sync failed, until one works. */
+  lastError: string | null;
+  /** This PC first. */
+  devices: SyncDevice[];
+  conflicts: number;
+}
+
+export interface SyncReport {
+  sent: number;
+  received: number;
+  conflicts: number;
+}
+
+/** One side of a conflict: `text: null` when it was deleted. */
+export interface SyncSide {
+  text: string | null;
+  /** A device id (named in `SyncStatus.devices`). */
+  device: string;
+  at: number;
+}
+
+export type SyncItemKind = "note" | "skill" | "template" | "theme" | "suggestion";
+
+export interface SyncConflict {
+  id: number;
+  kind: SyncItemKind;
+  /** In use on every PC. */
+  kept: SyncSide;
+  other: SyncSide;
+}
+
+/** Where a project's memory lives. */
+export type MemoryHomeKind =
+  | { kind: "personal" }
+  | { kind: "shared"; group: string }
+  | { kind: "local" }
+  /** A team's (its local id): its notes go to the team's repo. */
+  | { kind: "team"; team: string };
+
+export interface MemoryHome {
+  path: string;
+  /** `null`: not decided yet; it stays on this PC. */
+  home: MemoryHomeKind | null;
+  /** The user chose it (it wins over the repo's owner). */
+  chosen: boolean;
+  /** The owner to ask about (`github.com/empresa-org`). */
+  ask: string | null;
+  /** The group "Compartido" names. */
+  group: string | null;
+  /** Its memory syncs now: personal, with an `origin` that names it. */
+  syncs: boolean;
+}
+
+// ---------------------------------------------------------------- team memory
+// docs/decisions.md §35: a team's memory on its own private git repo.
+
+export type TeamRole = "admin" | "member";
+
+export interface TeamSummary {
+  /** Local id: the team's name may change. */
+  id: string;
+  /** Empty while this PC is still joining. */
+  name: string;
+  url: string;
+  /** Joining: waiting for the inviting PC to let this one in. */
+  waiting: boolean;
+  /** An admin's PC that asked to leave, waiting for another admin's. */
+  leaving: boolean;
+  /** This PC's role; `null` while joining or once removed. */
+  role: TeamRole | null;
+  lastSync: number | null;
+  lastError: string | null;
+}
+
+export interface TeamPerson {
+  person: string;
+  /** The name an admin wrote for them. */
+  name: string;
+  role: TeamRole;
+  devices: SyncDevice[];
+  /** This PC's person. */
+  me: boolean;
+}
+
+export interface TeamInvite {
+  number: number;
+  /** What the joiner types: `7-tigre-lima-nube-mar`. */
+  code: string;
+  /** Unix seconds. */
+  expiresAt: number;
+  /** For another PC of this person (else a new person). */
+  ownPc: boolean;
+  role: TeamRole;
+  /** A request opened: the PC gets in on this PC's next syncs. */
+  answered: boolean;
+}
+
+export interface TeamStatus {
+  summary: TeamSummary;
+  device: string;
+  person: string;
+  /** Admins first. */
+  people: TeamPerson[];
+  suggestions: number;
+  /** The ones this person may take or turn down. */
+  toReview: number;
+  conflicts: number;
+  invites: TeamInvite[];
+  /** Invites a wrong code burned. */
+  failedInvites: number[];
+  /** The team layer's size now, and the most any agent gets of it. */
+  layerTokens: number;
+  layerMax: number;
+}
+
+export interface TeamNote {
+  uid: string;
+  text: string;
+  category: NoteCategory;
+  topic: string | null;
+  /** The whole team's (always in context), or a project's. */
+  teamLayer: boolean;
+  /** A project's note: the project here, if any. */
+  project: string | null;
+  person: string;
+  author: string;
+  mine: boolean;
+  /** This person may change it (else they suggest a change). */
+  canEdit: boolean;
+  createdAt: number;
+  updatedAt: number | null;
+}
+
+export interface TeamSuggestion {
+  uid: string;
+  /** The note it changes; `null`: a new note. */
+  note: string | null;
+  before: string | null;
+  /** Exactly as written (`null`: removing the note). */
+  after: string | null;
+  /** `after` with every hidden character shown as ⟦U+202E⟧. */
+  shown: string | null;
+  /** It has hidden characters: it cannot be accepted. */
+  hidden: boolean;
+  category: NoteCategory;
+  topic: string | null;
+  teamLayer: boolean;
+  project: string | null;
+  person: string;
+  author: string;
+  mine: boolean;
+  canReview: boolean;
+  createdAt: number;
+}
+
+/** What a team write became: the note itself, or a suggestion. */
+export interface TeamWrite {
+  published: boolean;
+  uid: string;
+}
+
+export interface TeamCreated {
+  id: string;
+  /** The team's 12 recovery words, shown once. */
+  words: string;
+}
+
+export interface TeamJoin {
+  id: string;
+  /** In; else waiting for the inviting PC. */
+  joined: boolean;
+}
+
 export type * from "./codeTypes";

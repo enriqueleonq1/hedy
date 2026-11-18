@@ -15,6 +15,8 @@ import { NoteCard } from "./NoteCard";
 import { authorLabel, keepLabel, memoryKey, useMemoryAction } from "./notes";
 import { skillsKey } from "./skills";
 import { NewSkillDialog, SkillsPanel } from "./SkillsPanel";
+import { MemoryHomeCard } from "../sync/ProjectSync";
+import { LayerFilter, TeamNotes, useProjectTeam, useTeamProjectNotes, type Layer } from "../team/TeamMemory";
 
 type Tab = "notes" | "skills";
 
@@ -54,6 +56,17 @@ export function MemoryScreen({
   });
   const [adding, setAdding] = useState(false);
   const [addingSkill, setAddingSkill] = useState(false);
+  // A team's project: one list, filtered by layer (Equipo, Proyecto, Solo tú).
+  const team = useProjectTeam(project);
+  const teamNotes = useTeamProjectNotes(team, project);
+  const [layer, setLayer] = useState<Layer>("all");
+  const mine = (memory.data?.notes.length ?? 0) + (memory.data?.proposed.length ?? 0);
+  const layerCounts: Record<Layer, number> = {
+    team: teamNotes.filter((n) => n.teamLayer).length,
+    project: teamNotes.filter((n) => !n.teamLayer).length,
+    mine,
+    all: teamNotes.length + mine,
+  };
   const info = overview.projects.find((p) => p.path === project);
   const name = info?.name ?? shortPath(project);
   const color = overview.accounts.find((a) => a.id === info?.account)?.color ?? DEFAULT_ACCOUNT_COLOR;
@@ -132,6 +145,7 @@ export function MemoryScreen({
               ))}
               <div className="memory__layout">
                 <div className="memory__main">
+                  {team && !query.trim() && <LayerFilter value={layer} onChange={setLayer} counts={layerCounts} />}
                   {query.trim() ? (
                     <Results
                       project={project}
@@ -140,10 +154,14 @@ export function MemoryScreen({
                       error={search.isError ? errorMessage(search.error, t) : null}
                     />
                   ) : (
-                    <Groups project={project} view={memory.data} />
+                    <>
+                      {team && layer !== "mine" && <TeamNotes team={team} notes={teamNotes} layer={layer} />}
+                      {(!team || layer === "all" || layer === "mine") && <Groups project={project} view={memory.data} />}
+                    </>
                   )}
                 </div>
                 <aside className="memory__side">
+                  <MemoryHomeCard project={project} />
                   <UsedLastTask notes={memory.data.usedLastTask} />
                   <Stale project={project} notes={memory.data.stale} />
                   <Readers project={project} view={memory.data} accounts={overview.accounts} />

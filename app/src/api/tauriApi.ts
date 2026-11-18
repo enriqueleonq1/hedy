@@ -20,6 +20,24 @@ function subscribe<T>(event: string, handler: (payload: T) => void): () => void 
   };
 }
 
+/**
+ * What may keep the window open. Tauri closes it after each of its listeners
+ * unless that listener's own event was prevented, so one listener asks every
+ * guard: any `false` keeps it open.
+ */
+const closeGuards = new Set<() => Promise<boolean>>();
+let listeningForClose = false;
+
+function listenForClose() {
+  if (listeningForClose) return;
+  listeningForClose = true;
+  void getCurrentWindow().onCloseRequested(async (event) => {
+    for (const confirm of [...closeGuards]) {
+      if (!(await confirm())) return event.preventDefault();
+    }
+  });
+}
+
 /** `HedyApi` over Tauri commands (see `src-tauri/src/commands.rs`). */
 export const tauriApi: HedyApi = {
   overview: () => invoke("overview"),
@@ -118,21 +136,9 @@ export const tauriApi: HedyApi = {
   deletePath: (copy, path) => invoke("delete_path", { copy, path }),
   duplicateFile: (copy, path) => invoke("duplicate_file", { copy, path }),
   onCloseRequested: (confirm) => {
-    // Tauri closes the window after the handler unless it prevents it.
-    let unlisten: (() => void) | null = null;
-    let cancelled = false;
-    void getCurrentWindow()
-      .onCloseRequested(async (event) => {
-        if (!(await confirm())) event.preventDefault();
-      })
-      .then((fn) => {
-        if (cancelled) fn();
-        else unlisten = fn;
-      });
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
+    closeGuards.add(confirm);
+    listenForClose();
+    return () => closeGuards.delete(confirm);
   },
   sendMessage: (id, text) => invoke("send_message", { id, text }),
   queued: (id) => invoke("queued", { id }),
@@ -176,6 +182,47 @@ export const tauriApi: HedyApi = {
   onTaskQueue: (listener) =>
     subscribe<{ taskId: string; queue: QueuedMessage[] }>("task-queue", ({ taskId, queue }) => listener(taskId, queue)),
   onOpenTask: (listener) => subscribe<OpenTaskRequest>("open-task", listener),
+
+  syncStatus: () => invoke("sync_status"),
+  syncDefaultName: () => invoke("sync_default_name"),
+  syncRepoIsPublic: (url) => invoke("sync_repo_is_public", { url }),
+  syncSetup: (url, name) => invoke("sync_setup", { url, name }),
+  syncJoin: (url, words, name) => invoke("sync_join", { url, words, name }),
+  syncNow: () => invoke("sync_now"),
+  syncRemoveDevice: (id) => invoke("sync_remove_device", { id }),
+  syncLeave: () => invoke("sync_leave"),
+  syncConflicts: () => invoke("sync_conflicts"),
+  resolveSyncConflict: (id, useOther) => invoke("resolve_sync_conflict", { id, useOther }),
+  memoryHome: (project) => invoke("memory_home", { path: project }),
+  memoryHomes: () => invoke("memory_homes"),
+  setMemoryHome: (project, home) => invoke("set_memory_home", { path: project, home }),
+  answerOwner: (owner, mine) => invoke("answer_owner", { owner, mine }),
+  forgetOwner: (owner) => invoke("forget_owner", { owner }),
+  onSyncUpdated: (listener) => subscribe<null>("sync-updated", () => listener()),
+
+  teams: () => invoke("teams"),
+  teamStatus: (team) => invoke("team_status", { team }),
+  teamCreate: (url, name, me, pc) => invoke("team_create", { url, name, me, pc }),
+  teamInvite: (team, admin, mine) => invoke("team_invite", { team, admin, mine }),
+  teamCancelInvite: (team, number) => invoke("team_cancel_invite", { team, number }),
+  teamDismissFailedInvite: (team, number) => invoke("team_dismiss_failed_invite", { team, number }),
+  teamJoin: (url, code, me, pc) => invoke("team_join", { url, code, me, pc }),
+  teamSync: (team) => invoke("team_sync", { team }),
+  teamLinkProject: (team, project) => invoke("team_link_project", { team, path: project }),
+  teamNotes: (team) => invoke("team_notes", { team }),
+  teamAddNote: (team, project, text, category) =>
+    invoke("team_add_note", { team, project, text, category, topic: null }),
+  teamEditNote: (team, uid, text) => invoke("team_edit_note", { team, uid, text, category: null }),
+  teamPublishNote: (team, noteId, everyone) => invoke("team_publish_note", { team, noteId, everyone }),
+  teamSuggestions: (team) => invoke("team_suggestions", { team }),
+  teamAcceptSuggestion: (team, uid) => invoke("team_accept_suggestion", { team, uid }),
+  teamRejectSuggestion: (team, uid) => invoke("team_reject_suggestion", { team, uid }),
+  teamSetRole: (team, person, admin) => invoke("team_set_role", { team, person, admin }),
+  teamRemovePerson: (team, person) => invoke("team_remove_person", { team, person }),
+  teamRemovePc: (team, device) => invoke("team_remove_pc", { team, device }),
+  teamRename: (team, name) => invoke("team_rename", { team, name }),
+  teamRenamePerson: (team, person, name) => invoke("team_rename_person", { team, person, name }),
+  teamLeave: (team, here) => invoke("team_leave", { team, here }),
 };
 
 export function isTauri(): boolean {

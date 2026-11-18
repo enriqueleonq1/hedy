@@ -750,6 +750,477 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             ),
         ),
         (
+            "sync",
+            "",
+            tr!(
+                "Tu memoria, habilidades, plantillas y temas, iguales en todas tus PCs (por defecto, el estado)",
+                "Your memory, skills, templates and themes, the same on every PC (by default, the status)"
+            ),
+        ),
+        (
+            "sync status",
+            "",
+            tr!(
+                "Dónde sincroniza, tus PCs y los conflictos",
+                "Where it syncs, your PCs and the conflicts"
+            ),
+        ),
+        (
+            "sync setup",
+            "",
+            tr!(
+                "Configura la sincronización con un repo git privado y vacío, y muestra tu clave de recuperación",
+                "Set up sync with an empty private git repo, and show your recovery key"
+            ),
+        ),
+        (
+            "sync setup",
+            "url",
+            tr!(
+                "Dirección del repo (GitHub, GitLab, Bitbucket o tu propio servidor)",
+                "The repo's URL (GitHub, GitLab, Bitbucket or your own server)"
+            ),
+        ),
+        (
+            "sync setup",
+            "name",
+            tr!(
+                "Nombre de esta PC (por defecto, el del equipo)",
+                "This PC's name (by default, the machine's)"
+            ),
+        ),
+        (
+            "sync join",
+            "",
+            tr!(
+                "Suma esta PC con tu clave de recuperación",
+                "Add this PC with your recovery key"
+            ),
+        ),
+        (
+            "sync join",
+            "url",
+            tr!(
+                "Dirección del repo que ya usas en otra PC",
+                "The URL of the repo you already use on another PC"
+            ),
+        ),
+        (
+            "sync join",
+            "name",
+            tr!(
+                "Nombre de esta PC (por defecto, el del equipo)",
+                "This PC's name (by default, the machine's)"
+            ),
+        ),
+        ("sync now", "", tr!("Sincroniza ahora", "Sync now")),
+        (
+            "sync conflicts",
+            "",
+            tr!(
+                "Notas y habilidades editadas a la vez en dos PCs",
+                "Notes and skills edited at once on two PCs"
+            ),
+        ),
+        (
+            "sync resolve",
+            "",
+            tr!("Resuelve un conflicto", "Settle a conflict"),
+        ),
+        (
+            "sync resolve",
+            "id",
+            tr!(
+                "El número que muestra `hedy sync conflicts`",
+                "The number `hedy sync conflicts` shows"
+            ),
+        ),
+        (
+            "sync resolve",
+            "keep",
+            tr!("Quédate con la versión en uso", "Keep the version in use"),
+        ),
+        (
+            "sync resolve",
+            "other",
+            tr!("Usa la otra versión", "Use the other version"),
+        ),
+        (
+            "sync owner",
+            "",
+            tr!(
+                "Tus respuestas sobre los dueños de repos (o una respuesta nueva)",
+                "Your answers about repo owners (or a new one)"
+            ),
+        ),
+        (
+            "sync owner",
+            "owner",
+            tr!(
+                "Dueño con su servidor, p. ej. github.com/empresa-org",
+                "The owner with its server, e.g. github.com/empresa-org"
+            ),
+        ),
+        (
+            "sync owner",
+            "mine",
+            tr!(
+                "Su memoria es solo tuya: se sincroniza",
+                "Its memory is yours alone: it syncs"
+            ),
+        ),
+        (
+            "sync owner",
+            "shared",
+            tr!(
+                "Es de un grupo (empresa, cliente, comunidad): no sale de esta PC",
+                "It belongs to a group (company, client, community): it stays on this PC"
+            ),
+        ),
+        (
+            "sync owner",
+            "forget",
+            tr!(
+                "Olvida la respuesta: sus proyectos vuelven a preguntar",
+                "Forget the answer: its projects ask again"
+            ),
+        ),
+        (
+            "sync project",
+            "",
+            tr!(
+                "Dónde vive la memoria del proyecto actual (o cámbialo)",
+                "Where the current project's memory lives (or change it)"
+            ),
+        ),
+        (
+            "sync project",
+            "personal",
+            tr!(
+                "Personal: se sincroniza con todas tus PCs",
+                "Personal: synced to all your PCs"
+            ),
+        ),
+        (
+            "sync project",
+            "local",
+            tr!("Solo en esta PC", "On this PC only"),
+        ),
+        (
+            "sync project",
+            "shared",
+            tr!(
+                "Compartida con un grupo, p. ej. github.com/empresa-org",
+                "Shared with a group, e.g. github.com/empresa-org"
+            ),
+        ),
+        (
+            "sync project",
+            "follow",
+            tr!(
+                "Según el dueño de su repo otra vez",
+                "From its repo's owner again"
+            ),
+        ),
+        (
+            "sync remove",
+            "",
+            tr!(
+                "Quita otra PC: no podrá leer lo que guardes desde ahora",
+                "Remove another PC: it cannot read what you keep from now on"
+            ),
+        ),
+        (
+            "sync remove",
+            "pc",
+            tr!(
+                "Su nombre o su id (`hedy sync` los muestra)",
+                "Its name or its id (`hedy sync` shows them)"
+            ),
+        ),
+        ("sync remove", "yes", tr!("Sin preguntar", "Without asking")),
+        (
+            "sync leave",
+            "",
+            tr!(
+                "Deja de sincronizar en esta PC (tus notas se quedan)",
+                "Stop syncing on this PC (your notes stay)"
+            ),
+        ),
+        ("sync leave", "yes", tr!("Sin preguntar", "Without asking")),
+        (
+            "team",
+            "",
+            tr!(
+                "La memoria compartida de un equipo, en su propio repo git (por defecto, el estado)",
+                "A team's shared memory, in its own git repo (by default, the status)"
+            ),
+        ),
+        (
+            "team",
+            "team",
+            tr!(
+                "El equipo (nombre o id; por defecto, el del proyecto actual o el único)",
+                "The team (name or id; by default, the current project's or the only one)"
+            ),
+        ),
+        (
+            "team status",
+            "",
+            tr!(
+                "Personas, invitaciones y lo que espera revisión",
+                "People, invites and what waits for review"
+            ),
+        ),
+        (
+            "team create",
+            "",
+            tr!(
+                "Crea un equipo en un repo git privado y vacío; eres su admin",
+                "Create a team in an empty private git repo; you are its admin"
+            ),
+        ),
+        (
+            "team create",
+            "url",
+            tr!("Dirección del repo", "The repo's address"),
+        ),
+        (
+            "team create",
+            "name",
+            tr!("Nombre del equipo", "The team's name"),
+        ),
+        (
+            "team create",
+            "me",
+            tr!("Tu nombre en el equipo", "Your name in the team"),
+        ),
+        (
+            "team create",
+            "pc",
+            tr!(
+                "Nombre de esta PC (por defecto, el de la máquina)",
+                "This PC's name (by default, the machine's)"
+            ),
+        ),
+        (
+            "team invite",
+            "",
+            tr!(
+                "Crea un código que sirve una vez, por 48 horas",
+                "Make a code that works once, for 48 hours"
+            ),
+        ),
+        (
+            "team invite",
+            "admin",
+            tr!(
+                "La persona entra como admin",
+                "The person joins as an admin"
+            ),
+        ),
+        (
+            "team invite",
+            "mine",
+            tr!("Para otra PC tuya", "For another PC of yours"),
+        ),
+        (
+            "team invite",
+            "cancel",
+            tr!(
+                "Cancela la invitación con ese número",
+                "Cancel the invite with that number"
+            ),
+        ),
+        (
+            "team join",
+            "",
+            tr!(
+                "Entra a un equipo con una invitación (el código se pregunta sin mostrarlo, o se lee de la entrada)",
+                "Join a team with an invite (the code is asked, hidden, or read from stdin)"
+            ),
+        ),
+        (
+            "team join",
+            "url",
+            tr!("Dirección del repo del equipo", "The team repo's address"),
+        ),
+        (
+            "team join",
+            "me",
+            tr!("Tu nombre en el equipo", "Your name in the team"),
+        ),
+        (
+            "team join",
+            "pc",
+            tr!(
+                "Nombre de esta PC (por defecto, el de la máquina)",
+                "This PC's name (by default, the machine's)"
+            ),
+        ),
+        (
+            "team now",
+            "",
+            tr!(
+                "Sincroniza el equipo ahora (o mira si ya te dejaron entrar)",
+                "Sync the team now (or see whether you were let in)"
+            ),
+        ),
+        (
+            "team link",
+            "",
+            tr!(
+                "La memoria del proyecto actual pasa a ser del equipo",
+                "The current project's memory becomes the team's"
+            ),
+        ),
+        (
+            "team notes",
+            "",
+            tr!("Las notas del equipo", "The team's notes"),
+        ),
+        (
+            "team add",
+            "",
+            tr!(
+                "Agrega una nota del equipo al proyecto actual",
+                "Add a team note to the current project"
+            ),
+        ),
+        (
+            "team add",
+            "text",
+            tr!("Texto de la nota", "The note's text"),
+        ),
+        (
+            "team add",
+            "everyone",
+            tr!(
+                "A la capa Equipo (siempre en el contexto; la de un miembro es una sugerencia)",
+                "To the team layer (always in context; a member's is a suggestion)"
+            ),
+        ),
+        (
+            "team add",
+            "category",
+            tr!(
+                "decision, convention, rule o preference",
+                "decision, convention, rule or preference"
+            ),
+        ),
+        (
+            "team publish",
+            "",
+            tr!(
+                "Pasa una nota de esta PC (`hedy memory` las lista) al equipo",
+                "Move a note of this PC (`hedy memory` lists them) to the team"
+            ),
+        ),
+        ("team publish", "id", tr!("Id de la nota", "The note's id")),
+        (
+            "team publish",
+            "everyone",
+            tr!("A la capa Equipo", "To the team layer"),
+        ),
+        (
+            "team review",
+            "",
+            tr!(
+                "Las sugerencias, o acepta o rechaza una",
+                "The suggestions, or accept or turn one down"
+            ),
+        ),
+        (
+            "team review",
+            "id",
+            tr!(
+                "La sugerencia (el final de su id)",
+                "The suggestion (the end of its id)"
+            ),
+        ),
+        ("team review", "accept", tr!("Acéptala", "Accept it")),
+        ("team review", "reject", tr!("Recházala", "Turn it down")),
+        (
+            "team review",
+            "yes",
+            tr!(
+                "Acepta sin mostrarla ni preguntar",
+                "Accept without showing it or asking"
+            ),
+        ),
+        (
+            "team role",
+            "",
+            tr!(
+                "Cambia el rol de una persona (admins)",
+                "Change a person's role (admins)"
+            ),
+        ),
+        (
+            "team role",
+            "person",
+            tr!(
+                "Su nombre o el comienzo de su id",
+                "Their name or the start of their id"
+            ),
+        ),
+        ("team role", "admin", tr!("Admin", "Admin")),
+        ("team role", "member", tr!("Miembro", "Member")),
+        (
+            "team remove",
+            "",
+            tr!(
+                "Quita a una persona del equipo (admins), o una PC",
+                "Remove a person from the team (admins), or a PC"
+            ),
+        ),
+        (
+            "team remove",
+            "who",
+            tr!("Su nombre o su id", "Their name or their id"),
+        ),
+        (
+            "team remove",
+            "pc",
+            tr!("Es una PC, no una persona", "It is a PC, not a person"),
+        ),
+        ("team remove", "yes", tr!("Sin preguntar", "Without asking")),
+        (
+            "team rename",
+            "",
+            tr!(
+                "Cambia el nombre del equipo, o el de una persona (admins)",
+                "Rename the team, or a person (admins)"
+            ),
+        ),
+        (
+            "team rename",
+            "name",
+            tr!("El nombre nuevo", "The new name"),
+        ),
+        (
+            "team rename",
+            "person",
+            tr!(
+                "La persona (su nombre o id)",
+                "The person (their name or id)"
+            ),
+        ),
+        (
+            "team leave",
+            "",
+            tr!("Sal del equipo en esta PC", "Leave the team on this PC"),
+        ),
+        ("team leave", "yes", tr!("Sin preguntar", "Without asking")),
+        (
+            "team leave",
+            "here",
+            tr!(
+                "Solo olvida el equipo en esta PC, sin pedir salir (un admin la quita después)",
+                "Only forget the team on this PC, without asking to leave (an admin removes it later)"
+            ),
+        ),
+        (
             "config",
             "",
             tr!(
@@ -805,6 +1276,18 @@ fn value_names() -> Vec<(&'static str, String)> {
         ("text", tr!("TEXTO", "TEXT")),
         ("question", tr!("PREGUNTA", "QUESTION")),
         ("model", tr!("MODELO", "MODEL")),
+        ("url", tr!("DIRECCIÓN", "URL")),
+        ("owner", tr!("DUEÑO", "OWNER")),
+        ("pc", tr!("PC", "PC")),
+        ("code", tr!("CÓDIGO", "CODE")),
+        ("me", tr!("NOMBRE", "NAME")),
+        ("who", tr!("QUIÉN", "WHO")),
+        ("person", tr!("PERSONA", "PERSON")),
+        ("team", tr!("EQUIPO", "TEAM")),
+        ("cancel", tr!("NÚMERO", "NUMBER")),
+        ("category", tr!("CATEGORÍA", "CATEGORY")),
+        // `hedy sync project --shared <DUEÑO>` (a flag elsewhere, without one).
+        ("shared", tr!("DUEÑO", "OWNER")),
     ]
 }
 
@@ -991,6 +1474,18 @@ pub enum Command {
         command: Option<TemplateCommand>,
     },
 
+    Sync {
+        #[command(subcommand)]
+        command: Option<SyncCommand>,
+    },
+
+    Team {
+        #[arg(long, global = true)]
+        team: Option<String>,
+        #[command(subcommand)]
+        command: Option<TeamCommand>,
+    },
+
     #[command(subcommand)]
     Config(ConfigCommand),
 
@@ -1065,6 +1560,167 @@ pub enum TemplateCommand {
         name: String,
         #[arg(long)]
         project: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SyncCommand {
+    Status,
+
+    Setup {
+        url: String,
+        #[arg(long)]
+        name: Option<String>,
+    },
+
+    Join {
+        url: String,
+        #[arg(long)]
+        name: Option<String>,
+    },
+
+    Now,
+
+    Conflicts,
+
+    #[command(group(clap::ArgGroup::new("choice").required(true).args(["keep", "other"])))]
+    Resolve {
+        id: i64,
+        #[arg(long)]
+        keep: bool,
+        #[arg(long)]
+        other: bool,
+    },
+
+    #[command(group(clap::ArgGroup::new("answer").args(["mine", "shared", "forget"])))]
+    Owner {
+        #[arg(
+            required_if_eq_any([("mine", "true"), ("shared", "true"), ("forget", "true")]),
+            requires = "answer"
+        )]
+        owner: Option<String>,
+        #[arg(long)]
+        mine: bool,
+        #[arg(long)]
+        shared: bool,
+        #[arg(long)]
+        forget: bool,
+    },
+
+    #[command(group(clap::ArgGroup::new("home").args(["personal", "local", "shared", "follow"])))]
+    Project {
+        #[arg(long)]
+        personal: bool,
+        #[arg(long)]
+        local: bool,
+        #[arg(long)]
+        shared: Option<String>,
+        #[arg(long)]
+        follow: bool,
+    },
+
+    Remove {
+        pc: String,
+        #[arg(long, short)]
+        yes: bool,
+    },
+
+    Leave {
+        #[arg(long, short)]
+        yes: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TeamCommand {
+    Status,
+
+    Create {
+        url: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        me: Option<String>,
+        #[arg(long)]
+        pc: Option<String>,
+    },
+
+    Invite {
+        #[arg(long)]
+        admin: bool,
+        #[arg(long, conflicts_with = "admin")]
+        mine: bool,
+        #[arg(long, conflicts_with_all = ["admin", "mine"])]
+        cancel: Option<u32>,
+    },
+
+    Join {
+        url: String,
+        #[arg(long)]
+        me: Option<String>,
+        #[arg(long)]
+        pc: Option<String>,
+    },
+
+    Now,
+
+    Link,
+
+    Notes,
+
+    Add {
+        #[arg(required = true)]
+        text: Vec<String>,
+        #[arg(long)]
+        everyone: bool,
+        #[arg(long, default_value = "convention")]
+        category: String,
+    },
+
+    Publish {
+        id: i64,
+        #[arg(long)]
+        everyone: bool,
+    },
+
+    Review {
+        id: Option<String>,
+        #[arg(long, requires = "id")]
+        accept: bool,
+        #[arg(long, requires = "id", conflicts_with = "accept")]
+        reject: bool,
+        #[arg(long, short)]
+        yes: bool,
+    },
+
+    #[command(group(clap::ArgGroup::new("new_role").required(true).args(["admin", "member"])))]
+    Role {
+        person: String,
+        #[arg(long)]
+        admin: bool,
+        #[arg(long)]
+        member: bool,
+    },
+
+    Remove {
+        who: String,
+        #[arg(long)]
+        pc: bool,
+        #[arg(long, short)]
+        yes: bool,
+    },
+
+    Rename {
+        name: String,
+        #[arg(long)]
+        person: Option<String>,
+    },
+
+    Leave {
+        #[arg(long, short)]
+        yes: bool,
+        #[arg(long)]
+        here: bool,
     },
 }
 

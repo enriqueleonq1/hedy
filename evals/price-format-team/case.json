@@ -1,0 +1,11 @@
+{
+  "title": "Formato de precios según la convención del equipo",
+  "measures": "team",
+  "prompt": "Agrega en shop/catalog.py una función format_price(product) que devuelva el precio del producto listo para mostrárselo al cliente.",
+  "check": "python3 -m unittest -q test_hidden_prices",
+  "teamNotes": [
+    { "text": "Los precios se muestran como «USD 12.50»: prefijo USD, un espacio, punto decimal y siempre dos decimales.", "category": "convention" },
+    { "text": "Los montos se guardan en centavos enteros (price_cents), nunca en float.", "category": "decision" }
+  ],
+  "timeoutSecs": 600
+}

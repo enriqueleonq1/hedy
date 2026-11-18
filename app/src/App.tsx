@@ -27,6 +27,7 @@ import { ThemeStudio } from "./screens/themes/ThemeStudio";
 import { StatusScreen } from "./screens/status/StatusScreen";
 import { Welcome } from "./screens/Welcome";
 import { Workspace } from "./screens/workspace/Workspace";
+import { useSyncEvents } from "./sync/hooks";
 import { TaskEventsBridge } from "./tasks/hooks";
 import { ThemeProvider } from "./theme/ThemeProvider";
 import { I18nProvider, useT } from "./i18n";
@@ -68,7 +69,7 @@ function Localized({ children }: { children: ReactNode }) {
 }
 
 /**
- * `#accounts`, `#a=<id>` (accounts, that card), `#settings`, `#activity`, `#p=<path>` (workspace; `&t=<id>`
+ * `#accounts`, `#a=<id>` (accounts, that card), `#settings`, `#sync` (its sync card), `#activity`, `#p=<path>` (workspace; `&t=<id>`
  * that task, `&new` a new one, `&new&from=<id>` a new one continuing that conversation), `#m=<path>` (memory), `#k=<path>` (memory, skills tab), `#s=<path>` (status),
  * `#c` (a new quick question), `#c=<id>` (that conversation).
  */
@@ -87,6 +88,8 @@ function viewFromHash(): View {
   }
   const hash = decodeURIComponent(raw);
   if (hash === "accounts" || hash === "settings" || hash === "activity") return { screen: hash };
+  if (hash === "sync") return { screen: "settings", section: "sync" };
+  if (hash === "teams") return { screen: "settings", section: "teams" };
   if (hash === "c") return { screen: "conversation" };
   if (hash.startsWith("c=")) return { screen: "conversation", task: hash.slice(2) };
   if (hash.startsWith("a=")) return { screen: "accounts", account: hash.slice(2) };
@@ -106,7 +109,14 @@ function hashFor(view: View): string {
   if (view.screen === "status") return `#s=${encodeURIComponent(view.project)}`;
   if (view.screen === "accounts" && view.account) return `#a=${encodeURIComponent(view.account)}`;
   if (view.screen === "conversation") return view.task ? `#c=${encodeURIComponent(view.task)}` : "#c";
+  if (view.screen === "settings" && view.section === "sync") return "#sync";
+  if (view.screen === "settings" && view.section === "teams") return "#teams";
   return `#${view.screen}`;
+}
+
+/** A dialog that must finish first is open (the recovery words, a setup under way). */
+function lockedByDialog(): boolean {
+  return document.querySelector('[data-locked="true"]') !== null;
 }
 
 function Root() {
@@ -127,6 +137,7 @@ function Root() {
         if (options?.replace) history.replaceState(null, "", hash);
         else if (hash !== window.location.hash) history.pushState(null, "", hash);
       };
+      if (lockedByDialog()) return;
       if (!unsaved.dirty) return go();
       void unsaved.confirmLeave().then((ok) => ok && go());
     },
@@ -141,6 +152,7 @@ function Root() {
   useEffect(() => {
     const onPop = () => {
       const next = viewFromHash();
+      if (lockedByDialog()) return history.pushState(null, "", hashFor(shown.current));
       if (!unsaved.dirty) return setView(next);
       // The URL already moved: put it back while asking.
       const target = window.location.hash;
@@ -172,6 +184,7 @@ function Root() {
   );
   const goToProject = useCallback((path: string) => navigate({ screen: "workspace", project: path }), [navigate]);
   useProjectShortcuts(shortcutProjects, goToProject);
+  useSyncEvents();
 
   if (overview.isPending) {
     return (
@@ -180,7 +193,9 @@ function Root() {
       </div>
     );
   }
-  if (overview.isError) {
+  // A failed refresh keeps what is on screen (a dialog may hold something
+  // that must finish, like the recovery words); only a first load fails here.
+  if (!overview.data) {
     return (
       <div className="splash">
         <Mascot color={ERROR_MASCOT_COLOR} state="sleeping" size={140} />
