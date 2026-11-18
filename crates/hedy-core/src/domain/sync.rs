@@ -362,6 +362,73 @@ pub mod layout {
     }
 }
 
+/// What the user said about repo owners, by owner (lowercase, without the
+/// host, like [`RepoIdentity::project_key`]): theirs, or a group's (a
+/// company, a client, a community). Each answer covers every repo of that
+/// owner.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Owners {
+    #[serde(default)]
+    pub mine: std::collections::BTreeSet<String>,
+    #[serde(default)]
+    pub shared: std::collections::BTreeSet<String>,
+}
+
+impl Owners {
+    /// Records an answer about `owner`, replacing any earlier one.
+    pub fn answer(&mut self, owner: &str, mine: bool) {
+        let owner = owner.to_lowercase();
+        self.forget(&owner);
+        if mine {
+            self.mine.insert(owner);
+        } else {
+            self.shared.insert(owner);
+        }
+    }
+
+    pub fn forget(&mut self, owner: &str) {
+        let owner = owner.to_lowercase();
+        self.mine.remove(&owner);
+        self.shared.remove(&owner);
+    }
+}
+
+/// Where a project's memory lives when the user did not choose it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DerivedHome {
+    /// From an answer about its owner.
+    Known(MemoryHome),
+    /// Its owner is new: ask whether its memory is the user's alone.
+    Ask(String),
+    /// No remote to match it by on other PCs: it stays here.
+    NoRemote,
+}
+
+/// Where a project's memory lives, from who owns its repo: the one it was
+/// forked from (`upstream`, when its owner differs from `origin`'s), else
+/// `origin`'s. A fork of a group's repo in the user's own account is still
+/// the group's.
+pub fn derive_home(
+    origin: Option<&RepoIdentity>,
+    upstream: Option<&RepoIdentity>,
+    owners: &Owners,
+) -> DerivedHome {
+    let Some(origin) = origin else {
+        return DerivedHome::NoRemote;
+    };
+    let owner = match upstream {
+        Some(upstream) if upstream.owner != origin.owner => &upstream.owner,
+        _ => &origin.owner,
+    };
+    if owners.shared.contains(owner) {
+        DerivedHome::Known(MemoryHome::Shared(owner.clone()))
+    } else if owners.mine.contains(owner) {
+        DerivedHome::Known(MemoryHome::Personal)
+    } else {
+        DerivedHome::Ask(owner.clone())
+    }
+}
+
 /// Who owns a repo, read from a remote's URL: what tells a personal project
 /// from a shared one, and the same project on two PCs.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -556,6 +623,50 @@ mod tests {
         assert_eq!(MemoryHome::from_stored("shared:"), None);
         assert_eq!(MemoryHome::from_stored("work"), None);
         assert!(MemoryHome::Personal.syncs() && !MemoryHome::Local.syncs());
+    }
+
+    #[test]
+    fn derives_where_a_projects_memory_lives_from_its_owner() {
+        let repo = |url: &str| RepoIdentity::from_url(url).unwrap();
+        let mut owners = Owners::default();
+        let mine = repo("git@github.com:tu-usuario/tienda.git");
+        let work = repo("https://github.com/Empresa-Org/app");
+        assert_eq!(derive_home(None, None, &owners), DerivedHome::NoRemote);
+        assert_eq!(
+            derive_home(Some(&work), None, &owners),
+            DerivedHome::Ask("empresa-org".into())
+        );
+
+        owners.answer("Tu-Usuario", true);
+        owners.answer("empresa-org", false);
+        assert_eq!(
+            derive_home(Some(&mine), None, &owners),
+            DerivedHome::Known(MemoryHome::Personal)
+        );
+        assert_eq!(
+            derive_home(Some(&work), None, &owners),
+            DerivedHome::Known(MemoryHome::Shared("empresa-org".into()))
+        );
+        // A fork of the group's repo in the user's account is the group's.
+        let fork = repo("git@github.com:tu-usuario/app.git");
+        assert_eq!(
+            derive_home(Some(&fork), Some(&work), &owners),
+            DerivedHome::Known(MemoryHome::Shared("empresa-org".into()))
+        );
+        // An upstream with the same owner is just another remote.
+        assert_eq!(
+            derive_home(Some(&mine), Some(&mine), &owners),
+            DerivedHome::Known(MemoryHome::Personal)
+        );
+
+        // Changing an answer moves the owner; forgetting asks again.
+        owners.answer("empresa-org", true);
+        assert!(owners.mine.contains("empresa-org") && !owners.shared.contains("empresa-org"));
+        owners.forget("EMPRESA-ORG");
+        assert_eq!(
+            derive_home(Some(&work), None, &owners),
+            DerivedHome::Ask("empresa-org".into())
+        );
     }
 
     #[test]

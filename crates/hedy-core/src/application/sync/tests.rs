@@ -11,6 +11,7 @@ use crate::application::ports::{
 };
 use crate::application::testing::{Fixture, SyncServer};
 use crate::application::themes::NewTheme;
+use crate::domain::sync::MemoryHome;
 use crate::domain::theme::{ThemeBase, ThemeOrigin};
 use crate::domain::{Category, NoteStatus};
 
@@ -757,7 +758,10 @@ fn a_project_kept_local_for_a_while_catches_up() {
 #[test]
 fn a_project_made_personal_later_brings_its_notes() {
     let (_server, (home, home_tienda), (office, office_tienda)) = two_pcs();
-    office.hedy.set_memory_home(&office_tienda, None).unwrap();
+    office
+        .hedy
+        .set_memory_home(&office_tienda, Some(&MemoryHome::Local))
+        .unwrap();
     home.hedy
         .add_note(Some(&home_tienda), "de casa", Category::Decision)
         .unwrap();
@@ -769,10 +773,8 @@ fn a_project_made_personal_later_brings_its_notes() {
     office.hedy.sync_now().unwrap();
     assert_eq!(texts(&office, Some(&office_tienda)), ["de la oficina"]);
 
-    office
-        .hedy
-        .set_memory_home(&office_tienda, Some(&MemoryHome::Personal))
-        .unwrap();
+    // Back to following its owner, the user (the sync repo's owner).
+    office.hedy.set_memory_home(&office_tienda, None).unwrap();
     office.hedy.sync_now().unwrap();
     home.hedy.sync_now().unwrap();
     for (f, project) in [(&home, &home_tienda), (&office, &office_tienda)] {
@@ -1132,4 +1134,50 @@ fn a_pending_batch_replayed_after_a_crash_keeps_its_seq() {
     assert!(server.file(&layout::batch(&home_id, seq + 2)).is_some());
     office.hedy.sync_now().unwrap();
     assert_eq!(texts(&office, None), ["B"]);
+}
+
+// Phase 3: where each project's memory lives.
+
+#[test]
+fn a_new_owners_project_waits_for_the_answer() {
+    let server = SyncServer::default();
+    let (home, home_app) = pc(&server, "/a/app");
+    let (office, office_app) = pc(&server, "/b/app");
+    for f in [&home, &office] {
+        f.source
+            .set_remotes(&[("origin", "git@github.com:empresa-org/app.git")]);
+    }
+    let words = home.hedy.sync_setup(URL, "Casa").unwrap();
+    office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+    home.hedy
+        .add_note(Some(&home_app), "Regla del cliente", Category::Rule)
+        .unwrap();
+    let status = home.hedy.memory_home_status(&home_app).unwrap();
+    assert_eq!(status.ask.as_deref(), Some("empresa-org"));
+
+    // Not answered, or shared: it never leaves this PC.
+    assert_eq!(home.hedy.sync_now().unwrap().sent, 0);
+    home.hedy.answer_owner("empresa-org", false).unwrap();
+    assert_eq!(home.hedy.sync_now().unwrap().sent, 0);
+
+    // The user's own after all: it syncs where the owner is also the user's.
+    home.hedy.answer_owner("empresa-org", true).unwrap();
+    assert_eq!(home.hedy.sync_now().unwrap().sent, 1);
+    office.hedy.sync_now().unwrap();
+    assert!(texts(&office, Some(&office_app)).is_empty());
+    office.hedy.answer_owner("empresa-org", true).unwrap();
+    office.hedy.sync_now().unwrap();
+    assert_eq!(texts(&office, Some(&office_app)), ["Regla del cliente"]);
+}
+
+#[test]
+fn the_sync_repos_owner_counts_as_the_user() {
+    let (_server, (home, home_tienda), _) = two_pcs();
+    home.hedy.set_memory_home(&home_tienda, None).unwrap();
+    let status = home.hedy.memory_home_status(&home_tienda).unwrap();
+    assert_eq!(
+        (status.home, status.chosen),
+        (Some(MemoryHome::Personal), false)
+    );
+    assert!(home.hedy.repo_owners().unwrap().mine.contains("tu-usuario"));
 }

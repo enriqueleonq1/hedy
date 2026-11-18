@@ -16,6 +16,7 @@ mod error;
 mod files;
 mod launch;
 mod memory;
+mod memory_home;
 mod metrics;
 mod one_shot;
 mod plan_usage;
@@ -61,6 +62,7 @@ pub use memory::{
     MemoryServerCommand, MemoryView, Proposal, format_note, format_note_page, format_notes,
     format_topics,
 };
+pub use memory_home::MemoryHomeStatus;
 pub use metrics::{ProjectStatus, TestRun, UsageSummary};
 pub use plan_usage::{LimitCheck, PLAN_USAGE_MIN_INTERVAL_SECS, PlanUsageState};
 pub use projects::NewProject;

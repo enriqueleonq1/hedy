@@ -29,8 +29,8 @@ use serde::{Deserialize, Serialize};
 use super::ports::{SyncConflict, SyncLink, TemplateRecord};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::sync::{
-    Batch, Change, DeviceId, ItemKind, MemoryHome, Merge, NoteBody, RECOVERY_MEMBER, RepoIdentity,
-    Scope, SkillBody, Stamp, TemplateBody, ThemeBody, Version, layout, merge,
+    Batch, Change, DeviceId, ItemKind, Merge, NoteBody, RECOVERY_MEMBER, RepoIdentity, Scope,
+    SkillBody, Stamp, TemplateBody, ThemeBody, Version, layout, merge,
 };
 use crate::domain::theme::{CustomTheme, new_theme_id};
 use crate::tr;
@@ -399,6 +399,10 @@ impl Hedy {
         self.set_sync_setting(EPOCH, &epoch.to_string())?;
         self.set_sync_setting(PINS, &json(pins))?;
         self.set_sync_setting(SEQ, "0")?;
+        // The sync repo's owner is the user: their projects need no question.
+        if let Some(identity) = RepoIdentity::from_url(url) {
+            self.answer_owner(&identity.owner, true)?;
+        }
         // Last: what says the sync is set up.
         self.set_sync_setting(URL, url)
     }
@@ -646,8 +650,7 @@ impl Hedy {
     /// remote to match it by on other PCs.
     fn synced_identity(&self, project: &Path) -> AppResult<Option<RepoIdentity>> {
         if !self
-            .store
-            .memory_home(project)?
+            .effective_memory_home(project)?
             .is_some_and(|home| home.syncs())
         {
             return Ok(None);
@@ -1320,17 +1323,6 @@ impl Hedy {
         outbox.push(change);
         self.set_sync_setting(OUTBOX, &json(&outbox))?;
         Ok(self.store.delete_sync_conflict(id)?)
-    }
-
-    /// Where `project`'s memory lives (`None`: not decided, it stays here).
-    pub fn set_memory_home(&self, project: &Path, home: Option<&MemoryHome>) -> AppResult<()> {
-        let project = self.project_at(project)?;
-        Ok(self.store.set_memory_home(&project.path, home)?)
-    }
-
-    pub fn memory_home(&self, project: &Path) -> AppResult<Option<MemoryHome>> {
-        let project = self.project_at(project)?;
-        Ok(self.store.memory_home(&project.path)?)
     }
 }
 
