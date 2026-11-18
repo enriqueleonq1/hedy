@@ -3098,11 +3098,12 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
   "person" is a data dir of their own, with their own keys):
   - `scripts/team-e2e.sh`, the real `hedy` binary and keyring: three people, one with two PCs.
   - `team_ipc_end_to_end`, the app's commands over IPC with the arguments the UI sends.
-  - `personal_sync_and_two_teams*`, personal sync and two teams on the same PCs: one person with
-    two PCs in personal sync and in two teams, each team with someone else. Each note reaches
-    only its own people; each agent reads only its project's team layer; the personal repo
-    holds only that person's PCs; leaving every team leaves personal sync as it was. It also
-    runs locally (real git and SQLite) in `cargo test`.
+  - Fourteen scenarios (`application::sync::team::scenarios`), each PC a Hedy of its own on
+    SQLite and real git, locally in `cargo test` and on GitHub with `HEDY_E2E_REPOS`: five of
+    personal memory, seven of teams, and two of both (one person in personal sync and two
+    teams; a project moving from personal memory to a team and back). Each note reaches only
+    its own people, and each agent reads only its project's team layer. Making personal sync
+    take team projects fails both mixed scenarios.
   - Every repo's history was searched for notes, names and the teams' names: none.
 - **Cancelling a join** (`withdraw_join`): a PC that stops joining takes its request back, so
   the inviting PC adds nobody.

@@ -109,8 +109,16 @@ An admin's PC adds it on its next sync.
 - `HEDY_E2E_URL=<empty-repo-url> cargo test -p hedy-app -- --ignored team_ipc`: the app's
   Tauri commands over IPC, with the arguments the UI sends. Without `HEDY_E2E_URL` it uses a
   local bare repo.
-- Personal sync and teams together (`cargo test personal_sync_and_two_teams`): one person with
-  two PCs in personal sync and in two teams, each team with someone else. Each note reaches
-  only its own repo and its own people, and each agent reads only its project's team. Against
-  real servers: `HEDY_E2E_PERSONAL`, `HEDY_E2E_TEAM_A` and `HEDY_E2E_TEAM_B` (three empty
-  repos) and `cargo test -p hedy-core -- --ignored personal_sync_and_two_teams_on_real_repos`.
+- End-to-end scenarios (`cargo test scenarios::local`), each PC a Hedy of its own on SQLite
+  and real git:
+  - **Personal memory:** three PCs sharing notes, templates and skills; the same note edited
+    apart; a PC removed; a project kept on one PC; the 12 words bringing everything back.
+  - **Teams:** a product team reviewing suggestions; people leaving, joining later and changing
+    roles; one person with two PCs; invite codes; what a member forges; two admins leaving at
+    once; an agent's proposal reaching the team.
+  - **Both:** one person in personal sync and in two teams, and a project moving from personal
+    memory to a team and back. Each note reaches only its own people.
+
+  On a real server, one empty repo per scenario repo name (`p1-personal` … `m2-team`, see
+  `Env::repo` in `scenarios.rs`): `HEDY_E2E_REPOS='https://host/me/e2e-{}.git' cargo test -p
+  hedy-core -- --ignored scenarios::real`.
