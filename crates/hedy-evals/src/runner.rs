@@ -72,6 +72,13 @@ fn now() -> i64 {
         .map_or(0, |d| d.as_secs() as i64)
 }
 
+/// The bare repo of a run's team, next to the run's repo.
+fn team_repo(repo: &Path) -> std::path::PathBuf {
+    let mut name = repo.as_os_str().to_owned();
+    name.push(".team.git");
+    name.into()
+}
+
 fn git(dir: &Path, args: &[&str]) -> Result<()> {
     let status = Command::new("git")
         .args([
@@ -178,6 +185,8 @@ impl Runner {
             variant.name.replace('+', "_")
         ));
         let _repo = RemoveOnDrop(repo.clone());
+        // Its team's repo too, however the run ends.
+        let _team = RemoveOnDrop(team_repo(&repo));
         if let Err(e) = self.run_in(case, layer, &repo, &mut result) {
             result.passed = false;
             result.error.get_or_insert_with(|| format!("{e:#}"));
@@ -194,7 +203,7 @@ impl Runner {
         let repo = repo.canonicalize()?;
         let result = self.run_task(case, layer, &repo, out);
         self.leave_teams();
-        let _ = std::fs::remove_dir_all(repo.with_extension("team.git"));
+        let _ = std::fs::remove_dir_all(team_repo(&repo));
         let _ = self.hedy.remove_project(&repo);
         result
     }
@@ -252,7 +261,7 @@ impl Runner {
     /// Puts the project in a team made for this run (in a bare repo next to
     /// it), with the case's team-layer notes.
     fn join_team(&self, case: &Case, repo: &Path) -> Result<()> {
-        let bare = repo.with_extension("team.git");
+        let bare = team_repo(repo);
         std::fs::create_dir_all(&bare)?;
         git(&bare, &["init", "-q", "--bare", "-b", "main"])?;
         let hedy = &self.hedy;

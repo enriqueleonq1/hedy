@@ -384,9 +384,10 @@ pub fn team_layer_block(team: &str, notes: &[LayerNote], budget: usize) -> Optio
             note.category.as_str(),
             quote(note.text)
         );
+        // One that does not fit gives way to shorter ones after it.
         if super::context::estimate_tokens(&text) + super::context::estimate_tokens(&line) > budget
         {
-            break;
+            continue;
         }
         text.push_str(&line);
         left -= 1;

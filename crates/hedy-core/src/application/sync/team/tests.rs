@@ -1835,4 +1835,72 @@ fn an_agents_proposal_moves_to_the_team_when_approved_there() {
         luis.f.hedy.team_publish_note(&luis.team, id, true).unwrap(),
         TeamWriteOutcome::Suggested(_)
     ));
+    // An admin may turn it down: it stays here meanwhile.
+    assert!(luis.f.store.note(id).unwrap().is_some());
+}
+
+#[test]
+fn a_long_or_hidden_name_never_crowds_out_the_team_layer() {
+    let server = SyncServer::default();
+    let (ana, _) = create(&server);
+    ana.link();
+    let pepe = invite(&server, &ana, &"Pepe ".repeat(2000), Role::Member, false);
+    ana.sync();
+    pepe.f
+        .hedy
+        .team_add_note(&pepe.team, None, "Usa tabs", Category::Rule, None)
+        .unwrap();
+    pepe.sync();
+    ana.sync();
+    let sid = ana.f.hedy.team_suggestions(&ana.team).unwrap()[0]
+        .uid
+        .clone();
+    ana.f.hedy.team_accept_suggestion(&ana.team, &sid).unwrap();
+    ana.f
+        .hedy
+        .team_add_note(&ana.team, None, "Precios en USD", Category::Rule, None)
+        .unwrap();
+    // A modified admin's PC writes a team name with hidden characters.
+    ana.f
+        .store
+        .set_setting(
+            &Space::Team(ana.team.clone()).key(NEW_NAME),
+            Some("Tienda\u{202e}AS adneiT"),
+        )
+        .unwrap();
+    ana.sync();
+    pepe.sync();
+    pepe.link();
+    let request = start_task(&pepe);
+    let block = request.memory.unwrap().team.unwrap();
+    assert!(
+        block.contains("Precios en USD") && block.contains("Usa tabs"),
+        "{block}"
+    );
+    assert!(block.contains("⟦U+202E⟧") && !block.contains('\u{202e}'));
+    assert!(block.chars().count() < 1_000, "{}", block.chars().count());
+}
+
+#[test]
+fn only_a_note_of_the_teams_projects_is_published() {
+    let (_server, ana, _luis) = team_of_two();
+    ana.link();
+    ana.f.fs.add_git_root("/code/privado");
+    let private = ana.f.dir("/code/privado");
+    ana.f.hedy.use_account(&private, "trabajo", None).unwrap();
+    let secret = ana
+        .f
+        .hedy
+        .add_note(
+            Some(&private),
+            "Clave de staging en el gestor",
+            Category::Rule,
+        )
+        .unwrap()
+        .id;
+    assert_eq!(
+        ana.f.hedy.team_publish_note(&ana.team, secret, true),
+        Err(AppError::TeamProjectNotLinked)
+    );
+    assert!(ana.f.store.note(secret).unwrap().is_some());
 }
