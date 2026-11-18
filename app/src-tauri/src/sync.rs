@@ -504,6 +504,8 @@ mod tests {
         });
         let home = pc(tmp.path(), "casa");
         let office = pc(tmp.path(), "oficina");
+        // The errors are checked in Spanish, whatever the system's language.
+        hedy_core::i18n::set_language(hedy_core::i18n::Language::Spanish);
 
         // Off, then a token in the URL is refused and the repo is private.
         assert_eq!(home.ok("sync_status", json!({})), Value::Null);

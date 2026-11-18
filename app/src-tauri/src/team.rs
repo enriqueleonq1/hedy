@@ -708,6 +708,8 @@ mod tests {
         let ana = pc(tmp.path(), "ana");
         let luis = pc(tmp.path(), "luis");
         let marta = pc(tmp.path(), "marta");
+        // The errors are checked in Spanish, whatever the system's language.
+        hedy_core::i18n::set_language(hedy_core::i18n::Language::Spanish);
 
         // Ana creates the team (the 12 words come back once).
         assert_eq!(ana.ok("teams", json!({})), json!([]));
