@@ -29,6 +29,7 @@ pub mod read_guard;
 pub mod recall;
 pub mod ship;
 pub mod skill;
+pub mod sync;
 pub mod task;
 pub mod template;
 pub mod theme;
