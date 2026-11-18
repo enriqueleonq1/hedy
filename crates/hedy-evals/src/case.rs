@@ -234,6 +234,7 @@ mod tests {
                 prompt: String::new(),
                 check: "true".into(),
                 notes: Vec::new(),
+                team_notes: Vec::new(),
                 measures: None,
                 timeout_secs: 1,
             },
