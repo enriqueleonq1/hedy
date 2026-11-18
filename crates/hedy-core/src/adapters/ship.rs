@@ -70,6 +70,7 @@ pub(crate) fn run_timed(
                 std::thread::sleep(Duration::from_millis(15));
             }
             Ok(None) => {
+                kill_group(child.id());
                 let _ = child.kill();
                 let _ = child.wait();
                 let secs = timeout.as_secs();
@@ -86,6 +87,22 @@ pub(crate) fn run_timed(
         stdout: stdout.join().unwrap_or_default(),
         stderr: stderr.join().unwrap_or_default(),
     })
+}
+
+/// Also stops what the command started (git's `ssh`), when it runs in a
+/// process group of its own (`CommandExt::process_group(0)`). Nothing
+/// happens otherwise: only a group's leader has its pid as the group id.
+fn kill_group(pid: u32) {
+    #[cfg(unix)]
+    if let Ok(pid) = i32::try_from(pid) {
+        // SAFETY: `kill` takes no pointers; a group that does not exist
+        // only makes it fail.
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = pid;
 }
 
 fn git_command(dir: &Path, args: &[&str]) -> Command {
@@ -348,6 +365,30 @@ mod tests {
     use super::*;
     use crate::domain::ship::{PullProblem, PushProblem};
     use std::fs;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_timeout_also_stops_what_the_command_started() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("pid");
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            &format!("sleep 30 & echo $! > {}; wait", file.display()),
+        ]);
+        std::os::unix::process::CommandExt::process_group(&mut command, 0);
+        assert!(run_timed(command, None, Duration::from_millis(300)).is_err());
+        let pid = fs::read_to_string(&file).unwrap().trim().to_owned();
+        let gone = || {
+            fs::read_to_string(format!("/proc/{pid}/stat"))
+                .map_or(true, |stat| stat.contains(") Z "))
+        };
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !gone() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(gone(), "sleep {pid} still runs");
+    }
 
     fn sh(dir: &Path, args: &[&str]) {
         git(dir, args).unwrap();

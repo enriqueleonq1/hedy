@@ -2310,8 +2310,8 @@ The views picked on the design canvas, built on the same use cases as the CLI:
     the words are copied to a password manager.
 - **Before setup, the repo is checked for anonymous read** (`SyncRemote::is_public`): `git
   ls-remote` of its HTTPS form, with no git config and an empty home. No credential helper,
-  `insteadOf` or `~/.netrc` helps. A server that does not answer within 10 s counts as not
-  public.
+  `insteadOf`, `~/.netrc` or `$NETRC` helps. The empty home has a random name. A server that does
+  not answer within 10 s counts as not public.
   - A public repo is warned about, not refused: everything in it is encrypted, but anyone can
     see how many PCs sync and when.
   - This is the only request Hedy makes outside the sync itself, and it goes to the user's own
@@ -2339,17 +2339,21 @@ The views picked on the design canvas, built on the same use cases as the CLI:
   - any command is killed after a limit (15 minutes when it talks to the server, so a first
     clone of a big repo on a slow link still finishes; 1 minute otherwise), so the lock is never
     held forever;
-  - a kill stops `git` only, not its `ssh` child. A kill in the middle of a fetch could leave a
-    ref lock file that makes later syncs fail; leaving and joining again makes a new clone.
-    That is rare: the limit almost always fires while git waits for the network, before any
-    ref is locked;
+  - without a terminal (the app), git runs in a process group of its own, so a kill also
+    stops its `ssh`; in a terminal it stays in the foreground group, so `ssh` can still ask for
+    a key's passphrase;
+  - a kill in the middle of a fetch could leave a ref lock file that makes later syncs fail;
+    leaving and joining again makes a new clone. That is rare: the limit almost always fires
+    while git waits for the network, before any ref is locked;
   - no password window appears: no SSH askpass (`SSH_ASKPASS_REQUIRE=never`) and no credential
     manager login (`GCM_INTERACTIVE=never`).
 - **The 12 words cannot be lost on the way:**
   - the setup dialog cannot be closed while the repo takes the first epoch, nor before word 7
     is typed back;
-  - meanwhile nothing navigates away: not the history, a project shortcut, the palette, nor a
-    click on a notification (`data-locked` on the dialog);
+  - meanwhile nothing takes the words away: not the history, a project shortcut, the palette,
+    a click on a notification (`data-locked` on the dialog), closing the window (it asks to
+    finish first), nor a failed refresh of the app's data (only a first load shows the error
+    screen);
   - when it finishes, Hedy clears the clipboard if it copied the words.
 - **A project is counted and shown as synced only when it really syncs:** personal, and with an
   `origin` that names it (`MemoryHomeStatus::syncs`).
@@ -2377,6 +2381,13 @@ The views picked on the design canvas, built on the same use cases as the CLI:
   - the address placeholder was not translated.
 - All are fixed. The ones that can be tested have a test that fails without the fix: the
   dialog lock, the shortcuts, the notification, no remote, the error line, `syncs`.
+- The re-check confirmed the fixes. It found:
+  - stray `ssh` processes after a kill;
+  - `$NETRC`;
+  - a guessable temp folder;
+  - two more ways to lose the words: closing the window, and a failed refresh;
+  - a total limit that a slow first clone would always hit.
+  All of these are fixed too.
 - The `~/.netrc` fix was checked by hand: a server that asks for Basic auth got the token from
   the user's home before, and gets nothing now.
 

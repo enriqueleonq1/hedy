@@ -108,6 +108,13 @@ fn git(dir: &Path, args: &[&str]) -> PortResult<Ran> {
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("SSH_ASKPASS_REQUIRE", "never")
         .env("GCM_INTERACTIVE", "never");
+    // Without a terminal (the app), git and its `ssh` get a process group
+    // of their own, so a timeout stops both. In a terminal they stay in
+    // its foreground group: `ssh` may still ask for a key's passphrase.
+    #[cfg(unix)]
+    if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    }
     let network = matches!(args.first(), Some(&("clone" | "fetch" | "push")));
     run_timed(
         command,
@@ -222,8 +229,14 @@ impl SyncRemote for GitSyncRemote {
         let Some(https) = https_form(url) else {
             return false;
         };
-        let home = std::env::temp_dir().join(format!("hedy-anonymous-{}", std::process::id()));
-        if std::fs::create_dir_all(&home).is_err() {
+        // A new folder of its own, with a name nobody can guess first.
+        let mut name = [0u8; 12];
+        if getrandom::fill(&mut name).is_err() {
+            return false;
+        }
+        let name: String = name.iter().map(|b| format!("{b:02x}")).collect();
+        let home = std::env::temp_dir().join(format!("hedy-anonymous-{name}"));
+        if std::fs::create_dir(&home).is_err() {
             return false;
         }
         let mut command = Command::new("git");
@@ -247,7 +260,10 @@ impl SyncRemote for GitSyncRemote {
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_TERMINAL_PROMPT", "0")
             .env_remove("GIT_ASKPASS")
-            .env_remove("SSH_ASKPASS");
+            .env_remove("SSH_ASKPASS")
+            // curl also reads a netrc file named here.
+            .env_remove("NETRC")
+            .env_remove("CURL_HOME");
         let public = run_timed(command, None, PUBLIC_CHECK_TIMEOUT).is_ok_and(|out| out.ok);
         let _ = std::fs::remove_dir_all(&home);
         public

@@ -191,7 +191,9 @@ function Root() {
       </div>
     );
   }
-  if (overview.isError) {
+  // A failed refresh keeps what is on screen (a dialog may hold something
+  // that must finish, like the recovery words); only a first load fails here.
+  if (!overview.data) {
     return (
       <div className="splash">
         <Mascot color={ERROR_MASCOT_COLOR} state="sleeping" size={140} />

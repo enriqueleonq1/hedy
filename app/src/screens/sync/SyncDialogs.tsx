@@ -1,7 +1,7 @@
 // Setting up the sync on a first PC, adding this PC to it, and how to add
 // another one: short step-by-step dialogs (docs/decisions.md §34).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { errorMessage, useApi } from "../../api/context";
@@ -120,6 +120,16 @@ export function SetupDialog({ onClose }: { onClose: () => void }) {
       void refreshAfterSync(client);
     },
   });
+
+  // Closing the window now would lose the words: it waits for "Terminar".
+  const locked = step === 3 || setup.isPending;
+  useEffect(() => {
+    if (!locked) return;
+    return api.onCloseRequested(async () => {
+      toast.info(t("sync.words.closeFirst"));
+      return false;
+    });
+  }, [api, locked, toast, t]);
 
   const list = words.split(/\s+/).filter(Boolean);
   const confirmed = list.length >= CHECK_WORD && foldWord(typed) === foldWord(list[CHECK_WORD - 1] ?? "");

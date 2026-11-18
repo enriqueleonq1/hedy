@@ -2068,6 +2068,7 @@ dependencies = [
  "hmac 0.13.0",
  "jiff",
  "keyring",
+ "libc",
  "portable-pty",
  "regex",
  "rusqlite",

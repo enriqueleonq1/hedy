@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient } from "@tanstack/react-query";
 
@@ -101,6 +101,13 @@ describe("Sync", () => {
 
     api.simulateNotificationClick("s3");
     expect(window.location.hash).toBe("#sync");
+    expect(screen.getByRole("dialog", { name: "Configurar la sincronización" })).toBeInTheDocument();
+    // Nor closing the window, nor a failed refresh of the app's data.
+    expect(await api.requestClose()).toBe(false);
+    expect(await screen.findByText(/Antes de cerrar, guarda tu clave/)).toBeInTheDocument();
+    api.overview = () => Promise.reject(new Error("sin base de datos"));
+    await act(() => api.emitSyncUpdated());
+    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(screen.getByRole("dialog", { name: "Configurar la sincronización" })).toBeInTheDocument();
   });
 

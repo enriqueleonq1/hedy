@@ -98,6 +98,7 @@ const es = {
   "sync.words.confirm": "Para confirmar, escribe la palabra n.º {n}",
   "sync.words.mismatch": "No coincide; revisa la clave de arriba.",
   "sync.words.finish": "Terminar",
+  "sync.words.closeFirst": "Antes de cerrar, guarda tu clave de recuperación y pulsa «Terminar».",
   "sync.setup.done": "Sincronización configurada.",
 
   "sync.join.title": "Sumar esta PC",
@@ -241,6 +242,7 @@ const en: Record<keyof typeof es, string> = {
   "sync.words.confirm": "To confirm, type word #{n}",
   "sync.words.mismatch": "That does not match; check the key above.",
   "sync.words.finish": "Finish",
+  "sync.words.closeFirst": "Before closing, keep your recovery key and press \u201cFinish\u201d.",
   "sync.setup.done": "Sync is set up.",
 
   "sync.join.title": "Add this PC",
