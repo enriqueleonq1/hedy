@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::domain::code::{Blame, CommitInfo, FileBytes, LineMatch, PathChange, TextQuery};
 use crate::domain::recall::{NoteUse, PageRequest};
 use crate::domain::sync::{
-    Change, DeviceId, ItemKind, MemoryHome, NoteBody, Scope, SkillBody, Stamp, Version,
+    Change, DeviceId, EpochMember, ItemKind, MemoryHome, NoteBody, Scope, SkillBody, Stamp, Version,
 };
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, ImageSupport,
@@ -1011,12 +1011,12 @@ pub trait SyncCrypto: Send + Sync {
     fn recover(&self, words: &str) -> PortResult<String>;
     /// A member's public keys (as epoch files list them).
     fn member_public(&self, secrets: &str) -> PortResult<String>;
-    /// A new epoch with a new key for `members` (id, public keys), signed by
-    /// `signer`: (the epoch file, its key).
+    /// A new epoch with a new key for `members`, signed by `signer`: (the
+    /// epoch file, its key).
     fn new_epoch(
         &self,
         epoch: u32,
-        members: &[(String, String)],
+        members: &[EpochMember],
         signer_id: &str,
         signer: &str,
     ) -> PortResult<(String, String)>;
@@ -1024,8 +1024,8 @@ pub trait SyncCrypto: Send + Sync {
     fn verify_first_epoch(&self, file: &str, recovery: &str) -> PortResult<()>;
     /// Whether `next` may follow `previous`.
     fn verify_next_epoch(&self, previous: &str, next: &str) -> PortResult<()>;
-    /// An epoch file's number and members (id, public keys).
-    fn epoch_members(&self, file: &str) -> PortResult<(u32, Vec<(String, String)>)>;
+    /// An epoch file's number and members.
+    fn epoch_members(&self, file: &str) -> PortResult<(u32, Vec<EpochMember>)>;
     /// The epoch's key, for member `id`.
     fn open_epoch(&self, file: &str, id: &str, secrets: &str) -> PortResult<String>;
     fn seal(&self, key: &str, path: &str, plaintext: &[u8]) -> PortResult<Vec<u8>>;

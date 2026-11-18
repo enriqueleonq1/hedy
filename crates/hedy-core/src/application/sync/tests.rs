@@ -330,9 +330,9 @@ fn a_pc_left_out_of_the_newest_epoch_stops_syncing() {
     let epoch2 = String::from_utf8(server.file(&layout::epoch(2)).unwrap()).unwrap();
     let (_, members) = crypto.epoch_members(&epoch2).unwrap();
     let home_id = home.hedy.sync_status().unwrap().unwrap().device;
-    let kept: Vec<(String, String)> = members
+    let kept: Vec<EpochMember> = members
         .into_iter()
-        .filter(|(id, _)| id == RECOVERY_MEMBER || id == home_id.as_str())
+        .filter(|m| m.id == RECOVERY_MEMBER || m.id == home_id.as_str())
         .collect();
     let (file, _) = crypto
         .new_epoch(3, &kept, home_id.as_str(), &keys.device)
@@ -934,9 +934,9 @@ fn a_removed_pc_cannot_write_and_no_pc_writes_as_another() {
     let keys: Keys = serde_json::from_str(&home.secrets.sync_keys().unwrap().unwrap()).unwrap();
     let epoch2 = String::from_utf8(server.file(&layout::epoch(2)).unwrap()).unwrap();
     let (_, members) = crypto.epoch_members(&epoch2).unwrap();
-    let kept: Vec<(String, String)> = members
+    let kept: Vec<EpochMember> = members
         .into_iter()
-        .filter(|(id, _)| id != office_id.as_str())
+        .filter(|m| m.id != office_id.as_str())
         .collect();
     let (file, _) = crypto
         .new_epoch(3, &kept, home_id.as_str(), &keys.device)
@@ -1672,8 +1672,8 @@ fn a_member_cannot_add_a_hidden_member_and_a_bad_epoch_stops_no_sync() {
     let (_, mut members) = crypto.epoch_members(&file).unwrap();
     // The (stolen) office signs an epoch that adds a member it controls.
     let phantom = crypto.new_member().unwrap();
-    members.push((
-        "abcdef0123456789".into(),
+    members.push(EpochMember::new(
+        "abcdef0123456789",
         crypto.member_public(&phantom).unwrap(),
     ));
     let (next, _) = crypto
@@ -2116,7 +2116,7 @@ fn an_epoch_without_the_recovery_key_is_ignored_and_written_over() {
     let (_, members) = crypto.epoch_members(&file).unwrap();
     let kept: Vec<_> = members
         .into_iter()
-        .filter(|(id, _)| id != RECOVERY_MEMBER)
+        .filter(|m| m.id != RECOVERY_MEMBER)
         .collect();
     let (next, _) = crypto
         .new_epoch(newest + 1, &kept, office_id.as_str(), &keys.device)

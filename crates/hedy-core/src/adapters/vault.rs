@@ -15,6 +15,10 @@
 //! - **Trust**: epoch 1 is signed by the recovery key, and every later one
 //!   by a member of the one before. A PC removed from an epoch cannot sign
 //!   the next, so it cannot put its own key back, even with push access.
+//! - **Teams** (§35): each PC also names its person and their role. An
+//!   admin's PC adds, removes and changes anyone; a member's PC only adds or
+//!   removes that person's own PCs. Personal vaults have no seats, and there
+//!   a PC only removes.
 
 use std::fmt;
 
@@ -31,7 +35,8 @@ use sha2::Sha256;
 use zeroize::Zeroize;
 
 use crate::application::ports::{PortError, PortResult, SyncCrypto};
-use crate::domain::sync::{DeviceId, fold_word};
+use crate::domain::sync::{DeviceId, EpochMember, fold_word};
+use crate::domain::team::{PersonId, Role, Seat};
 use crate::tr;
 
 /// The member id of the recovery key in epoch files.
@@ -72,8 +77,9 @@ pub enum Distrust {
     Signer,
     /// The signature does not match.
     Signature,
-    /// A member id that is not a PC's, a member twice, or a PC (not the
-    /// recovery key) adding or changing a member: a PC can only remove.
+    /// A member id that is not a PC's, a member twice, a seat that does
+    /// not hold together, or a change its signer may not make (a personal
+    /// PC only removes; a team member only adds or removes their own PCs).
     Members,
 }
 
@@ -96,8 +102,8 @@ impl fmt::Display for Distrust {
             ),
             Self::Signature => tr!("la firma no coincide", "the signature does not match"),
             Self::Members => tr!(
-                "sus miembros no son válidos (una PC solo puede quitar PCs)",
-                "its members are not valid (a PC can only remove PCs)"
+                "sus miembros no son válidos, o quien la firmó no podía hacer ese cambio",
+                "its members are not valid, or its signer could not make that change"
             ),
         })
     }
@@ -422,8 +428,23 @@ pub fn open(keys: &[VaultKey], path: &str, sealed: &[u8]) -> Result<Vec<u8>> {
 pub struct Member {
     /// A device id, or [`RECOVERY_ID`].
     pub id: String,
+    /// In a team, whose PC it is and their role; never in a personal vault,
+    /// whose files (and signatures) stay as they were.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub person: Option<PersonId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<Role>,
     pub public: MemberPublic,
     pub wrapped_key: String,
+}
+
+impl Member {
+    fn seat(&self) -> Option<Seat> {
+        Some(Seat {
+            person: self.person.clone()?,
+            role: self.role?,
+        })
+    }
 }
 
 /// `vault/epochs/<n>.json`: who can read epoch `n` and who signed it.
@@ -440,24 +461,40 @@ pub struct EpochFile {
 }
 
 impl EpochFile {
-    /// `key` sealed for each of `members` (id, public keys), signed by
-    /// `signer`.
+    /// `key` sealed for each of `members` (id, public keys) of a personal
+    /// vault, signed by `signer`.
     pub fn create(
         key: &VaultKey,
         members: &[(String, MemberPublic)],
         signer_id: &str,
         signer: &MemberSecrets,
     ) -> Result<Self> {
+        let members: Vec<_> = members
+            .iter()
+            .map(|(id, public)| (id.clone(), public.clone(), None))
+            .collect();
+        Self::create_seated(key, &members, signer_id, signer)
+    }
+
+    /// [`Self::create`] where each member may have a team seat.
+    pub fn create_seated(
+        key: &VaultKey,
+        members: &[(String, MemberPublic, Option<Seat>)],
+        signer_id: &str,
+        signer: &MemberSecrets,
+    ) -> Result<Self> {
         let payload = wrap_payload(key);
         let members = members
             .iter()
-            .map(|(id, public)| {
+            .map(|(id, public, seat)| {
                 let sealed = public
                     .box_key()?
                     .seal(&mut crypto_box::aead::OsRng, &payload)
                     .map_err(|_| VaultError::Random)?;
                 Ok(Member {
                     id: id.clone(),
+                    person: seat.as_ref().map(|s| s.person.clone()),
+                    role: seat.as_ref().map(|s| s.role),
                     public: public.clone(),
                     wrapped_key: BASE64.encode(sealed),
                 })
@@ -530,12 +567,29 @@ impl EpochFile {
         self.valid_members()
     }
 
-    /// Each member once, and every one the recovery key or a PC id.
+    /// Each member once, and every one the recovery key (with no seat) or a
+    /// PC id. Seats hold together: every PC has one (a team) or none does
+    /// (a personal vault), each with a person id, and all of a person's PCs
+    /// have the same role.
     fn valid_members(&self) -> Result<()> {
         let mut seen = std::collections::HashSet::new();
-        let valid = self.members.iter().all(|m| {
-            seen.insert(m.id.as_str()) && (m.id == RECOVERY_ID || DeviceId(m.id.clone()).is_valid())
-        });
+        let mut roles = std::collections::HashMap::new();
+        let pcs = self.members.iter().filter(|m| m.id != RECOVERY_ID);
+        let seated = pcs.clone().filter(|m| m.seat().is_some()).count();
+        let valid = (seated == 0 || seated == pcs.count())
+            && self.members.iter().all(|m| {
+                let seat_ok = if m.id == RECOVERY_ID {
+                    m.person.is_none() && m.role.is_none()
+                } else {
+                    DeviceId(m.id.clone()).is_valid()
+                        && m.person.is_some() == m.role.is_some()
+                        && m.seat().is_none_or(|s| {
+                            s.person.is_valid()
+                                && *roles.entry(s.person).or_insert(s.role) == s.role
+                        })
+                };
+                seen.insert(m.id.as_str()) && seat_ok
+            });
         if valid {
             Ok(())
         } else {
@@ -544,8 +598,13 @@ impl EpochFile {
     }
 
     /// Whether `next` may follow `self`: the next epoch, signed by a member
-    /// of this one. Only the recovery key adds a PC (a join, with the 12
-    /// words); a PC only removes: every member it keeps, unchanged.
+    /// of this one, keeping the recovery key. The recovery key may change
+    /// anything else. Otherwise every member kept keeps its keys and person,
+    /// and:
+    /// - a personal PC only removes (a PC joins with the 12 words);
+    /// - a team admin's PC adds, removes and changes roles;
+    /// - a team member's PC only adds or removes that person's own PCs,
+    ///   with their role.
     pub fn verify_next(&self, next: &EpochFile) -> Result<()> {
         if next.format != FORMAT || Some(next.epoch) != self.epoch.checked_add(1) {
             return Err(VaultError::Untrusted(Distrust::Sequence));
@@ -555,18 +614,44 @@ impl EpochFile {
             .ok_or(VaultError::Untrusted(Distrust::Signer))?;
         next.signed_by(&signer.public)?;
         next.valid_members()?;
-        let only_removes = next
-            .members
-            .iter()
-            .all(|m| self.member(&m.id).is_some_and(|old| old.public == m.public));
         // The recovery key always stays, unchanged: it is how a PC joins.
         let keeps_recovery = self.member(RECOVERY_ID).map(|m| &m.public)
             == next.member(RECOVERY_ID).map(|m| &m.public);
-        if !keeps_recovery || (next.signer != RECOVERY_ID && !only_removes) {
+        if !keeps_recovery {
             return Err(VaultError::Untrusted(Distrust::Members));
         }
-        Ok(())
+        if next.signer == RECOVERY_ID || signer_may_change(signer.seat(), self, next) {
+            Ok(())
+        } else {
+            Err(VaultError::Untrusted(Distrust::Members))
+        }
     }
+}
+
+/// Whether a PC with `seat` (none: a personal PC) may turn `old`'s members
+/// into `new`'s. See [`EpochFile::verify_next`].
+fn signer_may_change(seat: Option<Seat>, old: &EpochFile, new: &EpochFile) -> bool {
+    let admin = seat.as_ref().is_some_and(|s| s.role == Role::Admin);
+    // Whether the signer may add or remove a PC of `of`'s person.
+    let theirs = |of: Option<Seat>| {
+        admin || matches!((&seat, of), (Some(mine), Some(of)) if mine.person == of.person)
+    };
+    let kept_or_added = new.members.iter().all(|m| match old.member(&m.id) {
+        Some(was) => {
+            was.public == m.public && was.person == m.person && (admin || was.role == m.role)
+        }
+        // A personal PC never adds; a member adds a PC of their own, as
+        // what they are.
+        None => {
+            seat.is_some() && theirs(m.seat()) && (admin || m.role == seat.as_ref().map(|s| s.role))
+        }
+    });
+    let removed = old
+        .members
+        .iter()
+        .filter(|m| new.member(&m.id).is_none())
+        .all(|m| seat.is_none() || theirs(m.seat()));
+    kept_or_added && removed
 }
 
 /// Checks a whole chain of epochs, oldest first, from the recovery key:
@@ -643,18 +728,18 @@ impl SyncCrypto for VaultCrypto {
     fn new_epoch(
         &self,
         epoch: u32,
-        members: &[(String, String)],
+        members: &[EpochMember],
         signer_id: &str,
         signer: &str,
     ) -> PortResult<(String, String)> {
         let key = VaultKey::generate(epoch).map_err(port)?;
         let members = members
             .iter()
-            .map(|(id, public)| Ok((id.clone(), member_public(public)?)))
+            .map(|m| Ok((m.id.clone(), member_public(&m.public)?, m.seat.clone())))
             .collect::<Result<Vec<_>>>()
             .map_err(port)?;
         let signer = MemberSecrets::decode(signer).map_err(port)?;
-        let file = EpochFile::create(&key, &members, signer_id, &signer).map_err(port)?;
+        let file = EpochFile::create_seated(&key, &members, signer_id, &signer).map_err(port)?;
         let text = serde_json::to_string_pretty(&file).expect("an epoch file serializes");
         Ok((text, key.encode()))
     }
@@ -671,14 +756,15 @@ impl SyncCrypto for VaultCrypto {
             .map_err(port)
     }
 
-    fn epoch_members(&self, file: &str) -> PortResult<(u32, Vec<(String, String)>)> {
+    fn epoch_members(&self, file: &str) -> PortResult<(u32, Vec<EpochMember>)> {
         let file = epoch_file(file).map_err(port)?;
         let members = file
             .members
             .iter()
-            .map(|m| {
-                let public = serde_json::to_string(&m.public).expect("public keys serialize");
-                (m.id.clone(), public)
+            .map(|m| EpochMember {
+                id: m.id.clone(),
+                public: serde_json::to_string(&m.public).expect("public keys serialize"),
+                seat: m.seat(),
             })
             .collect();
         Ok((file.epoch, members))
@@ -1025,5 +1111,260 @@ mod tests {
 
         let json = serde_json::to_string(&e1).unwrap();
         assert_eq!(serde_json::from_str::<EpochFile>(&json).unwrap(), e1);
+    }
+
+    #[test]
+    fn personal_epoch_files_are_written_as_before_teams() {
+        let (_, recovery) = with_language(UiLanguage::English, || new_recovery().unwrap());
+        let (_, home_public) = pc();
+        let e1 = EpochFile::create(
+            &VaultKey::generate(1).unwrap(),
+            &[
+                (RECOVERY_ID.to_owned(), recovery.public()),
+                ("00000000000000aa".to_owned(), home_public),
+            ],
+            RECOVERY_ID,
+            &recovery,
+        )
+        .unwrap();
+        // No seat fields: the signed bytes of a file written before teams
+        // are the same, so its signature still verifies.
+        let json: serde_json::Value = serde_json::to_value(&e1).unwrap();
+        for member in json["members"].as_array().unwrap() {
+            let keys: Vec<&str> = member
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect();
+            assert_eq!(keys, ["id", "public", "wrapped_key"]);
+        }
+        let back: EpochFile = serde_json::from_value(json).unwrap();
+        back.verify_first(&recovery.public()).unwrap();
+    }
+
+    /// An epoch's members as the tests change them.
+    type Seated = Vec<(String, MemberPublic, Option<Seat>)>;
+
+    /// A team: the recovery key, an admin (Ana, one PC) and a member (Luis,
+    /// one PC), plus the PCs and keys the tests below use.
+    struct Team {
+        recovery: MemberSecrets,
+        ana: MemberSecrets,
+        luis: MemberSecrets,
+        e1: EpochFile,
+    }
+
+    const ANA_PC: &str = "00000000000000a1";
+    const LUIS_PC: &str = "00000000000000b1";
+    const LUIS_LAPTOP: &str = "00000000000000b2";
+    const MARTA_PC: &str = "00000000000000c1";
+
+    fn person(name: &str) -> PersonId {
+        PersonId(
+            match name {
+                "ana" => "aaaaaaaaaaaaaaaa",
+                "luis" => "bbbbbbbbbbbbbbbb",
+                _ => "cccccccccccccccc",
+            }
+            .to_owned(),
+        )
+    }
+
+    fn seat(name: &str, role: Role) -> Option<Seat> {
+        Some(Seat {
+            person: person(name),
+            role,
+        })
+    }
+
+    impl Team {
+        fn new() -> Self {
+            let (_, recovery) = with_language(UiLanguage::English, || new_recovery().unwrap());
+            let (ana, ana_public) = pc();
+            let (luis, luis_public) = pc();
+            let e1 = EpochFile::create_seated(
+                &VaultKey::generate(1).unwrap(),
+                &[
+                    (RECOVERY_ID.to_owned(), recovery.public(), None),
+                    (ANA_PC.to_owned(), ana_public, seat("ana", Role::Admin)),
+                    (LUIS_PC.to_owned(), luis_public, seat("luis", Role::Member)),
+                ],
+                RECOVERY_ID,
+                &recovery,
+            )
+            .unwrap();
+            e1.verify_first(&recovery.public()).unwrap();
+            Self {
+                recovery,
+                ana,
+                luis,
+                e1,
+            }
+        }
+
+        /// Epoch 1's members, changed by `change`, signed by `signer`.
+        fn next(&self, signer: &str, change: impl FnOnce(&mut Seated)) -> EpochFile {
+            let mut members: Vec<_> = self
+                .e1
+                .members
+                .iter()
+                .map(|m| (m.id.clone(), m.public.clone(), m.seat()))
+                .collect();
+            change(&mut members);
+            let keys = match signer {
+                ANA_PC => &self.ana,
+                LUIS_PC => &self.luis,
+                _ => &self.recovery,
+            };
+            EpochFile::create_seated(&VaultKey::generate(2).unwrap(), &members, signer, keys)
+                .unwrap()
+        }
+    }
+
+    fn set_role(members: &mut Seated, id: &str, role: Role) {
+        let member = members.iter_mut().find(|m| m.0 == id).unwrap();
+        member.2.as_mut().unwrap().role = role;
+    }
+
+    #[test]
+    fn a_team_admin_adds_removes_and_changes_roles() {
+        let team = Team::new();
+        // Marta joins (an invite Ana made), and Luis becomes an admin.
+        let grown = team.next(ANA_PC, |m| {
+            m.push((MARTA_PC.into(), pc().1, seat("marta", Role::Member)));
+            set_role(m, LUIS_PC, Role::Admin);
+        });
+        team.e1.verify_next(&grown).unwrap();
+        // Ana removes Luis.
+        let smaller = team.next(ANA_PC, |m| m.retain(|m| m.0 != LUIS_PC));
+        team.e1.verify_next(&smaller).unwrap();
+        // The recovery key may do anything but leave.
+        team.e1
+            .verify_next(&team.next(RECOVERY_ID, |m| m.retain(|m| m.0 != ANA_PC)))
+            .unwrap();
+        assert_eq!(
+            team.e1
+                .verify_next(&team.next(ANA_PC, |m| m.retain(|m| m.0 != RECOVERY_ID))),
+            Err(VaultError::Untrusted(Distrust::Members))
+        );
+    }
+
+    #[test]
+    fn a_team_member_only_adds_or_removes_their_own_pcs() {
+        let team = Team::new();
+        let refused = Err(VaultError::Untrusted(Distrust::Members));
+        let laptop = pc().1;
+
+        // Their own new laptop, as a member: fine. Leaving: fine.
+        let own = team.next(LUIS_PC, |m| {
+            m.push((
+                LUIS_LAPTOP.into(),
+                laptop.clone(),
+                seat("luis", Role::Member),
+            ));
+        });
+        team.e1.verify_next(&own).unwrap();
+        let leaves = team.next(LUIS_PC, |m| m.retain(|m| m.0 != LUIS_PC));
+        team.e1.verify_next(&leaves).unwrap();
+
+        // Their laptop as an admin, or a PC for someone else, or a newcomer.
+        for (id, seat) in [
+            (LUIS_LAPTOP, seat("luis", Role::Admin)),
+            (LUIS_LAPTOP, seat("ana", Role::Admin)),
+            (MARTA_PC, seat("marta", Role::Member)),
+        ] {
+            let added = team.next(LUIS_PC, |m| m.push((id.into(), laptop.clone(), seat)));
+            assert_eq!(team.e1.verify_next(&added), refused, "{id}");
+        }
+        // Promoting themselves, demoting or removing the admin.
+        assert_eq!(
+            team.e1
+                .verify_next(&team.next(LUIS_PC, |m| set_role(m, LUIS_PC, Role::Admin))),
+            refused
+        );
+        assert_eq!(
+            team.e1
+                .verify_next(&team.next(LUIS_PC, |m| set_role(m, ANA_PC, Role::Member))),
+            refused
+        );
+        assert_eq!(
+            team.e1
+                .verify_next(&team.next(LUIS_PC, |m| m.retain(|m| m.0 != ANA_PC))),
+            refused
+        );
+        // Moving a PC to another person, or changing its keys.
+        assert_eq!(
+            team.e1.verify_next(&team.next(LUIS_PC, |m| {
+                m.iter_mut().find(|m| m.0 == LUIS_PC).unwrap().2 = seat("ana", Role::Admin);
+            })),
+            refused
+        );
+        assert_eq!(
+            team.e1.verify_next(&team.next(ANA_PC, |m| {
+                m.iter_mut().find(|m| m.0 == LUIS_PC).unwrap().1 = laptop.clone();
+            })),
+            refused
+        );
+    }
+
+    #[test]
+    fn team_seats_must_hold_together() {
+        let team = Team::new();
+        let refused = Err(VaultError::Untrusted(Distrust::Members));
+        let check = |change: &dyn Fn(&mut Seated)| {
+            team.e1.verify_next(&team.next(RECOVERY_ID, |m| change(m)))
+        };
+        // A PC with no seat in a team; the recovery key with one.
+        assert_eq!(check(&|m| m.push((MARTA_PC.into(), pc().1, None))), refused);
+        assert_eq!(check(&|m| m[0].2 = seat("marta", Role::Admin)), refused);
+        // One person, two roles; a person id that is not one.
+        assert_eq!(
+            check(&|m| m.push((LUIS_LAPTOP.into(), pc().1, seat("luis", Role::Admin)))),
+            refused
+        );
+        assert_eq!(
+            check(&|m| {
+                m.push((
+                    MARTA_PC.into(),
+                    pc().1,
+                    Some(Seat {
+                        person: PersonId("../marta".into()),
+                        role: Role::Member,
+                    }),
+                ))
+            }),
+            refused
+        );
+        // A person without a role (a file written by hand).
+        let mut half = team.e1.clone();
+        half.members[2].role = None;
+        assert_eq!(half.valid_members(), refused);
+        // A personal vault never turns into a team without its words.
+        let personal = EpochFile::create(
+            &VaultKey::generate(1).unwrap(),
+            &[
+                (RECOVERY_ID.to_owned(), team.recovery.public()),
+                (ANA_PC.to_owned(), team.ana.public()),
+            ],
+            RECOVERY_ID,
+            &team.recovery,
+        )
+        .unwrap();
+        let seated = EpochFile::create_seated(
+            &VaultKey::generate(2).unwrap(),
+            &[
+                (RECOVERY_ID.to_owned(), team.recovery.public(), None),
+                (
+                    ANA_PC.to_owned(),
+                    team.ana.public(),
+                    seat("ana", Role::Admin),
+                ),
+            ],
+            ANA_PC,
+            &team.ana,
+        )
+        .unwrap();
+        assert_eq!(personal.verify_next(&seated), refused);
     }
 }

@@ -14,6 +14,8 @@ use std::cmp::Ordering;
 
 use serde::{Deserialize, Serialize};
 
+use super::team::Seat;
+
 /// Stamps of the versions a change replaced that it carries, newest first:
 /// enough to recognise a PC's own edits after a few more, small enough to
 /// keep snapshots light.
@@ -21,6 +23,27 @@ pub const HISTORY_MAX: usize = 8;
 
 /// The recovery key's member id in key epochs (every other member is a PC).
 pub const RECOVERY_MEMBER: &str = "recovery";
+
+/// A member of a key epoch as the engine sees it: a PC or the recovery
+/// key, its public keys (as the vault writes them) and, in a team, whose PC
+/// it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EpochMember {
+    pub id: String,
+    pub public: String,
+    pub seat: Option<Seat>,
+}
+
+impl EpochMember {
+    /// A member of a personal vault: no person, no role.
+    pub fn new(id: impl Into<String>, public: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            public: public.into(),
+            seat: None,
+        }
+    }
+}
 
 /// A PC in the sync repo: random, never derived from the machine.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

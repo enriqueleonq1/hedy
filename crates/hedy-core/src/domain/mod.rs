@@ -31,6 +31,7 @@ pub mod ship;
 pub mod skill;
 pub mod sync;
 pub mod task;
+pub mod team;
 pub mod template;
 pub mod theme;
 pub mod version;

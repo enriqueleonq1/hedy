@@ -30,9 +30,9 @@ use serde::{Deserialize, Serialize};
 use super::ports::{SyncConflict, SyncLink, SyncLock, TemplateRecord};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::sync::{
-    Batch, Change, DeviceId, Former, ItemKind, Merge, NoteBody, RECOVERY_MEMBER, RepoIdentity,
-    Scope, SkillBody, Snapshot, Stamp, TemplateBody, ThemeBody, Version, layout, merge,
-    url_has_credentials,
+    Batch, Change, DeviceId, EpochMember, Former, ItemKind, Merge, NoteBody, RECOVERY_MEMBER,
+    RepoIdentity, Scope, SkillBody, Snapshot, Stamp, TemplateBody, ThemeBody, Version, layout,
+    merge, url_has_credentials,
 };
 use crate::domain::theme::{CustomTheme, new_theme_id};
 use crate::tr;
@@ -402,8 +402,8 @@ impl Hedy {
         let (words, recovery) = self.sync_crypto.new_recovery()?;
         let recovery_public = self.sync_crypto.member_public(&recovery)?;
         let members = [
-            (RECOVERY_MEMBER.to_owned(), recovery_public.clone()),
-            (device.0.clone(), self.sync_crypto.member_public(&me)?),
+            EpochMember::new(RECOVERY_MEMBER, recovery_public.clone()),
+            EpochMember::new(device.as_str(), self.sync_crypto.member_public(&me)?),
         ];
         let (file, key) = self
             .sync_crypto
@@ -472,7 +472,10 @@ impl Hedy {
         let device = DeviceId(self.sync_crypto.random_hex(8)?);
         let me = self.sync_crypto.new_member()?;
         let (_, mut members) = self.sync_crypto.epoch_members(last_file)?;
-        members.push((device.0.clone(), self.sync_crypto.member_public(&me)?));
+        members.push(EpochMember::new(
+            device.as_str(),
+            self.sync_crypto.member_public(&me)?,
+        ));
         let next = last + 1;
         let (file, key) = self
             .sync_crypto
@@ -713,7 +716,7 @@ impl Hedy {
             let (_, members) = self.sync_crypto.epoch_members(file)?;
             if !members
                 .iter()
-                .any(|(id, public)| id == RECOVERY_MEMBER && *public == recovery)
+                .any(|m| m.id == RECOVERY_MEMBER && m.public == recovery)
             {
                 break;
             }
@@ -762,7 +765,7 @@ impl Hedy {
             current,
             projects,
             project_ids,
-            members: members.into_iter().collect(),
+            members: members.into_iter().map(|m| (m.id, m.public)).collect(),
             twins: RefCell::default(),
             made: RefCell::default(),
             former: RefCell::default(),
@@ -1692,14 +1695,21 @@ impl Hedy {
                 current: String::new(),
                 projects: HashMap::new(),
                 project_ids: HashMap::new(),
-                members: members.iter().cloned().collect(),
+                members: members
+                    .iter()
+                    .map(|m| (m.id.clone(), m.public.clone()))
+                    .collect(),
                 twins: RefCell::default(),
                 made: RefCell::default(),
                 former: RefCell::default(),
                 twin_digests: RefCell::default(),
                 keys: keys.epochs.values().cloned().collect(),
             };
-            for (id, _) in members.into_iter().filter(|(id, _)| id != RECOVERY_MEMBER) {
+            for id in members
+                .into_iter()
+                .map(|m| m.id)
+                .filter(|id| id != RECOVERY_MEMBER)
+            {
                 let id = DeviceId(id);
                 let info: Option<DeviceInfo> = self
                     .open_signed(&session, &id, &layout::device_info(&id))
@@ -1793,9 +1803,9 @@ impl Hedy {
             return Err(AppError::SyncBusy);
         }
         let (_, members) = self.sync_crypto.epoch_members(&file)?;
-        let remaining: Vec<(String, String)> = members
+        let remaining: Vec<EpochMember> = members
             .into_iter()
-            .filter(|(id, _)| id != device.id.as_str())
+            .filter(|m| m.id != device.id.as_str())
             .collect();
         let (next, _) =
             self.sync_crypto
