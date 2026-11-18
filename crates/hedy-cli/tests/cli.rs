@@ -2039,3 +2039,29 @@ fn a_closed_pipe_ends_quietly() {
         .unwrap();
     assert!(!String::from_utf8_lossy(&out.stderr).contains("panicked"));
 }
+
+#[test]
+fn team_without_a_team_explains_how_and_refuses_the_rest() {
+    let env = Env::new();
+    env.hedy(&["team"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no está en ningún equipo"))
+        .stdout(predicate::str::contains("hedy team create"));
+    for args in [["team", "now"], ["team", "notes"], ["team", "invite"]] {
+        env.hedy(&args)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("ningún equipo"));
+    }
+    // A typo in the code is caught before anything is cloned.
+    env.hedy(&["team", "join", "/no/existe.git", "7-zzzz", "--me", "Ana"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no es un código de invitación"));
+    // A role is one of the two.
+    env.hedy(&["team", "role", "Ana"]).assert().failure();
+    env.hedy(&["team", "role", "Ana", "--admin", "--member"])
+        .assert()
+        .failure();
+}
