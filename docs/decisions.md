@@ -2574,7 +2574,8 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
     has them).
 - **Two roles:**
   - an **admin** invites, removes and reviews the team layer;
-  - a **member** adds or removes only their own PCs.
+  - a **member** adds or removes only their own PCs. Their PC asks, and an admin's PC signs
+    the change on its next sync, with nobody approving by hand (see T1).
 
   The team has its own 12 recovery words, meant for the team's password manager. Without
   them, a team whose admins all lose their PCs is locked forever.
@@ -2603,44 +2604,100 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
 ### Phase T1: seats, roles and invites
 
 - **Seats** (`domain::team`, `adapters::vault`):
-  - Each member of a team epoch carries `person` (16 hex, random) and `role`
-    (`admin`/`member`).
-  - A personal vault has no seats. Its epoch files serialize exactly as before, so their
-    signatures still verify.
+  - A team's epoch says so (`"team": true`, signed). Each of its PCs carries `person`
+    (16 hex, random) and `role` (`admin`/`member`).
+  - A personal vault has neither, and its epoch files serialize byte for byte as before. A
+    test holds two files written by the code before teams (`adapters/testdata`).
   - Seats must hold together:
-    - every PC has a seat, or none does;
-    - the recovery key has none;
-    - all of a person's PCs share one role.
+    - in a team, every PC has a seat; in a personal vault, none does;
+    - the recovery key has no seat;
+    - all of a person's PCs share one role;
+    - no two members share a key.
+  - A field the format does not know is refused, so nothing travels outside the signature.
 - **`verify_next`** keeps every earlier rule: the next number, a signer from the epoch
   before, and the recovery key kept unchanged. Then:
-  - the recovery key may change anything else;
-  - every member that stays keeps its keys and its person;
+  - the recovery key may change anything else, even turn a vault into a team's;
+  - any other signer keeps the vault what it was, and every PC that stays keeps its keys and
+    its person;
   - a personal PC (no seat) only removes, as before;
   - an admin's PC adds, removes and changes roles;
-  - a member's PC adds or removes only its own person's PCs, with the person's role. It can
-    neither promote itself nor touch anyone else.
+  - **a member's PC signs no epoch.** A first version let it add or remove its own person's
+    PCs. The security review showed that a PC writing an epoch re-wraps the key for
+    everyone, and nobody can check another member's wrapped key. A member could wrap junk
+    for an admin, or for the recovery key, and lock them out, which is a removal its role
+    forbids. A member's changes to their own PCs are now requests that an admin's PC signs
+    (T2).
 - **Invites** (`adapters::invite`):
-  - **The code:** a number naming the invite plus 4 BIP39 words (44 bits). The words are kept
-    without accents but with their `ñ`, and both lists are read back. A typo is caught
-    before any attempt, so it never burns the invite.
+  - **The code:** a number naming the invite plus 4 BIP39 words (44 bits).
+    - The words are kept without accents but with their `ñ`, and both lists are read back.
+    - Words may be apart by spaces, dashes or any punctuation.
+    - A typo is caught before any attempt, so it never burns the invite.
   - **The check:** SPAKE2 over Ed25519 (RustCrypto's `spake2` 0.4, the one Magic Wormhole's
-    Rust port uses). The inviting PC writes its message in the invite and keeps a 32-byte
-    seed in the keyring, from which its side is rebuilt after a restart (`ChaCha20Rng`). The
-    joiner answers with its own message.
-  - **The shared key:** HKDF of SPAKE2's output, used like an epoch key under epoch 0, which
-    no vault uses. A wrong code gives a different key, so the joiner's sealed request does not
-    open.
+    Rust port uses).
+    - The inviting PC writes its message in the invite, and the joiner answers with its own.
+    - The inviting PC keeps a 32-byte seed in the keyring and rebuilds its side from it
+      after a restart (`ChaCha20Rng`).
+    - Both identities carry a context (the team repo), so an invite answers for one repo
+      only.
+  - **The shared key** is an `InviteKey`: HKDF of SPAKE2's output, written `invite:…`.
+    - It seals under epoch 0, which `vault::open` and `VaultKey::decode` refuse. What a
+      joiner seals, someone not trusted yet, never opens as a vault file.
+    - A wrong code gives a different key, so the request does not open.
   - **Caveat:** `spake2` has never had an independent audit (its README says so). It is
-    built on `curve25519-dalek`, which has. The crate stays behind the `SyncCrypto` port, so
-    it can be swapped (CPace, for instance).
+    built on `curve25519-dalek`, which has. It stays behind the `SyncCrypto` port, so it can
+    be swapped (CPace, for instance).
 - **Hidden characters** (`domain::team::hidden_chars`, `reveal_hidden`):
   - Flagged:
     - direction overrides (Trojan Source);
     - zero-width and other invisible format characters;
-    - Unicode tags and variation selectors, which can spell out hidden instructions;
+    - line and paragraph separators;
+    - blank lookalikes;
+    - private-use characters;
+    - Unicode tags and variation selectors;
     - control characters.
-  - Allowed: emoji joiners and selectors between emoji, and `\r\n`.
-  - A reviewer sees each one as `⟦U+202E⟧`.
+  - Allowed, because they are how ordinary emoji are written:
+    - joiners between emoji (❤️‍🔥);
+    - presentation selectors after a symbol (1️⃣, ▶️, ↩︎);
+    - the tags of a subdivision flag;
+    - `\r\n`.
+  - Still refused: ZWNJ and the direction marks that Persian or Arabic text uses. The author
+    rewrites the note.
+  - A reviewer sees each hidden character as `⟦U+202E⟧`.
+- **Personal sync never joins a team's repo with the 12 words** ("ese repo es de un equipo:
+  únete a él con una invitación"). Its epoch would have no seat, and every PC would refuse it.
 - **Found on the way:** Spanish recovery words typed without accents were refused. The
   BIP39 list writes accents as separate marks, which `fold_word` did not remove. The app's
-  word check had the same problem. Both are fixed, with tests.
+  and the CLI's word checks had the same problem. All three are fixed, with tests.
+
+**Housekeeping:**
+- **Two reviews:**
+  - security, with proof-of-concept tests;
+  - correctness, which ran old and new binaries against one repo. A new PC joined an old
+    PC's repo with the words in capitals and without accents, both synced, and the new one
+    removed a PC that the old one then dropped.
+- **Fixed:**
+  - a member's PC could lock out an admin, or the recovery key, with a junk wrapped key
+    (high). Members now sign nothing;
+  - an admin's PC could turn a team into a personal vault, where any PC removes anyone. The
+    kind is now signed in the epoch, and only the recovery key changes it;
+  - the invite key opened like a vault key;
+  - a member could reuse another member's keys;
+  - unknown fields rode outside the signature;
+  - the lint blocked ordinary emoji (keycaps, ❤️‍🔥, subdivision flags) and missed some
+    carriers;
+  - joining a team with the words wrote an epoch that every PC refused.
+- **Left for T2:**
+  - **Give the joiner its root of trust.** The inviting PC's answer, sealed with the shared
+    key, carries the team's recovery public key and the pins of its epochs. Without them, a
+    git host could hand the joiner a chain of its own.
+  - **Burn the invite before `accept`.** Each call is one guess, so a crash in between must
+    not allow another.
+  - **Refuse to leave a team without admins:** warn before the last admin leaves or demotes
+    themselves.
+  - **Show team notes as raw text** when they are reviewed. Markdown hides HTML comments and
+    link definitions that the agent would still read.
+- **Known limits, unchanged from §34:**
+  - Someone who still has push access after being removed can race the removal epoch.
+  - Pins are digests of the raw file, so whitespace or an explicit `null` changes them under
+    the same signature. Anyone with push access could therefore stop a sync, which they can
+    do by other means as well.
