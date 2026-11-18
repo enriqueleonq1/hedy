@@ -38,13 +38,19 @@ fn redirects_git(name: &str) -> bool {
     ) || name.starts_with("GIT_CONFIG")
 }
 
-fn git(dir: &Path, args: &[&str]) -> PortResult<Output> {
-    let mut command = Command::new("git");
+/// Removes the environment variables that would point git at another repo
+/// or config (a git hook's `GIT_DIR`, `GIT_CONFIG_*`).
+pub(crate) fn clear_git_redirects(command: &mut Command) {
     for (name, _) in std::env::vars_os() {
         if name.to_str().is_some_and(redirects_git) {
             command.env_remove(name);
         }
     }
+}
+
+fn git(dir: &Path, args: &[&str]) -> PortResult<Output> {
+    let mut command = Command::new("git");
+    clear_git_redirects(&mut command);
     command
         .args([
             "-c",

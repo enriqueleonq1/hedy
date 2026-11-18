@@ -11,7 +11,7 @@ use crate::application::ports::{
 };
 use crate::application::testing::{Fixture, SyncServer};
 use crate::application::themes::NewTheme;
-use crate::domain::sync::MemoryHome;
+use crate::domain::sync::{MemoryHome, Owners};
 use crate::domain::theme::{ThemeBase, ThemeOrigin};
 use crate::domain::{Category, NoteStatus};
 
@@ -773,7 +773,11 @@ fn a_project_made_personal_later_brings_its_notes() {
     office.hedy.sync_now().unwrap();
     assert_eq!(texts(&office, Some(&office_tienda)), ["de la oficina"]);
 
-    // Back to following its owner, the user (the sync repo's owner).
+    // Back to following its owner, which the user says is theirs.
+    office
+        .hedy
+        .answer_owner("github.com/tu-usuario", true)
+        .unwrap();
     office.hedy.set_memory_home(&office_tienda, None).unwrap();
     office.hedy.sync_now().unwrap();
     home.hedy.sync_now().unwrap();
@@ -1153,39 +1157,82 @@ fn a_new_owners_project_waits_for_the_answer() {
         .add_note(Some(&home_app), "Regla del cliente", Category::Rule)
         .unwrap();
     let status = home.hedy.memory_home_status(&home_app).unwrap();
-    assert_eq!(status.ask.as_deref(), Some("empresa-org"));
+    assert_eq!(status.ask.as_deref(), Some("github.com/empresa-org"));
 
     // Not answered, or shared: it never leaves this PC.
     assert_eq!(home.hedy.sync_now().unwrap().sent, 0);
-    home.hedy.answer_owner("empresa-org", false).unwrap();
+    home.hedy
+        .answer_owner("github.com/empresa-org", false)
+        .unwrap();
     assert_eq!(home.hedy.sync_now().unwrap().sent, 0);
 
     // The user's own after all: it syncs where the owner is also the user's.
-    home.hedy.answer_owner("empresa-org", true).unwrap();
+    home.hedy
+        .answer_owner("github.com/empresa-org", true)
+        .unwrap();
     assert_eq!(home.hedy.sync_now().unwrap().sent, 1);
     office.hedy.sync_now().unwrap();
     assert!(texts(&office, Some(&office_app)).is_empty());
-    office.hedy.answer_owner("empresa-org", true).unwrap();
+    office
+        .hedy
+        .answer_owner("github.com/empresa-org", true)
+        .unwrap();
     office.hedy.sync_now().unwrap();
     assert_eq!(texts(&office, Some(&office_app)), ["Regla del cliente"]);
 }
 
 #[test]
-fn the_sync_repos_owner_counts_as_the_user() {
+fn nobody_is_the_users_until_the_user_says_so() {
     let (_server, (home, home_tienda), _) = two_pcs();
     home.hedy.set_memory_home(&home_tienda, None).unwrap();
     let status = home.hedy.memory_home_status(&home_tienda).unwrap();
-    assert_eq!(
-        (status.home, status.chosen),
-        (Some(MemoryHome::Personal), false)
-    );
-    assert!(home.hedy.repo_owners().unwrap().mine.contains("tu-usuario"));
+    assert_eq!(status.ask.as_deref(), Some("github.com/tu-usuario"));
+    assert_eq!(home.hedy.repo_owners().unwrap(), Owners::default());
 }
 
-/// Three PCs edit notes in their own project ("tienda", whose memory moves
-/// at random between personal, local and following its owner) and in a
-/// client's ("cliente", shared). A client note never reaches another PC, and
-/// once "tienda" is personal everywhere the PCs agree on it.
+#[test]
+fn a_sync_repo_in_an_organization_keeps_its_projects_shared() {
+    let server = SyncServer::default();
+    let (home, app) = pc(&server, "/a/app");
+    home.source
+        .set_remotes(&[("origin", "git@github.com:empresa-org/app.git")]);
+    home.hedy
+        .answer_owner("github.com/empresa-org", false)
+        .unwrap();
+    home.hedy
+        .add_note(Some(&app), "Regla de la empresa", Category::Rule)
+        .unwrap();
+    home.hedy
+        .sync_setup("git@github.com:empresa-org/hedy-memory.git", "Casa")
+        .unwrap();
+    assert_eq!(
+        home.hedy.memory_home_status(&app).unwrap().home,
+        Some(MemoryHome::Shared("github.com/empresa-org".into()))
+    );
+    assert_eq!(home.hedy.sync_now().unwrap().sent, 0);
+}
+
+#[test]
+fn the_same_owner_on_a_company_server_is_not_the_user() {
+    let (_server, (home, _), (office, _)) = two_pcs();
+    home.hedy
+        .answer_owner("github.com/tu-usuario", true)
+        .unwrap();
+    home.fs.add_git_root("/a/interna");
+    let interna = home.dir("/a/interna");
+    home.hedy.use_account(&interna, "personal", None).unwrap();
+    home.source.set_remotes_of(
+        &interna,
+        &[("origin", "git@gitlab.empresa.com:tu-usuario/interna.git")],
+    );
+    home.hedy
+        .add_note(Some(&interna), "Código de la empresa", Category::Rule)
+        .unwrap();
+    assert_eq!(home.hedy.sync_now().unwrap().sent, 0);
+    office.hedy.sync_now().unwrap();
+    assert!(texts(&office, None).is_empty());
+}
+
 #[test]
 fn random_memory_homes_never_leak_a_shared_project() {
     for seed in 1..=8u64 {
@@ -1200,7 +1247,13 @@ fn random_memory_homes_never_leak_a_shared_project() {
                 &cliente,
                 &[("origin", "git@github.com:cliente-sa/portal.git")],
             );
-            f.hedy.answer_owner("cliente-sa", false).unwrap();
+            f.hedy.answer_owner("github.com/cliente-sa", false).unwrap();
+            // "Following its owner" makes "tienda" personal.
+            f.hedy.answer_owner("github.com/tu-usuario", true).unwrap();
+            assert_eq!(
+                f.hedy.memory_home_status(&cliente).unwrap().home,
+                Some(MemoryHome::Shared("github.com/cliente-sa".into()))
+            );
             pcs.push((f, tienda, cliente, i));
         }
         let words = pcs[0].0.hedy.sync_setup(URL, "pc0").unwrap();

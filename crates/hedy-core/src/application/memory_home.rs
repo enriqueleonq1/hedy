@@ -1,7 +1,8 @@
 //! Where each project's memory lives (docs/decisions.md §34): the user's
-//! own choice for a project, else what its repo's owner says
-//! ([`derive_home`]). Answers are kept per owner, so one answer covers every
-//! repo of that owner, on this PC and in later projects.
+//! own choice for a project, else what its repos' owners say
+//! ([`derive_home`]). Answers are kept per owner and server, so one answer
+//! covers every repo of that owner, on this PC and in later projects. Nobody
+//! is the user's until the user says so.
 
 use std::path::Path;
 
@@ -18,7 +19,8 @@ pub struct MemoryHomeStatus {
     pub home: Option<MemoryHome>,
     /// The user chose it for this project (it wins over its owner).
     pub chosen: bool,
-    /// The owner to ask about ("¿La memoria de … es solo tuya?").
+    /// The owner to ask about ("¿La memoria de … es solo tuya?"), as its
+    /// owner key (`github.com/empresa-org`).
     pub ask: Option<String>,
 }
 
@@ -50,18 +52,23 @@ impl Hedy {
         self.save_owners(&owners)
     }
 
-    /// Who owns the repo of the project in `path`, by `remote`.
-    fn repo_identity(&self, path: &Path, remote: &str) -> Option<RepoIdentity> {
-        let url = self.source.remote_url(path, remote).ok().flatten()?;
-        RepoIdentity::from_url(&url)
+    /// Who owns each remote of the project in `path`; `None` for one that
+    /// does not say (or cannot be read), which keeps the project here.
+    fn remote_owners(&self, path: &Path) -> Vec<Option<RepoIdentity>> {
+        let Ok(names) = self.source.remotes(path) else {
+            return vec![None];
+        };
+        names
+            .iter()
+            .map(|name| {
+                let url = self.source.remote_url(path, name).ok().flatten()?;
+                RepoIdentity::from_url(&url)
+            })
+            .collect()
     }
 
     fn derived_home(&self, path: &Path) -> AppResult<DerivedHome> {
-        Ok(derive_home(
-            self.repo_identity(path, "origin").as_ref(),
-            self.repo_identity(path, "upstream").as_ref(),
-            &self.repo_owners()?,
-        ))
+        Ok(derive_home(&self.remote_owners(path), &self.repo_owners()?))
     }
 
     pub fn memory_home_status(&self, project: &Path) -> AppResult<MemoryHomeStatus> {
@@ -115,33 +122,35 @@ mod tests {
     use super::*;
     use crate::application::testing::Fixture;
 
-    fn project(
-        f: &Fixture,
-        path: &str,
-        origin: &str,
-        upstream: Option<&str>,
-    ) -> std::path::PathBuf {
+    fn project(f: &Fixture, path: &str, remotes: &[(&str, &str)]) -> std::path::PathBuf {
         f.add_claude("Personal");
         f.fs.add_git_root(path);
         let dir = f.dir(path);
         f.hedy.use_account(&dir, "personal", None).unwrap();
-        let mut remotes = vec![("origin", origin)];
-        remotes.extend(upstream.map(|u| ("upstream", u)));
-        f.source.set_remotes(&remotes);
+        f.source.set_remotes(remotes);
         dir
     }
 
     #[test]
     fn a_new_owner_asks_once_and_the_answer_covers_its_repos() {
         let f = Fixture::new();
-        let app = project(&f, "/w/app", "git@github.com:empresa-org/app.git", None);
+        let app = project(
+            &f,
+            "/w/app",
+            &[("origin", "git@github.com:empresa-org/app.git")],
+        );
         let status = f.hedy.memory_home_status(&app).unwrap();
-        assert_eq!(status.ask.as_deref(), Some("empresa-org"));
+        assert_eq!(status.ask.as_deref(), Some("github.com/empresa-org"));
         assert_eq!(status.home, None);
 
-        f.hedy.answer_owner("empresa-org", false).unwrap();
+        f.hedy
+            .answer_owner("github.com/empresa-org", false)
+            .unwrap();
         let status = f.hedy.memory_home_status(&app).unwrap();
-        assert_eq!(status.home, Some(MemoryHome::Shared("empresa-org".into())));
+        assert_eq!(
+            status.home,
+            Some(MemoryHome::Shared("github.com/empresa-org".into()))
+        );
         assert!(!status.chosen && status.ask.is_none());
 
         // The user's own choice for the project wins, until cleared.
@@ -154,26 +163,45 @@ mod tests {
             (Some(MemoryHome::Local), true)
         );
         f.hedy.set_memory_home(&app, None).unwrap();
-        f.hedy.forget_owner("empresa-org").unwrap();
+        f.hedy.forget_owner("github.com/empresa-org").unwrap();
         assert!(f.hedy.memory_home_status(&app).unwrap().ask.is_some());
     }
 
     #[test]
-    fn a_fork_follows_the_repo_it_came_from() {
+    fn a_fork_follows_any_remote_of_a_group() {
         let f = Fixture::new();
         let fork = project(
             &f,
             "/w/app",
-            "git@github.com:tu-usuario/app.git",
-            Some("https://github.com/empresa-org/app"),
+            &[
+                ("origin", "git@github.com:tu-usuario/app.git"),
+                ("empresa", "https://github.com/empresa-org/app"),
+            ],
         );
-        f.hedy.answer_owner("tu-usuario", true).unwrap();
+        f.hedy.answer_owner("github.com/tu-usuario", true).unwrap();
         let status = f.hedy.memory_home_status(&fork).unwrap();
-        assert_eq!(status.ask.as_deref(), Some("empresa-org"));
-        f.hedy.answer_owner("empresa-org", false).unwrap();
+        assert_eq!(status.ask.as_deref(), Some("github.com/empresa-org"));
+        f.hedy
+            .answer_owner("github.com/empresa-org", false)
+            .unwrap();
         assert_eq!(
             f.hedy.effective_memory_home(&fork).unwrap(),
-            Some(MemoryHome::Shared("empresa-org".into()))
+            Some(MemoryHome::Shared("github.com/empresa-org".into()))
         );
+    }
+
+    #[test]
+    fn a_remote_that_does_not_say_its_owner_keeps_the_project_here() {
+        let f = Fixture::new();
+        let app = project(
+            &f,
+            "/w/app",
+            &[
+                ("origin", "git@github.com:tu-usuario/app.git"),
+                ("upstream", "git@git.empresa.com:app.git"),
+            ],
+        );
+        f.hedy.answer_owner("github.com/tu-usuario", true).unwrap();
+        assert_eq!(f.hedy.effective_memory_home(&app).unwrap(), None);
     }
 }

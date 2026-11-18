@@ -280,7 +280,11 @@ impl SyncRepository for SqliteStore {
                 |r| r.get::<_, Option<String>>(0),
             )
             .optional()
-            .map(|home| home.flatten().as_deref().and_then(MemoryHome::from_stored))
+            // A value this version cannot read keeps the memory here.
+            .map(|home| {
+                home.flatten()
+                    .map(|text| MemoryHome::from_stored(&text).unwrap_or(MemoryHome::Local))
+            })
         })
     }
 
@@ -485,6 +489,14 @@ mod tests {
         );
         store.set_memory_home(&project, None).unwrap();
         assert_eq!(store.memory_home(&project).unwrap(), None);
+        // An owner left empty does not read back as "not decided".
+        store
+            .set_memory_home(&project, Some(&MemoryHome::Shared(String::new())))
+            .unwrap();
+        assert_eq!(
+            store.memory_home(&project).unwrap(),
+            Some(MemoryHome::Local)
+        );
 
         let mut body = NoteBody {
             text: "USD 12.50".into(),

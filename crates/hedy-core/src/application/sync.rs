@@ -158,12 +158,19 @@ struct Session {
     keys: Vec<String>,
     /// The newest: what this PC seals with.
     current: String,
-    /// The first epoch's key: what names projects, the same in every epoch.
-    name_key: String,
     /// Sealed project id → the projects here with that remote.
     projects: HashMap<String, Vec<PathBuf>>,
+    /// The projects that sync, and their sealed id (worked out once per
+    /// sync: it reads each project's remotes).
+    project_ids: HashMap<PathBuf, String>,
     /// The PCs of the newest epoch and their public keys.
     members: HashMap<String, String>,
+}
+
+/// The projects that sync here, both ways round (see [`Session`]).
+struct SyncedProjects {
+    projects: HashMap<String, Vec<PathBuf>>,
+    project_ids: HashMap<PathBuf, String>,
 }
 
 fn json<T: Serialize>(value: &T) -> String {
@@ -399,10 +406,6 @@ impl Hedy {
         self.set_sync_setting(EPOCH, &epoch.to_string())?;
         self.set_sync_setting(PINS, &json(pins))?;
         self.set_sync_setting(SEQ, "0")?;
-        // The sync repo's owner is the user: their projects need no question.
-        if let Some(identity) = RepoIdentity::from_url(url) {
-            self.answer_owner(&identity.owner, true)?;
-        }
         // Last: what says the sync is set up.
         self.set_sync_setting(URL, url)
     }
@@ -608,15 +611,18 @@ impl Hedy {
             .cloned()
             .ok_or(AppError::SyncRemoved)?;
         let (_, members) = self.sync_crypto.epoch_members(&previous)?;
-        let projects = self.synced_projects(&name_key)?;
+        let SyncedProjects {
+            projects,
+            project_ids,
+        } = self.synced_projects(&name_key)?;
         Ok(Session {
             dir,
             device,
             me: keys.device.clone(),
             keys: keys.epochs.into_values().collect(),
             current,
-            name_key,
             projects,
+            project_ids,
             members: members.into_iter().collect(),
         })
     }
@@ -630,47 +636,51 @@ impl Hedy {
         }
     }
 
-    /// Projects whose memory is personal, by their sealed id. Two projects
-    /// here with the same remote share one.
-    fn synced_projects(&self, name_key: &str) -> AppResult<HashMap<String, Vec<PathBuf>>> {
+    /// The projects whose memory is personal here, by their sealed id (of
+    /// `origin`'s `owner/name`, what matches them on other PCs). Two
+    /// projects here with the same remote share one.
+    fn synced_projects(&self, name_key: &str) -> AppResult<SyncedProjects> {
         let mut projects: HashMap<String, Vec<PathBuf>> = HashMap::new();
+        let mut project_ids = HashMap::new();
         for project in self.store.list_projects()? {
-            let Some(identity) = self.synced_identity(&project.path)? else {
+            if !self
+                .effective_memory_home(&project.path)?
+                .is_some_and(|home| home.syncs())
+            {
+                continue;
+            }
+            let url = self
+                .source
+                .remote_url(&project.path, "origin")
+                .ok()
+                .flatten();
+            let Some(identity) = url.as_deref().and_then(RepoIdentity::from_url) else {
                 continue;
             };
             let id = self
                 .sync_crypto
                 .project_id(name_key, &identity.project_key())?;
-            projects.entry(id).or_default().push(project.path);
+            projects
+                .entry(id.clone())
+                .or_default()
+                .push(project.path.clone());
+            project_ids.insert(project.path, id);
         }
-        Ok(projects)
-    }
-
-    /// Who owns the project, when its memory is personal and it has a
-    /// remote to match it by on other PCs.
-    fn synced_identity(&self, project: &Path) -> AppResult<Option<RepoIdentity>> {
-        if !self
-            .effective_memory_home(project)?
-            .is_some_and(|home| home.syncs())
-        {
-            return Ok(None);
-        }
-        let url = self.source.remote_url(project, "origin").ok().flatten();
-        Ok(url.as_deref().and_then(RepoIdentity::from_url))
+        Ok(SyncedProjects {
+            projects,
+            project_ids,
+        })
     }
 
     /// The scope a local item syncs under; `None` when it stays here.
-    fn scope_of(&self, project: Option<&Path>, name_key: &str) -> AppResult<Option<Scope>> {
-        let Some(project) = project else {
-            return Ok(Some(Scope::Global));
-        };
-        let Some(identity) = self.synced_identity(project)? else {
-            return Ok(None);
-        };
-        Ok(Some(Scope::Project(
-            self.sync_crypto
-                .project_id(name_key, &identity.project_key())?,
-        )))
+    fn scope_of(session: &Session, project: Option<&Path>) -> Option<Scope> {
+        match project {
+            None => Some(Scope::Global),
+            Some(path) => session
+                .project_ids
+                .get(path)
+                .map(|id| Scope::Project(id.clone())),
+        }
     }
 
     /// Whether items of `scope` sync on this PC now.
@@ -692,7 +702,7 @@ impl Hedy {
                 .map(|p| Some(p.path)),
         );
         for place in &places {
-            let Some(scope) = self.scope_of(place.as_deref(), &session.name_key)? else {
+            let Some(scope) = Self::scope_of(session, place.as_deref()) else {
                 continue;
             };
             for note in self.store.notes(place.as_deref(), false)? {
@@ -731,7 +741,7 @@ impl Hedy {
             }
         }
         for record in self.store.template_records()? {
-            let Some(scope) = self.scope_of(record.project.as_deref(), &session.name_key)? else {
+            let Some(scope) = Self::scope_of(session, record.project.as_deref()) else {
                 continue;
             };
             let body = TemplateBody {
@@ -1243,8 +1253,8 @@ impl Hedy {
                 device: device.clone(),
                 me: keys.device.clone(),
                 current: String::new(),
-                name_key: String::new(),
                 projects: HashMap::new(),
+                project_ids: HashMap::new(),
                 members: members.iter().cloned().collect(),
                 keys: keys.epochs.values().cloned().collect(),
             };
@@ -1308,13 +1318,17 @@ impl Hedy {
         self.store.put_sync_item(&change)?;
         let keys = self.keys()?;
         let name_key = keys.epochs.values().next().cloned().unwrap_or_default();
+        let SyncedProjects {
+            projects,
+            project_ids,
+        } = self.synced_projects(&name_key)?;
         let session = Session {
             dir: self.sync_dir()?,
             device,
             me: keys.device.clone(),
             current: String::new(),
-            projects: self.synced_projects(&name_key)?,
-            name_key,
+            projects,
+            project_ids,
             members: HashMap::new(),
             keys: Vec::new(),
         };

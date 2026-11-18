@@ -362,10 +362,10 @@ pub mod layout {
     }
 }
 
-/// What the user said about repo owners, by owner (lowercase, without the
-/// host, like [`RepoIdentity::project_key`]): theirs, or a group's (a
-/// company, a client, a community). Each answer covers every repo of that
-/// owner.
+/// What the user said about repo owners, by [`RepoIdentity::owner_key`]
+/// (`github.com/tu-usuario`): theirs, or a group's (a company, a client, a
+/// community). Each answer covers every repo of that owner on that server;
+/// the same name on another server (a company's GitLab) is another owner.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Owners {
     #[serde(default)]
@@ -375,7 +375,8 @@ pub struct Owners {
 }
 
 impl Owners {
-    /// Records an answer about `owner`, replacing any earlier one.
+    /// Records an answer about `owner` (an owner key), replacing any earlier
+    /// one.
     pub fn answer(&mut self, owner: &str, mine: bool) {
         let owner = owner.to_lowercase();
         self.forget(&owner);
@@ -396,37 +397,38 @@ impl Owners {
 /// Where a project's memory lives when the user did not choose it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DerivedHome {
-    /// From an answer about its owner.
+    /// From the answers about its owners.
     Known(MemoryHome),
-    /// Its owner is new: ask whether its memory is the user's alone.
+    /// One of its owners is new: ask whether that owner's memory is the
+    /// user's alone.
     Ask(String),
-    /// No remote to match it by on other PCs: it stays here.
+    /// No remote, or one that does not say who owns it: it stays here.
     NoRemote,
 }
 
-/// Where a project's memory lives, from who owns its repo: the one it was
-/// forked from (`upstream`, when its owner differs from `origin`'s), else
-/// `origin`'s. A fork of a group's repo in the user's own account is still
-/// the group's.
-pub fn derive_home(
-    origin: Option<&RepoIdentity>,
-    upstream: Option<&RepoIdentity>,
-    owners: &Owners,
-) -> DerivedHome {
-    let Some(origin) = origin else {
+/// Where a project's memory lives, from who owns its repos: every remote
+/// counts (`origin`, and the one a fork came from, whatever its name).
+/// - any owner the user called shared: the group's;
+/// - any owner not answered yet: ask;
+/// - all of them the user's: personal.
+///
+/// A remote that does not say its owner (`None`: a local path, a server
+/// without owners) keeps the project here: the safe side.
+pub fn derive_home(remotes: &[Option<RepoIdentity>], owners: &Owners) -> DerivedHome {
+    let Some(remotes) = remotes.iter().cloned().collect::<Option<Vec<_>>>() else {
         return DerivedHome::NoRemote;
     };
-    let owner = match upstream {
-        Some(upstream) if upstream.owner != origin.owner => &upstream.owner,
-        _ => &origin.owner,
-    };
-    if owners.shared.contains(owner) {
-        DerivedHome::Known(MemoryHome::Shared(owner.clone()))
-    } else if owners.mine.contains(owner) {
-        DerivedHome::Known(MemoryHome::Personal)
-    } else {
-        DerivedHome::Ask(owner.clone())
+    if remotes.is_empty() {
+        return DerivedHome::NoRemote;
     }
+    let keys: Vec<String> = remotes.iter().map(RepoIdentity::owner_key).collect();
+    if let Some(shared) = keys.iter().find(|k| owners.shared.contains(*k)) {
+        return DerivedHome::Known(MemoryHome::Shared(shared.clone()));
+    }
+    if let Some(new) = keys.iter().find(|k| !owners.mine.contains(*k)) {
+        return DerivedHome::Ask(new.clone());
+    }
+    DerivedHome::Known(MemoryHome::Personal)
 }
 
 /// Who owns a repo, read from a remote's URL: what tells a personal project
@@ -482,6 +484,12 @@ impl RepoIdentity {
     /// host, so an SSH host alias (`github-work`) matches the real host.
     pub fn project_key(&self) -> String {
         format!("{}/{}", self.owner, self.name)
+    }
+
+    /// Who owns it, with its server: what an answer about an owner is kept
+    /// by (`github.com/tu-usuario` is not `gitlab.empresa.com/tu-usuario`).
+    pub fn owner_key(&self) -> String {
+        format!("{}/{}", self.host, self.owner)
     }
 }
 
@@ -626,46 +634,54 @@ mod tests {
     }
 
     #[test]
-    fn derives_where_a_projects_memory_lives_from_its_owner() {
-        let repo = |url: &str| RepoIdentity::from_url(url).unwrap();
+    fn derives_where_a_projects_memory_lives_from_its_owners() {
+        let repo = |url: &str| RepoIdentity::from_url(url);
         let mut owners = Owners::default();
         let mine = repo("git@github.com:tu-usuario/tienda.git");
         let work = repo("https://github.com/Empresa-Org/app");
-        assert_eq!(derive_home(None, None, &owners), DerivedHome::NoRemote);
+        assert_eq!(derive_home(&[], &owners), DerivedHome::NoRemote);
         assert_eq!(
-            derive_home(Some(&work), None, &owners),
-            DerivedHome::Ask("empresa-org".into())
+            derive_home(std::slice::from_ref(&work), &owners),
+            DerivedHome::Ask("github.com/empresa-org".into())
         );
 
-        owners.answer("Tu-Usuario", true);
-        owners.answer("empresa-org", false);
+        owners.answer("github.com/Tu-Usuario", true);
+        owners.answer("github.com/empresa-org", false);
         assert_eq!(
-            derive_home(Some(&mine), None, &owners),
+            derive_home(std::slice::from_ref(&mine), &owners),
             DerivedHome::Known(MemoryHome::Personal)
         );
-        assert_eq!(
-            derive_home(Some(&work), None, &owners),
-            DerivedHome::Known(MemoryHome::Shared("empresa-org".into()))
-        );
-        // A fork of the group's repo in the user's account is the group's.
+        // A fork: any remote of a group makes it the group's, whatever its name.
         let fork = repo("git@github.com:tu-usuario/app.git");
         assert_eq!(
-            derive_home(Some(&fork), Some(&work), &owners),
-            DerivedHome::Known(MemoryHome::Shared("empresa-org".into()))
+            derive_home(&[fork.clone(), work.clone()], &owners),
+            DerivedHome::Known(MemoryHome::Shared("github.com/empresa-org".into()))
         );
-        // An upstream with the same owner is just another remote.
+        // The same name on another server is another owner.
+        let gitlab = repo("git@gitlab.empresa.com:tu-usuario/herramienta.git");
         assert_eq!(
-            derive_home(Some(&mine), Some(&mine), &owners),
-            DerivedHome::Known(MemoryHome::Personal)
+            derive_home(&[gitlab], &owners),
+            DerivedHome::Ask("gitlab.empresa.com/tu-usuario".into())
+        );
+        // A remote that does not say its owner keeps it here.
+        assert_eq!(
+            derive_home(&[fork.clone(), None], &owners),
+            DerivedHome::NoRemote
+        );
+        // Any owner not answered yet asks, even next to the user's.
+        let other = repo("https://github.com/otra-org/app");
+        assert_eq!(
+            derive_home(&[mine, other], &owners),
+            DerivedHome::Ask("github.com/otra-org".into())
         );
 
-        // Changing an answer moves the owner; forgetting asks again.
-        owners.answer("empresa-org", true);
-        assert!(owners.mine.contains("empresa-org") && !owners.shared.contains("empresa-org"));
-        owners.forget("EMPRESA-ORG");
+        owners.answer("github.com/empresa-org", true);
+        assert!(owners.mine.contains("github.com/empresa-org"));
+        assert!(!owners.shared.contains("github.com/empresa-org"));
+        owners.forget("GITHUB.COM/EMPRESA-ORG");
         assert_eq!(
-            derive_home(Some(&work), None, &owners),
-            DerivedHome::Ask("empresa-org".into())
+            derive_home(&[work], &owners),
+            DerivedHome::Ask("github.com/empresa-org".into())
         );
     }
 
