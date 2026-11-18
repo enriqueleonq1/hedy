@@ -139,4 +139,13 @@ describe("Teams", () => {
     expect((await api.memory("/code/tienda")).proposed.some((p) => p.note.id === proposal.id)).toBe(false);
     expect(api.teamList[0]!.notes.some((n) => n.text === "Los webhooks del banco son idempotentes." && !n.teamLayer)).toBe(true);
   });
+
+  it("connects a project to a team from its memory card", async () => {
+    const { api, user } = renderAt("#m=%2Fcode%2Ftienda");
+    const home = await screen.findByRole("combobox", { name: "Memoria de este proyecto" });
+    await user.click(home);
+    await user.click(screen.getByRole("option", { name: /Equipo · Plataforma/ }));
+    expect(await screen.findByRole("radiogroup", { name: "Capa" })).toBeInTheDocument();
+    expect((await api.memoryHome("/code/tienda")).home).toEqual({ kind: "team", team: "team-1" });
+  });
 });

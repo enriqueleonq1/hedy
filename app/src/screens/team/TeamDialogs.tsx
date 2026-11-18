@@ -151,7 +151,7 @@ export function CreateTeamDialog({ onClose }: { onClose: () => void }) {
             <h3>{t("team.create.whereTitle")}</h3>
             <p className="muted">{t("team.create.whereText")}</p>
           </div>
-          <TextField id="team-url" label={t("sync.url.label")} value={url} mono placeholder={t("sync.url.placeholder")} onChange={setUrl} />
+          <TextField id="team-url" label={t("sync.url.label")} value={url} mono placeholder={t("team.url.placeholder")} onChange={setUrl} />
           <ul className="team-checks small muted">
             <li>{t("team.create.checkPrivate")}</li>
             <li>{t("team.create.checkEmpty")}</li>
@@ -260,7 +260,7 @@ export function JoinTeamDialog({ onClose }: { onClose: () => void }) {
       ) : (
         <>
           <p className="muted">{t("team.join.text")}</p>
-          <TextField id="team-join-url" label={t("team.join.url")} value={url} mono placeholder={t("sync.url.placeholder")} onChange={setUrl} />
+          <TextField id="team-join-url" label={t("team.join.url")} value={url} mono placeholder={t("team.url.placeholder")} onChange={setUrl} />
           <TextField id="team-join-code" label={t("team.join.code")} value={code} mono placeholder="7-tigre-lima-nube-faro" onChange={setCode} />
           <TextField id="team-join-me" label={t("team.me")} value={me} onChange={setMe} />
           <TextField id="team-join-pc" label={t("sync.name.label")} value={pc} onChange={setPc} />

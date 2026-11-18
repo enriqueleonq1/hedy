@@ -51,6 +51,7 @@ const es = {
   "team.words.text":
     "Guárdala en el gestor de contraseñas del equipo. Sin ella, un equipo cuyos admins pierden sus PCs queda cerrado para siempre. Solo se muestra ahora.",
 
+  "team.url.placeholder": "git@github.com:empresa/hedy-team.git",
   "team.join.title": "Unirme con una invitación",
   "team.join.hint": "Pega la invitación que te pasó alguien del equipo.",
   "team.join.text": "La dirección del repo y el código te los pasa alguien del equipo. El código sirve una vez.",
@@ -183,6 +184,7 @@ const en: Record<keyof typeof es, string> = {
   "team.words.text":
     "Keep it in the team's password manager. Without it, a team whose admins lose their PCs is locked forever. It is only shown now.",
 
+  "team.url.placeholder": "git@github.com:company/hedy-team.git",
   "team.join.title": "Join with an invite",
   "team.join.hint": "Paste the invite someone in the team gave you.",
   "team.join.text": "Someone in the team gives you the repo's address and the code. The code works once.",

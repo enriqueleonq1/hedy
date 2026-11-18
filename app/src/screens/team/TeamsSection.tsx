@@ -356,7 +356,7 @@ function PersonCard({ team, person, onRemove }: { team: TeamStatus; person: Team
           {person.devices.map((pc) => (
             <li key={pc.id} className="team-pc">
               <span>{pc.thisPc ? t("sync.thisPc") : pc.name.trim() || t("sync.unnamed")}</span>
-              <span className="muted"> · {pc.lastSync === null ? t("sync.notYet") : timeAgo(pc.lastSync, t)}</span>
+              <span className="muted">· {pc.lastSync === null ? t("sync.notYet") : timeAgo(pc.lastSync, t)}</span>
               {(admin || person.me) && !pc.thisPc && (
                 <button
                   type="button"

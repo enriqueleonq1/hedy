@@ -10,6 +10,7 @@ import { Button } from "../../components/ui/Button";
 import { Select } from "../../components/ui/Select";
 import { useT, type Translate } from "../../i18n";
 import { SYNC_KEY, memoryHomeKey, useSyncStatus } from "../../sync/hooks";
+import { TEAMS_KEY, useTeams } from "../../team/hooks";
 import "../../styles/sync.css";
 
 /** The short owner name for a sentence: `empresa-org` of `github.com/empresa-org`. */
@@ -58,7 +59,8 @@ export function OwnerBanner({ project }: { project: string }) {
   );
 }
 
-type Choice = "follow" | "personal" | "shared" | "local";
+/** A team's: `team:<id>`. */
+type Choice = "follow" | "personal" | "shared" | "local" | `team:${string}`;
 
 function homeLabel(home: MemoryHomeKind | null, t: Translate): string {
   if (!home) return t("sync.home.undecided");
@@ -70,8 +72,7 @@ function homeLabel(home: MemoryHomeKind | null, t: Translate): string {
 
 export function homeChoice(home: MemoryHome): Choice {
   if (!home.chosen || !home.home) return "follow";
-  // A team's memory is a group's; the team's own screens manage it.
-  return home.home.kind === "team" ? "shared" : home.home.kind;
+  return home.home.kind === "team" ? `team:${home.home.team}` : home.home.kind;
 }
 
 /** "Memoria de este proyecto": personal, shared with a group, this PC only, or as its owner says. */
@@ -82,13 +83,24 @@ export function MemoryHomeCard({ project }: { project: string }) {
   const set = useAction((api, next: MemoryHomeKind | null) => api.setMemoryHome(project, next), {
     invalidate: [SYNC_KEY],
   });
+  // A team's project: its team notes go to the team's repo (docs/decisions.md §35).
+  const teams = (useTeams().data ?? []).filter((team) => !team.waiting);
+  const link = useAction((api, team: string) => api.teamLinkProject(team, project), {
+    invalidate: [SYNC_KEY, TEAMS_KEY, ["memory"]],
+  });
   if (!home) return null;
   const group = home.group;
   const choose = (choice: Choice) => {
     if (choice === "follow") set.mutate(null);
     else if (choice === "shared" && group) set.mutate({ kind: "shared", group });
     else if (choice === "personal" || choice === "local") set.mutate({ kind: choice });
+    else if (choice.startsWith("team:")) link.mutate(choice.slice("team:".length));
   };
+  const teamOptions = teams.map((team) => ({
+    value: `team:${team.id}` as Choice,
+    label: t("sync.home.teamNamed", { team: team.name }),
+    detail: t("sync.home.teamDetail"),
+  }));
   const value = homeChoice(home);
   return (
     <section className="card memory-home" aria-labelledby="memory-home-title">
@@ -105,6 +117,9 @@ export function MemoryHomeCard({ project }: { project: string }) {
               label: t("sync.home.sharedNamed", { group: ownerName(group) }),
               detail: t("sync.home.sharedDetail"),
             },
+            // A project's notes are matched by its remote: a project without
+            // one cannot be a team's either.
+            ...teamOptions,
             { value: "local", label: t("sync.home.local"), detail: t("sync.home.localDetail") },
             {
               value: "follow",
@@ -113,7 +128,7 @@ export function MemoryHomeCard({ project }: { project: string }) {
               detail: home.chosen ? undefined : t("sync.home.followDetail", { home: homeLabel(home.home, t) }),
             },
           ]}
-          disabled={set.isPending}
+          disabled={set.isPending || link.isPending}
           onChange={choose}
           renderValue={(option) => (value === "follow" ? capitalize(homeLabel(home.home, t)) : option?.label)}
         />
