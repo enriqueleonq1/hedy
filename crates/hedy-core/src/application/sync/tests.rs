@@ -1569,12 +1569,13 @@ fn a_removed_pc_reads_nothing_new_and_what_it_wrote_last_still_arrives() {
     home.hedy.sync_remove_device("Oficina").unwrap();
     assert_eq!(names(&home), ["Casa", "Portátil"]);
     let office_id = office.hedy.sync_status().unwrap().unwrap().device;
-    assert!(
-        !server
-            .paths()
-            .iter()
-            .any(|p| p.starts_with(&layout::device_dir(&office_id)))
-    );
+    // Only its name stays (a commit it has not pushed still rebases).
+    let left: Vec<String> = server
+        .paths()
+        .into_iter()
+        .filter(|p| p.starts_with(&layout::device_dir(&office_id)))
+        .collect();
+    assert_eq!(left, [layout::device_info(&office_id)]);
 
     laptop.hedy.sync_now().unwrap();
     assert_eq!(texts(&laptop, None), ["A", "B"]);
@@ -1983,4 +1984,121 @@ fn a_removal_never_writes_over_an_epoch_that_came_in_meanwhile() {
         .map(|d| d.name)
         .collect();
     assert_eq!(names, ["Portátil", "Casa"]);
+}
+
+// Phase 6 housekeeping (correctness review).
+
+#[test]
+fn a_pc_far_behind_catches_up_through_a_snapshot_without_a_false_conflict() {
+    let server = SyncServer::default();
+    let (home, _) = pc(&server, "/a/tienda");
+    let words = home.hedy.sync_setup(URL, "Casa").unwrap();
+    let (office, _) = pc(&server, "/b/tienda");
+    office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+    let note = home.hedy.add_note(None, "v0", Category::Decision).unwrap();
+    home.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+    // More edits than a version's history holds, compacted away.
+    for i in 1..=12 {
+        home.clock.advance(5);
+        home.hedy
+            .edit_note(note.id, &format!("v{i}"), Category::Decision)
+            .unwrap();
+        home.hedy.sync_now().unwrap();
+    }
+    let report = office.hedy.sync_now().unwrap();
+    assert_eq!(texts(&office, None), ["v12"]);
+    assert_eq!(report.conflicts, 0);
+    assert!(office.hedy.sync_conflicts().unwrap().is_empty());
+}
+
+#[test]
+fn joining_again_after_the_others_compacted_adopts_the_row() {
+    let server = SyncServer::default();
+    let (home, _) = pc(&server, "/a/tienda");
+    let words = home.hedy.sync_setup(URL, "Casa").unwrap();
+    let (office, _) = pc(&server, "/b/tienda");
+    office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+    let note = home.hedy.add_note(None, "A", Category::Convention).unwrap();
+    home.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+    office.hedy.sync_leave().unwrap();
+    home.hedy
+        .edit_note(note.id, "B", Category::Convention)
+        .unwrap();
+    home.hedy.sync_now().unwrap();
+    for i in 0..5 {
+        home.hedy
+            .add_template(NewTemplate {
+                project: None,
+                name: format!("t{i}"),
+                text: format!("t{i}"),
+            })
+            .unwrap();
+        home.hedy.sync_now().unwrap();
+    }
+    assert!(
+        server
+            .paths()
+            .iter()
+            .any(|p| layout::snapshot_seq(p).is_some())
+    );
+    office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+    home.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+    for f in [&home, &office] {
+        assert_eq!(texts(f, None), ["B"]);
+    }
+}
+
+#[test]
+fn an_edit_made_on_the_removed_pcs_version_wins_over_the_take_over() {
+    let (_server, home, office, laptop) = three_pcs();
+    office
+        .hedy
+        .add_note(None, "uno", Category::Decision)
+        .unwrap();
+    let template = office
+        .hedy
+        .add_template(NewTemplate {
+            project: None,
+            name: "T".into(),
+            text: "uno".into(),
+        })
+        .unwrap();
+    let _ = template;
+    office.hedy.sync_now().unwrap();
+    laptop.hedy.sync_now().unwrap();
+    home.hedy.sync_now().unwrap();
+    // The laptop edits both, offline (its push fails), before the removal.
+    let id = laptop.store.notes(None, false).unwrap()[0].id;
+    laptop
+        .hedy
+        .edit_note(id, "dos", Category::Decision)
+        .unwrap();
+    let row = laptop
+        .store
+        .template_records()
+        .unwrap()
+        .into_iter()
+        .find(|r| r.name == "T")
+        .unwrap()
+        .id;
+    laptop
+        .hedy
+        .update_template(&crate::domain::TemplateId::Saved(row), "T", "dos")
+        .unwrap();
+    laptop.sync.fail_next_push();
+    assert!(laptop.hedy.sync_now().is_err());
+    home.clock.advance(30);
+    home.hedy.sync_remove_device("Oficina").unwrap();
+    laptop.hedy.sync_now().unwrap();
+    home.hedy.sync_now().unwrap();
+    laptop.hedy.sync_now().unwrap();
+    for f in [&home, &laptop] {
+        assert_eq!(texts(f, None), ["dos"]);
+        let t = f.store.template_records().unwrap();
+        assert_eq!(t.iter().find(|r| r.name == "T").unwrap().text, "dos");
+        assert!(f.hedy.sync_conflicts().unwrap().is_empty());
+    }
 }

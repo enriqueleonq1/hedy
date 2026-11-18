@@ -130,11 +130,14 @@ pub fn status(hedy: &Hedy) -> Result<()> {
         let seen = pc
             .last_sync
             .map_or_else(String::new, |at| age_label(now() - at));
-        println!(
-            "  {name}{mark}  {}  {}",
-            s.muted(seen),
-            s.muted(pc.id.as_str())
-        );
+        // The id tells apart two PCs with one name (it is the name when
+        // a PC has none yet).
+        let id = if name == pc.id.as_str() {
+            ""
+        } else {
+            pc.id.as_str()
+        };
+        println!("  {name}{mark}  {}  {}", s.muted(seen), s.muted(id));
     }
     if status.conflicts > 0 {
         let n = status.conflicts;

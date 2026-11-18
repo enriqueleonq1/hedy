@@ -30,8 +30,8 @@ use serde::{Deserialize, Serialize};
 use super::ports::{SyncConflict, SyncLink, SyncLock, TemplateRecord};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::sync::{
-    Batch, Change, DeviceId, ItemKind, Merge, NoteBody, RECOVERY_MEMBER, RepoIdentity, Scope,
-    SkillBody, Snapshot, Stamp, TemplateBody, ThemeBody, Version, layout, merge,
+    Batch, Change, DeviceId, Former, ItemKind, Merge, NoteBody, RECOVERY_MEMBER, RepoIdentity,
+    Scope, SkillBody, Snapshot, Stamp, TemplateBody, ThemeBody, Version, layout, merge,
     url_has_credentials,
 };
 use crate::domain::theme::{CustomTheme, new_theme_id};
@@ -74,6 +74,9 @@ const FILE_MAX: usize = 16 * 1024 * 1024;
 /// Past this many batches of its own in the repo, a PC rewrites them as
 /// one snapshot (fewer in tests, so every test also compacts).
 const COMPACT_AFTER: usize = if cfg!(test) { 3 } else { 100 };
+
+/// The former bodies a snapshot keeps of each item, newest last.
+const FORMER_MAX: usize = 16;
 
 const KINDS: [ItemKind; 4] = [
     ItemKind::Note,
@@ -181,6 +184,9 @@ struct Session {
     /// The rows this first sync made, for an item's older version: a later
     /// version with a twin here moves the item onto the twin.
     made: RefCell<HashSet<(ItemKind, String)>>,
+    /// What snapshots say their items held before (digests), so a first
+    /// sync adopts a row equal to an older version.
+    former: RefCell<HashMap<(ItemKind, String), Vec<String>>>,
 }
 
 struct SyncGuard<'a> {
@@ -749,6 +755,7 @@ impl Hedy {
             members: members.into_iter().collect(),
             twins: RefCell::default(),
             made: RefCell::default(),
+            former: RefCell::default(),
         })
     }
 
@@ -1186,7 +1193,7 @@ impl Hedy {
                     return Err(corrupt(&path));
                 }
                 for change in &batch.changes {
-                    self.apply_change(session, change, report)?;
+                    self.apply_change(session, change, report, false)?;
                 }
                 self.store.set_sync_cursor(&device, seq)?;
                 read = seq;
@@ -1223,8 +1230,13 @@ impl Hedy {
         {
             return Ok(false);
         }
+        let mut former = session.former.borrow_mut();
+        for f in snapshot.former {
+            former.insert((f.kind, f.uid), f.bodies);
+        }
+        drop(former);
         for change in &snapshot.changes {
-            self.apply_change(session, change, report)?;
+            self.apply_change(session, change, report, true)?;
         }
         self.store.set_sync_cursor(device, through)?;
         Ok(true)
@@ -1276,10 +1288,12 @@ impl Hedy {
             .into_iter()
             .filter(|c| c.version.stamp.device == session.device)
             .collect();
+        let former = self.former_bodies(session, &files, &changes)?;
         let body = json(&Snapshot {
             device: session.device.clone(),
             through_seq,
             changes,
+            former,
         });
         // Too big for one file once signed and sealed (it would be
         // refused): keep the batches.
@@ -1298,11 +1312,79 @@ impl Hedy {
         Ok(())
     }
 
+    /// For each item a snapshot keeps, the digests of what it held before:
+    /// read from this PC's batches and snapshot it replaces.
+    fn former_bodies(
+        &self,
+        session: &Session,
+        files: &[String],
+        changes: &[Change],
+    ) -> AppResult<Vec<Former>> {
+        let mut seen: HashMap<(ItemKind, String), Vec<String>> = HashMap::new();
+        let mut note = |kind: ItemKind, uid: &str, digest: String| {
+            let list = seen.entry((kind, uid.to_owned())).or_default();
+            list.retain(|d| *d != digest);
+            list.push(digest);
+        };
+        let mut ordered: Vec<&String> = files.iter().collect();
+        // Oldest first: the snapshot (it comes before its batches), then
+        // the batches by seq.
+        ordered.sort_by_key(|p| match (layout::snapshot_seq(p), layout::batch_seq(p)) {
+            (Some((_, seq)), _) => (0, seq),
+            (_, Some((_, seq))) => (1, seq),
+            _ => (2, 0),
+        });
+        for path in ordered {
+            let Ok(Some(body)) = self.open_signed(session, &session.device, path) else {
+                continue;
+            };
+            if layout::snapshot_seq(path).is_some() {
+                let Ok(old) = serde_json::from_str::<Snapshot>(&body) else {
+                    continue;
+                };
+                for f in old.former {
+                    for digest in f.bodies {
+                        note(f.kind, &f.uid, digest);
+                    }
+                }
+                for c in old.changes {
+                    if let Some(body) = &c.version.body {
+                        note(c.kind, &c.uid, self.sync_crypto.digest(body.as_bytes()));
+                    }
+                }
+            } else if let Ok(batch) = serde_json::from_str::<Batch>(&body) {
+                for c in batch.changes {
+                    if let Some(body) = &c.version.body {
+                        note(c.kind, &c.uid, self.sync_crypto.digest(body.as_bytes()));
+                    }
+                }
+            }
+        }
+        Ok(changes
+            .iter()
+            .filter_map(|c| {
+                let mut bodies = seen.remove(&(c.kind, c.uid.clone()))?;
+                if let Some(body) = &c.version.body {
+                    let now = self.sync_crypto.digest(body.as_bytes());
+                    bodies.retain(|d| *d != now);
+                }
+                let keep = bodies.len().saturating_sub(FORMER_MAX);
+                bodies.drain(..keep);
+                (!bodies.is_empty()).then(|| Former {
+                    kind: c.kind,
+                    uid: c.uid.clone(),
+                    bodies,
+                })
+            })
+            .collect())
+    }
+
     fn apply_change(
         &self,
         session: &Session,
         change: &Change,
         report: &mut SyncReport,
+        catching_up: bool,
     ) -> AppResult<()> {
         self.observe_stamp(&change.version.stamp)?;
         let known = self.store.sync_item(change.kind, &change.uid)?;
@@ -1314,13 +1396,11 @@ impl Hedy {
                 // Built on the version a conflict kept: settled elsewhere.
                 // Not when it takes over a removed PC's version: nobody
                 // chose then.
-                let taken_over = change
-                    .version
-                    .history
-                    .first()
-                    .is_some_and(|s| !session.members.contains_key(s.device.as_str()));
                 for conflict in self.store.sync_conflicts()? {
-                    if !taken_over && conflict.kind == change.kind && conflict.uid == change.uid {
+                    if !change.version.restates
+                        && conflict.kind == change.kind
+                        && conflict.uid == change.uid
+                    {
                         self.store.delete_sync_conflict(conflict.id)?;
                     }
                 }
@@ -1328,6 +1408,7 @@ impl Hedy {
             }
             Merge::Conflict { incoming_wins } => {
                 let (_, local) = known.expect("a conflict has a local version");
+                let local_device = local.stamp.device.clone();
                 let (kept, other) = if incoming_wins {
                     self.store.put_sync_item(change)?;
                     self.materialize(session, change)?;
@@ -1336,7 +1417,11 @@ impl Hedy {
                 } else {
                     (local, change.version.clone())
                 };
-                if change.kind.asks_on_conflict() && other.body != kept.body {
+                // Catching up through a snapshot, a version far behind
+                // reads as made apart (its history only goes back so far):
+                // the newer one is taken, unless the other was made here.
+                let far_behind = catching_up && local_device != session.device;
+                if change.kind.asks_on_conflict() && other.body != kept.body && !far_behind {
                     report.conflicts +=
                         self.record_conflict(change.kind, &change.uid, &kept, &other)?;
                 }
@@ -1388,6 +1473,23 @@ impl Hedy {
             .pop()
     }
 
+    /// A row here not synced yet that holds what `change`'s item held
+    /// before (a snapshot's digests), taken from the index.
+    fn take_former_twin(&self, session: &Session, change: &Change) -> Option<String> {
+        let former = session.former.borrow();
+        let digests = former.get(&(change.kind, change.uid.clone()))?;
+        let mut twins = session.twins.borrow_mut();
+        twins
+            .iter_mut()
+            .find(|((kind, scope, body), rows)| {
+                *kind == change.kind
+                    && *scope == change.scope
+                    && !rows.is_empty()
+                    && digests.contains(&self.sync_crypto.digest(body.as_bytes()))
+            })
+            .and_then(|(_, rows)| rows.pop())
+    }
+
     /// The project a linked row is in now; `None` when the row is gone.
     fn row_project(&self, kind: ItemKind, local_id: &str) -> AppResult<Option<Option<PathBuf>>> {
         let row = local_id.parse::<i64>().ok();
@@ -1412,7 +1514,7 @@ impl Hedy {
         if !Self::scope_here(session, &change.scope) {
             return Ok(false);
         }
-        let link: Option<SyncLink> = self.store.sync_link(change.kind, &change.uid)?;
+        let mut link: Option<SyncLink> = self.store.sync_link(change.kind, &change.uid)?;
         let made_now = |link: &SyncLink| {
             session
                 .made
@@ -1430,6 +1532,16 @@ impl Hedy {
             self.store
                 .link_sync_item(change.kind, &change.uid, &local_id, &change.version)?;
             return Ok(true);
+        }
+        if link.is_none()
+            && let Some(local_id) = self.take_former_twin(session, change)
+        {
+            // A row equal to an older version of it (a PC joining again
+            // after the others compacted): adopt it, and bring it up to
+            // date below.
+            self.store
+                .link_sync_item(change.kind, &change.uid, &local_id, &change.version)?;
+            link = self.store.sync_link(change.kind, &change.uid)?;
         }
         let row_project = match &link {
             Some(link) => self.row_project(change.kind, &link.local_id)?,
@@ -1573,6 +1685,7 @@ impl Hedy {
                 members: members.iter().cloned().collect(),
                 twins: RefCell::default(),
                 made: RefCell::default(),
+                former: RefCell::default(),
                 keys: keys.epochs.values().cloned().collect(),
             };
             for (id, _) in members.into_iter().filter(|(id, _)| id != RECOVERY_MEMBER) {
@@ -1678,11 +1791,16 @@ impl Hedy {
                 .new_epoch(newest + 1, &remaining, me.as_str(), &keys.device)?;
         self.sync_remote
             .write(&dir, &layout::epoch(newest + 1), next.as_bytes())?;
+        // Its batches and snapshots go; its `device.hedy` stays, so a
+        // commit it has not pushed yet (which changes it) still rebases and
+        // it then learns it was removed.
         for path in self
             .sync_remote
             .files(&dir, &layout::device_dir(&device.id))?
         {
-            self.sync_remote.remove(&dir, &path)?;
+            if path != layout::device_info(&device.id) {
+                self.sync_remote.remove(&dir, &path)?;
+            }
         }
         // Another PC wrote this epoch first: start from the repo again.
         if let Err(error) = self.sync_remote.push(&dir, "hedy sync") {
@@ -1702,7 +1820,7 @@ impl Hedy {
                     device: me.clone(),
                     ..old.clone()
                 };
-                let version = item.version.replaced(stamp, item.version.body.clone());
+                let version = item.version.restated(stamp);
                 (old, Change { version, ..item })
             })
             .collect();
@@ -1726,7 +1844,9 @@ impl Hedy {
             }
         }
         // The next sync checks the new epoch (signed here) and sends them.
-        self.sync_locked()
+        let report = self.sync_locked()?;
+        self.store.set_setting(LAST_ERROR, None)?;
+        Ok(report)
     }
 
     pub fn sync_conflicts(&self) -> AppResult<Vec<SyncConflict>> {
@@ -1778,6 +1898,7 @@ impl Hedy {
             members: HashMap::new(),
             twins: RefCell::default(),
             made: RefCell::default(),
+            former: RefCell::default(),
             keys: Vec::new(),
         };
         self.materialize(&session, &change)?;

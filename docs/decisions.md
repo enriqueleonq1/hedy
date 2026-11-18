@@ -2400,7 +2400,8 @@ The views picked on the design canvas, built on the same use cases as the CLI:
   1. this PC syncs first, so it has everything the other one sent;
   2. it signs a new key epoch without that PC (the recovery key stays): from then on that PC
      reads nothing new, and its batches are no longer read;
-  3. its files go from the repo;
+  3. its batches and snapshots go from the repo. Its `device.hedy` stays: a commit it had not
+     pushed yet changes that file, so it still rebases, and the PC then learns it was removed;
   4. this PC takes over what that PC wrote last: a new version of each item whose newest
      version was that PC's, with the same content. The other PCs get it even if they had not
      read that PC's last batches. One that already had it applies the same text again,
@@ -2420,8 +2421,15 @@ The views picked on the design canvas, built on the same use cases as the CLI:
   - a PC whose next batch is gone reads the snapshot instead, with the same checks as a batch:
     signed by a member, only its own versions, its seq;
   - a version replaced since by another PC's is left out: that one carries it in its history;
-  - a concurrent version that lost a conflict on that PC is not in the snapshot either, so a
-    PC catching up through it does not see that conflict;
+  - a concurrent version that lost a conflict is not in the snapshot either. A PC catching up
+    through it does not see that conflict, and with compaction a losing version can end up
+    offered on no PC (both PCs have the same data; only the prompt goes);
+  - a snapshot also keeps digests of what each item held before (`Former`, up to 16 per item),
+    so a PC joining again with a row equal to an older version adopts it instead of adding a
+    duplicate (the phase-4 fix, after compaction);
+  - a PC far behind reads versions whose history no longer reaches what it has: through a
+    snapshot, that is taken as newer-wins with no conflict, unless what it has was made on
+    this PC;
   - tests compact after 3 batches, so every sync test (the random simulations included) also
     goes through snapshots.
 - **The git history keeps old files:** compaction keeps the working tree small. The server's
@@ -2451,8 +2459,11 @@ The views picked on the design canvas, built on the same use cases as the CLI:
   - Removing a PC writes over it.
   - One that does follow and came in meanwhile (another PC's join or removal) is never written
     over: the removal stops with "vuelve a intentarlo".
-- **The take-over keeps each version's time** (only the PC that answers for it changes). A later
-  edit elsewhere still wins, and a conflict waiting on another PC is not cleared by it.
+- **The take-over keeps each version's time** (only the PC that answers for it changes), and its
+  versions are marked `restates`:
+  - an edit built on the removed PC's version wins over it with no conflict, even when it was
+    pushed late;
+  - a conflict waiting on another PC is not cleared by it.
 - **What the take-over will send is saved first**, so a failure halfway loses none of it.
 - **A snapshot that does not open or check out is skipped:** it stops only that PC's batches,
   like a missing batch. A PC removes anything in its own folder it did not write (a junk
@@ -2462,6 +2473,17 @@ The views picked on the design canvas, built on the same use cases as the CLI:
 - **A limit, kept on purpose:** the take-over re-sends what the removed PC wrote last,
   approved notes included, under this PC's name. Without it, the PCs that had not read those
   changes would never get them.
+
+**Housekeeping (correctness review):** it confirmed the take-over issues above. It also found,
+each now fixed with a regression test (or, for the git case, a real run):
+- a joining PC duplicated a note after compaction;
+- false conflicts for a PC far behind;
+- an edit made on the removed PC's version lost to the take-over;
+- a removed PC with an unpushed commit got a git rebase error forever instead of `SyncRemoved`;
+- small things: `last_error` after a removal, the CLI printing an id twice.
+
+A differential random simulation (4 PCs, 200 steps, 30 seeds, with and without compaction and a
+removal) found the notes and templates identical in every pair.
 
 **Next phase:**
 7. A real test.

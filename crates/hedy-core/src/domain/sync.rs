@@ -135,6 +135,11 @@ pub struct Version {
     pub history: Vec<Stamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
+    /// It only says again what the version it replaced said: a PC taking
+    /// over a removed PC's version. An edit built on that version wins
+    /// over it, with no conflict.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub restates: bool,
 }
 
 impl Version {
@@ -144,6 +149,7 @@ impl Version {
             stamp,
             history: Vec::new(),
             body,
+            restates: false,
         }
     }
 
@@ -155,7 +161,21 @@ impl Version {
             stamp,
             history,
             body,
+            restates: false,
         }
+    }
+
+    /// The same content again, answered for at `stamp` (see `restates`).
+    pub fn restated(&self, stamp: Stamp) -> Self {
+        Self {
+            restates: true,
+            ..self.replaced(stamp, self.body.clone())
+        }
+    }
+
+    /// Whether this restates a version `other` was built on.
+    fn restates_base_of(&self, other: &Self) -> bool {
+        self.restates && self.history.first().is_some_and(|s| other.knows(s))
     }
 
     pub fn is_deletion(&self) -> bool {
@@ -200,6 +220,14 @@ pub fn merge(local: Option<&Version>, incoming: &Version) -> Merge {
     }
     if incoming.knows(&local.stamp) {
         return Merge::Apply;
+    }
+    // A version taken over from a removed PC yields to an edit made on top
+    // of that PC's version: the edit is newer in all but the stamp.
+    if local.restates_base_of(incoming) {
+        return Merge::Apply;
+    }
+    if incoming.restates_base_of(local) {
+        return Merge::Ignore;
     }
     // Two deletions agree, whoever made them.
     if local.is_deletion() && incoming.is_deletion() {
@@ -320,6 +348,18 @@ pub struct Snapshot {
     pub device: DeviceId,
     pub through_seq: u64,
     pub changes: Vec<Change>,
+    /// What its items held before, as digests: a PC joining again with a
+    /// row equal to an older version adopts it instead of adding another.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub former: Vec<Former>,
+}
+
+/// The digests of the bodies an item held before its newest version.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Former {
+    pub kind: ItemKind,
+    pub uid: String,
+    pub bodies: Vec<String>,
 }
 
 /// Paths inside the sync repo. Everything but the README and the key
@@ -804,6 +844,29 @@ mod tests {
             layout::batch_seq("devices/abababababababab/changes/1.hedy"),
             None
         );
+    }
+
+    #[test]
+    fn a_taken_over_version_yields_to_an_edit_built_on_the_original() {
+        let original = Version::new(stamp(1, 0, 0xaa), Some("uno".into()));
+        let taken = original.restated(Stamp {
+            device: device(0xbb),
+            ..original.stamp.clone()
+        });
+        // Made on top of the removed PC's version, even if older.
+        let edit = original.replaced(stamp(2, 0, 0xcc), Some("dos".into()));
+        assert_eq!(merge(Some(&taken), &edit), Merge::Apply);
+        assert_eq!(merge(Some(&edit), &taken), Merge::Ignore);
+        // An edit made apart from it is still a conflict.
+        let apart = Version::new(stamp(3, 0, 0xcc), Some("tres".into()));
+        assert!(matches!(
+            merge(Some(&taken), &apart),
+            Merge::Conflict { .. }
+        ));
+        // Restating survives a round trip; a plain version does not carry it.
+        let text = serde_json::to_string(&taken).unwrap();
+        assert_eq!(serde_json::from_str::<Version>(&text).unwrap(), taken);
+        assert!(!serde_json::to_string(&edit).unwrap().contains("restates"));
     }
 
     #[test]
