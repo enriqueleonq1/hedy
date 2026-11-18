@@ -2875,6 +2875,13 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
     - A removal that would leave no admin is dropped on its own, and its PC is told
       (`TeamLastAdmin`) and stays.
     - A stuck request no longer blocks the rest.
+    - A PC never acts on its own requests: another admin's PC takes it out and answers for
+      what it wrote. A leaving admin's PC that synced first took itself out, and its notes
+      were lost to those who joined later.
+    - If no other admin is left to take it out, the request is withdrawn and the PC is told
+      it stays.
+    - An admin cannot leave offline: its request has to reach the repo, so that it stays an
+      admin until another one takes it out. A member's PC leaves offline all the same.
 - **Known limits:**
   - **Hiding someone's batches.** A member who hides another's batches can keep that
     person's work from a PC that never saw it. They need push access, and they cannot put

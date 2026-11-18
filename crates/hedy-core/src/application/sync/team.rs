@@ -626,7 +626,19 @@ impl Hedy {
                 let me = self.team_me(space)?;
                 let dir = self.sync_dir(space)?;
                 let mine = format!("{}/{}/", team_layout::REQUESTS_DIR, me.device.as_str());
-                if self.sync_remote.files(&dir, &mine)?.is_empty() {
+                let asked = self.sync_remote.files(&dir, &mine)?;
+                // No other admin's PC is left to take it out: it stays.
+                let (_, members) = self.space_status(space)?.ok_or(AppError::SyncNotSetUp)?;
+                let alone = !members.iter().any(|m| {
+                    !m.device.this_pc && m.seat.as_ref().is_some_and(|s| s.role == Role::Admin)
+                });
+                if alone && !asked.is_empty() {
+                    for path in &asked {
+                        self.sync_remote.remove(&dir, path)?;
+                    }
+                    self.sync_remote.push(&dir, "hedy team")?;
+                }
+                if asked.is_empty() || alone {
                     self.clear_sync_setting(space, LEAVING)?;
                     let error = AppError::TeamLastAdmin;
                     self.set_sync_setting(space, LAST_ERROR, &shown_error(&error))?;
@@ -1578,6 +1590,13 @@ impl Hedy {
                 }
             }
             for path in self.sync_remote.files(&dir, team_layout::REQUESTS_DIR)? {
+                // This PC's own requests are another admin's PC's to sign
+                // (and to remove).
+                if team_layout::seat_request_of(&path)
+                    .is_some_and(|(signer, _)| signer == me.device)
+                {
+                    continue;
+                }
                 done.push(path.clone());
                 let Some((signer, _)) = team_layout::seat_request_of(&path) else {
                     continue;
@@ -1606,11 +1625,14 @@ impl Hedy {
                     }
                     // One that would leave no admin (two admins leaving at
                     // once) is dropped on its own; its PC learns it stayed.
+                    // Never its own: the PC that takes another out answers
+                    // for what it wrote, which a PC that is out cannot.
                     Ok(SeatRequest::Remove { device })
-                        if session
-                            .seats
-                            .get(device.as_str())
-                            .is_some_and(|s| s.person == seat.person)
+                        if device != me.device
+                            && session
+                                .seats
+                                .get(device.as_str())
+                                .is_some_and(|s| s.person == seat.person)
                             && !removed.contains(&device.0)
                             && self
                                 .check_admins_stay(
