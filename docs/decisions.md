@@ -3009,3 +3009,25 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
     leaving.
 
   Its cleanup uses `--here`, so even a failed run leaves no team entry in the keyring.
+- **Housekeeping:**
+  - **Two reviews.** The security review ran the real binary against a local repo.
+  - **Fixed:**
+    - **Names other PCs sign reached the terminal raw (medium).** A joiner named
+      `Luis\n  ● Mallory  admin` with an escape in their PC's name faked a whole line in an
+      admin's `hedy team` and changed the terminal's title. Now:
+      - names and PC names are one line in the core, with their hidden characters revealed;
+      - the CLI also cleans everything it prints from other PCs;
+      - a note's lines are shown indented.
+    - **The invite code was an argument** of `hedy team join`, so it showed in `ps` and
+      stayed in the shell's history. It is now asked without echo, or read from stdin.
+    - **`--team <name>` was compared as if it were an id,** so a team still joining or
+      leaving went unnoticed. `pick` now always resolves to an id.
+    - **Several commands spoke of personal sync** to a PC taken out of the team. Every team
+      error now says it in the team's words.
+    - **Taking a suggestion by the end of its id** could take another one, since its author
+      writes their own ids and may change the text. `review --accept` shows the suggestion
+      and asks first (`--yes` skips it), and needs at least 4 characters of the id.
+    - **`remove`** finds the person or PC before asking, an exact id wins over a name, and the
+      question names who it resolved to.
+    - **`leave --here` from the only admin** warns that only the 12 words bring the team back.
+    - **`notes`** groups by project.
