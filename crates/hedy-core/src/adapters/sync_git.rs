@@ -416,6 +416,16 @@ mod tests {
         assert!(!GitSyncRemote.is_public(&url));
     }
 
+    /// Reaches github.com: `cargo test -p hedy-core -- --ignored public`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn a_public_repo_is_told_from_a_private_or_missing_one() {
+        let git = GitSyncRemote;
+        assert!(git.is_public("https://github.com/git/git.git"));
+        assert!(git.is_public("git@github.com:git/git.git"));
+        assert!(!git.is_public("git@github.com:enriqueleonq1/no-such-hedy-repo.git"));
+    }
+
     #[test]
     fn the_lock_waits_for_the_other_holder() {
         let tmp = tempfile::tempdir().unwrap();
