@@ -393,6 +393,10 @@ impl Hedy {
         if !self.epochs(&dir)?.is_empty() {
             return Err(AppError::SyncRepoInUse);
         }
+        // Not someone's code (a mistyped address): it would be written into.
+        if !self.sync_remote.files(&dir, "")?.is_empty() {
+            return Err(AppError::SyncRepoNotEmpty);
+        }
         let device = DeviceId(self.sync_crypto.random_hex(8)?);
         let me = self.sync_crypto.new_member()?;
         let (words, recovery) = self.sync_crypto.new_recovery()?;

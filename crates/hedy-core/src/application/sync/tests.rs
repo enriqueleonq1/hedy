@@ -2175,3 +2175,20 @@ fn junk_named_like_a_snapshot_never_replaces_the_real_one() {
         assert_eq!(texts(f, None), expected);
     }
 }
+
+#[test]
+fn setup_refuses_a_repo_with_files() {
+    let server = SyncServer::default();
+    let (home, _) = pc(&server, "/a/tienda");
+    // Someone's code (a mistyped address), or a README made with the repo.
+    home.sync
+        .write(Path::new("/"), "README.md", b"# App")
+        .unwrap();
+    home.sync.push(Path::new("/"), "init").unwrap();
+    assert_eq!(
+        home.hedy.sync_setup(URL, "Casa"),
+        Err(AppError::SyncRepoNotEmpty)
+    );
+    assert_eq!(server.file("README.md").unwrap(), b"# App");
+    assert!(!home.hedy.sync_is_set_up().unwrap());
+}

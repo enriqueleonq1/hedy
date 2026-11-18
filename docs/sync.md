@@ -1,8 +1,9 @@
 # Personal sync
 
 The same Hedy on every PC of yours: approved notes and proposals, skills, prompt templates and
-themes, through a private git repo of yours. Everything is encrypted and signed on your PC
-before it leaves it. The design, the threat model and every decision behind it are in
+themes, through a private git repo of yours. Everything you keep is encrypted and signed on
+your PC before it leaves it; only the repo's README and its key files (who the PCs are) are
+plain. The design, the threat model and every decision behind it are in
 [decisions.md §34](decisions.md).
 
 ## What syncs and what stays
@@ -20,12 +21,14 @@ also choose per project, in its memory screen or with `hedy sync project`.
 
 ## Set it up
 
-1. Create an **empty private repo** on any git server: GitHub, GitLab, Bitbucket, Gitea or
-   your own over SSH. If your server has branch protection, turn it on so nobody can
-   force-push.
+1. Create an **empty private repo** (no README) on any git server: GitHub, GitLab, Bitbucket,
+   Gitea or your own over SSH. Hedy refuses a repo that already has files. If your server has
+   branch protection, turn it on so nobody can force-push.
 2. Make sure your git can reach it **without a password prompt**: an SSH key in your agent,
    or a credential helper. Never put a token in the address: Hedy refuses such an address and
-   keeps no password or token.
+   keeps no password or token. Prefer **one credential per PC** (its own SSH key), so one PC's
+   access can be revoked alone. Note that `credential.helper store` keeps a token in a plain
+   file.
 3. In the app, open Ajustes → Sincronización → **Configurar**, or run
    `hedy sync setup <address>`.
 4. Keep the **12 words** (the recovery key) in your password manager. They are shown once,
@@ -47,10 +50,12 @@ choose. Templates and themes keep the newer one.
 ## Remove a PC, or leave
 
 - **Quitar** next to a PC (or `hedy sync remove <name|id>`) makes a new key without it. From
-  then on it cannot read what you keep, and its changes are no longer taken. What it already
-  has stays on it.
-- **If it was lost or stolen, also revoke its git access** (its SSH key or token on your git
-  server).
+  then on it cannot read what you keep, and its changes are no longer taken.
+- **Also revoke its git access** (its SSH key or token on your git server). With push access
+  a removed PC could still offer old keys to a PC that has not synced since, or fill the repo
+  with junk.
+- A removed PC keeps every key up to its removal: with any copy of the repo it can read
+  everything written until then, even items it never synced.
 - **Dejar de sincronizar en esta PC** (`hedy sync leave`) stops syncing here; your notes stay.
   Remove the PC from another one afterwards, so the others stop listing it.
 - To come back, join again with the 12 words. It comes back as a new PC.
@@ -63,10 +68,14 @@ choose. Templates and themes keep the newer one.
 - **Who can add or remove a PC:** only the 12 words add one; a PC can only remove PCs. Every
   key epoch must be signed by a member of the one before and keep the recovery key. A PC
   pins the epochs it has checked.
-- **What the git server sees:** only file names made of random ids, sizes and times. Never a
-  note, a project name or a PC name.
-- **What a removed PC keeps:** everything it read before. The git history also keeps old
-  encrypted files; to start fully fresh, use a new repo.
+- **What the git server sees:** the PCs' random ids, how many there are, when each joined or
+  was removed (the key files are plain), how many batches each wrote and when, file sizes,
+  and which credential and address each push came from. Never a note, a project name or a
+  PC's name.
+- **What stays:** the git history keeps every encrypted file ever written. To start fully
+  fresh, use a new repo.
+- **The 12 words open everything:** with them and a copy of the repo, all of it can be read.
+  Keep them in a password manager.
 
 ## Troubleshooting
 
@@ -74,7 +83,8 @@ choose. Templates and themes keep the newer one.
 |---|---|
 | "esa dirección lleva una contraseña o un token" | Use the address without it, with SSH or a credential helper |
 | "git … falló: Permission denied / Authentication failed" | Check that `git ls-remote <address>` works in a terminal without a prompt |
-| "Este repo es público" | Make it private (it still works, but anyone sees when you sync) |
+| "Este repo es público" (the app's setup checks it; `hedy sync setup` does not) | Make it private: anyone could keep its encrypted history, see when you sync, and read it all if the 12 words ever leak |
+| "ese repo ya tiene archivos" | Use a new empty repo, created without a README |
 | "esta PC se quitó de la sincronización desde otra PC" | `hedy sync leave`, then join again with the 12 words |
 | "otra PC acaba de cambiar las claves" | Try again: another PC was adding or removing one at the same time |
 | A sync that never finishes | Hedy stops a git command after 15 minutes (30 s for a stalled HTTP transfer); check the network or the server |

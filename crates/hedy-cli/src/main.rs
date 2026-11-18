@@ -23,13 +23,21 @@ use cli::{
 use style::Style;
 
 fn main() -> ExitCode {
-    // Like other Unix tools: `hedy … | head` ends quietly when the reader
-    // closes the pipe, instead of panicking on the next print.
-    #[cfg(unix)]
-    // SAFETY: called first, before any thread starts.
-    unsafe {
-        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
-    }
+    // `hedy … | head`: a print to a closed pipe ends the command without a
+    // panic message. Only the message: SIGPIPE stays ignored, so a pipe to
+    // an agent that closes still reads as an error the command handles.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let message = info
+            .payload()
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| info.payload().downcast_ref::<&str>().copied())
+            .unwrap_or("");
+        if !(message.starts_with("failed printing to std") && message.contains("Broken pipe")) {
+            default_hook(info);
+        }
+    }));
     // Claude Code runs this binary as its `PreToolUse` hook for `hedy ask`.
     if std::env::args().skip(1).eq(adapters::hook::HOOK_ARGS) {
         return ExitCode::from(u8::try_from(adapters::hook::run()).unwrap_or(1));

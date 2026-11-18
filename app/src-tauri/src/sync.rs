@@ -417,7 +417,7 @@ mod tests {
                 super::answer_owner,
                 super::forget_owner,
             ])
-            // The app's own config and capabilities (its ACL), no assets.
+            // The app's own config, without its assets.
             .build(tauri::generate_context!(
                 test = true,
                 assets = noop_assets()

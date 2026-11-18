@@ -170,6 +170,9 @@ pub enum AppError {
     /// No PC with that id or name syncs.
     #[error("{}", self.message())]
     SyncDeviceNotFound(String),
+    /// The repo for a new sync already has files (not Hedy's).
+    #[error("{}", self.message())]
+    SyncRepoNotEmpty,
     /// Another PC changed the sync's keys at the same moment.
     #[error("{}", self.message())]
     SyncBusy,
@@ -320,6 +323,10 @@ impl AppError {
             Self::SyncDeviceNotFound(name) => tr!(
                 "no hay ninguna PC «{name}» en la sincronización",
                 "no PC \"{name}\" syncs"
+            ),
+            Self::SyncRepoNotEmpty => tr!(
+                "ese repo ya tiene archivos: usa uno vacío, creado sin README",
+                "that repo already has files: use an empty one, created without a README"
             ),
             Self::SyncBusy => tr!(
                 "otra PC acaba de cambiar las claves de la sincronización; vuelve a intentarlo",

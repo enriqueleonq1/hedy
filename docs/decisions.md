@@ -2528,7 +2528,24 @@ removal) found the notes and templates identical in every pair.
 - **Not automated:** driving the real window (no WebKitWebDriver on the machine). The UI is
   covered by its tests against `MockApi` and by headless screenshots, and its wiring to the
   backend by the IPC test above.
-- **Also fixed:** `hedy … | head` panicked when the reader closed the pipe. The CLI now ends
-  quietly, like other Unix tools.
+- **Also fixed:** `hedy … | head` panicked when the reader closed the pipe. Now a print to a
+  closed pipe ends the command without the panic message. SIGPIPE itself stays ignored: a first
+  version reset it for the whole process, and then a pipe to an agent that closed killed
+  `hedy ask` and `hedy usage` silently instead of reporting the error.
+
+**Housekeeping:** both reviews found that most of the script's checks could not fail
+(`[ … ] && ok` under `set -e`). They also found:
+- the process-wide SIGPIPE reset above;
+- `setup` writing into a repo that already had files (someone's code, at a mistyped address).
+  It is now refused with "ese repo ya tiene archivos";
+- `docs/sync.md` claiming the server sees less than it does: it also sees the plain key
+  files, the batch counts and when PCs join or are removed;
+- a keyring check that counted the user's own entries.
+
+All are fixed:
+- every check of the script now fails the run (shown by breaking one on purpose);
+- the script refuses a repo that is not empty, counts only sync keys, and checks the expected
+  number of templates;
+- a vitest pins the sync payloads `tauriApi.ts` sends to the names the IPC test uses.
 
 User guide: [sync.md](sync.md).

@@ -2048,7 +2048,6 @@ dependencies = [
  "clap_complete",
  "ctrlc",
  "hedy-core",
- "libc",
  "predicates",
  "rpassword",
  "serde_json",
