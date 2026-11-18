@@ -2931,3 +2931,43 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
   run, connects the project, adds the notes to the team layer, and leaves the team afterwards
   (its keys are in the keyring). `price-format-team` is `price-format` with its two notes in
   the team layer.
+- **First measurement** (haiku, `claude-personal`, 2 runs each,
+  `evals/results/team-layer-2026-11-18.jsonl`):
+
+  | case | plain | memory | median tokens with memory | memory reads |
+  |---|---|---|---|---|
+  | `price-format-team` (convention in the team layer) | 0/2 | 2/2 | 89 k | 0 |
+  | `price-format` (same convention as a project note) | 0/2 | 2/2 | 127 k | 1 |
+
+  - The agent follows the team layer without searching, because the convention is already in
+    its context.
+  - Two runs are within the noise (§33: up to ~30 % between identical runs), so the token
+    difference says nothing yet.
+  - The 1,500-token cap stays until a case with a large team layer is measured.
+- **Housekeeping:**
+  - **Two reviews,** read-only on the adapters and with proofs of concept for injection. No
+    regression was found:
+    - every adapter adds the memory text only when the memory is on, in the same place as
+      before;
+    - quoting keeps every note and name on its own line.
+  - **Fixed** (each with a test of its own):
+    - **Every task and search ran git, even with no team.** The team's home was derived from
+      the project's remotes, and the team's projects were all read too. A team's home is
+      always stored, so now only the stored home is read. The team layer reads the replica
+      alone, and the search names only this project, with its `origin` and epoch 1's key.
+    - **A very long name could hide the team layer (medium).** The cut stopped at the first
+      line that did not fit, and rules come first. Now a line that does not fit gives way to
+      the shorter ones after it. A person's name is capped at 60 characters and a team's at
+      80, both when written and when read.
+    - **Names from the repo were not checked for hidden characters.** JSON quoting does not
+      escape bidi controls, so names and the team name are now shown with them revealed,
+      whoever wrote them.
+    - **`team_publish_note` took any note and deleted it even when it only became a
+      suggestion.** It now takes only a note of one of the team's projects, or a global one
+      for the team layer. A suggestion keeps the note here until an admin decides.
+    - **Search output:** the team's notes now open the search's first page, so its paging
+      footer stays last. A search that failed shows only the error.
+    - **Eval runs:** the bare repo goes however the run ends. A killed run can still leave
+      its team's keyring entry for that run's data folder.
+  - **Not changed:** `session_overhead` (§33) measures the guidance only. The team block is
+    measured by its own cap.
