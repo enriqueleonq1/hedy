@@ -3031,3 +3031,42 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
       question names who it resolved to.
     - **`leave --here` from the only admin** warns that only the 12 words bring the team back.
     - **`notes`** groups by project.
+
+### Phase T5: the app
+
+- **Tauri** (`app/src-tauri/src/team.rs`): one command per use case, with camelCase DTOs, and
+  every error comes back already in the user's language. The background sync of
+  `sync::start` syncs every team after personal sync; a PC still joining looks whether it is
+  in. Then it emits `sync-updated`, which also refreshes the teams.
+- **The nine views chosen on the canvas:**
+  - **1b, Ajustes → Equipos.** A card per team, with its projects here, its people, this PC's
+    role and its state ("2 para revisar", "Al día", "Esperando para entrar"). Below, creating
+    a team or joining one, and that personal memory never goes to a team.
+  - **2a, creating a team, in three steps:** the repo (private, empty, writable, and the
+    advice to protect `main`), then the names (the team's, the person's, the PC's), then the
+    12 words. As in personal sync, the window does not close until one word is typed back.
+  - **3b, the invite inline among the people.** Its code shows with Copiar and Anular, and
+    the reminder to give git access. A burned invite shows a notice.
+  - **4b, joining:** the address and the code as two fields, then the wait for the team.
+  - **5b, a team project's memory:** one list with a layer filter (Todas, Equipo, Proyecto,
+    Solo tú) and its counts. Each team note shows its layer and its author, with Editar or
+    Sugerir cambio, and the team layer's size against its cap is shown.
+  - **6a, "¿A quién le sirve?".** Approving an agent's proposal (or sharing a note of this PC)
+    in a team project offers three choices: only me, whoever works on the project, or the
+    whole team, which shows how much of the layer it would take and that an admin reviews it.
+  - **7b, suggestions one at a time:** now and with the change, side by side. It says how much
+    of the layer the change takes, and a suggestion with hidden characters cannot be accepted.
+  - **8b, a card per person** with their PCs as chips. An admin makes people admins or
+    members and removes them; anyone removes their own PCs.
+  - **9a, removing someone:** a dialog that says their notes stay and reminds the admin to
+    revoke their git access.
+- **Also:**
+  - "Equipo · N para revisar" in the status bar, counting only what this person may review. It
+    opens `#teams`.
+  - The memory card of a project with a remote offers its teams as one more home, which links
+    the project to the team. A project without a remote cannot be a team's.
+- **Checks:**
+  - seven UI tests run against the mock, which holds a team ("Plataforma");
+  - the 22 `invoke` calls in `tauriApi.ts` were checked against the Rust commands, by name and
+    arguments;
+  - screenshots in both themes with headless Chromium over CDP.
