@@ -50,7 +50,7 @@ pub fn new_code(nameplate: u32) -> Result<String> {
         // 2048 words: the low 11 bits are uniform.
         let index = usize::from(u16::from_le_bytes(bytes)) % list.len();
         code.push('-');
-        code.push_str(&fold(list[index]));
+        code.push_str(&fold_word(list[index]));
     }
     Ok(code)
 }
@@ -63,30 +63,14 @@ pub fn parse_code(typed: &str) -> Option<String> {
         .split(|c: char| c == '-' || c.is_whitespace())
         .filter(|p| !p.is_empty());
     let nameplate: u32 = parts.next()?.parse().ok()?;
-    let words: Vec<String> = parts.map(fold).collect();
+    let words: Vec<String> = parts.map(fold_word).collect();
     let known = |word: &String| {
         [Language::Spanish, Language::English]
             .iter()
-            .any(|l| l.word_list().iter().any(|w| fold(w) == *word))
+            .any(|l| l.word_list().iter().any(|w| fold_word(w) == *word))
     };
     (words.len() == WORDS && words.iter().all(known))
         .then(|| format!("{nameplate}-{}", words.join("-")))
-}
-
-/// A word without its accents, however they are written (the BIP39
-/// Spanish list keeps them as separate combining marks: `a` + `´`), but
-/// with its `ñ`.
-fn fold(word: &str) -> String {
-    let mut out = String::new();
-    for c in fold_word(word).chars() {
-        if c == '\u{303}' && out.ends_with('n') {
-            out.pop();
-            out.push('ñ');
-        } else if !('\u{300}'..='\u{36f}').contains(&c) {
-            out.push(c);
-        }
-    }
-    out
 }
 
 /// The number naming the invite a (parsed) code is for.

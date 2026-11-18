@@ -230,6 +230,9 @@ describe("Sync", () => {
     expect(foldWord(" Ábaco ")).toBe("abaco");
     expect(foldWord("PINGÜINO")).toBe("pinguino");
     expect(foldWord("Ñandú")).toBe("ñandu");
+    // As the words come: accents as separate marks.
+    expect(foldWord("pito\u0301n")).toBe(foldWord("pitón"));
+    expect(foldWord("an\u0303o")).toBe("año");
     expect(repoLabel("git@github.com:alex/hedy-memory.git")).toBe("alex/hedy-memory");
     expect(repoLabel("https://gitlab.com/grupo/sub/memoria.git")).toBe("grupo/sub/memoria");
     expect(repoLabel("ssh://git@host:2222/u/m.git")).toBe("u/m");

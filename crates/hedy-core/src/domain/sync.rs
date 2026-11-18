@@ -534,20 +534,28 @@ pub fn item_preview(kind: ItemKind, body: Option<&str>) -> Option<String> {
     }
 }
 
-/// A recovery word as compared: lower case, without Spanish accents (the
-/// user may type `abaco` for `ábaco`).
+/// A recovery or invite word as compared: lower case, without Spanish
+/// accents (the user may type `abaco` for `ábaco`), but with its `ñ`. The
+/// BIP39 Spanish list writes accents as separate marks (`a` + `´`); those go
+/// too.
 pub fn fold_word(word: &str) -> String {
-    word.to_lowercase()
-        .chars()
-        .map(|c| match c {
-            'á' => 'a',
-            'é' => 'e',
-            'í' => 'i',
-            'ó' => 'o',
-            'ú' | 'ü' => 'u',
-            other => other,
-        })
-        .collect()
+    let mut out = String::with_capacity(word.len());
+    for c in word.to_lowercase().chars() {
+        match c {
+            'á' => out.push('a'),
+            'é' => out.push('e'),
+            'í' => out.push('i'),
+            'ó' => out.push('o'),
+            'ú' | 'ü' => out.push('u'),
+            '\u{303}' if out.ends_with('n') => {
+                out.pop();
+                out.push('ñ');
+            }
+            '\u{300}'..='\u{36f}' => {}
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// Whether a git URL carries a password or a token (`https://user:token@…`,

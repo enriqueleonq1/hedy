@@ -21,11 +21,17 @@ const CREATE_REPO = [
   { name: "Bitbucket", url: "https://bitbucket.org/repo/create" },
 ];
 
-const ACCENTS: Record<string, string> = { á: "a", é: "e", í: "i", ó: "o", ú: "u", ü: "u" };
-
-/** A recovery word as compared: any case, Spanish accents optional (as the core reads them; `ñ` stays). */
+/**
+ * A recovery word as compared: any case, Spanish accents optional (as the core reads them; `ñ`
+ * stays). The words come with their accents as separate marks (`o` + `´`), as typed ones may not.
+ */
 export function foldWord(word: string): string {
-  return [...word.trim().toLowerCase()].map((c) => ACCENTS[c] ?? c).join("");
+  return word
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/n\u0303/g, "ñ")
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
 function Steps({ step, total }: { step: number; total: number }) {

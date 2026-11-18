@@ -947,6 +947,22 @@ mod tests {
             .replace(['Ú', 'ú'], "u");
         assert_eq!(recover(&messy).unwrap().public(), keys.public());
 
+        // Without accents at all: the Spanish list writes them as separate
+        // marks (`o` + `´`), which once kept `piton` from matching `pitón`.
+        let accented = (0u8..)
+            .map(|i| {
+                Mnemonic::from_entropy_in(Language::Spanish, &[i; 16])
+                    .unwrap()
+                    .to_string()
+            })
+            .find(|w| w.contains('\u{301}'))
+            .unwrap();
+        let plain: String = accented.chars().filter(|c| *c != '\u{301}').collect();
+        assert_eq!(
+            recover(&plain).unwrap().public(),
+            recover(&accented).unwrap().public()
+        );
+
         let english = with_language(UiLanguage::English, || new_recovery().unwrap()).0;
         assert!(recover(&english).is_ok());
         assert_eq!(recover("hola mundo").unwrap_err(), VaultError::BadPhrase);
