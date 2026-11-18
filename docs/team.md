@@ -64,6 +64,8 @@ An admin's PC adds it on its next sync.
 - **Leaving** (**Salir del equipo**, `hedy team leave`): another admin's PC takes yours out on
   its next sync. `hedy team leave --here` (or **Olvidar en esta PC** while you wait) only
   forgets the team on this PC.
+- **Cancelling a join** before you are in takes your request back, so the invite no longer
+  works. If an admin's PC let you in first, the PC stays in the team until an admin removes it.
 
 ## Security in short
 
@@ -77,8 +79,9 @@ An admin's PC adds it on its next sync.
 - **New members read older notes:** each epoch carries the key before it, signed by the admin
   who wrote it. Someone removed never gets a new key.
 - **What the git server sees:** the PCs' and people's random ids, their roles, how many PCs
-  each person has, when invites were made and used, and file sizes and times. Never a note,
-  a name or the team's name.
+  each person has, when invites were made and used, file sizes and times, and which git
+  account pushed each change (which can tie a PC to a real person). Never a note, a name in
+  Hedy or the team's name.
 - **Limits:** someone who keeps push access after being removed can delete files, which
   stops syncs or cuts new members off from older notes. They cannot forge notes.
 
@@ -88,7 +91,7 @@ An admin's PC adds it on its next sync.
 |---|---|
 | "eso no es un código de invitación" | Check the number and the four words; a typo never burns the invite |
 | "la invitación venció" / "alguien ya usó esa invitación" / "no funcionó" | Ask for another |
-| Waiting to get in for a long time | The PC that invited you has to sync: ask them to open Hedy (or `hedy team now`) |
+| Waiting to get in for a long time | The PC that invited you has to sync: ask them to open Hedy (or `hedy team now`). To give up, **Cancelar** (or `hedy team leave`) |
 | "tu rol en el equipo no lo permite" | Ask an admin |
 | "el equipo se quedaría sin admin" | Make someone else an admin first |
 | "esta PC ya no está en el equipo" | An admin removed it: `hedy team leave`, and ask for another invite to come back |
