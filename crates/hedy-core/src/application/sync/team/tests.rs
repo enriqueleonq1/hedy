@@ -1938,3 +1938,32 @@ fn names_from_other_pcs_stay_on_one_line_and_show_their_controls() {
     let pc = &luis_person.devices[0].name;
     assert!(!pc.contains('\u{1b}') && pc.contains("⟦U+001B⟧"), "{pc}");
 }
+
+#[test]
+fn a_join_cancelled_before_it_is_in_takes_its_request_back() {
+    let server = SyncServer::default();
+    let (ana, _) = create(&server);
+    let invite = ana.f.hedy.team_invite(&ana.team, Role::Member).unwrap();
+    let (luis, _) = pc(&server);
+    let join = luis
+        .hedy
+        .team_join(TEAM, &invite.code, "Luis", "PC")
+        .unwrap();
+    luis.hedy.team_forget(&join.id).unwrap();
+    assert!(
+        !server
+            .paths()
+            .contains(&team_layout::request(invite.number))
+    );
+    ana.sync();
+    // Nobody got in, and the invite is gone with it.
+    assert_eq!(people(&ana).len(), 1);
+    assert!(
+        ana.f
+            .hedy
+            .team_status(&ana.team)
+            .unwrap()
+            .invites
+            .is_empty()
+    );
+}

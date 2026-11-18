@@ -2637,6 +2637,7 @@ impl Hedy {
                 }
             }
         }
+        self.withdraw_join(&space);
         self.forget_team(&space)
     }
 
@@ -2646,7 +2647,39 @@ impl Hedy {
     pub fn team_forget(&self, team: &str) -> AppResult<()> {
         let space = self.team_space_or_joining(team)?;
         let _guard = self.sync_guard(&space)?;
+        self.withdraw_join(&space);
         self.forget_team(&space)
+    }
+
+    /// A PC that stops joining before it is in takes its request back, and
+    /// the invite with it: the inviting PC would otherwise add a PC with
+    /// nobody behind it. Without the network it does not wait.
+    fn withdraw_join(&self, space: &Space) {
+        let Ok(Some(joining)) = self.sync_json::<Joining>(space, JOIN) else {
+            return;
+        };
+        let Ok(dir) = self.sync_dir(space) else {
+            return;
+        };
+        if self.sync_remote.open(&joining.url, &dir).is_err() {
+            return;
+        }
+        // Answered already: the PC is in, or about to be; an admin removes it.
+        if matches!(
+            self.read_repo(&dir, &team_layout::answer(joining.number)),
+            Ok(Some(_))
+        ) {
+            return;
+        }
+        for path in [
+            team_layout::request(joining.number),
+            team_layout::offer(joining.number),
+        ] {
+            if matches!(self.read_repo(&dir, &path), Ok(Some(_))) {
+                let _ = self.sync_remote.remove(&dir, &path);
+            }
+        }
+        let _ = self.sync_remote.push(&dir, "hedy team");
     }
 
     /// This PC forgets the team: its keys, clone, settings and replica go,
