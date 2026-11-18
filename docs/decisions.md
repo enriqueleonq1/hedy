@@ -2206,8 +2206,9 @@ its clock is fixed. Members are trusted, and the local clock is protected.
   The app should say so.
 - **The engine works out where each project lives once per sync** (`Session::project_ids`).
   A memory home this version cannot read counts as local.
-- **Reading project remotes ignores the environment's `GIT_*` variables,** like the sync
-  clone.
+- **Git in the user's projects ignores the variables that point it at another repo**
+  (`GIT_DIR`, `GIT_WORK_TREE`…) but keeps the user's own config (`GIT_CONFIG_*`): commits and
+  pushes are theirs. The sync clone leaves out both.
 - **Moving a project:**
   - to shared or local sends nothing and deletes nothing elsewhere;
   - back to personal catches up, and sends what was written meanwhile.
@@ -2224,6 +2225,9 @@ its clock is fixed. Members are trusted, and the local clock is protected.
   - a company `origin` was overridden by a personal `upstream`;
   - an unreadable stored home fell back to the owner;
   - project remotes inherited `GIT_*`.
+- Their re-check found one regression in the fix: clearing every `GIT_CONFIG_*` for the user's
+  projects would have changed their commit identity or credentials. Now only repo redirects
+  are cleared there.
 - A random simulation (three PCs, 8 seeds × 150 steps) checks the main property at every step.
   The PCs move their own project's memory between personal, local and following its owner
   while they write in a client's project marked shared, and **no client note ever reaches
