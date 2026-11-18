@@ -314,6 +314,11 @@ pub trait SecretStore: Send + Sync {
     fn api_key(&self, account: &AccountId) -> PortResult<Option<String>>;
     fn has_api_key(&self, account: &AccountId) -> PortResult<bool>;
     fn delete_api_key(&self, account: &AccountId) -> PortResult<()>;
+    /// This PC's sync keys (docs/decisions.md §34), as the vault encodes
+    /// them. Read only to sync; never logged or shown.
+    fn sync_keys(&self) -> PortResult<Option<String>>;
+    fn set_sync_keys(&self, keys: &str) -> PortResult<()>;
+    fn delete_sync_keys(&self) -> PortResult<()>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

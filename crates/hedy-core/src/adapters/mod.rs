@@ -17,6 +17,7 @@ mod ship;
 mod sqlite;
 mod themes;
 mod usage_probe;
+pub mod vault;
 
 use std::sync::Arc;
 
@@ -157,7 +158,7 @@ fn build(paths: &HedyPaths, claude: ClaudeCodeLauncher) -> PortResult<Hedy> {
     let store = SqliteStore::open(&paths.database())?;
     let hedy = Hedy::new(Ports {
         store: Arc::new(store),
-        secrets: Arc::new(KeyringSecretStore::default()),
+        secrets: Arc::new(KeyringSecretStore::for_data_dir(paths.data_dir())),
         runner: Arc::new(SystemProcessRunner),
         fs: Arc::new(LocalFileSystem::new(
             paths.accounts_dir(),

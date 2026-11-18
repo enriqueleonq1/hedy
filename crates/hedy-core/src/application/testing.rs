@@ -957,7 +957,25 @@ impl SecretStore for MemorySecrets {
         self.0.lock().unwrap().remove(account.as_str());
         Ok(())
     }
+    fn sync_keys(&self) -> PortResult<Option<String>> {
+        Ok(self.0.lock().unwrap().get(SYNC_KEYS).cloned())
+    }
+    fn set_sync_keys(&self, keys: &str) -> PortResult<()> {
+        self.0
+            .lock()
+            .unwrap()
+            .insert(SYNC_KEYS.into(), keys.to_owned());
+        Ok(())
+    }
+    fn delete_sync_keys(&self) -> PortResult<()> {
+        self.0.lock().unwrap().remove(SYNC_KEYS);
+        Ok(())
+    }
 }
+
+/// Where [`MemorySecrets`] keeps the sync keys (not an account id: those
+/// never contain a space).
+const SYNC_KEYS: &str = "sync keys";
 
 /// Records launches and answers captured runs with a canned reply, or with
 /// the reply set for that exact command line.

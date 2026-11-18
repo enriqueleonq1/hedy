@@ -18,6 +18,15 @@ trash = { version = "5.3.0", default-features = false, features = ["freedesktop"
 jiff = "0.2.43"
 regex = "1.13.1"
 ureq = { version = "3.5.2", features = ["json"] }
+chacha20poly1305 = "0.11.0"
+crypto_box = { version = "0.9.1", features = ["seal"] }
+ed25519-dalek = "3.0.0"
+bip39 = { version = "3.0.0", features = ["spanish"] }
+hkdf = "0.13.0"
+sha2 = "0.11.1"
+hmac = "0.13.0"
+zeroize = "1.9.2"
+getrandom = "0.3"
 
 [dev-dependencies]
 tempfile = "3.27.0"
