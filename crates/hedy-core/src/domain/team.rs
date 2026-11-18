@@ -289,17 +289,17 @@ impl TeamWrite<'_> {
     }
 
     /// A suggestion: its author writes it; its author, the note's owner or
-    /// an admin removes it (takes it or turns it down).
+    /// an admin removes it (takes it or turns it down). Removing one the
+    /// reader does not have, or has removed already, protects nothing: a
+    /// PC that compacted sends only that, and two PCs may remove it at
+    /// once.
     pub fn suggestion_allowed(&self) -> bool {
         if self.writer.role == Role::Admin {
             return true;
         }
         match self.owner {
             Some(_) => self.own(self.owner) && self.own(self.replaced_owner),
-            None => {
-                self.replaced_owner == Some(&self.writer.person)
-                    || self.note_owner == Some(&self.writer.person)
-            }
+            None => self.own(self.replaced_owner) || self.note_owner == Some(&self.writer.person),
         }
     }
 }
@@ -461,7 +461,7 @@ mod tests {
         assert!(write(&member, false, None, Some(&luis), Some(&ana)).suggestion_allowed());
         assert!(write(&member, false, None, Some(&ana), Some(&luis)).suggestion_allowed());
         assert!(!write(&member, false, None, Some(&ana), Some(&ana)).suggestion_allowed());
-        assert!(!write(&member, false, None, None, None).suggestion_allowed());
+        assert!(write(&member, false, None, None, None).suggestion_allowed());
         assert!(write(&admin, false, None, Some(&luis), None).suggestion_allowed());
     }
 

@@ -800,3 +800,237 @@ fn a_member_removes_their_own_pc_and_leaves_through_an_admin() {
     ana.sync();
     assert_eq!(people(&ana), [("Ana".to_owned(), Role::Admin, 1)]);
 }
+
+/// A small deterministic random source for the simulation.
+struct Lcg(u64);
+
+impl Lcg {
+    fn next(&mut self, below: usize) -> usize {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((self.0 >> 33) % below.max(1) as u64) as usize
+    }
+}
+
+/// What a PC holds of the team, to compare PCs.
+fn replica(member: &Member) -> Vec<(ItemKind, String, Option<String>)> {
+    let mut items: Vec<_> = member
+        .f
+        .store
+        .sync_items(&space_id(member))
+        .unwrap()
+        .into_iter()
+        .map(|c| (c.kind, c.uid, c.version.body))
+        .collect();
+    items.sort();
+    items
+}
+
+/// Ana and Marta (admins) and Luis (a member) add, edit and remove notes,
+/// suggest, take and turn down suggestions, and sync in random order. No
+/// PC ever turns down what another wrote through the use cases, and once
+/// all of them sync they hold the same team.
+#[test]
+fn random_team_work_on_three_people_converges() {
+    for seed in 1..=8u64 {
+        let server = SyncServer::default();
+        let (ana, _) = create(&server);
+        let luis = invite(&server, &ana, "Luis", Role::Member, false);
+        let marta = invite(&server, &ana, "Marta", Role::Admin, false);
+        let pcs = [ana, luis, marta];
+        for pc in &pcs {
+            pc.link();
+            pc.sync();
+        }
+        let mut rng = Lcg(seed);
+        let mut refused = 0;
+        for step in 0..60 {
+            let pc = &pcs[rng.next(pcs.len())];
+            let hedy = &pc.f.hedy;
+            pc.f.clock.advance(rng.next(5) as i64);
+            let notes = hedy.team_notes(&pc.team).unwrap();
+            let pick = |rng: &mut Lcg| notes.get(rng.next(notes.len())).map(|n| n.uid.clone());
+            match rng.next(9) {
+                0 => {
+                    hedy.team_add_note(
+                        &pc.team,
+                        None,
+                        &format!("equipo {step}"),
+                        Category::Rule,
+                        None,
+                    )
+                    .unwrap();
+                }
+                1 => {
+                    hedy.team_add_note(
+                        &pc.team,
+                        Some(&pc.project),
+                        &format!("proyecto {step}"),
+                        Category::Decision,
+                        None,
+                    )
+                    .unwrap();
+                }
+                2 => {
+                    if let Some(uid) = pick(&mut rng) {
+                        hedy.team_edit_note(
+                            &pc.team,
+                            &uid,
+                            Some(&format!("editada {step}")),
+                            None,
+                            None,
+                        )
+                        .unwrap();
+                    }
+                }
+                3 => {
+                    if let Some(uid) = pick(&mut rng) {
+                        hedy.team_edit_note(&pc.team, &uid, None, None, None)
+                            .unwrap();
+                    }
+                }
+                4 | 5 => {
+                    let suggestions = hedy.team_suggestions(&pc.team).unwrap();
+                    if let Some(s) = suggestions.get(rng.next(suggestions.len())) {
+                        if s.can_review && rng.next(2) == 0 {
+                            hedy.team_accept_suggestion(&pc.team, &s.uid).unwrap();
+                        } else if s.can_review || s.mine {
+                            hedy.team_reject_suggestion(&pc.team, &s.uid).unwrap();
+                        }
+                    }
+                }
+                _ => refused += pc.sync().refused,
+            }
+        }
+        for _ in 0..3 {
+            for pc in &pcs {
+                refused += pc.sync().refused;
+            }
+        }
+        assert_eq!(refused, 0, "seed {seed}");
+        let first = replica(&pcs[0]);
+        for pc in &pcs[1..] {
+            assert_eq!(replica(pc), first, "seed {seed}");
+        }
+    }
+}
+
+/// The whole team flow with real git and SQLite: three people, one with
+/// two PCs, notes, a suggestion and a removal.
+#[test]
+fn a_team_works_through_a_real_git_repo() {
+    use std::sync::Arc;
+
+    use crate::adapters::{GitSyncRemote, SqliteStore};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let bare = tmp.path().join("hedy-team.git");
+    std::fs::create_dir_all(&bare).unwrap();
+    let init = std::process::Command::new("git")
+        .args(["init", "--quiet", "--bare", "--initial-branch=main"])
+        .current_dir(&bare)
+        .status()
+        .unwrap();
+    assert!(init.success());
+    let url = bare.to_string_lossy().into_owned();
+    let pc = |name: &str| {
+        let f = Fixture::new();
+        let data = tmp.path().join(name);
+        std::fs::create_dir_all(&data).unwrap();
+        let store = Arc::new(SqliteStore::open(&data.join("hedy.db")).unwrap());
+        let hedy = f.hedy_on(store, Arc::new(GitSyncRemote));
+        f.fs.add_git_root("/code/app");
+        f.source
+            .set_remotes(&[("origin", "https://github.com/empresa-org/app")]);
+        hedy.add_account(crate::application::NewAccount {
+            name: "Trabajo".into(),
+            provider: crate::domain::Provider::Claude,
+            api_key: false,
+            default_folder: false,
+            color: None,
+        })
+        .unwrap();
+        let project = f.dir("/code/app");
+        hedy.use_account(&project, "trabajo", None).unwrap();
+        (f, hedy, project)
+    };
+    let (_af, ana, project) = pc("ana");
+    let (team, words) = ana
+        .team_create(&url, "Tienda SA", "Ana", "Portátil")
+        .unwrap();
+    assert_eq!(words.split_whitespace().count(), 12);
+    ana.team_link_project(&team, &project).unwrap();
+    ana.team_add_note(&team, None, "Precios en USD", Category::Convention, None)
+        .unwrap();
+    ana.team_sync(&team).unwrap();
+
+    let join = |hedy: &Hedy, code: &str, person: &str| {
+        let join = hedy
+            .team_join(&url, code, person, &format!("PC de {person}"))
+            .unwrap();
+        assert!(!join.joined);
+        join.id
+    };
+    let (_lf, luis, _) = pc("luis");
+    let code = ana.team_invite(&team, Role::Member).unwrap().code;
+    let luis_team = join(&luis, &code, "Luis");
+    ana.team_sync(&team).unwrap();
+    luis.team_sync(&luis_team).unwrap();
+    luis.team_link_project(&luis_team, &project).unwrap();
+    assert_eq!(
+        luis.team_notes(&luis_team).unwrap()[0].text,
+        "Precios en USD"
+    );
+
+    // Luis's laptop, through an admin.
+    let (_pf, laptop, _) = pc("laptop");
+    let code = luis.team_invite_pc(&luis_team).unwrap().code;
+    let laptop_team = join(&laptop, &code, "Luis");
+    luis.team_sync(&luis_team).unwrap();
+    ana.team_sync(&team).unwrap();
+    laptop.team_sync(&laptop_team).unwrap();
+    assert!(!laptop.teams().unwrap()[0].waiting);
+
+    // A suggestion Ana takes.
+    let TeamWriteOutcome::Suggested(sid) = luis
+        .team_add_note(&luis_team, None, "Todo en inglés", Category::Rule, None)
+        .unwrap()
+    else {
+        panic!("a member suggests");
+    };
+    luis.team_sync(&luis_team).unwrap();
+    ana.team_sync(&team).unwrap();
+    ana.team_accept_suggestion(&team, &sid).unwrap();
+    ana.team_sync(&team).unwrap();
+    laptop.team_sync(&laptop_team).unwrap();
+    let mut texts: Vec<String> = laptop
+        .team_notes(&laptop_team)
+        .unwrap()
+        .into_iter()
+        .map(|n| n.text)
+        .collect();
+    texts.sort();
+    assert_eq!(texts, ["Precios en USD", "Todo en inglés"]);
+
+    // Luis's laptop is removed; it reads nothing new.
+    let laptop_id = laptop.team_status(&laptop_team).unwrap().device;
+    luis.team_remove_pc(&luis_team, &laptop_id).unwrap();
+    ana.team_sync(&team).unwrap();
+    assert_eq!(laptop.team_sync(&laptop_team), Err(AppError::SyncRemoved));
+    let status = ana.team_status(&team).unwrap();
+    assert_eq!(status.people.len(), 2);
+    assert!(status.people.iter().all(|p| p.devices.len() == 1));
+
+    // The repo holds nothing readable.
+    let out = std::process::Command::new("git")
+        .args(["log", "--all", "-p", "--format=%an %ae %s"])
+        .current_dir(&bare)
+        .output()
+        .unwrap();
+    let history = String::from_utf8_lossy(&out.stdout);
+    for secret in ["Precios", "Todo en", "Tienda SA", "Luis", "Ana"] {
+        assert!(!history.contains(secret), "{secret}");
+    }
+}
