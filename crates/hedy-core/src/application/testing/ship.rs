@@ -1,6 +1,6 @@
 //! Fakes of the shipping ports: the folder's git remote and GitHub CLI.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use crate::application::ports::{
@@ -12,6 +12,8 @@ use crate::domain::ship::GitFolder;
 pub struct FakeSource {
     folder: Mutex<GitFolder>,
     remotes: Mutex<Vec<(String, String)>>,
+    /// Remotes of one repo, over `remotes` (which every repo has).
+    remotes_of: Mutex<Vec<(PathBuf, String, String)>>,
     upstreams: Mutex<Vec<(String, Upstream)>>,
     default_branch: Mutex<Option<String>>,
     push_error: Mutex<Option<String>>,
@@ -27,6 +29,7 @@ impl Default for FakeSource {
                 ..Default::default()
             }),
             remotes: Mutex::default(),
+            remotes_of: Mutex::default(),
             upstreams: Mutex::default(),
             default_branch: Mutex::default(),
             push_error: Mutex::default(),
@@ -41,6 +44,17 @@ impl FakeSource {
         *self.folder.lock().unwrap() = folder;
     }
     /// (name, url) of each remote.
+    /// The remotes of `repo` alone (other repos keep [`Self::set_remotes`]').
+    pub fn set_remotes_of(&self, repo: &Path, remotes: &[(&str, &str)]) {
+        let mut own = self.remotes_of.lock().unwrap();
+        own.retain(|(r, _, _)| r != repo);
+        own.extend(
+            remotes
+                .iter()
+                .map(|(n, u)| (repo.to_owned(), n.to_string(), u.to_string())),
+        );
+    }
+
     pub fn set_remotes(&self, remotes: &[(&str, &str)]) {
         *self.remotes.lock().unwrap() = remotes
             .iter()
@@ -98,7 +112,14 @@ impl SourceControl for FakeSource {
             .map(|(n, _)| n.clone())
             .collect())
     }
-    fn remote_url(&self, _: &Path, remote: &str) -> PortResult<Option<String>> {
+    fn remote_url(&self, repo: &Path, remote: &str) -> PortResult<Option<String>> {
+        let own = self.remotes_of.lock().unwrap();
+        if own.iter().any(|(r, _, _)| r == repo) {
+            return Ok(own
+                .iter()
+                .find(|(r, n, _)| r == repo && n == remote)
+                .map(|(_, _, u)| u.clone()));
+        }
         Ok(self
             .remotes
             .lock()

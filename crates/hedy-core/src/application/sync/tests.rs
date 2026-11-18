@@ -1181,3 +1181,136 @@ fn the_sync_repos_owner_counts_as_the_user() {
     );
     assert!(home.hedy.repo_owners().unwrap().mine.contains("tu-usuario"));
 }
+
+/// Three PCs edit notes in their own project ("tienda", whose memory moves
+/// at random between personal, local and following its owner) and in a
+/// client's ("cliente", shared). A client note never reaches another PC, and
+/// once "tienda" is personal everywhere the PCs agree on it.
+#[test]
+fn random_memory_homes_never_leak_a_shared_project() {
+    for seed in 1..=8u64 {
+        let server = SyncServer::default();
+        let mut pcs = Vec::new();
+        for (i, root) in ["/a", "/b", "/c"].iter().enumerate() {
+            let (f, tienda) = pc(&server, &format!("{root}/tienda"));
+            let cliente = f.dir(&format!("{root}/cliente"));
+            f.fs.add_git_root(cliente.to_str().unwrap());
+            f.hedy.use_account(&cliente, "personal", None).unwrap();
+            f.source.set_remotes_of(
+                &cliente,
+                &[("origin", "git@github.com:cliente-sa/portal.git")],
+            );
+            f.hedy.answer_owner("cliente-sa", false).unwrap();
+            pcs.push((f, tienda, cliente, i));
+        }
+        let words = pcs[0].0.hedy.sync_setup(URL, "pc0").unwrap();
+        for (f, _, _, i) in pcs.iter().skip(1) {
+            f.hedy.sync_join(URL, &words, &format!("pc{i}")).unwrap();
+        }
+
+        let mut rng = Lcg(seed);
+        let mut written = 0;
+        for _ in 0..150 {
+            let (f, tienda, cliente, i) = &pcs[rng.next(pcs.len())];
+            f.clock.advance(rng.next(5) as i64);
+            match rng.next(7) {
+                0 | 1 => {
+                    written += 1;
+                    f.hedy
+                        .add_note(
+                            Some(tienda),
+                            &format!("tienda {seed}-{written}"),
+                            Category::Decision,
+                        )
+                        .unwrap();
+                }
+                2 => {
+                    written += 1;
+                    f.hedy
+                        .add_note(
+                            Some(cliente),
+                            &format!("cliente pc{i} {seed}-{written}"),
+                            Category::Rule,
+                        )
+                        .unwrap();
+                }
+                3 => {
+                    let notes = f.store.notes(Some(tienda), false).unwrap();
+                    if !notes.is_empty() {
+                        written += 1;
+                        let note = &notes[rng.next(notes.len())];
+                        f.hedy
+                            .edit_note(
+                                note.id,
+                                &format!("editada {seed}-{written}"),
+                                Category::Decision,
+                            )
+                            .unwrap();
+                    }
+                }
+                4 => {
+                    let home = match rng.next(3) {
+                        0 => Some(MemoryHome::Personal),
+                        1 => Some(MemoryHome::Local),
+                        _ => None,
+                    };
+                    f.hedy.set_memory_home(tienda, home.as_ref()).unwrap();
+                }
+                _ => {
+                    f.hedy.sync_now().unwrap();
+                }
+            }
+            // Privacy, at every step: client notes stay on the PC that wrote them.
+            for (other, _, other_cliente, j) in &pcs {
+                for text in texts(other, Some(other_cliente)) {
+                    assert!(
+                        text.starts_with(&format!("cliente pc{j} ")),
+                        "seed {seed}: {text} leaked"
+                    );
+                }
+                let all: Vec<String> = other
+                    .store
+                    .notes(None, false)
+                    .unwrap()
+                    .into_iter()
+                    .map(|n| n.text)
+                    .collect();
+                assert!(
+                    all.iter().all(|t| !t.starts_with("cliente")),
+                    "seed {seed}: leaked as global"
+                );
+            }
+        }
+
+        for (f, tienda, _, _) in &pcs {
+            f.hedy
+                .set_memory_home(tienda, Some(&MemoryHome::Personal))
+                .unwrap();
+        }
+        for _ in 0..2 {
+            for (f, _, _, _) in &pcs {
+                f.hedy.sync_now().unwrap();
+            }
+        }
+        let first = texts(&pcs[0].0, Some(&pcs[0].1));
+        for (f, tienda, _, i) in &pcs[1..] {
+            assert_eq!(
+                texts(f, Some(tienda)),
+                first,
+                "seed {seed}: pc{i} disagrees"
+            );
+        }
+        for (f, _, _, i) in &pcs {
+            assert_eq!(
+                f.hedy.sync_now().unwrap().sent,
+                0,
+                "seed {seed}: pc{i} still sends"
+            );
+        }
+        // The server never holds a client note's text.
+        for path in server.paths() {
+            let bytes = server.file(&path).unwrap();
+            assert!(!String::from_utf8_lossy(&bytes).contains("cliente pc"));
+        }
+    }
+}
