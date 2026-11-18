@@ -784,4 +784,65 @@ export interface DetectedCli {
 }
 
 // Code navigation and review: see codeTypes.ts.
+// ---------------------------------------------------------------- personal sync
+// docs/decisions.md §34: the same Hedy on every PC, through a private git repo.
+
+export interface SyncDevice {
+  id: string;
+  /** As that PC signed it; empty until it syncs once. */
+  name: string;
+  /** Unix seconds; `null` until it syncs once. */
+  lastSync: number | null;
+  thisPc: boolean;
+}
+
+export interface SyncStatus {
+  url: string;
+  lastSync: number | null;
+  /** Why the last sync failed, until one works. */
+  lastError: string | null;
+  /** This PC first. */
+  devices: SyncDevice[];
+  conflicts: number;
+}
+
+export interface SyncReport {
+  sent: number;
+  received: number;
+  conflicts: number;
+}
+
+/** One side of a conflict: `text: null` when it was deleted. */
+export interface SyncSide {
+  text: string | null;
+  /** A device id (named in `SyncStatus.devices`). */
+  device: string;
+  at: number;
+}
+
+export type SyncItemKind = "note" | "skill" | "template" | "theme";
+
+export interface SyncConflict {
+  id: number;
+  kind: SyncItemKind;
+  /** In use on every PC. */
+  kept: SyncSide;
+  other: SyncSide;
+}
+
+/** Where a project's memory lives. */
+export type MemoryHomeKind = { kind: "personal" } | { kind: "shared"; group: string } | { kind: "local" };
+
+export interface MemoryHome {
+  path: string;
+  /** `null`: not decided yet; it stays on this PC. */
+  home: MemoryHomeKind | null;
+  /** The user chose it (it wins over the repo's owner). */
+  chosen: boolean;
+  /** The owner to ask about (`github.com/empresa-org`). */
+  ask: string | null;
+  /** The group "Compartido" names. */
+  group: string | null;
+}
+
 export type * from "./codeTypes";

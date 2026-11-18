@@ -26,6 +26,11 @@ import type {
   ShipState,
   ImageInput,
   ImageSupport,
+  MemoryHome,
+  MemoryHomeKind,
+  SyncConflict,
+  SyncReport,
+  SyncStatus,
   ActivityItem,
   AgentEvent,
   CustomTheme,
@@ -316,6 +321,35 @@ export interface HedyApi {
    * unsaved changes); resolving `false` keeps it open.
    */
   onCloseRequested(confirm: () => Promise<boolean>): Unsubscribe;
+
+  // ------------------------------------------------ personal sync (§34)
+
+  /** `null` while the sync is not set up. */
+  syncStatus(): Promise<SyncStatus | null>;
+  /** The name this PC takes by default (the machine's). */
+  syncDefaultName(): Promise<string>;
+  /** Whether anyone can read the repo without credentials; rejects a URL with a token. */
+  syncRepoIsPublic(url: string): Promise<boolean>;
+  /** Starts the sync with an empty repo; resolves to the 12 recovery words, shown once. */
+  syncSetup(url: string, name: string): Promise<string>;
+  /** Joins with the recovery words and brings everything in. */
+  syncJoin(url: string, words: string, name: string): Promise<SyncReport>;
+  syncNow(): Promise<SyncReport>;
+  /** This PC stops syncing (its notes stay). Resolves whether it was set up. */
+  syncLeave(): Promise<boolean>;
+  syncConflicts(): Promise<SyncConflict[]>;
+  /** Keeps the version in use, or (`useOther`) the other one; it goes out with the next sync. */
+  resolveSyncConflict(id: number, useOther: boolean): Promise<void>;
+  memoryHome(project: string): Promise<MemoryHome>;
+  /** Every project's. */
+  memoryHomes(): Promise<MemoryHome[]>;
+  /** `null`: follow the repo's owner again. */
+  setMemoryHome(project: string, home: MemoryHomeKind | null): Promise<void>;
+  /** "¿La memoria de … es solo tuya?": one answer per owner, on this PC. */
+  answerOwner(owner: string, mine: boolean): Promise<void>;
+  forgetOwner(owner: string): Promise<void>;
+  /** The sync that runs on its own finished (it may have brought things in). */
+  onSyncUpdated(listener: () => void): Unsubscribe;
 
   /** Live events of every task. */
   onTaskEvent(listener: (taskId: string, event: AgentEvent) => void): Unsubscribe;

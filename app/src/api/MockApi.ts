@@ -21,6 +21,11 @@ import { resolveLanguage } from "../i18n";
 import { placeholders } from "../templates/placeholders";
 import { buildTheme } from "../theme/derive";
 import type {
+  MemoryHome,
+  MemoryHomeKind,
+  SyncConflict,
+  SyncReport,
+  SyncStatus,
   CustomTheme,
   ThemeBase,
   ThemeDraft,
@@ -354,6 +359,36 @@ export class MockApi implements HedyApi {
     ];
     api.recomputeOffers();
     const day = 86_400;
+    // Personal sync between two PCs, with one note edited on both.
+    api.repoOwners.set("/code/hedy", "github.com/alex");
+    api.repoOwners.set("/code/tienda", "github.com/cafe-aurora");
+    api.owners.mine.add("github.com/alex");
+    api.sync = {
+      url: "git@github.com:alex/hedy-memory.git",
+      lastSync: now - 120,
+      lastError: null,
+      devices: [
+        { id: "pc-1", name: "Casa", lastSync: now - 120, thisPc: true },
+        { id: "pc-2", name: "Oficina", lastSync: now - 3600, thisPc: false },
+      ],
+      conflicts: 0,
+    };
+    api.syncConflictList = [
+      {
+        id: 1,
+        kind: "note",
+        kept: {
+          text: "Los precios se muestran como «USD 12.50», con decimales solo si no son cero.",
+          device: "pc-2",
+          at: now - 3600,
+        },
+        other: {
+          text: "Los precios se muestran como «USD 12.50», con dos decimales.",
+          device: "pc-1",
+          at: now - 3 * 3600,
+        },
+      },
+    ];
     const note = (text: string, category: NoteCategory, extra: Partial<Note> = {}) =>
       api.notes.push({
         id: api.notes.length + 1,
@@ -2495,6 +2530,150 @@ export class MockApi implements HedyApi {
   onOpenTask(listener: (request: OpenTaskRequest) => void): Unsubscribe {
     this.openTaskListeners.add(listener);
     return () => this.openTaskListeners.delete(listener);
+  }
+
+  // ---------------------------------------------------------------- personal sync
+
+  /** Tests: the sync's state (`null`: not set up). */
+  sync: SyncStatus | null = null;
+  syncConflictList: SyncConflict[] = [];
+  /** Tests: the repo of each project, as its owner key. */
+  repoOwners = new Map<string, string>();
+  /** Tests: the next sync fails with this message. */
+  syncFailure: string | null = null;
+  private homes = new Map<string, MemoryHomeKind>();
+  private owners = { mine: new Set<string>(), shared: new Set<string>() };
+  private syncListeners = new Set<() => void>();
+  static readonly SYNC_WORDS = "árbol nube lápiz río mesa farol cobre pasto vuelo menta ancla ritmo";
+
+  private checkSyncUrl(url: string) {
+    if (!url.trim()) throw "falta la dirección del repo";
+    if (/^https?:\/\/[^/]*@/i.test(url.trim())) {
+      throw "esa dirección lleva una contraseña o un token, y Hedy no guarda ninguno: usa la dirección sin él (con SSH, o con el gestor de credenciales de git)";
+    }
+  }
+
+  private now(): number {
+    return Math.floor(Date.now() / 1000);
+  }
+
+  async syncStatus(): Promise<SyncStatus | null> {
+    return this.sync && { ...this.sync, conflicts: this.syncConflictList.length };
+  }
+
+  async syncDefaultName(): Promise<string> {
+    return "Casa";
+  }
+
+  async syncRepoIsPublic(url: string): Promise<boolean> {
+    this.checkSyncUrl(url);
+    return url.includes("public");
+  }
+
+  async syncSetup(url: string, name: string): Promise<string> {
+    this.checkSyncUrl(url);
+    if (this.sync) throw "la sincronización ya está configurada en esta PC";
+    this.sync = {
+      url: url.trim(),
+      lastSync: this.now(),
+      lastError: null,
+      devices: [{ id: "pc-1", name, lastSync: this.now(), thisPc: true }],
+      conflicts: 0,
+    };
+    return MockApi.SYNC_WORDS;
+  }
+
+  async syncJoin(url: string, words: string, name: string): Promise<SyncReport> {
+    this.checkSyncUrl(url);
+    if (this.sync) throw "la sincronización ya está configurada en esta PC";
+    if (words.trim().split(/\s+/).length !== 12) throw "esas palabras no son una clave de recuperación de 12 palabras";
+    this.sync = {
+      url: url.trim(),
+      lastSync: this.now(),
+      lastError: null,
+      devices: [
+        { id: "pc-2", name, lastSync: this.now(), thisPc: true },
+        { id: "pc-1", name: "Casa", lastSync: this.now() - 3600, thisPc: false },
+      ],
+      conflicts: 0,
+    };
+    return { sent: 0, received: 8, conflicts: 0 };
+  }
+
+  async syncNow(): Promise<SyncReport> {
+    if (!this.sync) throw "la sincronización no está configurada en esta PC";
+    if (this.syncFailure) {
+      this.sync.lastError = this.syncFailure;
+      throw this.syncFailure;
+    }
+    this.sync.lastSync = this.now();
+    this.sync.lastError = null;
+    const me = this.sync.devices.find((d) => d.thisPc);
+    if (me) me.lastSync = this.sync.lastSync;
+    return { sent: 0, received: 0, conflicts: 0 };
+  }
+
+  async syncLeave(): Promise<boolean> {
+    const was = this.sync !== null;
+    this.sync = null;
+    this.syncConflictList = [];
+    return was;
+  }
+
+  async syncConflicts(): Promise<SyncConflict[]> {
+    return [...this.syncConflictList];
+  }
+
+  /** Tests: which side each settled conflict used. */
+  resolved: { id: number; useOther: boolean }[] = [];
+
+  async resolveSyncConflict(id: number, useOther: boolean): Promise<void> {
+    if (!this.syncConflictList.some((c) => c.id === id)) throw "ese conflicto ya no existe";
+    this.syncConflictList = this.syncConflictList.filter((c) => c.id !== id);
+    this.resolved.push({ id, useOther });
+  }
+
+  private homeOf(path: string): MemoryHome {
+    const owner = this.repoOwners.get(path) ?? null;
+    const chosen = this.homes.get(path);
+    if (chosen) return { path, home: chosen, chosen: true, ask: null, group: owner };
+    if (!owner) return { path, home: null, chosen: false, ask: null, group: null };
+    if (this.owners.shared.has(owner)) return { path, home: { kind: "shared", group: owner }, chosen: false, ask: null, group: owner };
+    if (this.owners.mine.has(owner)) return { path, home: { kind: "personal" }, chosen: false, ask: null, group: owner };
+    return { path, home: null, chosen: false, ask: owner, group: owner };
+  }
+
+  async memoryHome(project: string): Promise<MemoryHome> {
+    return this.homeOf(project);
+  }
+
+  async memoryHomes(): Promise<MemoryHome[]> {
+    return this.state.projects.map((p) => this.homeOf(p.path));
+  }
+
+  async setMemoryHome(project: string, home: MemoryHomeKind | null): Promise<void> {
+    if (home) this.homes.set(project, home);
+    else this.homes.delete(project);
+  }
+
+  async answerOwner(owner: string, mine: boolean): Promise<void> {
+    (mine ? this.owners.mine : this.owners.shared).add(owner);
+    (mine ? this.owners.shared : this.owners.mine).delete(owner);
+  }
+
+  async forgetOwner(owner: string): Promise<void> {
+    this.owners.mine.delete(owner);
+    this.owners.shared.delete(owner);
+  }
+
+  onSyncUpdated(listener: () => void): Unsubscribe {
+    this.syncListeners.add(listener);
+    return () => this.syncListeners.delete(listener);
+  }
+
+  /** Tests: the sync that runs on its own finished. */
+  emitSyncUpdated(): void {
+    for (const listener of this.syncListeners) listener();
   }
 
   // ---------------------------------------------------------------- files

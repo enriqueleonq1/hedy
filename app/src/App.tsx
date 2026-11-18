@@ -68,7 +68,7 @@ function Localized({ children }: { children: ReactNode }) {
 }
 
 /**
- * `#accounts`, `#a=<id>` (accounts, that card), `#settings`, `#activity`, `#p=<path>` (workspace; `&t=<id>`
+ * `#accounts`, `#a=<id>` (accounts, that card), `#settings`, `#sync` (its sync card), `#activity`, `#p=<path>` (workspace; `&t=<id>`
  * that task, `&new` a new one, `&new&from=<id>` a new one continuing that conversation), `#m=<path>` (memory), `#k=<path>` (memory, skills tab), `#s=<path>` (status),
  * `#c` (a new quick question), `#c=<id>` (that conversation).
  */
@@ -87,6 +87,7 @@ function viewFromHash(): View {
   }
   const hash = decodeURIComponent(raw);
   if (hash === "accounts" || hash === "settings" || hash === "activity") return { screen: hash };
+  if (hash === "sync") return { screen: "settings", section: "sync" };
   if (hash === "c") return { screen: "conversation" };
   if (hash.startsWith("c=")) return { screen: "conversation", task: hash.slice(2) };
   if (hash.startsWith("a=")) return { screen: "accounts", account: hash.slice(2) };
@@ -106,6 +107,7 @@ function hashFor(view: View): string {
   if (view.screen === "status") return `#s=${encodeURIComponent(view.project)}`;
   if (view.screen === "accounts" && view.account) return `#a=${encodeURIComponent(view.account)}`;
   if (view.screen === "conversation") return view.task ? `#c=${encodeURIComponent(view.task)}` : "#c";
+  if (view.screen === "settings" && view.section === "sync") return "#sync";
   return `#${view.screen}`;
 }
 

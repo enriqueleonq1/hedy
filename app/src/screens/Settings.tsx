@@ -11,6 +11,7 @@ import { Mascot, MASCOT_STATE_LABEL, type MascotState } from "../components/Masc
 import { ACTIVITY_LABEL, ACTIVITY_WORDS, WORKING_ACTIVITIES } from "../components/Mascot/activity";
 import { ColorPicker, Field, Segmented, Switch } from "../components/ui/controls";
 import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
+import { SyncSection } from "./sync/SyncSection";
 import { TemplatesSection } from "./templates/TemplatesSection";
 import { ThemeGallery } from "./themes/ThemeGallery";
 
@@ -22,7 +23,7 @@ const CLIS: { id: CliProviderId; name: string }[] = [
   { id: "antigravity", name: "Antigravity" },
 ];
 
-export function Settings({ overview, focus }: { overview: Overview; focus?: { section?: "themes" } }) {
+export function Settings({ overview, focus }: { overview: Overview; focus?: { section?: "themes" | "sync" } }) {
   const setSetting = useAction((api, vars: { key: SettingKey; value: string | null }) =>
     api.setSetting(vars.key, vars.value),
   );
@@ -41,6 +42,8 @@ export function Settings({ overview, focus }: { overview: Overview; focus?: { se
   return (
     <div className="screen settings">
       <h1>{t("common.settings")}</h1>
+
+      <SyncSection focus={focus?.section === "sync"} />
 
       <section className="card settings__section">
         <h2>{t("settings.appearance")}</h2>

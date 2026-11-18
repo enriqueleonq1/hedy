@@ -22,6 +22,7 @@ import ship from "./ship";
 import shell from "./shell";
 import skills from "./skills";
 import statusbar from "./statusbar";
+import sync from "./sync";
 import status from "./status";
 import templates from "./templates";
 import themes from "./themes";
@@ -58,6 +59,7 @@ const es = {
   ...edit.es,
   ...carry.es,
   ...themes.es,
+  ...sync.es,
 };
 const en: Record<keyof typeof es, string> = {
   ...common.en,
@@ -86,6 +88,7 @@ const en: Record<keyof typeof es, string> = {
   ...edit.en,
   ...carry.en,
   ...themes.en,
+  ...sync.en,
 };
 
 export type MessageKey = keyof typeof es;

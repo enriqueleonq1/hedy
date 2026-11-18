@@ -15,6 +15,7 @@ import { NoteCard } from "./NoteCard";
 import { authorLabel, keepLabel, memoryKey, useMemoryAction } from "./notes";
 import { skillsKey } from "./skills";
 import { NewSkillDialog, SkillsPanel } from "./SkillsPanel";
+import { MemoryHomeCard } from "../sync/ProjectSync";
 
 type Tab = "notes" | "skills";
 
@@ -144,6 +145,7 @@ export function MemoryScreen({
                   )}
                 </div>
                 <aside className="memory__side">
+                  <MemoryHomeCard project={project} />
                   <UsedLastTask notes={memory.data.usedLastTask} />
                   <Stale project={project} notes={memory.data.stale} />
                   <Readers project={project} view={memory.data} accounts={overview.accounts} />

@@ -20,7 +20,7 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Running and recent tasks across projects: `hedy tasks`
 - App (from `app/`): `npm install`, then `npm run tauri dev`; UI only with sample data:
   `npm run dev` (`?theme=light|dark`, `?lang=es|en`, `?onboarding=1`, `#accounts`, `#settings`,
-  `#activity` for the task board)
+  `#activity` for the task board, `#sync` for the sync card)
 - App checks (from `app/`): `npm run typecheck`, `npm run lint`, `npm test`
 - Icons: edit `app/src-tauri/icons/logo.svg`, render it to `logo.png` (1024 px), then
   `npx tauri icon src-tauri/icons/logo.png`. Dev window icon on Wayland:

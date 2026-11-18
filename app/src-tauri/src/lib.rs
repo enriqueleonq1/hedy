@@ -6,6 +6,7 @@ mod commands;
 mod dto;
 mod events;
 mod ship;
+mod sync;
 mod terminal;
 mod themes;
 mod waits;
@@ -38,6 +39,7 @@ pub fn run() {
             let events = Arc::new(events::UiEvents(app.handle().clone()));
             let hedy = hedy.with_task_events(events);
             waits::start(&hedy);
+            sync::start(app.handle().clone(), &hedy);
             app.manage(AppState {
                 hedy,
                 paths,
@@ -161,6 +163,20 @@ pub fn run() {
             themes::save_theme,
             themes::delete_theme,
             themes::describe_theme,
+            sync::sync_status,
+            sync::sync_default_name,
+            sync::sync_repo_is_public,
+            sync::sync_setup,
+            sync::sync_join,
+            sync::sync_now,
+            sync::sync_leave,
+            sync::sync_conflicts,
+            sync::resolve_sync_conflict,
+            sync::memory_home,
+            sync::memory_homes,
+            sync::set_memory_home,
+            sync::answer_owner,
+            sync::forget_owner,
         ])
         .run(tauri::generate_context!())
         .expect("error al ejecutar Hedy");

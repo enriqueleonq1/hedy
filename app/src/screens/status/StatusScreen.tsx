@@ -13,6 +13,7 @@ import { useTaskEvents, useTasks } from "../../tasks/hooks";
 import { agentName, isOpen, PHASE_VERB } from "../../tasks/timeline";
 import { useMascot } from "../../tasks/useMascot";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
+import { OwnerBanner } from "../sync/ProjectSync";
 
 const TASK_BADGE: Record<Task["status"], { label: MessageKey; tone: string }> = {
   running: { label: "status.badge.running", tone: "info" },
@@ -151,6 +152,8 @@ export function StatusScreen({
           )}
         </div>
       </section>
+
+      <OwnerBanner project={project} />
 
       {status.isError && (
         <p className="error-text" role="alert">

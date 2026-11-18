@@ -176,6 +176,22 @@ export const tauriApi: HedyApi = {
   onTaskQueue: (listener) =>
     subscribe<{ taskId: string; queue: QueuedMessage[] }>("task-queue", ({ taskId, queue }) => listener(taskId, queue)),
   onOpenTask: (listener) => subscribe<OpenTaskRequest>("open-task", listener),
+
+  syncStatus: () => invoke("sync_status"),
+  syncDefaultName: () => invoke("sync_default_name"),
+  syncRepoIsPublic: (url) => invoke("sync_repo_is_public", { url }),
+  syncSetup: (url, name) => invoke("sync_setup", { url, name }),
+  syncJoin: (url, words, name) => invoke("sync_join", { url, words, name }),
+  syncNow: () => invoke("sync_now"),
+  syncLeave: () => invoke("sync_leave"),
+  syncConflicts: () => invoke("sync_conflicts"),
+  resolveSyncConflict: (id, useOther) => invoke("resolve_sync_conflict", { id, useOther }),
+  memoryHome: (project) => invoke("memory_home", { path: project }),
+  memoryHomes: () => invoke("memory_homes"),
+  setMemoryHome: (project, home) => invoke("set_memory_home", { path: project, home }),
+  answerOwner: (owner, mine) => invoke("answer_owner", { owner, mine }),
+  forgetOwner: (owner) => invoke("forget_owner", { owner }),
+  onSyncUpdated: (listener) => subscribe<null>("sync-updated", () => listener()),
 };
 
 export function isTauri(): boolean {
