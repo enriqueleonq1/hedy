@@ -435,9 +435,16 @@ impl Hedy {
             .verify_first_epoch(first, &recovery_public)?;
         let mut epoch_keys = BTreeMap::new();
         let mut pins = BTreeMap::new();
+        let mut trusted = 0;
         for (i, (number, file)) in epochs.iter().enumerate() {
-            if i > 0 {
-                self.sync_crypto.verify_next_epoch(&epochs[i - 1].1, file)?;
+            // The chain ends at one that does not follow (as in a sync).
+            if i > 0
+                && self
+                    .sync_crypto
+                    .verify_next_epoch(&epochs[i - 1].1, file)
+                    .is_err()
+            {
+                break;
             }
             epoch_keys.insert(
                 *number,
@@ -445,8 +452,9 @@ impl Hedy {
                     .open_epoch(file, RECOVERY_MEMBER, &recovery)?,
             );
             pins.insert(*number, self.sync_crypto.digest(file.as_bytes()));
+            trusted = i;
         }
-        let (last, last_file) = epochs.last().expect("not empty");
+        let (last, last_file) = &epochs[trusted];
         let device = DeviceId(self.sync_crypto.random_hex(8)?);
         let me = self.sync_crypto.new_member()?;
         let (_, mut members) = self.sync_crypto.epoch_members(last_file)?;
@@ -677,7 +685,14 @@ impl Hedy {
             .or_insert_with(|| self.sync_crypto.digest(previous.as_bytes()));
         let mut newest = trusted;
         for (number, file) in epochs.iter().filter(|(n, _)| *n > trusted) {
-            self.sync_crypto.verify_next_epoch(&previous, file)?;
+            // One that does not follow (forged by someone with push access,
+            // or a member trying to add one) is not trusted, and neither is
+            // anything after it. Ignoring it, instead of stopping, keeps a
+            // stolen PC from halting every sync; a PC that removes it
+            // writes over it.
+            if self.sync_crypto.verify_next_epoch(&previous, file).is_err() {
+                break;
+            }
             // The recovery key stays a member: it is how a PC joins.
             let (_, members) = self.sync_crypto.epoch_members(file)?;
             if !members
@@ -1181,7 +1196,9 @@ impl Hedy {
     }
 
     /// A PC's batches through `through`, as one snapshot. Returns whether it
-    /// was read (a PC that is not a member is not).
+    /// was read. One that does not open or check out (not a member's, or
+    /// junk someone with push access left) is skipped: it stops only that
+    /// PC's batches, not the whole sync, as a missing batch would.
     fn apply_snapshot(
         &self,
         session: &Session,
@@ -1190,10 +1207,12 @@ impl Hedy {
         path: &str,
         report: &mut SyncReport,
     ) -> AppResult<bool> {
-        let Some(body) = self.open_signed(session, device, path)? else {
+        let Ok(Some(body)) = self.open_signed(session, device, path) else {
             return Ok(false);
         };
-        let snapshot: Snapshot = serde_json::from_str(&body).map_err(|_| corrupt(path))?;
+        let Ok(snapshot) = serde_json::from_str::<Snapshot>(&body) else {
+            return Ok(false);
+        };
         // A PC writes only its own versions, in a file named for its seq.
         if snapshot.device != *device
             || snapshot.through_seq != through
@@ -1202,7 +1221,7 @@ impl Hedy {
                 .iter()
                 .any(|c| c.version.stamp.device != *device)
         {
-            return Err(corrupt(path));
+            return Ok(false);
         }
         for change in &snapshot.changes {
             self.apply_change(session, change, report)?;
@@ -1215,18 +1234,42 @@ impl Hedy {
     /// it made of each item as one snapshot and removes them (and older
     /// snapshots). A version replaced since by another PC's is left out:
     /// that one carries it in its history.
+    ///
+    /// Its folder only ever holds what this PC wrote: anything else there
+    /// (left by someone with push access) goes.
     fn compact(&self, session: &Session) -> AppResult<()> {
         let own = layout::device_dir(&session.device);
-        let files = self.sync_remote.files(&session.dir, &own)?;
+        // Every batch it decided is written (nothing pending).
+        if self.sync_setting(PENDING)?.is_some() {
+            return Ok(());
+        }
+        let seq = self.sync_number(SEQ)?;
+        let mut files = self.sync_remote.files(&session.dir, &own)?;
+        let mut newest_snapshot = 0;
+        for path in &files {
+            if let Some((_, through)) = layout::snapshot_seq(path)
+                && through <= seq
+            {
+                newest_snapshot = newest_snapshot.max(through);
+            }
+        }
+        let mine = |path: &str| {
+            path == layout::device_info(&session.device)
+                || layout::batch_seq(path).is_some_and(|(_, s)| s <= seq)
+                || layout::snapshot_seq(path).is_some_and(|(_, s)| s == newest_snapshot)
+        };
+        for path in files.iter().filter(|p| !mine(p)) {
+            self.sync_remote.remove(&session.dir, path)?;
+        }
+        files.retain(|p| mine(p));
         let batches = files
             .iter()
             .filter(|p| layout::batch_seq(p).is_some())
             .count();
-        // Every batch it decided is written (nothing pending).
-        if batches <= COMPACT_AFTER || self.sync_setting(PENDING)?.is_some() {
+        if batches <= COMPACT_AFTER {
             return Ok(());
         }
-        let through_seq = self.sync_number(SEQ)?;
+        let through_seq = seq;
         let changes: Vec<Change> = self
             .store
             .sync_items()?
@@ -1238,8 +1281,9 @@ impl Hedy {
             through_seq,
             changes,
         });
-        // Too big for one file (it would be refused): keep the batches.
-        if body.len() > FILE_MAX / 2 {
+        // Too big for one file once signed and sealed (it would be
+        // refused): keep the batches.
+        if body.len() > FILE_MAX / 8 {
             return Ok(());
         }
         let path = layout::snapshot(&session.device, through_seq);
@@ -1268,8 +1312,15 @@ impl Hedy {
                 self.store.put_sync_item(change)?;
                 self.materialize(session, change)?;
                 // Built on the version a conflict kept: settled elsewhere.
+                // Not when it takes over a removed PC's version: nobody
+                // chose then.
+                let taken_over = change
+                    .version
+                    .history
+                    .first()
+                    .is_some_and(|s| !session.members.contains_key(s.device.as_str()));
                 for conflict in self.store.sync_conflicts()? {
-                    if conflict.kind == change.kind && conflict.uid == change.uid {
+                    if !taken_over && conflict.kind == change.kind && conflict.uid == change.uid {
                         self.store.delete_sync_conflict(conflict.id)?;
                     }
                 }
@@ -1597,15 +1648,26 @@ impl Hedy {
         if device.id == me {
             return Err(AppError::SyncRemoveThisPc);
         }
+        if !device.id.is_valid() {
+            return Err(AppError::SyncDeviceNotFound(who.to_owned()));
+        }
         let dir = self.sync_dir()?;
         let keys = self.keys()?;
         let newest = self.sync_number(EPOCH)? as u32;
-        let file = self
-            .epochs(&dir)?
-            .into_iter()
+        let epochs = self.epochs(&dir)?;
+        let file = epochs
+            .iter()
             .find(|(n, _)| *n == newest)
-            .map(|(_, f)| f)
+            .map(|(_, f)| f.clone())
             .ok_or_else(|| corrupt(&layout::epoch(newest)))?;
+        // Another PC changed the keys meanwhile (its epoch came in while
+        // this sync pushed): never write over it; the next sync checks it.
+        // One that does not follow is not trusted, and is written over.
+        if let Some((_, next)) = epochs.iter().find(|(n, _)| *n == newest + 1)
+            && self.sync_crypto.verify_next_epoch(&file, next).is_ok()
+        {
+            return Err(AppError::SyncBusy);
+        }
         let (_, members) = self.sync_crypto.epoch_members(&file)?;
         let remaining: Vec<(String, String)> = members
             .into_iter()
@@ -1627,18 +1689,34 @@ impl Hedy {
             let _ = self.sync_remote.discard_local(&dir);
             return Err(error.into());
         }
+        // Each version keeps its time (a later edit elsewhere still wins);
+        // only the PC that answers for it changes.
+        let taken: Vec<(Stamp, Change)> = self
+            .store
+            .sync_items()?
+            .into_iter()
+            .filter(|item| item.version.stamp.device == device.id)
+            .map(|item| {
+                let old = item.version.stamp.clone();
+                let stamp = Stamp {
+                    device: me.clone(),
+                    ..old.clone()
+                };
+                let version = item.version.replaced(stamp, item.version.body.clone());
+                (old, Change { version, ..item })
+            })
+            .collect();
+        // Kept to send first, so a failure below loses none of them.
         let mut outbox: Vec<Change> = self.sync_json(OUTBOX)?.unwrap_or_default();
-        for item in self.store.sync_items()? {
-            if item.version.stamp.device != device.id {
-                continue;
-            }
-            let version = item
-                .version
-                .replaced(self.next_stamp(&me)?, item.version.body.clone());
-            let change = Change { version, ..item };
-            self.store.put_sync_item(&change)?;
-            // The row already holds it: only its base moves.
-            if let Some(link) = self.store.sync_link(change.kind, &change.uid)? {
+        outbox.extend(taken.iter().map(|(_, change)| change.clone()));
+        self.set_sync_setting(OUTBOX, &json(&outbox))?;
+        for (old, change) in &taken {
+            self.store.put_sync_item(change)?;
+            // A row that holds that version: only its base moves. One that
+            // waits (or was edited here) keeps its base.
+            if let Some(link) = self.store.sync_link(change.kind, &change.uid)?
+                && link.base_stamp == *old
+            {
                 self.store.link_sync_item(
                     change.kind,
                     &change.uid,
@@ -1646,9 +1724,7 @@ impl Hedy {
                     &change.version,
                 )?;
             }
-            outbox.push(change);
         }
-        self.set_sync_setting(OUTBOX, &json(&outbox))?;
         // The next sync checks the new epoch (signed here) and sends them.
         self.sync_locked()
     }

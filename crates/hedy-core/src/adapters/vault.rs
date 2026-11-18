@@ -31,7 +31,7 @@ use sha2::Sha256;
 use zeroize::Zeroize;
 
 use crate::application::ports::{PortError, PortResult, SyncCrypto};
-use crate::domain::sync::fold_word;
+use crate::domain::sync::{DeviceId, fold_word};
 use crate::tr;
 
 /// The member id of the recovery key in epoch files.
@@ -72,6 +72,9 @@ pub enum Distrust {
     Signer,
     /// The signature does not match.
     Signature,
+    /// A member id that is not a PC's, a member twice, or a PC (not the
+    /// recovery key) adding or changing a member: a PC can only remove.
+    Members,
 }
 
 impl fmt::Display for Distrust {
@@ -92,6 +95,10 @@ impl fmt::Display for Distrust {
                 "a PC that was no longer a member signed it"
             ),
             Self::Signature => tr!("la firma no coincide", "the signature does not match"),
+            Self::Members => tr!(
+                "sus miembros no son válidos (una PC solo puede quitar PCs)",
+                "its members are not valid (a PC can only remove PCs)"
+            ),
         })
     }
 }
@@ -519,11 +526,26 @@ impl EpochFile {
         {
             return Err(VaultError::Untrusted(Distrust::Recovery));
         }
-        self.signed_by(recovery)
+        self.signed_by(recovery)?;
+        self.valid_members()
+    }
+
+    /// Each member once, and every one the recovery key or a PC id.
+    fn valid_members(&self) -> Result<()> {
+        let mut seen = std::collections::HashSet::new();
+        let valid = self.members.iter().all(|m| {
+            seen.insert(m.id.as_str()) && (m.id == RECOVERY_ID || DeviceId(m.id.clone()).is_valid())
+        });
+        if valid {
+            Ok(())
+        } else {
+            Err(VaultError::Untrusted(Distrust::Members))
+        }
     }
 
     /// Whether `next` may follow `self`: the next epoch, signed by a member
-    /// of this one.
+    /// of this one. Only the recovery key adds a PC (a join, with the 12
+    /// words); a PC only removes: every member it keeps, unchanged.
     pub fn verify_next(&self, next: &EpochFile) -> Result<()> {
         if next.format != FORMAT || Some(next.epoch) != self.epoch.checked_add(1) {
             return Err(VaultError::Untrusted(Distrust::Sequence));
@@ -531,7 +553,16 @@ impl EpochFile {
         let signer = self
             .member(&next.signer)
             .ok_or(VaultError::Untrusted(Distrust::Signer))?;
-        next.signed_by(&signer.public)
+        next.signed_by(&signer.public)?;
+        next.valid_members()?;
+        let only_removes = next
+            .members
+            .iter()
+            .all(|m| self.member(&m.id).is_some_and(|old| old.public == m.public));
+        if next.signer != RECOVERY_ID && !only_removes {
+            return Err(VaultError::Untrusted(Distrust::Members));
+        }
+        Ok(())
     }
 }
 
@@ -805,55 +836,120 @@ mod tests {
     }
 
     #[test]
+    fn a_pc_only_removes_members_and_ids_are_pcs() {
+        const HOME: &str = "00000000000000aa";
+        const OFFICE: &str = "00000000000000bb";
+        let (_, recovery) = with_language(UiLanguage::English, || new_recovery().unwrap());
+        let (home, home_public) = pc();
+        let (_, office_public) = pc();
+        let (_, phantom_public) = pc();
+        let members = |list: &[(&str, &MemberPublic)]| -> Vec<(String, MemberPublic)> {
+            list.iter()
+                .map(|(id, p)| ((*id).to_owned(), (*p).clone()))
+                .collect()
+        };
+        let e1 = EpochFile::create(
+            &VaultKey::generate(1).unwrap(),
+            &members(&[
+                (RECOVERY_ID, &recovery.public()),
+                (HOME, &home_public),
+                (OFFICE, &office_public),
+            ]),
+            RECOVERY_ID,
+            &recovery,
+        )
+        .unwrap();
+        let next = |list: &[(&str, &MemberPublic)]| {
+            EpochFile::create(&VaultKey::generate(2).unwrap(), &members(list), HOME, &home).unwrap()
+        };
+        let refused = Err(VaultError::Untrusted(Distrust::Members));
+        // Adding a member, or changing another's keys.
+        let phantom = "00000000000000cc";
+        assert_eq!(
+            e1.verify_next(&next(&[
+                (RECOVERY_ID, &recovery.public()),
+                (HOME, &home_public),
+                (OFFICE, &office_public),
+                (phantom, &phantom_public),
+            ])),
+            refused
+        );
+        assert_eq!(
+            e1.verify_next(&next(&[
+                (RECOVERY_ID, &recovery.public()),
+                (HOME, &home_public),
+                (OFFICE, &phantom_public),
+            ])),
+            refused
+        );
+        // An id that is not a PC's (`devices//` would be every PC's folder).
+        assert_eq!(
+            e1.verify_next(&next(&[
+                (RECOVERY_ID, &recovery.public()),
+                ("", &home_public)
+            ])),
+            refused
+        );
+        // Removing is fine.
+        e1.verify_next(&next(&[
+            (RECOVERY_ID, &recovery.public()),
+            (HOME, &home_public),
+        ]))
+        .unwrap();
+    }
+
+    #[test]
     fn epochs_let_members_in_and_removed_pcs_out() {
+        const HOME: &str = "00000000000000aa";
+        const OFFICE: &str = "00000000000000bb";
         let (_, recovery) = with_language(UiLanguage::English, || new_recovery().unwrap());
         let recovery_public = recovery.public();
         let (home, home_public) = pc();
         let (office, office_public) = pc();
 
-        // Setup on "home": signed by the recovery key.
+        // Setup on HOME: signed by the recovery key.
         let k1 = VaultKey::generate(1).unwrap();
         let e1 = EpochFile::create(
             &k1,
             &[
                 (RECOVERY_ID.into(), recovery_public.clone()),
-                ("home".into(), home_public.clone()),
+                (HOME.to_owned(), home_public.clone()),
             ],
             RECOVERY_ID,
             &recovery,
         )
         .unwrap();
         e1.verify_first(&recovery_public).unwrap();
-        assert_eq!(e1.open("home", &home).unwrap(), k1);
+        assert_eq!(e1.open(HOME, &home).unwrap(), k1);
         assert_eq!(e1.open(RECOVERY_ID, &recovery).unwrap(), k1);
-        assert_eq!(e1.open("office", &office), Err(VaultError::NotForUs));
-        assert_eq!(e1.open("home", &office), Err(VaultError::NotForUs));
+        assert_eq!(e1.open(OFFICE, &office), Err(VaultError::NotForUs));
+        assert_eq!(e1.open(HOME, &office), Err(VaultError::NotForUs));
 
-        // "office" joins with the words: the recovery key signs epoch 2.
+        // OFFICE joins with the words: the recovery key signs epoch 2.
         let k2 = VaultKey::generate(2).unwrap();
         let e2 = EpochFile::create(
             &k2,
             &[
                 (RECOVERY_ID.into(), recovery_public.clone()),
-                ("home".into(), home_public.clone()),
-                ("office".into(), office_public.clone()),
+                (HOME.to_owned(), home_public.clone()),
+                (OFFICE.to_owned(), office_public.clone()),
             ],
             RECOVERY_ID,
             &recovery,
         )
         .unwrap();
         e1.verify_next(&e2).unwrap();
-        assert_eq!(e2.open("office", &office).unwrap(), k2);
+        assert_eq!(e2.open(OFFICE, &office).unwrap(), k2);
 
-        // "home" removes "office": epoch 3, signed by home.
+        // HOME removes OFFICE: epoch 3, signed by home.
         let k3 = VaultKey::generate(3).unwrap();
         let e3 = EpochFile::create(
             &k3,
             &[
                 (RECOVERY_ID.into(), recovery_public.clone()),
-                ("home".into(), home_public.clone()),
+                (HOME.to_owned(), home_public.clone()),
             ],
-            "home",
+            HOME,
             &home,
         )
         .unwrap();
@@ -862,15 +958,15 @@ mod tests {
             verify_chain(&[e1.clone(), e2.clone(), e3.clone()], &recovery_public).unwrap(),
             &e3
         );
-        assert_eq!(e3.open("office", &office), Err(VaultError::NotForUs));
+        assert_eq!(e3.open(OFFICE, &office), Err(VaultError::NotForUs));
         let later = k3.seal("devices/x/snapshot.hedy", b"nuevo").unwrap();
         assert!(open(&[k1.clone(), k2.clone()], "devices/x/snapshot.hedy", &later).is_err());
 
         // The removed PC tries to put itself back: not a member of epoch 3.
         let forged = EpochFile::create(
             &VaultKey::generate(4).unwrap(),
-            &[("office".into(), office_public.clone())],
-            "office",
+            &[(OFFICE.to_owned(), office_public.clone())],
+            OFFICE,
             &office,
         )
         .unwrap();
@@ -880,7 +976,7 @@ mod tests {
         );
         // Nor can it pretend another member signed it.
         let mut impostor = forged.clone();
-        impostor.signer = "home".into();
+        impostor.signer = HOME.to_owned();
         assert_eq!(
             e3.verify_next(&impostor),
             Err(VaultError::Untrusted(Distrust::Signature))

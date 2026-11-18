@@ -170,6 +170,9 @@ pub enum AppError {
     /// No PC with that id or name syncs.
     #[error("{}", self.message())]
     SyncDeviceNotFound(String),
+    /// Another PC changed the sync's keys at the same moment.
+    #[error("{}", self.message())]
+    SyncBusy,
     /// Several PCs have that name.
     #[error("{}", self.message())]
     SyncDeviceAmbiguous(String),
@@ -317,6 +320,10 @@ impl AppError {
             Self::SyncDeviceNotFound(name) => tr!(
                 "no hay ninguna PC «{name}» en la sincronización",
                 "no PC \"{name}\" syncs"
+            ),
+            Self::SyncBusy => tr!(
+                "otra PC acaba de cambiar las claves de la sincronización; vuelve a intentarlo",
+                "another PC just changed the sync's keys; try again"
             ),
             Self::SyncDeviceAmbiguous(name) => tr!(
                 "hay varias PCs llamadas «{name}»: usa su id (`hedy sync` lo muestra)",

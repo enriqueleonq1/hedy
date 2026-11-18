@@ -2434,5 +2434,34 @@ The views picked on the design canvas, built on the same use cases as the CLI:
     105 templates;
   - the keyring was empty after leaving.
 
+**Housekeeping (security review):**
+- **High: the take-over moved the link base of rows that did not hold that version.** These were
+  rows of a project local for a while, or items waiting in the replica. Later the stale rows
+  counted as edits made here: an edit was reverted and a deletion revived on every PC, with no
+  conflict. Now a base moves only when the row reflects the version taken over.
+- **Medium-high: a member could add a hidden member** (its own keys) that outlived the member's
+  removal, read what came after and wrote as a member.
+  - Now only the recovery key adds a PC (a join, with the 12 words).
+  - A PC's epoch may only remove: every member it keeps, with the same keys.
+  - Member ids must be PC ids, each once: an empty id would have made "Quitar" delete every
+    PC's folder.
+- **An epoch that does not follow is ignored, not fatal.** Otherwise a stolen PC, or anyone with
+  push access, could stop every sync by writing a bad one.
+  - A sync and a join trust the chain up to it.
+  - Removing a PC writes over it.
+  - One that does follow and came in meanwhile (another PC's join or removal) is never written
+    over: the removal stops with "vuelve a intentarlo".
+- **The take-over keeps each version's time** (only the PC that answers for it changes). A later
+  edit elsewhere still wins, and a conflict waiting on another PC is not cleared by it.
+- **What the take-over will send is saved first**, so a failure halfway loses none of it.
+- **A snapshot that does not open or check out is skipped:** it stops only that PC's batches,
+  like a missing batch. A PC removes anything in its own folder it did not write (a junk
+  snapshot, a batch past its seq) on every sync.
+- **The confirmation and the CLI say to revoke a lost PC's git access too.** The CLI prints PC
+  names without terminal controls.
+- **A limit, kept on purpose:** the take-over re-sends what the removed PC wrote last,
+  approved notes included, under this PC's name. Without it, the PCs that had not read those
+  changes would never get them.
+
 **Next phase:**
 7. A real test.

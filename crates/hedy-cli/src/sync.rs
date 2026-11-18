@@ -115,10 +115,12 @@ pub fn status(hedy: &Hedy) -> Result<()> {
     }
     println!("\n{}", s.section(&tr!("PCs", "PCs")));
     for pc in &status.devices {
-        let name = if pc.name.is_empty() {
+        // Each PC signs its own name: shown without terminal controls.
+        let name: String = pc.name.chars().filter(|c| !c.is_control()).collect();
+        let name = if name.trim().is_empty() {
             pc.id.as_str().to_owned()
         } else {
-            pc.name.clone()
+            name
         };
         let mark = if pc.this_pc {
             s.muted(tr!(" · esta PC", " · this PC"))
@@ -434,8 +436,8 @@ pub fn remove(hedy: &Hedy, who: &str, yes: bool) -> Result<()> {
             );
         }
         let answer = read_line(&tr!(
-            "¿Quitar {who}? No podrá leer lo que guardes desde ahora; lo que ya tiene sigue en esa PC. [s/N] ",
-            "Remove {who}? It cannot read what you keep from now on; what it has stays on that PC. [y/N] "
+            "¿Quitar {who}? No podrá leer lo que guardes desde ahora; lo que ya tiene sigue en esa PC. Si la perdiste o te la robaron, quita también su acceso a git. [s/N] ",
+            "Remove {who}? It cannot read what you keep from now on; what it has stays on that PC. If it was lost or stolen, also revoke its git access. [y/N] "
         ))?;
         if !matches!(
             answer.to_lowercase().as_str(),

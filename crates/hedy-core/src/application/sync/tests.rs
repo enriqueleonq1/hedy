@@ -1649,3 +1649,338 @@ fn many_syncs_leave_a_snapshot_and_a_pc_behind_or_a_new_one_catches_up() {
         assert_eq!(f.hedy.sync_now().unwrap().sent, 0);
     }
 }
+
+// Phase 6 housekeeping: what a stolen PC (still a member, or with push
+// access) and races must not do.
+
+/// The office's keys and the newest epoch it knows.
+fn office_keys(office: &Fixture) -> Keys {
+    serde_json::from_str(&office.secrets.sync_keys().unwrap().unwrap()).unwrap()
+}
+
+#[test]
+fn a_member_cannot_add_a_hidden_member_and_a_bad_epoch_stops_no_sync() {
+    use crate::application::ports::SyncCrypto;
+    let (server, home, office, laptop) = three_pcs();
+    office.hedy.sync_now().unwrap();
+    let crypto = crate::adapters::VaultCrypto;
+    let keys = office_keys(&office);
+    let office_id = office.hedy.sync_status().unwrap().unwrap().device;
+    let newest = *keys.epochs.keys().last().unwrap();
+    let file = String::from_utf8(server.file(&layout::epoch(newest)).unwrap()).unwrap();
+    let (_, mut members) = crypto.epoch_members(&file).unwrap();
+    // The (stolen) office signs an epoch that adds a member it controls.
+    let phantom = crypto.new_member().unwrap();
+    members.push((
+        "abcdef0123456789".into(),
+        crypto.member_public(&phantom).unwrap(),
+    ));
+    let (next, _) = crypto
+        .new_epoch(newest + 1, &members, office_id.as_str(), &keys.device)
+        .unwrap();
+    office
+        .sync
+        .write(Path::new("/"), &layout::epoch(newest + 1), next.as_bytes())
+        .unwrap();
+    office.sync.push(Path::new("/"), "phantom").unwrap();
+    // Not trusted, and it stops nobody.
+    home.hedy.sync_now().unwrap();
+    laptop.hedy.sync_now().unwrap();
+    assert_eq!(names(&home), ["Casa", "Oficina", "Portátil"]);
+
+    // Removing the office writes over it: the phantom opens nothing.
+    home.hedy.sync_remove_device("Oficina").unwrap();
+    laptop.hedy.sync_now().unwrap();
+    let last = String::from_utf8(server.file(&layout::epoch(newest + 1)).unwrap()).unwrap();
+    assert!(
+        crypto
+            .open_epoch(&last, "abcdef0123456789", &phantom)
+            .is_err()
+    );
+    assert_eq!(names(&laptop), ["Portátil", "Casa"]);
+    home.hedy
+        .add_note(None, "tras quitar", Category::Decision)
+        .unwrap();
+    home.hedy.sync_now().unwrap();
+    laptop.hedy.sync_now().unwrap();
+    assert_eq!(texts(&laptop, None), ["tras quitar"]);
+}
+
+/// A template edited on the office, then later on the laptop (whose push
+/// fails); then home removes the office or just syncs.
+fn later_edit_after(remove: bool) -> String {
+    let (_server, home, office, laptop) = three_pcs();
+    let builtin: crate::domain::TemplateId = "builtin:tests".parse().unwrap();
+    office.hedy.sync_now().unwrap();
+    laptop.hedy.sync_now().unwrap();
+    office.clock.advance(5);
+    office
+        .hedy
+        .update_template(&builtin, "Tests", "oficina (antes)")
+        .unwrap();
+    office.hedy.sync_now().unwrap();
+    laptop.clock.advance(10);
+    laptop
+        .hedy
+        .update_template(&builtin, "Tests", "portátil (después)")
+        .unwrap();
+    laptop.sync.fail_next_push();
+    assert!(laptop.hedy.sync_now().is_err());
+    home.clock.advance(20);
+    if remove {
+        home.hedy.sync_remove_device("Oficina").unwrap();
+    } else {
+        home.hedy.sync_now().unwrap();
+    }
+    laptop.hedy.sync_now().unwrap();
+    home.hedy.sync_now().unwrap();
+    let rows = home.store.template_records().unwrap();
+    rows.iter()
+        .find(|r| r.builtin.as_deref() == Some("tests"))
+        .map(|r| r.text.clone())
+        .unwrap_or_default()
+}
+
+#[test]
+fn taking_over_keeps_who_wins_a_conflict() {
+    assert_eq!(later_edit_after(false), "portátil (después)");
+    assert_eq!(later_edit_after(true), "portátil (después)");
+}
+
+#[test]
+fn junk_in_a_members_folder_stops_no_sync_and_its_owner_clears_it() {
+    let (server, home, office, laptop) = three_pcs();
+    let home_id = home.hedy.sync_status().unwrap().unwrap().device;
+    home.hedy.sync_remove_device("Oficina").unwrap();
+    laptop.hedy.sync_now().unwrap();
+    // The removed office still has push access.
+    let junk = layout::snapshot(&home_id, 9_999_999_999);
+    office.sync.write(Path::new("/"), &junk, b"junk").unwrap();
+    office.sync.push(Path::new("/"), "junk").unwrap();
+    laptop.hedy.sync_now().unwrap();
+    home.hedy
+        .add_note(None, "sigue", Category::Decision)
+        .unwrap();
+    home.hedy.sync_now().unwrap();
+    assert!(!server.paths().contains(&junk));
+    laptop.hedy.sync_now().unwrap();
+    assert_eq!(texts(&laptop, None), ["sigue"]);
+}
+
+#[test]
+fn an_id_that_is_not_a_pc_removes_nothing() {
+    let (server, home, _office, _laptop) = three_pcs();
+    let before = server.paths();
+    for who in ["", "   ", "devices"] {
+        assert!(matches!(
+            home.hedy.sync_remove_device(who),
+            Err(AppError::SyncDeviceNotFound(_))
+        ));
+    }
+    let after = server.paths();
+    assert!(
+        before
+            .iter()
+            .filter(|p| p.starts_with("devices/"))
+            .all(|p| after.contains(p))
+    );
+}
+
+#[test]
+fn taking_over_leaves_a_waiting_item_alone() {
+    let server = SyncServer::default();
+    let (home, home_tienda) = pc(&server, "/a/tienda");
+    let (office, office_tienda) = pc(&server, "/b/tienda");
+    let (laptop, laptop_tienda) = pc(&server, "/c/tienda");
+    for (f, p) in [
+        (&home, &home_tienda),
+        (&office, &office_tienda),
+        (&laptop, &laptop_tienda),
+    ] {
+        f.hedy
+            .set_memory_home(p, Some(&MemoryHome::Personal))
+            .unwrap();
+    }
+    let words = home.hedy.sync_setup(URL, "Casa").unwrap();
+    office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+    laptop.hedy.sync_join(URL, &words, "Portátil").unwrap();
+    let note = office
+        .hedy
+        .add_note(Some(&office_tienda), "v1", Category::Decision)
+        .unwrap();
+    let gone = office
+        .hedy
+        .add_note(Some(&office_tienda), "se borra", Category::Decision)
+        .unwrap();
+    office.hedy.sync_now().unwrap();
+    home.hedy.sync_now().unwrap();
+    laptop.hedy.sync_now().unwrap();
+    // Home keeps the project local a while: the office's edit waits there.
+    home.hedy
+        .set_memory_home(&home_tienda, Some(&MemoryHome::Local))
+        .unwrap();
+    office
+        .hedy
+        .edit_note(note.id, "v2", Category::Decision)
+        .unwrap();
+    office.hedy.forget_note(gone.id).unwrap();
+    office.hedy.sync_now().unwrap();
+    laptop.hedy.sync_now().unwrap();
+    home.hedy.sync_remove_device("Oficina").unwrap();
+    laptop.hedy.sync_now().unwrap();
+    home.hedy
+        .set_memory_home(&home_tienda, Some(&MemoryHome::Personal))
+        .unwrap();
+    home.hedy.sync_now().unwrap();
+    laptop.hedy.sync_now().unwrap();
+    for (f, p) in [(&home, &home_tienda), (&laptop, &laptop_tienda)] {
+        assert_eq!(texts(f, Some(p)), ["v2"]);
+    }
+}
+
+#[test]
+fn taking_over_keeps_a_conflict_waiting_elsewhere() {
+    let (_server, home, office, laptop) = three_pcs();
+    let note = office
+        .hedy
+        .add_note(None, "base", Category::Decision)
+        .unwrap();
+    office.hedy.sync_now().unwrap();
+    laptop.hedy.sync_now().unwrap();
+    home.hedy.sync_now().unwrap();
+    let id = laptop.store.notes(None, false).unwrap()[0].id;
+    laptop
+        .hedy
+        .edit_note(id, "del portátil", Category::Decision)
+        .unwrap();
+    laptop.hedy.sync_now().unwrap();
+    office.clock.advance(30);
+    office
+        .hedy
+        .edit_note(note.id, "de la oficina", Category::Decision)
+        .unwrap();
+    office.hedy.sync_now().unwrap();
+    laptop.hedy.sync_now().unwrap();
+    assert_eq!(laptop.hedy.sync_conflicts().unwrap().len(), 1);
+    home.clock.advance(60);
+    home.hedy.sync_remove_device("Oficina").unwrap();
+    laptop.hedy.sync_now().unwrap();
+    assert_eq!(laptop.hedy.sync_conflicts().unwrap().len(), 1);
+}
+
+/// `GitSyncRemote` that runs something just before its next push.
+struct BeforePush {
+    inner: crate::adapters::GitSyncRemote,
+    hook: std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>,
+}
+
+impl SyncRemote for BeforePush {
+    fn lock(&self, dir: &Path) -> crate::application::ports::PortResult<SyncLock> {
+        self.inner.lock(dir)
+    }
+    fn is_public(&self, url: &str) -> bool {
+        self.inner.is_public(url)
+    }
+    fn device_name(&self) -> String {
+        self.inner.device_name()
+    }
+    fn open(&self, url: &str, dir: &Path) -> crate::application::ports::PortResult<()> {
+        self.inner.open(url, dir)
+    }
+    fn pull(&self, dir: &Path) -> crate::application::ports::PortResult<()> {
+        self.inner.pull(dir)
+    }
+    fn files(
+        &self,
+        dir: &Path,
+        prefix: &str,
+    ) -> crate::application::ports::PortResult<Vec<String>> {
+        self.inner.files(dir, prefix)
+    }
+    fn read(
+        &self,
+        dir: &Path,
+        path: &str,
+    ) -> crate::application::ports::PortResult<Option<Vec<u8>>> {
+        self.inner.read(dir, path)
+    }
+    fn write(
+        &self,
+        dir: &Path,
+        path: &str,
+        bytes: &[u8],
+    ) -> crate::application::ports::PortResult<()> {
+        self.inner.write(dir, path, bytes)
+    }
+    fn remove(&self, dir: &Path, path: &str) -> crate::application::ports::PortResult<()> {
+        self.inner.remove(dir, path)
+    }
+    fn push(&self, dir: &Path, message: &str) -> crate::application::ports::PortResult<()> {
+        let hook = self.hook.lock().unwrap().take();
+        if let Some(hook) = hook {
+            hook();
+        }
+        self.inner.push(dir, message)
+    }
+    fn discard_local(&self, dir: &Path) -> crate::application::ports::PortResult<()> {
+        self.inner.discard_local(dir)
+    }
+}
+
+#[test]
+fn a_removal_never_writes_over_an_epoch_that_came_in_meanwhile() {
+    use crate::adapters::{GitSyncRemote, SqliteStore};
+    use std::sync::Arc;
+    let tmp = tempfile::tempdir().unwrap();
+    let bare = tmp.path().join("hedy-memory.git");
+    std::fs::create_dir_all(&bare).unwrap();
+    assert!(
+        std::process::Command::new("git")
+            .args(["init", "--quiet", "--bare", "--initial-branch=main"])
+            .current_dir(&bare)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let url = bare.to_string_lossy().into_owned();
+    let racy = Arc::new(BeforePush {
+        inner: GitSyncRemote,
+        hook: Default::default(),
+    });
+    let make = |name: &str, remote: Arc<dyn SyncRemote>| {
+        let f = Fixture::new();
+        let data = tmp.path().join(name);
+        std::fs::create_dir_all(&data).unwrap();
+        let store = Arc::new(SqliteStore::open(&data.join("hedy.db")).unwrap());
+        let hedy = f.hedy_on(store, remote);
+        (f, hedy)
+    };
+    let (_home_f, home) = make("home", racy.clone());
+    let (_office_f, office) = make("office", Arc::new(GitSyncRemote));
+    let (_laptop_f, laptop) = make("laptop", Arc::new(GitSyncRemote));
+    let words = home.sync_setup(&url, "Casa").unwrap();
+    office.sync_join(&url, &words, "Oficina").unwrap();
+    home.sync_now().unwrap();
+    home.add_note(None, "algo que enviar", Category::Decision)
+        .unwrap();
+    let laptop = Arc::new(laptop);
+    let (joining, url2, words2) = (laptop.clone(), url.clone(), words.clone());
+    // The laptop joins (a new epoch) while home's first sync pushes.
+    *racy.hook.lock().unwrap() = Some(Box::new(move || {
+        joining.sync_join(&url2, &words2, "Portátil").unwrap();
+    }));
+    assert_eq!(home.sync_remove_device("Oficina"), Err(AppError::SyncBusy));
+    laptop.sync_now().unwrap();
+    // Again: it checks the laptop's epoch, then removes the office.
+    home.sync_remove_device("Oficina").unwrap();
+    laptop.sync_now().unwrap();
+    let names: Vec<String> = laptop
+        .sync_status()
+        .unwrap()
+        .unwrap()
+        .devices
+        .into_iter()
+        .map(|d| d.name)
+        .collect();
+    assert_eq!(names, ["Portátil", "Casa"]);
+}
