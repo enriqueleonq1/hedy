@@ -65,7 +65,8 @@ An admin's PC adds it on its next sync.
   its next sync. `hedy team leave --here` (or **Olvidar en esta PC** while you wait) only
   forgets the team on this PC.
 - **Cancelling a join** before you are in takes your request back, so the invite no longer
-  works. If an admin's PC let you in first, the PC stays in the team until an admin removes it.
+  works. If the PC that invited you let you in first, or you cancel without the network, the
+  PC stays in the team until it is removed (by an admin, or by you for a PC of your own).
 
 ## Security in short
 
