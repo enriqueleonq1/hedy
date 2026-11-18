@@ -2393,6 +2393,46 @@ The views picked on the design canvas, built on the same use cases as the CLI:
 - The `~/.netrc` fix was checked by hand: a server that asks for Basic auth got the token from
   the user's home before, and gets nothing now.
 
-**Next phases:**
-6. Removing a PC and compaction.
+### Removing a PC and compaction (phase 6)
+
+- **Removing a PC** (`sync_remove_device`, "Quitar" in the PCs table with the 8b confirmation,
+  `hedy sync remove <name|id>`):
+  1. this PC syncs first, so it has everything the other one sent;
+  2. it signs a new key epoch without that PC (the recovery key stays): from then on that PC
+     reads nothing new, and its batches are no longer read;
+  3. its files go from the repo;
+  4. this PC takes over what that PC wrote last: a new version of each item whose newest
+     version was that PC's, with the same content. The other PCs get it even if they had not
+     read that PC's last batches. One that already had it applies the same text again,
+     nothing more.
+- **A PC removes others, never itself:** it leaves (`hedy sync leave`), and another PC removes it.
+  A removed PC gets `SyncRemoved` on its next sync: what it already has stays, and to come back
+  it leaves and joins again with the 12 words (as a new PC).
+- **Limits:**
+  - what a removed PC pushed after the remover's last pull is lost;
+  - two PCs removing at the same moment write the same epoch number: the second push is
+    refused, its clone is made again, and it can retry.
+- **Compaction:**
+  - once a PC has more than 100 batches of its own in the repo, it writes one snapshot
+    (`devices/<id>/snapshot-<seq>.hedy`, the seq in the name so a PC knows whether it needs it
+    without opening it) with the newest version it made of each item, then removes those
+    batches and older snapshots;
+  - a PC whose next batch is gone reads the snapshot instead, with the same checks as a batch:
+    signed by a member, only its own versions, its seq;
+  - a version replaced since by another PC's is left out: that one carries it in its history;
+  - a concurrent version that lost a conflict on that PC is not in the snapshot either, so a
+    PC catching up through it does not see that conflict;
+  - tests compact after 3 batches, so every sync test (the random simulations included) also
+    goes through snapshots.
+- **The git history keeps old files:** compaction keeps the working tree small. The server's
+  history still holds every encrypted batch ever written, a few KB each. Rewriting history
+  would break the other clones; a fresh repo is the way to start over.
+- **Real run** with the binary and a bare repo, across four data dirs:
+  - a PC removed after writing a template: its last template reached the third PC, the removed
+    PC got the error, and what it wrote afterwards reached nobody;
+  - 105 syncs left 5 batches and one snapshot: a PC that was behind and a new PC both got all
+    105 templates;
+  - the keyring was empty after leaving.
+
+**Next phase:**
 7. A real test.

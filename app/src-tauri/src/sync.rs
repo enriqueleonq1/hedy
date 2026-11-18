@@ -241,6 +241,15 @@ pub async fn sync_now(state: State<'_, AppState>) -> CommandResult<SyncReportDto
     blocking(&state, |h| h.sync_now().map(Into::into)).await
 }
 
+/// Removes another PC (by id): it cannot read anything written from now on.
+#[tauri::command]
+pub async fn sync_remove_device(
+    state: State<'_, AppState>,
+    id: String,
+) -> CommandResult<SyncReportDto> {
+    blocking(&state, move |h| h.sync_remove_device(&id).map(Into::into)).await
+}
+
 /// Whether the sync was set up.
 #[tauri::command]
 pub async fn sync_leave(state: State<'_, AppState>) -> CommandResult<bool> {

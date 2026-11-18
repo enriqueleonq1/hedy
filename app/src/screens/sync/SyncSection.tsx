@@ -6,7 +6,7 @@ import { useEffect, useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAction, useApi } from "../../api/context";
-import type { MemoryHome, SyncConflict, SyncStatus } from "../../api/types";
+import type { MemoryHome, SyncConflict, SyncDevice, SyncStatus } from "../../api/types";
 import { Button, ConfirmButton } from "../../components/ui/Button";
 import { useToast } from "../../components/ui/Toast";
 import { timeAgo } from "../../format";
@@ -23,7 +23,7 @@ import {
   useSyncNow,
   useSyncStatus,
 } from "../../sync/hooks";
-import { AddPcDialog, JoinDialog, SetupDialog } from "./SyncDialogs";
+import { AddPcDialog, JoinDialog, RemovePcDialog, SetupDialog } from "./SyncDialogs";
 import "../../styles/sync.css";
 
 export function SyncSection({ focus }: { focus?: boolean }) {
@@ -92,6 +92,7 @@ function SyncOn({ status }: { status: SyncStatus }) {
   const t = useT();
   const now = useSyncNow();
   const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<SyncDevice | null>(null);
   const state = syncState(status);
   const last = status.lastSync === null ? t("sync.notYet") : timeAgo(status.lastSync, t);
   const pcs = t(status.devices.length === 1 ? "sync.pcs.one" : "sync.pcs.other", { n: status.devices.length });
@@ -145,6 +146,9 @@ function SyncOn({ status }: { status: SyncStatus }) {
             <tr>
               <th scope="col">{t("sync.col.name")}</th>
               <th scope="col">{t("sync.col.last")}</th>
+              <th scope="col">
+                <span className="sr-only">{t("sync.remove")}</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -155,6 +159,18 @@ function SyncOn({ status }: { status: SyncStatus }) {
                   {d.thisPc && <span className="muted small"> · {t("sync.thisPc")}</span>}
                 </td>
                 <td className="muted">{d.lastSync === null ? t("sync.notYet") : timeAgo(d.lastSync, t)}</td>
+                <td className="sync-pcs__action">
+                  {!d.thisPc && (
+                    <button
+                      type="button"
+                      className="sync-link sync-link--danger"
+                      aria-label={t("sync.removeNamed", { pc: deviceName(d, t) })}
+                      onClick={() => setRemoving(d)}
+                    >
+                      {t("sync.remove")}
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -170,6 +186,7 @@ function SyncOn({ status }: { status: SyncStatus }) {
         <Leave />
       </div>
       {adding && <AddPcDialog url={status.url} onClose={() => setAdding(false)} />}
+      {removing && <RemovePcDialog device={removing} onClose={() => setRemoving(null)} />}
     </>
   );
 }

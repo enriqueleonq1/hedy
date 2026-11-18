@@ -203,6 +203,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 };
                 sync::project(&hedy, &dir, choice)
             }
+            SyncCommand::Remove { pc, yes } => sync::remove(&hedy, &pc, yes),
             SyncCommand::Leave { yes } => sync::leave(&hedy, yes),
         },
         Command::Config(sub) => match sub {

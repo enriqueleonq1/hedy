@@ -9,7 +9,8 @@ import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { useToast } from "../../components/ui/Toast";
 import { useT } from "../../i18n";
-import { refreshAfterSync } from "../../sync/hooks";
+import type { SyncDevice } from "../../api/types";
+import { deviceName, refreshAfterSync } from "../../sync/hooks";
 
 /** The word the user types back to show the key was kept (n.º 7). */
 const CHECK_WORD = 7;
@@ -386,6 +387,47 @@ export function AddPcDialog({ url, onClose }: { url: string; onClose: () => void
           {t("sync.addPc.copy")}
         </Button>
       </div>
+    </Dialog>
+  );
+}
+
+/** "¿Quitar Oficina?": a new key leaves it out; what it has stays there. */
+export function RemovePcDialog({ device, onClose }: { device: SyncDevice; onClose: () => void }) {
+  const api = useApi();
+  const t = useT();
+  const toast = useToast();
+  const client = useQueryClient();
+  const pc = deviceName(device, t);
+  const remove = useMutation({
+    mutationFn: () => api.syncRemoveDevice(device.id),
+    onSuccess: () => {
+      toast.info(t("sync.remove.done", { pc }));
+      void refreshAfterSync(client);
+      onClose();
+    },
+  });
+  return (
+    <Dialog
+      title={t("sync.remove.title", { pc })}
+      onClose={onClose}
+      dismissible={!remove.isPending}
+      footer={
+        <>
+          <Button variant="ghost" disabled={remove.isPending} onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="danger" disabled={remove.isPending} onClick={() => remove.mutate()}>
+            {remove.isPending ? t("sync.remove.removing") : t("sync.remove.confirm")}
+          </Button>
+        </>
+      }
+    >
+      <p className="muted">{t("sync.remove.text", { pc })}</p>
+      {remove.isError && (
+        <p className="error-text" role="alert">
+          {errorMessage(remove.error, t)}
+        </p>
+      )}
     </Dialog>
   );
 }

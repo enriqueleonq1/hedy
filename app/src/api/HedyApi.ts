@@ -335,6 +335,8 @@ export interface HedyApi {
   /** Joins with the recovery words and brings everything in. */
   syncJoin(url: string, words: string, name: string): Promise<SyncReport>;
   syncNow(): Promise<SyncReport>;
+  /** Removes another PC: it cannot read what is written from now on. Its last changes are taken over here. */
+  syncRemoveDevice(id: string): Promise<SyncReport>;
   /** This PC stops syncing (its notes stay). Resolves whether it was set up. */
   syncLeave(): Promise<boolean>;
   syncConflicts(): Promise<SyncConflict[]>;

@@ -340,8 +340,30 @@ pub mod layout {
         format!("{DEVICES_DIR}/{}/changes/{seq:010}.hedy", device.as_str())
     }
 
-    pub fn snapshot(device: &DeviceId) -> String {
-        format!("{DEVICES_DIR}/{}/snapshot.hedy", device.as_str())
+    /// A PC's batches through `through_seq`, in one file. The number is in
+    /// the name so a PC knows whether it needs it without opening it.
+    pub fn snapshot(device: &DeviceId, through_seq: u64) -> String {
+        format!(
+            "{DEVICES_DIR}/{}/snapshot-{through_seq:010}.hedy",
+            device.as_str()
+        )
+    }
+
+    /// Everything a PC wrote lives under this folder.
+    pub fn device_dir(device: &DeviceId) -> String {
+        format!("{DEVICES_DIR}/{}/", device.as_str())
+    }
+
+    /// The PC and `through_seq` of a snapshot path; `None` for any other.
+    pub fn snapshot_seq(path: &str) -> Option<(DeviceId, u64)> {
+        let rest = path.strip_prefix(DEVICES_DIR)?.strip_prefix('/')?;
+        let (device, file) = rest.split_once("/snapshot-")?;
+        let seq = file.strip_suffix(".hedy")?;
+        let device = DeviceId(device.to_owned());
+        if !device.is_valid() || seq.len() != 10 || !seq.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        Some((device, seq.parse().ok()?))
     }
 
     /// The PC's name and when it last synced, sealed.
@@ -763,7 +785,17 @@ mod tests {
             layout::batch_seq(&layout::batch(&d, 42)),
             Some((d.clone(), 42))
         );
-        assert_eq!(layout::batch_seq(&layout::snapshot(&d)), None);
+        assert_eq!(layout::batch_seq(&layout::snapshot(&d, 7)), None);
+        assert_eq!(
+            layout::snapshot_seq(&layout::snapshot(&d, 7)),
+            Some((d.clone(), 7))
+        );
+        assert_eq!(layout::snapshot_seq(&layout::batch(&d, 1)), None);
+        assert_eq!(
+            layout::snapshot_seq("devices/../snapshot-0000000007.hedy"),
+            None
+        );
+        assert!(layout::batch(&d, 1).starts_with(&layout::device_dir(&d)));
         assert_eq!(
             layout::batch_seq("devices/../changes/0000000001.hedy"),
             None

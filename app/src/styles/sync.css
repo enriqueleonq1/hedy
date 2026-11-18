@@ -43,6 +43,7 @@
 .sync-link:hover:not(:disabled) { text-decoration: underline; }
 .sync-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 .sync-link:disabled { cursor: default; opacity: 0.55; }
+.sync-link--danger { color: var(--danger); }
 
 /* The state, first. */
 .sync-hero {
@@ -78,7 +79,8 @@
 .sync-pcs th { padding: var(--space-2) var(--space-4); text-align: left; font-size: var(--text-caption); font-weight: 500; color: var(--muted); background: var(--panel-2); border-bottom: 1px solid var(--line); }
 .sync-pcs td { padding: 10px var(--space-4); }
 .sync-pcs tbody tr + tr td { border-top: 1px solid var(--line); }
-.sync-pcs td:last-child, .sync-pcs th:last-child { width: 40%; }
+.sync-pcs td:nth-child(2), .sync-pcs th:nth-child(2) { width: 35%; }
+.sync-pcs__action { width: 1%; text-align: right; white-space: nowrap; }
 
 .sync-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .sync-split__cell { display: grid; gap: 4px; align-content: start; padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-control); }

@@ -128,7 +128,11 @@ pub fn status(hedy: &Hedy) -> Result<()> {
         let seen = pc
             .last_sync
             .map_or_else(String::new, |at| age_label(now() - at));
-        println!("  {name}{mark}  {}", s.muted(seen));
+        println!(
+            "  {name}{mark}  {}  {}",
+            s.muted(seen),
+            s.muted(pc.id.as_str())
+        );
     }
     if status.conflicts > 0 {
         let n = status.conflicts;
@@ -417,6 +421,42 @@ pub fn project(hedy: &Hedy, dir: &Path, choice: Option<HomeChoice>) -> Result<()
     Ok(())
 }
 
+/// `hedy sync remove <pc>`: asks first in a terminal (`--yes` skips it).
+pub fn remove(hedy: &Hedy, who: &str, yes: bool) -> Result<()> {
+    if !yes {
+        if !interactive() {
+            bail!(
+                "{}",
+                tr!(
+                    "para quitarla sin preguntar, usa `hedy sync remove {who} --yes`",
+                    "to remove it without asking, use `hedy sync remove {who} --yes`"
+                )
+            );
+        }
+        let answer = read_line(&tr!(
+            "¿Quitar {who}? No podrá leer lo que guardes desde ahora; lo que ya tiene sigue en esa PC. [s/N] ",
+            "Remove {who}? It cannot read what you keep from now on; what it has stays on that PC. [y/N] "
+        ))?;
+        if !matches!(
+            answer.to_lowercase().as_str(),
+            "s" | "si" | "sí" | "y" | "yes"
+        ) {
+            return Ok(());
+        }
+    }
+    let report = hedy.sync_remove_device(who)?;
+    println!(
+        "{} {}",
+        Style::for_stdout().ok("✓"),
+        tr!(
+            "{who} ya no puede leer lo nuevo. Tus otras PCs siguen igual.",
+            "{who} can no longer read what is new. Your other PCs carry on."
+        )
+    );
+    print_report(&Style::for_stdout(), &report);
+    Ok(())
+}
+
 /// `hedy sync leave`: asks first in a terminal (`--yes` skips it).
 pub fn leave(hedy: &Hedy, yes: bool) -> Result<()> {
     if !yes {
@@ -462,8 +502,8 @@ pub fn leave(hedy: &Hedy, yes: bool) -> Result<()> {
     println!(
         "{}",
         s.muted(tr!(
-            "Tus otras PCs aún la ven en la lista: sigue siendo miembro hasta que la quites desde otra PC.",
-            "Your other PCs still list it: it stays a member until you remove it from another PC."
+            "Tus otras PCs aún la ven en la lista: quítala desde una de ellas (`hedy sync remove`).",
+            "Your other PCs still list it: remove it from one of them (`hedy sync remove`)."
         ))
     );
     Ok(())

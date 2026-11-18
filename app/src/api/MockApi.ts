@@ -2616,6 +2616,15 @@ export class MockApi implements HedyApi {
     return { sent: 0, received: 0, conflicts: 0 };
   }
 
+  async syncRemoveDevice(id: string): Promise<SyncReport> {
+    if (!this.sync) throw "la sincronización no está configurada en esta PC";
+    const device = this.sync.devices.find((d) => d.id === id);
+    if (!device) throw `no hay ninguna PC «${id}» en la sincronización`;
+    if (device.thisPc) throw "esta PC no se quita a sí misma: deja de sincronizar en ella, y quítala desde otra";
+    this.sync.devices = this.sync.devices.filter((d) => d.id !== id);
+    return { sent: 1, received: 0, conflicts: 0 };
+  }
+
   async syncLeave(): Promise<boolean> {
     const was = this.sync !== null;
     this.sync = null;

@@ -167,6 +167,15 @@ pub enum AppError {
     /// The newest key epoch leaves this PC out.
     #[error("{}", self.message())]
     SyncRemoved,
+    /// No PC with that id or name syncs.
+    #[error("{}", self.message())]
+    SyncDeviceNotFound(String),
+    /// Several PCs have that name.
+    #[error("{}", self.message())]
+    SyncDeviceAmbiguous(String),
+    /// A PC cannot remove itself (it leaves instead).
+    #[error("{}", self.message())]
+    SyncRemoveThisPc,
     #[error("{}", self.message())]
     SyncConflictNotFound(i64),
     /// A key epoch this PC already checked changed in the repo.
@@ -302,8 +311,20 @@ impl AppError {
                 "that repo holds no sync yet: set it up on your other PC first"
             ),
             Self::SyncRemoved => tr!(
-                "esta PC fue quitada de la sincronización",
-                "this PC was removed from sync"
+                "esta PC se quitó de la sincronización desde otra PC: ya no puede leer lo nuevo. Tus notas siguen aquí; para volver, deja de sincronizar y súmala de nuevo con tus 12 palabras",
+                "this PC was removed from sync on another PC: it can no longer read what is new. Your notes stay here; to come back, stop syncing and add it again with your 12 words"
+            ),
+            Self::SyncDeviceNotFound(name) => tr!(
+                "no hay ninguna PC «{name}» en la sincronización",
+                "no PC \"{name}\" syncs"
+            ),
+            Self::SyncDeviceAmbiguous(name) => tr!(
+                "hay varias PCs llamadas «{name}»: usa su id (`hedy sync` lo muestra)",
+                "several PCs are called \"{name}\": use its id (`hedy sync` shows it)"
+            ),
+            Self::SyncRemoveThisPc => tr!(
+                "esta PC no se quita a sí misma: deja de sincronizar en ella, y quítala desde otra",
+                "this PC does not remove itself: stop syncing on it, and remove it from another"
             ),
             Self::SyncUrlWithCredentials => tr!(
                 "esa dirección lleva una contraseña o un token, y Hedy no guarda ninguno: usa la dirección sin él (con SSH, o con el gestor de credenciales de git)",

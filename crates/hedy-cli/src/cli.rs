@@ -923,6 +923,23 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             ),
         ),
         (
+            "sync remove",
+            "",
+            tr!(
+                "Quita otra PC: no podrá leer lo que guardes desde ahora",
+                "Remove another PC: it cannot read what you keep from now on"
+            ),
+        ),
+        (
+            "sync remove",
+            "pc",
+            tr!(
+                "Su nombre o su id (`hedy sync` los muestra)",
+                "Its name or its id (`hedy sync` shows them)"
+            ),
+        ),
+        ("sync remove", "yes", tr!("Sin preguntar", "Without asking")),
+        (
             "sync leave",
             "",
             tr!(
@@ -989,6 +1006,7 @@ fn value_names() -> Vec<(&'static str, String)> {
         ("model", tr!("MODELO", "MODEL")),
         ("url", tr!("DIRECCIÓN", "URL")),
         ("owner", tr!("DUEÑO", "OWNER")),
+        ("pc", tr!("PC", "PC")),
         // `hedy sync project --shared <DUEÑO>` (a flag elsewhere, without one).
         ("shared", tr!("DUEÑO", "OWNER")),
     ]
@@ -1313,6 +1331,12 @@ pub enum SyncCommand {
         shared: Option<String>,
         #[arg(long)]
         follow: bool,
+    },
+
+    Remove {
+        pc: String,
+        #[arg(long, short)]
+        yes: bool,
     },
 
     Leave {

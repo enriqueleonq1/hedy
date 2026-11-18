@@ -199,6 +199,24 @@ describe("Sync", () => {
     expect((await api.memoryHome("/code/hedy")).chosen).toBe(true);
   });
 
+  it("removes another PC after asking", async () => {
+    const { api, user } = renderAt("#sync", MockApi.withSampleData());
+    const table = await waitFor(() => within(section()).getByRole("table"));
+    // This PC has no "Quitar": it leaves instead.
+    expect(within(table).queryByRole("button", { name: "Quitar Casa" })).toBeNull();
+    await user.click(within(table).getByRole("button", { name: "Quitar Oficina" }));
+    const dialog = screen.getByRole("dialog", { name: "¿Quitar Oficina?" });
+    expect(within(dialog).getByText(/no podrá leer lo que guardes desde ahora/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+    expect(api.sync?.devices).toHaveLength(2);
+
+    await user.click(within(table).getByRole("button", { name: "Quitar Oficina" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Quitar PC" }));
+    expect(await screen.findByText("Oficina ya no puede leer lo nuevo.")).toBeInTheDocument();
+    expect(api.sync?.devices.map((d) => d.name)).toEqual(["Casa"]);
+    await waitFor(() => expect(within(section()).queryByText("Oficina")).toBeNull());
+  });
+
   it("stops syncing on this PC after a second click", async () => {
     const { api, user } = renderAt("#sync", MockApi.withSampleData());
     const card = await waitFor(section);

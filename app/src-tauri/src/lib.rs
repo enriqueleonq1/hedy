@@ -169,6 +169,7 @@ pub fn run() {
             sync::sync_setup,
             sync::sync_join,
             sync::sync_now,
+            sync::sync_remove_device,
             sync::sync_leave,
             sync::sync_conflicts,
             sync::resolve_sync_conflict,

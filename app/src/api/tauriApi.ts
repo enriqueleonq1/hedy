@@ -189,6 +189,7 @@ export const tauriApi: HedyApi = {
   syncSetup: (url, name) => invoke("sync_setup", { url, name }),
   syncJoin: (url, words, name) => invoke("sync_join", { url, words, name }),
   syncNow: () => invoke("sync_now"),
+  syncRemoveDevice: (id) => invoke("sync_remove_device", { id }),
   syncLeave: () => invoke("sync_leave"),
   syncConflicts: () => invoke("sync_conflicts"),
   resolveSyncConflict: (id, useOther) => invoke("resolve_sync_conflict", { id, useOther }),

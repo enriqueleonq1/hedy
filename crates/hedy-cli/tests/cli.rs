@@ -1931,6 +1931,14 @@ fn sync_without_setup_explains_how_and_refuses_the_rest() {
         .failure()
         .stderr(predicate::str::contains("--yes"));
     env.hedy(&["sync", "resolve", "1"]).assert().failure();
+    env.hedy(&["sync", "remove", "Oficina"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--yes"));
+    env.hedy(&["sync", "remove", "Oficina", "--yes"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no está configurada"));
     env.hedy(&["sync", "owner", "--mine"]).assert().failure();
     // An owner needs an answer, and its server.
     env.hedy(&["sync", "owner", "github.com/x"])

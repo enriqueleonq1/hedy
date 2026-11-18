@@ -31,7 +31,8 @@ use super::ports::{SyncConflict, SyncLink, SyncLock, TemplateRecord};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::sync::{
     Batch, Change, DeviceId, ItemKind, Merge, NoteBody, RECOVERY_MEMBER, RepoIdentity, Scope,
-    SkillBody, Stamp, TemplateBody, ThemeBody, Version, layout, merge, url_has_credentials,
+    SkillBody, Snapshot, Stamp, TemplateBody, ThemeBody, Version, layout, merge,
+    url_has_credentials,
 };
 use crate::domain::theme::{CustomTheme, new_theme_id};
 use crate::tr;
@@ -69,6 +70,10 @@ const INFO_EVERY: i64 = 3600;
 const CLOCK_AHEAD_MAX: i64 = 24 * 3600 * 1000;
 /// Files in the repo bigger than this are refused, not read.
 const FILE_MAX: usize = 16 * 1024 * 1024;
+
+/// Past this many batches of its own in the repo, a PC rewrites them as
+/// one snapshot (fewer in tests, so every test also compacts).
+const COMPACT_AFTER: usize = if cfg!(test) { 3 } else { 100 };
 
 const KINDS: [ItemKind; 4] = [
     ItemKind::Note,
@@ -546,6 +551,7 @@ impl Hedy {
             self.store.set_setting(OUTBOX, None)?;
             self.write_pending(&session)?;
         }
+        self.compact(&session)?;
         // This PC's batch leaves even when another PC's cannot be applied.
         let applied = self
             .apply_batches(&session, &mut report)
@@ -1109,20 +1115,39 @@ impl Hedy {
     }
 
     /// Reads the batches of the newest epoch's PCs not read yet, in order.
-    /// A PC not in it (removed, or never added) is not read.
+    /// A PC not in it (removed, or never added) is not read. When the next
+    /// batch is gone (compacted), its snapshot stands for it.
     fn apply_batches(&self, session: &Session, report: &mut SyncReport) -> AppResult<()> {
         let mut pending: BTreeMap<DeviceId, Vec<(u64, String)>> = BTreeMap::new();
+        let mut snapshots: HashMap<DeviceId, (u64, String)> = HashMap::new();
         for path in self.sync_remote.files(&session.dir, layout::DEVICES_DIR)? {
+            let member = |device: &DeviceId| {
+                *device != session.device && session.members.contains_key(device.as_str())
+            };
             if let Some((device, seq)) = layout::batch_seq(&path)
-                && device != session.device
-                && session.members.contains_key(device.as_str())
+                && member(&device)
             {
                 pending.entry(device).or_default().push((seq, path));
+            } else if let Some((device, seq)) = layout::snapshot_seq(&path)
+                && member(&device)
+                && snapshots
+                    .get(&device)
+                    .is_none_or(|(newest, _)| seq > *newest)
+            {
+                pending.entry(device.clone()).or_default();
+                snapshots.insert(device, (seq, path));
             }
         }
         for (device, mut batches) in pending {
             batches.sort();
             let mut read = self.store.sync_cursor(&device)?;
+            if let Some((through, path)) = snapshots.get(&device)
+                && *through > read
+                && !batches.iter().any(|(seq, _)| *seq == read + 1)
+                && self.apply_snapshot(session, &device, *through, path, report)?
+            {
+                read = *through;
+            }
             let unread: Vec<(u64, String)> =
                 batches.into_iter().filter(|(seq, _)| *seq > read).collect();
             for (seq, path) in unread {
@@ -1150,6 +1175,80 @@ impl Hedy {
                 }
                 self.store.set_sync_cursor(&device, seq)?;
                 read = seq;
+            }
+        }
+        Ok(())
+    }
+
+    /// A PC's batches through `through`, as one snapshot. Returns whether it
+    /// was read (a PC that is not a member is not).
+    fn apply_snapshot(
+        &self,
+        session: &Session,
+        device: &DeviceId,
+        through: u64,
+        path: &str,
+        report: &mut SyncReport,
+    ) -> AppResult<bool> {
+        let Some(body) = self.open_signed(session, device, path)? else {
+            return Ok(false);
+        };
+        let snapshot: Snapshot = serde_json::from_str(&body).map_err(|_| corrupt(path))?;
+        // A PC writes only its own versions, in a file named for its seq.
+        if snapshot.device != *device
+            || snapshot.through_seq != through
+            || snapshot
+                .changes
+                .iter()
+                .any(|c| c.version.stamp.device != *device)
+        {
+            return Err(corrupt(path));
+        }
+        for change in &snapshot.changes {
+            self.apply_change(session, change, report)?;
+        }
+        self.store.set_sync_cursor(device, through)?;
+        Ok(true)
+    }
+
+    /// Once this PC has many batches in the repo, writes the newest version
+    /// it made of each item as one snapshot and removes them (and older
+    /// snapshots). A version replaced since by another PC's is left out:
+    /// that one carries it in its history.
+    fn compact(&self, session: &Session) -> AppResult<()> {
+        let own = layout::device_dir(&session.device);
+        let files = self.sync_remote.files(&session.dir, &own)?;
+        let batches = files
+            .iter()
+            .filter(|p| layout::batch_seq(p).is_some())
+            .count();
+        // Every batch it decided is written (nothing pending).
+        if batches <= COMPACT_AFTER || self.sync_setting(PENDING)?.is_some() {
+            return Ok(());
+        }
+        let through_seq = self.sync_number(SEQ)?;
+        let changes: Vec<Change> = self
+            .store
+            .sync_items()?
+            .into_iter()
+            .filter(|c| c.version.stamp.device == session.device)
+            .collect();
+        let body = json(&Snapshot {
+            device: session.device.clone(),
+            through_seq,
+            changes,
+        });
+        // Too big for one file (it would be refused): keep the batches.
+        if body.len() > FILE_MAX / 2 {
+            return Ok(());
+        }
+        let path = layout::snapshot(&session.device, through_seq);
+        self.write_signed(session, &path, &body)?;
+        for old in files {
+            let replaced = layout::batch_seq(&old).is_some_and(|(_, seq)| seq <= through_seq)
+                || layout::snapshot_seq(&old).is_some_and(|(_, seq)| seq < through_seq);
+            if replaced {
+                self.sync_remote.remove(&session.dir, &old)?;
             }
         }
         Ok(())
@@ -1471,6 +1570,87 @@ impl Hedy {
             self.store.set_setting(key, None)?;
         }
         Ok(was_set_up)
+    }
+
+    /// Removes another PC (by its id or its name): a new key epoch leaves it
+    /// out, so it cannot read anything written from now on, and its files
+    /// go. This PC syncs first, then takes over what that PC wrote last (a
+    /// new version of each item, same content), so the other PCs get it
+    /// even if they had not read it yet. Returns the sync that sends it.
+    pub fn sync_remove_device(&self, who: &str) -> AppResult<SyncReport> {
+        let _guard = self.sync_guard()?;
+        let me = DeviceId(self.sync_setting(DEVICE)?.ok_or(AppError::SyncNotSetUp)?);
+        // Everything it sent so far, first; the epoch this PC checked last
+        // is then the newest.
+        self.sync_locked()?;
+        let who = who.trim();
+        let devices = self.sync_status()?.ok_or(AppError::SyncNotSetUp)?.devices;
+        let named: Vec<&SyncDevice> = devices.iter().filter(|d| d.name.trim() == who).collect();
+        let device = match devices.iter().find(|d| d.id.as_str() == who) {
+            Some(device) => device.clone(),
+            None if named.len() > 1 => return Err(AppError::SyncDeviceAmbiguous(who.to_owned())),
+            None => (*named
+                .first()
+                .ok_or_else(|| AppError::SyncDeviceNotFound(who.to_owned()))?)
+            .clone(),
+        };
+        if device.id == me {
+            return Err(AppError::SyncRemoveThisPc);
+        }
+        let dir = self.sync_dir()?;
+        let keys = self.keys()?;
+        let newest = self.sync_number(EPOCH)? as u32;
+        let file = self
+            .epochs(&dir)?
+            .into_iter()
+            .find(|(n, _)| *n == newest)
+            .map(|(_, f)| f)
+            .ok_or_else(|| corrupt(&layout::epoch(newest)))?;
+        let (_, members) = self.sync_crypto.epoch_members(&file)?;
+        let remaining: Vec<(String, String)> = members
+            .into_iter()
+            .filter(|(id, _)| id != device.id.as_str())
+            .collect();
+        let (next, _) =
+            self.sync_crypto
+                .new_epoch(newest + 1, &remaining, me.as_str(), &keys.device)?;
+        self.sync_remote
+            .write(&dir, &layout::epoch(newest + 1), next.as_bytes())?;
+        for path in self
+            .sync_remote
+            .files(&dir, &layout::device_dir(&device.id))?
+        {
+            self.sync_remote.remove(&dir, &path)?;
+        }
+        // Another PC wrote this epoch first: start from the repo again.
+        if let Err(error) = self.sync_remote.push(&dir, "hedy sync") {
+            let _ = self.sync_remote.discard_local(&dir);
+            return Err(error.into());
+        }
+        let mut outbox: Vec<Change> = self.sync_json(OUTBOX)?.unwrap_or_default();
+        for item in self.store.sync_items()? {
+            if item.version.stamp.device != device.id {
+                continue;
+            }
+            let version = item
+                .version
+                .replaced(self.next_stamp(&me)?, item.version.body.clone());
+            let change = Change { version, ..item };
+            self.store.put_sync_item(&change)?;
+            // The row already holds it: only its base moves.
+            if let Some(link) = self.store.sync_link(change.kind, &change.uid)? {
+                self.store.link_sync_item(
+                    change.kind,
+                    &change.uid,
+                    &link.local_id,
+                    &change.version,
+                )?;
+            }
+            outbox.push(change);
+        }
+        self.set_sync_setting(OUTBOX, &json(&outbox))?;
+        // The next sync checks the new epoch (signed here) and sends them.
+        self.sync_locked()
     }
 
     pub fn sync_conflicts(&self) -> AppResult<Vec<SyncConflict>> {

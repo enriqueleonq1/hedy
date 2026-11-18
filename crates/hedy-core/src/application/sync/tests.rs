@@ -1521,3 +1521,131 @@ fn an_error_is_kept_on_one_short_line_without_escapes() {
     assert!(!shown.contains('\u{1b}') && !shown.contains('\n'));
     assert_eq!(shown.chars().count(), super::ERROR_MAX + 1);
 }
+
+// Phase 6.
+
+/// Home sets up; office and laptop join.
+fn three_pcs() -> (SyncServer, Fixture, Fixture, Fixture) {
+    let server = SyncServer::default();
+    let (home, _) = pc(&server, "/a/tienda");
+    let (office, _) = pc(&server, "/b/tienda");
+    let (laptop, _) = pc(&server, "/c/tienda");
+    let words = home.hedy.sync_setup(URL, "Casa").unwrap();
+    office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+    laptop.hedy.sync_join(URL, &words, "Portátil").unwrap();
+    home.hedy.sync_now().unwrap();
+    (server, home, office, laptop)
+}
+
+fn names(f: &Fixture) -> Vec<String> {
+    f.hedy
+        .sync_status()
+        .unwrap()
+        .unwrap()
+        .devices
+        .into_iter()
+        .map(|d| d.name)
+        .collect()
+}
+
+#[test]
+fn a_removed_pc_reads_nothing_new_and_what_it_wrote_last_still_arrives() {
+    let (server, home, office, laptop) = three_pcs();
+    office.hedy.add_note(None, "A", Category::Decision).unwrap();
+    office.hedy.sync_now().unwrap();
+    laptop.hedy.sync_now().unwrap();
+    // B reaches the repo, but the laptop has not read it when office goes.
+    office.hedy.add_note(None, "B", Category::Decision).unwrap();
+    office.hedy.sync_now().unwrap();
+
+    assert_eq!(
+        home.hedy.sync_remove_device("Casa"),
+        Err(AppError::SyncRemoveThisPc)
+    );
+    assert_eq!(
+        home.hedy.sync_remove_device("Nadie"),
+        Err(AppError::SyncDeviceNotFound("Nadie".into()))
+    );
+    home.hedy.sync_remove_device("Oficina").unwrap();
+    assert_eq!(names(&home), ["Casa", "Portátil"]);
+    let office_id = office.hedy.sync_status().unwrap().unwrap().device;
+    assert!(
+        !server
+            .paths()
+            .iter()
+            .any(|p| p.starts_with(&layout::device_dir(&office_id)))
+    );
+
+    laptop.hedy.sync_now().unwrap();
+    assert_eq!(texts(&laptop, None), ["A", "B"]);
+    assert_eq!(names(&laptop), ["Portátil", "Casa"]);
+
+    // Office cannot read what is written from now on, nor write.
+    home.hedy.add_note(None, "C", Category::Decision).unwrap();
+    home.hedy.sync_now().unwrap();
+    office.hedy.add_note(None, "D", Category::Decision).unwrap();
+    assert_eq!(office.hedy.sync_now(), Err(AppError::SyncRemoved));
+    assert_eq!(texts(&office, None), ["A", "B", "D"]);
+    laptop.hedy.sync_now().unwrap();
+    home.hedy.sync_now().unwrap();
+    for f in [&home, &laptop] {
+        assert_eq!(texts(f, None), ["A", "B", "C"]);
+    }
+    // Taking over sent each of its items once, and nothing more after.
+    assert_eq!(home.hedy.sync_now().unwrap().sent, 0);
+    assert_eq!(laptop.hedy.sync_now().unwrap().sent, 0);
+}
+
+#[test]
+fn many_syncs_leave_a_snapshot_and_a_pc_behind_or_a_new_one_catches_up() {
+    let server = SyncServer::default();
+    let (home, _) = pc(&server, "/a/tienda");
+    let words = home.hedy.sync_setup(URL, "Casa").unwrap();
+    let (office, _) = pc(&server, "/b/tienda");
+    office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+    let mut first = None;
+    for i in 0..12 {
+        let note = home
+            .hedy
+            .add_note(None, &format!("nota {i:02}"), Category::Decision)
+            .unwrap();
+        first.get_or_insert(note.id);
+        home.hedy.sync_now().unwrap();
+    }
+    // An edit and a deletion travel in the snapshot too.
+    home.hedy
+        .edit_note(first.unwrap(), "nota 00 editada", Category::Decision)
+        .unwrap();
+    let last = home.store.notes(None, false).unwrap();
+    let last = last.iter().find(|n| n.text == "nota 11").unwrap().id;
+    home.hedy.forget_note(last).unwrap();
+    home.hedy.sync_now().unwrap();
+
+    let home_id = home.hedy.sync_status().unwrap().unwrap().device;
+    let own: Vec<String> = server
+        .paths()
+        .into_iter()
+        .filter(|p| p.starts_with(&layout::device_dir(&home_id)))
+        .collect();
+    let batches = own
+        .iter()
+        .filter(|p| layout::batch_seq(p).is_some())
+        .count();
+    let snapshots = own
+        .iter()
+        .filter(|p| layout::snapshot_seq(p).is_some())
+        .count();
+    assert!(batches <= super::COMPACT_AFTER, "{own:?}");
+    assert_eq!(snapshots, 1, "{own:?}");
+
+    let mut expected: Vec<String> = (1..11).map(|i| format!("nota {i:02}")).collect();
+    expected.insert(0, "nota 00 editada".into());
+    // Behind since it joined, and new.
+    office.hedy.sync_now().unwrap();
+    let (laptop, _) = pc(&server, "/c/tienda");
+    laptop.hedy.sync_join(URL, &words, "Portátil").unwrap();
+    for f in [&office, &laptop] {
+        assert_eq!(texts(f, None), expected);
+        assert_eq!(f.hedy.sync_now().unwrap().sent, 0);
+    }
+}
