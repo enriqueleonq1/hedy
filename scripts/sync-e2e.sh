@@ -11,7 +11,8 @@
 set -euo pipefail
 
 URL=${1:?usage: scripts/sync-e2e.sh <empty-repo-url> [hedy-binary]}
-HEDY=$(cd "$(dirname "${2:-$(dirname "$0")/../target/debug/hedy}")" && pwd)/$(basename "${2:-hedy}")
+HEDY=$(cd "$(dirname "${2:-$(dirname "$0")/../target/debug/hedy}")" && pwd)/$(basename "${2:-hedy}") || exit 1
+[ -x "$HEDY" ] || { echo "no está el binario $HEDY (cargo build -p hedy-cli)" >&2; exit 1; }
 WORK=$(mktemp -d)
 export HEDY_LANGUAGE=es
 
