@@ -24,7 +24,8 @@ h() {
 # Sync keys in the keyring (other Hedy entries, such as API keys, do not count).
 keyring() {
   if command -v secret-tool >/dev/null; then
-    secret-tool search --all service hedy 2>/dev/null | grep -c 'username = sync-device:' || true
+    # secret-tool prints the attributes on stderr.
+    secret-tool search --all service hedy 2>&1 | grep -c 'username = sync-device:' || true
   else
     echo 0
   fi

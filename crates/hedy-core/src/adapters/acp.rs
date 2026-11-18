@@ -115,7 +115,12 @@ impl Shared {
         stdin
             .write_all(line.as_bytes())
             .and_then(|()| stdin.flush())
-            .map_err(|e| PortError::new(format!("el agente ya no responde: {e}")))
+            .map_err(|e| {
+                PortError::new(tr!(
+                    "el agente ya no responde: {e}",
+                    "the agent no longer answers: {e}"
+                ))
+            })
     }
 
     fn request(&self, method: &str, params: Value, kind: Pending) -> PortResult<()> {
