@@ -1675,7 +1675,7 @@ fn a_new_persons_name_is_shown_plain_and_told_apart() {
 }
 
 #[test]
-fn zz_promoted_luis_leaves_and_syncs_first() {
+fn a_promoted_member_who_leaves_leaves_their_team_notes() {
     let (server, ana, luis) = team_of_two();
     let luis_person = person_of(&ana, "Luis");
     ana.f
