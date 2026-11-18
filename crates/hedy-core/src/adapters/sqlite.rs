@@ -265,6 +265,32 @@ const MIGRATIONS: &[&str] = &[
     -- NULL until decided.
     ALTER TABLE projects ADD COLUMN memory_home TEXT;
 "#,
+    r#"
+    -- Teams (docs/decisions.md §35) sync like personal sync, each in its own
+    -- space: '' is personal sync, 'team:<id>' a team.
+    CREATE TABLE sync_items_spaced (
+        space    TEXT NOT NULL DEFAULT '',
+        kind     TEXT NOT NULL,
+        uid      TEXT NOT NULL,
+        scope    TEXT NOT NULL,
+        version  TEXT NOT NULL,
+        PRIMARY KEY (space, kind, uid)
+    );
+    INSERT INTO sync_items_spaced (kind, uid, scope, version)
+        SELECT kind, uid, scope, version FROM sync_items;
+    DROP TABLE sync_items;
+    ALTER TABLE sync_items_spaced RENAME TO sync_items;
+    CREATE TABLE sync_cursors_spaced (
+        space   TEXT NOT NULL DEFAULT '',
+        device  TEXT NOT NULL,
+        seq     INTEGER NOT NULL,
+        PRIMARY KEY (space, device)
+    );
+    INSERT INTO sync_cursors_spaced (device, seq) SELECT device, seq FROM sync_cursors;
+    DROP TABLE sync_cursors;
+    ALTER TABLE sync_cursors_spaced RENAME TO sync_cursors;
+    ALTER TABLE sync_conflicts ADD COLUMN space TEXT NOT NULL DEFAULT '';
+"#,
 ];
 
 mod commands;
@@ -1939,7 +1965,8 @@ mod tests {
     fn the_skills_migration_keeps_existing_data() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("hedy.db");
-        let before = MIGRATIONS.len() - 1;
+        // The skills migration was the 13th.
+        let before = 12;
         {
             // A database from before skills.
             let conn = Connection::open(&path).unwrap();

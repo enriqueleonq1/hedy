@@ -16,30 +16,42 @@ use crate::domain::{Note, Skill};
 
 #[derive(Default)]
 pub struct SyncTables {
-    items: BTreeMap<(ItemKind, String), Change>,
+    items: BTreeMap<(String, ItemKind, String), Change>,
     links: BTreeMap<(ItemKind, String), SyncLink>,
-    cursors: BTreeMap<DeviceId, u64>,
-    conflicts: Vec<SyncConflict>,
+    cursors: BTreeMap<(String, DeviceId), u64>,
+    conflicts: Vec<(String, SyncConflict)>,
     homes: BTreeMap<PathBuf, MemoryHome>,
 }
 
 impl SyncRepository for MemoryStore {
-    fn sync_item(&self, kind: ItemKind, uid: &str) -> PortResult<Option<(Scope, Version)>> {
+    fn sync_item(
+        &self,
+        space: &str,
+        kind: ItemKind,
+        uid: &str,
+    ) -> PortResult<Option<(Scope, Version)>> {
         let tables = self.sync.lock().unwrap();
         Ok(tables
             .items
-            .get(&(kind, uid.to_owned()))
+            .get(&(space.to_owned(), kind, uid.to_owned()))
             .map(|c| (c.scope.clone(), c.version.clone())))
     }
-    fn sync_items(&self) -> PortResult<Vec<Change>> {
-        Ok(self.sync.lock().unwrap().items.values().cloned().collect())
-    }
-    fn put_sync_item(&self, change: &Change) -> PortResult<()> {
-        self.sync
+    fn sync_items(&self, space: &str) -> PortResult<Vec<Change>> {
+        Ok(self
+            .sync
             .lock()
             .unwrap()
             .items
-            .insert((change.kind, change.uid.clone()), change.clone());
+            .iter()
+            .filter(|((s, _, _), _)| s == space)
+            .map(|(_, c)| c.clone())
+            .collect())
+    }
+    fn put_sync_item(&self, space: &str, change: &Change) -> PortResult<()> {
+        self.sync.lock().unwrap().items.insert(
+            (space.to_owned(), change.kind, change.uid.clone()),
+            change.clone(),
+        );
         Ok(())
     }
     fn sync_link(&self, kind: ItemKind, uid: &str) -> PortResult<Option<SyncLink>> {
@@ -93,26 +105,27 @@ impl SyncRepository for MemoryStore {
             .remove(&(kind, uid.to_owned()));
         Ok(())
     }
-    fn sync_cursor(&self, device: &DeviceId) -> PortResult<u64> {
+    fn sync_cursor(&self, space: &str, device: &DeviceId) -> PortResult<u64> {
         Ok(self
             .sync
             .lock()
             .unwrap()
             .cursors
-            .get(device)
+            .get(&(space.to_owned(), device.clone()))
             .copied()
             .unwrap_or(0))
     }
-    fn set_sync_cursor(&self, device: &DeviceId, seq: u64) -> PortResult<()> {
+    fn set_sync_cursor(&self, space: &str, device: &DeviceId, seq: u64) -> PortResult<()> {
         self.sync
             .lock()
             .unwrap()
             .cursors
-            .insert(device.clone(), seq);
+            .insert((space.to_owned(), device.clone()), seq);
         Ok(())
     }
     fn add_sync_conflict(
         &self,
+        space: &str,
         kind: ItemKind,
         uid: &str,
         kept: &Version,
@@ -120,31 +133,43 @@ impl SyncRepository for MemoryStore {
         at: i64,
     ) -> PortResult<i64> {
         let mut tables = self.sync.lock().unwrap();
-        let id = tables.conflicts.iter().map(|c| c.id).max().unwrap_or(0) + 1;
-        tables.conflicts.push(SyncConflict {
-            id,
-            kind,
-            uid: uid.to_owned(),
-            kept: kept.clone(),
-            other: other.clone(),
-            at,
-        });
+        let id = tables.conflicts.iter().map(|c| c.1.id).max().unwrap_or(0) + 1;
+        tables.conflicts.push((
+            space.to_owned(),
+            SyncConflict {
+                id,
+                kind,
+                uid: uid.to_owned(),
+                kept: kept.clone(),
+                other: other.clone(),
+                at,
+            },
+        ));
         Ok(id)
     }
-    fn sync_conflicts(&self) -> PortResult<Vec<SyncConflict>> {
-        Ok(self.sync.lock().unwrap().conflicts.clone())
+    fn sync_conflicts(&self, space: &str) -> PortResult<Vec<SyncConflict>> {
+        Ok(self
+            .sync
+            .lock()
+            .unwrap()
+            .conflicts
+            .iter()
+            .filter(|(s, _)| s == space)
+            .map(|(_, c)| c.clone())
+            .collect())
     }
     fn delete_sync_conflict(&self, id: i64) -> PortResult<()> {
-        self.sync.lock().unwrap().conflicts.retain(|c| c.id != id);
+        self.sync.lock().unwrap().conflicts.retain(|c| c.1.id != id);
         Ok(())
     }
-    fn clear_sync_state(&self) -> PortResult<()> {
+    fn clear_sync_state(&self, space: &str) -> PortResult<()> {
         let mut tables = self.sync.lock().unwrap();
-        let homes = std::mem::take(&mut tables.homes);
-        *tables = SyncTables {
-            homes,
-            ..SyncTables::default()
-        };
+        tables.items.retain(|(s, _, _), _| s != space);
+        tables.cursors.retain(|(s, _), _| s != space);
+        tables.conflicts.retain(|(s, _)| s != space);
+        if space.is_empty() {
+            tables.links.clear();
+        }
         Ok(())
     }
     fn memory_home(&self, project: &Path) -> PortResult<Option<MemoryHome>> {
@@ -227,27 +252,53 @@ impl SyncServer {
     }
 }
 
-/// One PC's working copy of a [`SyncServer`]: what it pulled, plus what it
-/// wrote since its last push.
+/// One PC's working copies, one per folder (personal sync's, each team's):
+/// what each pulled from its [`SyncServer`], plus what it wrote since its
+/// last push. A folder opened for a URL served with [`Self::serve`] uses
+/// that server; any other uses the fixture's.
 pub struct FakeSyncRemote {
     server: SyncServer,
-    local: Mutex<BTreeMap<String, Vec<u8>>>,
-    /// Written (`Some`) or removed (`None`) since the last push.
-    pending: Mutex<BTreeMap<String, Option<Vec<u8>>>>,
+    servers: Mutex<BTreeMap<String, SyncServer>>,
+    clones: Mutex<BTreeMap<PathBuf, FakeClone>>,
     pushes: Mutex<Vec<String>>,
     /// Pushes to let through before one fails (the network went down).
     fail_push: Mutex<Option<usize>>,
+}
+
+struct FakeClone {
+    server: SyncServer,
+    local: BTreeMap<String, Vec<u8>>,
+    /// Written (`Some`) or removed (`None`) since the last push.
+    pending: BTreeMap<String, Option<Vec<u8>>>,
+}
+
+impl FakeClone {
+    fn pull(&mut self) {
+        let mut local = self.server.0.lock().unwrap().clone();
+        for (path, file) in &self.pending {
+            match file {
+                Some(bytes) => local.insert(path.clone(), bytes.clone()),
+                None => local.remove(path),
+            };
+        }
+        self.local = local;
+    }
 }
 
 impl FakeSyncRemote {
     pub fn new(server: SyncServer) -> Self {
         Self {
             server,
-            local: Mutex::default(),
-            pending: Mutex::default(),
+            servers: Mutex::default(),
+            clones: Mutex::default(),
             pushes: Mutex::default(),
             fail_push: Mutex::default(),
         }
+    }
+
+    /// Serves `url` from `server` (another repo: a team's).
+    pub fn serve(&self, url: &str, server: SyncServer) {
+        self.servers.lock().unwrap().insert(url.to_owned(), server);
     }
 
     pub fn fail_next_push(&self) {
@@ -263,6 +314,17 @@ impl FakeSyncRemote {
     pub fn pushes(&self) -> Vec<String> {
         self.pushes.lock().unwrap().clone()
     }
+
+    /// The clone in `dir`, made (from the fixture's server) if none is.
+    fn clone_in<T>(&self, dir: &Path, f: impl FnOnce(&mut FakeClone) -> T) -> T {
+        let mut clones = self.clones.lock().unwrap();
+        let clone = clones.entry(dir.to_owned()).or_insert_with(|| FakeClone {
+            server: self.server.clone(),
+            local: BTreeMap::new(),
+            pending: BTreeMap::new(),
+        });
+        f(clone)
+    }
 }
 
 impl SyncRemote for FakeSyncRemote {
@@ -276,54 +338,55 @@ impl SyncRemote for FakeSyncRemote {
     fn device_name(&self) -> String {
         "PC de prueba".into()
     }
-    fn open(&self, _url: &str, dir: &Path) -> PortResult<()> {
-        self.pull(dir)
-    }
-    fn pull(&self, _dir: &Path) -> PortResult<()> {
-        let mut local = self.server.0.lock().unwrap().clone();
-        for (path, file) in self.pending.lock().unwrap().iter() {
-            match file {
-                Some(bytes) => local.insert(path.clone(), bytes.clone()),
-                None => local.remove(path),
-            };
-        }
-        *self.local.lock().unwrap() = local;
+    fn open(&self, url: &str, dir: &Path) -> PortResult<()> {
+        let served = self.servers.lock().unwrap().get(url).cloned();
+        self.clone_in(dir, |clone| {
+            if let Some(server) = served {
+                clone.server = server;
+            }
+            clone.pull();
+        });
         Ok(())
     }
-    fn files(&self, _dir: &Path, prefix: &str) -> PortResult<Vec<String>> {
-        Ok(self
-            .local
-            .lock()
-            .unwrap()
-            .keys()
-            .filter(|p| p.starts_with(prefix))
-            .cloned()
-            .collect())
-    }
-    fn read(&self, _dir: &Path, path: &str) -> PortResult<Option<Vec<u8>>> {
-        Ok(self.local.lock().unwrap().get(path).cloned())
-    }
-    fn write(&self, _dir: &Path, path: &str, bytes: &[u8]) -> PortResult<()> {
-        self.local
-            .lock()
-            .unwrap()
-            .insert(path.into(), bytes.to_vec());
-        self.pending
-            .lock()
-            .unwrap()
-            .insert(path.into(), Some(bytes.to_vec()));
+    fn pull(&self, dir: &Path) -> PortResult<()> {
+        self.clone_in(dir, FakeClone::pull);
         Ok(())
     }
-    fn remove(&self, _dir: &Path, path: &str) -> PortResult<()> {
-        self.local.lock().unwrap().remove(path);
-        self.pending.lock().unwrap().insert(path.into(), None);
+    fn files(&self, dir: &Path, prefix: &str) -> PortResult<Vec<String>> {
+        Ok(self.clone_in(dir, |clone| {
+            clone
+                .local
+                .keys()
+                .filter(|p| p.starts_with(prefix))
+                .cloned()
+                .collect()
+        }))
+    }
+    fn read(&self, dir: &Path, path: &str) -> PortResult<Option<Vec<u8>>> {
+        Ok(self.clone_in(dir, |clone| clone.local.get(path).cloned()))
+    }
+    fn write(&self, dir: &Path, path: &str, bytes: &[u8]) -> PortResult<()> {
+        self.clone_in(dir, |clone| {
+            clone.local.insert(path.into(), bytes.to_vec());
+            clone.pending.insert(path.into(), Some(bytes.to_vec()));
+        });
+        Ok(())
+    }
+    fn remove(&self, dir: &Path, path: &str) -> PortResult<()> {
+        self.clone_in(dir, |clone| {
+            clone.local.remove(path);
+            clone.pending.insert(path.into(), None);
+        });
         Ok(())
     }
     fn discard_local(&self, dir: &Path) -> PortResult<()> {
-        self.pending.lock().unwrap().clear();
-        self.pull(dir)
+        self.clone_in(dir, |clone| {
+            clone.pending.clear();
+            clone.pull();
+        });
+        Ok(())
     }
-    fn push(&self, _dir: &Path, message: &str) -> PortResult<()> {
+    fn push(&self, dir: &Path, message: &str) -> PortResult<()> {
         {
             let mut fail = self.fail_push.lock().unwrap();
             match *fail {
@@ -335,18 +398,23 @@ impl SyncRemote for FakeSyncRemote {
                 None => {}
             }
         }
-        let pending = std::mem::take(&mut *self.pending.lock().unwrap());
-        if pending.is_empty() {
-            return Ok(());
+        let pushed = self.clone_in(dir, |clone| {
+            let pending = std::mem::take(&mut clone.pending);
+            if pending.is_empty() {
+                return false;
+            }
+            let mut server = clone.server.0.lock().unwrap();
+            for (path, file) in pending {
+                match file {
+                    Some(bytes) => server.insert(path, bytes),
+                    None => server.remove(&path),
+                };
+            }
+            true
+        });
+        if pushed {
+            self.pushes.lock().unwrap().push(message.to_owned());
         }
-        let mut server = self.server.0.lock().unwrap();
-        for (path, file) in pending {
-            match file {
-                Some(bytes) => server.insert(path, bytes),
-                None => server.remove(&path),
-            };
-        }
-        self.pushes.lock().unwrap().push(message.to_owned());
         Ok(())
     }
 }

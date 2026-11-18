@@ -18,6 +18,7 @@ fn kind_str(kind: ItemKind) -> &'static str {
         ItemKind::Skill => "skill",
         ItemKind::Template => "template",
         ItemKind::Theme => "theme",
+        ItemKind::Suggestion => "suggestion",
     }
 }
 
@@ -27,6 +28,7 @@ fn kind_from(text: &str) -> Option<ItemKind> {
         ItemKind::Skill,
         ItemKind::Template,
         ItemKind::Theme,
+        ItemKind::Suggestion,
     ]
     .into_iter()
     .find(|k| kind_str(*k) == text)
@@ -59,11 +61,16 @@ fn path_text(path: Option<&Path>) -> Option<String> {
 }
 
 impl SyncRepository for SqliteStore {
-    fn sync_item(&self, kind: ItemKind, uid: &str) -> PortResult<Option<(Scope, Version)>> {
+    fn sync_item(
+        &self,
+        space: &str,
+        kind: ItemKind,
+        uid: &str,
+    ) -> PortResult<Option<(Scope, Version)>> {
         self.with(|c| {
             c.query_row(
-                "SELECT scope, version FROM sync_items WHERE kind = ?1 AND uid = ?2",
-                params![kind_str(kind), uid],
+                "SELECT scope, version FROM sync_items WHERE space = ?1 AND kind = ?2 AND uid = ?3",
+                params![space, kind_str(kind), uid],
                 |r| {
                     Ok((
                         from_json(0, &r.get::<_, String>(0)?)?,
@@ -75,10 +82,11 @@ impl SyncRepository for SqliteStore {
         })
     }
 
-    fn sync_items(&self) -> PortResult<Vec<Change>> {
+    fn sync_items(&self, space: &str) -> PortResult<Vec<Change>> {
         self.with(|c| {
-            let mut stmt = c.prepare("SELECT kind, uid, scope, version FROM sync_items")?;
-            let rows = stmt.query_map([], |r| {
+            let mut stmt =
+                c.prepare("SELECT kind, uid, scope, version FROM sync_items WHERE space = ?1")?;
+            let rows = stmt.query_map([space], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
@@ -104,12 +112,14 @@ impl SyncRepository for SqliteStore {
         })
     }
 
-    fn put_sync_item(&self, change: &Change) -> PortResult<()> {
+    fn put_sync_item(&self, space: &str, change: &Change) -> PortResult<()> {
         self.with(|c| {
             c.execute(
-                "INSERT INTO sync_items (kind, uid, scope, version) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT (kind, uid) DO UPDATE SET scope = ?3, version = ?4",
+                "INSERT INTO sync_items (space, kind, uid, scope, version)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT (space, kind, uid) DO UPDATE SET scope = ?4, version = ?5",
                 params![
+                    space,
                     kind_str(change.kind),
                     change.uid,
                     to_json(&change.scope),
@@ -191,11 +201,11 @@ impl SyncRepository for SqliteStore {
         })
     }
 
-    fn sync_cursor(&self, device: &DeviceId) -> PortResult<u64> {
+    fn sync_cursor(&self, space: &str, device: &DeviceId) -> PortResult<u64> {
         self.with(|c| {
             c.query_row(
-                "SELECT seq FROM sync_cursors WHERE device = ?1",
-                [device.as_str()],
+                "SELECT seq FROM sync_cursors WHERE space = ?1 AND device = ?2",
+                [space, device.as_str()],
                 |r| r.get::<_, i64>(0),
             )
             .optional()
@@ -203,12 +213,12 @@ impl SyncRepository for SqliteStore {
         })
     }
 
-    fn set_sync_cursor(&self, device: &DeviceId, seq: u64) -> PortResult<()> {
+    fn set_sync_cursor(&self, space: &str, device: &DeviceId, seq: u64) -> PortResult<()> {
         self.with(|c| {
             c.execute(
-                "INSERT INTO sync_cursors (device, seq) VALUES (?1, ?2)
-                 ON CONFLICT (device) DO UPDATE SET seq = ?2",
-                params![device.as_str(), seq as i64],
+                "INSERT INTO sync_cursors (space, device, seq) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (space, device) DO UPDATE SET seq = ?3",
+                params![space, device.as_str(), seq as i64],
             )
             .map(drop)
         })
@@ -216,6 +226,7 @@ impl SyncRepository for SqliteStore {
 
     fn add_sync_conflict(
         &self,
+        space: &str,
         kind: ItemKind,
         uid: &str,
         kept: &Version,
@@ -224,19 +235,28 @@ impl SyncRepository for SqliteStore {
     ) -> PortResult<i64> {
         self.with(|c| {
             c.execute(
-                "INSERT INTO sync_conflicts (kind, uid, kept, other, at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![kind_str(kind), uid, to_json(kept), to_json(other), at],
+                "INSERT INTO sync_conflicts (space, kind, uid, kept, other, at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    space,
+                    kind_str(kind),
+                    uid,
+                    to_json(kept),
+                    to_json(other),
+                    at
+                ],
             )?;
             Ok(c.last_insert_rowid())
         })
     }
 
-    fn sync_conflicts(&self) -> PortResult<Vec<SyncConflict>> {
+    fn sync_conflicts(&self, space: &str) -> PortResult<Vec<SyncConflict>> {
         self.with(|c| {
-            let mut stmt =
-                c.prepare("SELECT id, kind, uid, kept, other, at FROM sync_conflicts ORDER BY id")?;
-            let rows = stmt.query_map([], |r| {
+            let mut stmt = c.prepare(
+                "SELECT id, kind, uid, kept, other, at FROM sync_conflicts WHERE space = ?1
+                 ORDER BY id",
+            )?;
+            let rows = stmt.query_map([space], |r| {
                 Ok((
                     r.get::<_, i64>(0)?,
                     r.get::<_, String>(1)?,
@@ -272,12 +292,16 @@ impl SyncRepository for SqliteStore {
         })
     }
 
-    fn clear_sync_state(&self) -> PortResult<()> {
+    fn clear_sync_state(&self, space: &str) -> PortResult<()> {
         self.with(|c| {
-            c.execute_batch(
-                "DELETE FROM sync_items; DELETE FROM sync_links; DELETE FROM sync_cursors;
-                 DELETE FROM sync_conflicts;",
-            )
+            for table in ["sync_items", "sync_cursors", "sync_conflicts"] {
+                c.execute(&format!("DELETE FROM {table} WHERE space = ?1"), [space])?;
+            }
+            // Links are personal sync's only.
+            if space.is_empty() {
+                c.execute("DELETE FROM sync_links", [])?;
+            }
+            Ok(())
         })
     }
 
@@ -438,18 +462,18 @@ mod tests {
             scope: Scope::Project("p1".into()),
             version: version(1),
         };
-        assert_eq!(store.sync_item(ItemKind::Note, "u1").unwrap(), None);
-        store.put_sync_item(&change).unwrap();
+        assert_eq!(store.sync_item("", ItemKind::Note, "u1").unwrap(), None);
+        store.put_sync_item("", &change).unwrap();
         let newer = Change {
             version: version(2),
             ..change.clone()
         };
-        store.put_sync_item(&newer).unwrap();
+        store.put_sync_item("", &newer).unwrap();
         assert_eq!(
-            store.sync_item(ItemKind::Note, "u1").unwrap(),
+            store.sync_item("", ItemKind::Note, "u1").unwrap(),
             Some((Scope::Project("p1".into()), version(2)))
         );
-        assert_eq!(store.sync_items().unwrap(), vec![newer]);
+        assert_eq!(store.sync_items("").unwrap(), vec![newer]);
 
         store
             .link_sync_item(ItemKind::Note, "u1", "7", &version(1))
@@ -468,19 +492,19 @@ mod tests {
         assert!(store.sync_links(ItemKind::Note).unwrap().is_empty());
 
         let pc = DeviceId::from_bytes([2; 8]);
-        assert_eq!(store.sync_cursor(&pc).unwrap(), 0);
-        store.set_sync_cursor(&pc, 4).unwrap();
-        store.set_sync_cursor(&pc, 5).unwrap();
-        assert_eq!(store.sync_cursor(&pc).unwrap(), 5);
+        assert_eq!(store.sync_cursor("", &pc).unwrap(), 0);
+        store.set_sync_cursor("", &pc, 4).unwrap();
+        store.set_sync_cursor("", &pc, 5).unwrap();
+        assert_eq!(store.sync_cursor("", &pc).unwrap(), 5);
 
         let id = store
-            .add_sync_conflict(ItemKind::Skill, "s1", &version(3), &version(2), 99)
+            .add_sync_conflict("", ItemKind::Skill, "s1", &version(3), &version(2), 99)
             .unwrap();
-        let conflicts = store.sync_conflicts().unwrap();
+        let conflicts = store.sync_conflicts("").unwrap();
         assert_eq!((conflicts[0].id, conflicts[0].kind), (id, ItemKind::Skill));
         assert_eq!(conflicts[0].other, version(2));
         store.delete_sync_conflict(id).unwrap();
-        assert!(store.sync_conflicts().unwrap().is_empty());
+        assert!(store.sync_conflicts("").unwrap().is_empty());
     }
 
     #[test]
@@ -551,5 +575,85 @@ mod tests {
         let sid = store.write_synced_skill(None, None, &skill).unwrap();
         let saved = store.skill(sid).unwrap().unwrap();
         assert_eq!((saved.name.as_str(), saved.project), ("deploy", None));
+    }
+
+    #[test]
+    fn spaces_keep_their_replicas_apart_and_old_rows_stay_personal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("hedy.db");
+        let change = Change {
+            kind: ItemKind::Note,
+            uid: "u1".into(),
+            scope: Scope::Global,
+            version: version(1),
+        };
+        let pc = DeviceId::from_bytes([2; 8]);
+        {
+            // A database from before teams, with personal sync's rows.
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            let before = super::super::MIGRATIONS.len() - 1;
+            for sql in &super::super::MIGRATIONS[..before] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.pragma_update(None, "user_version", before as i64)
+                .unwrap();
+            conn.execute(
+                "INSERT INTO sync_items (kind, uid, scope, version) VALUES ('note', 'u1', ?1, ?2)",
+                params![to_json(&change.scope), to_json(&change.version)],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO sync_cursors (device, seq) VALUES (?1, 7)",
+                [pc.as_str()],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO sync_conflicts (kind, uid, kept, other, at)
+                 VALUES ('note', 'u1', ?1, ?1, 3)",
+                [to_json(&change.version)],
+            )
+            .unwrap();
+        }
+        let store = SqliteStore::open(&path).unwrap();
+        assert_eq!(store.sync_items("").unwrap(), vec![change.clone()]);
+        assert_eq!(store.sync_cursor("", &pc).unwrap(), 7);
+        assert_eq!(store.sync_conflicts("").unwrap().len(), 1);
+
+        // A team's rows, with the same uid and PC, live next to them.
+        let team = "team:0123456789abcdef";
+        let theirs = Change {
+            version: version(9),
+            ..change.clone()
+        };
+        store.put_sync_item(team, &theirs).unwrap();
+        store.set_sync_cursor(team, &pc, 2).unwrap();
+        store
+            .add_sync_conflict(team, ItemKind::Note, "u1", &version(9), &version(8), 4)
+            .unwrap();
+        assert_eq!(
+            store
+                .sync_item("", ItemKind::Note, "u1")
+                .unwrap()
+                .unwrap()
+                .1,
+            version(1)
+        );
+        assert_eq!(store.sync_items(team).unwrap(), vec![theirs]);
+        assert_eq!(store.sync_cursor(team, &pc).unwrap(), 2);
+        assert_eq!(store.sync_conflicts(team).unwrap()[0].at, 4);
+
+        // Leaving the team forgets its rows only.
+        store
+            .link_sync_item(ItemKind::Note, "u1", "7", &version(1))
+            .unwrap();
+        store.clear_sync_state(team).unwrap();
+        assert!(store.sync_items(team).unwrap().is_empty());
+        assert_eq!(store.sync_cursor(team, &pc).unwrap(), 0);
+        assert!(store.sync_conflicts(team).unwrap().is_empty());
+        assert_eq!(store.sync_items("").unwrap().len(), 1);
+        assert!(store.sync_link(ItemKind::Note, "u1").unwrap().is_some());
+        store.clear_sync_state("").unwrap();
+        assert!(store.sync_items("").unwrap().is_empty());
+        assert!(store.sync_link(ItemKind::Note, "u1").unwrap().is_none());
     }
 }

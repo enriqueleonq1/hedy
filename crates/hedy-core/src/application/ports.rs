@@ -297,13 +297,20 @@ pub struct SyncLink {
     pub base_body: Option<String>,
 }
 
-/// The local side of personal sync (docs/decisions.md §34): the replica of
-/// every synced item as last known, the link between items here and their
-/// global ids, how far each other PC was read, and conflicts.
+/// The local side of sync (docs/decisions.md §34, §35): the replica of every
+/// synced item as last known, how far each other PC was read, and
+/// conflicts, kept apart per `space` (`""` for personal sync, `team:<id>`
+/// for a team); plus the links between personal sync's items and the rows
+/// here.
 pub trait SyncRepository: Send + Sync {
-    fn sync_item(&self, kind: ItemKind, uid: &str) -> PortResult<Option<(Scope, Version)>>;
-    fn sync_items(&self) -> PortResult<Vec<Change>>;
-    fn put_sync_item(&self, change: &Change) -> PortResult<()>;
+    fn sync_item(
+        &self,
+        space: &str,
+        kind: ItemKind,
+        uid: &str,
+    ) -> PortResult<Option<(Scope, Version)>>;
+    fn sync_items(&self, space: &str) -> PortResult<Vec<Change>>;
+    fn put_sync_item(&self, space: &str, change: &Change) -> PortResult<()>;
     fn sync_link(&self, kind: ItemKind, uid: &str) -> PortResult<Option<SyncLink>>;
     /// The link of a local item (a note's or template's row id, a theme's
     /// id).
@@ -320,21 +327,23 @@ pub trait SyncRepository: Send + Sync {
     ) -> PortResult<()>;
     fn unlink_sync_item(&self, kind: ItemKind, uid: &str) -> PortResult<()>;
     /// The last batch read from `device` (0: none).
-    fn sync_cursor(&self, device: &DeviceId) -> PortResult<u64>;
-    fn set_sync_cursor(&self, device: &DeviceId, seq: u64) -> PortResult<()>;
+    fn sync_cursor(&self, space: &str, device: &DeviceId) -> PortResult<u64>;
+    fn set_sync_cursor(&self, space: &str, device: &DeviceId, seq: u64) -> PortResult<()>;
     fn add_sync_conflict(
         &self,
+        space: &str,
         kind: ItemKind,
         uid: &str,
         kept: &Version,
         other: &Version,
         at: i64,
     ) -> PortResult<i64>;
-    fn sync_conflicts(&self) -> PortResult<Vec<SyncConflict>>;
+    fn sync_conflicts(&self, space: &str) -> PortResult<Vec<SyncConflict>>;
     fn delete_sync_conflict(&self, id: i64) -> PortResult<()>;
-    /// Forgets everything personal sync kept here (replica, links, cursors,
-    /// conflicts): this PC leaves the sync. Notes and the rest stay.
-    fn clear_sync_state(&self) -> PortResult<()>;
+    /// Forgets everything a space kept here (replica, cursors, conflicts,
+    /// and personal sync's links): this PC leaves it. Notes and the rest
+    /// stay.
+    fn clear_sync_state(&self, space: &str) -> PortResult<()>;
     /// `None`: not decided yet (its memory stays on this PC).
     fn memory_home(&self, project: &Path) -> PortResult<Option<MemoryHome>>;
     fn set_memory_home(&self, project: &Path, home: Option<&MemoryHome>) -> PortResult<()>;
@@ -404,11 +413,12 @@ pub trait SecretStore: Send + Sync {
     fn api_key(&self, account: &AccountId) -> PortResult<Option<String>>;
     fn has_api_key(&self, account: &AccountId) -> PortResult<bool>;
     fn delete_api_key(&self, account: &AccountId) -> PortResult<()>;
-    /// This PC's sync keys (docs/decisions.md §34), as the vault encodes
+    /// This PC's keys for a sync space (docs/decisions.md §34, §35: `""`
+    /// for personal sync, `team:<id>` for a team), as the vault encodes
     /// them. Read only to sync; never logged or shown.
-    fn sync_keys(&self) -> PortResult<Option<String>>;
-    fn set_sync_keys(&self, keys: &str) -> PortResult<()>;
-    fn delete_sync_keys(&self) -> PortResult<()>;
+    fn sync_keys(&self, space: &str) -> PortResult<Option<String>>;
+    fn set_sync_keys(&self, space: &str, keys: &str) -> PortResult<()>;
+    fn delete_sync_keys(&self, space: &str) -> PortResult<()>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

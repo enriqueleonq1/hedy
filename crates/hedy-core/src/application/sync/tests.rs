@@ -176,7 +176,7 @@ fn a_project_not_on_this_pc_waits_in_the_replica() {
 
     // Made personal later: the next sync does not bring it again by itself,
     // but its version is in the replica for when the project matches.
-    assert_eq!(office.store.sync_items().unwrap().len(), 1);
+    assert_eq!(office.store.sync_items("").unwrap().len(), 1);
 }
 
 #[test]
@@ -324,7 +324,7 @@ fn a_pc_left_out_of_the_newest_epoch_stops_syncing() {
     let (server, (home, _), (office, _)) = two_pcs();
     home.hedy.sync_now().unwrap();
     // Home writes epoch 3 without the office (what "Quitar PC" will do).
-    let keys: Keys = serde_json::from_str(&home.secrets.sync_keys().unwrap().unwrap()).unwrap();
+    let keys: Keys = serde_json::from_str(&home.secrets.sync_keys("").unwrap().unwrap()).unwrap();
     let crypto = crate::adapters::VaultCrypto;
     use crate::application::ports::SyncCrypto;
     let epoch2 = String::from_utf8(server.file(&layout::epoch(2)).unwrap()).unwrap();
@@ -651,7 +651,7 @@ fn an_edit_survives_a_sync_that_fails() {
     let home_id = home.hedy.sync_status().unwrap().unwrap().device;
     let next = home
         .store
-        .get_setting(SEQ)
+        .get_setting(&PERSONAL.key(SEQ))
         .unwrap()
         .unwrap()
         .parse::<u64>()
@@ -869,7 +869,7 @@ fn a_removed_pc_cannot_write_and_no_pc_writes_as_another() {
     office.hedy.sync_now().unwrap();
     let crypto = crate::adapters::VaultCrypto;
     let office_keys: Keys =
-        serde_json::from_str(&office.secrets.sync_keys().unwrap().unwrap()).unwrap();
+        serde_json::from_str(&office.secrets.sync_keys("").unwrap().unwrap()).unwrap();
     let home_id = home.hedy.sync_status().unwrap().unwrap().device;
     let office_id = office.hedy.sync_status().unwrap().unwrap().device;
 
@@ -913,7 +913,7 @@ fn a_removed_pc_cannot_write_and_no_pc_writes_as_another() {
     let stranger = crypto.new_member().unwrap();
     let next = office
         .store
-        .get_setting(SEQ)
+        .get_setting(&PERSONAL.key(SEQ))
         .unwrap()
         .unwrap()
         .parse::<u64>()
@@ -931,7 +931,7 @@ fn a_removed_pc_cannot_write_and_no_pc_writes_as_another() {
 
     // Home removes the office (epoch 3), which then writes as a new PC
     // with the keys it still has.
-    let keys: Keys = serde_json::from_str(&home.secrets.sync_keys().unwrap().unwrap()).unwrap();
+    let keys: Keys = serde_json::from_str(&home.secrets.sync_keys("").unwrap().unwrap()).unwrap();
     let epoch2 = String::from_utf8(server.file(&layout::epoch(2)).unwrap()).unwrap();
     let members = crypto.epoch_members(&epoch2).unwrap().members;
     let kept: Vec<EpochMember> = members
@@ -963,7 +963,7 @@ fn a_batch_hidden_for_a_while_is_still_applied_in_order() {
     let home_id = home.hedy.sync_status().unwrap().unwrap().device;
     let seq_b = home
         .store
-        .get_setting(SEQ)
+        .get_setting(&PERSONAL.key(SEQ))
         .unwrap()
         .unwrap()
         .parse::<u64>()
@@ -1006,7 +1006,9 @@ fn junk_in_the_epochs_folder_is_ignored_and_bad_pins_fail_closed() {
         .unwrap();
     office.sync.push(Path::new("/"), "junk").unwrap();
     home.hedy.sync_now().unwrap();
-    home.store.set_setting(PINS, Some("no es json")).unwrap();
+    home.store
+        .set_setting(&PERSONAL.key(PINS), Some("no es json"))
+        .unwrap();
     assert!(home.hedy.sync_now().is_err());
 }
 
@@ -1027,17 +1029,19 @@ fn a_body_this_version_cannot_read_waits_without_stopping_the_sync() {
 
     // Home (a newer Hedy) sends a note with a category this one lacks.
     let crypto = crate::adapters::VaultCrypto;
-    let keys: Keys = serde_json::from_str(&home.secrets.sync_keys().unwrap().unwrap()).unwrap();
+    let keys: Keys = serde_json::from_str(&home.secrets.sync_keys("").unwrap().unwrap()).unwrap();
     let home_id = home.hedy.sync_status().unwrap().unwrap().device;
     let seq = home
         .store
-        .get_setting(SEQ)
+        .get_setting(&PERSONAL.key(SEQ))
         .unwrap()
         .unwrap()
         .parse::<u64>()
         .unwrap()
         + 1;
-    home.store.set_setting(SEQ, Some(&seq.to_string())).unwrap();
+    home.store
+        .set_setting(&PERSONAL.key(SEQ), Some(&seq.to_string()))
+        .unwrap();
     let future = r#"{"text":"futura","category":"futureCategory","author":"x","status":"approved","createdAt":1}"#;
     let batch = Batch {
         device: home_id.clone(),
@@ -1119,7 +1123,7 @@ fn a_pending_batch_replayed_after_a_crash_keeps_its_seq() {
     // A crash left a pending batch whose seq never reached `sync.seq`.
     let seq = home
         .store
-        .get_setting(SEQ)
+        .get_setting(&PERSONAL.key(SEQ))
         .unwrap()
         .unwrap()
         .parse::<u64>()
@@ -1129,7 +1133,7 @@ fn a_pending_batch_replayed_after_a_crash_keeps_its_seq() {
         outgoing: Vec::new(),
     };
     home.store
-        .set_setting(PENDING, Some(&json(&pending)))
+        .set_setting(&PERSONAL.key(PENDING), Some(&json(&pending)))
         .unwrap();
     home.hedy.add_note(None, "B", Category::Decision).unwrap();
     home.hedy.sync_now().unwrap();
@@ -1381,8 +1385,8 @@ fn leaving_keeps_the_notes_and_joining_again_starts_fresh() {
 
     assert_eq!(office.hedy.sync_leave(), Ok(true));
     assert!(!office.hedy.sync_is_set_up().unwrap());
-    assert_eq!(office.secrets.sync_keys().unwrap(), None);
-    assert!(office.store.sync_items().unwrap().is_empty());
+    assert_eq!(office.secrets.sync_keys("").unwrap(), None);
+    assert!(office.store.sync_items("").unwrap().is_empty());
     assert_eq!(texts(&office, None), ["nota"]);
     // Leaving again finds nothing to clear.
     assert_eq!(office.hedy.sync_leave(), Ok(false));
@@ -1407,7 +1411,7 @@ fn a_pc_that_joins_with_the_same_notes_adopts_them() {
             &NoteBody {
                 text: "Usa tabs".into(),
                 ..serde_json::from_str(
-                    home.store.sync_items().unwrap()[0]
+                    home.store.sync_items("").unwrap()[0]
                         .version
                         .body
                         .as_deref()
@@ -1476,11 +1480,16 @@ fn a_url_with_a_token_is_refused_and_a_cut_short_setup_can_be_cleared() {
             Err(AppError::SyncUrlWithCredentials)
         );
     }
-    assert!(home.store.get_setting(super::URL).unwrap().is_none());
+    assert!(
+        home.store
+            .get_setting(&PERSONAL.key(super::URL))
+            .unwrap()
+            .is_none()
+    );
     // Keys left by a setup cut short (no settings yet) are still cleared.
-    home.secrets.set_sync_keys("{}").unwrap();
+    home.secrets.set_sync_keys("", "{}").unwrap();
     assert_eq!(home.hedy.sync_leave(), Ok(false));
-    assert_eq!(home.secrets.sync_keys().unwrap(), None);
+    assert_eq!(home.secrets.sync_keys("").unwrap(), None);
 }
 
 #[test]
@@ -1656,7 +1665,7 @@ fn many_syncs_leave_a_snapshot_and_a_pc_behind_or_a_new_one_catches_up() {
 
 /// The office's keys and the newest epoch it knows.
 fn office_keys(office: &Fixture) -> Keys {
-    serde_json::from_str(&office.secrets.sync_keys().unwrap().unwrap()).unwrap()
+    serde_json::from_str(&office.secrets.sync_keys("").unwrap().unwrap()).unwrap()
 }
 
 #[test]

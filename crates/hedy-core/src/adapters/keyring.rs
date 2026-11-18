@@ -43,8 +43,14 @@ impl KeyringSecretStore {
         Entry::new(&self.service, &format!("api-key:{account}")).map_err(keyring_error)
     }
 
-    fn sync(&self) -> PortResult<Entry> {
-        Entry::new(&self.service, &self.sync_entry).map_err(keyring_error)
+    /// Personal sync keeps the entry it always had; each team has its own
+    /// next to it.
+    fn sync(&self, space: &str) -> PortResult<Entry> {
+        let name = match space {
+            "" => self.sync_entry.clone(),
+            space => format!("{}:{space}", self.sync_entry),
+        };
+        Entry::new(&self.service, &name).map_err(keyring_error)
     }
 }
 
@@ -82,20 +88,20 @@ impl SecretStore for KeyringSecretStore {
         }
     }
 
-    fn sync_keys(&self) -> PortResult<Option<String>> {
-        match self.sync()?.get_password() {
+    fn sync_keys(&self, space: &str) -> PortResult<Option<String>> {
+        match self.sync(space)?.get_password() {
             Ok(keys) => Ok(Some(keys)),
             Err(KeyringError::NoEntry) => Ok(None),
             Err(e) => Err(keyring_error(e)),
         }
     }
 
-    fn set_sync_keys(&self, keys: &str) -> PortResult<()> {
-        self.sync()?.set_password(keys).map_err(keyring_error)
+    fn set_sync_keys(&self, space: &str, keys: &str) -> PortResult<()> {
+        self.sync(space)?.set_password(keys).map_err(keyring_error)
     }
 
-    fn delete_sync_keys(&self) -> PortResult<()> {
-        match self.sync()?.delete_credential() {
+    fn delete_sync_keys(&self, space: &str) -> PortResult<()> {
+        match self.sync(space)?.delete_credential() {
             Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
             Err(e) => Err(keyring_error(e)),
         }

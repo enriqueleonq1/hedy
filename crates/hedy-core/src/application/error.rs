@@ -193,6 +193,37 @@ pub enum AppError {
     /// The sync repo's URL carries a password or a token.
     #[error("{}", self.message())]
     SyncUrlWithCredentials,
+    /// This PC is in no team with that id or name.
+    #[error("{}", self.message())]
+    TeamNotFound(String),
+    /// A team note with hidden characters (shown as `⟦U+202E⟧`).
+    #[error("{}", self.message())]
+    TeamHiddenText(String),
+    /// No team note or suggestion with that id.
+    #[error("{}", self.message())]
+    TeamItemNotFound(String),
+    /// The team member's role does not allow it.
+    #[error("{}", self.message())]
+    TeamNotAllowed,
+    /// The project's memory is not this team's.
+    #[error("{}", self.message())]
+    TeamProjectNotLinked,
+    /// What was typed is not an invite code (caught before it burns one).
+    #[error("{}", self.message())]
+    TeamInviteCode,
+    #[error("{}", self.message())]
+    TeamInviteNotFound(u32),
+    #[error("{}", self.message())]
+    TeamInviteExpired,
+    /// Someone else already answered that invite.
+    #[error("{}", self.message())]
+    TeamInviteUsed,
+    /// The inviting PC burned the invite: the code did not match.
+    #[error("{}", self.message())]
+    TeamInviteFailed,
+    /// Joining a team in a repo that holds personal sync.
+    #[error("{}", self.message())]
+    TeamNotATeam,
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -355,6 +386,47 @@ impl AppError {
                 "el repo de sincronización fue alterado: la época de llaves {epoch}, que esta PC ya había verificado, cambió. No se sincroniza hasta revisarlo",
                 "the sync repo was tampered with: key epoch {epoch}, which this PC had already checked, changed. Sync stops until it is looked at"
             ),
+            Self::TeamNotFound(team) => tr!(
+                "esta PC no está en el equipo «{team}»",
+                "this PC is not in the team \"{team}\""
+            ),
+            Self::TeamHiddenText(shown) => tr!(
+                "la nota tiene caracteres ocultos que el agente leería y tú no ves: {shown}. Escríbela de nuevo sin ellos",
+                "the note has hidden characters the agent would read and you do not see: {shown}. Write it again without them"
+            ),
+            Self::TeamItemNotFound(uid) => tr!(
+                "el equipo no tiene la nota o sugerencia {uid}",
+                "the team has no note or suggestion {uid}"
+            ),
+            Self::TeamNotAllowed => tr!(
+                "tu rol en el equipo no lo permite: pídeselo a un admin",
+                "your role in the team does not allow it: ask an admin"
+            ),
+            Self::TeamProjectNotLinked => tr!(
+                "la memoria de este proyecto no es del equipo: conéctalo al equipo primero",
+                "this project's memory is not the team's: connect it to the team first"
+            ),
+            Self::TeamInviteCode => tr!(
+                "eso no es un código de invitación: revisa el número y las cuatro palabras",
+                "that is not an invite code: check the number and the four words"
+            ),
+            Self::TeamInviteNotFound(number) => tr!(
+                "el equipo no tiene la invitación {number}: puede que ya se usara o se cancelara",
+                "the team has no invite {number}: it may have been used or cancelled"
+            ),
+            Self::TeamInviteExpired => tr!(
+                "la invitación venció: pide otra",
+                "the invite expired: ask for another"
+            ),
+            Self::TeamInviteUsed => tr!(
+                "alguien ya usó esa invitación: pide otra",
+                "someone already used that invite: ask for another"
+            ),
+            Self::TeamInviteFailed => tr!(
+                "la invitación no funcionó (el código no coincidió) y ya no sirve: pide otra",
+                "the invite did not work (the code did not match) and is no longer valid: ask for another"
+            ),
+            Self::TeamNotATeam => tr!("ese repo no es de un equipo", "that repo is not a team's"),
             Self::SyncConflictNotFound(id) => tr!(
                 "no existe el conflicto {id}",
                 "conflict {id} does not exist"

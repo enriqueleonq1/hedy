@@ -62,6 +62,7 @@ fn print_report(s: &Style, report: &SyncReport) {
         sent,
         received,
         conflicts,
+        ..
     } = report;
     println!(
         "{} {}",
@@ -379,6 +380,7 @@ fn home_label(home: Option<&MemoryHome>) -> String {
             "Compartida · {owner} · no sale de esta PC",
             "Shared · {owner} · stays on this PC"
         ),
+        Some(MemoryHome::Team(team)) => tr!("Equipo · {team}", "Team · {team}"),
         Some(MemoryHome::Local) | None => tr!("Solo en esta PC", "On this PC only"),
     }
 }

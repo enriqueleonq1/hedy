@@ -10,6 +10,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::Category;
+
 /// How long an invite works, in seconds: 48 hours.
 pub const INVITE_TTL_SECS: i64 = 48 * 60 * 60;
 
@@ -158,6 +160,150 @@ fn in_flag_tags(chars: &[char], i: usize) -> bool {
         && FLAG_CODES.contains(&code.as_str())
 }
 
+/// Paths a team's repo has besides personal sync's (`sync::layout`). Each
+/// PC still writes only its own files, except an invite's: its offer and
+/// answer (the inviting PC's) and its request (the joiner's).
+pub mod layout {
+    use crate::domain::sync::DeviceId;
+
+    pub const INVITES_DIR: &str = "invites";
+    pub const REQUESTS_DIR: &str = "requests";
+
+    /// Epoch `epoch`'s key history: the key of the epoch before it, sealed
+    /// with this one's and signed by the admin's PC that wrote both.
+    pub fn key_history(epoch: u32) -> String {
+        format!("vault/history/{epoch:06}.hedy")
+    }
+
+    /// The team's name as an admin's PC wrote it, in its own folder.
+    pub fn team_info(device: &DeviceId) -> String {
+        format!("devices/{}/team.hedy", device.as_str())
+    }
+
+    /// An invite's offer (the inviting PC's SPAKE2 message), plain.
+    pub fn offer(number: u32) -> String {
+        format!("{INVITES_DIR}/{number}/offer.json")
+    }
+
+    /// The joiner's request: its SPAKE2 message, and what it asks sealed
+    /// with the key they share.
+    pub fn request(number: u32) -> String {
+        format!("{INVITES_DIR}/{number}/request.json")
+    }
+
+    /// The inviting PC's answer, sealed with that key.
+    pub fn answer(number: u32) -> String {
+        format!("{INVITES_DIR}/{number}/answer.hedy")
+    }
+
+    /// The invite number of a path under `invites/`.
+    pub fn invite_number(path: &str) -> Option<u32> {
+        let rest = path.strip_prefix(INVITES_DIR)?.strip_prefix('/')?;
+        let (number, _) = rest.split_once('/')?;
+        if number.is_empty() || !number.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        number.parse().ok()
+    }
+
+    /// A member PC's request for an admin's PC to sign (its own PCs).
+    pub fn seat_request(device: &DeviceId, id: &str) -> String {
+        format!("{REQUESTS_DIR}/{}/{id}.hedy", device.as_str())
+    }
+
+    /// The PC that wrote a request, and the request's id.
+    pub fn seat_request_of(path: &str) -> Option<(DeviceId, String)> {
+        let rest = path.strip_prefix(REQUESTS_DIR)?.strip_prefix('/')?;
+        let (device, file) = rest.split_once('/')?;
+        let id = file.strip_suffix(".hedy")?;
+        let device = DeviceId(device.to_owned());
+        let id_ok = !id.is_empty() && id.bytes().all(|b| b.is_ascii_hexdigit());
+        (device.is_valid() && id_ok).then(|| (device, id.to_owned()))
+    }
+}
+
+/// A team note as it travels between PCs (docs/decisions.md §35). Its
+/// layer is its scope: the whole team ("Equipo", always in the agent's
+/// context) or one project ("Proyecto").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamNoteBody {
+    pub text: String,
+    pub category: Category,
+    /// Whose note it is (the byline): only they or an admin change it.
+    pub person: PersonId,
+    /// Their name when it was written.
+    pub author: String,
+    pub created_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<i64>,
+}
+
+/// A suggested change to someone else's team note, or a new note for the
+/// team layer from a member: the note's owner or an admin takes it or
+/// turns it down.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SuggestionBody {
+    /// The note it changes (its uid); `None`: a new note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// The text it proposes; `None`: removing the note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    pub category: Category,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+    /// Who suggests it.
+    pub person: PersonId,
+    pub author: String,
+    pub created_at: i64,
+}
+
+/// One version a team PC wrote, as every PC that reads it checks it: never
+/// trusted because the writing PC checked it.
+#[derive(Debug, Clone, Copy)]
+pub struct TeamWrite<'a> {
+    /// The seat of the PC that wrote it, in the newest epoch.
+    pub writer: &'a Seat,
+    /// It belongs to the team layer, not to a project.
+    pub team_layer: bool,
+    /// Whose the new version says it is; `None` for a deletion.
+    pub owner: Option<&'a PersonId>,
+    /// Whose the version it replaces is, when the reading PC has it.
+    pub replaced_owner: Option<&'a PersonId>,
+    /// For a suggestion: whose note it changes, when known.
+    pub note_owner: Option<&'a PersonId>,
+}
+
+impl TeamWrite<'_> {
+    fn own(&self, person: Option<&PersonId>) -> bool {
+        person.is_none_or(|p| *p == self.writer.person)
+    }
+
+    /// A note: an admin writes any; a member only their own notes of a
+    /// project (the team layer is what admins review).
+    pub fn note_allowed(&self) -> bool {
+        self.writer.role == Role::Admin
+            || (!self.team_layer && self.own(self.owner) && self.own(self.replaced_owner))
+    }
+
+    /// A suggestion: its author writes it; its author, the note's owner or
+    /// an admin removes it (takes it or turns it down).
+    pub fn suggestion_allowed(&self) -> bool {
+        if self.writer.role == Role::Admin {
+            return true;
+        }
+        match self.owner {
+            Some(_) => self.own(self.owner) && self.own(self.replaced_owner),
+            None => {
+                self.replaced_owner == Some(&self.writer.person)
+                    || self.note_owner == Some(&self.writer.person)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,5 +420,68 @@ mod tests {
             ]
         );
         assert_eq!(reveal_hidden("a\rb"), "a⟦U+000D⟧b");
+    }
+
+    #[test]
+    fn members_write_only_their_own_project_notes_and_admins_anything() {
+        let ana = PersonId("aaaaaaaaaaaaaaaa".into());
+        let luis = PersonId("bbbbbbbbbbbbbbbb".into());
+        let admin = Seat {
+            person: ana.clone(),
+            role: Role::Admin,
+        };
+        let member = Seat {
+            person: luis.clone(),
+            role: Role::Member,
+        };
+        let write = |writer, team_layer, owner, replaced_owner, note_owner| TeamWrite {
+            writer,
+            team_layer,
+            owner,
+            replaced_owner,
+            note_owner,
+        };
+        // Notes.
+        assert!(write(&member, false, Some(&luis), None, None).note_allowed());
+        assert!(write(&member, false, Some(&luis), Some(&luis), None).note_allowed());
+        assert!(write(&member, false, None, Some(&luis), None).note_allowed());
+        // Not in someone else's name, not over their note, not the team layer.
+        assert!(!write(&member, false, Some(&ana), None, None).note_allowed());
+        assert!(!write(&member, false, Some(&luis), Some(&ana), None).note_allowed());
+        assert!(!write(&member, false, None, Some(&ana), None).note_allowed());
+        assert!(!write(&member, true, Some(&luis), None, None).note_allowed());
+        assert!(write(&admin, true, Some(&luis), Some(&luis), None).note_allowed());
+        assert!(write(&admin, false, None, Some(&luis), None).note_allowed());
+
+        // Suggestions.
+        assert!(write(&member, true, Some(&luis), None, None).suggestion_allowed());
+        assert!(!write(&member, true, Some(&ana), None, None).suggestion_allowed());
+        assert!(!write(&member, false, Some(&luis), Some(&ana), None).suggestion_allowed());
+        // Removed by its author or by the note's owner, not by anyone else.
+        assert!(write(&member, false, None, Some(&luis), Some(&ana)).suggestion_allowed());
+        assert!(write(&member, false, None, Some(&ana), Some(&luis)).suggestion_allowed());
+        assert!(!write(&member, false, None, Some(&ana), Some(&ana)).suggestion_allowed());
+        assert!(!write(&member, false, None, None, None).suggestion_allowed());
+        assert!(write(&admin, false, None, Some(&luis), None).suggestion_allowed());
+    }
+
+    #[test]
+    fn team_paths_name_numbers_and_pcs_only() {
+        let pc = crate::domain::sync::DeviceId::from_bytes([0xab; 8]);
+        assert_eq!(layout::team_info(&pc), "devices/abababababababab/team.hedy");
+        assert_eq!(layout::offer(7), "invites/7/offer.json");
+        for path in [layout::offer(7), layout::request(7), layout::answer(7)] {
+            assert_eq!(layout::invite_number(&path), Some(7));
+        }
+        assert_eq!(layout::invite_number("invites/../offer.json"), None);
+        assert_eq!(layout::invite_number("invites/7"), None);
+        let request = layout::seat_request(&pc, "0a1b");
+        assert_eq!(request, "requests/abababababababab/0a1b.hedy");
+        assert_eq!(layout::seat_request_of(&request), Some((pc, "0a1b".into())));
+        assert_eq!(layout::seat_request_of("requests/../x.hedy"), None);
+        assert_eq!(
+            layout::seat_request_of("requests/abababababababab/../x.hedy"),
+            None
+        );
     }
 }

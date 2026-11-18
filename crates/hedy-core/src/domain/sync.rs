@@ -141,6 +141,9 @@ pub enum ItemKind {
     Skill,
     Template,
     Theme,
+    /// A suggested change to a team note (docs/decisions.md §35); only in a
+    /// team's repo.
+    Suggestion,
 }
 
 impl ItemKind {
@@ -340,15 +343,19 @@ pub enum MemoryHome {
     Shared(String),
     /// Neither synced nor shared.
     Local,
+    /// A team's (docs/decisions.md §35), by its local id: its notes go to
+    /// the team's repo, never to the personal one.
+    Team(String),
 }
 
 impl MemoryHome {
-    /// How it is stored: `personal`, `shared:<owner>`, `local`.
+    /// How it is stored: `personal`, `shared:<owner>`, `local`, `team:<id>`.
     pub fn as_stored(&self) -> String {
         match self {
             Self::Personal => "personal".into(),
             Self::Shared(owner) => format!("shared:{owner}"),
             Self::Local => "local".into(),
+            Self::Team(id) => format!("team:{id}"),
         }
     }
 
@@ -357,10 +364,14 @@ impl MemoryHome {
         match text {
             "personal" => Some(Self::Personal),
             "local" => Some(Self::Local),
-            _ => text
-                .strip_prefix("shared:")
-                .filter(|owner| !owner.is_empty())
-                .map(|owner| Self::Shared(owner.to_owned())),
+            _ => {
+                if let Some(id) = text.strip_prefix("team:") {
+                    return is_hex16(id).then(|| Self::Team(id.to_owned()));
+                }
+                text.strip_prefix("shared:")
+                    .filter(|owner| !owner.is_empty())
+                    .map(|owner| Self::Shared(owner.to_owned()))
+            }
         }
     }
 
@@ -544,6 +555,9 @@ pub fn item_preview(kind: ItemKind, body: Option<&str>) -> Option<String> {
             .filter(|t| !t.deleted)
             .map(|t| format!("{}\n\n{}", t.name, t.text)),
         ItemKind::Theme => serde_json::from_str::<ThemeBody>(body).ok().map(|t| t.name),
+        ItemKind::Suggestion => serde_json::from_str::<super::team::SuggestionBody>(body)
+            .ok()
+            .and_then(|s| s.text),
     }
 }
 
@@ -797,10 +811,13 @@ mod tests {
             MemoryHome::Personal,
             MemoryHome::Shared("empresa-org".into()),
             MemoryHome::Local,
+            MemoryHome::Team("0123456789abcdef".into()),
         ] {
             assert_eq!(MemoryHome::from_stored(&home.as_stored()), Some(home));
         }
         assert_eq!(MemoryHome::from_stored("shared:"), None);
+        assert_eq!(MemoryHome::from_stored("team:../x"), None);
+        assert!(!MemoryHome::Team("0123456789abcdef".into()).syncs());
         assert_eq!(MemoryHome::from_stored("work"), None);
         assert!(MemoryHome::Personal.syncs() && !MemoryHome::Local.syncs());
     }

@@ -960,25 +960,27 @@ impl SecretStore for MemorySecrets {
         self.0.lock().unwrap().remove(account.as_str());
         Ok(())
     }
-    fn sync_keys(&self) -> PortResult<Option<String>> {
-        Ok(self.0.lock().unwrap().get(SYNC_KEYS).cloned())
+    fn sync_keys(&self, space: &str) -> PortResult<Option<String>> {
+        Ok(self.0.lock().unwrap().get(&sync_keys(space)).cloned())
     }
-    fn set_sync_keys(&self, keys: &str) -> PortResult<()> {
+    fn set_sync_keys(&self, space: &str, keys: &str) -> PortResult<()> {
         self.0
             .lock()
             .unwrap()
-            .insert(SYNC_KEYS.into(), keys.to_owned());
+            .insert(sync_keys(space), keys.to_owned());
         Ok(())
     }
-    fn delete_sync_keys(&self) -> PortResult<()> {
-        self.0.lock().unwrap().remove(SYNC_KEYS);
+    fn delete_sync_keys(&self, space: &str) -> PortResult<()> {
+        self.0.lock().unwrap().remove(&sync_keys(space));
         Ok(())
     }
 }
 
-/// Where [`MemorySecrets`] keeps the sync keys (not an account id: those
-/// never contain a space).
-const SYNC_KEYS: &str = "sync keys";
+/// Where [`MemorySecrets`] keeps a space's sync keys (not an account id:
+/// those never contain a space character).
+fn sync_keys(space: &str) -> String {
+    format!("sync keys{space}")
+}
 
 /// Records launches and answers captured runs with a canned reply, or with
 /// the reply set for that exact command line.

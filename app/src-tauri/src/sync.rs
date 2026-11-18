@@ -124,6 +124,7 @@ fn kind_name(kind: ItemKind) -> &'static str {
         ItemKind::Skill => "skill",
         ItemKind::Template => "template",
         ItemKind::Theme => "theme",
+        ItemKind::Suggestion => "suggestion",
     }
 }
 
@@ -150,6 +151,7 @@ pub enum HomeDto {
     Personal,
     Shared { group: String },
     Local,
+    Team { team: String },
 }
 
 impl From<MemoryHome> for HomeDto {
@@ -158,6 +160,7 @@ impl From<MemoryHome> for HomeDto {
             MemoryHome::Personal => Self::Personal,
             MemoryHome::Shared(group) => Self::Shared { group },
             MemoryHome::Local => Self::Local,
+            MemoryHome::Team(team) => Self::Team { team },
         }
     }
 }
@@ -168,6 +171,7 @@ impl From<HomeDto> for MemoryHome {
             HomeDto::Personal => Self::Personal,
             HomeDto::Shared { group } => Self::Shared(group),
             HomeDto::Local => Self::Local,
+            HomeDto::Team { team } => Self::Team(team),
         }
     }
 }

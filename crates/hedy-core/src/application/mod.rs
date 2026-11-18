@@ -76,7 +76,10 @@ pub use skills::{
     format_skill_page, format_skills,
 };
 pub use status::{AccountStatus, AccountUsage, Status};
-pub use sync::{SyncDevice, SyncReport, SyncStatus};
+pub use sync::{
+    SyncDevice, SyncReport, SyncStatus, TeamInvite, TeamJoin, TeamNote, TeamPerson, TeamStatus,
+    TeamSuggestion, TeamSummary, TeamWriteOutcome,
+};
 pub use tasks::NewTask;
 pub use templates::{NewTemplate, TemplateScope};
 pub use themes::NewTheme;
