@@ -224,8 +224,8 @@ pub struct FakeSyncRemote {
     /// Written (`Some`) or removed (`None`) since the last push.
     pending: Mutex<BTreeMap<String, Option<Vec<u8>>>>,
     pushes: Mutex<Vec<String>>,
-    /// The next push fails (the network went down).
-    fail_push: Mutex<bool>,
+    /// Pushes to let through before one fails (the network went down).
+    fail_push: Mutex<Option<usize>>,
 }
 
 impl FakeSyncRemote {
@@ -240,7 +240,12 @@ impl FakeSyncRemote {
     }
 
     pub fn fail_next_push(&self) {
-        *self.fail_push.lock().unwrap() = true;
+        self.fail_push_after(0);
+    }
+
+    /// Lets `ok` pushes through, then fails one.
+    pub fn fail_push_after(&self, ok: usize) {
+        *self.fail_push.lock().unwrap() = Some(ok);
     }
 
     /// The commit messages pushed so far.
@@ -298,8 +303,16 @@ impl SyncRemote for FakeSyncRemote {
         self.pull(dir)
     }
     fn push(&self, _dir: &Path, message: &str) -> PortResult<()> {
-        if std::mem::take(&mut *self.fail_push.lock().unwrap()) {
-            return Err(crate::application::ports::PortError::new("sin conexión"));
+        {
+            let mut fail = self.fail_push.lock().unwrap();
+            match *fail {
+                Some(0) => {
+                    *fail = None;
+                    return Err(crate::application::ports::PortError::new("sin conexión"));
+                }
+                Some(ok) => *fail = Some(ok - 1),
+                None => {}
+            }
         }
         let pending = std::mem::take(&mut *self.pending.lock().unwrap());
         if pending.is_empty() {

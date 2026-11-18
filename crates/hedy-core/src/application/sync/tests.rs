@@ -6,7 +6,8 @@ use std::path::PathBuf;
 use super::*;
 use crate::application::NewTemplate;
 use crate::application::ports::{
-    MemoryRepository, SecretStore, SyncRemote, SyncRepository, TemplateRepository,
+    Clock, MemoryRepository, SecretStore, SettingsRepository, SyncRemote, SyncRepository,
+    TemplateRepository,
 };
 use crate::application::testing::{Fixture, SyncServer};
 use crate::application::themes::NewTheme;
@@ -647,7 +648,15 @@ fn an_edit_survives_a_sync_that_fails() {
 
     // A batch that does not open stops the sync before anything is lost.
     let home_id = home.hedy.sync_status().unwrap().unwrap().device;
-    let junk = layout::batch(&home_id, 99);
+    let next = home
+        .store
+        .get_setting(SEQ)
+        .unwrap()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap()
+        + 1;
+    let junk = layout::batch(&home_id, next);
     home.sync.write(Path::new("/"), &junk, b"junk").unwrap();
     home.sync.push(Path::new("/"), "junk").unwrap();
     office
@@ -896,12 +905,20 @@ fn a_removed_pc_cannot_write_and_no_pc_writes_as_another() {
     // As the office (a member) but signed by a key that is not its own:
     // refused, nothing applied.
     let stranger = crypto.new_member().unwrap();
-    forged(&office_id, 30, &stranger);
+    let next = office
+        .store
+        .get_setting(SEQ)
+        .unwrap()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap()
+        + 1;
+    forged(&office_id, next, &stranger);
     assert!(home.hedy.sync_now().is_err());
     assert!(!texts(&home, None).contains(&"inyectada".to_owned()));
     office
         .sync
-        .remove(Path::new("/"), &layout::batch(&office_id, 30))
+        .remove(Path::new("/"), &layout::batch(&office_id, next))
         .unwrap();
     office.sync.push(Path::new("/"), "clean").unwrap();
     home.hedy.sync_now().unwrap();
@@ -927,4 +944,192 @@ fn a_removed_pc_cannot_write_and_no_pc_writes_as_another() {
     forged(&office_id, 40, &office_keys.device);
     home.hedy.sync_now().unwrap();
     assert!(!texts(&home, None).contains(&"inyectada".to_owned()));
+}
+
+#[test]
+fn a_batch_hidden_for_a_while_is_still_applied_in_order() {
+    let (server, (home, _), (office, _)) = two_pcs();
+    home.hedy.add_note(None, "A", Category::Decision).unwrap();
+    home.hedy.sync_now().unwrap();
+    home.hedy.add_note(None, "B", Category::Decision).unwrap();
+    home.hedy.sync_now().unwrap();
+    // Someone with push access hides batch A for one sync.
+    let home_id = home.hedy.sync_status().unwrap().unwrap().device;
+    let seq_b = home
+        .store
+        .get_setting(SEQ)
+        .unwrap()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    let hidden = layout::batch(&home_id, seq_b - 1);
+    let saved = server.file(&hidden).unwrap();
+    office.sync.remove(Path::new("/"), &hidden).unwrap();
+    office.sync.push(Path::new("/"), "hide").unwrap();
+    office.hedy.sync_now().unwrap();
+    assert!(texts(&office, None).is_empty(), "B was applied before A");
+    office.sync.write(Path::new("/"), &hidden, &saved).unwrap();
+    office.sync.push(Path::new("/"), "put back").unwrap();
+    office.hedy.sync_now().unwrap();
+    assert_eq!(texts(&office, None), ["A", "B"]);
+}
+
+#[test]
+fn setup_returns_the_words_even_when_its_first_sync_fails() {
+    let server = SyncServer::default();
+    let (home, _) = pc(&server, "/a/tienda");
+    home.hedy
+        .add_note(None, "nota", Category::Decision)
+        .unwrap();
+    // The epoch is pushed; the first sync's push fails.
+    home.sync.fail_push_after(1);
+    let words = home.hedy.sync_setup(URL, "Casa").unwrap();
+    assert_eq!(words.split_whitespace().count(), 12);
+    home.hedy.sync_now().unwrap();
+    let (office, _) = pc(&server, "/b/tienda");
+    office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+    assert_eq!(texts(&office, None), ["nota"]);
+}
+
+#[test]
+fn junk_in_the_epochs_folder_is_ignored_and_bad_pins_fail_closed() {
+    let (_server, (home, _), (office, _)) = two_pcs();
+    office
+        .sync
+        .write(Path::new("/"), "vault/epochs/999999.json", b"junk")
+        .unwrap();
+    office.sync.push(Path::new("/"), "junk").unwrap();
+    home.hedy.sync_now().unwrap();
+    home.store.set_setting(PINS, Some("no es json")).unwrap();
+    assert!(home.hedy.sync_now().is_err());
+}
+
+// Regressions from the second review of phase 2.
+
+#[test]
+fn a_body_this_version_cannot_read_waits_without_stopping_the_sync() {
+    use crate::application::ports::SyncCrypto;
+
+    let (_server, (home, _), (office, _)) = two_pcs();
+    home.hedy.sync_now().unwrap();
+    let there = office
+        .hedy
+        .add_note(None, "de la oficina", Category::Decision)
+        .unwrap();
+    office.hedy.sync_now().unwrap();
+    home.hedy.sync_now().unwrap();
+
+    // Home (a newer Hedy) sends a note with a category this one lacks.
+    let crypto = crate::adapters::VaultCrypto;
+    let keys: Keys = serde_json::from_str(&home.secrets.sync_keys().unwrap().unwrap()).unwrap();
+    let home_id = home.hedy.sync_status().unwrap().unwrap().device;
+    let seq = home
+        .store
+        .get_setting(SEQ)
+        .unwrap()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap()
+        + 1;
+    home.store.set_setting(SEQ, Some(&seq.to_string())).unwrap();
+    let future = r#"{"text":"futura","category":"futureCategory","author":"x","status":"approved","createdAt":1}"#;
+    let batch = Batch {
+        device: home_id.clone(),
+        seq,
+        changes: vec![Change {
+            kind: ItemKind::Note,
+            uid: "futura".into(),
+            scope: Scope::Global,
+            version: Version::new(
+                Stamp {
+                    ms: home.clock.now_ms(),
+                    counter: 9,
+                    device: home_id.clone(),
+                },
+                Some(future.into()),
+            ),
+        }],
+    };
+    let path = layout::batch(&home_id, seq);
+    let body = json(&batch);
+    let signature = crypto
+        .sign(&keys.device, &signed_bytes(&path, &body))
+        .unwrap();
+    let sealed = crypto
+        .seal(
+            keys.epochs.values().last().unwrap(),
+            &path,
+            json(&Signed { body, signature }).as_bytes(),
+        )
+        .unwrap();
+    home.sync.write(Path::new("/"), &path, &sealed).unwrap();
+    home.sync.push(Path::new("/"), "future").unwrap();
+
+    // The office keeps syncing and its edits still leave.
+    office
+        .hedy
+        .edit_note(there.id, "editada en la oficina", Category::Decision)
+        .unwrap();
+    office.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+    home.hedy.sync_now().unwrap();
+    assert_eq!(texts(&home, None), ["editada en la oficina"]);
+    assert!(!texts(&office, None).contains(&"futura".to_owned()));
+}
+
+#[test]
+fn a_remote_renamed_on_one_pc_does_not_ping_pong() {
+    let (_server, (home, home_tienda), (office, office_tienda)) = two_pcs();
+    let note = home
+        .hedy
+        .add_note(Some(&home_tienda), "v1", Category::Decision)
+        .unwrap();
+    home.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+
+    // Home's origin now has the repo's new name; the office's does not.
+    home.source
+        .set_remotes(&[("origin", "git@github.com:tu-usuario/tienda-nueva.git")]);
+    let mut sent = Vec::new();
+    for _ in 0..3 {
+        sent.push(home.hedy.sync_now().unwrap().sent);
+        sent.push(office.hedy.sync_now().unwrap().sent);
+    }
+    assert_eq!(sent, [0, 0, 0, 0, 0, 0]);
+
+    // An edit made at home still reaches the office's project.
+    home.hedy
+        .edit_note(note.id, "v2", Category::Decision)
+        .unwrap();
+    home.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+    assert_eq!(texts(&office, Some(&office_tienda)), ["v2"]);
+}
+
+#[test]
+fn a_pending_batch_replayed_after_a_crash_keeps_its_seq() {
+    let (server, (home, _), (office, _)) = two_pcs();
+    home.hedy.sync_now().unwrap();
+    // A crash left a pending batch whose seq never reached `sync.seq`.
+    let seq = home
+        .store
+        .get_setting(SEQ)
+        .unwrap()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    let pending = Pending {
+        seq: seq + 1,
+        outgoing: Vec::new(),
+    };
+    home.store
+        .set_setting(PENDING, Some(&json(&pending)))
+        .unwrap();
+    home.hedy.add_note(None, "B", Category::Decision).unwrap();
+    home.hedy.sync_now().unwrap();
+    let home_id = home.hedy.sync_status().unwrap().unwrap().device;
+    assert!(server.file(&layout::batch(&home_id, seq + 1)).is_some());
+    assert!(server.file(&layout::batch(&home_id, seq + 2)).is_some());
+    office.hedy.sync_now().unwrap();
+    assert_eq!(texts(&office, None), ["B"]);
 }

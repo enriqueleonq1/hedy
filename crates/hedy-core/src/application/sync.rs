@@ -212,13 +212,13 @@ impl Hedy {
             .unwrap_or(0))
     }
 
-    /// The sync repo's clone, inside Hedy's data folder.
-    fn sync_dir(&self) -> PathBuf {
-        self.store
-            .data_dir()
-            .unwrap_or_default()
-            .join("sync")
-            .join("repo")
+    /// The sync repo's clone, inside Hedy's data folder (never a relative
+    /// path: a failed setup deletes it).
+    fn sync_dir(&self) -> AppResult<PathBuf> {
+        match self.store.data_dir() {
+            Some(dir) if dir.is_absolute() => Ok(dir.join("sync").join("repo")),
+            _ => Err(corrupt("data dir")),
+        }
     }
 
     pub fn sync_is_set_up(&self) -> AppResult<bool> {
@@ -260,12 +260,14 @@ impl Hedy {
             let Some(bytes) = self.read_repo(dir, &path)? else {
                 continue;
             };
-            let text = String::from_utf8(bytes).map_err(|_| corrupt(&path))?;
-            let (inside, _) = self.sync_crypto.epoch_members(&text)?;
-            if inside != number {
-                return Err(corrupt(&path));
+            // Not an epoch file (junk, or one a newer Hedy wrote): left alone.
+            let Ok(text) = String::from_utf8(bytes) else {
+                continue;
+            };
+            match self.sync_crypto.epoch_members(&text) {
+                Ok((inside, _)) if inside == number => epochs.push((number, text)),
+                _ => continue,
             }
-            epochs.push((number, text));
         }
         epochs.sort_by_key(|(n, _)| *n);
         Ok(epochs)
@@ -280,7 +282,7 @@ impl Hedy {
         if self.sync_is_set_up()? {
             return Err(AppError::SyncAlreadySetUp);
         }
-        let dir = self.sync_dir();
+        let dir = self.sync_dir()?;
         self.sync_remote.open(url, &dir)?;
         if !self.epochs(&dir)?.is_empty() {
             return Err(AppError::SyncRepoInUse);
@@ -307,7 +309,9 @@ impl Hedy {
         self.publish_epoch(&dir, &keys)?;
         let pins = BTreeMap::from([(1, self.sync_crypto.digest(file.as_bytes()))]);
         self.remember_sync(url, &device, device_name, &recovery_public, 1, &pins)?;
-        self.sync_locked()?;
+        // The sync is set up: the words must reach the user even when this
+        // first sync fails (the next one sends what is left).
+        let _ = self.sync_locked();
         Ok(words)
     }
 
@@ -319,7 +323,7 @@ impl Hedy {
         if self.sync_is_set_up()? {
             return Err(AppError::SyncAlreadySetUp);
         }
-        let dir = self.sync_dir();
+        let dir = self.sync_dir()?;
         self.sync_remote.open(url, &dir)?;
         let epochs = self.epochs(&dir)?;
         let Some((first_number, first)) = epochs.first() else {
@@ -408,7 +412,7 @@ impl Hedy {
     fn sync_locked(&self) -> AppResult<SyncReport> {
         let url = self.sync_setting(URL)?.ok_or(AppError::SyncNotSetUp)?;
         let device = DeviceId(self.sync_setting(DEVICE)?.ok_or(AppError::SyncNotSetUp)?);
-        let dir = self.sync_dir();
+        let dir = self.sync_dir()?;
         self.sync_remote.open(&url, &dir)?;
         let session = self.sync_session(dir, device)?;
         let mut report = SyncReport::default();
@@ -433,8 +437,10 @@ impl Hedy {
             self.store.set_setting(OUTBOX, None)?;
             self.write_pending(&session)?;
         }
-        self.apply_batches(&session, &mut report)?;
-        self.bring_waiting(&session)?;
+        // This PC's batch leaves even when another PC's cannot be applied.
+        let applied = self
+            .apply_batches(&session, &mut report)
+            .and_then(|()| self.bring_waiting(&session));
 
         let now = self.now_secs();
         let info_at = self.sync_number(INFO_AT)? as i64;
@@ -451,6 +457,7 @@ impl Hedy {
             self.set_sync_setting(INFO_AT, &now.to_string())?;
         }
         self.sync_remote.push(&session.dir, "hedy sync")?;
+        applied?;
         self.set_sync_setting(LAST_SYNC, &now.to_string())?;
         Ok(report)
     }
@@ -498,6 +505,10 @@ impl Hedy {
         let Some(pending) = self.sync_json::<Pending>(PENDING)? else {
             return Ok(());
         };
+        // Saved before SEQ moved (a crash in between): never reuse its seq.
+        if self.sync_number(SEQ)? < pending.seq {
+            self.set_sync_setting(SEQ, &pending.seq.to_string())?;
+        }
         for out in &pending.outgoing {
             let change = &out.change;
             self.store.put_sync_item(change)?;
@@ -529,7 +540,8 @@ impl Hedy {
     fn sync_session(&self, dir: PathBuf, device: DeviceId) -> AppResult<Session> {
         let mut keys = self.keys()?;
         let trusted = self.sync_number(EPOCH)? as u32;
-        let mut pins: BTreeMap<u32, String> = self.sync_json(PINS)?.unwrap_or_default();
+        let mut pins = self.pins()?;
+        let recovery = self.sync_setting(RECOVERY)?.unwrap_or_default();
         let epochs = self.epochs(&dir)?;
         for (number, file) in epochs.iter().filter(|(n, _)| *n <= trusted) {
             if pins
@@ -551,6 +563,14 @@ impl Hedy {
         let mut newest = trusted;
         for (number, file) in epochs.iter().filter(|(n, _)| *n > trusted) {
             self.sync_crypto.verify_next_epoch(&previous, file)?;
+            // The recovery key stays a member: it is how a PC joins.
+            let (_, members) = self.sync_crypto.epoch_members(file)?;
+            if !members
+                .iter()
+                .any(|(id, public)| id == RECOVERY_MEMBER && *public == recovery)
+            {
+                return Err(corrupt(&layout::epoch(*number)));
+            }
             pins.insert(*number, self.sync_crypto.digest(file.as_bytes()));
             match self
                 .sync_crypto
@@ -595,6 +615,15 @@ impl Hedy {
             projects,
             members: members.into_iter().collect(),
         })
+    }
+
+    /// The pinned epoch hashes. A setting that does not read fails closed:
+    /// nothing would be checked otherwise.
+    fn pins(&self) -> AppResult<BTreeMap<u32, String>> {
+        match self.sync_setting(PINS)? {
+            Some(text) => serde_json::from_str(&text).map_err(|_| corrupt(PINS)),
+            None => Ok(BTreeMap::new()),
+        }
     }
 
     /// Projects whose memory is personal, by their sealed id. Two projects
@@ -826,7 +855,7 @@ impl Hedy {
                 && birth(item.kind, base) != birth(item.kind, &item.body)
             {
                 self.store.unlink_sync_item(item.kind, &link.uid)?;
-                if !known.is_deletion() {
+                if !known.is_deletion() && Self::scope_here(session, &known_scope) {
                     let stamp = self.next_stamp(&session.device)?;
                     out.push(Outgoing {
                         change: Change {
@@ -843,8 +872,9 @@ impl Hedy {
                 }
                 continue;
             }
-            let edited_here =
-                link.base_body.as_deref() != Some(item.body.as_str()) || known_scope != item.scope;
+            // Only the body: a project whose remote changed on one PC keeps
+            // its items where they are.
+            let edited_here = link.base_body.as_deref() != Some(item.body.as_str());
             let changed_elsewhere = known.stamp != link.base_stamp;
             if !edited_here {
                 if changed_elsewhere {
@@ -860,25 +890,18 @@ impl Hedy {
             }
             let stamp = self.next_stamp(&session.device)?;
             let version = known.replaced(stamp, Some(item.body.clone()));
+            // Edited here while it changed (or was deleted) elsewhere.
             if changed_elsewhere
                 && item.kind.asks_on_conflict()
-                && known.body.is_some()
                 && known.body.as_deref() != Some(item.body.as_str())
             {
-                self.store.add_sync_conflict(
-                    item.kind,
-                    &link.uid,
-                    &version,
-                    &known,
-                    self.now_secs(),
-                )?;
-                report.conflicts += 1;
+                report.conflicts += self.record_conflict(item.kind, &link.uid, &version, &known)?;
             }
             out.push(Outgoing {
                 change: Change {
                     kind: item.kind,
                     uid: link.uid,
-                    scope: item.scope,
+                    scope: known_scope,
                     version,
                 },
                 local_id: Some(item.local_id),
@@ -904,14 +927,7 @@ impl Hedy {
                 let stamp = self.next_stamp(&session.device)?;
                 let version = known.replaced(stamp, None);
                 if known.stamp != link.base_stamp && kind.asks_on_conflict() {
-                    self.store.add_sync_conflict(
-                        kind,
-                        &link.uid,
-                        &version,
-                        &known,
-                        self.now_secs(),
-                    )?;
-                    report.conflicts += 1;
+                    report.conflicts += self.record_conflict(kind, &link.uid, &version, &known)?;
                 }
                 out.push(Outgoing {
                     change: Change {
@@ -925,6 +941,29 @@ impl Hedy {
             }
         }
         Ok(out)
+    }
+
+    /// Records a conflict for the user, once: a sync that is retried meets
+    /// the same two versions again. Returns how many were recorded (0 or 1).
+    fn record_conflict(
+        &self,
+        kind: ItemKind,
+        uid: &str,
+        kept: &Version,
+        other: &Version,
+    ) -> AppResult<usize> {
+        let known = self.store.sync_conflicts()?.into_iter().any(|c| {
+            c.kind == kind
+                && c.uid == uid
+                && c.kept.stamp == kept.stamp
+                && c.other.stamp == other.stamp
+        });
+        if known {
+            return Ok(0);
+        }
+        self.store
+            .add_sync_conflict(kind, uid, kept, other, self.now_secs())?;
+        Ok(1)
     }
 
     /// A local item not synced yet. `None` when the replica already holds
@@ -966,10 +1005,17 @@ impl Hedy {
         }
         for (device, mut batches) in pending {
             batches.sort();
-            let read = self.store.sync_cursor(&device)?;
-            for (seq, path) in batches.into_iter().filter(|(seq, _)| *seq > read) {
+            let mut read = self.store.sync_cursor(&device)?;
+            let unread: Vec<(u64, String)> =
+                batches.into_iter().filter(|(seq, _)| *seq > read).collect();
+            for (seq, path) in unread {
+                // Strictly in order: a batch missing for now (hidden, or not
+                // pulled yet) stops this PC's batches until it is there.
+                if seq != read + 1 {
+                    break;
+                }
                 let Some(body) = self.open_signed(session, &device, &path)? else {
-                    continue;
+                    break;
                 };
                 let batch: Batch = serde_json::from_str(&body).map_err(|_| corrupt(&path))?;
                 // A PC writes only its own versions.
@@ -986,6 +1032,7 @@ impl Hedy {
                     self.apply_change(session, change, report)?;
                 }
                 self.store.set_sync_cursor(&device, seq)?;
+                read = seq;
             }
         }
         Ok(())
@@ -1022,16 +1069,9 @@ impl Hedy {
                 } else {
                     (local, change.version.clone())
                 };
-                if change.kind.asks_on_conflict() && other.body.is_some() && other.body != kept.body
-                {
-                    self.store.add_sync_conflict(
-                        change.kind,
-                        &change.uid,
-                        &kept,
-                        &other,
-                        self.now_secs(),
-                    )?;
-                    report.conflicts += 1;
+                if change.kind.asks_on_conflict() && other.body != kept.body {
+                    report.conflicts +=
+                        self.record_conflict(change.kind, &change.uid, &kept, &other)?;
                 }
             }
         }
@@ -1104,22 +1144,29 @@ impl Hedy {
             }
             return Ok(true);
         };
-        let bad = || corrupt(&change.uid);
+        // A body this version cannot read (a newer Hedy's) waits in the
+        // replica instead of stopping the sync.
         let local_id = match change.kind {
             ItemKind::Note => {
-                let body: NoteBody = serde_json::from_str(body).map_err(|_| bad())?;
+                let Ok(body) = serde_json::from_str::<NoteBody>(body) else {
+                    return Ok(false);
+                };
                 self.store
                     .write_synced_note(row, project.as_deref(), &body)?
                     .to_string()
             }
             ItemKind::Skill => {
-                let body: SkillBody = serde_json::from_str(body).map_err(|_| bad())?;
+                let Ok(body) = serde_json::from_str::<SkillBody>(body) else {
+                    return Ok(false);
+                };
                 self.store
                     .write_synced_skill(row, project.as_deref(), &body)?
                     .to_string()
             }
             ItemKind::Template => {
-                let body: TemplateBody = serde_json::from_str(body).map_err(|_| bad())?;
+                let Ok(body) = serde_json::from_str::<TemplateBody>(body) else {
+                    return Ok(false);
+                };
                 // An edited built-in here already has its row.
                 let row = row.or_else(|| {
                     let builtin = body.builtin.as_ref()?;
@@ -1142,14 +1189,16 @@ impl Hedy {
                     .to_string()
             }
             ItemKind::Theme => {
-                let body: ThemeBody = serde_json::from_str(body).map_err(|_| bad())?;
+                let Ok(body) = serde_json::from_str::<ThemeBody>(body) else {
+                    return Ok(false);
+                };
                 // Each PC picks the id: two themes made apart with one name
                 // are two themes.
                 let id = match &link {
                     Some(link) => link.local_id.clone(),
                     None => new_theme_id(&body.name, |id| !matches!(self.themes.get(id), Ok(None))),
                 };
-                // One this version cannot read (a newer Hedy's) waits.
+                // One that does not validate here (a newer Hedy's) waits.
                 let Ok(theme) =
                     CustomTheme::new(id, &body.name, body.base, body.colors, body.origin)
                 else {
@@ -1172,10 +1221,10 @@ impl Hedy {
             return Ok(None);
         };
         let device = DeviceId(self.sync_setting(DEVICE)?.unwrap_or_default());
-        let dir = self.sync_dir();
+        let dir = self.sync_dir()?;
         let keys = self.keys()?;
         let trusted = self.sync_number(EPOCH)? as u32;
-        let pins: BTreeMap<u32, String> = self.sync_json(PINS)?.unwrap_or_default();
+        let pins = self.pins()?;
         let mut devices = Vec::new();
         let trusted_file = self
             .epochs(&dir)?
@@ -1257,7 +1306,7 @@ impl Hedy {
         let keys = self.keys()?;
         let name_key = keys.epochs.values().next().cloned().unwrap_or_default();
         let session = Session {
-            dir: self.sync_dir(),
+            dir: self.sync_dir()?,
             device,
             me: keys.device.clone(),
             current: String::new(),
