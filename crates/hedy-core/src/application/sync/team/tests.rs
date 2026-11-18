@@ -1968,6 +1968,83 @@ fn a_join_cancelled_before_it_is_in_takes_its_request_back() {
     );
 }
 
+// ── Housekeeping of T6 ──────────────────────────────────────────────────
+
+#[test]
+fn cancelling_a_join_leaves_a_later_invites_files_alone() {
+    let server = SyncServer::default();
+    let (ana, _) = create(&server);
+    let invite = ana.f.hedy.team_invite(&ana.team, Role::Member).unwrap();
+    let (luis, _) = pc(&server);
+    let join = luis
+        .hedy
+        .team_join(TEAM, &invite.code, "Luis", "PC")
+        .unwrap();
+    ana.f
+        .hedy
+        .team_cancel_invite(&ana.team, invite.number)
+        .unwrap();
+    // A later invite draws the same number, and Marta answers it.
+    server.put(&team_layout::offer(invite.number), b"later offer".to_vec());
+    server.put(
+        &team_layout::request(invite.number),
+        b"Marta's request".to_vec(),
+    );
+    luis.hedy.team_forget(&join.id).unwrap();
+    assert!(server.file(&team_layout::request(invite.number)).is_some());
+    assert!(server.file(&team_layout::offer(invite.number)).is_some());
+}
+
+#[test]
+fn a_join_taken_back_before_its_answer_is_out_gets_no_seat() {
+    let server = SyncServer::default();
+    let (ana, _) = create(&server);
+    let invite = ana.f.hedy.team_invite(&ana.team, Role::Member).unwrap();
+    let (luis, _) = pc(&server);
+    let join = luis
+        .hedy
+        .team_join(TEAM, &invite.code, "Luis", "PC")
+        .unwrap();
+    // Ana's PC opens the request, but its answer's push is lost.
+    ana.f.sync.fail_push_after(1);
+    assert!(ana.f.hedy.team_sync(&ana.team).is_err());
+    luis.hedy.team_forget(&join.id).unwrap();
+    assert!(
+        !server
+            .paths()
+            .contains(&team_layout::request(invite.number))
+    );
+    ana.sync();
+    assert_eq!(people(&ana).len(), 1);
+    assert!(!server.paths().contains(&team_layout::answer(invite.number)));
+    assert!(!server.paths().contains(&team_layout::offer(invite.number)));
+    assert!(
+        ana.f
+            .hedy
+            .team_status(&ana.team)
+            .unwrap()
+            .invites
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_join_cancelled_while_its_inviter_could_not_push_lets_nobody_in() {
+    let server = SyncServer::default();
+    let (ana, _) = create(&server);
+    let invite = ana.f.hedy.team_invite(&ana.team, Role::Member).unwrap();
+    let (luis, _) = pc(&server);
+    let join = luis
+        .hedy
+        .team_join(TEAM, &invite.code, "Luis", "PC")
+        .unwrap();
+    ana.f.sync.fail_next_push();
+    assert!(ana.f.hedy.team_sync(&ana.team).is_err());
+    luis.hedy.team_forget(&join.id).unwrap();
+    ana.sync();
+    assert_eq!(people(&ana).len(), 1);
+}
+
 // ── T6: personal sync and teams together ────────────────────────────────
 
 /// A PC of the combined scenario, on real git and SQLite.
@@ -2234,11 +2311,15 @@ fn personal_sync_and_two_teams(dir: &Path, personal_url: &str, a_url: &str, b_ur
         casa.own_notes()
             .contains(&"Commits en una línea".to_owned())
     );
-    assert!(luis.team_notes(&luis_a).len() == 2);
+    luis.hedy.team_sync(&luis_a).unwrap();
+    assert_eq!(luis.team_notes(&luis_a), tienda_notes);
 
     // Leaving the teams leaves personal sync as it was.
     oficina.hedy.team_leave(&oficina_a).unwrap();
     casa.hedy.team_sync(&a).unwrap();
+    let status = casa.hedy.team_status(&a).unwrap();
+    let ana = status.people.iter().find(|p| p.name == "Ana").unwrap();
+    assert_eq!(ana.devices.len(), 1);
     for (pc, team) in [(&luis, &luis_a), (&marta, &marta_b), (&oficina, &oficina_a)] {
         pc.hedy.team_forget(team).unwrap();
     }

@@ -1775,6 +1775,7 @@ impl Hedy {
         let mut done: Vec<String> = Vec::new();
         let mut answered: Vec<u32> = Vec::new();
         let mut failed: Vec<u32> = Vec::new();
+        let mut withdrawn: Vec<u32> = Vec::new();
         // A new PC with keys of its own (no member's, no other new PC's).
         let fits = |device: &DeviceId, public: &str, added: &[EpochMember]| {
             device.is_valid()
@@ -1793,6 +1794,14 @@ impl Hedy {
             if session.members.contains_key(request.device.as_str()) {
                 // In already (an answer whose push was cut short).
                 answered.push(*number);
+            } else if self
+                .read_repo(&dir, &team_layout::request(*number))?
+                .is_none()
+            {
+                // Taken back before its answer was out (`withdraw_join`): the
+                // answer and the request's removal go in one push, so a
+                // missing request with no seat has nobody behind it.
+                withdrawn.push(*number);
             } else if !fits(&request.device, &request.public, &added) {
                 failed.push(*number);
             } else if admin {
@@ -1928,6 +1937,7 @@ impl Hedy {
         if !new_epoch
             && answered.is_empty()
             && failed.is_empty()
+            && withdrawn.is_empty()
             && done.is_empty()
             && write_asks.is_empty()
         {
@@ -1962,7 +1972,7 @@ impl Hedy {
                     self.sync_remote.write(&dir, &path, &sealed)?;
                 }
             }
-            for number in answered.iter().chain(&failed) {
+            for number in answered.iter().chain(&failed).chain(&withdrawn) {
                 self.drop_invite_files(&session, *number)?;
             }
             for path in done.iter().chain(&stale) {
@@ -1979,7 +1989,7 @@ impl Hedy {
             let _ = self.sync_remote.discard_local(&dir);
             return Err(error);
         }
-        for number in answered.iter().chain(&failed) {
+        for number in answered.iter().chain(&failed).chain(&withdrawn) {
             self.forget_invite(space, *number)?;
         }
         for number in &failed {
@@ -2321,9 +2331,10 @@ impl Hedy {
         self.save_keys(space, &keys)?;
         self.sync_remote.remove(&dir, &path)?;
         self.set_sync_setting(space, SEQ, "0")?;
-        self.clear_sync_setting(space, JOIN)?;
-        // Last: what says the team is set up here.
+        // What says the team is set up here, before the join's mark goes: a
+        // crash in between leaves a team that is set up (and still listed).
         self.set_sync_setting(space, URL, &joining.url)?;
+        self.clear_sync_setting(space, JOIN)?;
         self.sync_locked(space)?;
         Ok(true)
     }
@@ -2658,6 +2669,10 @@ impl Hedy {
         let Ok(Some(joining)) = self.sync_json::<Joining>(space, JOIN) else {
             return;
         };
+        // In already (a join's mark left by a crash): nothing to take back.
+        if self.space_is_set_up(space).unwrap_or(true) {
+            return;
+        }
         let Ok(dir) = self.sync_dir(space) else {
             return;
         };
@@ -2671,10 +2686,29 @@ impl Hedy {
         ) {
             return;
         }
-        for path in [
-            team_layout::request(joining.number),
-            team_layout::offer(joining.number),
-        ] {
+        // Only its own request, and the offer with it: once the invite is
+        // burned, a later one may draw the same number.
+        let request = team_layout::request(joining.number);
+        let mine = self
+            .keys(space)
+            .ok()
+            .and_then(|k| k.invite)
+            .is_some_and(|key| {
+                self.read_repo(&dir, &request)
+                    .ok()
+                    .flatten()
+                    .and_then(|bytes| serde_json::from_slice::<RequestFile>(&bytes).ok())
+                    .and_then(|file| BASE64.decode(file.sealed).ok())
+                    .is_some_and(|sealed| {
+                        self.sync_crypto
+                            .invite_open(&key, &request, &sealed)
+                            .is_ok()
+                    })
+            });
+        if !mine {
+            return;
+        }
+        for path in [request, team_layout::offer(joining.number)] {
             if matches!(self.read_repo(&dir, &path), Ok(Some(_))) {
                 let _ = self.sync_remote.remove(&dir, &path);
             }
