@@ -537,6 +537,7 @@ impl Hedy {
         Some(MemoryLink {
             server,
             skills: Some(self.task_skills(project, task, &author)),
+            team: self.team_context(&project.path),
             tools: Arc::new(TaskMemory {
                 hedy: self.clone(),
                 project: project.path.clone(),
@@ -664,17 +665,25 @@ impl MemoryTools for TaskMemory {
     }
 
     fn search_page(&self, query: &str, page: PageRequest) -> String {
-        match self
-            .hedy
-            .read_memory_page(&self.project, self.task.as_ref(), query, page)
-        {
-            Ok(page) if experiments::on(Experiment::Search8) => format_note_page(&page),
-            Ok(page) => format_notes(&page.items),
-            Err(e) => tr!(
-                "No se pudo leer la memoria: {e}",
-                "Could not read the memory: {e}"
-            ),
+        let first = page.offset.unwrap_or(0) == 0;
+        let mut text =
+            match self
+                .hedy
+                .read_memory_page(&self.project, self.task.as_ref(), query, page)
+            {
+                Ok(page) if experiments::on(Experiment::Search8) => format_note_page(&page),
+                Ok(page) => format_notes(&page.items),
+                Err(e) => tr!(
+                    "No se pudo leer la memoria: {e}",
+                    "Could not read the memory: {e}"
+                ),
+            };
+        // The team's notes (a project of a team), with the first page.
+        if first && let Some(team) = self.hedy.team_search(&self.project, query) {
+            text.push_str("\n\n");
+            text.push_str(&team);
         }
+        text
     }
 
     fn get(&self, id: Option<i64>, topic: Option<&str>) -> String {

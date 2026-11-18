@@ -205,8 +205,12 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
         // the user), so their tools need no prompt.
         allowed.extend(servers.iter().map(|s| format!("mcp__{}", s.name)));
     }
-    if request.memory.is_some() {
-        system.push(prompts::memory_guidance(request.phase, request.mode));
+    if let Some(memory) = &request.memory {
+        system.push(prompts::memory_context(
+            request.phase,
+            request.mode,
+            memory.team.as_deref(),
+        ));
     }
     if !allowed.is_empty() {
         args.extend(["--allowedTools".into(), allowed.join(",")]);
@@ -533,6 +537,7 @@ pub(crate) mod tests {
             server: Some(server("hedy-memory", vec![])),
             tools: Arc::new(NoMemory),
             skills: None,
+            team: None,
         });
         request.mcp = vec![server(
             "codebase-memory",

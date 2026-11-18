@@ -607,6 +607,9 @@ pub struct MemoryLink {
     pub tools: Arc<dyn MemoryTools>,
     /// The learned skills, served next to the memory (same server).
     pub skills: Option<Arc<dyn SkillTools>>,
+    /// The team layer, for a project of a team (docs/decisions.md §35):
+    /// always in the agent's context, next to the memory guidance.
+    pub team: Option<String>,
 }
 
 impl std::fmt::Debug for MemoryLink {
@@ -619,7 +622,7 @@ impl std::fmt::Debug for MemoryLink {
 
 impl PartialEq for MemoryLink {
     fn eq(&self, other: &Self) -> bool {
-        self.server == other.server
+        self.server == other.server && self.team == other.team
     }
 }
 

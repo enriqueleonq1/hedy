@@ -55,6 +55,17 @@ pub fn memory_guidance_in(phase: Phase, mode: TaskMode, set: Experiments) -> Str
     text
 }
 
+/// [`memory_guidance`] followed by the team layer, when the project is a
+/// team's (its notes, quoted, always in the agent's context).
+pub fn memory_context(phase: Phase, mode: TaskMode, team: Option<&str>) -> String {
+    let mut text = memory_guidance(phase, mode);
+    if let Some(team) = team {
+        text.push_str("\n\n");
+        text.push_str(team);
+    }
+    text
+}
+
 /// The learned skills, served by the same `hedy-memory` server. An agent
 /// that may change the project may propose one skill when it worked out a
 /// non-obvious, reusable procedure: only a proposal, and quiet otherwise.

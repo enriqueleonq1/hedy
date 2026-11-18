@@ -1721,3 +1721,118 @@ fn a_leaving_admin_that_syncs_first_still_leaves_its_notes() {
     let pepe = invite(&server, &ana, "Pepe", Role::Member, false);
     assert_eq!(pepe.note_texts(), ["Regla de Bea"]);
 }
+
+// ── T3: what the agent reads ─────────────────────────────────────────────
+
+fn start_task(member: &Member) -> crate::application::ports::AgentRequest {
+    member
+        .f
+        .hedy
+        .start_task(crate::application::NewTask {
+            images: Vec::new(),
+            project: member.project.clone(),
+            prompt: "Agrega el formato de precios".into(),
+            mode: crate::domain::TaskMode::Project,
+            model: None,
+            plan_first: false,
+        })
+        .unwrap();
+    member.f.agents.last_request()
+}
+
+#[test]
+fn an_agent_in_a_team_project_always_reads_the_team_layer_quoted() {
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    ana.f
+        .hedy
+        .team_add_note(
+            &ana.team,
+            None,
+            "Precios en USD con dos decimales",
+            Category::Rule,
+            None,
+        )
+        .unwrap();
+    ana.f
+        .hedy
+        .team_add_note(
+            &ana.team,
+            Some(&ana.project),
+            "Los tests van en tests/",
+            Category::Convention,
+            None,
+        )
+        .unwrap();
+    ana.sync();
+    luis.sync();
+    let request = start_task(&luis);
+    let team = request.memory.as_ref().unwrap().team.clone().unwrap();
+    assert!(team.contains(r#""Tienda SA""#), "{team}");
+    assert!(
+        team.contains(r#"- "Ana" (rule): "Precios en USD con dos decimales""#),
+        "{team}"
+    );
+    // A project note is not always there: the search finds it.
+    assert!(!team.contains("tests/"));
+    let found = request.memory.as_ref().unwrap().tools.search("tests");
+    assert!(found.contains(r#""Los tests van en tests/""#), "{found}");
+    assert!(found.contains(r#""Ana""#), "{found}");
+    // Nothing of the team in a project that is not the team's.
+    luis.f
+        .hedy
+        .set_memory_home(&luis.project, Some(&MemoryHome::Local))
+        .unwrap();
+    let request = start_task(&luis);
+    assert_eq!(request.memory.as_ref().unwrap().team, None);
+    assert!(
+        !request
+            .memory
+            .unwrap()
+            .tools
+            .search("tests")
+            .contains("tests/")
+    );
+}
+
+#[test]
+fn an_agents_proposal_moves_to_the_team_when_approved_there() {
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    let id = luis
+        .f
+        .hedy
+        .propose_note(
+            &luis.project,
+            "Usa pnpm, no npm",
+            Category::Convention,
+            "Claude",
+            None,
+        )
+        .unwrap()
+        .id;
+    let outcome = luis
+        .f
+        .hedy
+        .team_publish_note(&luis.team, id, false)
+        .unwrap();
+    assert!(matches!(outcome, TeamWriteOutcome::Published(_)));
+    // It left this PC's notes: the team's copy is the one.
+    assert!(luis.f.store.note(id).unwrap().is_none());
+    luis.sync();
+    ana.sync();
+    assert_eq!(ana.note_texts(), ["Usa pnpm, no npm"]);
+    // For the team layer, a member's becomes a suggestion.
+    let id = luis
+        .f
+        .hedy
+        .add_note(Some(&luis.project), "Todo en inglés", Category::Rule)
+        .unwrap()
+        .id;
+    assert!(matches!(
+        luis.f.hedy.team_publish_note(&luis.team, id, true).unwrap(),
+        TeamWriteOutcome::Suggested(_)
+    ));
+}
