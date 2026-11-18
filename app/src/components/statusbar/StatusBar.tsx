@@ -32,6 +32,7 @@ import {
 } from "../planUsage";
 import { useShortcuts } from "../shortcuts";
 import { SyncItem } from "./SyncItem";
+import { TeamItem } from "./TeamItem";
 import { isMenuKey, pointFor, useContextMenu, type ContextMenuItem } from "../ui/ContextMenu";
 import { MenuButton, type MenuItem } from "../ui/Menu";
 import { useToast } from "../ui/Toast";
@@ -94,6 +95,7 @@ export function StatusBar({ overview, view, onNavigate }: Props) {
       <div className="statusbar__group statusbar__group--end">
         {workspace && <FileItem />}
         <SyncItem onOpenSettings={() => onNavigate({ screen: "settings", section: "sync" })} />
+        <TeamItem onOpen={() => onNavigate({ screen: "settings", section: "teams" })} />
         {account && <AccountItem account={account} onOpen={() => onNavigate({ screen: "accounts", account: account.id })} />}
         <HelpItem />
       </div>

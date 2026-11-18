@@ -12,6 +12,7 @@ import { ACTIVITY_LABEL, ACTIVITY_WORDS, WORKING_ACTIVITIES } from "../component
 import { ColorPicker, Field, Segmented, Switch } from "../components/ui/controls";
 import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 import { SyncSection } from "./sync/SyncSection";
+import { TeamsSection } from "./team/TeamsSection";
 import { TemplatesSection } from "./templates/TemplatesSection";
 import { ThemeGallery } from "./themes/ThemeGallery";
 
@@ -23,7 +24,7 @@ const CLIS: { id: CliProviderId; name: string }[] = [
   { id: "antigravity", name: "Antigravity" },
 ];
 
-export function Settings({ overview, focus }: { overview: Overview; focus?: { section?: "themes" | "sync" } }) {
+export function Settings({ overview, focus }: { overview: Overview; focus?: { section?: "themes" | "sync" | "teams" } }) {
   const setSetting = useAction((api, vars: { key: SettingKey; value: string | null }) =>
     api.setSetting(vars.key, vars.value),
   );
@@ -44,6 +45,7 @@ export function Settings({ overview, focus }: { overview: Overview; focus?: { se
       <h1>{t("common.settings")}</h1>
 
       <SyncSection focus={focus?.section === "sync"} />
+      <TeamsSection focus={focus?.section === "teams"} />
 
       <section className="card settings__section">
         <h2>{t("settings.appearance")}</h2>

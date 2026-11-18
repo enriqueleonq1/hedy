@@ -6,6 +6,8 @@ import { Segmented } from "../../components/ui/controls";
 import { timeAgo } from "../../format";
 import { useT } from "../../i18n";
 import { authorLabel, CATEGORY_LABEL, categoryOptions, useMemoryAction } from "./notes";
+import { shortPath } from "../../components/projects";
+import { useProjectTeam, WhoForDialog } from "../team/TeamMemory";
 
 /**
  * One note. A proposal may come with the approved note it changes (same
@@ -25,6 +27,9 @@ export function NoteCard({
 }) {
   const t = useT();
   const [editing, setEditing] = useState(false);
+  // A team's project: approving or sharing asks who it is for (6a).
+  const team = useProjectTeam(project);
+  const [whoFor, setWhoFor] = useState(false);
   const [text, setText] = useState(note.text);
   const [category, setCategory] = useState(note.category);
   const save = useMemoryAction(project, (api) => api.editNote(note.id, text, category));
@@ -130,7 +135,12 @@ export function NoteCard({
         <span className="spacer" />
         {proposed ? (
           <>
-            <Button small variant="primary" disabled={busy} onClick={() => approve.mutate(undefined)}>
+            <Button
+              small
+              variant="primary"
+              disabled={busy}
+              onClick={() => (team && !replaces ? setWhoFor(true) : approve.mutate(undefined))}
+            >
               {t(replaces ? "memory.change.approve" : looksLike.length > 0 ? "memory.similar.keepBoth" : "memory.note.approve")}
             </Button>
             <Button small onClick={edit}>
@@ -142,6 +152,11 @@ export function NoteCard({
           </>
         ) : (
           <>
+            {team && note.project !== null && (
+              <Button small onClick={() => setWhoFor(true)}>
+                {t("team.who.share")}
+              </Button>
+            )}
             <Button small onClick={edit}>
               {t("common.edit")}
             </Button>
@@ -151,6 +166,15 @@ export function NoteCard({
           </>
         )}
       </div>
+      {whoFor && team && (
+        <WhoForDialog
+          note={note}
+          project={project}
+          projectName={shortPath(project)}
+          team={team}
+          onClose={() => setWhoFor(false)}
+        />
+      )}
     </li>
   );
 }

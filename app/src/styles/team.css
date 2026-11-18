@@ -1,0 +1,188 @@
+/* Team memory: the card in Ajustes (teams, people, invites), its dialogs,
+   a team project's memory and the "¿A quién le sirve?" sheet. */
+
+.team { gap: var(--space-4); }
+.team-pill--warn { border-color: var(--warn-ink); color: var(--warn-ink); background: var(--warn-bg); }
+
+.team-initial {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--action-text);
+  font-weight: 600;
+}
+
+/* 1b: the list of teams. */
+.team-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.team-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--panel-2);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.team-row:hover:not(:disabled) { border-color: var(--line-strong); }
+.team-row:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.team-row:disabled { cursor: default; }
+.team-row__text { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.team-row__text strong { color: var(--ink); overflow-wrap: anywhere; }
+
+.team-start { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.team-start__option {
+  display: grid;
+  gap: 4px;
+  padding: var(--space-4);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-card);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.team-start__option:hover { border-style: solid; border-color: var(--action); }
+.team-start__option:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.team-start__option strong { color: var(--ink); }
+
+.team-crumbs { color: var(--muted); }
+.team-subtitle { margin: var(--space-2) 0 0; font-size: var(--text-body); font-weight: 600; color: var(--ink); }
+.team-alert,
+.team-review-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+}
+.team-alert > :first-child,
+.team-review-bar > :first-child { flex: 1; }
+.team-leave { justify-content: flex-end; }
+
+/* A small label: a role, a layer. */
+.team-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+.team-tag--admin,
+.team-tag--team { border-color: var(--action); color: var(--action-text); background: var(--selection); }
+
+/* 3b: the invite, inline in the people list. */
+.team-invite { display: grid; gap: var(--space-2); }
+.team-invite__form { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.team-invite__form input:not([type="checkbox"]) { flex: 1; min-width: 160px; }
+.team-invite__admin { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.team-invites { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.team-invite__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--action);
+  border-radius: var(--radius-control);
+  background: var(--selection);
+}
+.team-invite__who { font-weight: 600; color: var(--ink); }
+.team-invite__code { font-size: 13px; color: var(--ink); }
+
+/* 8b: a card per person, with their PCs. */
+.team-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.team-person {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--panel-2);
+}
+.team-person__body { display: grid; gap: var(--space-2); flex: 1; min-width: 0; }
+.team-person__head { display: flex; align-items: center; gap: var(--space-2); }
+.team-person__head strong { color: var(--ink); overflow-wrap: anywhere; }
+.team-person__actions { display: flex; gap: var(--space-1); width: 100%; justify-content: flex-end; }
+.team-pcs { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); margin: 0; padding: 0; list-style: none; font-size: var(--text-caption); }
+.team-pc {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+.team-pc__remove {
+  margin-left: 4px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.team-pc__remove:hover { color: var(--danger); }
+.team-pc__remove:focus-visible { outline: 2px solid var(--focus); border-radius: 4px; }
+
+/* Dialogs. */
+.team-checks { margin: 0; padding-left: var(--space-5); display: grid; gap: 2px; }
+.team-wait { display: flex; align-items: center; gap: var(--space-4); }
+.team-wait__mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--selection);
+  color: var(--action-text);
+  font-weight: 700;
+}
+
+/* 7b: one suggestion, now and with the change. */
+.team-review { display: grid; gap: var(--space-3); }
+.team-review h3 { margin: 0; font-size: var(--text-headline); color: var(--ink); }
+.team-review__side { display: grid; gap: 4px; padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-control); }
+.team-review__side--after { border-color: var(--action); background: var(--selection); }
+.team-review__text { margin: 0; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* 6a: who a note is for. */
+.team-who { display: grid; gap: var(--space-2); }
+.team-who__quote { margin: 0 0 var(--space-2); padding: var(--space-3) var(--space-4); border-left: 3px solid var(--action); color: var(--ink); background: var(--panel-2); }
+.team-who__option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+.team-who__option > span { display: grid; gap: 2px; }
+.team-who__option strong { color: var(--ink); }
+.team-who__option--on { border-color: var(--action); background: var(--selection); }
+
+/* 5b: a team project's notes. */
+.team-notes .note__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+
+@media (max-width: 720px) {
+  .team-start { grid-template-columns: 1fr; }
+  .team-people { grid-template-columns: 1fr; }
+}

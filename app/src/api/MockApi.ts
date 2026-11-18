@@ -26,6 +26,16 @@ import type {
   SyncConflict,
   SyncReport,
   SyncStatus,
+  TeamCreated,
+  TeamInvite,
+  TeamJoin,
+  TeamNote,
+  TeamPerson,
+  TeamRole,
+  TeamStatus,
+  TeamSuggestion,
+  TeamSummary,
+  TeamWrite,
   CustomTheme,
   ThemeBase,
   ThemeDraft,
@@ -373,6 +383,8 @@ export class MockApi implements HedyApi {
       ],
       conflicts: 0,
     };
+    // A team, with no project connected (tests connect one).
+    api.teamList = [sampleTeam(now)];
     api.syncConflictList = [
       {
         id: 1,
@@ -2697,6 +2709,312 @@ export class MockApi implements HedyApi {
     for (const listener of this.syncListeners) listener();
   }
 
+  // ---------------------------------------------------------------- team memory
+
+  /** Tests: the teams this PC is in, each with what the core would hold. */
+  teamList: MockTeam[] = [];
+  static readonly TEAM_WORDS = "faro trigo nube cobre ancla menta río lápiz vuelo mesa ritmo pasto";
+  private teamSeq = 0;
+
+  private team(id: string): MockTeam {
+    const team = this.teamList.find((t) => t.summary.id === id || t.summary.name === id);
+    if (!team) throw `esta PC no está en el equipo «${id}»`;
+    return team;
+  }
+
+  private teamMe(team: MockTeam): TeamPerson {
+    const me = team.people.find((p) => p.me);
+    if (!me) throw "esta PC ya no está en el equipo";
+    return me;
+  }
+
+  private teamUid(): string {
+    this.teamSeq += 1;
+    return `u${String(this.teamSeq).padStart(8, "0")}`;
+  }
+
+  async teams(): Promise<TeamSummary[]> {
+    return this.teamList.map((t) => ({ ...t.summary }));
+  }
+
+  async teamStatus(id: string): Promise<TeamStatus> {
+    const team = this.team(id);
+    const layer = team.notes.filter((n) => n.teamLayer);
+    const layerTokens = Math.ceil(layer.reduce((sum, n) => sum + n.text.length + n.author.length + 20, 0) / 4);
+    const people = [...team.people].sort(
+      (a, b) => Number(a.role !== "admin") - Number(b.role !== "admin") || a.name.localeCompare(b.name),
+    );
+    return {
+      summary: { ...team.summary },
+      device: "pc-1",
+      person: this.teamMe(team).person,
+      people,
+      suggestions: team.suggestions.length,
+      conflicts: 0,
+      invites: [...team.invites],
+      failedInvites: [...team.failedInvites],
+      layerTokens,
+      layerMax: 1500,
+    };
+  }
+
+  async teamCreate(url: string, name: string, me: string, pc: string): Promise<TeamCreated> {
+    this.checkSyncUrl(url);
+    if (!name.trim()) throw "falta el nombre del equipo";
+    if (!me.trim()) throw "falta tu nombre en el equipo";
+    const id = `team-${this.teamList.length + 1}`;
+    this.teamList.push({
+      summary: { id, name: name.trim(), url: url.trim(), waiting: false, leaving: false, role: "admin", lastSync: this.now(), lastError: null },
+      people: [
+        { person: "p-me", name: me.trim(), role: "admin", me: true, devices: [{ id: "pc-1", name: pc, lastSync: this.now(), thisPc: true }] },
+      ],
+      invites: [],
+      failedInvites: [],
+      notes: [],
+      suggestions: [],
+    });
+    return { id, words: MockApi.TEAM_WORDS };
+  }
+
+  async teamInvite(id: string, admin: boolean, mine: boolean): Promise<TeamInvite> {
+    const team = this.team(id);
+    if (!mine && this.teamMe(team).role !== "admin") throw "tu rol en el equipo no lo permite: pídeselo a un admin";
+    const number = 7 + team.invites.length;
+    const invite: TeamInvite = {
+      number,
+      code: `${number}-tigre-lima-nube-faro`,
+      expiresAt: this.now() + 48 * 3600,
+      ownPc: mine,
+      role: mine ? this.teamMe(team).role : admin ? "admin" : "member",
+      answered: false,
+    };
+    team.invites.push(invite);
+    return invite;
+  }
+
+  /** Tests: an agent's proposal in `project`, as the memory server would add it. */
+  addProposal(project: string, text: string, author = "Claude"): Note {
+    const note: Note = {
+      id: Math.max(0, ...this.notes.map((n) => n.id)) + 1,
+      project,
+      text,
+      category: "decision",
+      author,
+      status: "proposed",
+      createdAt: this.now(),
+      uses: 0,
+      lastUsed: null,
+      topic: null,
+      updatedAt: null,
+    };
+    this.notes.push(note);
+    return note;
+  }
+
+  async teamCancelInvite(id: string, number: number): Promise<void> {
+    const team = this.team(id);
+    team.invites = team.invites.filter((i) => i.number !== number);
+  }
+
+  async teamDismissFailedInvite(id: string, number: number): Promise<void> {
+    const team = this.team(id);
+    team.failedInvites = team.failedInvites.filter((n) => n !== number);
+  }
+
+  async teamJoin(url: string, code: string, me: string, pc: string): Promise<TeamJoin> {
+    this.checkSyncUrl(url);
+    if (!/^\d+[-\s]+\p{L}+[-\s]+\p{L}+[-\s]+\p{L}+[-\s]+\p{L}+$/u.test(code.trim())) {
+      throw "eso no es un código de invitación: revisa el número y las cuatro palabras";
+    }
+    const id = `team-${this.teamList.length + 1}`;
+    this.teamList.push({
+      summary: { id, name: "", url: url.trim(), waiting: true, leaving: false, role: null, lastSync: null, lastError: null },
+      people: [{ person: "p-me", name: me.trim(), role: "member", me: true, devices: [{ id: "pc-1", name: pc, lastSync: null, thisPc: true }] }],
+      invites: [],
+      failedInvites: [],
+      notes: [],
+      suggestions: [],
+    });
+    return { id, joined: false };
+  }
+
+  async teamSync(id: string): Promise<SyncReport> {
+    const team = this.team(id);
+    if (team.summary.waiting) {
+      // The inviting PC answered meanwhile.
+      team.summary = { ...team.summary, waiting: false, name: "Plataforma", role: "member", lastSync: this.now() };
+      team.people.push({ person: "p-ana", name: "Ana", role: "admin", me: false, devices: [{ id: "pc-a", name: "Portátil de Ana", lastSync: this.now(), thisPc: false }] });
+      return { sent: 0, received: 3, conflicts: 0 };
+    }
+    if (team.summary.leaving) {
+      this.teamList = this.teamList.filter((t) => t !== team);
+      return { sent: 0, received: 0, conflicts: 0 };
+    }
+    team.summary.lastSync = this.now();
+    return { sent: 0, received: 0, conflicts: 0 };
+  }
+
+  async teamLinkProject(id: string, project: string): Promise<void> {
+    this.team(id);
+    this.homes.set(project, { kind: "team", team: id });
+  }
+
+  async teamNotes(id: string): Promise<TeamNote[]> {
+    return [...this.team(id).notes].sort((a, b) => Number(!a.teamLayer) - Number(!b.teamLayer) || a.createdAt - b.createdAt);
+  }
+
+  private teamWrite(team: MockTeam, project: string | null, text: string, category: NoteCategory, author?: TeamPerson): TeamWrite {
+    if (/[\u200b-\u200f\u202a-\u202e\u2066-\u2069]/.test(text)) {
+      throw "la nota tiene caracteres ocultos que el agente leería y tú no ves: escríbela de nuevo sin ellos";
+    }
+    const me = author ?? this.teamMe(team);
+    const uid = this.teamUid();
+    if (project === null && this.teamMe(team).role !== "admin") {
+      team.suggestions.push({
+        uid, note: null, before: null, after: text, shown: text, hidden: false, category, topic: null,
+        teamLayer: true, project: null, person: me.person, author: me.name, mine: true, canReview: false, createdAt: this.now(),
+      });
+      return { published: false, uid };
+    }
+    team.notes.push({
+      uid, text, category, topic: null, teamLayer: project === null, project, person: me.person, author: me.name,
+      mine: me.me, canEdit: true, createdAt: this.now(), updatedAt: null,
+    });
+    return { published: true, uid };
+  }
+
+  async teamAddNote(id: string, project: string | null, text: string, category: NoteCategory): Promise<TeamWrite> {
+    const team = this.team(id);
+    if (project !== null) {
+      const home = this.homes.get(project);
+      if (home?.kind !== "team" || home.team !== team.summary.id) {
+        throw "la memoria de este proyecto no es del equipo: conéctalo al equipo primero";
+      }
+    }
+    return this.teamWrite(team, project, text.trim(), category);
+  }
+
+  async teamEditNote(id: string, uid: string, text: string | null): Promise<TeamWrite> {
+    const team = this.team(id);
+    const note = team.notes.find((n) => n.uid === uid);
+    if (!note) throw `el equipo no tiene la nota o sugerencia ${uid}`;
+    const me = this.teamMe(team);
+    if (!note.canEdit) {
+      const sid = this.teamUid();
+      team.suggestions.push({
+        uid: sid, note: uid, before: note.text, after: text, shown: text, hidden: false, category: note.category, topic: null,
+        teamLayer: note.teamLayer, project: note.project, person: me.person, author: me.name, mine: true, canReview: false,
+        createdAt: this.now(),
+      });
+      return { published: false, uid: sid };
+    }
+    if (text === null) team.notes = team.notes.filter((n) => n !== note);
+    else Object.assign(note, { text, updatedAt: this.now() });
+    return { published: true, uid };
+  }
+
+  async teamPublishNote(id: string, noteId: number, everyone: boolean): Promise<TeamWrite> {
+    const team = this.team(id);
+    const local = this.note(noteId);
+    if (local.project) {
+      const home = this.homes.get(local.project);
+      if (home?.kind !== "team" || home.team !== team.summary.id) {
+        throw "la memoria de este proyecto no es del equipo: conéctalo al equipo primero";
+      }
+    }
+    const write = this.teamWrite(team, everyone ? null : local.project, local.text, local.category);
+    if (write.published) this.notes = this.notes.filter((n) => n.id !== noteId);
+    return write;
+  }
+
+  async teamSuggestions(id: string): Promise<TeamSuggestion[]> {
+    return [...this.team(id).suggestions];
+  }
+
+  async teamAcceptSuggestion(id: string, uid: string): Promise<void> {
+    const team = this.team(id);
+    const suggestion = team.suggestions.find((s) => s.uid === uid);
+    if (!suggestion) throw `el equipo no tiene la nota o sugerencia ${uid}`;
+    if (!suggestion.canReview) throw "tu rol en el equipo no lo permite: pídeselo a un admin";
+    if (suggestion.hidden) throw "la nota tiene caracteres ocultos que el agente leería y tú no ves";
+    team.suggestions = team.suggestions.filter((s) => s !== suggestion);
+    const note = suggestion.note && team.notes.find((n) => n.uid === suggestion.note);
+    if (note) {
+      if (suggestion.after === null) team.notes = team.notes.filter((n) => n !== note);
+      else Object.assign(note, { text: suggestion.after, updatedAt: this.now() });
+    } else if (suggestion.after !== null) {
+      team.notes.push({
+        uid: this.teamUid(), text: suggestion.after, category: suggestion.category, topic: null, teamLayer: suggestion.teamLayer,
+        project: suggestion.project, person: suggestion.person, author: suggestion.author, mine: false, canEdit: true,
+        createdAt: this.now(), updatedAt: null,
+      });
+    }
+  }
+
+  async teamRejectSuggestion(id: string, uid: string): Promise<void> {
+    const team = this.team(id);
+    team.suggestions = team.suggestions.filter((s) => s.uid !== uid);
+  }
+
+  private adminOf(team: MockTeam) {
+    if (this.teamMe(team).role !== "admin") throw "tu rol en el equipo no lo permite: pídeselo a un admin";
+  }
+
+  private lastAdmin(team: MockTeam, people: TeamPerson[]) {
+    if (people.length > 0 && !people.some((p) => p.role === "admin")) {
+      throw "el equipo se quedaría sin admin: haz admin a otra persona primero";
+    }
+    void team;
+  }
+
+  async teamSetRole(id: string, person: string, admin: boolean): Promise<void> {
+    const team = this.team(id);
+    this.adminOf(team);
+    const after = team.people.map((p) => (p.person === person ? { ...p, role: (admin ? "admin" : "member") as TeamRole } : p));
+    this.lastAdmin(team, after);
+    team.people = after;
+  }
+
+  async teamRemovePerson(id: string, person: string): Promise<void> {
+    const team = this.team(id);
+    this.adminOf(team);
+    if (this.teamMe(team).person === person) throw "esta PC no se quita a sí misma: deja de sincronizar en ella, y quítala desde otra";
+    team.people = team.people.filter((p) => p.person !== person);
+  }
+
+  async teamRemovePc(id: string, device: string): Promise<void> {
+    const team = this.team(id);
+    team.people = team.people.map((p) => ({ ...p, devices: p.devices.filter((d) => d.id !== device) })).filter((p) => p.devices.length > 0);
+  }
+
+  async teamRename(id: string, name: string): Promise<void> {
+    const team = this.team(id);
+    this.adminOf(team);
+    team.summary.name = name.trim();
+  }
+
+  async teamRenamePerson(id: string, person: string, name: string): Promise<void> {
+    const team = this.team(id);
+    this.adminOf(team);
+    team.people = team.people.map((p) => (p.person === person ? { ...p, name: name.trim() } : p));
+  }
+
+  async teamLeave(id: string, here: boolean): Promise<void> {
+    const team = this.team(id);
+    const me = team.people.find((p) => p.me);
+    if (!here && me?.role === "admin") {
+      this.lastAdmin(team, team.people.filter((p) => !p.me));
+      if (team.people.length > 1) {
+        team.summary.leaving = true;
+        return;
+      }
+    }
+    this.teamList = this.teamList.filter((t) => t !== team);
+    for (const [project, home] of this.homes) {
+      if (home.kind === "team" && home.team === team.summary.id) this.homes.delete(project);
+    }
+  }
+
   // ---------------------------------------------------------------- files
 
   /** Tests: the files `projectFiles` answers for a project. */
@@ -2951,6 +3269,106 @@ function sampleDiff(path: string): FileDiff {
           { kind: "added", oldLine: null, newLine: 15, text: "    programar_recordatorio(cita, horas=24)" },
           { kind: "added", oldLine: null, newLine: 16, text: "    return cita" },
         ],
+      },
+    ],
+  };
+}
+
+/** What the mock holds of one team. */
+export interface MockTeam {
+  summary: TeamSummary;
+  people: TeamPerson[];
+  invites: TeamInvite[];
+  failedInvites: number[];
+  notes: TeamNote[];
+  suggestions: TeamSuggestion[];
+}
+
+/** The sample team ("Plataforma", the canvas's): two admins, three members. */
+function sampleTeam(now: number): MockTeam {
+  const pc = (id: string, name: string, ago: number, thisPc = false) => ({ id, name, lastSync: now - ago, thisPc });
+  const note = (
+    uid: string,
+    text: string,
+    teamLayer: boolean,
+    author: string,
+    person: string,
+    extra: Partial<TeamNote> = {},
+  ): TeamNote => ({
+    uid,
+    text,
+    category: "convention",
+    topic: null,
+    teamLayer,
+    project: teamLayer ? null : "/code/tienda",
+    person,
+    author,
+    mine: person === "p-me",
+    canEdit: person === "p-me" || teamLayer,
+    createdAt: now - 86_400,
+    updatedAt: null,
+    ...extra,
+  });
+  return {
+    summary: {
+      id: "team-1",
+      name: "Plataforma",
+      url: "git@github.com:empresa/hedy-team.git",
+      waiting: false,
+      leaving: false,
+      role: "admin",
+      lastSync: now - 300,
+      lastError: null,
+    },
+    people: [
+      { person: "p-me", name: "Alex", role: "admin", me: true, devices: [pc("pc-1", "Casa", 0, true), pc("pc-9", "Oficina", 7200)] },
+      { person: "p-marta", name: "Marta", role: "admin", me: false, devices: [pc("pc-m1", "Oficina", 1200), pc("pc-m2", "Portátil", 34 * 86_400)] },
+      { person: "p-ana", name: "Ana", role: "member", me: false, devices: [pc("pc-a", "Portátil de Ana", 3600)] },
+      { person: "p-luis", name: "Luis", role: "member", me: false, devices: [pc("pc-l", "Escritorio", 86_400)] },
+    ],
+    invites: [{ number: 7, code: "7-tigre-lima-nube-faro", expiresAt: now + 47 * 3600, ownPc: false, role: "member", answered: false }],
+    failedInvites: [],
+    notes: [
+      note("n1", "Los commits siguen Conventional Commits.", true, "Marta", "p-marta", { category: "rule" }),
+      note("n2", "Nunca se usan datos reales de clientes en pruebas.", true, "Alex", "p-me", { category: "rule" }),
+      note("n3", "Los webhooks del banco reintentan 3 veces.", false, "Ana", "p-ana", { category: "decision" }),
+      note("n4", "Los tests de integración necesitan la base en docker.", false, "Luis", "p-luis"),
+      note("n5", "Los importes van en céntimos.", false, "Alex", "p-me"),
+    ],
+    suggestions: [
+      {
+        uid: "s1",
+        note: "n1",
+        before: "Los commits siguen Conventional Commits.",
+        after: "Los commits siguen Conventional Commits, en una línea y sin cuerpo.",
+        shown: "Los commits siguen Conventional Commits, en una línea y sin cuerpo.",
+        hidden: false,
+        category: "rule",
+        topic: null,
+        teamLayer: true,
+        project: null,
+        person: "p-luis",
+        author: "Luis",
+        mine: false,
+        canReview: true,
+        createdAt: now - 3600,
+      },
+      {
+        uid: "s2",
+        note: null,
+        before: null,
+        after: "Las migraciones se revisan en pareja.",
+        shown: "Las migraciones se revisan en pareja.",
+        hidden: false,
+        category: "convention",
+        topic: null,
+        teamLayer: true,
+        project: null,
+        person: "p-ana",
+        author: "Ana",
+        mine: false,
+        canReview: true,
+        createdAt: now - 1800,
       },
     ],
   };

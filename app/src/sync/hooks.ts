@@ -17,10 +17,10 @@ export const SYNC_CONFLICTS_KEY = [...SYNC_KEY, "conflicts"] as const;
 export const MEMORY_HOMES_KEY = [...SYNC_KEY, "homes"] as const;
 export const memoryHomeKey = (project: string) => [...SYNC_KEY, "home", project] as const;
 
-/** What a sync may change: its own state, memory, skills, templates, themes. */
+/** What a sync may change: its own state, the teams, memory, skills, templates, themes. */
 export function refreshAfterSync(client: QueryClient): Promise<unknown> {
   return Promise.all(
-    [SYNC_KEY, ["memory"], ["skills"], ["status"], TEMPLATES_KEY, THEMES_KEY, OVERVIEW_KEY].map((queryKey) =>
+    [SYNC_KEY, ["teams"], ["memory"], ["skills"], ["status"], TEMPLATES_KEY, THEMES_KEY, OVERVIEW_KEY].map((queryKey) =>
       client.invalidateQueries({ queryKey }),
     ),
   );

@@ -17,7 +17,7 @@ export function ownerName(owner: string): string {
   return owner.split("/").slice(1).join("/") || owner;
 }
 
-function useMemoryHome(project: string) {
+export function useMemoryHome(project: string) {
   const api = useApi();
   return useQuery({ queryKey: memoryHomeKey(project), queryFn: () => api.memoryHome(project) });
 }

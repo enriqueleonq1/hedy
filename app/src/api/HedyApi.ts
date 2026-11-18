@@ -31,6 +31,14 @@ import type {
   SyncConflict,
   SyncReport,
   SyncStatus,
+  TeamCreated,
+  TeamInvite,
+  TeamJoin,
+  TeamNote,
+  TeamStatus,
+  TeamSuggestion,
+  TeamSummary,
+  TeamWrite,
   ActivityItem,
   AgentEvent,
   CustomTheme,
@@ -352,6 +360,40 @@ export interface HedyApi {
   forgetOwner(owner: string): Promise<void>;
   /** The sync that runs on its own finished (it may have brought things in). */
   onSyncUpdated(listener: () => void): Unsubscribe;
+
+  // ------------------------------------------------ team memory (§35)
+
+  teams(): Promise<TeamSummary[]>;
+  teamStatus(team: string): Promise<TeamStatus>;
+  /** A team in an empty repo, with this PC as its first admin. */
+  teamCreate(url: string, name: string, me: string, pc: string): Promise<TeamCreated>;
+  /** A code that works once, for 48 h: a new person (`admin` for an admin), or another PC of this person (`mine`). */
+  teamInvite(team: string, admin: boolean, mine: boolean): Promise<TeamInvite>;
+  teamCancelInvite(team: string, number: number): Promise<void>;
+  teamDismissFailedInvite(team: string, number: number): Promise<void>;
+  teamJoin(url: string, code: string, me: string, pc: string): Promise<TeamJoin>;
+  /** One sync of the team (or a look, while joining). */
+  teamSync(team: string): Promise<SyncReport>;
+  /** The project's memory becomes the team's. */
+  teamLinkProject(team: string, project: string): Promise<void>;
+  teamNotes(team: string): Promise<TeamNote[]>;
+  /** To a project's notes, or (`project: null`) to the team layer, where a member's becomes a suggestion. */
+  teamAddNote(team: string, project: string | null, text: string, category: NoteCategory): Promise<TeamWrite>;
+  /** `text: null` removes it; someone else's note gets a suggestion instead. */
+  teamEditNote(team: string, uid: string, text: string | null): Promise<TeamWrite>;
+  /** Moves a note of this PC to the team (its project's notes, or the team layer). */
+  teamPublishNote(team: string, noteId: number, everyone: boolean): Promise<TeamWrite>;
+  teamSuggestions(team: string): Promise<TeamSuggestion[]>;
+  teamAcceptSuggestion(team: string, uid: string): Promise<void>;
+  teamRejectSuggestion(team: string, uid: string): Promise<void>;
+  teamSetRole(team: string, person: string, admin: boolean): Promise<void>;
+  /** Their PCs read nothing new; their notes stay with their name. */
+  teamRemovePerson(team: string, person: string): Promise<void>;
+  teamRemovePc(team: string, device: string): Promise<void>;
+  teamRename(team: string, name: string): Promise<void>;
+  teamRenamePerson(team: string, person: string, name: string): Promise<void>;
+  /** Asks to be taken out (an admin's PC waits), or (`here`) only forgets it on this PC. */
+  teamLeave(team: string, here: boolean): Promise<void>;
 
   /** Live events of every task. */
   onTaskEvent(listener: (taskId: string, event: AgentEvent) => void): Unsubscribe;

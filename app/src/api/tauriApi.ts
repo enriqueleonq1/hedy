@@ -199,6 +199,30 @@ export const tauriApi: HedyApi = {
   answerOwner: (owner, mine) => invoke("answer_owner", { owner, mine }),
   forgetOwner: (owner) => invoke("forget_owner", { owner }),
   onSyncUpdated: (listener) => subscribe<null>("sync-updated", () => listener()),
+
+  teams: () => invoke("teams"),
+  teamStatus: (team) => invoke("team_status", { team }),
+  teamCreate: (url, name, me, pc) => invoke("team_create", { url, name, me, pc }),
+  teamInvite: (team, admin, mine) => invoke("team_invite", { team, admin, mine }),
+  teamCancelInvite: (team, number) => invoke("team_cancel_invite", { team, number }),
+  teamDismissFailedInvite: (team, number) => invoke("team_dismiss_failed_invite", { team, number }),
+  teamJoin: (url, code, me, pc) => invoke("team_join", { url, code, me, pc }),
+  teamSync: (team) => invoke("team_sync", { team }),
+  teamLinkProject: (team, project) => invoke("team_link_project", { team, path: project }),
+  teamNotes: (team) => invoke("team_notes", { team }),
+  teamAddNote: (team, project, text, category) =>
+    invoke("team_add_note", { team, project, text, category, topic: null }),
+  teamEditNote: (team, uid, text) => invoke("team_edit_note", { team, uid, text, category: null }),
+  teamPublishNote: (team, noteId, everyone) => invoke("team_publish_note", { team, noteId, everyone }),
+  teamSuggestions: (team) => invoke("team_suggestions", { team }),
+  teamAcceptSuggestion: (team, uid) => invoke("team_accept_suggestion", { team, uid }),
+  teamRejectSuggestion: (team, uid) => invoke("team_reject_suggestion", { team, uid }),
+  teamSetRole: (team, person, admin) => invoke("team_set_role", { team, person, admin }),
+  teamRemovePerson: (team, person) => invoke("team_remove_person", { team, person }),
+  teamRemovePc: (team, device) => invoke("team_remove_pc", { team, device }),
+  teamRename: (team, name) => invoke("team_rename", { team, name }),
+  teamRenamePerson: (team, person, name) => invoke("team_rename_person", { team, person, name }),
+  teamLeave: (team, here) => invoke("team_leave", { team, here }),
 };
 
 export function isTauri(): boolean {
