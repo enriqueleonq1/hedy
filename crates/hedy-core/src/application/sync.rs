@@ -189,6 +189,8 @@ struct Session {
     /// What snapshots say their items held before (digests), so a first
     /// sync adopts a row equal to an older version.
     former: RefCell<HashMap<(ItemKind, String), Vec<String>>>,
+    /// The twins' keys by the digest of what they hold (hashed once).
+    twin_digests: RefCell<HashMap<String, (ItemKind, Scope, String)>>,
 }
 
 struct SyncGuard<'a> {
@@ -547,6 +549,7 @@ impl Hedy {
             self.bring_waiting(&session)?;
             session.twins.borrow_mut().clear();
             session.made.borrow_mut().clear();
+            session.twin_digests.borrow_mut().clear();
         }
         // What changed here first, so the other PCs' versions meet it.
         let mut outgoing: Vec<Outgoing> = self
@@ -759,6 +762,7 @@ impl Hedy {
             twins: RefCell::default(),
             made: RefCell::default(),
             former: RefCell::default(),
+            twin_digests: RefCell::default(),
         })
     }
 
@@ -1452,16 +1456,17 @@ impl Hedy {
     /// Indexes the rows here not synced yet, by what they hold.
     fn index_twins(&self, session: &Session) -> AppResult<()> {
         let mut twins = session.twins.borrow_mut();
+        let mut digests = session.twin_digests.borrow_mut();
         for item in self.local_items(session)? {
             if self
                 .store
                 .sync_link_of(item.kind, &item.local_id)?
                 .is_none()
             {
-                twins
-                    .entry((item.kind, item.scope, item.body))
-                    .or_default()
-                    .push(item.local_id);
+                let digest = self.sync_crypto.digest(item.body.as_bytes());
+                let key = (item.kind, item.scope, item.body);
+                digests.insert(digest, key.clone());
+                twins.entry(key).or_default().push(item.local_id);
             }
         }
         Ok(())
@@ -1481,17 +1486,14 @@ impl Hedy {
     /// before (a snapshot's digests), taken from the index.
     fn take_former_twin(&self, session: &Session, change: &Change) -> Option<String> {
         let former = session.former.borrow();
-        let digests = former.get(&(change.kind, change.uid.clone()))?;
+        let keys = session.twin_digests.borrow();
         let mut twins = session.twins.borrow_mut();
-        twins
-            .iter_mut()
-            .find(|((kind, scope, body), rows)| {
-                *kind == change.kind
-                    && *scope == change.scope
-                    && !rows.is_empty()
-                    && digests.contains(&self.sync_crypto.digest(body.as_bytes()))
-            })
-            .and_then(|(_, rows)| rows.pop())
+        former
+            .get(&(change.kind, change.uid.clone()))?
+            .iter()
+            .filter_map(|digest| keys.get(digest))
+            .filter(|(kind, scope, _)| *kind == change.kind && *scope == change.scope)
+            .find_map(|key| twins.get_mut(key)?.pop())
     }
 
     /// The project a linked row is in now; `None` when the row is gone.
@@ -1690,6 +1692,7 @@ impl Hedy {
                 twins: RefCell::default(),
                 made: RefCell::default(),
                 former: RefCell::default(),
+                twin_digests: RefCell::default(),
                 keys: keys.epochs.values().cloned().collect(),
             };
             for (id, _) in members.into_iter().filter(|(id, _)| id != RECOVERY_MEMBER) {
@@ -1903,6 +1906,7 @@ impl Hedy {
             twins: RefCell::default(),
             made: RefCell::default(),
             former: RefCell::default(),
+            twin_digests: RefCell::default(),
             keys: Vec::new(),
         };
         self.materialize(&session, &change)?;
