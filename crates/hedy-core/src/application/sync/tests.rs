@@ -1379,12 +1379,13 @@ fn leaving_keeps_the_notes_and_joining_again_starts_fresh() {
     home.hedy.sync_now().unwrap();
     office.hedy.sync_now().unwrap();
 
-    office.hedy.sync_leave().unwrap();
+    assert_eq!(office.hedy.sync_leave(), Ok(true));
     assert!(!office.hedy.sync_is_set_up().unwrap());
     assert_eq!(office.secrets.sync_keys().unwrap(), None);
     assert!(office.store.sync_items().unwrap().is_empty());
     assert_eq!(texts(&office, None), ["nota"]);
-    assert_eq!(office.hedy.sync_leave(), Err(AppError::SyncNotSetUp));
+    // Leaving again finds nothing to clear.
+    assert_eq!(office.hedy.sync_leave(), Ok(false));
     assert_eq!(office.hedy.sync_now(), Err(AppError::SyncNotSetUp));
 }
 
@@ -1430,4 +1431,54 @@ fn a_pc_that_joins_with_the_same_notes_adopts_them() {
     for f in [&home, &office] {
         assert_eq!(texts(f, None), ["Usa tabs"]);
     }
+}
+
+#[test]
+fn joining_again_after_an_edit_elsewhere_adopts_the_row() {
+    let server = SyncServer::default();
+    let (home, _) = pc(&server, "/a/tienda");
+    let words = home.hedy.sync_setup(URL, "Casa").unwrap();
+    let (office, _) = pc(&server, "/b/tienda");
+    office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+    let note = home.hedy.add_note(None, "A", Category::Convention).unwrap();
+    home.hedy.sync_now().unwrap();
+    home.hedy
+        .edit_note(note.id, "B", Category::Convention)
+        .unwrap();
+    home.hedy.sync_now().unwrap();
+    office.hedy.sync_now().unwrap();
+
+    // Version "A" comes in first and makes a row; version "B" then finds
+    // the office's own "B" and moves onto it.
+    office.hedy.sync_leave().unwrap();
+    let report = office.hedy.sync_join(URL, &words, "Oficina").unwrap();
+    assert_eq!(report.sent, 0);
+    home.hedy.sync_now().unwrap();
+    for f in [&home, &office] {
+        assert_eq!(texts(f, None), ["B"]);
+    }
+}
+
+#[test]
+fn a_url_with_a_token_is_refused_and_a_cut_short_setup_can_be_cleared() {
+    let server = SyncServer::default();
+    let (home, _) = pc(&server, "/a/tienda");
+    for url in [
+        "https://alice:ghp_TOKEN@github.com/tu-usuario/hedy-memory.git",
+        "https://ghp_TOKEN@github.com/tu-usuario/hedy-memory.git",
+    ] {
+        assert_eq!(
+            home.hedy.sync_setup(url, "Casa"),
+            Err(AppError::SyncUrlWithCredentials)
+        );
+        assert_eq!(
+            home.hedy.sync_join(url, "x", "Casa"),
+            Err(AppError::SyncUrlWithCredentials)
+        );
+    }
+    assert!(home.store.get_setting(super::URL).unwrap().is_none());
+    // Keys left by a setup cut short (no settings yet) are still cleared.
+    home.secrets.set_sync_keys("{}").unwrap();
+    assert_eq!(home.hedy.sync_leave(), Ok(false));
+    assert_eq!(home.secrets.sync_keys().unwrap(), None);
 }

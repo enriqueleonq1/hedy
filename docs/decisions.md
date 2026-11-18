@@ -2233,8 +2233,55 @@ its clock is fixed. Members are trusted, and the local clock is protected.
   while they write in a client's project marked shared, and **no client note ever reaches
   another PC**. Once the project is personal everywhere, the PCs agree on it.
 
+### The CLI (phase 4, `hedy sync`)
+
+- **Commands:**
+  - `hedy sync` shows the status: the repo, this PC's last sync, the PCs and their conflicts;
+  - `setup <url>` shows the 12 words and, in a terminal, asks for word 7 back (accents and case
+    do not count, as in `join`);
+  - `join <url>` reads the words hidden whenever stdin is a terminal, and from stdin otherwise;
+  - `now`, `conflicts`, `resolve <id> --keep|--other`;
+  - `owner [<server/owner> --mine|--shared|--forget]`;
+  - `project [--personal|--local|--shared <owner>|--follow]`;
+  - `leave [--yes]`.
+  The CLI only asks and prints; every rule lives in the use cases the app will use.
+- **A URL with a password or a token is refused** (`https://user:token@…`, `https://token@…`,
+  `user:secret@` over SSH). Hedy would otherwise keep it in its settings and print it. The
+  error points to SSH or git's credential helper (rule 1).
+- **The sync clone is compared with `remote.origin.url` as configured,** not as
+  `url.*.insteadOf` rewrites it (otherwise a common HTTPS→SSH rewrite broke every sync). A
+  server whose `HEAD` names another branch (`git init --bare` gives `master`) still shows `main`.
+- **A setup or join that fails before the sync is set up leaves no clone behind**, so another
+  URL can be tried. `leave` also clears what one cut short left (keys in the keyring), and works
+  when nothing is set up.
+- **A PC's first sync (a join, or after leaving) adopts what it already has:** a row equal to a
+  synced item is linked to it instead of being sent as a new one. Batches arrive oldest first,
+  so an item edited elsewhere first makes a row for its old version; its newest version then
+  moves the item onto the PC's own equal row and drops the one just made.
+- **Known limits, kept on purpose:**
+  - Joining again starts fresh. A note edited on a PC while it was out of sync is not equal to
+    any synced one, so it comes back as a second note (both are kept; nothing is lost). Notes
+    deleted elsewhere while it was out come back from it too.
+  - Leaving does not revoke: the PC stays in the key epoch, and the other PCs keep listing it,
+    until it is removed from another PC (phase 6). The CLI says so.
+
+**Housekeeping:**
+- Real run with the real binary, the real keyring and a bare repo, across two data dirs:
+  setup, join, templates both ways, wrong words refused, no plaintext on the server, neutral
+  commits, keyring empty after leave.
+- The security review reproduced:
+  - the URL with a token kept and printed;
+  - `insteadOf` breaking the sync;
+  - the words echoing with stdout piped.
+- The correctness review reproduced:
+  - **high:** after leaving, joining again duplicated a note edited elsewhere on every PC;
+  - a failed join's clone blocked any other URL and `leave` could not clear it;
+  - the first join against a `master` server failed once;
+  - setup's word check was stricter than join's;
+  - `hedy sync owner` accepted an owner without an answer or without its server.
+- Each one is fixed and has a regression test (engine, git adapter or CLI).
+
 **Next phases:**
-4. `hedy sync`.
 5. The app.
 6. Removing a PC and compaction.
 7. A real test.

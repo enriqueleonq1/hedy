@@ -1290,7 +1290,10 @@ pub enum SyncCommand {
 
     #[command(group(clap::ArgGroup::new("answer").args(["mine", "shared", "forget"])))]
     Owner {
-        #[arg(required_if_eq_any([("mine", "true"), ("shared", "true"), ("forget", "true")]))]
+        #[arg(
+            required_if_eq_any([("mine", "true"), ("shared", "true"), ("forget", "true")]),
+            requires = "answer"
+        )]
         owner: Option<String>,
         #[arg(long)]
         mine: bool,

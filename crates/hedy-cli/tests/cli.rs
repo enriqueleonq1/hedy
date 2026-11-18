@@ -1923,8 +1923,8 @@ fn sync_without_setup_explains_how_and_refuses_the_rest() {
     }
     env.hedy(&["sync", "leave", "--yes"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("no está configurada"));
+        .success()
+        .stdout(predicate::str::contains("no estaba configurada"));
     // Without a terminal, leaving needs --yes.
     env.hedy(&["sync", "leave"])
         .assert()
@@ -1932,6 +1932,22 @@ fn sync_without_setup_explains_how_and_refuses_the_rest() {
         .stderr(predicate::str::contains("--yes"));
     env.hedy(&["sync", "resolve", "1"]).assert().failure();
     env.hedy(&["sync", "owner", "--mine"]).assert().failure();
+    // An owner needs an answer, and its server.
+    env.hedy(&["sync", "owner", "github.com/x"])
+        .assert()
+        .failure();
+    env.hedy(&["sync", "owner", "empresa", "--mine"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("github.com/empresa"));
+    env.hedy(&[
+        "sync",
+        "setup",
+        "https://ghp_TOKEN@github.com/u/hedy-memory.git",
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("token"));
     env.hedy(&["sync", "project", "--personal", "--local"])
         .assert()
         .failure();
@@ -1978,4 +1994,23 @@ fn sync_owner_answers_decide_where_a_projects_memory_lives() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Todavía no respondiste"));
+}
+
+#[test]
+fn a_join_that_fails_leaves_no_clone_behind() {
+    let env = Env::new();
+    let bare = env.path("server.git");
+    std::fs::create_dir_all(&bare).unwrap();
+    let init = std::process::Command::new("git")
+        .args(["init", "--quiet", "--bare"])
+        .current_dir(&bare)
+        .status()
+        .unwrap();
+    assert!(init.success());
+    let url = format!("file://{}", bare.display());
+    env.hedy(&["sync", "join", &url])
+        .write_stdin("uno dos tres\n")
+        .assert()
+        .failure();
+    assert!(!env.path("data").join("sync").join("repo").exists());
 }

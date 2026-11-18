@@ -153,7 +153,8 @@ fn inside(dir: &Path, path: &str) -> PortResult<PathBuf> {
 impl SyncRemote for GitSyncRemote {
     fn open(&self, url: &str, dir: &Path) -> PortResult<()> {
         if dir.join(".git").is_dir() {
-            let current = run(dir, &["remote", "get-url", "origin"])?;
+            // As configured, not as `url.*.insteadOf` rewrites it.
+            let current = run(dir, &["config", "--get", "remote.origin.url"])?;
             if current != url {
                 return Err(PortError::new(tr!(
                     "la carpeta de sincronización ya usa otro repo ({current})",
@@ -166,9 +167,11 @@ impl SyncRemote for GitSyncRemote {
         std::fs::create_dir_all(parent).map_err(|e| PortError::new(e.to_string()))?;
         let target = dir.to_string_lossy().into_owned();
         run(parent, &["clone", "--quiet", "--", url, &target])?;
-        // An empty repo has no branch yet: start `main`.
+        // An empty repo has no branch yet, and a server whose HEAD names
+        // another branch (`master`) checks nothing out: use `main`.
         if !succeeds(dir, &["rev-parse", "--verify", "--quiet", "HEAD"]) {
             run(dir, &["symbolic-ref", "HEAD", "refs/heads/main"])?;
+            return self.pull(dir);
         }
         Ok(())
     }
@@ -291,16 +294,51 @@ mod tests {
 
     /// A bare "server" and a clone of it per PC.
     fn server() -> (tempfile::TempDir, String) {
+        server_on("main")
+    }
+
+    fn server_on(branch: &str) -> (tempfile::TempDir, String) {
         let tmp = tempfile::tempdir().unwrap();
         let bare = tmp.path().join("server.git");
         std::fs::create_dir_all(&bare).unwrap();
-        run(
-            &bare,
-            &["init", "--quiet", "--bare", "--initial-branch=main"],
-        )
-        .unwrap();
+        let initial = format!("--initial-branch={branch}");
+        run(&bare, &["init", "--quiet", "--bare", &initial]).unwrap();
         let url = bare.to_string_lossy().into_owned();
         (tmp, url)
+    }
+
+    #[test]
+    fn a_server_whose_head_is_master_still_shows_main() {
+        let (tmp, url) = server_on("master");
+        let git = GitSyncRemote;
+        let (home, office) = (tmp.path().join("home"), tmp.path().join("office"));
+        git.open(&url, &home).unwrap();
+        git.write(&home, "vault/epochs/000001.json", b"{}").unwrap();
+        git.push(&home, "hedy: home 1").unwrap();
+
+        git.open(&url, &office).unwrap();
+        assert_eq!(
+            git.files(&office, "").unwrap(),
+            ["vault/epochs/000001.json"]
+        );
+    }
+
+    #[test]
+    fn a_url_rewritten_by_insteadof_is_the_same_repo() {
+        let (tmp, url) = server();
+        let git = GitSyncRemote;
+        let home = tmp.path().join("home");
+        git.open(&url, &home).unwrap();
+        let base = format!("{}/", tmp.path().to_string_lossy());
+        run(
+            &home,
+            &["config", &format!("url.{base}.insteadOf"), "alias:"],
+        )
+        .unwrap();
+        run(&home, &["remote", "set-url", "origin", "alias:server.git"]).unwrap();
+
+        git.open("alias:server.git", &home).unwrap();
+        assert!(git.open(&url, &home).is_err());
     }
 
     #[test]

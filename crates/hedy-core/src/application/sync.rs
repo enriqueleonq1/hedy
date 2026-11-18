@@ -21,7 +21,7 @@
 //! is personal take part.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::MutexGuard;
 
@@ -31,7 +31,7 @@ use super::ports::{SyncConflict, SyncLink, TemplateRecord};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::sync::{
     Batch, Change, DeviceId, ItemKind, Merge, NoteBody, RECOVERY_MEMBER, RepoIdentity, Scope,
-    SkillBody, Stamp, TemplateBody, ThemeBody, Version, layout, merge,
+    SkillBody, Stamp, TemplateBody, ThemeBody, Version, layout, merge, url_has_credentials,
 };
 use crate::domain::theme::{CustomTheme, new_theme_id};
 use crate::tr;
@@ -169,6 +169,9 @@ struct Session {
     /// On a PC's first sync, its rows not synced yet by what they hold: a
     /// synced item equal to one adopts that row instead of adding another.
     twins: RefCell<HashMap<(ItemKind, Scope, String), Vec<String>>>,
+    /// The rows this first sync made, for an item's older version: a later
+    /// version with a twin here moves the item onto the twin.
+    made: RefCell<HashSet<(ItemKind, String)>>,
 }
 
 /// The projects that sync here, both ways round (see [`Session`]).
@@ -290,9 +293,26 @@ impl Hedy {
     /// accepted the first epoch.
     pub fn sync_setup(&self, url: &str, device_name: &str) -> AppResult<String> {
         let _guard = self.sync_guard();
+        self.starting_sync(url, || self.setup_locked(url, device_name))
+    }
+
+    /// Runs a setup or a join; one that fails before the sync is set up
+    /// leaves no clone behind (it would hold the folder for another URL).
+    fn starting_sync<T>(&self, url: &str, start: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
         if self.sync_is_set_up()? {
             return Err(AppError::SyncAlreadySetUp);
         }
+        if url_has_credentials(url) {
+            return Err(AppError::SyncUrlWithCredentials);
+        }
+        let result = start();
+        if result.is_err() && !self.sync_is_set_up()? {
+            let _ = self.sync_remote.discard_local(&self.sync_dir()?);
+        }
+        result
+    }
+
+    fn setup_locked(&self, url: &str, device_name: &str) -> AppResult<String> {
         let dir = self.sync_dir()?;
         self.sync_remote.open(url, &dir)?;
         if !self.epochs(&dir)?.is_empty() {
@@ -331,9 +351,10 @@ impl Hedy {
     /// (which brings everything in).
     pub fn sync_join(&self, url: &str, words: &str, device_name: &str) -> AppResult<SyncReport> {
         let _guard = self.sync_guard();
-        if self.sync_is_set_up()? {
-            return Err(AppError::SyncAlreadySetUp);
-        }
+        self.starting_sync(url, || self.join_locked(url, words, device_name))
+    }
+
+    fn join_locked(&self, url: &str, words: &str, device_name: &str) -> AppResult<SyncReport> {
         let dir = self.sync_dir()?;
         self.sync_remote.open(url, &dir)?;
         let epochs = self.epochs(&dir)?;
@@ -437,6 +458,7 @@ impl Hedy {
             self.apply_batches(&session, &mut report)?;
             self.bring_waiting(&session)?;
             session.twins.borrow_mut().clear();
+            session.made.borrow_mut().clear();
         }
         // What changed here first, so the other PCs' versions meet it.
         let mut outgoing: Vec<Outgoing> = self
@@ -638,6 +660,7 @@ impl Hedy {
             project_ids,
             members: members.into_iter().collect(),
             twins: RefCell::default(),
+            made: RefCell::default(),
         })
     }
 
@@ -1173,10 +1196,20 @@ impl Hedy {
             return Ok(false);
         }
         let link: Option<SyncLink> = self.store.sync_link(change.kind, &change.uid)?;
-        if link.is_none()
+        let made_now = |link: &SyncLink| {
+            session
+                .made
+                .borrow()
+                .contains(&(change.kind, link.local_id.clone()))
+        };
+        if link.as_ref().is_none_or(made_now)
             && let Some(local_id) = Self::take_twin(session, change)
         {
-            // The same item, already here: adopt the row.
+            // The same item, already here: adopt the row (and drop the one
+            // this first sync made for an older version of it).
+            if let Some(link) = &link {
+                self.delete_row(change.kind, &link.local_id)?;
+            }
             self.store
                 .link_sync_item(change.kind, &change.uid, &local_id, &change.version)?;
             return Ok(true);
@@ -1197,12 +1230,7 @@ impl Hedy {
         let row = link.as_ref().and_then(|l| l.local_id.parse::<i64>().ok());
         let Some(body) = &change.version.body else {
             if let Some(link) = &link {
-                match change.kind {
-                    ItemKind::Note => self.store.delete_note(row.unwrap_or(-1))?,
-                    ItemKind::Skill => self.store.delete_skill(row.unwrap_or(-1))?,
-                    ItemKind::Template => self.store.delete_template(row.unwrap_or(-1))?,
-                    ItemKind::Theme => self.themes.delete(&link.local_id)?,
-                }
+                self.delete_row(change.kind, &link.local_id)?;
                 self.store.unlink_sync_item(change.kind, &change.uid)?;
             }
             return Ok(true);
@@ -1274,9 +1302,26 @@ impl Hedy {
                 theme.id
             }
         };
+        if link.is_none() && !session.twins.borrow().is_empty() {
+            session
+                .made
+                .borrow_mut()
+                .insert((change.kind, local_id.clone()));
+        }
         self.store
             .link_sync_item(change.kind, &change.uid, &local_id, &change.version)?;
         Ok(true)
+    }
+
+    fn delete_row(&self, kind: ItemKind, local_id: &str) -> AppResult<()> {
+        let row = local_id.parse::<i64>().unwrap_or(-1);
+        match kind {
+            ItemKind::Note => self.store.delete_note(row)?,
+            ItemKind::Skill => self.store.delete_skill(row)?,
+            ItemKind::Template => self.store.delete_template(row)?,
+            ItemKind::Theme => self.themes.delete(local_id)?,
+        }
+        Ok(())
     }
 
     /// The sync's state for the status bar and Ajustes; `None` when it is
@@ -1310,6 +1355,7 @@ impl Hedy {
                 project_ids: HashMap::new(),
                 members: members.iter().cloned().collect(),
                 twins: RefCell::default(),
+                made: RefCell::default(),
                 keys: keys.epochs.values().cloned().collect(),
             };
             for (id, _) in members.into_iter().filter(|(id, _)| id != RECOVERY_MEMBER) {
@@ -1340,11 +1386,12 @@ impl Hedy {
     /// This PC stops syncing: its keys, the clone, the sync settings and
     /// state go. Its notes, skills, templates and themes stay, and so does
     /// the repo (the other PCs keep syncing). Joining again starts fresh.
-    pub fn sync_leave(&self) -> AppResult<()> {
+    /// It also clears what a setup or join cut short left behind, and says
+    /// whether the sync was set up. This PC stays a member of the key epoch
+    /// until it is removed from another PC.
+    pub fn sync_leave(&self) -> AppResult<bool> {
         let _guard = self.sync_guard();
-        if !self.sync_is_set_up()? {
-            return Err(AppError::SyncNotSetUp);
-        }
+        let was_set_up = self.sync_is_set_up()?;
         self.sync_remote.discard_local(&self.sync_dir()?)?;
         self.secrets.delete_sync_keys()?;
         self.store.clear_sync_state()?;
@@ -1355,7 +1402,7 @@ impl Hedy {
         ] {
             self.store.set_setting(key, None)?;
         }
-        Ok(())
+        Ok(was_set_up)
     }
 
     pub fn sync_conflicts(&self) -> AppResult<Vec<SyncConflict>> {
@@ -1406,6 +1453,7 @@ impl Hedy {
             project_ids,
             members: HashMap::new(),
             twins: RefCell::default(),
+            made: RefCell::default(),
             keys: Vec::new(),
         };
         self.materialize(&session, &change)?;

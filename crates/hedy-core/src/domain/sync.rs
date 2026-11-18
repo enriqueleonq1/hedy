@@ -431,6 +431,44 @@ pub fn derive_home(remotes: &[Option<RepoIdentity>], owners: &Owners) -> Derived
     DerivedHome::Known(MemoryHome::Personal)
 }
 
+/// A recovery word as compared: lower case, without Spanish accents (the
+/// user may type `abaco` for `ábaco`).
+pub fn fold_word(word: &str) -> String {
+    word.to_lowercase()
+        .chars()
+        .map(|c| match c {
+            'á' => 'a',
+            'é' => 'e',
+            'í' => 'i',
+            'ó' => 'o',
+            'ú' | 'ü' => 'u',
+            other => other,
+        })
+        .collect()
+}
+
+/// Whether a git URL carries a password or a token (`https://user:token@…`,
+/// `https://token@…`): Hedy never keeps one (rule 1). A bare SSH user
+/// (`git@github.com:…`, `ssh://git@host/…`) is fine.
+pub fn url_has_credentials(url: &str) -> bool {
+    let url = url.trim();
+    let Some((scheme, rest)) = url.split_once("://") else {
+        // scp-like: `user@host:path`; a `user:password@` form has no meaning
+        // here, so a colon before the `@` is refused.
+        return url
+            .split_once('@')
+            .is_some_and(|(user, _)| user.contains(':'));
+    };
+    let authority = rest.split('/').next().unwrap_or("");
+    let Some((userinfo, _)) = authority.rsplit_once('@') else {
+        return false;
+    };
+    match scheme.to_lowercase().as_str() {
+        "http" | "https" => true,
+        _ => userinfo.contains(':'),
+    }
+}
+
 /// Who owns a repo, read from a remote's URL: what tells a personal project
 /// from a shared one, and the same project on two PCs.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -706,6 +744,28 @@ mod tests {
             layout::batch_seq("devices/abababababababab/changes/1.hedy"),
             None
         );
+    }
+
+    #[test]
+    fn urls_with_a_password_or_a_token_are_told_apart() {
+        for bad in [
+            "https://alice:ghp_TOKEN@github.com/a/b.git",
+            "https://ghp_TOKEN@github.com/a/b.git",
+            "http://user@host/a.git",
+            "ssh://git:secret@host/a.git",
+            "git:secret@github.com:a/b.git",
+        ] {
+            assert!(url_has_credentials(bad), "{bad}");
+        }
+        for good in [
+            "https://github.com/a/b.git",
+            "git@github.com:a/b.git",
+            "ssh://git@host:2222/a/b.git",
+            "/srv/git/b.git",
+            "https://github.com/a/b@v1",
+        ] {
+            assert!(!url_has_credentials(good), "{good}");
+        }
     }
 
     #[test]

@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Result, bail};
 use hedy_core::application::ports::SyncConflict;
 use hedy_core::application::{Hedy, SyncReport};
-use hedy_core::domain::sync::MemoryHome;
+use hedy_core::domain::sync::{MemoryHome, fold_word};
 use hedy_core::tr;
 
 use crate::commands::age_label;
@@ -43,6 +43,11 @@ fn default_name() -> String {
     std::fs::read_to_string("/etc/hostname")
         .ok()
         .or_else(|| std::env::var("HOSTNAME").ok())
+        .or_else(|| std::env::var("COMPUTERNAME").ok())
+        .or_else(|| {
+            let out = std::process::Command::new("hostname").output().ok()?;
+            String::from_utf8(out.stdout).ok()
+        })
         .map(|n| n.trim().to_owned())
         .filter(|n| !n.is_empty())
         .unwrap_or_else(|| "PC".into())
@@ -100,8 +105,8 @@ pub fn status(hedy: &Hedy) -> Result<()> {
         println!(
             "{}",
             s.muted(tr!(
-                "Crea un repo git privado y vacío, y luego `hedy sync setup <dirección>`; en otra PC ya configurada, `hedy sync join <dirección>`.",
-                "Create an empty private git repo, then `hedy sync setup <url>`; on a PC that already syncs elsewhere, `hedy sync join <url>`."
+                "Crea un repo git privado y vacío, y luego `hedy sync setup <dirección>`; si ya sincronizas en otra PC, `hedy sync join <dirección>`.",
+                "Create an empty private git repo, then `hedy sync setup <url>`; if another PC already syncs, `hedy sync join <url>`."
             ))
         );
         return Ok(());
@@ -189,7 +194,7 @@ pub fn setup(hedy: &Hedy, url: &str, name: Option<&str>) -> Result<()> {
                 "Para confirmar, escribe la palabra n.º {n}: ",
                 "To confirm, type word #{n}: "
             ))?;
-            if typed.eq_ignore_ascii_case(list[n - 1]) {
+            if fold_word(&typed) == fold_word(list[n - 1]) {
                 break;
             }
             println!(
@@ -209,7 +214,8 @@ pub fn setup(hedy: &Hedy, url: &str, name: Option<&str>) -> Result<()> {
 pub fn join(hedy: &Hedy, url: &str, name: Option<&str>) -> Result<()> {
     let s = Style::for_stdout();
     let name = name.map_or_else(default_name, str::to_owned);
-    let words = if interactive() {
+    // Typed in a terminal, the words never echo (even with stdout piped).
+    let words = if std::io::stdin().is_terminal() {
         rpassword::prompt_password(tr!(
             "Tu clave de recuperación (12 palabras, no se muestra): ",
             "Your recovery key (12 words, hidden): "
@@ -310,6 +316,17 @@ pub fn resolve(hedy: &Hedy, id: i64, use_other: bool) -> Result<()> {
 /// `hedy sync owner`: the answers about repo owners, or one answer.
 pub fn owner(hedy: &Hedy, owner: Option<&str>, choice: Option<OwnerChoice>) -> Result<()> {
     let s = Style::for_stdout();
+    if let Some(owner) = owner
+        && !owner.contains('/')
+    {
+        bail!(
+            "{}",
+            tr!(
+                "«{owner}» no dice en qué servidor está; escríbelo como servidor/dueño, p. ej. github.com/{owner}",
+                "\"{owner}\" does not say its server; write it as server/owner, e.g. github.com/{owner}"
+            )
+        );
+    }
     match (owner, choice) {
         (Some(owner), Some(OwnerChoice::Mine)) => hedy.answer_owner(owner, true)?,
         (Some(owner), Some(OwnerChoice::Shared)) => hedy.answer_owner(owner, false)?,
@@ -441,14 +458,31 @@ pub fn leave(hedy: &Hedy, yes: bool) -> Result<()> {
             return Ok(());
         }
     }
-    hedy.sync_leave()?;
+    let s = Style::for_stdout();
+    if !hedy.sync_leave()? {
+        println!(
+            "{}",
+            tr!(
+                "La sincronización no estaba configurada en esta PC; no queda nada de ella.",
+                "Sync was not set up on this PC; nothing of it is left."
+            )
+        );
+        return Ok(());
+    }
     println!(
         "{} {}",
-        Style::for_stdout().ok("✓"),
+        s.ok("✓"),
         tr!(
             "Esta PC dejó de sincronizar. Tus notas siguen aquí, y tus otras PCs siguen igual.",
             "This PC stopped syncing. Your notes stay here, and your other PCs carry on."
         )
+    );
+    println!(
+        "{}",
+        s.muted(tr!(
+            "Tus otras PCs aún la ven en la lista: salir no le quita el acceso a la clave.",
+            "Your other PCs still list it: leaving does not take away its access to the key."
+        ))
     );
     Ok(())
 }

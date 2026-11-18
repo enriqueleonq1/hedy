@@ -172,6 +172,9 @@ pub enum AppError {
     /// A key epoch this PC already checked changed in the repo.
     #[error("{}", self.message())]
     SyncTampered(u32),
+    /// The sync repo's URL carries a password or a token.
+    #[error("{}", self.message())]
+    SyncUrlWithCredentials,
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -301,6 +304,10 @@ impl AppError {
             Self::SyncRemoved => tr!(
                 "esta PC fue quitada de la sincronización",
                 "this PC was removed from sync"
+            ),
+            Self::SyncUrlWithCredentials => tr!(
+                "esa dirección lleva una contraseña o un token, y Hedy no guarda ninguno: usa la dirección sin él (con SSH, o con el gestor de credenciales de git)",
+                "that URL carries a password or a token, and Hedy keeps none: use the URL without it (with SSH, or with git's credential helper)"
             ),
             Self::SyncTampered(epoch) => tr!(
                 "el repo de sincronización fue alterado: la época de llaves {epoch}, que esta PC ya había verificado, cambió. No se sincroniza hasta revisarlo",

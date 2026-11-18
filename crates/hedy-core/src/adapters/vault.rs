@@ -31,6 +31,7 @@ use sha2::Sha256;
 use zeroize::Zeroize;
 
 use crate::application::ports::{PortError, PortResult, SyncCrypto};
+use crate::domain::sync::fold_word;
 use crate::tr;
 
 /// The member id of the recovery key in epoch files.
@@ -286,25 +287,13 @@ pub fn recover(words: &str) -> Result<MemberSecrets> {
 
 /// Each word as written in `language`'s list when it only lacks accents.
 fn with_accents(words: &[String], language: Language) -> Vec<String> {
-    let fold = |w: &str| -> String {
-        w.chars()
-            .map(|c| match c {
-                'á' => 'a',
-                'é' => 'e',
-                'í' => 'i',
-                'ó' => 'o',
-                'ú' | 'ü' => 'u',
-                other => other,
-            })
-            .collect()
-    };
     words
         .iter()
         .map(|w| {
             language
                 .word_list()
                 .iter()
-                .find(|listed| fold(listed) == fold(w))
+                .find(|listed| fold_word(listed) == fold_word(w))
                 .map_or_else(|| w.clone(), |listed| (*listed).to_owned())
         })
         .collect()
