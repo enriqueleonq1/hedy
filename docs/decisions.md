@@ -2045,7 +2045,7 @@ Crates: `chacha20poly1305`, `crypto_box` (`seal`), `ed25519-dalek`, `bip39` (`sp
 ### The engine (phase 2, `application::sync`)
 
 **Ports.**
-- `SyncRepository` (SQLite: the 20th migration) holds:
+- `SyncRepository` (SQLite: the 13th migration) holds:
   - the replica, `sync_items`: the newest version known of every synced item;
   - `sync_links`: the local row or theme id behind each global uid;
   - `sync_cursors`: the last batch read from each PC;
