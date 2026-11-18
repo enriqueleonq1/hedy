@@ -2689,10 +2689,12 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
 - **Re-verified** by both reviewers, with their proofs of concept rerun: the fixes hold. The
   check found one new hole, opened by the emoji fix:
   - any run of tags after 🏴 passed as a flag, so a note could hide a whole instruction in
-    them. Now only a subdivision code passes: 3 to 7 lowercase letters or digits, then the
-    cancel tag;
+    them. A first fix allowed any subdivision code (3 to 7 lowercase letters or digits), but a
+    row of 🏴 could still spell out text a few letters at a time. Now only the three flags
+    that exist pass: England, Scotland and Wales;
   - a presentation selector passed after any symbol from U+2000 to U+2BFF, a dash or a quote
-    among them. Now it passes only after the characters that have an emoji form.
+    among them, and after any digit. Now it passes only after the characters that have an
+    emoji form, and after a digit, `#` or `*` only as a keycap (1️⃣).
 
   Not changed: the check that no two members share a key compares the keys' text. An X25519
   key with its top bit flipped reads as another key, but it opens nothing of the original's.
