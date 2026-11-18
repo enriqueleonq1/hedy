@@ -224,6 +224,11 @@ pub enum AppError {
     /// Joining a team in a repo that holds personal sync.
     #[error("{}", self.message())]
     TeamNotATeam,
+    /// The change would leave the team without an admin.
+    #[error("{}", self.message())]
+    TeamLastAdmin,
+    #[error("{}", self.message())]
+    TeamPersonNotFound(String),
 }
 
 /// Why accepting a task cannot be undone safely. Hedy only moves the base
@@ -425,6 +430,14 @@ impl AppError {
             Self::TeamInviteFailed => tr!(
                 "la invitación no funcionó (el código no coincidió) y ya no sirve: pide otra",
                 "the invite did not work (the code did not match) and is no longer valid: ask for another"
+            ),
+            Self::TeamLastAdmin => tr!(
+                "el equipo se quedaría sin admin: haz admin a otra persona primero",
+                "the team would be left without an admin: make someone else an admin first"
+            ),
+            Self::TeamPersonNotFound(person) => tr!(
+                "nadie del equipo es «{person}»",
+                "nobody in the team is \"{person}\""
             ),
             Self::TeamNotATeam => tr!("ese repo no es de un equipo", "that repo is not a team's"),
             Self::SyncConflictNotFound(id) => tr!(

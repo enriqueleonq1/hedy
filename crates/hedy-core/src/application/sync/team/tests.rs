@@ -625,3 +625,178 @@ fn someone_who_joins_later_reads_what_the_team_wrote_before() {
     marta.sync();
     assert_eq!(marta.note_texts(), ["Antes de Luis", "Del proyecto"]);
 }
+
+fn person_of(member: &Member, name: &str) -> PersonId {
+    member
+        .f
+        .hedy
+        .team_status(&member.team)
+        .unwrap()
+        .people
+        .into_iter()
+        .find(|p| p.name == name)
+        .unwrap()
+        .person
+}
+
+fn people(member: &Member) -> Vec<(String, Role, usize)> {
+    member
+        .f
+        .hedy
+        .team_status(&member.team)
+        .unwrap()
+        .people
+        .into_iter()
+        .map(|p| (p.name, p.role, p.devices.len()))
+        .collect()
+}
+
+#[test]
+fn removing_someone_keeps_their_notes_and_shuts_them_out() {
+    let (server, ana, luis) = team_of_two();
+    luis.link();
+    ana.link();
+    luis.f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            Some(&luis.project),
+            "De Luis",
+            Category::Decision,
+            None,
+        )
+        .unwrap();
+    luis.sync();
+    ana.sync();
+    let luis_person = person_of(&ana, "Luis");
+    // Only admins remove people; nobody removes themselves.
+    assert_eq!(
+        luis.f
+            .hedy
+            .team_remove_person(&luis.team, &person_of(&luis, "Ana")),
+        Err(AppError::TeamNotAllowed)
+    );
+    assert_eq!(
+        ana.f
+            .hedy
+            .team_remove_person(&ana.team, &person_of(&ana, "Ana")),
+        Err(AppError::SyncRemoveThisPc)
+    );
+    ana.f
+        .hedy
+        .team_remove_person(&ana.team, &luis_person)
+        .unwrap();
+    assert_eq!(people(&ana), [("Ana".to_owned(), Role::Admin, 1)]);
+    assert_eq!(
+        luis.f.hedy.team_sync(&luis.team),
+        Err(AppError::SyncRemoved)
+    );
+    // Someone who joins afterwards still gets Luis's note, under his name.
+    let marta = invite(&server, &ana, "Marta", Role::Member, false);
+    marta.link();
+    let notes = marta.f.hedy.team_notes(&marta.team).unwrap();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(
+        (notes[0].text.as_str(), notes[0].author.as_str()),
+        ("De Luis", "Luis")
+    );
+}
+
+#[test]
+fn the_last_admin_cannot_leave_or_step_down() {
+    let (_server, ana, luis) = team_of_two();
+    let ana_person = person_of(&ana, "Ana");
+    assert_eq!(
+        ana.f.hedy.team_leave(&ana.team),
+        Err(AppError::TeamLastAdmin)
+    );
+    assert_eq!(
+        ana.f
+            .hedy
+            .team_set_role(&ana.team, &ana_person, Role::Member),
+        Err(AppError::TeamLastAdmin)
+    );
+    // Luis becomes an admin; then Ana may go.
+    ana.f
+        .hedy
+        .team_set_role(&ana.team, &person_of(&ana, "Luis"), Role::Admin)
+        .unwrap();
+    luis.sync();
+    assert_eq!(
+        luis.f.hedy.team_status(&luis.team).unwrap().summary.role,
+        Some(Role::Admin)
+    );
+    ana.f.hedy.team_leave(&ana.team).unwrap();
+    assert!(ana.f.hedy.teams().unwrap().is_empty());
+    luis.sync();
+    assert_eq!(people(&luis), [("Luis".to_owned(), Role::Admin, 1)]);
+    // The team keeps its name though Ana's PC wrote it.
+    luis.sync();
+    assert_eq!(
+        luis.f.hedy.team_status(&luis.team).unwrap().summary.name,
+        "Tienda SA"
+    );
+}
+
+#[test]
+fn a_team_note_of_someone_no_longer_an_admin_stays_for_everyone() {
+    let (server, ana, luis) = team_of_two();
+    let luis_person = person_of(&ana, "Luis");
+    ana.f
+        .hedy
+        .team_set_role(&ana.team, &luis_person, Role::Admin)
+        .unwrap();
+    luis.sync();
+    assert!(matches!(
+        luis.f
+            .hedy
+            .team_add_note(&luis.team, None, "Nota de Luis", Category::Rule, None)
+            .unwrap(),
+        TeamWriteOutcome::Published(_)
+    ));
+    luis.sync();
+    ana.sync();
+    ana.f
+        .hedy
+        .team_set_role(&ana.team, &luis_person, Role::Member)
+        .unwrap();
+    let marta = invite(&server, &ana, "Marta", Role::Member, false);
+    assert_eq!(marta.note_texts(), ["Nota de Luis"]);
+    luis.sync();
+    assert_eq!(
+        luis.f.hedy.team_status(&luis.team).unwrap().summary.role,
+        Some(Role::Member)
+    );
+}
+
+#[test]
+fn a_member_removes_their_own_pc_and_leaves_through_an_admin() {
+    let (server, ana, luis) = team_of_two();
+    let laptop = invite(&server, &luis, "Luis", Role::Member, true);
+    ana.sync();
+    laptop.sync();
+    let laptop_id = laptop.f.hedy.team_status(&laptop.team).unwrap().device;
+    // Not someone else's PC.
+    let ana_pc = ana.f.hedy.team_status(&ana.team).unwrap().device;
+    assert_eq!(
+        luis.f.hedy.team_remove_pc(&luis.team, &ana_pc),
+        Err(AppError::TeamNotAllowed)
+    );
+    luis.f.hedy.team_remove_pc(&luis.team, &laptop_id).unwrap();
+    ana.sync();
+    assert_eq!(
+        laptop.f.hedy.team_sync(&laptop.team),
+        Err(AppError::SyncRemoved)
+    );
+    assert_eq!(
+        people(&ana),
+        [
+            ("Ana".to_owned(), Role::Admin, 1),
+            ("Luis".to_owned(), Role::Member, 1)
+        ]
+    );
+    luis.f.hedy.team_leave(&luis.team).unwrap();
+    assert!(luis.f.hedy.teams().unwrap().is_empty());
+    ana.sync();
+    assert_eq!(people(&ana), [("Ana".to_owned(), Role::Admin, 1)]);
+}

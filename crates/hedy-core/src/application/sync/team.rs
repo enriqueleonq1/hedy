@@ -636,23 +636,30 @@ impl Hedy {
             .seats
             .get(session.device.as_str())
             .is_some_and(|s| s.role == Role::Admin);
-        let renamed = self.sync_setting(space, NEW_NAME)?;
-        match (self.read_team_info(session), renamed) {
-            (_, Some(name)) if admin => {
-                let info = TeamInfo {
-                    name: name.clone(),
-                    at: self.clock.now_ms(),
-                };
-                self.write_signed(
-                    session,
-                    &team_layout::team_info(&session.device),
-                    &json(&info),
-                )?;
-                self.set_sync_setting(space, TEAM_NAME, &name)?;
-                self.clear_sync_setting(space, NEW_NAME)?;
-            }
-            (Some(info), _) => self.set_sync_setting(space, TEAM_NAME, &info.name)?,
-            _ => {}
+        let info = self.read_team_info(session);
+        // A new name; or, when no admin's name is left in the repo (the PC
+        // that wrote it was removed), the one this PC knows.
+        let write = match (self.sync_setting(space, NEW_NAME)?, &info) {
+            (Some(name), _) if admin => Some(name),
+            (None, None) if admin => self
+                .sync_setting(space, TEAM_NAME)?
+                .filter(|n| !n.is_empty()),
+            _ => None,
+        };
+        if let Some(name) = write {
+            let info = TeamInfo {
+                name: name.clone(),
+                at: self.clock.now_ms(),
+            };
+            self.write_signed(
+                session,
+                &team_layout::team_info(&session.device),
+                &json(&info),
+            )?;
+            self.set_sync_setting(space, TEAM_NAME, &name)?;
+            self.clear_sync_setting(space, NEW_NAME)?;
+        } else if let Some(info) = info {
+            self.set_sync_setting(space, TEAM_NAME, &info.name)?;
         }
         self.open_requests(session)
     }
@@ -1399,9 +1406,14 @@ impl Hedy {
             return Ok(());
         }
         let mut pins = self.pins(space)?;
-        if !added.is_empty() || !removed.is_empty() {
-            let (number, file) = self.next_team_epoch(space, &me, &added, &removed)?;
+        let new_epoch = !added.is_empty() || !removed.is_empty();
+        if new_epoch {
+            if !removed.is_empty() {
+                self.check_admins_stay(space, &removed, &[])?;
+            }
+            let (number, file) = self.next_team_epoch(space, &me, &added, &removed, &[])?;
             pins.insert(number, self.sync_crypto.digest(file.as_bytes()));
+            self.drop_device_files(&dir, &removed)?;
         }
         let keys = self.keys(space)?;
         let answer = JoinAnswer {
@@ -1428,17 +1440,24 @@ impl Hedy {
         for (number, _) in &accepted {
             self.forget_invite(space, *number)?;
         }
+        self.take_over(&me, &removed, false)?;
+        // Its own epoch, checked and in use here; and what it took over, sent.
+        if new_epoch {
+            self.sync_locked(space)?;
+        }
         Ok(())
     }
 
     /// Writes the epoch after the trusted one, signed by this admin's PC,
-    /// with `added` in and `removed` out. Returns its number and file.
+    /// with `added` in, `removed` out and the `roles` given. Returns its
+    /// number and file.
     fn next_team_epoch(
         &self,
         space: &Space,
         me: &Me,
         added: &[EpochMember],
         removed: &[String],
+        roles: &[(PersonId, Role)],
     ) -> AppResult<(u32, String)> {
         let dir = self.sync_dir(space)?;
         let keys = self.keys(space)?;
@@ -1460,6 +1479,13 @@ impl Hedy {
             .into_iter()
             .filter(|m| !removed.contains(&m.id))
             .collect();
+        for member in &mut members {
+            if let Some(seat) = &mut member.seat
+                && let Some((_, role)) = roles.iter().find(|(p, _)| *p == seat.person)
+            {
+                seat.role = *role;
+            }
+        }
         for member in added {
             if !members.iter().any(|m| m.id == member.id) {
                 members.push(member.clone());
@@ -1755,14 +1781,245 @@ impl Hedy {
         Ok(true)
     }
 
-    /// This PC leaves the team here: its keys, clone, settings and replica
-    /// go, and its projects' memory follows their owner again.
+    // ── People: removing, roles, leaving ────────────────────────────────
+
+    /// Fails when the change would leave PCs in the team and no admin's
+    /// among them: nobody could invite, remove or review any more.
+    fn check_admins_stay(
+        &self,
+        space: &Space,
+        removed: &[String],
+        roles: &[(PersonId, Role)],
+    ) -> AppResult<()> {
+        let (_, members) = self.space_status(space)?.ok_or(AppError::SyncNotSetUp)?;
+        let left: Vec<Seat> = members
+            .into_iter()
+            .filter(|m| !removed.iter().any(|r| r == m.device.id.as_str()))
+            .filter_map(|m| m.seat)
+            .map(|mut seat| {
+                if let Some((_, role)) = roles.iter().find(|(p, _)| *p == seat.person) {
+                    seat.role = *role;
+                }
+                seat
+            })
+            .collect();
+        if !left.is_empty() && !left.iter().any(|s| s.role == Role::Admin) {
+            return Err(AppError::TeamLastAdmin);
+        }
+        Ok(())
+    }
+
+    /// The files a removed PC wrote go (its batches, snapshots and name),
+    /// except its `device.hedy`: a commit it has not pushed yet still
+    /// rebases, and it then learns it was removed.
+    fn drop_device_files(&self, dir: &Path, removed: &[String]) -> AppResult<()> {
+        for device in removed {
+            let device = DeviceId(device.clone());
+            if !device.is_valid() {
+                continue;
+            }
+            for path in self.sync_remote.files(dir, &layout::device_dir(&device))? {
+                if path != layout::device_info(&device) {
+                    self.sync_remote.remove(dir, &path)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// This admin's PC answers for the newest versions `devices` wrote (all
+    /// of them, or the team layer's notes only): the same content, signed
+    /// here, so every PC still takes them once those PCs are out (or no
+    /// longer admins). Bylines stay.
+    fn take_over(&self, me: &Me, devices: &[String], team_layer_only: bool) -> AppResult<()> {
+        if devices.is_empty() {
+            return Ok(());
+        }
+        let space = &me.space;
+        let mut outbox: Vec<Change> = self.sync_json(space, OUTBOX)?.unwrap_or_default();
+        for item in self.store.sync_items(&space.id())? {
+            let wrote = devices
+                .iter()
+                .any(|d| d == item.version.stamp.device.as_str());
+            let team_layer = item.kind == ItemKind::Note && item.scope == Scope::Global;
+            if !wrote || (team_layer_only && !team_layer) {
+                continue;
+            }
+            let stamp = Stamp {
+                device: me.device.clone(),
+                ..item.version.stamp.clone()
+            };
+            let change = Change {
+                version: item.version.restated(stamp),
+                ..item
+            };
+            self.store.put_sync_item(&space.id(), &change)?;
+            outbox.push(change);
+        }
+        self.set_sync_setting(space, OUTBOX, &json(&outbox))
+    }
+
+    /// An admin's change to the team's seats, now (after a sync: what they
+    /// sent so far is in): a new epoch in a commit of its own, then a sync
+    /// that sends what this PC took over.
+    fn change_seats(
+        &self,
+        space: &Space,
+        removed: &[String],
+        roles: &[(PersonId, Role)],
+        take_over: (&[String], bool),
+    ) -> AppResult<()> {
+        let me = self.team_me(space)?;
+        if me.seat.role != Role::Admin {
+            return Err(AppError::TeamNotAllowed);
+        }
+        self.check_admins_stay(space, removed, roles)?;
+        let dir = self.sync_dir(space)?;
+        self.next_team_epoch(space, &me, &[], removed, roles)?;
+        self.drop_device_files(&dir, removed)?;
+        if let Err(error) = self.sync_remote.push(&dir, "hedy team") {
+            let _ = self.sync_remote.discard_local(&dir);
+            return Err(error.into());
+        }
+        self.take_over(&me, take_over.0, take_over.1)?;
+        self.sync_locked(space).map(drop)
+    }
+
+    /// The PCs of `person` in the team's trusted epoch.
+    fn person_devices(&self, space: &Space, person: &PersonId) -> AppResult<Vec<String>> {
+        let (_, members) = self.space_status(space)?.ok_or(AppError::SyncNotSetUp)?;
+        Ok(members
+            .into_iter()
+            .filter(|m| m.seat.as_ref().is_some_and(|s| s.person == *person))
+            .map(|m| m.device.id.0)
+            .collect())
+    }
+
+    /// Removes a person and all their PCs (admins): the key rotates, so
+    /// they read nothing written from now on; their notes stay under their
+    /// name. Their access to the git repo is the host's: the app reminds the
+    /// admin to take it away there.
+    pub fn team_remove_person(&self, team: &str, person: &PersonId) -> AppResult<()> {
+        let space = self.team_space(team)?;
+        let _guard = self.sync_guard(&space)?;
+        self.sync_locked(&space)?;
+        let me = self.team_me(&space)?;
+        if *person == me.seat.person {
+            return Err(AppError::SyncRemoveThisPc);
+        }
+        let devices = self.person_devices(&space, person)?;
+        if devices.is_empty() {
+            return Err(AppError::TeamPersonNotFound(person.as_str().to_owned()));
+        }
+        self.change_seats(&space, &devices, &[], (&devices, false))
+    }
+
+    /// Gives a person another role (admins). Someone no longer an admin
+    /// leaves notes in the team layer that this PC now answers for.
+    pub fn team_set_role(&self, team: &str, person: &PersonId, role: Role) -> AppResult<()> {
+        let space = self.team_space(team)?;
+        let _guard = self.sync_guard(&space)?;
+        self.sync_locked(&space)?;
+        let (_, members) = self.space_status(&space)?.ok_or(AppError::SyncNotSetUp)?;
+        let current = members
+            .iter()
+            .filter_map(|m| m.seat.as_ref())
+            .find(|s| s.person == *person)
+            .map(|s| s.role)
+            .ok_or_else(|| AppError::TeamPersonNotFound(person.as_str().to_owned()))?;
+        if current == role {
+            return Ok(());
+        }
+        let devices = self.person_devices(&space, person)?;
+        let demoted: &[String] = if role == Role::Admin { &[] } else { &devices };
+        self.change_seats(&space, &[], &[(person.clone(), role)], (demoted, true))
+    }
+
+    /// Removes one PC: an admin removes any; a member, their own (an
+    /// admin's PC signs it on its next sync). This PC leaves instead.
+    pub fn team_remove_pc(&self, team: &str, device: &DeviceId) -> AppResult<()> {
+        let space = self.team_space(team)?;
+        let _guard = self.sync_guard(&space)?;
+        self.sync_locked(&space)?;
+        let me = self.team_me(&space)?;
+        if *device == me.device {
+            return Err(AppError::SyncRemoveThisPc);
+        }
+        let (_, members) = self.space_status(&space)?.ok_or(AppError::SyncNotSetUp)?;
+        let seat = members
+            .iter()
+            .find(|m| m.device.id == *device)
+            .and_then(|m| m.seat.clone())
+            .ok_or_else(|| AppError::SyncDeviceNotFound(device.as_str().to_owned()))?;
+        let removed = [device.as_str().to_owned()];
+        if me.seat.role == Role::Admin {
+            return self.change_seats(&space, &removed, &[], (&removed, false));
+        }
+        if seat.person != me.seat.person {
+            return Err(AppError::TeamNotAllowed);
+        }
+        self.ask_admin(
+            &space,
+            &me,
+            &SeatRequest::Remove {
+                device: device.clone(),
+            },
+        )
+    }
+
+    /// An admin's PC writes itself out of the epoch (the team keeps the
+    /// rest of its people).
+    fn leave_as_admin(&self, space: &Space, me: &Me) -> AppResult<()> {
+        let (_, members) = self.space_status(space)?.ok_or(AppError::SyncNotSetUp)?;
+        if members.iter().all(|m| m.device.this_pc) {
+            return Ok(());
+        }
+        self.sync_locked(space)?;
+        let dir = self.sync_dir(space)?;
+        let mine = [me.device.as_str().to_owned()];
+        self.next_team_epoch(space, me, &[], &mine, &[])?;
+        self.sync_remote.push(&dir, "hedy team")?;
+        Ok(())
+    }
+
+    /// A member's PC asks an admin's PC to sign `request`.
+    fn ask_admin(&self, space: &Space, me: &Me, request: &SeatRequest) -> AppResult<()> {
+        let dir = self.sync_dir(space)?;
+        let session = self.sync_session(space, dir.clone(), me.device.clone())?;
+        let path = team_layout::seat_request(&me.device, &self.sync_crypto.random_hex(8)?);
+        self.write_signed(&session, &path, &json(request))?;
+        Ok(self.sync_remote.push(&dir, "hedy team")?)
+    }
+
+    /// This PC leaves the team: it asks to be taken out (an admin's PC
+    /// writes itself out of the epoch; a member's asks an admin's), then
+    /// its keys, clone, settings and replica go here, and its projects'
+    /// memory follows their owner again. The last admin of a team with
+    /// other people cannot leave: they make someone else an admin first.
     pub fn team_leave(&self, team: &str) -> AppResult<()> {
         let space = self.team_space_or_joining(team)?;
         let Space::Team(id) = &space else {
             unreachable!("a team's space");
         };
         let _guard = self.sync_guard(&space)?;
+        if self.space_is_set_up(&space)? {
+            let me = self.team_me(&space)?;
+            let mine = [me.device.as_str().to_owned()];
+            self.check_admins_stay(&space, &mine, &[])?;
+            // Without the network, it leaves here all the same; the others
+            // remove it from their side.
+            let _ = if me.seat.role == Role::Admin {
+                self.leave_as_admin(&space, &me)
+            } else {
+                self.ask_admin(
+                    &space,
+                    &me,
+                    &SeatRequest::Remove {
+                        device: me.device.clone(),
+                    },
+                )
+            };
+        }
         self.sync_remote.discard_local(&self.sync_dir(&space)?)?;
         self.secrets.delete_sync_keys(&space.id())?;
         self.store.clear_sync_state(&space.id())?;
