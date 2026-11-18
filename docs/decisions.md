@@ -2549,3 +2549,98 @@ All are fixed:
 - a vitest pins the sync payloads `tauriApi.ts` sends to the names the IPC test uses.
 
 User guide: [sync.md](sync.md).
+
+## 35. Team memory: a team's shared memory on its own git repo (Nov 18, 2026)
+
+Team memory reuses personal sync's engine and vault (§34): a team is a key vault in a private
+repo on any git server, where each PC also belongs to a person with a role. The views were
+chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
+
+### Decisions
+
+- **One team is one repo with one key.** To keep a project apart, make another team. A
+  project belongs to one team at most. Keys per project were dropped: more to keep and
+  rotate, and a separate team gives the same isolation.
+- **Joining is a one-time invite**: the repo's address plus a code (`7-tigre-lima-nube-mar`)
+  that works once and expires after 48 h.
+  - The code is checked with a PAKE, so it never reaches the repo. Someone with a copy of the
+    repo cannot test guesses offline.
+  - A request that does not open burns the invite. When the code is right, the person gets in
+    on the inviting PC's next sync, with nobody approving by hand.
+  - The git server still decides who can read the repo. Hedy reminds the admin to give access
+    there, and to take it away when a person is removed.
+  - Rejected: a compared hash of a short code (any reader of the repo can brute-force it
+    offline), and SSH keys from `<host>/<user>.keys` (tied to one host, and not every user
+    has them).
+- **Two roles:**
+  - an **admin** invites, removes and reviews the team layer;
+  - a **member** adds or removes only their own PCs.
+
+  The team has its own 12 recovery words, meant for the team's password manager. Without
+  them, a team whose admins all lose their PCs is locked forever.
+- **Three layers of memory:**
+  - **Equipo**: the agent always reads it. It is capped at 1,500 tokens, and admins review it.
+  - **Proyecto**: a note is published when someone approves it, with their name on it.
+  - **Solo tú**: personal, as today.
+
+  Changing someone else's note is a suggestion. There is no review mode per project: the
+  author's name and suggestions are enough, and the switch would be one more thing to explain.
+- **Team notes are untrusted input** for the agent:
+  - a note with hidden characters cannot be accepted;
+  - the author is always shown;
+  - the agent gets team notes quoted, as data.
+- **Removing someone** rotates the key forward. Their PCs keep what they already had, their
+  notes stay under their name, and the admin is taken to the repo to remove their access.
+- **Out of v1:**
+  - the weekly digest;
+  - public groups (open-source communities);
+  - keys per project;
+  - SSH signatures;
+  - access by GitHub username (the invite replaces it).
+- **The 1,500-token cap** is a starting point, to be tuned with evals before release (§33:
+  always-on context files cost about 20% more for little gain).
+
+### Phase T1: seats, roles and invites
+
+- **Seats** (`domain::team`, `adapters::vault`):
+  - Each member of a team epoch carries `person` (16 hex, random) and `role`
+    (`admin`/`member`).
+  - A personal vault has no seats. Its epoch files serialize exactly as before, so their
+    signatures still verify.
+  - Seats must hold together:
+    - every PC has a seat, or none does;
+    - the recovery key has none;
+    - all of a person's PCs share one role.
+- **`verify_next`** keeps every earlier rule: the next number, a signer from the epoch
+  before, and the recovery key kept unchanged. Then:
+  - the recovery key may change anything else;
+  - every member that stays keeps its keys and its person;
+  - a personal PC (no seat) only removes, as before;
+  - an admin's PC adds, removes and changes roles;
+  - a member's PC adds or removes only its own person's PCs, with the person's role. It can
+    neither promote itself nor touch anyone else.
+- **Invites** (`adapters::invite`):
+  - **The code:** a number naming the invite plus 4 BIP39 words (44 bits). The words are kept
+    without accents but with their `ñ`, and both lists are read back. A typo is caught
+    before any attempt, so it never burns the invite.
+  - **The check:** SPAKE2 over Ed25519 (RustCrypto's `spake2` 0.4, the one Magic Wormhole's
+    Rust port uses). The inviting PC writes its message in the invite and keeps a 32-byte
+    seed in the keyring, from which its side is rebuilt after a restart (`ChaCha20Rng`). The
+    joiner answers with its own message.
+  - **The shared key:** HKDF of SPAKE2's output, used like an epoch key under epoch 0, which
+    no vault uses. A wrong code gives a different key, so the joiner's sealed request does not
+    open.
+  - **Caveat:** `spake2` has never had an independent audit (its README says so). It is
+    built on `curve25519-dalek`, which has. The crate stays behind the `SyncCrypto` port, so
+    it can be swapped (CPace, for instance).
+- **Hidden characters** (`domain::team::hidden_chars`, `reveal_hidden`):
+  - Flagged:
+    - direction overrides (Trojan Source);
+    - zero-width and other invisible format characters;
+    - Unicode tags and variation selectors, which can spell out hidden instructions;
+    - control characters.
+  - Allowed: emoji joiners and selectors between emoji, and `\r\n`.
+  - A reviewer sees each one as `⟦U+202E⟧`.
+- **Found on the way:** Spanish recovery words typed without accents were refused. The
+  BIP39 list writes accents as separate marks, which `fold_word` did not remove. The app's
+  word check had the same problem. Both are fixed, with tests.
