@@ -1673,3 +1673,51 @@ fn a_new_persons_name_is_shown_plain_and_told_apart() {
         "Tienda S.A."
     );
 }
+
+#[test]
+fn zz_promoted_luis_leaves_and_syncs_first() {
+    let (server, ana, luis) = team_of_two();
+    let luis_person = person_of(&ana, "Luis");
+    ana.f
+        .hedy
+        .team_set_role(&ana.team, &luis_person, Role::Admin)
+        .unwrap();
+    luis.sync();
+    luis.f
+        .hedy
+        .team_add_note(&luis.team, None, "De Luis", Category::Rule, None)
+        .unwrap();
+    luis.sync();
+    ana.sync();
+    luis.f.hedy.team_leave(&luis.team).unwrap();
+    luis.sync();
+    assert_eq!(luis.f.hedy.teams().unwrap().len(), 1);
+    ana.sync();
+    assert_eq!(luis.f.hedy.team_sync(&luis.team), Ok(SyncReport::default()));
+    assert!(luis.f.hedy.teams().unwrap().is_empty());
+    let kim = invite(&server, &ana, "Kim", Role::Member, false);
+    assert_eq!(kim.note_texts(), ["De Luis"]);
+    assert_eq!(people(&ana).len(), 2);
+}
+
+#[test]
+fn a_leaving_admin_that_syncs_first_still_leaves_its_notes() {
+    let (server, ana, _luis) = team_of_two();
+    let bea = invite(&server, &ana, "Bea", Role::Admin, false);
+    ana.sync();
+    bea.f
+        .hedy
+        .team_add_note(&bea.team, None, "Regla de Bea", Category::Rule, None)
+        .unwrap();
+    bea.sync();
+    ana.sync();
+    bea.f.hedy.team_leave(&bea.team).unwrap();
+    // Bea's PC syncs before Ana's: it waits, it does not take itself out.
+    bea.sync();
+    assert!(bea.f.hedy.teams().unwrap()[0].leaving);
+    ana.sync();
+    bea.sync();
+    assert!(bea.f.hedy.teams().unwrap().is_empty());
+    let pepe = invite(&server, &ana, "Pepe", Role::Member, false);
+    assert_eq!(pepe.note_texts(), ["Regla de Bea"]);
+}
