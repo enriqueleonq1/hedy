@@ -2245,9 +2245,10 @@ its clock is fixed. Members are trusted, and the local clock is protected.
   - `project [--personal|--local|--shared <owner>|--follow]`;
   - `leave [--yes]`.
   The CLI only asks and prints; every rule lives in the use cases the app will use.
-- **A URL with a password or a token is refused** (`https://user:token@…`, `https://token@…`,
-  `user:secret@` over SSH). Hedy would otherwise keep it in its settings and print it. The
-  error points to SSH or git's credential helper (rule 1).
+- **A URL with a password or a token is refused**: any user over HTTP(S)/FTP(S)
+  (`https://user:token@…`, `https://token@…`), a query (`?access_token=…`), and
+  `user:secret@` over SSH, also behind git's `<transport>::` prefix. Hedy would otherwise keep
+  it in its settings and print it. The error points to SSH or git's credential helper (rule 1).
 - **The sync clone is compared with `remote.origin.url` as configured,** not as
   `url.*.insteadOf` rewrites it (otherwise a common HTTPS→SSH rewrite broke every sync). A
   server whose `HEAD` names another branch (`git init --bare` gives `master`) still shows `main`.
@@ -2260,10 +2261,14 @@ its clock is fixed. Members are trusted, and the local clock is protected.
   moves the item onto the PC's own equal row and drops the one just made.
 - **Known limits, kept on purpose:**
   - Joining again starts fresh. A note edited on a PC while it was out of sync is not equal to
-    any synced one, so it comes back as a second note (both are kept; nothing is lost). Notes
-    deleted elsewhere while it was out come back from it too.
+    any version of a synced one, so it comes back as a second note (both are kept; nothing is
+    lost). A note deleted elsewhere meanwhile is adopted and deleted, unless it was also edited
+    on that PC.
   - Leaving does not revoke: the PC stays in the key epoch, and the other PCs keep listing it,
     until it is removed from another PC (phase 6). The CLI says so.
+  - The sync lock is per process. The app and the CLI starting a setup at the same moment can
+    undo each other's clone (only inside `<data>/sync/repo`); a lock file comes with the app
+    (phase 5).
 
 **Housekeeping:**
 - Real run with the real binary, the real keyring and a bare repo, across two data dirs:
@@ -2280,6 +2285,10 @@ its clock is fixed. Members are trusted, and the local clock is protected.
   - setup's word check was stricter than join's;
   - `hedy sync owner` accepted an owner without an answer or without its server.
 - Each one is fixed and has a regression test (engine, git adapter or CLI).
+- The re-check confirmed every fix, plus edge cases of the adoption (three versions, two items,
+  a delete after it, themes, built-in templates). It found one bypass of the token check
+  (`https::https://token@…`) and a query token, both now refused, and an scp URL with an `@`
+  in its path wrongly refused, now accepted.
 
 **Next phases:**
 5. The app.

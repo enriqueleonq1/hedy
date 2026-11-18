@@ -448,24 +448,34 @@ pub fn fold_word(word: &str) -> String {
 }
 
 /// Whether a git URL carries a password or a token (`https://user:token@…`,
-/// `https://token@…`): Hedy never keeps one (rule 1). A bare SSH user
-/// (`git@github.com:…`, `ssh://git@host/…`) is fine.
+/// `https://token@…`, `…?access_token=…`): Hedy never keeps one (rule 1). A
+/// bare SSH user (`git@github.com:…`, `ssh://git@host/…`) is fine.
 pub fn url_has_credentials(url: &str) -> bool {
-    let url = url.trim();
+    let mut url = url.trim();
+    // git's `<transport>::<address>` form (`https::https://…`).
+    while let Some((helper, rest)) = url.split_once("::")
+        && !helper.is_empty()
+        && helper
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    {
+        url = rest;
+    }
     let Some((scheme, rest)) = url.split_once("://") else {
-        // scp-like: `user@host:path`; a `user:password@` form has no meaning
-        // here, so a colon before the `@` is refused.
-        return url
-            .split_once('@')
+        // scp-like: `user@host:path`. Only an `@` before the path names a
+        // user, and a `user:password@` there is refused.
+        let head = url.split('/').next().unwrap_or("");
+        return head
+            .rsplit_once('@')
             .is_some_and(|(user, _)| user.contains(':'));
     };
-    let authority = rest.split('/').next().unwrap_or("");
-    let Some((userinfo, _)) = authority.rsplit_once('@') else {
-        return false;
-    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let userinfo = authority.rsplit_once('@').map(|(userinfo, _)| userinfo);
     match scheme.to_lowercase().as_str() {
-        "http" | "https" => true,
-        _ => userinfo.contains(':'),
+        // Over HTTP and FTP a user is a token or comes with one, and a
+        // query can carry one too.
+        "http" | "https" | "ftp" | "ftps" => userinfo.is_some() || rest.contains('?'),
+        _ => userinfo.is_some_and(|userinfo| userinfo.contains(':')),
     }
 }
 
@@ -754,6 +764,10 @@ mod tests {
             "http://user@host/a.git",
             "ssh://git:secret@host/a.git",
             "git:secret@github.com:a/b.git",
+            "https::https://ghp_TOKEN@github.com/a/b.git",
+            "HTTPS://alice:tok@github.com",
+            "https://github.com/a/b.git?access_token=ghp_TOKEN",
+            "ftps://tok@host/a.git",
         ] {
             assert!(url_has_credentials(bad), "{bad}");
         }
@@ -763,6 +777,9 @@ mod tests {
             "ssh://git@host:2222/a/b.git",
             "/srv/git/b.git",
             "https://github.com/a/b@v1",
+            "github.com:org/repo@v1.git",
+            "ext::ssh -i key git@host %S a.git",
+            "ssh::git@github.com:a/b.git",
         ] {
             assert!(!url_has_credentials(good), "{good}");
         }

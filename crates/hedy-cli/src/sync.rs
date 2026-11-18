@@ -480,8 +480,8 @@ pub fn leave(hedy: &Hedy, yes: bool) -> Result<()> {
     println!(
         "{}",
         s.muted(tr!(
-            "Tus otras PCs aún la ven en la lista: salir no le quita el acceso a la clave.",
-            "Your other PCs still list it: leaving does not take away its access to the key."
+            "Tus otras PCs aún la ven en la lista: sigue siendo miembro hasta que la quites desde otra PC.",
+            "Your other PCs still list it: it stays a member until you remove it from another PC."
         ))
     );
     Ok(())
