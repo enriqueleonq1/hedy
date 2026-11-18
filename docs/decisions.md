@@ -2971,3 +2971,41 @@ chosen on a design canvas (1b, 2a, 3b, 4b, 5b, 6a, 7b, 8b, 9a).
       its team's keyring entry for that run's data folder.
   - **Not changed:** `session_overhead` (§33) measures the guidance only. The team block is
     measured by its own cap.
+
+### Phase T4: `hedy team`
+
+- **The same use cases as the app.** `crates/hedy-cli/src/team.rs` only asks and prints, in
+  the style of `hedy sync`:
+  - `hedy team` (the status, by default): the people with their roles and PCs, open invites,
+    burned invites and the suggestions waiting. With several teams and none chosen, it lists
+    them.
+  - `--team <name|id>` picks a team. By default it is the current project's, or the only one.
+  - **Creating and joining:**
+    - `create <url> --name <team> [--me] [--pc]` shows the 12 words and, in a terminal, asks
+      for one back;
+    - `invite [--admin|--mine] [--cancel <n>]` prints the code and reminds the admin to give
+      git access;
+    - `join <url> [code]` asks for the code without showing it when it is left out;
+    - `now` syncs, or looks whether a joining PC is in yet.
+  - **Notes:** `link` (the current project becomes the team's), `notes`, `add [--everyone]`,
+    `publish <id> [--everyone]` and `review [<id> --accept|--reject]`. In the review,
+    suggestions are named by the end of their id, and their hidden characters show.
+  - **People:**
+    - `role <person> --admin|--member`, `remove <person>|--pc <pc>`, and `rename <name>
+      [--person]`. People are named by their name or the start of their id.
+    - `remove` reminds the admin to take away the person's git access.
+  - **Leaving:**
+    - `leave` asks an admin's PC to take this one out; an admin's PC waits for that.
+    - `leave --here` only forgets the team on this PC, without asking anybody. It is for a PC
+      given away, or a run that has to clean up. The PC stays in the team's epoch, with
+      nothing behind it, until an admin removes it.
+- **A removed PC is told in a team's words** (`TeamRemoved`), not personal sync's, which
+  speak of the 12 words.
+- **`scripts/team-e2e.sh <url>`** runs the real binary and keyring against an empty repo:
+  - three people, one with two PCs, an admin among them;
+  - an invite burned by a wrong code;
+  - notes, a suggestion taken, and all four PCs equal;
+  - a repo with nothing readable, a person removed with their note kept, and everyone
+    leaving.
+
+  Its cleanup uses `--here`, so even a failed run leaves no team entry in the keyring.

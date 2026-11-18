@@ -22,6 +22,10 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
   `resolve`, `owner`, `project`, `remove <pc>`, `leave`). End to end against an empty repo:
   `scripts/sync-e2e.sh <url>` (real binary) and
   `HEDY_E2E_URL=<url> cargo test -p hedy-app -- --ignored sync_ipc` (the app's commands)
+- Team memory (docs/decisions.md §35): `hedy team` (`create <url> --name`, `invite [--admin|--mine]`,
+  `join <url> [code]`, `now`, `link`, `notes`, `add [--everyone]`, `publish <id>`, `review`,
+  `role`, `remove`, `rename`, `leave [--here]`; `--team` picks one). End to end against an empty
+  repo: `scripts/team-e2e.sh <url>` (real binary and keyring; three people)
 - App (from `app/`): `npm install`, then `npm run tauri dev`; UI only with sample data:
   `npm run dev` (`?theme=light|dark`, `?lang=es|en`, `?onboarding=1`, `#accounts`, `#settings`,
   `#activity` for the task board, `#sync` for the sync card)
