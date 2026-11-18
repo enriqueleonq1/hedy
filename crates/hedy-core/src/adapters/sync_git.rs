@@ -473,7 +473,7 @@ mod tests {
         let git = GitSyncRemote;
         assert!(git.is_public("https://github.com/git/git.git"));
         assert!(git.is_public("git@github.com:git/git.git"));
-        assert!(!git.is_public("git@github.com:enriqueleonq1/no-such-hedy-repo.git"));
+        assert!(!git.is_public("git@github.com:git/no-such-hedy-repo.git"));
     }
 
     #[test]
