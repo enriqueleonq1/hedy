@@ -2339,9 +2339,10 @@ The views picked on the design canvas, built on the same use cases as the CLI:
   - any command is killed after a limit (15 minutes when it talks to the server, so a first
     clone of a big repo on a slow link still finishes; 1 minute otherwise), so the lock is never
     held forever;
-  - without a terminal (the app), git runs in a process group of its own, so a kill also
-    stops its `ssh`; in a terminal it stays in the foreground group, so `ssh` can still ask for
-    a key's passphrase;
+  - without a controlling terminal (the app opened from the desktop), git runs in a process
+    group of its own, so a kill also stops its `ssh`. With one (even with stdin redirected, as in
+    `echo … | hedy sync join`) it stays in the terminal's foreground group, so `ssh` can still
+    ask for a key's passphrase;
   - a kill in the middle of a fetch could leave a ref lock file that makes later syncs fail;
     leaving and joining again makes a new clone. That is rare: the limit almost always fires
     while git waits for the network, before any ref is locked;
@@ -2352,7 +2353,8 @@ The views picked on the design canvas, built on the same use cases as the CLI:
     is typed back;
   - meanwhile nothing takes the words away: not the history, a project shortcut, the palette,
     a click on a notification (`data-locked` on the dialog), closing the window (it asks to
-    finish first), nor a failed refresh of the app's data (only a first load shows the error
+    finish first; Tauri closes the window after each of its listeners unless that listener
+    prevents it, so a single listener asks every guard), nor a failed refresh of the app's data (only a first load shows the error
     screen);
   - when it finishes, Hedy clears the clipboard if it copied the words.
 - **A project is counted and shown as synced only when it really syncs:** personal, and with an

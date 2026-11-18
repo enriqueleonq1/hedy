@@ -109,10 +109,11 @@ fn git(dir: &Path, args: &[&str]) -> PortResult<Ran> {
         .env("SSH_ASKPASS_REQUIRE", "never")
         .env("GCM_INTERACTIVE", "never");
     // Without a terminal (the app), git and its `ssh` get a process group
-    // of their own, so a timeout stops both. In a terminal they stay in
-    // its foreground group: `ssh` may still ask for a key's passphrase.
+    // of their own, so a timeout stops both. With one (even with stdin
+    // redirected) they stay in its foreground group: `ssh` may still ask
+    // for a key's passphrase on it.
     #[cfg(unix)]
-    if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+    if std::fs::File::open("/dev/tty").is_err() {
         std::os::unix::process::CommandExt::process_group(&mut command, 0);
     }
     let network = matches!(args.first(), Some(&("clone" | "fetch" | "push")));

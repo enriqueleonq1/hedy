@@ -20,6 +20,24 @@ function subscribe<T>(event: string, handler: (payload: T) => void): () => void 
   };
 }
 
+/**
+ * What may keep the window open. Tauri closes it after each of its listeners
+ * unless that listener's own event was prevented, so one listener asks every
+ * guard: any `false` keeps it open.
+ */
+const closeGuards = new Set<() => Promise<boolean>>();
+let listeningForClose = false;
+
+function listenForClose() {
+  if (listeningForClose) return;
+  listeningForClose = true;
+  void getCurrentWindow().onCloseRequested(async (event) => {
+    for (const confirm of [...closeGuards]) {
+      if (!(await confirm())) return event.preventDefault();
+    }
+  });
+}
+
 /** `HedyApi` over Tauri commands (see `src-tauri/src/commands.rs`). */
 export const tauriApi: HedyApi = {
   overview: () => invoke("overview"),
@@ -118,21 +136,9 @@ export const tauriApi: HedyApi = {
   deletePath: (copy, path) => invoke("delete_path", { copy, path }),
   duplicateFile: (copy, path) => invoke("duplicate_file", { copy, path }),
   onCloseRequested: (confirm) => {
-    // Tauri closes the window after the handler unless it prevents it.
-    let unlisten: (() => void) | null = null;
-    let cancelled = false;
-    void getCurrentWindow()
-      .onCloseRequested(async (event) => {
-        if (!(await confirm())) event.preventDefault();
-      })
-      .then((fn) => {
-        if (cancelled) fn();
-        else unlisten = fn;
-      });
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
+    closeGuards.add(confirm);
+    listenForClose();
+    return () => closeGuards.delete(confirm);
   },
   sendMessage: (id, text) => invoke("send_message", { id, text }),
   queued: (id) => invoke("queued", { id }),
