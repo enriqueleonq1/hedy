@@ -2039,10 +2039,11 @@ Only well-known constructions from RustCrypto and dalek, nothing home-made:
     next epoch (two joins at once), git takes the first to push. The second sees a rebase
     conflict, drops its clone and its new keys, and reports the error; a retry joins at the
     next number.
-  - A joiner trusts the chain it finds. A removed PC that still has push access could offer
-    a fork from the epoch before its removal. The PCs that already saw the real epoch refuse
-    the fork (pins, below), but a new PC cannot tell. So removing a PC must also revoke its
-    git access.
+  - A joiner, and a PC that has not synced since a removal, trusts the chain it finds. A
+    removed PC that still has push access could offer a fork from the epoch before its
+    removal. The PCs that already pinned the real epoch refuse the fork (`SyncTampered`), but
+    those cannot tell. So removing a PC must also revoke its git access.
+  - Every epoch must keep the recovery key as a member, with the same public keys.
 
 Crates: `chacha20poly1305`, `crypto_box` (`seal`), `ed25519-dalek`, `bip39` (`spanish`),
 `hkdf`, `hmac`, `sha2`, `zeroize` and `getrandom`. All MIT or Apache-2.0 (bip39: CC0).
@@ -2150,6 +2151,28 @@ Also changed:
 - The status lists the PCs of the pinned trusted epoch, with names signed by each PC.
 - A poisoned sync lock does not block later syncs.
 - The keyring entry hashes the canonical data folder.
+
+**Second review of the fixes.** Both reviewers re-ran their attacks on the fixed code: all
+blocked, and their six engine reproductions pass. They found five more problems, each now
+fixed with a regression test:
+
+| Problem | Fix |
+|---|---|
+| A git host could hide a member's batch for good (removing it for one sync moved the cursor past it) | Batches apply strictly in order; a gap stops that PC's batches until it is filled |
+| A failed first sync during setup lost the 12 words | Setup returns the words once the epoch is pushed, whatever the first sync does |
+| A body this version cannot read (a newer Hedy's) stopped reading and pushing, and the conflict repeated on every retry | It waits in the replica. This PC's batch is pushed even when applying fails, and a conflict is recorded once |
+| A remote renamed on one PC made both PCs re-send forever | Only the body counts as an edit, and edits keep the item's scope |
+| A crash between saving the pending batch and the counter could reuse a seq | Replaying a pending batch moves `sync.seq` past it |
+
+Also from that review:
+- A junk file in `vault/epochs` is ignored.
+- Pins that do not read fail closed.
+- The clone folder is never a relative path.
+- A reused row in a project not synced here sends no deletion.
+- An edit here over a deletion elsewhere is a conflict for the user.
+
+Still open, by design: a member with a wrong date (more than a day ahead) wins conflicts until
+its clock is fixed. Members are trusted, and the local clock is protected.
 
 **Checked empirically:**
 - A random simulation: three PCs add, edit and delete notes and sync in random order, 12 seeds
