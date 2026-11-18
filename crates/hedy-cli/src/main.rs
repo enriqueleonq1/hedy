@@ -237,8 +237,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 TeamCommand::Invite { admin, mine, .. } => {
                     team::invite(&hedy, &pick()?, admin, mine)
                 }
-                TeamCommand::Join { url, code, me, pc } => {
-                    team::join(&hedy, &url, code.as_deref(), me.as_deref(), pc.as_deref())
+                TeamCommand::Join { url, me, pc } => {
+                    team::join(&hedy, &url, me.as_deref(), pc.as_deref())
                 }
                 TeamCommand::Now => team::now_sync(&hedy, &pick()?),
                 TeamCommand::Link => team::link(&hedy, &dir, &pick()?),
@@ -251,9 +251,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 TeamCommand::Publish { id, everyone } => {
                     team::publish(&hedy, &pick()?, id, everyone)
                 }
-                TeamCommand::Review { id, accept, reject } => {
-                    team::review(&hedy, &pick()?, id.as_deref(), accept, reject)
-                }
+                TeamCommand::Review {
+                    id,
+                    accept,
+                    reject,
+                    yes,
+                } => team::review(&hedy, &pick()?, id.as_deref(), accept, reject, yes),
                 TeamCommand::Role { person, admin, .. } => {
                     team::role(&hedy, &pick()?, &person, admin)
                 }

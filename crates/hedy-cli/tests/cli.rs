@@ -2055,7 +2055,8 @@ fn team_without_a_team_explains_how_and_refuses_the_rest() {
             .stderr(predicate::str::contains("ningún equipo"));
     }
     // A typo in the code is caught before anything is cloned.
-    env.hedy(&["team", "join", "/no/existe.git", "7-zzzz", "--me", "Ana"])
+    env.hedy(&["team", "join", "/no/existe.git", "--me", "Ana"])
+        .write_stdin("7-zzzz\n")
         .assert()
         .failure()
         .stderr(predicate::str::contains("no es un código de invitación"));

@@ -391,7 +391,7 @@ impl Hedy {
             .into_iter()
             .find(|m| m.device.this_pc)
             .and_then(|m| m.seat)
-            .ok_or(AppError::SyncRemoved)?;
+            .ok_or(AppError::TeamRemoved)?;
         Ok(Me {
             space: space.clone(),
             device: status.device,
@@ -559,7 +559,12 @@ impl Hedy {
             {
                 person.name = name;
             }
-            person.devices.push(member.device);
+            // Each PC names itself: shown like any name from the repo.
+            let mut device = member.device;
+            if !device.name.trim().is_empty() {
+                device.name = shown_name(&device.name);
+            }
+            person.devices.push(device);
         }
         let mut people: Vec<TeamPerson> = people
             .into_values()
@@ -603,11 +608,7 @@ impl Hedy {
         if leaving {
             return self.finish_leaving(&space, result);
         }
-        // Said in a team's words (personal sync's speak of the 12 words).
-        let result = result.map_err(|error| match error {
-            AppError::SyncRemoved => AppError::TeamRemoved,
-            error => error,
-        });
+        let result = result.map_err(team_error);
         match &result {
             Ok(_) => self.clear_sync_setting(&space, LAST_ERROR)?,
             Err(error) => self.set_sync_setting(&space, LAST_ERROR, &shown_error(error))?,
@@ -2406,7 +2407,7 @@ impl Hedy {
             let _ = self.sync_remote.discard_local(&dir);
             return Err(error);
         }
-        self.sync_locked(space).map(drop)
+        self.sync_locked(space).map(drop).map_err(team_error)
     }
 
     /// The PCs of `person` in the team's trusted epoch.
@@ -2426,7 +2427,7 @@ impl Hedy {
     pub fn team_remove_person(&self, team: &str, person: &PersonId) -> AppResult<()> {
         let space = self.team_space(team)?;
         let _guard = self.sync_guard(&space)?;
-        self.sync_locked(&space)?;
+        self.sync_locked(&space).map_err(team_error)?;
         let me = self.team_me(&space)?;
         if *person == me.seat.person {
             return Err(AppError::SyncRemoveThisPc);
@@ -2443,7 +2444,7 @@ impl Hedy {
     pub fn team_set_role(&self, team: &str, person: &PersonId, role: Role) -> AppResult<()> {
         let space = self.team_space(team)?;
         let _guard = self.sync_guard(&space)?;
-        self.sync_locked(&space)?;
+        self.sync_locked(&space).map_err(team_error)?;
         let (_, members) = self.space_status(&space)?.ok_or(AppError::SyncNotSetUp)?;
         let current = members
             .iter()
@@ -2466,7 +2467,7 @@ impl Hedy {
     pub fn team_remove_pc(&self, team: &str, device: &DeviceId) -> AppResult<()> {
         let space = self.team_space(team)?;
         let _guard = self.sync_guard(&space)?;
-        self.sync_locked(&space)?;
+        self.sync_locked(&space).map_err(team_error)?;
         let me = self.team_me(&space)?;
         if *device == me.device {
             return Err(AppError::SyncRemoveThisPc);
@@ -2580,7 +2581,7 @@ impl Hedy {
         let me = match self.space_is_set_up(&space)? {
             true => match self.team_me(&space) {
                 Ok(me) => Some(me),
-                Err(AppError::SyncRemoved) => None,
+                Err(AppError::TeamRemoved) => None,
                 Err(error) => return Err(error),
             },
             false => None,
@@ -2669,6 +2670,15 @@ impl Hedy {
     }
 }
 
+/// An error said in a team's words: a PC taken out of the team is told so,
+/// not personal sync's way (which speaks of the 12 words).
+fn team_error(error: AppError) -> AppError {
+    match error {
+        AppError::SyncRemoved => AppError::TeamRemoved,
+        error => error,
+    }
+}
+
 /// The team's notes a search shows, and how much of each.
 const TEAM_MATCHES: usize = 8;
 const TEAM_MATCH_CHARS: usize = 400;
@@ -2705,7 +2715,10 @@ const TEAM_NAME_MAX: usize = 80;
 /// characters, never empty: how a name from the repo is shown, whoever
 /// wrote it.
 fn capped_name(typed: &str, max: usize) -> String {
-    let name: String = reveal_hidden(typed.trim()).chars().take(max).collect();
+    // One line: a new line or a tab in a name could pass for another line
+    // of what shows it.
+    let one_line = typed.split_whitespace().collect::<Vec<_>>().join(" ");
+    let name: String = reveal_hidden(&one_line).chars().take(max).collect();
     if name.trim().is_empty() {
         "?".into()
     } else {

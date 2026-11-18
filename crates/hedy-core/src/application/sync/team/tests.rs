@@ -1909,3 +1909,32 @@ fn only_a_note_of_the_teams_projects_is_published() {
     );
     assert!(ana.f.store.note(secret).unwrap().is_some());
 }
+
+#[test]
+fn names_from_other_pcs_stay_on_one_line_and_show_their_controls() {
+    let server = SyncServer::default();
+    let (ana, _) = create(&server);
+    let luis = invite(
+        &server,
+        &ana,
+        "Luis\n  ● Mallory  admin  Hacked",
+        Role::Member,
+        false,
+    );
+    // A PC name with a terminal escape.
+    luis.f
+        .store
+        .set_setting(
+            &Space::Team(luis.team.clone()).key(NAME),
+            Some("PC\u{1b}]0;PWNED\u{7}"),
+        )
+        .unwrap();
+    luis.f.clock.advance(4000);
+    luis.sync();
+    ana.sync();
+    let status = ana.f.hedy.team_status(&ana.team).unwrap();
+    let luis_person = status.people.iter().find(|p| !p.me).unwrap();
+    assert_eq!(luis_person.name, "Luis ● Mallory admin Hacked");
+    let pc = &luis_person.devices[0].name;
+    assert!(!pc.contains('\u{1b}') && pc.contains("⟦U+001B⟧"), "{pc}");
+}

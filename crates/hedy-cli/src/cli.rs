@@ -1036,22 +1036,14 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             "team join",
             "",
             tr!(
-                "Entra a un equipo con una invitación",
-                "Join a team with an invite"
+                "Entra a un equipo con una invitación (el código se pregunta sin mostrarlo, o se lee de la entrada)",
+                "Join a team with an invite (the code is asked, hidden, or read from stdin)"
             ),
         ),
         (
             "team join",
             "url",
             tr!("Dirección del repo del equipo", "The team repo's address"),
-        ),
-        (
-            "team join",
-            "code",
-            tr!(
-                "El código (si falta, se pregunta sin mostrarlo)",
-                "The code (asked, hidden, when missing)"
-            ),
         ),
         (
             "team join",
@@ -1148,6 +1140,14 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
         ),
         ("team review", "accept", tr!("Acéptala", "Accept it")),
         ("team review", "reject", tr!("Recházala", "Turn it down")),
+        (
+            "team review",
+            "yes",
+            tr!(
+                "Acepta sin mostrarla ni preguntar",
+                "Accept without showing it or asking"
+            ),
+        ),
         (
             "team role",
             "",
@@ -1656,7 +1656,6 @@ pub enum TeamCommand {
 
     Join {
         url: String,
-        code: Option<String>,
         #[arg(long)]
         me: Option<String>,
         #[arg(long)]
@@ -1690,6 +1689,8 @@ pub enum TeamCommand {
         accept: bool,
         #[arg(long, requires = "id", conflicts_with = "accept")]
         reject: bool,
+        #[arg(long, short)]
+        yes: bool,
     },
 
     #[command(group(clap::ArgGroup::new("new_role").required(true).args(["admin", "member"])))]

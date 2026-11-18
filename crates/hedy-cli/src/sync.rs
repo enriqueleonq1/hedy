@@ -40,7 +40,7 @@ pub(crate) fn now() -> i64 {
 
 /// What a name another PC signed must not carry into the terminal:
 /// controls, and the marks that reorder text (a name posing as another).
-fn hidden(c: char) -> bool {
+pub(crate) fn hidden(c: char) -> bool {
     c.is_control()
         || matches!(c, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
 }

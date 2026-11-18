@@ -13,21 +13,45 @@ use hedy_core::tr;
 
 use crate::commands::age_label;
 use crate::style::Style;
-use crate::sync::{confirmed, interactive, now, print_report, read_line};
+use crate::sync::{confirmed, hidden, interactive, now, print_report, read_line};
 
 /// The team a command is about: the one asked for (`--team`), else the
 /// current project's, else the only one.
+/// Always an id: a team named by its name, or one still joining (which has
+/// no name yet), is found by both.
 pub fn pick(hedy: &Hedy, dir: &Path, team: Option<&str>) -> Result<String> {
-    if let Some(team) = team {
-        return Ok(team.to_owned());
+    let teams = hedy.teams()?;
+    if let Some(team) = team.map(str::trim) {
+        let found: Vec<&str> = teams
+            .iter()
+            .filter(|t| t.id == team || t.name.trim().eq_ignore_ascii_case(team))
+            .map(|t| t.id.as_str())
+            .collect();
+        return match found.as_slice() {
+            [id] => Ok((*id).to_owned()),
+            [] => bail!(
+                "{}",
+                tr!(
+                    "esta PC no está en el equipo «{team}»",
+                    "this PC is not in the team \"{team}\""
+                )
+            ),
+            _ => bail!(
+                "{}",
+                tr!(
+                    "varios equipos se llaman «{team}»: usa su id (`hedy team` lo muestra)",
+                    "several teams are called \"{team}\": use its id (`hedy team` shows it)"
+                )
+            ),
+        };
     }
     if let Ok(Some(project)) = hedy.project_for(dir)
         && let Ok(status) = hedy.memory_home_status(&project.path)
         && let Some(MemoryHome::Team(id)) = status.home
+        && teams.iter().any(|t| t.id == id)
     {
         return Ok(id);
     }
-    let teams = hedy.teams()?;
     match teams.as_slice() {
         [only] => Ok(only.id.clone()),
         [] => bail!(
@@ -58,6 +82,23 @@ pub fn pick(hedy: &Hedy, dir: &Path, team: Option<&str>) -> Result<String> {
             )
         }
     }
+}
+
+/// What another PC wrote, fit for the terminal: one line, without controls
+/// or the marks that reorder text (it could fake a line, or move the cursor).
+fn clean(text: &str) -> String {
+    let text: String = text.chars().filter(|c| !hidden(*c)).collect();
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A note's text for the terminal: each of its lines cleaned and indented
+/// under the first.
+fn clean_text(text: &str) -> String {
+    text.lines()
+        .map(clean)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n    ")
 }
 
 fn role_label(role: Role) -> String {
@@ -95,7 +136,12 @@ pub fn status(hedy: &Hedy, dir: &Path, team: Option<&str>) -> Result<()> {
             println!("\n{}", s.section(&tr!("Equipos", "Teams")));
             for t in &teams {
                 let role = t.role.map(role_label).unwrap_or_default();
-                println!("  {}  {}", s.bold(&t.name), s.muted(role));
+                println!(
+                    "  {}  {}  {}",
+                    s.bold(clean(&t.name)),
+                    s.muted(role),
+                    s.muted(&t.id)
+                );
             }
             println!(
                 "\n{}",
@@ -132,7 +178,7 @@ fn print_status(s: &Style, status: &TeamStatus) {
     println!(
         "\n  {} {}  {}  {}",
         s.ok("●"),
-        s.bold(&t.name),
+        s.bold(clean(&t.name)),
         s.muted(role),
         s.muted(tr!("última: {last}", "last: {last}"))
     );
@@ -221,7 +267,7 @@ fn print_person(s: &Style, person: &TeamPerson) {
             let name = if pc.name.trim().is_empty() {
                 pc.id.as_str().to_owned()
             } else {
-                pc.name.clone()
+                clean(&pc.name)
             };
             match pc.this_pc {
                 true => format!("{name} {}", tr!("(esta PC)", "(this PC)")),
@@ -231,7 +277,7 @@ fn print_person(s: &Style, person: &TeamPerson) {
         .collect();
     println!(
         "  {}{me}  {}  {}",
-        s.bold(&person.name),
+        s.bold(clean(&person.name)),
         s.muted(role_label(person.role)),
         s.muted(pcs.join(", "))
     );
@@ -385,23 +431,17 @@ pub fn cancel_invite(hedy: &Hedy, team: &str, number: u32) -> Result<()> {
     Ok(())
 }
 
-/// `hedy team join <url> [code]`: the code is asked when missing (not
-/// echoed in a terminal).
-pub fn join(
-    hedy: &Hedy,
-    url: &str,
-    code: Option<&str>,
-    me: Option<&str>,
-    pc: Option<&str>,
-) -> Result<()> {
+/// `hedy team join <url>`: the code is asked (not echoed) or read from
+/// stdin, never taken as an argument (it would show in `ps` and stay in the
+/// shell's history).
+pub fn join(hedy: &Hedy, url: &str, me: Option<&str>, pc: Option<&str>) -> Result<()> {
     let s = Style::for_stdout();
-    let code = match code {
-        Some(code) => code.to_owned(),
-        None if std::io::stdin().is_terminal() => rpassword::prompt_password(tr!(
+    let code = match std::io::stdin().is_terminal() {
+        true => rpassword::prompt_password(tr!(
             "Código de invitación (no se muestra): ",
             "Invite code (hidden): "
         ))?,
-        None => read_line("")?,
+        false => read_line("")?,
     };
     let me = my_name(me)?;
     let pc = pc.map_or_else(|| hedy.default_device_name(), str::to_owned);
@@ -485,7 +525,11 @@ pub fn link(hedy: &Hedy, dir: &Path, team: &str) -> Result<()> {
 /// `hedy team notes`: the team layer first, then each project's.
 pub fn notes(hedy: &Hedy, team: &str) -> Result<()> {
     let s = Style::for_stdout();
-    let notes = hedy.team_notes(team)?;
+    let mut notes = hedy.team_notes(team)?;
+    // The team layer first, then each project's together.
+    notes.sort_by(|a, b| {
+        (!a.team_layer, &a.project, a.created_at).cmp(&(!b.team_layer, &b.project, b.created_at))
+    });
     if notes.is_empty() {
         println!(
             "{}",
@@ -518,10 +562,10 @@ pub fn notes(hedy: &Hedy, team: &str) -> Result<()> {
             .unwrap_or_default();
         println!(
             "  {} {}",
-            note.text,
+            clean_text(&note.text),
             s.muted(format!(
                 "— {}{project} · {}",
-                note.author,
+                clean(&note.author),
                 note.category.as_str()
             ))
         );
@@ -608,7 +652,7 @@ fn short(uid: &str) -> &str {
 }
 
 fn one_line(text: &str) -> String {
-    let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let text = clean(text);
     let cut: String = text.chars().take(90).collect();
     if cut.chars().count() < text.chars().count() {
         format!("«{cut}…»")
@@ -634,7 +678,7 @@ fn print_suggestion(s: &Style, suggestion: &TeamSuggestion) {
     println!(
         "  {}  {what}  {}",
         s.bold(short(&suggestion.uid)),
-        s.muted(format!("— {} · {layer}", suggestion.author))
+        s.muted(format!("— {} · {layer}", clean(&suggestion.author)))
     );
     if suggestion.hidden {
         println!(
@@ -650,7 +694,14 @@ fn print_suggestion(s: &Style, suggestion: &TeamSuggestion) {
 
 /// `hedy team review`: the suggestions; with an id, takes it (`--accept`)
 /// or turns it down (`--reject`).
-pub fn review(hedy: &Hedy, team: &str, id: Option<&str>, accept: bool, reject: bool) -> Result<()> {
+pub fn review(
+    hedy: &Hedy,
+    team: &str,
+    id: Option<&str>,
+    accept: bool,
+    reject: bool,
+    yes: bool,
+) -> Result<()> {
     let s = Style::for_stdout();
     let suggestions = hedy.team_suggestions(team)?;
     let Some(id) = id else {
@@ -682,6 +733,16 @@ pub fn review(hedy: &Hedy, team: &str, id: Option<&str>, accept: bool, reject: b
         );
         return Ok(());
     };
+    let id = id.trim();
+    if id.len() < 4 {
+        bail!(
+            "{}",
+            tr!(
+                "escribe al menos 4 caracteres del id de la sugerencia",
+                "type at least 4 characters of the suggestion's id"
+            )
+        );
+    }
     let found: Vec<&TeamSuggestion> = suggestions
         .iter()
         .filter(|x| x.uid == id || x.uid.ends_with(id))
@@ -705,6 +766,18 @@ pub fn review(hedy: &Hedy, team: &str, id: Option<&str>, accept: bool, reject: b
     };
     match (accept, reject) {
         (true, _) => {
+            // What is taken is what was shown (its author may change it).
+            if !yes {
+                print_suggestion(&s, suggestion);
+            }
+            let question = tr!(
+                "¿Aceptar esta sugerencia? [s/N] ",
+                "Accept this suggestion? [y/N] "
+            );
+            let hint = format!("hedy team review {id} --accept --team {team} --yes");
+            if !confirmed(yes, &question, &hint)? {
+                return Ok(());
+            }
             hedy.team_accept_suggestion(team, &suggestion.uid)?;
             println!("{} {}", s.ok("✓"), tr!("Aceptada.", "Accepted."));
         }
@@ -720,6 +793,10 @@ pub fn review(hedy: &Hedy, team: &str, id: Option<&str>, accept: bool, reject: b
 /// A person, by their name or the start of their id.
 fn find_person(status: &TeamStatus, who: &str) -> Result<PersonId> {
     let who = who.trim();
+    // A whole id is that person, whatever anyone is called.
+    if let Some(exact) = status.people.iter().find(|p| p.person.as_str() == who) {
+        return Ok(exact.person.clone());
+    }
     let found: Vec<&TeamPerson> = status
         .people
         .iter()
@@ -750,6 +827,11 @@ fn find_person(status: &TeamStatus, who: &str) -> Result<PersonId> {
 /// A PC, by its name or its id.
 fn find_pc(status: &TeamStatus, who: &str) -> Result<DeviceId> {
     let who = who.trim();
+    // A whole id is that PC, whatever another PC calls itself.
+    let pcs = status.people.iter().flat_map(|p| &p.devices);
+    if let Some(exact) = pcs.clone().find(|d| d.id.as_str() == who) {
+        return Ok(exact.id.clone());
+    }
     let found: Vec<DeviceId> = status
         .people
         .iter()
@@ -790,10 +872,36 @@ pub fn role(hedy: &Hedy, team: &str, who: &str, admin: bool) -> Result<()> {
     Ok(())
 }
 
+/// What `hedy team remove` takes out.
+enum Target {
+    Pc(DeviceId),
+    Person(PersonId),
+}
+
 /// `hedy team remove <person>` (admins), or `--pc` for one PC.
 pub fn remove(hedy: &Hedy, team: &str, who: &str, pc: bool, yes: bool) -> Result<()> {
     let s = Style::for_stdout();
     let status = hedy.team_status(team)?;
+    // Who, before asking: a wrong name fails before any "yes".
+    let target = if pc {
+        Target::Pc(find_pc(&status, who)?)
+    } else {
+        Target::Person(find_person(&status, who)?)
+    };
+    // The question names who it resolved to, not what was typed.
+    let who = &match &target {
+        Target::Pc(id) => format!("{who} ({})", id.as_str()),
+        Target::Person(person) => {
+            let found = status.people.iter().find(|p| p.person == *person);
+            let pcs = found.map_or(0, |p| p.devices.len());
+            let name = found.map_or_else(|| who.to_owned(), |p| clean(&p.name));
+            format!("{name} ({}, {pcs} PC)", person.as_str())
+        }
+    };
+    let hint = format!(
+        "hedy team remove {who}{} --team {team} --yes",
+        if pc { " --pc" } else { "" }
+    );
     let question = if pc {
         tr!(
             "¿Quitar la PC {who}? No podrá leer lo que el equipo guarde desde ahora. [s/N] ",
@@ -805,22 +913,25 @@ pub fn remove(hedy: &Hedy, team: &str, who: &str, pc: bool, yes: bool) -> Result
             "Remove {who} from the team? They cannot read what is new; their notes stay under their name. [y/N] "
         )
     };
-    if !confirmed(yes, &question, &format!("hedy team remove {who} --yes"))? {
+    if !confirmed(yes, &question, &hint)? {
         return Ok(());
     }
-    if pc {
-        hedy.team_remove_pc(team, &find_pc(&status, who)?)?;
-        println!("{} {}", s.ok("✓"), tr!("PC quitada.", "PC removed."));
-    } else {
-        hedy.team_remove_person(team, &find_person(&status, who)?)?;
-        println!(
-            "{} {}",
-            s.ok("✓"),
-            tr!(
-                "{who} ya no está en el equipo.",
-                "{who} is no longer in the team."
-            )
-        );
+    match target {
+        Target::Pc(device) => {
+            hedy.team_remove_pc(team, &device)?;
+            println!("{} {}", s.ok("✓"), tr!("PC quitada.", "PC removed."));
+        }
+        Target::Person(person) => {
+            hedy.team_remove_person(team, &person)?;
+            println!(
+                "{} {}",
+                s.ok("✓"),
+                tr!(
+                    "{who} ya no está en el equipo.",
+                    "{who} is no longer in the team."
+                )
+            );
+        }
     }
     let url = &status.summary.url;
     println!(
@@ -858,10 +969,28 @@ pub fn rename(hedy: &Hedy, team: &str, name: &str, person: Option<&str>) -> Resu
 pub fn leave(hedy: &Hedy, team: &str, yes: bool, here: bool) -> Result<()> {
     let s = Style::for_stdout();
     if here {
-        let question = tr!(
-            "¿Olvidar el equipo en esta PC sin pedir salir? Sigue en el equipo hasta que un admin la quite. [s/N] ",
-            "Forget the team on this PC without asking to leave? It stays in the team until an admin removes it. [y/N] "
-        );
+        let status = hedy.team_status(team).ok();
+        let last_admin = status.as_ref().is_some_and(|st| {
+            let admin_pcs = st
+                .people
+                .iter()
+                .filter(|p| p.role == Role::Admin)
+                .flat_map(|p| &p.devices)
+                .filter(|d| !d.this_pc)
+                .count();
+            st.summary.role == Some(Role::Admin) && admin_pcs == 0 && st.people.len() > 1
+        });
+        let question = if last_admin {
+            tr!(
+                "Eres el único admin: si olvidas el equipo aquí, nadie podrá invitar, quitar ni revisar, y solo las 12 palabras del equipo lo recuperan. Haz admin a alguien antes (`hedy team role`). ¿Olvidarlo igual? [s/N] ",
+                "You are the only admin: if you forget the team here, nobody can invite, remove or review, and only the team's 12 words bring it back. Make someone an admin first (`hedy team role`). Forget it anyway? [y/N] "
+            )
+        } else {
+            tr!(
+                "¿Olvidar el equipo en esta PC sin pedir salir? Sigue en el equipo hasta que un admin la quite. [s/N] ",
+                "Forget the team on this PC without asking to leave? It stays in the team until an admin removes it. [y/N] "
+            )
+        };
         if confirmed(yes, &question, "hedy team leave --here --yes")? {
             hedy.team_forget(team)?;
             println!(

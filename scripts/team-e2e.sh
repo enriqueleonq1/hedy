@@ -62,9 +62,9 @@ ok "Ana es su admin"
 
 step "Ana invita a Luis (miembro) y a Marta (admin)"
 CODE=$(invite ana)
-h luis team join "$URL" "$CODE" --me Luis --pc "PC de Luis" | grep -q "Pedido enviado" || fail "Luis no pidió entrar"
+echo "$CODE" | h luis team join "$URL" --me Luis --pc "PC de Luis" | grep -q "Pedido enviado" || fail "Luis no pidió entrar"
 CODE=$(invite ana --admin)
-h marta team join "$URL" "$CODE" --me Marta --pc "PC de Marta" >/dev/null
+echo "$CODE" | h marta team join "$URL" --me Marta --pc "PC de Marta" >/dev/null
 h ana team now >/dev/null
 h luis team now | grep -q "Ya estás en el equipo" || fail "Luis no entró"
 h marta team now | grep -q "Ya estás en el equipo" || fail "Marta no entró"
@@ -74,7 +74,7 @@ ok "los dos entraron, con su rol"
 step "Un código equivocado quema la invitación"
 CODE=$(invite ana)
 WRONG="${CODE%%-*}-abaco-abaco-abaco-abaco"
-h laptop team join "$URL" "$WRONG" --me Intruso --pc X >/dev/null
+echo "$WRONG" | h laptop team join "$URL" --me Intruso --pc X >/dev/null
 h ana team now >/dev/null
 h ana team | grep -q "no funcionó" || fail "Ana no ve la invitación quemada"
 h laptop team now >/dev/null 2>&1 && fail "el intruso sigue esperando"
@@ -83,7 +83,7 @@ ok "quemada, y el intruso no entra"
 
 step "Luis suma su laptop (la firma un admin)"
 CODE=$(invite luis --mine)
-h laptop team join "$URL" "$CODE" --me Luis --pc Laptop >/dev/null
+echo "$CODE" | h laptop team join "$URL" --me Luis --pc Laptop >/dev/null
 h luis team now >/dev/null
 h ana team now >/dev/null
 h laptop team now | grep -q "Ya estás en el equipo" || fail "la laptop no entró"
@@ -98,7 +98,7 @@ h luis team now >/dev/null
 h marta team now >/dev/null
 ID=$(h marta team review | grep -E '^  [0-9a-f]{6}  ' | head -1 | awk '{print $1}')
 [ -n "$ID" ] || fail "Marta no ve la sugerencia"
-h marta team review "$ID" --accept >/dev/null
+h marta team review "$ID" --accept --yes >/dev/null
 h marta team now >/dev/null
 for pc in ana luis laptop marta; do h "$pc" team now >/dev/null; done
 for pc in ana luis laptop marta; do
