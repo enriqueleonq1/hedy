@@ -18,6 +18,10 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Prompt templates from the CLI: `hedy template list|add <name> [--project] --text …|remove <name>`
 - Health check (CLIs and their versions, accounts, Hedy, environment): `hedy doctor`
 - Running and recent tasks across projects: `hedy tasks`
+- Personal sync (docs/sync.md): `hedy sync` (`setup <url>`, `join <url>`, `now`, `conflicts`,
+  `resolve`, `owner`, `project`, `remove <pc>`, `leave`). End to end against an empty repo:
+  `scripts/sync-e2e.sh <url>` (real binary) and
+  `HEDY_E2E_URL=<url> cargo test -p hedy-app -- --ignored sync_ipc` (the app's commands)
 - App (from `app/`): `npm install`, then `npm run tauri dev`; UI only with sample data:
   `npm run dev` (`?theme=light|dark`, `?lang=es|en`, `?onboarding=1`, `#accounts`, `#settings`,
   `#activity` for the task board, `#sync` for the sync card)

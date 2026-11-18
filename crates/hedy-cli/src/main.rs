@@ -23,6 +23,13 @@ use cli::{
 use style::Style;
 
 fn main() -> ExitCode {
+    // Like other Unix tools: `hedy … | head` ends quietly when the reader
+    // closes the pipe, instead of panicking on the next print.
+    #[cfg(unix)]
+    // SAFETY: called first, before any thread starts.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     // Claude Code runs this binary as its `PreToolUse` hook for `hedy ask`.
     if std::env::args().skip(1).eq(adapters::hook::HOOK_ARGS) {
         return ExitCode::from(u8::try_from(adapters::hook::run()).unwrap_or(1));

@@ -2033,6 +2033,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-notification",
+ "tempfile",
  "whoami",
 ]
 
@@ -2047,6 +2048,7 @@ dependencies = [
  "clap_complete",
  "ctrlc",
  "hedy-core",
+ "libc",
  "predicates",
  "rpassword",
  "serde_json",

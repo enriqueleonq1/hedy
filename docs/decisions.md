@@ -2496,5 +2496,39 @@ removal) found the notes and templates identical in every pair.
 - An epoch written by a newer Hedy (another format) is now ignored rather than fatal, like any
   epoch this version cannot check.
 
-**Next phase:**
-7. A real test.
+### A real test (phase 7)
+
+- **Against a real private GitHub repo**, with the user's own HTTPS credential in git's
+  credential cache (Hedy kept no token):
+  - **The app** (`sync_ipc_end_to_end`, `app/src-tauri/src/sync.rs`): the real Tauri commands
+    over IPC, with the app's own context and capabilities and the arguments `tauriApi.ts`
+    sends, on two PCs:
+    - a token URL is refused, and the repo is private;
+    - setup and join;
+    - the owner question and the memory homes;
+    - a project note and a global one;
+    - a conflict settled from the app;
+    - a project made local;
+    - a removal, and leaving.
+
+    49 s.
+  - **The CLI** (`scripts/sync-e2e.sh`), the real binary on four PCs:
+    - a token URL is refused, and wrong words leave no clone;
+    - three PCs join and templates travel;
+    - concurrent syncs from two PCs;
+    - leaving and joining again with nothing duplicated;
+    - a removed PC is told and is no longer listed;
+    - 105 syncs compact to 9 batches and one snapshot;
+    - a PC behind and a new one both get all 116 templates.
+
+    444 s, and the keyring was empty at the end.
+  - **Both repos**, across their whole history: no template name, note text, PC name, project
+    name or email of the user, and every commit is `Hedy <sync@hedy.invalid>`.
+- **The same runs against a local bare repo** need no network: the default of both.
+- **Not automated:** driving the real window (no WebKitWebDriver on the machine). The UI is
+  covered by its tests against `MockApi` and by headless screenshots, and its wiring to the
+  backend by the IPC test above.
+- **Also fixed:** `hedy … | head` panicked when the reader closed the pipe. The CLI now ends
+  quietly, like other Unix tools.
+
+User guide: [sync.md](sync.md).

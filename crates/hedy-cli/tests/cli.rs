@@ -2022,3 +2022,20 @@ fn a_join_that_fails_leaves_no_clone_behind() {
         .failure();
     assert!(!env.path("data").join("sync").join("repo").exists());
 }
+
+#[cfg(unix)]
+#[test]
+fn a_closed_pipe_ends_quietly() {
+    let env = Env::new();
+    let out = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            // The reader closes its end at once: every print hits a closed pipe.
+            "{} sync | (exec <&-; sleep 0.5)",
+            assert_cmd::cargo::cargo_bin("hedy").display()
+        ))
+        .env("HEDY_DATA_DIR", env.path("data"))
+        .output()
+        .unwrap();
+    assert!(!String::from_utf8_lossy(&out.stderr).contains("panicked"));
+}
