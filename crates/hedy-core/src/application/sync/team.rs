@@ -1038,7 +1038,7 @@ impl Hedy {
                     let author = roster
                         .get(&note.person)
                         .cloned()
-                        .unwrap_or_else(|| note.author.clone());
+                        .unwrap_or_else(|| shown_name(&note.author));
                     Some((c.scope, author, note))
                 })
                 .collect(),
@@ -1270,7 +1270,7 @@ impl Hedy {
                     author: roster
                         .get(&note.person)
                         .cloned()
-                        .unwrap_or(note.author.clone()),
+                        .unwrap_or_else(|| shown_name(&note.author)),
                     created_at: note.created_at,
                     updated_at: note.updated_at,
                 })
@@ -1321,7 +1321,10 @@ impl Hedy {
                 category: s.category,
                 topic: s.topic,
                 person: s.person.clone(),
-                author: roster.get(&s.person).cloned().unwrap_or(s.author),
+                author: roster
+                    .get(&s.person)
+                    .cloned()
+                    .unwrap_or_else(|| shown_name(&s.author)),
                 can_review,
                 created_at: s.created_at,
             });
