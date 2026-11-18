@@ -898,10 +898,13 @@ pub fn remove(hedy: &Hedy, team: &str, who: &str, pc: bool, yes: bool) -> Result
             format!("{name} ({}, {pcs} PC)", person.as_str())
         }
     };
-    let hint = format!(
-        "hedy team remove {who}{} --team {team} --yes",
-        if pc { " --pc" } else { "" }
-    );
+    // By its id: a command the shell takes as is.
+    let hint = match &target {
+        Target::Pc(id) => format!("hedy team remove {} --pc --team {team} --yes", id.as_str()),
+        Target::Person(person) => {
+            format!("hedy team remove {} --team {team} --yes", person.as_str())
+        }
+    };
     let question = if pc {
         tr!(
             "¿Quitar la PC {who}? No podrá leer lo que el equipo guarde desde ahora. [s/N] ",
