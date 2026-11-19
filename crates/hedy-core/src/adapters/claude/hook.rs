@@ -42,12 +42,13 @@ fn decide_with(input: &str, guard: Option<&Path>) -> Option<String> {
     let tool = input["tool_name"].as_str()?;
     let cwd = PathBuf::from(input["cwd"].as_str().unwrap_or("/"));
     let reason = protected_file_reason(tool, &input["tool_input"], &cwd)
+        .or_else(|| linked_protected(&input["tool_input"], &cwd))
         .or_else(|| {
             let root = whole_search_root(tool, &input["tool_input"], &cwd)?;
             let name = protected_inside(&root)?;
             Some(tr!(
-                "La búsqueda leería «{name}» (archivo protegido) sin nombrarlo: acótala con glob o type, o pide solo los nombres de los archivos.",
-                "The search would read «{name}» (protected file) without naming it: narrow it with glob or type, or ask only for file names."
+                "La búsqueda leería «{name}» (archivo protegido) sin nombrarlo: acótala con un glob (por ejemplo *.ts), o pide solo los nombres de los archivos.",
+                "The search would read «{name}» (protected file) without naming it: narrow it with a glob (for example *.ts), or ask only for file names."
             ))
         })
         .or_else(|| {
@@ -64,20 +65,31 @@ fn decide_with(input: &str, guard: Option<&Path>) -> Option<String> {
     )
 }
 
-/// Folders a search skips anyway, and that are too large to look through.
-const SKIPPED_DIRS: &[&str] = &[
-    ".git",
-    "node_modules",
-    "target",
-    "dist",
-    "build",
-    ".venv",
-    "vendor",
-    ".hedy",
-];
-/// How deep and how many entries the look for a protected file goes.
-const PROTECTED_DEPTH: usize = 6;
+/// Folders too large to look through that hold no project secrets: git's
+/// own, and installed dependencies.
+const SKIPPED_DIRS: &[&str] = &[".git", "node_modules"];
+/// How deep and how many entries the look for a protected file goes; past
+/// either it says there may be one (a search that large is narrowed first).
+const PROTECTED_DEPTH: usize = 12;
 const PROTECTED_ENTRIES: usize = 20_000;
+
+/// A file the tool names that is a link to a protected file (`docs/setup.txt`
+/// → `../.env`): the name alone says nothing.
+fn linked_protected(input: &Value, cwd: &Path) -> Option<String> {
+    ["file_path", "notebook_path", "path"]
+        .iter()
+        .filter_map(|key| input[*key].as_str())
+        .find_map(|path| {
+            let real = std::fs::canonicalize(cwd.join(path)).ok()?;
+            let name = real.file_name()?.to_string_lossy().into_owned();
+            is_blocked_name(&name).then(|| {
+                tr!(
+                    "Hedy no permite tocar «{name}» (archivo protegido), tampoco por un enlace.",
+                    "Hedy does not allow touching «{name}» (protected file), not through a link either."
+                )
+            })
+        })
+}
 
 /// The name of a protected file under `root`, if any (a file `root` itself
 /// counts too). Past its limits it says there may be one: a search that
@@ -103,11 +115,21 @@ fn protected_inside(root: &Path) -> Option<String> {
                 continue;
             };
             if kind.is_dir() {
-                if depth < PROTECTED_DEPTH && !SKIPPED_DIRS.contains(&name.as_str()) {
-                    stack.push((entry.path(), depth + 1));
+                if SKIPPED_DIRS.contains(&name.as_str()) {
+                    continue;
                 }
+                if depth >= PROTECTED_DEPTH {
+                    return Some(".env".into());
+                }
+                stack.push((entry.path(), depth + 1));
             } else if is_blocked_name(&name) {
                 return Some(name);
+            } else if kind.is_symlink()
+                && let Ok(real) = std::fs::canonicalize(entry.path())
+                && let Some(target) = real.file_name().map(|n| n.to_string_lossy().into_owned())
+                && is_blocked_name(&target)
+            {
+                return Some(target);
             }
         }
     }
@@ -267,6 +289,12 @@ mod tests {
             decide_with(&input("Grep", json!({"pattern": "KEY"})), None),
             None
         );
+        // A link to it reads it too.
+        std::os::unix::fs::symlink(dir.join("src/config/.env"), dir.join("docs.txt")).unwrap();
+        let read = |file: &str| input("Read", json!({"file_path": file}));
+        assert!(decide_with(&read("docs.txt"), None).is_some());
+        assert_eq!(decide_with(&read("src/app.ts"), None), None);
+        std::fs::remove_file(dir.join("docs.txt")).unwrap();
         // A protected file in a skipped folder (dependencies) does not count.
         std::fs::remove_file(dir.join("src/config/.env")).unwrap();
         std::fs::create_dir_all(dir.join("node_modules/x")).unwrap();

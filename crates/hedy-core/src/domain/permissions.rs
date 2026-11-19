@@ -71,7 +71,50 @@ fn matches(pattern: &str, name: &str) -> bool {
 }
 
 pub(crate) fn is_blocked_name(name: &str) -> bool {
-    DEFAULT_BLOCKED.iter().any(|p| matches(p, name))
+    // On a disk that ignores case, `.ENV` opens `.env`.
+    let name = name.to_lowercase();
+    DEFAULT_BLOCKED.iter().any(|p| matches(p, &name))
+}
+
+/// A search glob (Grep's `glob`, `rg -g`, `grep --include`) that can pick a
+/// blocked file. Unlike the shell's, its `*` and `?` also match a leading
+/// dot (`*env` picks `.env`), and it takes `{a,b}`. A negated one (`!…`)
+/// leaves files out, so it picks none.
+pub fn search_glob_hits_blocked(glob: &str) -> Option<String> {
+    expand_braces(glob).into_iter().find_map(|alt| {
+        if alt.starts_with('!') {
+            return None;
+        }
+        let name = alt.rsplit('/').next().unwrap_or(&alt).to_lowercase();
+        let hit = is_blocked_name(&name)
+            || (name.contains(['*', '?', '['])
+                && DEFAULT_BLOCKED.iter().any(|blocked| {
+                    [blocked.replace('*', ""), blocked.replace('*', "x")]
+                        .iter()
+                        .any(|sample| matches(&name, sample))
+                }));
+        hit.then_some(alt)
+    })
+}
+
+/// `a{b,c}d` as `abd` and `acd` (at most 64 forms).
+fn expand_braces(glob: &str) -> Vec<String> {
+    let Some(open) = glob.find('{') else {
+        return vec![glob.to_owned()];
+    };
+    let Some(close) = glob[open..].find('}').map(|c| open + c) else {
+        return vec![glob.to_owned()];
+    };
+    let (head, tail) = (&glob[..open], &glob[close + 1..]);
+    let mut out = Vec::new();
+    for alt in glob[open + 1..close].split(',') {
+        for rest in expand_braces(tail) {
+            if out.len() < 64 {
+                out.push(format!("{head}{alt}{rest}"));
+            }
+        }
+    }
+    out
 }
 
 /// Whether the file at `path` (relative or absolute) is one agents never
@@ -235,6 +278,12 @@ pub fn protected_file_reason(tool: &str, input: &Value, work_dir: &Path) -> Opti
         {
             return deny(name);
         }
+        // A search glob, read as ripgrep reads it (`*env` picks `.env`).
+        if tool == "Grep"
+            && let Some(name) = input["glob"].as_str().and_then(search_glob_hits_blocked)
+        {
+            return deny(&name);
+        }
     }
     if tool == "Bash"
         && let Some(command) = input["command"].as_str()
@@ -259,40 +308,73 @@ pub fn whole_search_root(tool: &str, input: &Value, work_dir: &Path) -> Option<P
     match tool {
         "Grep" => {
             let content = input["output_mode"].as_str() == Some("content");
-            let narrowed = input["glob"].as_str().is_some() || input["type"].as_str().is_some();
+            // A glob narrows it (one that picks a protected file is denied
+            // apart); a type does not (ripgrep's `sh` holds `.env`).
+            let glob = input["glob"].as_str();
+            let narrowed = glob.is_some_and(|g| search_glob_hits_blocked(g).is_none());
             (content && !narrowed)
                 .then(|| normalize(work_dir, Path::new(input["path"].as_str().unwrap_or("."))))
         }
         "Bash" => {
             let words = shell_words(input["command"].as_str()?);
             let program = |w: &str| w.rsplit('/').next().unwrap_or(w).to_owned();
-            let grep = words
-                .iter()
-                .any(|w| matches!(program(w).as_str(), "grep" | "egrep" | "fgrep"))
-                && words.iter().any(|w| {
-                    w == "--recursive"
-                        || w == "--dereference-recursive"
-                        || (w.starts_with('-') && !w.starts_with("--") && w.contains(['r', 'R']))
-                });
-            let searcher = words
-                .iter()
-                .any(|w| matches!(program(w).as_str(), "rg" | "ag" | "ack"));
-            // Narrowed to some files, or showing only names or counts.
-            let narrowed = words.iter().any(|w| {
-                [
-                    "--include",
-                    "--glob",
-                    "--type",
-                    "-g",
-                    "-t",
-                    "--files-with-matches",
-                    "--count",
-                ]
-                .iter()
-                .any(|flag| w == flag || w.starts_with(&format!("{flag}=")))
-                    || (w.starts_with('-') && !w.starts_with("--") && w.contains(['l', 'L', 'c']))
+            let has = |names: &[&str]| words.iter().any(|w| names.contains(&program(w).as_str()));
+            let short = |letters: &[char]| {
+                words
+                    .iter()
+                    .any(|w| w.starts_with('-') && !w.starts_with("--") && w.contains(letters))
+            };
+            let long = |names: &[&str]| {
+                words.iter().any(|w| {
+                    names
+                        .iter()
+                        .any(|n| w == n || w.starts_with(&format!("{n}=")))
+                })
+            };
+            // The globs it is narrowed to, and whether one picks a protected file.
+            let mut globs: Vec<&str> = Vec::new();
+            for (i, w) in words.iter().enumerate() {
+                if matches!(w.as_str(), "-g" | "--glob" | "--iglob" | "--include") {
+                    globs.extend(words.get(i + 1).map(String::as_str));
+                }
+                for flag in ["--glob=", "--iglob=", "--include="] {
+                    globs.extend(w.strip_prefix(flag));
+                }
+                if let Some(glob) = w.strip_prefix("-g").filter(|g| !g.is_empty()) {
+                    globs.push(glob);
+                }
+            }
+            let glob_hits = globs.iter().any(|g| search_glob_hits_blocked(g).is_some());
+            let by_glob = !globs.is_empty() && !glob_hits;
+            let grep = has(&["grep", "egrep", "fgrep"]);
+            let recursive = short(&['r', 'R'])
+                || long(&["--recursive", "--dereference-recursive"])
+                // The shell's words split `--directories=recurse` at the `=`.
+                || words
+                    .windows(2)
+                    .any(|p| matches!(p[0].as_str(), "-d" | "--directories") && p[1] == "recurse");
+            let grep_names = short(&['l', 'L', 'c'])
+                || long(&["--files-with-matches", "--files-without-match", "--count"]);
+            let searcher = has(&["rg", "ag", "ack"]);
+            // ripgrep's `-L` follows links: it narrows nothing.
+            let searcher_names = words.iter().any(|w| {
+                matches!(
+                    w.as_str(),
+                    "-l" | "-c"
+                        | "--files-with-matches"
+                        | "--files-without-match"
+                        | "--count"
+                        | "--files"
+                )
             });
-            ((grep || searcher) && !narrowed).then(|| work_dir.to_owned())
+            let git_grep = words
+                .windows(2)
+                .any(|p| program(&p[0]) == "git" && p[1] == "grep");
+            let whole = glob_hits
+                || git_grep
+                || (grep && recursive && !grep_names && !by_glob)
+                || (searcher && !searcher_names && !by_glob);
+            whole.then(|| work_dir.to_owned())
         }
         _ => None,
     }
@@ -356,6 +438,51 @@ mod tests {
             root("Bash", json!({"command": "grep KEY src/app.ts"})),
             None
         );
+    }
+
+    #[test]
+    fn search_globs_are_read_as_ripgrep_reads_them() {
+        for glob in [
+            "*env",
+            "?env",
+            "{*.ts,.env}",
+            "**/.ENV",
+            "*.pem",
+            "config/*",
+        ] {
+            // `config/*` picks `config/.env` too.
+            assert!(search_glob_hits_blocked(glob).is_some(), "{glob}");
+        }
+        assert_eq!(search_glob_hits_blocked("!*.env"), None);
+        assert_eq!(search_glob_hits_blocked("*.ts"), None);
+        let wt = Path::new(WT);
+        for glob in ["*env", "?env", "{*.ts,.env}"] {
+            let input = json!({"pattern": "K", "output_mode": "content", "glob": glob});
+            assert!(
+                protected_file_reason("Grep", &input, wt).is_some(),
+                "{glob}"
+            );
+        }
+        let typed = json!({"pattern": "K", "output_mode": "content", "type": "sh"});
+        assert!(whole_search_root("Grep", &typed, wt).is_some());
+        assert!(is_blocked_name(".ENV") && is_protected_path("conf/ID_RSA"));
+    }
+
+    #[test]
+    fn shell_searches_that_read_everything_are_seen() {
+        let wt = Path::new(WT);
+        let whole =
+            |command: &str| whole_search_root("Bash", &json!({"command": command}), wt).is_some();
+        assert!(whole("rg -L --hidden --no-ignore K"));
+        assert!(whole("git grep --no-index K"));
+        assert!(whole("grep -d recurse K ."));
+        assert!(whole("grep --directories=recurse K ."));
+        assert!(whole("rg K -g '*env'"));
+        assert!(whole("rg K --glob=.env"));
+        assert!(!whole("rg K -g '*.ts'"));
+        assert!(!whole("rg -l K"));
+        assert!(!whole("grep -rl K ."));
+        assert!(!whole("grep K src/app.ts"));
     }
 
     #[test]
