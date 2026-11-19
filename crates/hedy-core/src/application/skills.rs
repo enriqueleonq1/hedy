@@ -83,7 +83,7 @@ pub struct SkillChange {
 }
 
 /// The approved skill a proposal would update: same name, same scope.
-fn update_target(skills: &[Skill], proposal: &Skill) -> Option<Skill> {
+pub(super) fn update_target(skills: &[Skill], proposal: &Skill) -> Option<Skill> {
     skills
         .iter()
         .find(|s| {
@@ -293,7 +293,9 @@ impl Hedy {
                     },
                 )?;
                 self.store.delete_skill(proposal.id)?;
-                self.skill_or_error(target.id)?
+                let updated = self.skill_or_error(target.id)?;
+                self.follow_outside(&target, Some(&updated), &mut files);
+                updated
             }
             None => {
                 self.store.set_skill_status(id, SkillStatus::Approved)?;
@@ -365,6 +367,7 @@ impl Hedy {
             if old.name != skill.name || old.project != skill.project {
                 files.extend(self.uninstall_skill(&old)?);
             }
+            self.follow_outside(&old, Some(&skill), &mut files);
             files.extend(self.install_skill(&skill)?);
             self.refresh_skills_plugins();
         }
@@ -378,7 +381,8 @@ impl Hedy {
         self.store.delete_skill(id)?;
         self.forget_skill_trial(id);
         if skill.status == SkillStatus::Approved {
-            let files = self.uninstall_skill(&skill)?;
+            let mut files = self.uninstall_skill(&skill)?;
+            self.follow_outside(&skill, None, &mut files);
             self.refresh_skills_plugins();
             return Ok(files);
         }
@@ -419,7 +423,7 @@ impl Hedy {
     /// Whether a skill file's path in `dir` goes through a symbolic link: a
     /// repository may link `.agents/skills` to a folder git tracks or to one
     /// outside it, where Hedy's files must never land.
-    fn through_link(&self, dir: &Path, file: &Path) -> bool {
+    pub(super) fn through_link(&self, dir: &Path, file: &Path) -> bool {
         let mut path = dir.to_path_buf();
         file.components().any(|part| {
             path.push(part);
@@ -487,7 +491,7 @@ impl Hedy {
 
     /// The folders a removed skill file leaves empty: `<name>`, `skills`,
     /// `.claude` or `.agents`. A link is never followed or removed.
-    fn remove_empty_skill_dirs(
+    pub(super) fn remove_empty_skill_dirs(
         &self,
         dir: &Path,
         folder: SkillFolder,
@@ -514,7 +518,8 @@ impl Hedy {
             return;
         };
         for skill in skills {
-            if skill.status == SkillStatus::Approved {
+            // One the user asked to use outside Hedy too is not a leftover.
+            if skill.status == SkillStatus::Approved && !self.skill_outside(skill.id) {
                 self.tidy_skill(project, &skill, files);
             }
         }
@@ -615,6 +620,8 @@ impl Hedy {
     /// `hedy`. After every change to the skills and when the app starts.
     /// Under the sessions' lock, so it never races a launch here. Best effort.
     pub fn refresh_skills_plugins(&self) {
+        // Copies the user asked for outside Hedy follow too.
+        self.refresh_outside();
         let _launches = self.live.lock().unwrap();
         let Ok(entries) = self.fs.entries(&self.skills_plugins_root()) else {
             return;

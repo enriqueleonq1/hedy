@@ -30,6 +30,7 @@ mod rule_check;
 mod settings;
 mod ship;
 mod skill_check;
+mod skill_library;
 mod skill_transfer;
 mod skill_trial;
 mod skills;
@@ -81,6 +82,7 @@ pub use ship::{
     FolderStatus, NewPullRequest, PullRequestDraft, Pulled, Pushed, ShipError, ShipState,
 };
 pub use skill_check::SkillReview;
+pub use skill_library::SkillOverview;
 pub use skill_transfer::{
     ExportReport, ImportCandidate, ImportPreview, ImportProblem, ImportReport,
 };

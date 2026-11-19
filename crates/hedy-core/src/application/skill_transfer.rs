@@ -347,8 +347,28 @@ impl Hedy {
             }
             skills.retain(|s| wanted.contains(&s.name));
         }
+        self.write_exports(&skills, dest)
+    }
+
+    /// Exports approved skills by id, from any project (the app's skills
+    /// section), as [`Hedy::export_skills`] does: two with the same name
+    /// cannot both go, and the second is reported as skipped.
+    pub fn export_skills_by_id(&self, ids: &[i64], dest: &Path) -> AppResult<ExportReport> {
+        let mut skills = Vec::new();
+        for id in ids {
+            let skill = self.skill_or_error(*id)?;
+            if skill.status != SkillStatus::Approved {
+                return Err(AppError::SkillNotFound(id.to_string()));
+            }
+            skills.push(skill);
+        }
+        skills.sort_by_key(|s| s.project.is_none());
+        self.write_exports(&skills, dest)
+    }
+
+    fn write_exports(&self, skills: &[Skill], dest: &Path) -> AppResult<ExportReport> {
         let mut report = ExportReport::default();
-        for skill in &skills {
+        for skill in skills {
             let folder = dest.join(&skill.name);
             let path = folder.join(SKILL_FILE);
             let written = !self.fs.is_symlink(&folder)

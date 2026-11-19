@@ -8,6 +8,7 @@ mod dto;
 mod events;
 mod rules;
 mod ship;
+mod skill_section;
 mod sync;
 mod team;
 mod terminal;
@@ -137,6 +138,18 @@ pub fn run() {
             commands::approve_skill,
             commands::reject_skill,
             commands::remove_skill,
+            skill_section::skills_overview,
+            skill_section::set_skill_outside,
+            skill_section::preview_skill_import,
+            skill_section::review_skill_import,
+            skill_section::import_skills,
+            skill_section::review_skill,
+            skill_section::export_skills,
+            skill_section::propose_trial_tasks,
+            skill_section::trial_check,
+            skill_section::start_skill_trial,
+            skill_section::cancel_skill_trial,
+            skill_section::take_trial_outcome,
             commands::project_status,
             commands::project_usage,
             commands::usage_summary,

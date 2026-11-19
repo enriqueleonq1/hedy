@@ -76,6 +76,8 @@ pub enum AppError {
     #[error("{}", self.message())]
     TrialRun,
     #[error("{}", self.message())]
+    SkillOutsideProjectOnly,
+    #[error("{}", self.message())]
     EmptyPrompt,
     #[error("{}", self.message())]
     ProviderNotYetSupported(Provider),
@@ -530,10 +532,14 @@ impl AppError {
             Self::TrialSkillOutside(path) => {
                 let path = path.display();
                 tr!(
-                    "la habilidad también está en {path}, así que la ejecución sin ella la vería; quítala de ahí para probarla",
-                    "the skill is also at {path}, so the run without it would see it; remove it from there to try it"
+                    "la habilidad también está en {path}, así que la ejecución sin ella la vería; desactiva «Usar también fuera de Hedy» o quítala de ahí para probarla",
+                    "the skill is also at {path}, so the run without it would see it; turn off «Use outside Hedy too» or remove it from there to try it"
                 )
             }
+            Self::SkillOutsideProjectOnly => tr!(
+                "solo una habilidad aprobada de un proyecto se puede usar también fuera de Hedy",
+                "only an approved project skill can be used outside Hedy too"
+            ),
             Self::TrialRun => tr!(
                 "es una ejecución de prueba de una habilidad: no se acepta ni se continúa, se descarta sola al terminar",
                 "it is a trial run of a skill: it cannot be accepted or continued, it is discarded on its own when it ends"
