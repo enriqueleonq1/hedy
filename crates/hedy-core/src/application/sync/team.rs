@@ -1072,25 +1072,32 @@ impl Hedy {
             .collect())
     }
 
-    /// The team's project ids that a protected project on this PC holds
-    /// (rule 4: their notes only go to its account), and whether every
-    /// project of the team here is protected.
-    pub(crate) fn team_protection(&self, team: &str) -> AppResult<(HashSet<String>, bool)> {
+    /// Which of the team's project notes may go to an account other than a
+    /// protected project's (rule 4).
+    pub(crate) fn team_protection(&self, team: &str) -> AppResult<TeamProtection> {
         let space = self.team_space(team)?;
         let home = MemoryHome::Team(team.to_owned());
-        let (mut protected, mut linked, mut open) = (HashSet::new(), 0, 0);
+        let mut found = TeamProtection::default();
+        let (mut linked, mut unprotected) = (0, 0);
         for project in self.projects()? {
             if self.store.memory_home(&project.path)?.as_ref() != Some(&home) {
                 continue;
             }
             linked += 1;
+            let id = self.team_project_id(&space, &project.path);
             if !project.protected {
-                open += 1;
-            } else if let Some(id) = self.team_project_id(&space, &project.path) {
-                protected.insert(id);
+                unprotected += 1;
+                found.open.extend(id);
+            } else if let Some(id) = id {
+                found.protected.insert(id);
+            } else {
+                // Its id cannot be read now (no `origin`, folder gone): any
+                // note could be its own.
+                found.unknown = true;
             }
         }
-        Ok((protected, linked > 0 && open == 0))
+        found.only_protected = linked > 0 && unprotected == 0;
+        Ok(found)
     }
 
     /// A team's notes as its replica holds them, with the name an admin
@@ -2839,6 +2846,30 @@ const TEAM_MATCHES: usize = 8;
 const TEAM_MATCH_CHARS: usize = 400;
 
 /// Lowercase, without accents: how a search compares text.
+/// Which team project ids a protected project here holds (rule 4).
+#[derive(Debug, Default)]
+pub(crate) struct TeamProtection {
+    pub protected: HashSet<String>,
+    pub open: HashSet<String>,
+    /// A protected project here whose id cannot be read now.
+    pub unknown: bool,
+    /// Every project of the team here is protected.
+    pub only_protected: bool,
+}
+
+impl TeamProtection {
+    /// Whether a team project note (by its team project id) may go to an
+    /// account other than a protected project's. Failing closed: with a
+    /// protected project of unknown id, only the open projects' notes.
+    pub fn allows(&self, project: &str) -> bool {
+        if self.unknown {
+            self.open.contains(project)
+        } else {
+            !self.protected.contains(project)
+        }
+    }
+}
+
 fn fold(text: &str) -> String {
     text.to_lowercase()
         .chars()

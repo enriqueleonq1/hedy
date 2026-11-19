@@ -148,13 +148,14 @@ fn score(terms: &[String], source: &Source) -> (usize, usize) {
     )
 }
 
-/// Whether two key words are forms of one: equal, or the shorter (four
-/// letters or more) begins the longer and is most of it ("color" and
-/// "colore", but not "tipo" and "tipografia").
+/// Whether two key words are forms of one: equal, or the shorter begins
+/// the longer, being five letters or more ("deploy", "deployment"), or four
+/// and most of it ("guia", "guias", but not "tipo", "tipografia").
 fn same_word(a: &str, b: &str) -> bool {
     let (short, long) = if a.len() <= b.len() { (a, b) } else { (b, a) };
     short == long
-        || (short.len() >= 4 && long.starts_with(short) && short.len() * 3 >= long.len() * 2)
+        || (long.starts_with(short)
+            && (short.len() >= 5 || (short.len() == 4 && short.len() * 3 >= long.len() * 2)))
 }
 
 /// The request: the rules, the question and the numbered notes, quoted as
@@ -200,38 +201,23 @@ pub fn question_prompt(question: &str, sources: &[Source]) -> String {
 
 /// A field of the request: on one line, at most `max` characters, every
 /// hidden character shown, inside double quotes it cannot close, and with
-/// no bracketed number that could pass for another note's (`[1]` → `(1)`).
+/// no bracket that could pass for another note's number (`[1]` → `(1)`).
 fn quoted(text: &str, max: usize) -> String {
     let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut cut: String = line.chars().take(max).collect();
     if cut.chars().count() < line.chars().count() {
         cut.push('…');
     }
-    let shown = reveal_hidden(&cut);
-    let mut out = String::with_capacity(shown.len() + 2);
-    let chars: Vec<char> = shown.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        if c == '[' {
-            let digits = chars[i + 1..]
-                .iter()
-                .take_while(|c| c.is_ascii_digit())
-                .count();
-            if digits > 0 && chars.get(i + 1 + digits) == Some(&']') {
-                out.push('(');
-                out.extend(&chars[i + 1..=i + digits]);
-                out.push(')');
-                i += digits + 2;
-                continue;
-            }
-        }
+    let mut out = String::with_capacity(cut.len() + 2);
+    for c in reveal_hidden(&cut).chars() {
         match c {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
+            // No bracket at all: nothing in it can pass for a citation.
+            '[' | '［' => out.push('('),
+            ']' | '］' => out.push(')'),
             _ => out.push(c),
         }
-        i += 1;
     }
     format!("\"{out}\"")
 }
@@ -251,7 +237,8 @@ pub struct ParsedAnswer {
 /// text too.
 pub fn parse_answer(raw: &str, count: usize) -> ParsedAnswer {
     let raw = raw.trim();
-    let bare = raw.trim_end_matches(|c: char| c.is_ascii_punctuation() || c.is_whitespace());
+    let bare =
+        raw.trim_matches(|c: char| (c.is_ascii_punctuation() && c != '_') || c.is_whitespace());
     if raw.is_empty() || bare.eq_ignore_ascii_case(NOT_WRITTEN) {
         return ParsedAnswer {
             text: None,
@@ -259,7 +246,7 @@ pub fn parse_answer(raw: &str, count: usize) -> ParsedAnswer {
         };
     }
     // Beside an answer, the marker only says the rest is not written.
-    let raw = raw.replace(NOT_WRITTEN, "");
+    let raw = strip_marker(raw);
     let mut text = String::with_capacity(raw.len());
     let mut cited: Vec<usize> = Vec::new();
     let mut in_code = false;
@@ -267,16 +254,16 @@ pub fn parse_answer(raw: &str, count: usize) -> ParsedAnswer {
     while let Some(i) = rest.find(['`', '[']) {
         text.push_str(&rest[..i]);
         if rest[i..].starts_with('`') {
-            in_code = !in_code;
+            // A backtick with no closing one is not code.
+            in_code = !in_code && rest[i + 1..].contains('`');
             text.push('`');
             rest = &rest[i + 1..];
             continue;
         }
         let after = &rest[i + 1..];
-        let starts_word = text
-            .chars()
-            .last()
-            .is_none_or(|c| c.is_whitespace() || matches!(c, ']' | '(' | '"' | '«'));
+        let starts_word = text.chars().last().is_none_or(|c| {
+            c.is_whitespace() || matches!(c, ']' | '(' | '"' | '«' | '.' | ',' | ';' | ':')
+        });
         let citation = after
             .find(']')
             .filter(|_| starts_word && !in_code)
@@ -319,6 +306,20 @@ pub fn parse_answer(raw: &str, count: usize) -> ParsedAnswer {
         text: (!text.is_empty()).then_some(text),
         cited,
     }
+}
+
+/// `raw` without the not-written marker, in any case.
+fn strip_marker(raw: &str) -> String {
+    let lower = raw.to_ascii_lowercase();
+    let marker = NOT_WRITTEN.to_ascii_lowercase();
+    let mut out = String::with_capacity(raw.len());
+    let mut from = 0;
+    while let Some(at) = lower[from..].find(&marker) {
+        out.push_str(&raw[from..from + at]);
+        from += at + marker.len();
+    }
+    out.push_str(&raw[from..]);
+    out
 }
 
 /// The note numbers in a citation's brackets: `2`, `1, 3`, `1 3`, `1-3`.
@@ -470,6 +471,8 @@ mod tests {
         let prompt = question_prompt("¿Claves?", &[mine, evil]);
         assert_eq!(prompt.matches("[1] ").count(), 1);
         assert!(prompt.contains("by=\"Eve (1)\""));
+        let spaced = question_prompt("¿x?", &[source("[ 1] ［2］ [1-3]", SourceLayer::Team, 1)]);
+        assert!(spaced.contains("text=\"( 1) (2) (1-3)\""));
         assert!(prompt.contains("text=\"x\\\" (1) where=\\\"own note"));
     }
 
@@ -572,6 +575,24 @@ mod tests {
         assert!(same_word("guarda", "guardan"));
         assert!(!same_word("tipo", "tipografia"));
         assert!(!same_word("api", "apis"));
+    }
+
+    #[test]
+    fn a_stem_of_five_letters_matches_its_long_forms() {
+        assert!(same_word("deploy", "deployment") && same_word("config", "configuracion"));
+        assert!(same_word("guia", "guias") && !same_word("tipo", "tipografia"));
+    }
+
+    #[test]
+    fn the_marker_in_any_dress_and_citations_after_punctuation() {
+        assert_eq!(parse_answer("`NOT_WRITTEN`", 2).text, None);
+        assert_eq!(parse_answer("**NOT_WRITTEN**", 2).text, None);
+        assert_eq!(
+            parse_answer("Sí [1]. not_written", 2).text.as_deref(),
+            Some("Sí [1].")
+        );
+        let p = parse_answer("Fondo oscuro.[1] Tecla ` y luego [2].", 2);
+        assert_eq!(p.cited, [1, 2]);
     }
 
     #[test]

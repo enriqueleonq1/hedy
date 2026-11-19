@@ -208,22 +208,20 @@ impl Hedy {
                 sources.extend(notes.into_iter().filter_map(|n| local_source(n, &projects)));
                 if let Some(team) = self.project_team_id(&project.path) {
                     let own = self.team_project_id_of(&team, &project.path);
-                    let (protected, _) = self.team_protection(&team)?;
-                    let shared =
-                        project.protected || own.as_ref().is_none_or(|id| !protected.contains(id));
-                    sources.extend(self.team_sources(&team, |id| {
-                        shared && id.is_some() && id == own.as_deref()
-                    })?);
+                    let guard = self.team_protection(&team)?;
+                    // Another copy here of a protected project keeps its notes to it.
+                    let mine = |id: &str| {
+                        own.as_deref() == Some(id) && (project.protected || guard.allows(id))
+                    };
+                    sources.extend(self.team_sources(&team, mine)?);
                 }
             }
             AskScope::Team(team) => {
-                let (protected, only) = self.team_protection(team)?;
-                if only {
+                let guard = self.team_protection(team)?;
+                if guard.only_protected {
                     return Err(AppError::AskTeamProtected);
                 }
-                sources.extend(
-                    self.team_sources(team, |id| id.is_none_or(|id| !protected.contains(id)))?,
-                );
+                sources.extend(self.team_sources(team, |id| guard.allows(id))?);
             }
             AskScope::Mine => {
                 let mut notes = self.store.notes(None, false)?;
@@ -234,12 +232,12 @@ impl Hedy {
                 for team in self.teams()?.into_iter().filter(|t| !t.waiting) {
                     // A team only protected projects hold stays out; one this
                     // PC cannot read now does not stop the rest.
-                    if let Ok((protected, false)) = self.team_protection(&team.id) {
+                    if let Ok(guard) = self.team_protection(&team.id)
+                        && !guard.only_protected
+                    {
                         sources.extend(
-                            self.team_sources(&team.id, |id| {
-                                id.is_none_or(|id| !protected.contains(id))
-                            })
-                            .unwrap_or_default(),
+                            self.team_sources(&team.id, |id| guard.allows(id))
+                                .unwrap_or_default(),
                         );
                     }
                 }
@@ -250,17 +248,20 @@ impl Hedy {
 
     /// A team's notes: its layer, and the project notes `keep` accepts by
     /// their team project id.
-    fn team_sources(
-        &self,
-        team: &str,
-        keep: impl Fn(Option<&str>) -> bool,
-    ) -> AppResult<Vec<Source>> {
+    fn team_sources(&self, team: &str, keep: impl Fn(&str) -> bool) -> AppResult<Vec<Source>> {
         let name = self.team_status(team)?.summary.name;
         let projects = self.team_note_projects(team)?;
         Ok(self
             .team_notes(team)?
             .into_iter()
-            .filter(|n| n.team_layer || keep(projects.get(&n.uid).and_then(|id| id.as_deref())))
+            // One synced in between, of no known project, stays out.
+            .filter(|n| {
+                n.team_layer
+                    || projects
+                        .get(&n.uid)
+                        .and_then(|id| id.as_deref())
+                        .is_some_and(&keep)
+            })
             .map(|n| Source {
                 layer: if n.team_layer {
                     SourceLayer::Team

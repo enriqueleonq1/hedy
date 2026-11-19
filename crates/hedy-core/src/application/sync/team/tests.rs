@@ -2352,3 +2352,58 @@ fn a_team_held_only_by_protected_projects_stays_with_their_account() {
         .unwrap();
     assert!(a.sources.iter().all(|s| !s.text.contains("#0F1117")));
 }
+
+#[test]
+fn an_unreadable_protected_copy_still_keeps_its_team_notes() {
+    use crate::application::AskScope;
+
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    luis.f.add_claude("Seguro");
+    luis.f.fs.add_git_root("/code/banco");
+    let banco = luis.f.dir("/code/banco");
+    luis.f.source.set_remotes_of(
+        &banco,
+        &[("origin", "git@github.com:empresa-org/banco.git")],
+    );
+    luis.f
+        .hedy
+        .use_account(&banco, "seguro", Some(true))
+        .unwrap();
+    luis.f.hedy.team_link_project(&luis.team, &banco).unwrap();
+    luis.f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            Some(&banco),
+            "Secreto del banco: la clave rota",
+            Category::Rule,
+            None,
+        )
+        .unwrap();
+    luis.sync();
+    // Its `origin` is gone: its id cannot be read now.
+    luis.f.source.set_remotes_of(
+        &banco,
+        &[("upstream", "git@github.com:empresa-org/banco.git")],
+    );
+    luis.f
+        .agents
+        .reply_on_start(vec![crate::domain::AgentEvent::Finished {
+            ok: true,
+            summary: "x [1].".into(),
+            duration_ms: None,
+        }]);
+    let a = luis
+        .f
+        .hedy
+        .ask_memory(
+            "¿Secreto del banco, clave?",
+            &AskScope::Team(luis.team.clone()),
+            None,
+            None,
+        )
+        .unwrap();
+    assert!(a.sources.iter().all(|s| !s.text.contains("Secreto")));
+}
