@@ -1097,6 +1097,14 @@ impl ProcessRunner for FakeRunner {
     ) -> PortResult<CapturedOutput> {
         self.run_captured(spec)
     }
+    fn run_check(
+        &self,
+        spec: &LaunchSpec,
+        _timeout: std::time::Duration,
+    ) -> PortResult<CapturedOutput> {
+        self.run_captured(spec)
+    }
+    fn stop_checks(&self) {}
     fn blocked_env_vars(&self) -> Vec<String> {
         self.env.lock().unwrap().clone()
     }

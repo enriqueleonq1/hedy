@@ -148,6 +148,9 @@ pub struct Hedy {
     sessions: Arc<AtomicU64>,
     /// Serializes changes to message queues with their delivery.
     queue_lock: Arc<Mutex<()>>,
+    /// Serializes a status change that depends on the current one (an
+    /// answered card resuming, a turn ending) with the others like it.
+    status_lock: Arc<Mutex<()>>,
     /// One personal sync at a time (the timer, "Sincronizar ahora").
     sync_lock: Arc<Mutex<()>>,
     /// How to start the memory MCP server for CLI agents.
@@ -176,6 +179,7 @@ impl Hedy {
             live: Arc::default(),
             sessions: Arc::default(),
             queue_lock: Arc::default(),
+            status_lock: Arc::default(),
             sync_lock: Arc::default(),
             memory_server: None,
         }

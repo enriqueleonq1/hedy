@@ -441,6 +441,18 @@ pub trait ProcessRunner: Send + Sync {
         spec: &LaunchSpec,
         timeout: std::time::Duration,
     ) -> PortResult<CapturedOutput>;
+    /// Runs a check Hedy itself starts in a task's copy (a skill trial's test
+    /// command), which runs code an AI wrote: only the variables a build
+    /// needs (`PATH`, `HOME`, locale; never tokens or keys), in a process
+    /// group of its own, killed whole on timeout or by
+    /// [`ProcessRunner::stop_checks`].
+    fn run_check(
+        &self,
+        spec: &LaunchSpec,
+        timeout: std::time::Duration,
+    ) -> PortResult<CapturedOutput>;
+    /// Kills every check still running (its trial was cancelled).
+    fn stop_checks(&self);
     /// Names (never values) of the variables in Hedy's own environment that
     /// launched CLIs do not get, because [`crate::domain::env::is_blocked`].
     fn blocked_env_vars(&self) -> Vec<String>;

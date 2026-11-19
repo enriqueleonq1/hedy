@@ -72,13 +72,22 @@ pub fn try_skill(
     let project = project_here(hedy, dir)?;
     let skill = hedy.skill_named(&project.path, name)?;
     // Tasks an AI proposed from someone else's skill are read before
-    // anything runs.
-    if tasks.is_empty() && yes {
+    // anything runs, and so is the check (it runs code an AI wrote).
+    if yes && (tasks.is_empty() || check.is_none()) {
         anyhow::bail!(
             "{}",
             tr!(
-                "`--yes` solo va con tus propias tareas (`--task \"…\"`): las que propone la IA las revisas tú antes de gastar",
-                "`--yes` only goes with your own tasks (`--task \"…\"`): you read the ones the AI proposes before spending"
+                "`--yes` solo va con tus propias tareas (`--task \"…\"`) y diciendo qué comando corre Hedy en cada copia (`--check \"…\"`, o `--check none`): lo demás lo revisas tú antes de gastar",
+                "`--yes` only goes with your own tasks (`--task \"…\"`) and saying which command Hedy runs in each copy (`--check \"…\"`, or `--check none`): you read the rest before spending"
+            )
+        );
+    }
+    if !yes && !interactive() {
+        anyhow::bail!(
+            "{}",
+            tr!(
+                "para probarla sin preguntar, usa `--task \"…\" --check \"…\" --yes`",
+                "to try it without asking, use `--task \"…\" --check \"…\" --yes`"
             )
         );
     }
@@ -101,7 +110,8 @@ pub fn try_skill(
             )
         );
     }
-    let check = match check.map(str::trim).filter(|c| !c.is_empty()) {
+    let check = match check.map(str::trim) {
+        Some("none") | Some("") => None,
         Some(check) => Some(check.to_owned()),
         None => hedy.trial_check(&project.path)?,
     };
@@ -127,8 +137,8 @@ pub fn try_skill(
             println!(
                 "  {}",
                 s.muted(tr!(
-                    "Al terminar cada una, Hedy corre `{check}` en su copia: es lo que decide si acierta.",
-                    "When each one ends, Hedy runs `{check}` in its copy: that decides whether it passes."
+                    "Al terminar cada una, Hedy corre `{check}` en su copia: es lo que decide si acierta. Ejecuta el código que escribió la IA, sin tus variables de entorno.",
+                    "When each one ends, Hedy runs `{check}` in its copy: that decides whether it passes. It runs the code the AI wrote, without your environment variables."
                 ))
             );
         }
@@ -145,7 +155,10 @@ pub fn try_skill(
         "¿Empezar? Son {runs} tareas de verdad y gastan tokens de la cuenta del proyecto. [s/N] ",
         "Start? These are {runs} real tasks and they spend the project account's tokens. [y/N] "
     );
-    let again = format!("hedy skills try {} --task \"…\" --yes", skill.name);
+    let again = format!(
+        "hedy skills try {} --task \"…\" --check \"…\" --yes",
+        skill.name
+    );
     if !confirmed(yes, &question, &again)? {
         println!("{}", tr!("No se probó nada.", "Nothing was tried."));
         return Ok(());
@@ -223,10 +236,12 @@ pub fn try_skill(
         match rx.recv_timeout(POLL) {
             Ok(Signal::Interrupt) => {
                 if asking.is_some() {
-                    println!();
+                    let _ = writeln!(std::io::stdout());
                 }
                 hedy.cancel_skill_trial(&project.path, &trial.id);
-                println!(
+                // The terminal may be gone (it was closed): never panic here.
+                let _ = writeln!(
+                    std::io::stdout(),
                     "{} {}",
                     s.warn("■"),
                     tr!(
@@ -263,8 +278,11 @@ pub fn try_skill(
                     if ask {
                         let mut what = shown(&summary);
                         if summary.trim().is_empty() || summary == tool {
-                            let input: String =
-                                input.to_string().chars().take(INPUT_SHOWN).collect();
+                            let full = input.to_string();
+                            let mut input: String = full.chars().take(INPUT_SHOWN).collect();
+                            if full.chars().count() > INPUT_SHOWN {
+                                input.push('…');
+                            }
                             what = format!("{} {}", shown(&tool), shown(&input));
                         }
                         let run = label(&id);
@@ -284,7 +302,9 @@ pub fn try_skill(
             Ok(Signal::Updated(id, status)) if ids.contains(&id) => {
                 if matches!(status, TaskStatus::Review | TaskStatus::Failed) {
                     let run = label(&id);
-                    if asking.take().is_some() {
+                    // Only the question of the run that ended goes.
+                    if asking.as_ref().is_some_and(|q| q.task == id) {
+                        asking = None;
                         println!();
                     }
                     println!(
@@ -297,7 +317,7 @@ pub fn try_skill(
             Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
-        if hedy.trial_settled(&trial.id, &ids) {
+        if hedy.trial_settled(&trial.id) {
             break;
         }
     }

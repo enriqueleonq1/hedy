@@ -206,14 +206,11 @@ impl Hedy {
         }
     }
 
-    /// The trial has ended and its runs are gone: judged or voided (its
-    /// outcome is kept), or cancelled (no run is marked or open).
-    pub fn trial_settled(&self, trial: &str, tasks: &[TaskId]) -> bool {
+    /// The trial was judged or voided and its runs are gone: its outcome,
+    /// written last, is kept. (A cancel is its driver's own doing.)
+    pub fn trial_settled(&self, trial: &str) -> bool {
         let key = format!("{OUTCOME_KEY}{trial}");
         matches!(self.store.get_setting(&key), Ok(Some(_)))
-            || tasks.iter().all(|id| {
-                self.trial_of(id).is_none() && self.task(id).is_ok_and(|t| t.status.is_closed())
-            })
     }
 
     /// How a trial ended, read once (its driver shows it).
@@ -338,7 +335,7 @@ impl Hedy {
     /// compared (or the trial is voided), the outcome is kept and the runs
     /// are discarded. Best effort.
     pub(super) fn after_trial_run(&self, task: &TaskId) {
-        let Some(mut run) = self.trial_of(task) else {
+        let Some(run) = self.trial_of(task) else {
             return;
         };
         let Ok(current) = self.task(task) else {
@@ -347,19 +344,26 @@ impl Hedy {
         let stopped =
             |t: &Task| !matches!(t.status, TaskStatus::Running | TaskStatus::WaitingApproval);
         // This run's check, outside the lock: it can take minutes.
-        if !run.checked() && !run.stopped && stopped(&current) && !current.status.is_closed() {
-            let passed = match (&current.workspace, &run.check) {
-                (Some(ws), Some(check)) if current.status == TaskStatus::Review => {
-                    self.run_trial_check(ws.worktree.clone(), check)
-                }
-                _ => false,
-            };
-            run.checked = Some(passed);
-            if self.trial_of(task).is_some() {
-                let _ = self.mark_trial_run(task, &run);
+        let due =
+            !run.checked() && !run.stopped && stopped(&current) && !current.status.is_closed();
+        let checked = due.then(|| match (&current.workspace, &run.check) {
+            (Some(ws), Some(check)) if current.status == TaskStatus::Review => {
+                self.run_trial_check(ws.worktree.clone(), check)
             }
-        }
+            _ => false,
+        });
         let _judging = JUDGING.lock().unwrap_or_else(|e| e.into_inner());
+        // Read again under the lock: a stop or a cancel that came meanwhile
+        // must not be overwritten.
+        let Some(mut run) = self.trial_of(task) else {
+            return;
+        };
+        if let Some(passed) = checked
+            && run.checked.is_none()
+        {
+            run.checked = Some(passed);
+            let _ = self.mark_trial_run(task, &run);
+        }
         let runs = self.trial_runs(&current.project, &run.trial);
         let done = |(t, of): &(Task, TrialRef)| {
             t.status.is_closed() || of.stopped || (stopped(t) && of.checked())
@@ -552,12 +556,11 @@ mod tests {
             tasks[0].workspace.as_ref().map(|w| w.worktree.clone())
         );
         assert_eq!(f.hedy.skill_trial(skill.id).unwrap(), None);
-        assert!(!f.hedy.trial_settled(&trial.id, &[tasks[0].id.clone()]));
+        assert!(!f.hedy.trial_settled(&trial.id));
 
         // Both: judged, kept for the skill, and the runs go.
         finish(&f, 1, false, false, 11_000);
-        let ids: Vec<_> = tasks.iter().map(|t| t.id.clone()).collect();
-        assert!(f.hedy.trial_settled(&trial.id, &ids));
+        assert!(f.hedy.trial_settled(&trial.id));
         let TrialOutcome::Judged(judged) = outcome(&f, &trial) else {
             panic!("judged")
         };
@@ -629,8 +632,6 @@ mod tests {
         f.hedy.cancel_skill_trial(&f.dir("/code/agenda"), &trial.id);
         assert!(all_discarded(&f, &trial));
         assert_eq!(f.hedy.take_trial_outcome(&trial.id).unwrap(), None);
-        let ids: Vec<_> = trial.tasks.iter().map(|t| t.id.clone()).collect();
-        assert!(f.hedy.trial_settled(&trial.id, &ids));
     }
 
     #[test]

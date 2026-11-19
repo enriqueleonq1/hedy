@@ -636,8 +636,10 @@ impl Hedy {
     fn handle_event(&self, id: &TaskId, event: AgentEvent) -> AppResult<()> {
         let mut task = self.task(id)?;
         // A late event of a task closed meanwhile (another process discarded
-        // it) is kept, but never reopens it.
+        // it) is kept, but never reopens it; its agent here is stopped (a
+        // permission it asks for would wait forever).
         if task.status.is_closed() {
+            self.stop_session(id);
             return self.record(id, event);
         }
         match &event {
@@ -744,8 +746,16 @@ impl Hedy {
                 } else {
                     (TaskStatus::Failed, NoticeKind::Failed)
                 };
-                let changed = task.status != status;
-                self.set_status(&mut task, status)?;
+                let changed = {
+                    let _status = self.status_lock.lock().unwrap_or_else(|e| e.into_inner());
+                    // Closed meanwhile (discarded elsewhere): it stays closed.
+                    if self.task(id)?.status.is_closed() {
+                        return self.record(id, event);
+                    }
+                    let changed = task.status != status;
+                    self.set_status(&mut task, status)?;
+                    changed
+                };
                 if changed {
                     self.notify(&task, notice);
                 }
@@ -997,7 +1007,9 @@ impl Hedy {
         if others_waiting {
             return Ok(());
         }
-        // The agent may have finished meanwhile: only a waiting task runs again.
+        // The agent may have finished meanwhile: only a waiting task runs
+        // again, checked and changed under the same lock as a turn's end.
+        let _status = self.status_lock.lock().unwrap_or_else(|e| e.into_inner());
         let mut task = self.task(id)?;
         if task.status != TaskStatus::WaitingApproval {
             return Ok(());
@@ -1741,6 +1753,41 @@ mod tests {
             .answer_permission(&task.id, "p2", Decision::Allow)
             .unwrap();
         assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Running);
+    }
+
+    #[test]
+    fn an_answer_after_the_turn_ended_never_resumes_the_task() {
+        let f = Fixture::new();
+        let task = new_task(&f, "Hola", false);
+        f.agents
+            .emit(permission("p1", "Bash", json!({"command": "pytest"})));
+        assert!(f.hedy.is_permission_pending(&task.id, "p1"));
+        // The turn ends before the user answers (a race in the app or CLI).
+        f.agents.emit(AgentEvent::Finished {
+            ok: true,
+            summary: "listo".into(),
+            duration_ms: None,
+        });
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
+        let _ = f.hedy.answer_permission(&task.id, "p1", Decision::Allow);
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
+    }
+
+    #[test]
+    fn a_late_event_never_reopens_a_task_closed_elsewhere() {
+        let f = Fixture::new();
+        let task = new_task(&f, "Hola", false);
+        use crate::application::ports::TaskRepository as _;
+        // Another process (the app) discarded it while this one ran it.
+        let mut closed = f.hedy.task(&task.id).unwrap();
+        closed.status = TaskStatus::Discarded;
+        f.store.save_task(&closed).unwrap();
+        f.agents.emit(AgentEvent::Finished {
+            ok: true,
+            summary: "listo".into(),
+            duration_ms: None,
+        });
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Discarded);
     }
 
     #[test]

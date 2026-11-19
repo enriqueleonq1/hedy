@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::io::{ErrorKind, Read};
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
+use std::sync::{Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 use crate::application::ports::{CapturedOutput, PortError, PortResult, ProcessRunner};
@@ -10,6 +10,27 @@ use crate::domain::env::is_blocked;
 
 /// Starts official CLIs as child processes of the user's session.
 pub struct SystemProcessRunner;
+
+/// Process groups of the checks running now (see [`ProcessRunner::run_check`]).
+static CHECKS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+/// The only variables a check gets: enough to find the tools and their
+/// caches, nothing that identifies or bills anyone.
+const CHECK_ENV: &[&str] = &["PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "USER"];
+
+/// Kills a check's whole process group (its `cargo`, `npm`…).
+fn kill_check_group(pid: u32) {
+    #[cfg(unix)]
+    if let Ok(pid) = i32::try_from(pid) {
+        // SAFETY: `kill` takes no pointers; a group that is gone only makes
+        // it fail.
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = pid;
+}
 
 /// The inherited environment minus every blocked variable.
 pub(crate) fn allowed_env() -> impl Iterator<Item = (OsString, OsString)> {
@@ -124,6 +145,63 @@ impl ProcessRunner for SystemProcessRunner {
         })
     }
 
+    fn run_check(&self, spec: &LaunchSpec, timeout: Duration) -> PortResult<CapturedOutput> {
+        let mut cmd = Command::new(&spec.program);
+        cmd.args(&spec.args).env_clear();
+        for name in CHECK_ENV {
+            if let Some(value) = std::env::var_os(name) {
+                cmd.env(name, value);
+            }
+        }
+        if let Some(cwd) = &spec.cwd {
+            cmd.current_dir(cwd);
+        }
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        let mut child = cmd
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| launch_error(spec, e))?;
+        let pid = child.id();
+        CHECKS.lock().unwrap_or_else(|e| e.into_inner()).push(pid);
+        let deadline = Instant::now() + timeout;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break Ok(status),
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Ok(None) => {
+                    kill_check_group(pid);
+                    let _ = child.wait();
+                    let (program, secs) = (&spec.program, timeout.as_secs_f32());
+                    break Err(PortError::new(crate::tr!(
+                        "«{program}» no terminó en {secs} s",
+                        "«{program}» did not end within {secs} s"
+                    )));
+                }
+                Err(e) => break Err(launch_error(spec, e)),
+            }
+        };
+        CHECKS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|p| *p != pid);
+        // What it left behind in its group goes too.
+        kill_check_group(pid);
+        Ok(CapturedOutput {
+            exit_code: status?.code(),
+            stdout: String::new(),
+        })
+    }
+
+    fn stop_checks(&self) {
+        for pid in CHECKS.lock().unwrap_or_else(|e| e.into_inner()).drain(..) {
+            kill_check_group(pid);
+        }
+    }
     fn blocked_env_vars(&self) -> Vec<String> {
         let mut names: Vec<String> = std::env::vars_os()
             .filter_map(|(name, _)| name.into_string().ok())

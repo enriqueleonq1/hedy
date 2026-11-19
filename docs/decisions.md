@@ -849,8 +849,9 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
   - **Level 3, trying it** (`domain/skill_trial.rs`, `application/skill_trial.rs`, `hedy
     skills try <name>`; on demand only, since it spends tokens). Each task (1 to 3: the
     user's `--task`, or proposed by the project's account from the skill alone, with no
-    tools and Haiku by default; `--yes` only with `--task`, so tasks an AI made up from
-    someone else's skill are always read first) runs twice as an ordinary project task,
+    tools and Haiku by default; `--yes` only with `--task` and `--check`, so tasks an AI
+    made up from someone else's skill, and the command Hedy will run, are always read
+    first) runs twice as an ordinary project task,
     with the project's phases and accounts, each in its own worktree: one with the skill
     and one without it.
     - **The run without it gets it from nowhere:** not in its plugin, not in its
@@ -860,8 +861,15 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
       `.agents/skills` refuses the trial; one Hedy cannot see (the account's own folder)
       shows up as the run without it loading it, which voids the trial.
     - **Judged by Hedy's check, never by the agent's tests:** once a run stops, Hedy
-      runs the same command in its copy (`--check`, else the project's test command
-      guessed from its files; 10 minutes at most). A run passes when it finished, its
+      runs the same command in its copy (`--check`, `--check none` for no check, else
+      the project's test command guessed from its files and shown before starting; 10
+      minutes at most). It runs code the run wrote, and the CLI says so: it gets only
+      `PATH`, `HOME`, the locale, `TERM`, `TMPDIR` and `USER` (no tokens or keys), runs
+      in a process group of its own and is killed whole on timeout or cancel. It is
+      not a sandbox: it can read the user's files, and the shared `node_modules` /
+      `.venv` links reach the real project (bubblewrap or Landlock would close that).
+      A run can still pass by rewriting its own tests; restoring test files from the
+      base commit before the check is the next step. A run passes when it finished, its
       task did not fail and the check exits 0; with no check, passing is only finishing,
       and the result says so. A skill cannot pass by telling the agent not to test.
       More passes with it → útil, fewer → contraproducente; the same → útil only if the
