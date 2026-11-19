@@ -11,15 +11,19 @@ use std::time::Duration;
 use super::one_shot::{OneShot, OneShotFailure};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::ask::{
-    ParsedAnswer, QUESTION_MAX, Source, SourceLayer, SourceRef, parse_answer, pick_sources,
-    question_prompt,
+    CodeAnswer, ParsedAnswer, QUESTION_MAX, Source, SourceLayer, SourceRef, code_prompt,
+    parse_answer, parse_code_answer, pick_sources, question_prompt,
 };
 use crate::domain::sync::MemoryHome;
-use crate::domain::{Account, AccountId, NoteStatus, Phase, Project, Stage, policy};
+use crate::domain::{
+    Account, AccountId, Category, Note, NoteStatus, Phase, Project, Stage, policy,
+};
 use crate::tr;
 
 /// How long an answer may take.
 const ASK_TIMEOUT: Duration = Duration::from_secs(120);
+/// How long reading the project for an answer may take.
+const CODE_TIMEOUT: Duration = Duration::from_secs(240);
 
 /// Which memory a question is asked of.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,7 +49,88 @@ pub struct MemoryAnswer {
     pub account: Option<Account>,
 }
 
+/// What the project's files say when the memory has no answer, and the
+/// note proposed from it (rule 6: the user approves it, or not).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodeLookup {
+    /// `None`: the files do not answer it either.
+    pub text: Option<String>,
+    pub proposal: Option<Note>,
+    pub account: Account,
+}
+
 impl Hedy {
+    /// "Buscar en el código": the project's account reads its files (only
+    /// reads: Ask mode, protected files denied) for an answer the memory
+    /// does not have, and proposes the note that would have answered it.
+    pub fn look_in_code(
+        &self,
+        question: &str,
+        project: &Path,
+        account: Option<&str>,
+        model: Option<&str>,
+    ) -> AppResult<CodeLookup> {
+        self.look_in_code_within(question, project, account, model, CODE_TIMEOUT)
+    }
+
+    pub(super) fn look_in_code_within(
+        &self,
+        question: &str,
+        project: &Path,
+        account: Option<&str>,
+        model: Option<&str>,
+        timeout: Duration,
+    ) -> AppResult<CodeLookup> {
+        let question: String = question.trim().chars().take(QUESTION_MAX).collect();
+        if question.is_empty() {
+            return Err(AppError::AskEmpty);
+        }
+        let (account, dir) = self.ask_account(&AskScope::Project(project.to_owned()), account)?;
+        if self.account_at_limit(&account)? {
+            return Err(AppError::AskAtLimit {
+                account: account.name.clone(),
+            });
+        }
+        let stage = Stage {
+            phase: Phase::Review,
+            account: account.id.clone(),
+            model: model.map(str::to_owned),
+        };
+        let answer = self.one_shot(OneShot {
+            task: None,
+            account: &account,
+            stage: &stage,
+            cwd: dir.clone(),
+            prompt: code_prompt(&question),
+            refusal: tr!(
+                "No cambies nada: solo lee los archivos del proyecto.",
+                "Change nothing: only read the project's files."
+            ),
+            timeout,
+        })?;
+        let CodeAnswer { text, note } = match answer {
+            Ok(raw) => parse_code_answer(&raw),
+            Err(OneShotFailure::AtLimit) => {
+                return Err(AppError::AskAtLimit {
+                    account: account.name.clone(),
+                });
+            }
+            Err(OneShotFailure::Failed(detail)) => return Err(AppError::AskFailed(detail)),
+            Err(OneShotFailure::TimedOut) => return Err(AppError::AskTimedOut),
+        };
+        let proposal = match (&text, note) {
+            (Some(_), Some(note)) => {
+                Some(self.propose_note(&dir, &note, Category::Convention, &account.name, None)?)
+            }
+            _ => None,
+        };
+        Ok(CodeLookup {
+            text,
+            proposal,
+            account,
+        })
+    }
+
     /// Answers `question` from the memory of `scope` through `account`
     /// (else the project's, else the default one), never another account
     /// (rule 3). Spends a few of its tokens, only when some note may answer.
@@ -545,5 +630,42 @@ mod tests {
             f.hedy.ask_memory("   ", &AskScope::Mine, None, None),
             Err(AppError::AskEmpty)
         );
+    }
+
+    #[test]
+    fn the_code_answers_and_proposes_the_note_the_user_approves() {
+        let f = setup();
+        let tienda = f.dir("/code/tienda");
+        answer(
+            &f,
+            "El fondo es #0F1117, en `src/theme.ts`.\nNOTE: El fondo oscuro de tienda es #0F1117 (src/theme.ts).",
+        );
+        let found = f
+            .hedy
+            .look_in_code("¿Qué fondo usamos?", &tienda, None, Some("haiku"))
+            .unwrap();
+        assert_eq!(
+            found.text.as_deref(),
+            Some("El fondo es #0F1117, en `src/theme.ts`.")
+        );
+        let proposal = found.proposal.unwrap();
+        assert_eq!(proposal.status, NoteStatus::Proposed);
+        assert_eq!(proposal.project.as_deref(), Some(tienda.as_path()));
+        assert_eq!(proposal.author, "Personal");
+        let request = f.agents.last_request();
+        assert_eq!(
+            (request.mode, request.phase),
+            (TaskMode::Ask, Phase::Review)
+        );
+        assert_eq!(request.launch.cwd.as_deref(), Some(tienda.as_path()));
+        assert!(request.prompt.contains("only read them, change nothing"));
+
+        answer(&f, "NOT_FOUND");
+        let none = f
+            .hedy
+            .look_in_code("¿Tipografía?", &tienda, None, None)
+            .unwrap();
+        assert_eq!((none.text, none.proposal), (None, None));
+        assert_eq!(f.hedy.memory(&tienda).unwrap().proposed.len(), 1);
     }
 }

@@ -19,6 +19,9 @@ use crate::team::{clean, clean_text, pick};
 
 pub fn memory_ask(hedy: &Hedy, dir: &Path, args: MemoryAsk) -> Result<()> {
     let question = args.question.join(" ");
+    if args.code {
+        return look_in_code(hedy, dir, &question, &args);
+    }
     let scope = if args.all {
         AskScope::Mine
     } else if let Some(team) = args.team.as_deref() {
@@ -44,6 +47,78 @@ pub fn memory_ask(hedy: &Hedy, dir: &Path, args: MemoryAsk) -> Result<()> {
         return Ok(());
     }
     print_answer(&answer);
+    if answer.text.is_none() && matches!(scope, AskScope::Project(_)) {
+        let s = Style::for_stdout();
+        println!(
+            "  {}\n",
+            s.muted(&tr!(
+                "Búscalo en el código: hedy memory ask --code \"…\"",
+                "Look for it in the code: hedy memory ask --code \"…\""
+            ))
+        );
+    }
+    Ok(())
+}
+
+/// `--code`: the project's files answer, and the note it proposes waits for
+/// the user's approval.
+fn look_in_code(hedy: &Hedy, dir: &Path, question: &str, args: &MemoryAsk) -> Result<()> {
+    let Some(project) = hedy.project_for(dir)? else {
+        anyhow::bail!(
+            "{}",
+            tr!(
+                "esta carpeta no es un proyecto de Hedy; usa `hedy use <cuenta>` primero",
+                "this folder is not a Hedy project; use `hedy use <account>` first"
+            )
+        );
+    };
+    let found = spinner::while_running(
+        &tr!("Leyendo el proyecto…", "Reading the project…"),
+        || {
+            hedy.look_in_code(
+                question,
+                &project.path,
+                args.account.as_deref(),
+                args.model.as_deref(),
+            )
+        },
+    )?;
+    if args.json {
+        let value = json!({
+            "answer": found.text,
+            "proposal": found.proposal.as_ref().map(|n| json!({ "id": n.id, "text": n.text })),
+            "account": found.account.id.as_str(),
+        });
+        println!("{}", serde_json::to_string_pretty(&value)?);
+        return Ok(());
+    }
+    let s = Style::for_stdout();
+    println!();
+    match &found.text {
+        Some(text) => println!("  {}\n", clean_text(text)),
+        None => println!(
+            "  {}\n",
+            tr!(
+                "Tampoco el código del proyecto responde eso.",
+                "The project's code does not answer that either."
+            )
+        ),
+    }
+    if let Some(note) = &found.proposal {
+        let id = note.id;
+        println!(
+            "  {} {}",
+            s.bold(&tr!("Propuesta #{id}:", "Proposal #{id}:")),
+            clean_text(&note.text)
+        );
+        println!(
+            "  {}\n",
+            s.muted(&tr!(
+                "Apruébala con `hedy memory approve {id}` para que tus IAs lo sepan.",
+                "Approve it with `hedy memory approve {id}` so your AIs know it."
+            ))
+        );
+    }
     Ok(())
 }
 

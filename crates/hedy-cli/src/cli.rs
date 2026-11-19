@@ -601,6 +601,14 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
         ),
         (
             "memory ask",
+            "code",
+            tr!(
+                "Búscalo en el código del proyecto y propone la nota que lo habría respondido",
+                "Look for it in the project's code and propose the note that would have answered it"
+            ),
+        ),
+        (
+            "memory ask",
             "account",
             tr!(
                 "Cuenta que responde (por defecto, la del proyecto)",
@@ -1812,6 +1820,8 @@ pub struct MemoryAsk {
     pub team: Option<String>,
     #[arg(long)]
     pub all: bool,
+    #[arg(long, conflicts_with_all = ["team", "all"])]
+    pub code: bool,
     #[arg(long, short)]
     pub account: Option<String>,
     #[arg(long, short)]
