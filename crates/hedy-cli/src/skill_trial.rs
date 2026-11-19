@@ -137,10 +137,27 @@ pub fn try_skill(
             println!(
                 "  {}",
                 s.muted(tr!(
-                    "Al terminar cada una, Hedy corre `{check}` en su copia: es lo que decide si acierta. Ejecuta el código que escribió la IA, sin tus variables de entorno.",
-                    "When each one ends, Hedy runs `{check}` in its copy: that decides whether it passes. It runs the code the AI wrote, without your environment variables."
+                    "Al terminar cada una, Hedy devuelve sus tests a como estaban y corre `{check}` en su copia: es lo que decide si acierta.",
+                    "When each one ends, Hedy puts its tests back as they were and runs `{check}` in its copy: that decides whether it passes."
                 ))
             );
+            if hedy.trial_checks_isolated() {
+                println!(
+                    "  {}",
+                    s.muted(tr!(
+                        "Ejecuta el código que escribió la IA, aislado: sin red, sin tus variables de entorno y escribiendo solo en su copia.",
+                        "It runs the code the AI wrote, isolated: no network, none of your environment variables, and writing only in its copy."
+                    ))
+                );
+            } else {
+                println!(
+                    "  {}",
+                    s.warn(tr!(
+                        "Ejecuta el código que escribió la IA sin aislar (instala bubblewrap para aislarlo): sin tus variables de entorno, pero con acceso a tus archivos y a la red.",
+                        "It runs the code the AI wrote without isolation (install bubblewrap to isolate it): without your environment variables, but with access to your files and the network."
+                    ))
+                );
+            }
         }
         None => println!(
             "  {}",

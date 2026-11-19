@@ -12,13 +12,15 @@ use std::time::Duration;
 
 use super::ask::AskScope;
 use super::one_shot::{OneShot, OneShotFailure};
+use super::ports::PathKind;
 use super::{AppError, AppResult, Hedy, NewTask};
+use crate::domain::Workspace;
 use crate::domain::briefing;
 use crate::domain::launch::LaunchSpec;
 use crate::domain::skill::{SkillFolder, check_visible};
 use crate::domain::skill_trial::{
-    TRIAL_TASKS_MAX, TrialOutcome, TrialRef, TrialResult, fingerprint, judge, parse_trial_tasks,
-    run_from_events, trial_tasks_prompt, void_reason,
+    TRIAL_TASKS_MAX, TrialOutcome, TrialRef, TrialResult, fingerprint, guards_the_check, judge,
+    parse_trial_tasks, restore_scripts, run_from_events, trial_tasks_prompt, void_reason,
 };
 use crate::domain::{
     Phase, Provider, Skill, SkillStatus, Stage, Task, TaskId, TaskMode, TaskStatus,
@@ -33,6 +35,8 @@ const RESULT_KEY: &str = "skill_trial.result.";
 const OUTCOME_KEY: &str = "skill_trial.outcome.";
 /// Longest a check may take in one copy.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(600);
+/// Largest test file Hedy puts back before a check.
+const RESTORE_MAX: u64 = 2 * 1024 * 1024;
 
 /// Two runs that stop at once judge their trial once.
 static JUDGING: Mutex<()> = Mutex::new(());
@@ -102,6 +106,12 @@ impl Hedy {
         }
     }
 
+    /// Whether Hedy's checks run isolated on this machine (no network, the
+    /// system read-only except the copy).
+    pub fn trial_checks_isolated(&self) -> bool {
+        self.runner.isolates_checks()
+    }
+
     /// The check Hedy would run in each copy: the project's test command,
     /// guessed from its files.
     pub fn trial_check(&self, project: &Path) -> AppResult<Option<String>> {
@@ -117,8 +127,10 @@ impl Hedy {
     /// project tasks, one with the skill and one without, through the
     /// project's own phases and accounts (`model` for all, if given). They
     /// are ordinary tasks: they show on the board and ask for permissions
-    /// like any other. `check` (else [`Hedy::trial_check`]) runs in each
-    /// copy once its run stops. If one cannot start, the whole trial goes.
+    /// like any other. `check` (the driver offers [`Hedy::trial_check`]; the
+    /// user confirms it, since it runs code an AI wrote) runs in each copy
+    /// once its run stops; `None`: no check. If one cannot start, the whole
+    /// trial goes.
     pub fn start_skill_trial(
         &self,
         project: &Path,
@@ -145,10 +157,10 @@ impl Hedy {
                 return Err(AppError::TrialSkillOutside(path));
             }
         }
-        let check = match check.map(str::trim).filter(|c| !c.is_empty()) {
-            Some(check) => Some(check.to_owned()),
-            None => self.trial_check(&project.path)?,
-        };
+        let check = check
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .map(str::to_owned);
         let trial = format!("k{:x}", self.clock.now_ms());
         let version = fingerprint(&skill.name, &skill.description, &skill.body);
         let mut started = Vec::new();
@@ -163,6 +175,7 @@ impl Hedy {
                     tasks: prompts.len(),
                     check: check.clone(),
                     checked: None,
+                    restored: 0,
                     stopped: false,
                     version: version.clone(),
                 };
@@ -199,7 +212,10 @@ impl Hedy {
         for (task, _) in &runs {
             self.forget_trial_run(&task.id);
         }
+        // A check still running in a copy about to go stops first.
+        self.runner.stop_checks(trial);
         for (task, _) in &runs {
+            self.drop_trial_proposals(&task.project, &task.id);
             if !task.status.is_closed() {
                 let _ = self.discard_task(&task.id);
             }
@@ -318,7 +334,7 @@ impl Hedy {
     }
 
     /// Hedy's check in a run's copy: passed when it exits 0 in time.
-    fn run_trial_check(&self, worktree: PathBuf, check: &str) -> bool {
+    fn run_trial_check(&self, trial: &str, worktree: PathBuf, check: &str) -> bool {
         let spec = LaunchSpec {
             program: "sh".into(),
             args: vec!["-c".into(), check.to_owned()],
@@ -326,7 +342,7 @@ impl Hedy {
             cwd: Some(worktree),
         };
         self.runner
-            .run_captured_within(&spec, CHECK_TIMEOUT)
+            .run_check(&spec, CHECK_TIMEOUT, trial)
             .is_ok_and(|out| out.exit_code == Some(0))
     }
 
@@ -348,9 +364,13 @@ impl Hedy {
             !run.checked() && !run.stopped && stopped(&current) && !current.status.is_closed();
         let checked = due.then(|| match (&current.workspace, &run.check) {
             (Some(ws), Some(check)) if current.status == TaskStatus::Review => {
-                self.run_trial_check(ws.worktree.clone(), check)
+                let restored = self.restore_test_files(ws);
+                (
+                    self.run_trial_check(&run.trial, ws.worktree.clone(), check),
+                    restored,
+                )
             }
-            _ => false,
+            _ => (false, 0),
         });
         let _judging = JUDGING.lock().unwrap_or_else(|e| e.into_inner());
         // Read again under the lock: a stop or a cancel that came meanwhile
@@ -358,10 +378,11 @@ impl Hedy {
         let Some(mut run) = self.trial_of(task) else {
             return;
         };
-        if let Some(passed) = checked
+        if let Some((passed, restored)) = checked
             && run.checked.is_none()
         {
             run.checked = Some(passed);
+            run.restored = restored;
             let _ = self.mark_trial_run(task, &run);
         }
         let runs = self.trial_runs(&current.project, &run.trial);
@@ -409,6 +430,53 @@ impl Hedy {
             let key = format!("{OUTCOME_KEY}{}", run.trial);
             let _ = self.store.set_setting(&key, Some(&json));
         }
+    }
+
+    /// Puts back what a run changed in the files that decide the check
+    /// ([`guards_the_check`], and `package.json`'s scripts) as they are in
+    /// the base commit; new files stay. How many it put back.
+    fn restore_test_files(&self, ws: &Workspace) -> usize {
+        let (dir, base) = (&ws.worktree, ws.base_commit.as_str());
+        let Ok(changes) = self.code.changes(dir, base, None) else {
+            return 0;
+        };
+        let mut restored = 0;
+        for path in changes
+            .into_iter()
+            .flat_map(|c| std::iter::once(c.path).chain(c.old_path))
+        {
+            let Ok(Some(old)) = self.code.read_file(dir, Some(base), &path, RESTORE_MAX) else {
+                continue; // new in the run: it stays
+            };
+            if old.size > RESTORE_MAX {
+                continue;
+            }
+            let bytes = if path == "package.json" || path.ends_with("/package.json") {
+                let Ok(Some(now)) = self.code.read_file(dir, None, &path, RESTORE_MAX) else {
+                    continue;
+                };
+                let (old, now) = (
+                    String::from_utf8_lossy(&old.bytes),
+                    String::from_utf8_lossy(&now.bytes),
+                );
+                match restore_scripts(&old, &now) {
+                    Some(fixed) => fixed.into_bytes(),
+                    None => continue,
+                }
+            } else if guards_the_check(&path) {
+                old.bytes
+            } else {
+                continue;
+            };
+            let put = match self.writer.kind(dir, &path) {
+                Ok(Some(PathKind::File)) => self.writer.replace_file(dir, &path, &bytes),
+                Ok(None) => self.writer.create_file(dir, &path, &bytes),
+                // A folder or a link where a test was: left alone.
+                _ => continue,
+            };
+            restored += usize::from(put.is_ok());
+        }
+        restored
     }
 
     /// Skills a trial run proposed go with it: a skill under trial must not
@@ -547,9 +615,11 @@ mod tests {
             Err(AppError::TrialRun)
         ));
 
-        // One run stops: its check runs in its copy; nothing is judged yet.
+        // One run stops: its check runs in its copy, through the guarded
+        // runner and under the trial's name; nothing is judged yet.
         finish(&f, 0, true, true, 12_000);
-        let check = f.runner.captured().pop().unwrap();
+        let (group, check) = f.runner.checks().pop().unwrap();
+        assert_eq!(group, trial.id);
         assert_eq!(check.args, ["-c", "npm test"]);
         assert_eq!(
             check.cwd,
@@ -626,10 +696,68 @@ mod tests {
     }
 
     #[test]
+    fn a_run_cannot_pass_by_rewriting_its_tests() {
+        use crate::domain::code::{ChangeKind, PathChange};
+        let (f, skill) = setup();
+        let trial = start(&f, &skill);
+        let ws = trial.tasks[0].workspace.clone().unwrap();
+        let (wt, base) = (ws.worktree.to_str().unwrap(), Some(ws.base_commit.as_str()));
+        let base_json = r#"{"scripts":{"test":"vitest run"}}"#;
+        f.code
+            .add_file(wt, base, "tests/cart.test.ts", b"expect(total).toBe(3)");
+        f.code
+            .add_file(wt, None, "tests/cart.test.ts", b"// nothing to see");
+        f.code
+            .add_file(wt, base, "package.json", base_json.as_bytes());
+        f.code.add_file(
+            wt,
+            None,
+            "package.json",
+            br#"{"scripts":{"test":"exit 0"}}"#,
+        );
+        f.code.add_file(wt, base, "src/cart.ts", b"old");
+        f.code.add_file(wt, None, "src/cart.ts", b"new");
+        f.code
+            .add_file(wt, None, "tests/new.test.ts", b"a new test");
+        let change = |path: &str, kind| PathChange {
+            path: path.into(),
+            old_path: None,
+            kind,
+        };
+        f.code.set_changes(
+            wt,
+            vec![
+                change("tests/cart.test.ts", ChangeKind::Modified),
+                change("package.json", ChangeKind::Modified),
+                change("src/cart.ts", ChangeKind::Modified),
+                change("tests/new.test.ts", ChangeKind::Untracked),
+            ],
+        );
+        finish(&f, 0, true, true, 9_000);
+        let working = |path: &str| String::from_utf8(f.code.working(wt, path).unwrap()).unwrap();
+        assert_eq!(working("tests/cart.test.ts"), "expect(total).toBe(3)");
+        assert!(working("package.json").contains("vitest run"));
+        assert_eq!(working("src/cart.ts"), "new", "the run's code stays");
+        assert_eq!(working("tests/new.test.ts"), "a new test", "new tests stay");
+        assert_eq!(f.hedy.trial_of(&trial.tasks[0].id).unwrap().restored, 2);
+        finish(&f, 1, true, false, 9_000);
+        let TrialOutcome::Judged(result) = outcome(&f, &trial) else {
+            panic!("judged")
+        };
+        assert_eq!(result.restored, 2);
+        assert!(result.summary().contains("2 archivos") || result.summary().contains("2 changed"));
+    }
+
+    #[test]
     fn a_cancelled_trial_leaves_nothing() {
         let (f, skill) = setup();
         let trial = start(&f, &skill);
         f.hedy.cancel_skill_trial(&f.dir("/code/agenda"), &trial.id);
+        assert_eq!(
+            f.runner.stopped_checks(),
+            std::slice::from_ref(&trial.id),
+            "only its checks"
+        );
         assert!(all_discarded(&f, &trial));
         assert_eq!(f.hedy.take_trial_outcome(&trial.id).unwrap(), None);
     }

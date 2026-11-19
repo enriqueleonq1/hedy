@@ -11,8 +11,57 @@ use crate::domain::env::is_blocked;
 /// Starts official CLIs as child processes of the user's session.
 pub struct SystemProcessRunner;
 
-/// Process groups of the checks running now (see [`ProcessRunner::run_check`]).
-static CHECKS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+/// Process groups of the checks running now, by whose they are (see
+/// [`ProcessRunner::run_check`]).
+static CHECKS: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
+
+/// Whether bubblewrap runs here (installed, and user namespaces allowed).
+fn bubblewrap() -> bool {
+    static WORKS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *WORKS.get_or_init(|| {
+        cfg!(target_os = "linux")
+            && Command::new("bwrap")
+                .args(["--ro-bind", "/", "/", "--unshare-net", "true"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success())
+    })
+}
+
+/// The check inside bubblewrap: no network, no IPC, its own processes
+/// (all gone when it ends), the system read-only, `/run` (the session bus,
+/// the keyring's way in) and `/tmp` empty, and only the copy writable.
+/// Killed with Hedy.
+fn isolated(spec: &LaunchSpec, copy: &std::path::Path) -> Command {
+    let mut cmd = Command::new("bwrap");
+    cmd.args([
+        "--die-with-parent",
+        "--new-session",
+        "--unshare-net",
+        "--unshare-ipc",
+        "--unshare-pid",
+        "--ro-bind",
+        "/",
+        "/",
+        "--dev",
+        "/dev",
+        "--proc",
+        "/proc",
+        "--tmpfs",
+        "/tmp",
+        "--tmpfs",
+        "/run",
+    ]);
+    cmd.arg("--bind").arg(copy).arg(copy);
+    cmd.arg("--chdir").arg(copy);
+    cmd.arg("--").arg(&spec.program).args(&spec.args);
+    // Offline on purpose: say so to the tools, so they fail fast.
+    cmd.env("CARGO_NET_OFFLINE", "true")
+        .env("npm_config_offline", "true");
+    cmd
+}
 
 /// The only variables a check gets: enough to find the tools and their
 /// caches, nothing that identifies or bills anyone.
@@ -145,13 +194,32 @@ impl ProcessRunner for SystemProcessRunner {
         })
     }
 
-    fn run_check(&self, spec: &LaunchSpec, timeout: Duration) -> PortResult<CapturedOutput> {
-        let mut cmd = Command::new(&spec.program);
-        cmd.args(&spec.args).env_clear();
+    fn run_check(
+        &self,
+        spec: &LaunchSpec,
+        timeout: Duration,
+        group: &str,
+    ) -> PortResult<CapturedOutput> {
+        let mut cmd = match &spec.cwd {
+            Some(copy) if bubblewrap() => isolated(spec, copy),
+            _ => {
+                let mut cmd = Command::new(&spec.program);
+                cmd.args(&spec.args);
+                cmd
+            }
+        };
+        let offline: Vec<_> = cmd
+            .get_envs()
+            .map(|(k, v)| (k.to_owned(), v.map(|v| v.to_owned())))
+            .collect();
+        cmd.env_clear();
         for name in CHECK_ENV {
             if let Some(value) = std::env::var_os(name) {
                 cmd.env(name, value);
             }
+        }
+        for (name, value) in offline.into_iter().filter_map(|(k, v)| Some((k, v?))) {
+            cmd.env(name, value);
         }
         if let Some(cwd) = &spec.cwd {
             cmd.current_dir(cwd);
@@ -165,7 +233,10 @@ impl ProcessRunner for SystemProcessRunner {
             .spawn()
             .map_err(|e| launch_error(spec, e))?;
         let pid = child.id();
-        CHECKS.lock().unwrap_or_else(|e| e.into_inner()).push(pid);
+        CHECKS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push((group.to_owned(), pid));
         let deadline = Instant::now() + timeout;
         let status = loop {
             match child.try_wait() {
@@ -188,7 +259,7 @@ impl ProcessRunner for SystemProcessRunner {
         CHECKS
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .retain(|p| *p != pid);
+            .retain(|(_, p)| *p != pid);
         // What it left behind in its group goes too.
         kill_check_group(pid);
         Ok(CapturedOutput {
@@ -197,10 +268,21 @@ impl ProcessRunner for SystemProcessRunner {
         })
     }
 
-    fn stop_checks(&self) {
-        for pid in CHECKS.lock().unwrap_or_else(|e| e.into_inner()).drain(..) {
-            kill_check_group(pid);
-        }
+    fn stop_checks(&self, group: &str) {
+        CHECKS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|(of, pid)| {
+                let stop = of == group;
+                if stop {
+                    kill_check_group(*pid);
+                }
+                !stop
+            });
+    }
+
+    fn isolates_checks(&self) -> bool {
+        bubblewrap()
     }
     fn blocked_env_vars(&self) -> Vec<String> {
         let mut names: Vec<String> = std::env::vars_os()
@@ -274,6 +356,65 @@ pub fn wait_unlocked(child: &std::sync::Mutex<std::process::Child>) -> Option<i3
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    fn check(dir: &std::path::Path, script: &str, group: &str) -> Option<i32> {
+        let spec = LaunchSpec {
+            program: "sh".into(),
+            args: vec!["-c".into(), script.into()],
+            env: vec![],
+            cwd: Some(dir.to_path_buf()),
+        };
+        SystemProcessRunner
+            .run_check(&spec, Duration::from_secs(20), group)
+            .unwrap()
+            .exit_code
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_check_gets_no_secrets_and_leaves_nothing_running() {
+        let dir = tempfile::tempdir().unwrap();
+        // Cargo sets this for the test process: a stand-in for any variable.
+        assert!(std::env::var_os("CARGO_MANIFEST_DIR").is_some());
+        assert_eq!(check(dir.path(), "env > env.txt", "t1"), Some(0));
+        let env = std::fs::read_to_string(dir.path().join("env.txt")).unwrap();
+        assert!(env.contains("PATH=") && !env.contains("CARGO_MANIFEST_DIR"));
+
+        assert_eq!(
+            check(dir.path(), "(sleep 2; touch late) & exit 0", "t1"),
+            Some(0)
+        );
+        std::thread::sleep(Duration::from_secs(3));
+        assert!(
+            !dir.path().join("late").exists(),
+            "its background child went too"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_isolated_check_writes_only_in_its_copy_and_has_no_network() {
+        if !SystemProcessRunner.isolates_checks() {
+            return; // no bubblewrap here
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let probe = outside.path().join("probe");
+        let script = format!("touch '{}'", probe.display());
+        assert_ne!(check(dir.path(), &script, "t2"), Some(0));
+        assert!(!probe.exists());
+        assert_eq!(check(dir.path(), "touch inside", "t2"), Some(0));
+        assert!(dir.path().join("inside").exists());
+        assert_eq!(check(dir.path(), "test ! -e /run/user", "t2"), Some(0));
+        let net = "exec 3<>/dev/tcp/1.1.1.1/80 2>/dev/null && echo up || echo down";
+        assert_eq!(
+            check(dir.path(), &format!("bash -c '{net}' > net.txt"), "t2"),
+            Some(0)
+        );
+        let net = std::fs::read_to_string(dir.path().join("net.txt")).unwrap();
+        assert_eq!(net.trim(), "down");
+    }
 
     #[test]
     fn removes_blocked_vars_and_sets_the_folder() {

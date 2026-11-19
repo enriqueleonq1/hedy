@@ -749,8 +749,9 @@ impl Hedy {
                 let changed = {
                     let _status = self.status_lock.lock().unwrap_or_else(|e| e.into_inner());
                     // Closed meanwhile (discarded elsewhere): it stays closed.
+                    // (The event is already recorded.)
                     if self.task(id)?.status.is_closed() {
-                        return self.record(id, event);
+                        return Ok(());
                     }
                     let changed = task.status != status;
                     self.set_status(&mut task, status)?;

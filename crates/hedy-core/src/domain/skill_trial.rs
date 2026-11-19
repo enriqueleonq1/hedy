@@ -41,6 +41,9 @@ pub struct TrialRef {
     /// The check's result, once it ran.
     #[serde(default)]
     pub checked: Option<bool>,
+    /// Test files the run had changed that Hedy put back before the check.
+    #[serde(default)]
+    pub restored: usize,
     /// The user stopped this run: the trial says nothing.
     #[serde(default)]
     pub stopped: bool,
@@ -80,6 +83,8 @@ pub struct TrialRun {
     pub stopped: bool,
     /// It reached the model at all (some usage or a finished turn).
     pub started: bool,
+    /// Test files Hedy put back before the check.
+    pub restored: usize,
 }
 
 impl TrialRun {
@@ -103,6 +108,7 @@ pub fn run_from_events(
         check: trial.check.as_ref().map(|_| trial.checked == Some(true)),
         can_tell_use,
         stopped: trial.stopped,
+        restored: trial.restored,
         ..TrialRun::default()
     };
     let file = format!("skills/{}/SKILL.md", trial.skill);
@@ -217,6 +223,9 @@ pub struct TrialResult {
     /// Hedy ran a check on both sides (else a pass is only finishing).
     #[serde(default)]
     pub checked: bool,
+    /// Test files the runs had changed, put back before the check.
+    #[serde(default)]
+    pub restored: usize,
     /// When it was judged (seconds).
     pub at: i64,
     #[serde(default)]
@@ -264,6 +273,14 @@ impl TrialResult {
             line.push(' ');
             line.push_str(&tr!("La IA no llegó a usarla.", "The AI never used it."));
         }
+        if self.restored > 0 {
+            let n = self.restored;
+            line.push(' ');
+            line.push_str(&tr!(
+                "Antes de comprobar, Hedy devolvió {n} archivos de tests cambiados a como estaban.",
+                "Before checking, Hedy put {n} changed test files back as they were."
+            ));
+        }
         line
     }
 
@@ -301,6 +318,7 @@ pub fn judge(runs: &[TrialRun], trial: &TrialRef, at: i64) -> TrialResult {
         cost_with_micros: total(true, |r| r.cost_micros),
         cost_without_micros: total(false, |r| r.cost_micros),
         checked: trial.check.is_some(),
+        restored: runs.iter().map(|r| r.restored).sum(),
         at,
         trial: trial.trial.clone(),
         skill: trial.skill.clone(),
@@ -317,6 +335,71 @@ pub fn judge(runs: &[TrialRun], trial: &TrialRef, at: i64) -> TrialResult {
         Verdict::Doubtful
     };
     result
+}
+
+/// Files that decide what Hedy's check says: tests, their configuration and
+/// build scripts. A run's changes to the ones the base commit has are put
+/// back before the check, so a run cannot pass by rewriting its own tests
+/// (new test files stay: a task may ask for them).
+pub fn guards_the_check(path: &str) -> bool {
+    let path = path.replace('\\', "/");
+    let name = path.rsplit('/').next().unwrap_or(&path);
+    let in_folder = path
+        .split('/')
+        .rev()
+        .skip(1)
+        .any(|dir| matches!(dir, "test" | "tests" | "__tests__" | "spec" | "e2e"));
+    let stem = name.split('.').next().unwrap_or(name);
+    let test_name = stem.starts_with("test_")
+        || stem.ends_with("_test")
+        || stem.ends_with("_spec")
+        || name.contains(".test.")
+        || name.contains(".spec.");
+    let config = matches!(
+        name,
+        "conftest.py" | "pytest.ini" | "tox.ini" | "build.rs" | "setup.cfg" | "noxfile.py"
+    ) || [
+        "jest.config.",
+        "vitest.config.",
+        "vitest.workspace.",
+        "playwright.config.",
+        "karma.conf.",
+        "cypress.config.",
+        ".mocharc",
+        "babel.config.",
+    ]
+    .iter()
+    .any(|prefix| name.starts_with(prefix));
+    in_folder || test_name || config
+}
+
+/// `package.json` with the base commit's `scripts` (so `npm test` means
+/// what it meant before the run), or `None` when they are the same or the
+/// files cannot be read as JSON.
+pub fn restore_scripts(base: &str, current: &str) -> Option<String> {
+    let base: serde_json::Value = serde_json::from_str(base).ok()?;
+    let mut current: serde_json::Value = serde_json::from_str(current).ok()?;
+    let scripts = base
+        .get("scripts")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    if current
+        .get("scripts")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null)
+        == scripts
+    {
+        return None;
+    }
+    let object = current.as_object_mut()?;
+    if scripts.is_null() {
+        object.remove("scripts");
+    } else {
+        object.insert("scripts".into(), scripts);
+    }
+    serde_json::to_string_pretty(&current)
+        .ok()
+        .map(|json| json + "\n")
 }
 
 /// A stable fingerprint of a skill's text (FNV-1a), to tell versions apart.
@@ -407,6 +490,7 @@ mod tests {
             tasks: 1,
             check: Some("npm test".into()),
             checked: Some(true),
+            restored: 0,
             stopped: false,
             version: "v1".into(),
         }
@@ -564,6 +648,38 @@ mod tests {
             resets_at: None,
         };
         assert!(run_from_events(&reference(true), &[limit], false, true).limited);
+    }
+
+    #[test]
+    fn the_files_that_decide_the_check_are_known() {
+        for path in [
+            "tests/api.rs",
+            "src/__tests__/cart.tsx",
+            "app/cart.test.ts",
+            "app/cart.spec.js",
+            "pkg/cart_test.go",
+            "test_cart.py",
+            "conftest.py",
+            "vitest.config.ts",
+            "build.rs",
+            "e2e/login.ts",
+        ] {
+            assert!(guards_the_check(path), "{path}");
+        }
+        for path in [
+            "src/lib.rs",
+            "src/testing.rs",
+            "README.md",
+            "package.json",
+            "latest.ts",
+        ] {
+            assert!(!guards_the_check(path), "{path}");
+        }
+        let base = r#"{"name":"a","scripts":{"test":"vitest run"}}"#;
+        let gamed = r#"{"name":"a","scripts":{"test":"exit 0"},"dependencies":{"zod":"3"}}"#;
+        let restored = restore_scripts(base, gamed).unwrap();
+        assert!(restored.contains("vitest run") && restored.contains("zod"));
+        assert_eq!(restore_scripts(base, base), None);
     }
 
     #[test]

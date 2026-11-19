@@ -839,7 +839,7 @@ fn skills_try_runs_each_task_with_and_without_the_skill_and_keeps_the_result() {
     .timeout(std::time::Duration::from_secs(60))
     .assert()
     .success()
-    .stdout(predicate::str::contains("Hedy corre `true` en su copia"))
+    .stdout(predicate::str::contains("corre `true` en su copia"))
     .stdout(predicate::str::contains("Dudosa"))
     .stdout(predicate::str::contains(
         "Con ella acierta 1 de 1; sin ella, 1 de 1",

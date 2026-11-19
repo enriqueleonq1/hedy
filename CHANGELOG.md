@@ -35,8 +35,9 @@ All notable changes to Hedy are listed here. The format follows
 - Try a skill for real: `hedy skills try <name>` runs up to 3 tasks twice each, with and
   without the skill, in throwaway copies of the project, and says from what the runs did
   (finished, the same check Hedy runs in each copy, the skill used, tokens) whether it is
-  useful, doubtful or harmful. A limit, a run you stop or a copy of the skill outside Hedy
-  keeps no verdict. Nothing reaches the project; `hedy skills show` keeps the result until
+  useful, doubtful or harmful. Before the check, the tests a run changed are put back, and on
+  Linux the check runs isolated with bubblewrap (no network, writing only in its copy). A
+  limit, a run you stop or a copy of the skill outside Hedy keeps no verdict. Nothing reaches the project; `hedy skills show` keeps the result until
   the skill changes.
 - Personal sync: the same Hedy on every PC you use. Notes, proposals, skills, templates and
   themes travel through a private git repo of yours (GitHub, GitLab, Bitbucket, Gitea or your

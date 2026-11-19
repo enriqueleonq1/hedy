@@ -1022,6 +1022,9 @@ pub struct FakeRunner {
     replies: Mutex<HashMap<String, PortResult<CapturedOutput>>>,
     installed: Mutex<HashSet<String>>,
     env: Mutex<Vec<String>>,
+    /// Checks run through `run_check`, with their group.
+    checks: Mutex<Vec<(String, LaunchSpec)>>,
+    stopped_checks: Mutex<Vec<String>>,
 }
 
 fn command_line(spec: &LaunchSpec) -> String {
@@ -1066,6 +1069,13 @@ impl FakeRunner {
     pub fn captured(&self) -> Vec<LaunchSpec> {
         self.captured.lock().unwrap().clone()
     }
+    /// Checks run through `run_check` (never `run_captured` alone).
+    pub fn checks(&self) -> Vec<(String, LaunchSpec)> {
+        self.checks.lock().unwrap().clone()
+    }
+    pub fn stopped_checks(&self) -> Vec<String> {
+        self.stopped_checks.lock().unwrap().clone()
+    }
     pub fn interactive(&self) -> Vec<LaunchSpec> {
         self.interactive.lock().unwrap().clone()
     }
@@ -1101,10 +1111,20 @@ impl ProcessRunner for FakeRunner {
         &self,
         spec: &LaunchSpec,
         _timeout: std::time::Duration,
+        group: &str,
     ) -> PortResult<CapturedOutput> {
+        self.checks
+            .lock()
+            .unwrap()
+            .push((group.to_owned(), spec.clone()));
         self.run_captured(spec)
     }
-    fn stop_checks(&self) {}
+    fn stop_checks(&self, group: &str) {
+        self.stopped_checks.lock().unwrap().push(group.to_owned());
+    }
+    fn isolates_checks(&self) -> bool {
+        true
+    }
     fn blocked_env_vars(&self) -> Vec<String> {
         self.env.lock().unwrap().clone()
     }

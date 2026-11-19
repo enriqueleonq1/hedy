@@ -863,13 +863,22 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
     - **Judged by Hedy's check, never by the agent's tests:** once a run stops, Hedy
       runs the same command in its copy (`--check`, `--check none` for no check, else
       the project's test command guessed from its files and shown before starting; 10
-      minutes at most). It runs code the run wrote, and the CLI says so: it gets only
-      `PATH`, `HOME`, the locale, `TERM`, `TMPDIR` and `USER` (no tokens or keys), runs
-      in a process group of its own and is killed whole on timeout or cancel. It is
-      not a sandbox: it can read the user's files, and the shared `node_modules` /
-      `.venv` links reach the real project (bubblewrap or Landlock would close that).
-      A run can still pass by rewriting its own tests; restoring test files from the
-      base commit before the check is the next step. A run passes when it finished, its
+      minutes at most). Before it, the files that decide it are put back as the base
+      commit has them (tests, test configuration, `build.rs`, and `package.json`'s
+      `scripts`; new test files stay, since a task may ask for them), so a run cannot
+      pass by rewriting its tests; the result says how many. Tests written inline in
+      a source file (Rust's `#[cfg(test)]`) cannot be told apart and stay as the run
+      left them.
+    - **The check runs code the run wrote,** and the CLI says so. It gets only `PATH`,
+      `HOME`, the locale, `TERM`, `TMPDIR` and `USER` (no tokens or keys), runs in a
+      process group of its own and is killed whole on timeout or cancel (only its
+      trial's checks). On Linux with bubblewrap it runs isolated: no network, no IPC,
+      its own processes (gone when it ends), the system read-only, `/run` (the
+      session bus, the keyring's way in) and `/tmp` empty, only the copy writable,
+      killed with Hedy; tools are told they are offline (`CARGO_NET_OFFLINE`,
+      `npm_config_offline`), so a check that needs to download fails rather than
+      hangs. Without bubblewrap (macOS, or not installed) it runs as the user, and the
+      CLI warns before starting. A run passes when it finished, its
       task did not fail and the check exits 0; with no check, passing is only finishing,
       and the result says so. A skill cannot pass by telling the agent not to test.
       More passes with it → útil, fewer → contraproducente; the same → útil only if the

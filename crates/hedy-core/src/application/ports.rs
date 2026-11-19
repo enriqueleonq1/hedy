@@ -446,13 +446,20 @@ pub trait ProcessRunner: Send + Sync {
     /// needs (`PATH`, `HOME`, locale; never tokens or keys), in a process
     /// group of its own, killed whole on timeout or by
     /// [`ProcessRunner::stop_checks`].
+    /// `group` names whose check it is (a trial), for
+    /// [`ProcessRunner::stop_checks`]. On Linux with bubblewrap it runs
+    /// isolated: no network, no session bus, the system read-only except
+    /// the copy, killed with Hedy.
     fn run_check(
         &self,
         spec: &LaunchSpec,
         timeout: std::time::Duration,
+        group: &str,
     ) -> PortResult<CapturedOutput>;
-    /// Kills every check still running (its trial was cancelled).
-    fn stop_checks(&self);
+    /// Kills the checks of `group` still running (its trial was cancelled).
+    fn stop_checks(&self, group: &str);
+    /// Whether checks run isolated here (see [`ProcessRunner::run_check`]).
+    fn isolates_checks(&self) -> bool;
     /// Names (never values) of the variables in Hedy's own environment that
     /// launched CLIs do not get, because [`crate::domain::env::is_blocked`].
     fn blocked_env_vars(&self) -> Vec<String>;
