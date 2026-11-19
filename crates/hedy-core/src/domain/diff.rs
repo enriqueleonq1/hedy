@@ -55,12 +55,75 @@ pub struct Commit {
     pub subject: String,
 }
 
+/// A path as git prints it: maybe C-quoted (`"m\303\251x/.env"`, for
+/// unusual characters), with a tab after it when it has a space
+/// (`my dir/.env<TAB>`), and with its `a/` or `b/` prefix.
 fn strip_prefix(path: &str) -> String {
-    let path = path.trim_matches('"');
+    let path = git_path(path);
     path.strip_prefix("a/")
         .or_else(|| path.strip_prefix("b/"))
-        .unwrap_or(path)
-        .to_owned()
+        .map_or_else(|| path.clone(), str::to_owned)
+}
+
+/// A path as git prints it, unquoted, without the tab after it.
+fn git_path(raw: &str) -> String {
+    let raw = raw.trim_end_matches(['\t', '\r']);
+    match raw.strip_prefix('"').and_then(|r| r.strip_suffix('"')) {
+        Some(quoted) => unquote_c(quoted),
+        None => raw.to_owned(),
+    }
+}
+
+/// Undoes git's C quoting: `\"`, `\\`, `\t`, `\n` and octal bytes (`\303\251`).
+fn unquote_c(quoted: &str) -> String {
+    let mut bytes: Vec<u8> = Vec::with_capacity(quoted.len());
+    let mut chars = quoted.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            let mut buf = [0u8; 4];
+            bytes.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+            continue;
+        }
+        match chars.next() {
+            Some('t') => bytes.push(b'\t'),
+            Some('n') => bytes.push(b'\n'),
+            Some('r') => bytes.push(b'\r'),
+            Some('a') => bytes.push(0x07),
+            Some('b') => bytes.push(0x08),
+            Some('f') => bytes.push(0x0c),
+            Some('v') => bytes.push(0x0b),
+            Some(d @ '0'..='7') => {
+                let mut value = d.to_digit(8).unwrap_or(0);
+                for _ in 0..2 {
+                    match chars.peek().and_then(|c| c.to_digit(8)) {
+                        Some(next) => {
+                            value = value * 8 + next;
+                            chars.next();
+                        }
+                        None => break,
+                    }
+                }
+                bytes.push(value as u8);
+            }
+            Some(other) => {
+                let mut buf = [0u8; 4];
+                bytes.extend_from_slice(other.encode_utf8(&mut buf).as_bytes());
+            }
+            None => bytes.push(b'\\'),
+        }
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+/// The new path of a `diff --git a/x b/x` line (quoted or not).
+fn header_path(rest: &str) -> String {
+    if rest.ends_with('"')
+        && let Some(at) = rest.rfind(" \"b/")
+    {
+        return strip_prefix(&rest[at + 1..]);
+    }
+    rest.rsplit_once(" b/")
+        .map_or_else(|| git_path(rest), |(_, b)| git_path(b))
 }
 
 /// `@@ -12,7 +12,9 @@ fn x` → (12, 12).
@@ -80,9 +143,8 @@ pub fn parse_unified(diff: &str) -> Vec<FileDiff> {
 
     for line in diff.lines() {
         if let Some(rest) = line.strip_prefix("diff --git ") {
-            let path = rest.rsplit_once(" b/").map_or(rest, |(_, b)| b);
             files.push(FileDiff {
-                path: path.to_owned(),
+                path: header_path(rest),
                 old_path: None,
                 status: FileStatus::Modified,
                 additions: 0,
@@ -103,17 +165,24 @@ pub fn parse_unified(diff: &str) -> Vec<FileDiff> {
                 file.status = FileStatus::Deleted;
             } else if let Some(from) = line.strip_prefix("rename from ") {
                 file.status = FileStatus::Renamed;
-                file.old_path = Some(from.to_owned());
+                file.old_path = Some(git_path(from));
             } else if let Some(to) = line.strip_prefix("rename to ") {
-                file.path = to.to_owned();
+                file.path = git_path(to);
             } else if line.starts_with("Binary files ") {
                 file.binary = true;
             } else if let Some(to) = line.strip_prefix("+++ ") {
                 if to != "/dev/null" {
                     file.path = strip_prefix(to);
                 }
-            } else if line.starts_with("--- ") {
-                // The new path (+++) is the one shown.
+            } else if let Some(from) = line.strip_prefix("copy from ") {
+                file.old_path = Some(git_path(from));
+            } else if let Some(from) = line.strip_prefix("--- ") {
+                // The new path (+++) is the one shown; a different old one
+                // (two blobs, a copy) is kept like a rename's.
+                let from = strip_prefix(from);
+                if from != "/dev/null" && from != file.path && file.old_path.is_none() {
+                    file.old_path = Some(from);
+                }
             }
         }
 
@@ -234,6 +303,33 @@ Binary files /dev/null and b/logo.png differ
 
         assert!(files[3].binary);
         assert_eq!(files[3].status, FileStatus::Added);
+    }
+
+    #[test]
+    fn quoted_and_spaced_paths_are_read_as_they_are() {
+        let diff = "diff --git a/my dir/.env b/my dir/.env\n\
+            --- a/my dir/.env\t\n\
+            +++ b/my dir/.env\t\n\
+            @@ -1 +1,2 @@\n A=1\n+KEY=secret\n\
+            diff --git \"a/m\\303\\251x/.env\" \"b/m\\303\\251x/config.txt\"\n\
+            similarity index 90%\n\
+            rename from \"m\\303\\251x/.env\"\n\
+            rename to \"m\\303\\251x/config.txt\"\n\
+            diff --git \"a/caf\\303\\251 \\\"x\\\".png\" \"b/caf\\303\\251 \\\"x\\\".png\"\n\
+            new file mode 100644\n\
+            Binary files /dev/null and \"b/caf\\303\\251 \\\"x\\\".png\" differ\n";
+        let files = parse_unified(diff);
+        assert_eq!(files[0].path, "my dir/.env");
+        assert_eq!(files[1].path, "méx/config.txt");
+        assert_eq!(files[1].old_path.as_deref(), Some("méx/.env"));
+        assert_eq!(files[2].path, "café \"x\".png");
+        let blobs = parse_unified(
+            "diff --git a/.env b/notes.txt\nindex 1..2 100644\n--- a/.env\n+++ b/notes.txt\n@@ -1 +1 @@\n-K=1\n+x\n",
+        );
+        assert_eq!(blobs[0].path, "notes.txt");
+        assert_eq!(blobs[0].old_path.as_deref(), Some(".env"));
+        assert_eq!(parse_unified(SAMPLE)[0].old_path, None);
+        assert_eq!(unquote_c("tab\\there\\\\"), "tab\there\\");
     }
 
     #[test]
