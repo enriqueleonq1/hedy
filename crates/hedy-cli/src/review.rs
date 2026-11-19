@@ -31,44 +31,6 @@ pub struct ReviewOptions {
     pub json: bool,
 }
 
-/// How a check ended, as the JSON says it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Status {
-    /// Nothing changed.
-    NoChanges,
-    /// No written rule applies here; nothing was sent.
-    NoRules,
-    /// The change adds no line to judge; nothing was sent.
-    NothingToCheck,
-    /// The answer said neither what breaks a rule nor that nothing does.
-    Unread,
-    Checked,
-}
-
-impl Status {
-    fn of(check: &RuleCheck) -> Self {
-        if check.rules.is_empty() {
-            Self::NoRules
-        } else if check.account.is_none() {
-            Self::NothingToCheck
-        } else if check.unread {
-            Self::Unread
-        } else {
-            Self::Checked
-        }
-    }
-
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::NoChanges => "no_changes",
-            Self::NoRules => "no_rules",
-            Self::NothingToCheck => "nothing_to_check",
-            Self::Unread => "unread",
-            Self::Checked => "checked",
-        }
-    }
-}
-
 pub fn review(hedy: &Hedy, dir: &Path, options: ReviewOptions) -> Result<()> {
     let target = if let Some(task) = &options.task {
         RuleTarget::Task(TaskId::new(task.as_str()))
@@ -102,7 +64,7 @@ pub fn review(hedy: &Hedy, dir: &Path, options: ReviewOptions) -> Result<()> {
             if options.json {
                 // The same keys as a check, so a script reads `.breaks` alike.
                 let value = json!({
-                    "status": Status::NoChanges.as_str(),
+                    "status": "no_changes",
                     "breaks": [],
                     "rules": [],
                     "files": 0,
@@ -146,7 +108,7 @@ fn as_json(check: &RuleCheck, model: Option<&str>) -> serde_json::Value {
         })
         .collect();
     json!({
-        "status": Status::of(check).as_str(),
+        "status": check.status(),
         "breaks": check.breaks,
         "rules": rules,
         "files": check.files,
@@ -160,8 +122,8 @@ fn as_json(check: &RuleCheck, model: Option<&str>) -> serde_json::Value {
 fn print_check(check: &RuleCheck) {
     let s = Style::for_stdout();
     println!();
-    match Status::of(check) {
-        Status::NoRules => {
+    match check.status() {
+        "no_rules" => {
             println!(
                 "  {}",
                 tr!(
@@ -179,7 +141,7 @@ fn print_check(check: &RuleCheck) {
             print_left_out(&s, check);
             return;
         }
-        Status::NothingToCheck => {
+        "nothing_to_check" => {
             println!(
                 "  {}\n",
                 tr!(

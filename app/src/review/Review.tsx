@@ -18,10 +18,13 @@ import { DiffView, type DiffLayout } from "../screens/workspace/DiffView";
 import { useReviewed } from "../screens/workspace/reviewed";
 import { ShipPanel } from "../screens/workspace/ship/ShipPanel";
 import { useReviewComments } from "./comments";
+import { LineWarnings, RulesBar, useRuleCheck } from "./rules";
 import { HistoryDialog } from "./HistoryDialog";
 import { PencilIcon } from "../code/icons";
 import { CheckIcon, CommentIcon, DisclosureIcon, ExternalIcon, FileIcon, SplitIcon, UnifiedIcon } from "./icons";
 import "../styles/reviewer.css";
+
+const NO_FILES: FileDiff[] = [];
 
 /** Narrower than this, the side-by-side view would squeeze the code: unified only. */
 const SPLIT_MIN_WIDTH = 720;
@@ -134,6 +137,7 @@ export function Changes({ project, task }: { project: string; task: Task | null 
   const layout: DiffLayout = layoutChoice === "split" && splitFits ? "split" : "unified";
   const taskId = task?.id ?? "";
   const copy = useMemo<CodeCopy>(() => ({ kind: "task", task: taskId }), [taskId]);
+  const rules = useRuleCheck(editable ? task : null, diff.data ?? NO_FILES);
 
   // The agent changed files: what the code views cached for this copy is stale.
   const updatedAt = diff.dataUpdatedAt;
@@ -321,10 +325,14 @@ export function Changes({ project, task }: { project: string; task: Task | null 
               </div>
             </header>
 
+            <RulesBar task={task} copy={copy} rules={rules} />
+
             <ul className="rv-files" aria-label={t("workspace.changes.files")} title={t("review.keys")}>
               {files.map((f) => {
                 const done = reviewed.isReviewed(f);
                 const notes = commentCount(f.path);
+                const warned = rules.countFor(f.path);
+                const warnedLabel = warned === 1 ? t("rules.badgeOne") : t("rules.badge", { n: warned });
                 return (
                   <li
                     key={f.path}
@@ -361,6 +369,12 @@ export function Changes({ project, task }: { project: string; task: Task | null 
                           <CommentIcon />
                           {notes}
                           <span className="sr-only"> {pendingLabel(notes)}</span>
+                        </span>
+                      )}
+                      {warned > 0 && (
+                        <span className="rv-file__rules" title={warnedLabel}>
+                          {warned}
+                          <span className="sr-only"> {warnedLabel}</span>
                         </span>
                       )}
                       <span className="rv-file__stats">
@@ -418,6 +432,14 @@ export function Changes({ project, task }: { project: string; task: Task | null 
                   layout={layout}
                   focusLine={review.selectedFile === current.path ? review.selectedLine : null}
                   focusSeq={review.selectedFile === current.path ? review.selectSeq : 0}
+                  annotations={
+                    new Map(
+                      [...rules.linesOf(current.path)].map(([line, warnings]) => [
+                        line,
+                        <LineWarnings key={line} warnings={warnings} copy={copy} rules={rules} />,
+                      ]),
+                    )
+                  }
                 />
               </section>
             )}

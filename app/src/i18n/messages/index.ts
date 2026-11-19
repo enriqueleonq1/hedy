@@ -18,6 +18,7 @@ import palette from "./palette";
 import queue from "./queue";
 import review from "./review";
 import reviewer from "./reviewer";
+import rules from "./rules";
 import settings from "./settings";
 import ship from "./ship";
 import shell from "./shell";
@@ -64,6 +65,7 @@ const es = {
   ...sync.es,
   ...team.es,
   ...ask.es,
+  ...rules.es,
 };
 const en: Record<keyof typeof es, string> = {
   ...common.en,
@@ -95,6 +97,7 @@ const en: Record<keyof typeof es, string> = {
   ...sync.en,
   ...team.en,
   ...ask.en,
+  ...rules.en,
 };
 
 export type MessageKey = keyof typeof es;

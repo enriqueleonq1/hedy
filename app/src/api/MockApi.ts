@@ -27,6 +27,8 @@ import type {
   MemoryAnswer,
   MemoryGraph,
   MemorySource,
+  RuleBreak,
+  RuleCheck,
   MemoryHome,
   MemoryHomeKind,
   SyncConflict,
@@ -433,6 +435,7 @@ export class MockApi implements HedyApi {
     note("Tests con pytest; correr pytest -q antes de cada commit", "convention", { uses: 31 });
     note("Nunca tocar .env ni correr migraciones en producción", "rule", { uses: 12 });
     note("El deploy se hace los viernes", "convention", { lastUsed: now - 90 * day, createdAt: now - 120 * day });
+    note("Los comentarios del código van en inglés", "convention", { uses: 9 });
     note("Prefiere respuestas cortas y en español", "preference", { project: null, uses: 58 });
     const proposal = { status: "proposed", uses: 0, lastUsed: null, createdAt: now - 3600 } as const;
     note("Los formularios validan con zod", "convention", { ...proposal, author: "Codex" });
@@ -700,6 +703,54 @@ export class MockApi implements HedyApi {
     const cited = best.map((_, i) => i + 1);
     const text = best.map((s, i) => `${s.source.text.replace(/\.$/, "")} [${i + 1}].`).join(" ");
     return { text, sources, cited, account: reader?.name ?? null };
+  }
+
+  /**
+   * Like the backend's check, judged by two sample rules the sample notes
+   * hold: comments in English, and camelCase names in TypeScript.
+   */
+  async checkTaskRules(task: string, account?: string | null): Promise<RuleCheck> {
+    const found = this.tasksById.get(task);
+    if (!found) throw `no existe la tarea ${task}`;
+    if (found.status === "accepted" || found.status === "discarded") throw `la tarea ${task} ya está cerrada`;
+    const files = this.diffs.get(task) ?? [];
+    if (files.length === 0) throw "no hay cambios que revisar";
+    await this.pause();
+    const rank = (c: NoteCategory) => (c === "rule" || c === "convention" ? 0 : c === "decision" ? 1 : 2);
+    const rules = this.memorySources({ kind: "project", project: found.project }).sort(
+      (a, b) => rank(a.category) - rank(b.category) || b.at - a.at,
+    );
+    const isProtected = (path: string) => /(^|\/)\.env(\.|$)|\.(pem|key)$/i.test(path);
+    const shown = files.filter((f) => !isProtected(f.path) && !f.binary && f.status !== "deleted");
+    const added = shown.flatMap((f) =>
+      f.hunks.flatMap((h) => h.lines).filter((l) => l.kind === "added" && l.newLine !== null).map((l) => ({ path: f.path, line: l })),
+    );
+    const base = {
+      files: new Set(added.map((a) => a.path)).size,
+      protected: files.filter((f) => isProtected(f.path)).map((f) => f.path),
+      truncated: false,
+    };
+    if (rules.length === 0) return { status: "no_rules", breaks: [], rules, ...base, account: null };
+    if (added.length === 0) return { status: "nothing_to_check", breaks: [], rules, ...base, account: null };
+    const reader =
+      this.state.accounts.find((a) => a.id === (account ?? this.project(found.project).account ?? this.state.defaultAccount)) ??
+      this.state.accounts[0];
+    const english = rules.findIndex((r) => /comentarios.*ingl[eé]s/i.test(r.text)) + 1;
+    const camel = rules.findIndex((r) => /camelcase/i.test(r.text)) + 1;
+    const breaks: RuleBreak[] = [];
+    for (const { path, line } of added) {
+      const code = line.text.trim();
+      const comment = /^(#|\/\/)\s*(.*)$/.exec(code)?.[2] ?? "";
+      if (english && /[áéíóúñ]|\b(el|la|se|por|como|del)\b/i.test(comment)) {
+        breaks.push({ path, line: line.newLine ?? 0, rule: english, message: "El comentario está en español.", fix: "Escríbelo en inglés.", code });
+      }
+      const snake = /\b(?:const|let|var)\s+([a-z]+_[a-z0-9_]+)/.exec(code)?.[1];
+      if (camel && snake && /\.(ts|tsx|js|jsx)$/.test(path)) {
+        const fixed = snake.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+        breaks.push({ path, line: line.newLine ?? 0, rule: camel, message: `\`${snake}\` no va en camelCase.`, fix: `Llámala \`${fixed}\`.`, code });
+      }
+    }
+    return { status: "checked", breaks, rules, ...base, account: reader?.name ?? "Claude" };
   }
 
   async lookInCode(question: string, project: string): Promise<CodeLookup> {

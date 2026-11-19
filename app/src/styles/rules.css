@@ -1,0 +1,82 @@
+/* "Revisar con tus reglas" (docs/decisions.md §37): the bar above the files
+   and the warnings under the lines of the diff. */
+
+.rl-bar {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.rl-bar--warn { border-color: var(--warn-line); background: var(--warn-bg); }
+.rl-bar--ok .rl-bar__text::before {
+  content: "✓ ";
+  color: var(--success);
+  font-weight: 600;
+}
+.rl-bar__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.rl-bar__text { flex: 1 1 260px; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.rl-bar--warn .rl-bar__text strong { color: var(--warn-ink); }
+.rl-bar__tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.rl-bar__meta { margin: 0; }
+.rl-bar__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--action-text);
+  font: inherit;
+  cursor: pointer;
+}
+.rl-bar__link:hover { text-decoration: underline; }
+.rl-bar p.muted, .rl-bar p.error-text { margin: 0; }
+
+.rl-warnings {
+  display: grid;
+  gap: 8px;
+  max-width: 720px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rl-warning {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--warn-line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.rl-warning p { margin: 0; overflow-wrap: anywhere; }
+.rl-warning__head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.rl-warning__label { color: var(--warn-ink); font-weight: 600; }
+.rl-warning__rule { color: var(--muted); }
+.rl-warning__rule::before { content: "«"; }
+.rl-warning__rule::after { content: "»"; }
+.rl-warning__fix { color: var(--muted); }
+.rl-warning__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 2px; }
+.rl-warning__where {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--action-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.rl-warning__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.rl-warning__added { color: var(--muted); font-size: 12px; align-self: center; }
+
+.rv-file__rules {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--warn-bg);
+  box-shadow: inset 0 0 0 1px var(--warn-line);
+  color: var(--warn-ink);
+  font-size: 11px;
+  font-weight: 600;
+}

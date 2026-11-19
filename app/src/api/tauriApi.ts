@@ -105,6 +105,7 @@ export const tauriApi: HedyApi = {
   memory: (path) => invoke("memory", { path }),
   searchMemory: (path, query) => invoke("search_memory", { path, query }),
   askMemory: (question, scope, account) => invoke("ask_memory", { question, scope, account: account ?? null }),
+  checkTaskRules: (task, account) => invoke("check_task_rules", { task, account: account ?? null }),
   memoryGraph: () => invoke("memory_graph"),
   lookInCode: (question, project, account) => invoke("look_in_code", { question, project, account: account ?? null }),
   addNote: (project, text, category) => invoke("add_note", { project, text, category }),

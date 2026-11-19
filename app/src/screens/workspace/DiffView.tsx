@@ -164,6 +164,7 @@ export function DiffView({
   layout = "unified",
   focusLine = null,
   focusSeq = 0,
+  annotations,
 }: {
   copy: CodeCopy;
   file: FileDiff;
@@ -171,6 +172,8 @@ export function DiffView({
   /** A line of the new side to show (and move to) when `focusSeq` changes. */
   focusLine?: number | null;
   focusSeq?: number;
+  /** Shown under lines of the new side, by their number (the rules' warnings). */
+  annotations?: Map<number, ReactNode>;
 }) {
   const t = useT();
   const api = useApi();
@@ -216,8 +219,12 @@ export function DiffView({
       if (at >= 0) set.add(at);
     }
     if (focusIndex >= 0) set.add(focusIndex);
+    for (const n of annotations?.keys() ?? []) {
+      const at = indexOfLine(lines, "new", n);
+      if (at >= 0) set.add(at);
+    }
     return set;
-  }, [lines, extra, comments, anchorOf, focusIndex]);
+  }, [lines, extra, comments, anchorOf, focusIndex, annotations]);
   const segs = useMemo(
     () => (source.kind === "full" ? buildSegments(lines, visible) : source.kind === "hunks" ? source.segments : []),
     [source, lines, visible],
@@ -564,6 +571,21 @@ export function DiffView({
       </div>
     );
 
+  /** What is shown under a line of the new side (nothing under a removed one). */
+  const annotationRow = (index: number | null, side: Side | null) => {
+    const line = index === null ? undefined : lines[index];
+    const node = line && line.kind !== "removed" && line.newLine !== null ? annotations?.get(line.newLine) : undefined;
+    return (
+      node && (
+        <div role="row" className={`rd-thread rd-thread--rules${side ? ` rd-thread--${side}` : ""}`}>
+          <div role="cell" className="rd-thread__cell">
+            {node}
+          </div>
+        </div>
+      )
+    );
+  };
+
   const commentsAt = (index: number, side: Side | null) =>
     comments.filter((c) => anchorOf(c) === index && (side === null || c.side === side));
 
@@ -592,6 +614,7 @@ export function DiffView({
         >
           {lineCells(line, index, side, null)}
         </div>
+        {annotationRow(index, null)}
         {threadFor(commentsAt(index, null), null)}
         {composing?.at === index && composerRow(null)}
       </Fragment>
@@ -636,6 +659,7 @@ export function DiffView({
         </div>
         {threadFor(oldThreads, "old")}
         {composeOld && composerRow("old")}
+        {annotationRow(row.right, "new")}
         {threadFor(newThreads, "new")}
         {composeNew && composerRow("new")}
       </Fragment>

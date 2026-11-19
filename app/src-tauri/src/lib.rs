@@ -6,6 +6,7 @@ mod code;
 mod commands;
 mod dto;
 mod events;
+mod rules;
 mod ship;
 mod sync;
 mod team;
@@ -118,6 +119,7 @@ pub fn run() {
             ask::ask_memory,
             ask::memory_graph,
             ask::look_in_code,
+            rules::check_task_rules,
             commands::add_note,
             commands::edit_note,
             commands::approve_note,

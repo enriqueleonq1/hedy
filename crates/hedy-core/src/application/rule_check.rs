@@ -57,6 +57,22 @@ pub struct RuleCheck {
     pub account: Option<Account>,
 }
 
+impl RuleCheck {
+    /// How it ended, for a script or the app: `no_rules` and
+    /// `nothing_to_check` sent nothing; `unread` is not a clean change.
+    pub fn status(&self) -> &'static str {
+        if self.rules.is_empty() {
+            "no_rules"
+        } else if self.account.is_none() {
+            "nothing_to_check"
+        } else if self.unread {
+            "unread"
+        } else {
+            "checked"
+        }
+    }
+}
+
 impl Hedy {
     /// Checks `target` against the rules of its project through `account`
     /// (else the project's, else the default one), never another account
