@@ -29,6 +29,7 @@ mod review;
 mod rule_check;
 mod settings;
 mod ship;
+mod skill_check;
 mod skill_transfer;
 mod skills;
 mod status;
@@ -78,7 +79,10 @@ pub use settings::{CUSTOM_THEME_PREFIX, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME,
 pub use ship::{
     FolderStatus, NewPullRequest, PullRequestDraft, Pulled, Pushed, ShipError, ShipState,
 };
-pub use skill_transfer::{ExportReport, ImportCandidate, ImportProblem, ImportReport};
+pub use skill_check::SkillReview;
+pub use skill_transfer::{
+    ExportReport, ImportCandidate, ImportPreview, ImportProblem, ImportReport,
+};
 pub use skills::{
     SkillChange, SkillDraft, SkillFiles, SkillProposal, SkillsView, format_skill,
     format_skill_page, format_skills,

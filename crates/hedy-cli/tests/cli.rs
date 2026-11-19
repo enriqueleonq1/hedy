@@ -846,6 +846,14 @@ fn skills_import_shows_first_and_export_writes_plain_files() {
             "corre comandos en cuanto Claude Code la carga",
         ))
         .stdout(predicate::str::contains("1 líneas · 25 caracteres:"))
+        .stdout(predicate::str::contains("Lo que mide Hedy"))
+        .stdout(predicate::str::contains(
+            "Sus pasos usan archivos que no se importan: scripts.",
+        ))
+        .stdout(predicate::str::contains("→ Dudosa"))
+        // One skill to import: the AI reviews it on its own (the fake
+        // `claude` answers nothing it can read).
+        .stdout(predicate::str::contains("Lo que ve la IA"))
         .stdout(predicate::str::contains("│ 1. python scripts/fill.py"))
         .stdout(predicate::str::contains("sk-proj").not())
         .stdout(predicate::str::contains("\u{1b}").not())

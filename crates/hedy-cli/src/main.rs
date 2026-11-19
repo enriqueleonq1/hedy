@@ -198,7 +198,31 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 global,
                 replace,
                 yes,
-            } => skill_transfer::import(&hedy, &dir, &path, global, replace, yes),
+                review,
+                no_review,
+                account,
+                model,
+            } => {
+                let reviewer = skill_transfer::Reviewer {
+                    wanted: (review || no_review).then_some(review),
+                    account: account.as_deref(),
+                    model: model.as_deref(),
+                };
+                skill_transfer::import(&hedy, &dir, &path, global, replace, yes, &reviewer)
+            }
+            SkillsCommand::Check {
+                name,
+                no_review,
+                account,
+                model,
+            } => {
+                let reviewer = skill_transfer::Reviewer {
+                    wanted: no_review.then_some(false),
+                    account: account.as_deref(),
+                    model: model.as_deref(),
+                };
+                skill_transfer::check(&hedy, &dir, &name, &reviewer)
+            }
             SkillsCommand::Export { names, to } => skill_transfer::export(&hedy, &dir, &names, &to),
         },
         Command::Template { command } => match command.unwrap_or(TemplateCommand::List) {

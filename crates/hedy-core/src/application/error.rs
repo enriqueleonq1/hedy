@@ -66,6 +66,10 @@ pub enum AppError {
     #[error("{}", self.message())]
     NoSkillsToImport(PathBuf),
     #[error("{}", self.message())]
+    SkillReviewFailed(Option<String>),
+    #[error("{}", self.message())]
+    SkillReviewTimedOut,
+    #[error("{}", self.message())]
     EmptyPrompt,
     #[error("{}", self.message())]
     ProviderNotYetSupported(Provider),
@@ -502,6 +506,20 @@ impl AppError {
             Self::GlobalSkillInProtectedProject => tr!(
                 "un proyecto protegido no comparte habilidades globales: déjala en el proyecto",
                 "a protected project does not share global skills: keep it in the project"
+            ),
+            Self::SkillReviewFailed(detail) => match detail {
+                Some(detail) => tr!(
+                    "no se pudo revisar la habilidad: {detail}",
+                    "could not review the skill: {detail}"
+                ),
+                None => tr!(
+                    "la IA no devolvió la revisión; vuelve a intentarlo",
+                    "the AI gave no review; try again"
+                ),
+            },
+            Self::SkillReviewTimedOut => tr!(
+                "la IA tardó demasiado en revisar la habilidad; vuelve a intentarlo",
+                "the AI took too long to review the skill; try again"
             ),
             Self::NoSkillsToImport(path) => {
                 let path = path.display();

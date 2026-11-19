@@ -28,6 +28,10 @@ All notable changes to Hedy are listed here. The format follows
   `hedy skills import <path>` shows first what goes in, what does not and why (commands that
   run on load, secrets, names you already have, files Hedy does not keep), then asks;
   `hedy skills export --to <folder>` writes plain copies and never replaces a file.
+- Whether a skill helps or gets in the way: on import and with `hedy skills check <name>`,
+  Hedy measures it (size, a description that fits every task, overlap with your skills,
+  dangerous commands, missing files) and an AI reads it against your notes, quoting what
+  goes against them, what is vague and what really helps.
 - Personal sync: the same Hedy on every PC you use. Notes, proposals, skills, templates and
   themes travel through a private git repo of yours (GitHub, GitLab, Bitbucket, Gitea or your
   own server), encrypted and signed on each PC; the server never sees a note. Set it up in

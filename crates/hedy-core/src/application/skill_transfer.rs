@@ -16,6 +16,7 @@ use crate::domain::memory::USER_AUTHOR;
 use crate::domain::skill::{
     BODY_MAX, check_visible, find_secret, normalize_skill_name, runs_commands,
 };
+use crate::domain::skill_check::{Finding, SkillText, Verdict, predicted};
 use crate::domain::skill_import::{parse_skill_md, portable_skill_file};
 use crate::domain::team::strip_hidden;
 use crate::domain::{DomainError, Skill, SkillStatus};
@@ -127,6 +128,23 @@ pub struct ImportCandidate {
     /// The approved skill with its name: importing replacing updates it.
     pub replaces: Option<Skill>,
     pub problem: Option<ImportProblem>,
+    /// What Hedy measures on its own (level 1), beside the approved skills;
+    /// empty when nothing of its text can be shown.
+    pub findings: Vec<Finding>,
+    /// What those findings suggest.
+    pub verdict: Verdict,
+}
+
+impl ImportCandidate {
+    /// The skill as the analysis reads it (for [`Hedy::review_skill`]).
+    pub fn text(&self) -> SkillText<'_> {
+        SkillText {
+            name: &self.draft.name,
+            description: &self.draft.description,
+            body: &self.draft.body,
+            extra_files: &self.extra_files,
+        }
+    }
 }
 
 /// What [`Hedy::preview_import`] found.
@@ -178,7 +196,7 @@ impl Hedy {
         let approved = self.approved_in(scope.as_deref())?;
         let mut seen = HashSet::new();
         let total = files.len();
-        let candidates = files
+        let mut candidates = files
             .into_iter()
             .take(IMPORT_MAX)
             .map(|file| {
@@ -192,7 +210,24 @@ impl Hedy {
                 }
                 candidate
             })
-            .collect();
+            .collect::<Vec<_>>();
+        for candidate in &mut candidates {
+            let unseen = matches!(
+                candidate.problem,
+                Some(
+                    ImportProblem::Unreadable
+                        | ImportProblem::Link
+                        | ImportProblem::LooksSecret { .. }
+                        | ImportProblem::HiddenText { .. }
+                )
+            );
+            if !unseen && !candidate.draft.body.is_empty() {
+                let replacing = candidate.replaces.as_ref().map(|s| s.name.clone());
+                candidate.findings =
+                    self.measure_skill(scope.as_deref(), &candidate.text(), replacing.as_deref())?;
+                candidate.verdict = predicted(&candidate.findings);
+            }
+        }
         Ok(ImportPreview { candidates, total })
     }
 
@@ -434,6 +469,8 @@ impl Hedy {
             extra_files,
             replaces: None,
             problem,
+            findings: Vec::new(),
+            verdict: Verdict::Untested,
         }
     }
 }

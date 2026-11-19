@@ -31,6 +31,7 @@ pub mod recall;
 pub mod rule_check;
 pub mod ship;
 pub mod skill;
+pub mod skill_check;
 pub mod skill_import;
 pub mod sync;
 pub mod task;

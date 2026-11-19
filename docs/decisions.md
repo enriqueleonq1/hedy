@@ -803,6 +803,33 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
   - **Terminal:** text from someone else's file is printed without control or reordering
     characters; descriptions are saved without them (`normalize_description`, which keeps
     emoji whole and turns line separators into spaces).
+- **Does it help or get in the way?** (Nov 19, 2026; `domain/skill_check.rs`,
+  `application/skill_check.rs`). Many published skills make a model worse: too long,
+  always in context, vague, or against the project's own rules. Three levels, labelled
+  Útil / Dudosa / Contraproducente / Sin probar:
+  - **Level 1, what Hedy measures** (free, for every skill being imported and in `hedy
+    skills check`): size (a warning past ~5,000 tokens, or ~2,000 when the description
+    fits almost any task; never bad by itself, since the body loads only when used), a
+    description too short or too broad ("everything about", "cualquier tarea"…), overlap
+    with an approved skill (60 % of the shorter one's key words), dangerous commands
+    (`rm -rf /`, `curl … | sh`, `mkfs.`, `drop table`, `--dangerously-skip-permissions`…)
+    and risky ones (`sudo`, `--no-verify`, a forced push, `reset --hard`…), steps that
+    use files not imported, and no concrete steps at all.
+  - **Level 2, what the AI sees against the notes** (one read-only request through the
+    project's account, never another, like the rule check: only the skill and the
+    project's notes go, picked as for a change, never the code). It reports
+    contradictions (citing a note that was sent), vague instructions and parts that
+    really help, each quoting the skill: a quote not in the skill or a note number not
+    sent is dropped. In `hedy skills import` it runs on its own for up to 3 skills to
+    import, else with `--review`; `--no-review` skips it.
+  - **Verdict:** anything bad (a dangerous command, a contradiction) suggests
+    contraproducente, two or more warnings dudosa, else útil. Only a suggestion: level 3,
+    trying the skill on real tasks with and without it, is what can tell.
+  - **Calibrated on the 57 official Claude Code skills:** 41 useful, 15 doubtful (mostly
+    their scripts are not imported), 1 harmful (a hookify guide whose example pattern is
+    `rm -rf /tmp`). Real check with Haiku: a skill asking for styled-components in a
+    project whose note says CSS modules came back as a contradiction quoting both, plus
+    "write clean code" as vague and the test command as helpful, in 7 s.
 - **Not verified with the real CLIs yet:** that Codex, Gemini CLI, Kimi Code and
   Antigravity load `.agents/skills` in ACP / app-server mode (their docs describe the
   interactive CLI); that Codex and Kimi stop the root search at a linked worktree's

@@ -63,13 +63,23 @@ const GENERATED_ENDINGS: &[&str] = &[".min.js", ".min.css", ".map", ".snap"];
 /// A rule about naming shares no word with the code it judges, so unlike a
 /// question's, a note with no match is not left out.
 pub fn pick_rules(diff: &[FileDiff], sources: Vec<Source>) -> Vec<Source> {
+    pick_by_words(|| change_words(diff), sources)
+}
+
+/// The notes that go with a text (a skill), as [`pick_rules`] does for a
+/// change.
+pub fn pick_rules_for_text(text: &str, sources: Vec<Source>) -> Vec<Source> {
+    pick_by_words(|| key_words(text), sources)
+}
+
+fn pick_by_words(words: impl FnOnce() -> Vec<String>, sources: Vec<Source>) -> Vec<Source> {
     let cost = |s: &Source| estimate_tokens(&s.text).min(NOTE_CHARS / 4) + 16;
     let total: usize = sources.iter().map(cost).sum();
     // Matching words only matters when some notes stay out.
     let terms = if total <= ALL_NOTES_TOKENS {
         Vec::new()
     } else {
-        change_words(diff)
+        words()
     };
     let mut ranked: Vec<((u8, usize), Source)> = sources
         .into_iter()

@@ -825,6 +825,69 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             tr!("Sin preguntar", "Without asking"),
         ),
         (
+            "skills import",
+            "review",
+            tr!(
+                "Que la IA revise cada una contra tus notas, aunque sean muchas (una petición por habilidad)",
+                "Have the AI review each one against your notes, even many (one request per skill)"
+            ),
+        ),
+        (
+            "skills import",
+            "no_review",
+            tr!(
+                "Sin la revisión de la IA: solo lo que mide Hedy, sin gastar tokens",
+                "Without the AI's review: only what Hedy measures, spending no tokens"
+            ),
+        ),
+        (
+            "skills import",
+            "account",
+            tr!(
+                "Cuenta que revisa (por defecto, la del proyecto)",
+                "Account that reviews (by default, the project's)"
+            ),
+        ),
+        (
+            "skills import",
+            "model",
+            tr!("Modelo que revisa", "Model that reviews"),
+        ),
+        (
+            "skills check",
+            "",
+            tr!(
+                "¿Ayuda o estorba? Lo que mide Hedy de una habilidad aprobada y lo que ve la IA contra tus notas",
+                "Does it help or get in the way? What Hedy measures of an approved skill and what the AI sees against your notes"
+            ),
+        ),
+        (
+            "skills check",
+            "name",
+            tr!("Nombre de la habilidad", "Name of the skill"),
+        ),
+        (
+            "skills check",
+            "no_review",
+            tr!(
+                "Sin la revisión de la IA: solo lo que mide Hedy, sin gastar tokens",
+                "Without the AI's review: only what Hedy measures, spending no tokens"
+            ),
+        ),
+        (
+            "skills check",
+            "account",
+            tr!(
+                "Cuenta que revisa (por defecto, la del proyecto)",
+                "Account that reviews (by default, the project's)"
+            ),
+        ),
+        (
+            "skills check",
+            "model",
+            tr!("Modelo que revisa", "Model that reviews"),
+        ),
+        (
             "skills export",
             "",
             tr!(
@@ -1746,6 +1809,24 @@ pub enum SkillsCommand {
         replace: bool,
         #[arg(long, short)]
         yes: bool,
+        #[arg(long, conflicts_with = "no_review")]
+        review: bool,
+        #[arg(long)]
+        no_review: bool,
+        #[arg(long, short)]
+        account: Option<String>,
+        #[arg(long, short)]
+        model: Option<String>,
+    },
+
+    Check {
+        name: String,
+        #[arg(long)]
+        no_review: bool,
+        #[arg(long, short)]
+        account: Option<String>,
+        #[arg(long, short)]
+        model: Option<String>,
     },
 
     Export {
