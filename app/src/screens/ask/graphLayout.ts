@@ -39,13 +39,14 @@ export interface Sim {
   byId: Map<string, SimNode>;
   /** Ticks run so far. */
   ticks: number;
+  /** Which graph it is (its nodes' ids). */
+  seed: number;
 }
 
 /** Ticks until the layout is settled. */
 export const SETTLE_TICKS = 260;
-/** Past this many nodes, far pairs are left out of the repulsion. */
-const FAR_NODES = 900;
-const FAR_CUTOFF = 330;
+/** How far a group of nodes must be (its size over its distance) to push as one (Barnes–Hut). */
+const THETA2 = 1.44;
 
 const RADIUS: Record<GraphNode["kind"], number> = {
   you: 8,
@@ -67,12 +68,30 @@ function random(seed: number): () => number {
 
 function seedOf(graph: MemoryGraph): number {
   let h = 2166136261;
-  for (const n of graph.nodes) for (let i = 0; i < n.id.length; i++) h = Math.imul(h ^ n.id.charCodeAt(i), 16777619);
-  return h;
+  const mix = (text: string) => {
+    for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  };
+  for (const n of graph.nodes) mix(n.id);
+  for (const l of graph.links) mix(`${l.source}>${l.target}`);
+  return h >>> 0;
+}
+
+/** Settled layouts, by graph: coming back to the screen shows it at once. */
+const settledLayouts = new Map<number, Map<string, { x: number; y: number }>>();
+
+/** Remembers the settled layout of `sim` for the next time it is built. */
+export function remember(sim: Sim): void {
+  if (!settled(sim)) return;
+  const layout = new Map<string, { x: number; y: number }>();
+  for (const n of sim.nodes) layout.set(n.node.id, { x: n.x, y: n.y });
+  if (settledLayouts.size > 8) settledLayouts.clear();
+  settledLayouts.set(sim.seed, layout);
 }
 
 export function buildSim(graph: MemoryGraph): Sim {
-  const rnd = random(seedOf(graph));
+  const seed = seedOf(graph);
+  const rnd = random(seed);
+  const known = settledLayouts.get(seed);
   const byId = new Map<string, SimNode>();
   const nodes: SimNode[] = graph.nodes.map((node) => {
     const angle = rnd() * Math.PI * 2;
@@ -106,7 +125,17 @@ export function buildSim(graph: MemoryGraph): Sim {
     l.bias = l.s.nb.length / (l.s.nb.length + l.t.nb.length);
     l.strength = 1 / Math.min(l.s.nb.length, l.t.nb.length);
   }
-  return { nodes, links, byId, ticks: 0 };
+  const ready = known !== undefined && nodes.every((n) => known.has(n.node.id));
+  if (ready) {
+    for (const n of nodes) {
+      const at = known.get(n.node.id);
+      if (at) {
+        n.x = at.x;
+        n.y = at.y;
+      }
+    }
+  }
+  return { nodes, links, byId, ticks: ready ? SETTLE_TICKS : 0, seed };
 }
 
 /** How strongly the simulation still moves at its `ticks`-th tick (1 → 0.001). */
@@ -132,32 +161,118 @@ export function tick(sim: Sim): void {
     s.vy += dy * (1 - l.bias);
   }
   const nodes = sim.nodes;
-  const far = nodes.length > FAR_NODES ? FAR_CUTOFF * FAR_CUTOFF : Infinity;
-  nodes.forEach((a, i) => {
-    for (let j = i + 1; j < nodes.length; j++) {
-      const b = nodes[j];
-      if (!b) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      let l2 = dx * dx + dy * dy;
-      if (l2 > far) continue;
-      if (l2 < 1) l2 = 1;
-      const w = (-36 * alpha) / l2;
-      const wa = w * (b.hub ? 3 : 1);
-      const wb = w * (a.hub ? 3 : 1);
-      a.vx += dx * wa;
-      a.vy += dy * wa;
-      b.vx -= dx * wb;
-      b.vy -= dy * wb;
-    }
+  const tree = quadTree(nodes);
+  for (const a of nodes) {
+    repel(a, tree, -36 * alpha);
     a.vx -= a.x * 0.03 * alpha;
     a.vy -= a.y * 0.03 * alpha;
-  });
+  }
   for (const n of nodes) {
     n.vx *= 0.6;
     n.vy *= 0.6;
     n.x += n.vx;
     n.y += n.vy;
+  }
+}
+
+/** A square of the plane and what it holds: its nodes' weight and centre. */
+interface Quad {
+  x: number;
+  y: number;
+  size: number;
+  weight: number;
+  cx: number;
+  cy: number;
+  /** A leaf's nodes (more than one only when they share a point). */
+  bodies: SimNode[];
+  kids: Quad[] | null;
+}
+
+/** How much a node pushes: a hub, three times a note. */
+const weightOf = (n: SimNode) => (n.hub ? 3 : 1);
+
+/** The nodes in a quadtree, each square knowing its weight and centre. */
+function quadTree(nodes: SimNode[]): Quad {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const n of nodes) {
+    x0 = Math.min(x0, n.x);
+    y0 = Math.min(y0, n.y);
+    x1 = Math.max(x1, n.x);
+    y1 = Math.max(y1, n.y);
+  }
+  const size = Math.max(x1 - x0, y1 - y0, 1) + 1;
+  const root: Quad = { x: x0, y: y0, size, weight: 0, cx: 0, cy: 0, bodies: [], kids: null };
+  for (const n of nodes) insert(root, n, 0);
+  return root;
+}
+
+function insert(quad: Quad, n: SimNode, depth: number): void {
+  const w = weightOf(n);
+  quad.cx = (quad.cx * quad.weight + n.x * w) / (quad.weight + w);
+  quad.cy = (quad.cy * quad.weight + n.y * w) / (quad.weight + w);
+  quad.weight += w;
+  if (!quad.kids) {
+    if (quad.bodies.length === 0 || depth > 24) {
+      quad.bodies.push(n);
+      return;
+    }
+    const half = quad.size / 2;
+    quad.kids = [0, 1, 2, 3].map((i) => ({
+      x: quad.x + (i % 2) * half,
+      y: quad.y + Math.floor(i / 2) * half,
+      size: half,
+      weight: 0,
+      cx: 0,
+      cy: 0,
+      bodies: [],
+      kids: null,
+    }));
+    const moved = quad.bodies;
+    quad.bodies = [];
+    for (const b of moved) place(quad, b, depth);
+  }
+  place(quad, n, depth);
+}
+
+function place(quad: Quad, n: SimNode, depth: number): void {
+  const half = quad.size / 2;
+  const i = (n.x >= quad.x + half ? 1 : 0) + (n.y >= quad.y + half ? 2 : 0);
+  const kid = quad.kids?.[i];
+  if (kid) insert(kid, n, depth + 1);
+}
+
+/** Pushes `a` away from every other node, far groups as one. */
+function repel(a: SimNode, root: Quad, strength: number): void {
+  const stack: Quad[] = [root];
+  for (let quad = stack.pop(); quad; quad = stack.pop()) {
+    if (quad.weight === 0) continue;
+    const dx = quad.cx - a.x;
+    const dy = quad.cy - a.y;
+    let l2 = dx * dx + dy * dy;
+    if (quad.kids && (quad.size * quad.size) / Math.max(l2, 1) > THETA2) {
+      for (const kid of quad.kids) stack.push(kid);
+      continue;
+    }
+    if (quad.kids) {
+      if (l2 < 1) l2 = 1;
+      const w = (strength * quad.weight) / l2;
+      a.vx += dx * w;
+      a.vy += dy * w;
+      continue;
+    }
+    for (const b of quad.bodies) {
+      if (b === a) continue;
+      const bx = b.x - a.x;
+      const by = b.y - a.y;
+      let d2 = bx * bx + by * by;
+      if (d2 < 1) d2 = 1;
+      const w = (strength * weightOf(b)) / d2;
+      a.vx += bx * w;
+      a.vy += by * w;
+    }
   }
 }
 

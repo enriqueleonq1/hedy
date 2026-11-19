@@ -11,15 +11,15 @@ import type { GraphNode, MemoryGraph, SourceRef } from "../../api/types";
 import { useT } from "../../i18n";
 import { useThemeTokens } from "../../theme/ThemeProvider";
 import { accountPalette } from "../../theme/tokens";
-import { alphaAt, buildSim, extent, nodeOf, settle, settled, tick, type SimNode } from "./graphLayout";
+import { alphaAt, buildSim, extent, nodeOf, remember, settle, settled, tick, type SimNode } from "./graphLayout";
 
 /** Fill colours (never text): teams, then projects, by order of appearance. */
 const hex = (label: string) => accountPalette.find((c) => c.label === label)?.hex ?? "#7AA2F7";
 const TEAM_COLORS = [hex("color.purple"), hex("color.pink")];
 const PROJECT_COLORS = [hex("color.cyan"), hex("color.blue"), hex("color.teal"), hex("color.orange")];
 
-/** Ticks of the simulation per frame while it settles. */
-const TICKS_PER_FRAME = 3;
+/** Time for the simulation in each frame while it settles. */
+const FRAME_BUDGET_MS = 9;
 
 interface Camera {
   x: number;
@@ -71,7 +71,10 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
     const ctx = el?.getContext("2d") ?? null;
     if (!el || !ctx) return;
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    if (reduce) settle(sim);
+    if (reduce) {
+      settle(sim);
+      remember(sim);
+    }
     const colorOf = (n: SimNode) =>
       n.node.kind === "person" ? (live.current.tokens.muted ?? "#9AA5CE") : (colors.get(n.node.group) ?? hex("color.blue"));
 
@@ -186,7 +189,13 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
     let raf = 0;
     const frame = (now: number) => {
       const { tokens: tk, cited: refs, answer: asked } = live.current;
-      if (!settled(sim)) for (let i = 0; i < TICKS_PER_FRAME; i++) tick(sim);
+      // Settles a little each frame, within a budget, so the screen never stalls.
+      if (!settled(sim)) {
+        const until = performance.now() + FRAME_BUDGET_MS;
+        do tick(sim);
+        while (!settled(sim) && performance.now() < until);
+        if (settled(sim)) remember(sim);
+      }
       const ready = settled(sim) || alphaAt(sim.ticks) < 0.05;
       const c = cam.current;
       const citedNodes = refs.map((r) => nodeOf(sim, r)).filter((n): n is SimNode => n !== undefined);
