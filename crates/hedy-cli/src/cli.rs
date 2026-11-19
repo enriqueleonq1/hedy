@@ -362,6 +362,59 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             tr!("Hace el commit sin preguntar", "Commit without asking"),
         ),
         (
+            "review",
+            "",
+            tr!(
+                "Revisa un cambio contra las reglas escritas (tuyas, del proyecto y del equipo); solo avisa, nunca bloquea",
+                "Check a change against the written rules (yours, the project's and the team's); it only warns, never blocks"
+            ),
+        ),
+        (
+            "review",
+            "revs",
+            tr!(
+                "Un rango de commits (main..HEAD) o un commit; por defecto, lo que no tiene commit todavía",
+                "A range of commits (main..HEAD) or one commit; by default, what is not committed yet"
+            ),
+        ),
+        (
+            "review",
+            "staged",
+            tr!(
+                "Solo lo preparado para el commit (git add)",
+                "Only what is staged for the commit (git add)"
+            ),
+        ),
+        (
+            "review",
+            "task",
+            tr!(
+                "Los cambios de una tarea de Hedy (su id, de hedy tasks)",
+                "A Hedy task's changes (its id, from hedy tasks)"
+            ),
+        ),
+        (
+            "review",
+            "account",
+            tr!(
+                "Cuenta que revisa (por defecto, la del proyecto; Hedy nunca elige otra)",
+                "Account that checks (by default, the project's; Hedy never picks another)"
+            ),
+        ),
+        (
+            "review",
+            "model",
+            tr!("Modelo que revisa", "Model that checks"),
+        ),
+        (
+            "review",
+            "json",
+            tr!(
+                "Avisos y reglas en JSON, para scripts y hooks",
+                "Warnings and rules as JSON, for scripts and hooks"
+            ),
+        ),
+        (
             "ask",
             "",
             tr!(
@@ -1338,6 +1391,8 @@ fn value_names() -> Vec<(&'static str, String)> {
         ("who", tr!("QUIÉN", "WHO")),
         ("person", tr!("PERSONA", "PERSON")),
         ("team", tr!("EQUIPO", "TEAM")),
+        ("revs", tr!("COMMITS", "COMMITS")),
+        ("task", tr!("TAREA", "TASK")),
         ("cancel", tr!("NÚMERO", "NUMBER")),
         ("category", tr!("CATEGORÍA", "CATEGORY")),
         // `hedy sync project --shared <DUEÑO>` (a flag elsewhere, without one).
@@ -1495,6 +1550,21 @@ pub enum Command {
     Commands {
         #[arg(long, short)]
         account: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+
+    Review {
+        #[arg(conflicts_with_all = ["staged", "task"])]
+        revs: Option<String>,
+        #[arg(long, conflicts_with = "task")]
+        staged: bool,
+        #[arg(long)]
+        task: Option<String>,
+        #[arg(long, short)]
+        account: Option<String>,
+        #[arg(long, short)]
+        model: Option<String>,
         #[arg(long)]
         json: bool,
     },

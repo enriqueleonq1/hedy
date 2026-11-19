@@ -200,7 +200,7 @@ fn print_reader(s: &Style, answer: &MemoryAnswer) {
 }
 
 /// Where a note lives and who wrote it, for the line under it.
-fn place(source: &Source) -> String {
+pub(crate) fn place(source: &Source) -> String {
     let age = age_label(now() - source.at);
     let mut parts: Vec<String> = Vec::new();
     match source.layer {

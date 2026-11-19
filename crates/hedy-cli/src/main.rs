@@ -6,6 +6,7 @@ mod commands;
 mod commit;
 mod mascot;
 mod memory_ask;
+mod review;
 mod slash;
 mod spinner;
 mod style;
@@ -133,6 +134,25 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Commands { account, json } => {
             slash::commands(&hedy, &dir, account.as_deref(), json)
         }
+        Command::Review {
+            revs,
+            staged,
+            task,
+            account,
+            model,
+            json,
+        } => review::review(
+            &hedy,
+            &dir,
+            review::ReviewOptions {
+                revs,
+                staged,
+                task,
+                account,
+                model,
+                json,
+            },
+        ),
         Command::Commit {
             account,
             model,
