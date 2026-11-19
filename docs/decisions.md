@@ -864,9 +864,15 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
       runs the same command in its copy (`--check`, `--check none` for no check, else
       the project's test command guessed from its files and shown before starting; 10
       minutes at most). Before it, the files that decide it are put back as the base
-      commit has them (tests, test configuration, `build.rs`, and `package.json`'s
-      `scripts`; new test files stay, since a task may ask for them), so a run cannot
-      pass by rewriting its tests; the result says how many. Tests written inline in
+      commit has them (tests, test configuration, `build.rs`, `Makefile`; the test keys
+      of `package.json` (`scripts`, `jest`…), and the test tables of `Cargo.toml` and
+      `pyproject.toml` (`[lib]`, `[[test]]`, `[tool.pytest…]`), keeping the run's
+      dependencies); new test configuration (`.cargo/config.toml`, a new `conftest.py`…)
+      is removed, a renamed test comes back under its old name only, and new test files
+      stay, since a task may ask for them. So a run cannot pass by rewriting its tests;
+      the result says how many files were touched. When no copy passes, with the skill
+      or without it, the trial keeps no result and says why (offline, a missing
+      dependency, tests already failing, or tasks that change tests Hedy puts back). Tests written inline in
       a source file (Rust's `#[cfg(test)]`) cannot be told apart and stay as the run
       left them.
     - **The check runs code the run wrote,** and the CLI says so. It gets only `PATH`,
@@ -874,8 +880,10 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
       process group of its own and is killed whole on timeout or cancel (only its
       trial's checks). On Linux with bubblewrap it runs isolated: no network, no IPC,
       its own processes (gone when it ends), the system read-only, `/run` (the
-      session bus, the keyring's way in) and `/tmp` empty, only the copy writable,
-      killed with Hedy; tools are told they are offline (`CARGO_NET_OFFLINE`,
+      session bus, the keyring's way in), `/tmp` and the home folder empty but for the
+      tools' folders (`~/.cargo` without its credentials, `~/.rustup`, `~/.npm`,
+      `~/.cache`…), the project read-only (what the copy links to: `node_modules`,
+      `.git`), only the copy writable, killed with Hedy; tools are told they are offline (`CARGO_NET_OFFLINE`,
       `npm_config_offline`), so a check that needs to download fails rather than
       hangs. Without bubblewrap (macOS, or not installed) it runs as the user, and the
       CLI warns before starting. A run passes when it finished, its

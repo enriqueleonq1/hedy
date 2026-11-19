@@ -448,13 +448,15 @@ pub trait ProcessRunner: Send + Sync {
     /// [`ProcessRunner::stop_checks`].
     /// `group` names whose check it is (a trial), for
     /// [`ProcessRunner::stop_checks`]. On Linux with bubblewrap it runs
-    /// isolated: no network, no session bus, the system read-only except
-    /// the copy, killed with Hedy.
+    /// isolated: no network, no session bus, the system read-only, the home
+    /// folder empty but for the tools' caches, `reads` (the project the copy
+    /// links to) read-only and only the copy writable; killed with Hedy.
     fn run_check(
         &self,
         spec: &LaunchSpec,
         timeout: std::time::Duration,
         group: &str,
+        reads: &[std::path::PathBuf],
     ) -> PortResult<CapturedOutput>;
     /// Kills the checks of `group` still running (its trial was cancelled).
     fn stop_checks(&self, group: &str);

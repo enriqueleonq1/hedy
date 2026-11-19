@@ -155,6 +155,8 @@ pub enum TrialVoid {
     /// The run without the skill loaded it anyway (a copy in the repo or in
     /// the account's own folder).
     Leaked,
+    /// No run passed, with the skill or without it: nothing to compare.
+    NothingPassed,
 }
 
 impl TrialVoid {
@@ -176,6 +178,10 @@ impl TrialVoid {
                 "la ejecución sin la habilidad la cargó igual (hay otra copia fuera de Hedy): no se guardó ningún resultado",
                 "the run without the skill loaded it anyway (there is another copy outside Hedy): no result was kept"
             ),
+            Self::NothingPassed => tr!(
+                "ninguna copia aprobó, ni con la habilidad ni sin ella: puede faltar red o una dependencia, los tests ya fallaban, o las tareas cambian tests que Hedy devuelve a como estaban; prueba el comando a mano u otras tareas. No se guardó ningún resultado",
+                "no copy passed, with the skill or without it: the network or a dependency may be missing, the tests were already failing, or the tasks change tests Hedy puts back; try the command by hand or other tasks. No result was kept"
+            ),
         }
     }
 }
@@ -190,6 +196,8 @@ pub fn void_reason(runs: &[TrialRun]) -> Option<TrialVoid> {
         Some(TrialVoid::NotRun)
     } else if runs.iter().any(|r| !r.with_skill && r.used_skill) {
         Some(TrialVoid::Leaked)
+    } else if runs.iter().all(|r| !r.passed()) {
+        Some(TrialVoid::NothingPassed)
     } else {
         None
     }
@@ -355,51 +363,130 @@ pub fn guards_the_check(path: &str) -> bool {
         || stem.ends_with("_spec")
         || name.contains(".test.")
         || name.contains(".spec.");
-    let config = matches!(
-        name,
-        "conftest.py" | "pytest.ini" | "tox.ini" | "build.rs" | "setup.cfg" | "noxfile.py"
-    ) || [
-        "jest.config.",
-        "vitest.config.",
-        "vitest.workspace.",
-        "playwright.config.",
-        "karma.conf.",
-        "cypress.config.",
-        ".mocharc",
-        "babel.config.",
-    ]
-    .iter()
-    .any(|prefix| name.starts_with(prefix));
-    in_folder || test_name || config
+    in_folder || test_name || configures_the_check(&path)
 }
 
-/// `package.json` with the base commit's `scripts` (so `npm test` means
-/// what it meant before the run), or `None` when they are the same or the
-/// files cannot be read as JSON.
+/// Configuration that changes how tests run (a new one is removed before
+/// the check, not only a changed one put back): `.cargo/config.toml` can
+/// swap the test runner for `true`, a new `conftest.py` can skip them all.
+pub fn configures_the_check(path: &str) -> bool {
+    let path = path.replace('\\', "/");
+    let name = path.rsplit('/').next().unwrap_or(&path);
+    path == ".cargo/config"
+        || path == ".cargo/config.toml"
+        || path.ends_with("/.cargo/config")
+        || path.ends_with("/.cargo/config.toml")
+        || matches!(
+            name,
+            "conftest.py"
+                | "pytest.ini"
+                | "tox.ini"
+                | "setup.cfg"
+                | "noxfile.py"
+                | "build.rs"
+                | "Makefile"
+                | "GNUmakefile"
+                | "justfile"
+        )
+        || [
+            "jest.config.",
+            "vitest.config.",
+            "vitest.workspace.",
+            "playwright.config.",
+            "karma.conf.",
+            "cypress.config.",
+            ".mocharc",
+            "babel.config.",
+        ]
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+}
+
+/// `package.json` keys that decide how its tests run.
+const PACKAGE_KEYS: &[&str] = &["scripts", "jest", "mocha", "ava", "vitest", "c8", "nyc"];
+
+/// `package.json` with the base commit's test keys ([`PACKAGE_KEYS`]: so
+/// `npm test` means what it meant before the run), or `None` when they are
+/// the same or the files cannot be read as JSON.
 pub fn restore_scripts(base: &str, current: &str) -> Option<String> {
     let base: serde_json::Value = serde_json::from_str(base).ok()?;
     let mut current: serde_json::Value = serde_json::from_str(current).ok()?;
-    let scripts = base
-        .get("scripts")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
-    if current
-        .get("scripts")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null)
-        == scripts
-    {
+    let same = PACKAGE_KEYS.iter().all(|k| base.get(k) == current.get(k));
+    if same {
         return None;
     }
     let object = current.as_object_mut()?;
-    if scripts.is_null() {
-        object.remove("scripts");
-    } else {
-        object.insert("scripts".into(), scripts);
+    for key in PACKAGE_KEYS {
+        match base.get(key) {
+            Some(value) => object.insert((*key).into(), value.clone()),
+            None => object.remove(*key),
+        };
     }
     serde_json::to_string_pretty(&current)
         .ok()
         .map(|json| json + "\n")
+}
+
+/// TOML tables that decide how tests run (`Cargo.toml`, `pyproject.toml`).
+const TEST_TABLES: &[&str] = &[
+    "lib",
+    "test",
+    "bench",
+    "profile.test",
+    "tool.pytest",
+    "tool.coverage",
+];
+
+/// A TOML file's tables, as written: the top (no header) first.
+fn toml_tables(text: &str) -> Vec<(String, String)> {
+    let mut tables = vec![(String::new(), String::new())];
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && !trimmed.starts_with("[\"") {
+            let name = trimmed
+                .trim_matches(|c| c == '[' || c == ']')
+                .trim()
+                .to_owned();
+            tables.push((name, String::new()));
+        }
+        let body = &mut tables.last_mut().expect("never empty").1;
+        body.push_str(line);
+        body.push('\n');
+    }
+    tables
+}
+
+fn test_table(name: &str) -> bool {
+    TEST_TABLES
+        .iter()
+        .any(|t| name == *t || name.starts_with(&format!("{t}.")))
+}
+
+/// `Cargo.toml` or `pyproject.toml` with the base commit's test tables
+/// (`[[test]]`, `[lib]`, `[tool.pytest.ini_options]`…) and the run's other
+/// ones (its dependencies stay), or `None` when those tables are the same.
+pub fn restore_test_tables(base: &str, current: &str) -> Option<String> {
+    let pick = |text: &str, tests: bool| -> Vec<(String, String)> {
+        toml_tables(text)
+            .into_iter()
+            .filter(|(name, _)| test_table(name) == tests)
+            .collect()
+    };
+    let old = pick(base, true);
+    if old == pick(current, true) {
+        return None;
+    }
+    let mut out: String = pick(current, false)
+        .into_iter()
+        .map(|(_, body)| body)
+        .collect();
+    for (_, body) in old {
+        if !out.ends_with("\n\n") {
+            out.push('\n');
+        }
+        out.push_str(&body);
+    }
+    Some(out)
 }
 
 /// A stable fingerprint of a skill's text (FNV-1a), to tell versions apart.
@@ -638,9 +725,13 @@ mod tests {
         let mut silent = ok.clone();
         silent[1].started = false;
         assert_eq!(void_reason(&silent), Some(TrialVoid::NotRun));
-        let mut leaked = ok;
+        let mut leaked = ok.clone();
         leaked[1].used_skill = true;
         assert_eq!(void_reason(&leaked), Some(TrialVoid::Leaked));
+        let mut failing = ok;
+        failing[0].check = Some(false);
+        failing[1].check = Some(false);
+        assert_eq!(void_reason(&failing), Some(TrialVoid::NothingPassed));
 
         let limit = AgentEvent::RateLimit {
             status: "rejected".into(),
@@ -675,6 +766,22 @@ mod tests {
         ] {
             assert!(!guards_the_check(path), "{path}");
         }
+        assert!(configures_the_check(".cargo/config.toml") && configures_the_check("conftest.py"));
+        assert!(!configures_the_check("tests/new.test.ts"));
+        let base = "[package]\nname = \"c\"\n\n[dependencies]\n\n[lib]\ntest = true\n";
+        let gamed =
+            "[package]\nname = \"c\"\n\n[dependencies]\nserde = \"1\"\n\n[lib]\nharness = false\n";
+        let restored = restore_test_tables(base, gamed).unwrap();
+        assert!(restored.contains("serde = \"1\"") && restored.contains("test = true"));
+        assert!(!restored.contains("harness"));
+        assert_eq!(restore_test_tables(base, base), None);
+        let py = "[project]\nname = \"a\"\n";
+        let py_gamed = "[project]\nname = \"a\"\n\n[tool.pytest.ini_options]\naddopts = \"-k x\"\n";
+        assert!(
+            !restore_test_tables(py, py_gamed)
+                .unwrap()
+                .contains("addopts")
+        );
         let base = r#"{"name":"a","scripts":{"test":"vitest run"}}"#;
         let gamed = r#"{"name":"a","scripts":{"test":"exit 0"},"dependencies":{"zod":"3"}}"#;
         let restored = restore_scripts(base, gamed).unwrap();

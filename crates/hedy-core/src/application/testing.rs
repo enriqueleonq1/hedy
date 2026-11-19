@@ -1112,6 +1112,7 @@ impl ProcessRunner for FakeRunner {
         spec: &LaunchSpec,
         _timeout: std::time::Duration,
         group: &str,
+        _reads: &[PathBuf],
     ) -> PortResult<CapturedOutput> {
         self.checks
             .lock()

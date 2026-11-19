@@ -6,7 +6,7 @@
 //! are compared and discarded: nothing reaches the project. The result
 //! stays with the skill's version on this PC.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -16,11 +16,13 @@ use super::ports::PathKind;
 use super::{AppError, AppResult, Hedy, NewTask};
 use crate::domain::Workspace;
 use crate::domain::briefing;
+use crate::domain::code::ChangeKind;
 use crate::domain::launch::LaunchSpec;
 use crate::domain::skill::{SkillFolder, check_visible};
 use crate::domain::skill_trial::{
-    TRIAL_TASKS_MAX, TrialOutcome, TrialRef, TrialResult, fingerprint, guards_the_check, judge,
-    parse_trial_tasks, restore_scripts, run_from_events, trial_tasks_prompt, void_reason,
+    TRIAL_TASKS_MAX, TrialOutcome, TrialRef, TrialResult, configures_the_check, fingerprint,
+    guards_the_check, judge, parse_trial_tasks, restore_scripts, restore_test_tables,
+    run_from_events, trial_tasks_prompt, void_reason,
 };
 use crate::domain::{
     Phase, Provider, Skill, SkillStatus, Stage, Task, TaskId, TaskMode, TaskStatus,
@@ -334,15 +336,15 @@ impl Hedy {
     }
 
     /// Hedy's check in a run's copy: passed when it exits 0 in time.
-    fn run_trial_check(&self, trial: &str, worktree: PathBuf, check: &str) -> bool {
+    fn run_trial_check(&self, trial: &str, ws: &Workspace, project: &Path, check: &str) -> bool {
         let spec = LaunchSpec {
             program: "sh".into(),
             args: vec!["-c".into(), check.to_owned()],
             env: Vec::new(),
-            cwd: Some(worktree),
+            cwd: Some(ws.worktree.clone()),
         };
         self.runner
-            .run_check(&spec, CHECK_TIMEOUT, trial)
+            .run_check(&spec, CHECK_TIMEOUT, trial, &[project.to_path_buf()])
             .is_ok_and(|out| out.exit_code == Some(0))
     }
 
@@ -366,7 +368,7 @@ impl Hedy {
             (Some(ws), Some(check)) if current.status == TaskStatus::Review => {
                 let restored = self.restore_test_files(ws);
                 (
-                    self.run_trial_check(&run.trial, ws.worktree.clone(), check),
+                    self.run_trial_check(&run.trial, ws, &current.project, check),
                     restored,
                 )
             }
@@ -433,50 +435,72 @@ impl Hedy {
     }
 
     /// Puts back what a run changed in the files that decide the check
-    /// ([`guards_the_check`], and `package.json`'s scripts) as they are in
-    /// the base commit; new files stay. How many it put back.
+    /// ([`guards_the_check`]; the test keys of `package.json`, `Cargo.toml`
+    /// and `pyproject.toml`) as the base commit has them, and removes new
+    /// test configuration; new test files stay. How many files it touched.
     fn restore_test_files(&self, ws: &Workspace) -> usize {
         let (dir, base) = (&ws.worktree, ws.base_commit.as_str());
         let Ok(changes) = self.code.changes(dir, base, None) else {
             return 0;
         };
         let mut restored = 0;
-        for path in changes
-            .into_iter()
-            .flat_map(|c| std::iter::once(c.path).chain(c.old_path))
-        {
-            let Ok(Some(old)) = self.code.read_file(dir, Some(base), &path, RESTORE_MAX) else {
-                continue; // new in the run: it stays
-            };
-            if old.size > RESTORE_MAX {
+        for change in changes {
+            let new = matches!(change.kind, ChangeKind::Added | ChangeKind::Untracked);
+            if new && configures_the_check(&change.path) {
+                restored += usize::from(self.fs.remove_file(&dir.join(&change.path)).is_ok());
                 continue;
             }
-            let bytes = if path == "package.json" || path.ends_with("/package.json") {
-                let Ok(Some(now)) = self.code.read_file(dir, None, &path, RESTORE_MAX) else {
-                    continue;
-                };
-                let (old, now) = (
-                    String::from_utf8_lossy(&old.bytes),
-                    String::from_utf8_lossy(&now.bytes),
-                );
-                match restore_scripts(&old, &now) {
-                    Some(fixed) => fixed.into_bytes(),
-                    None => continue,
-                }
-            } else if guards_the_check(&path) {
-                old.bytes
-            } else {
-                continue;
-            };
-            let put = match self.writer.kind(dir, &path) {
-                Ok(Some(PathKind::File)) => self.writer.replace_file(dir, &path, &bytes),
-                Ok(None) => self.writer.create_file(dir, &path, &bytes),
-                // A folder or a link where a test was: left alone.
-                _ => continue,
-            };
-            restored += usize::from(put.is_ok());
+            // A renamed test comes back under its old name only.
+            if let Some(old) = &change.old_path
+                && guards_the_check(old)
+                && guards_the_check(&change.path)
+            {
+                let _ = self.fs.remove_file(&dir.join(&change.path));
+            }
+            for path in std::iter::once(change.path).chain(change.old_path) {
+                restored += usize::from(self.restore_file(ws, &path));
+            }
         }
         restored
+    }
+
+    /// One file of the copy back as the base commit has it (or only its test
+    /// keys); `true` when something changed.
+    fn restore_file(&self, ws: &Workspace, path: &str) -> bool {
+        let (dir, base) = (&ws.worktree, ws.base_commit.as_str());
+        let Ok(Some(old)) = self.code.read_file(dir, Some(base), path, RESTORE_MAX) else {
+            return false; // new in the run: it stays
+        };
+        if old.size > RESTORE_MAX {
+            return false;
+        }
+        let name = path.rsplit('/').next().unwrap_or(path);
+        let keys: Option<fn(&str, &str) -> Option<String>> = match name {
+            "package.json" => Some(restore_scripts),
+            "Cargo.toml" | "pyproject.toml" => Some(restore_test_tables),
+            _ => None,
+        };
+        let bytes = match keys {
+            Some(restore) => {
+                let Ok(Some(now)) = self.code.read_file(dir, None, path, RESTORE_MAX) else {
+                    return false;
+                };
+                let old = String::from_utf8_lossy(&old.bytes);
+                match restore(&old, &String::from_utf8_lossy(&now.bytes)) {
+                    Some(fixed) => fixed.into_bytes(),
+                    None => return false,
+                }
+            }
+            None if guards_the_check(path) => old.bytes,
+            None => return false,
+        };
+        let put = match self.writer.kind(dir, path) {
+            Ok(Some(PathKind::File)) => self.writer.replace_file(dir, path, &bytes),
+            Ok(None) => self.writer.create_file(dir, path, &bytes),
+            // A folder or a link where a test was: left alone.
+            _ => return false,
+        };
+        put.is_ok()
     }
 
     /// Skills a trial run proposed go with it: a skill under trial must not
@@ -731,6 +755,8 @@ mod tests {
                 change("package.json", ChangeKind::Modified),
                 change("src/cart.ts", ChangeKind::Modified),
                 change("tests/new.test.ts", ChangeKind::Untracked),
+                // `runner = "true"` would make any `cargo test` pass.
+                change(".cargo/config.toml", ChangeKind::Untracked),
             ],
         );
         finish(&f, 0, true, true, 9_000);
@@ -739,13 +765,29 @@ mod tests {
         assert!(working("package.json").contains("vitest run"));
         assert_eq!(working("src/cart.ts"), "new", "the run's code stays");
         assert_eq!(working("tests/new.test.ts"), "a new test", "new tests stay");
-        assert_eq!(f.hedy.trial_of(&trial.tasks[0].id).unwrap().restored, 2);
+        assert_eq!(f.hedy.trial_of(&trial.tasks[0].id).unwrap().restored, 3);
         finish(&f, 1, true, false, 9_000);
         let TrialOutcome::Judged(result) = outcome(&f, &trial) else {
             panic!("judged")
         };
-        assert_eq!(result.restored, 2);
-        assert!(result.summary().contains("2 archivos") || result.summary().contains("2 changed"));
+        assert_eq!(result.restored, 3);
+        assert!(result.summary().contains("3 archivos") || result.summary().contains("3 changed"));
+    }
+
+    #[test]
+    fn a_trial_where_nothing_passes_keeps_no_result() {
+        let (f, skill) = setup();
+        // Offline, a missing dependency, or tests already failing.
+        f.runner.reply_to("sh -c npm test", "", 1);
+        let trial = start(&f, &skill);
+        finish(&f, 0, true, true, 9_000);
+        finish(&f, 1, true, false, 9_000);
+        assert_eq!(
+            outcome(&f, &trial),
+            TrialOutcome::Void(TrialVoid::NothingPassed)
+        );
+        assert_eq!(f.hedy.skill_trial(skill.id).unwrap(), None);
+        assert!(all_discarded(&f, &trial));
     }
 
     #[test]

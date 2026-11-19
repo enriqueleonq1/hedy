@@ -30,11 +30,33 @@ fn bubblewrap() -> bool {
     })
 }
 
+/// What a check may read in the home folder: the tools and their caches.
+const HOME_TOOLS: &[&str] = &[
+    ".cargo",
+    ".rustup",
+    ".npm",
+    ".nvm",
+    ".cache",
+    ".local/bin",
+    ".local/lib",
+    ".pyenv",
+    ".bun",
+    ".deno",
+    "go",
+    ".gradle",
+    ".m2",
+    ".yarn",
+    ".pnpm-store",
+];
+/// Files inside those that hold credentials: shown empty.
+const HOME_SECRETS: &[&str] = &[".cargo/credentials", ".cargo/credentials.toml"];
+
 /// The check inside bubblewrap: no network, no IPC, its own processes
 /// (all gone when it ends), the system read-only, `/run` (the session bus,
-/// the keyring's way in) and `/tmp` empty, and only the copy writable.
-/// Killed with Hedy.
-fn isolated(spec: &LaunchSpec, copy: &std::path::Path) -> Command {
+/// the keyring's way in) and `/tmp` empty, the home folder empty but for
+/// the tools ([`HOME_TOOLS`]), `reads` read-only and only the copy
+/// writable. Killed with Hedy.
+fn isolated(spec: &LaunchSpec, copy: &std::path::Path, reads: &[std::path::PathBuf]) -> Command {
     let mut cmd = Command::new("bwrap");
     cmd.args([
         "--die-with-parent",
@@ -54,6 +76,22 @@ fn isolated(spec: &LaunchSpec, copy: &std::path::Path) -> Command {
         "--tmpfs",
         "/run",
     ]);
+    if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+        cmd.arg("--tmpfs").arg(&home);
+        for tool in HOME_TOOLS {
+            let path = home.join(tool);
+            cmd.arg("--ro-bind-try").arg(&path).arg(&path);
+        }
+        for secret in HOME_SECRETS {
+            let path = home.join(secret);
+            if path.is_file() {
+                cmd.arg("--ro-bind").arg("/dev/null").arg(&path);
+            }
+        }
+    }
+    for path in reads {
+        cmd.arg("--ro-bind-try").arg(path).arg(path);
+    }
     cmd.arg("--bind").arg(copy).arg(copy);
     cmd.arg("--chdir").arg(copy);
     cmd.arg("--").arg(&spec.program).args(&spec.args);
@@ -199,9 +237,10 @@ impl ProcessRunner for SystemProcessRunner {
         spec: &LaunchSpec,
         timeout: Duration,
         group: &str,
+        reads: &[std::path::PathBuf],
     ) -> PortResult<CapturedOutput> {
         let mut cmd = match &spec.cwd {
-            Some(copy) if bubblewrap() => isolated(spec, copy),
+            Some(copy) if bubblewrap() => isolated(spec, copy, reads),
             _ => {
                 let mut cmd = Command::new(&spec.program);
                 cmd.args(&spec.args);
@@ -359,6 +398,16 @@ mod tests {
 
     #[cfg(unix)]
     fn check(dir: &std::path::Path, script: &str, group: &str) -> Option<i32> {
+        check_reading(dir, script, group, &[])
+    }
+
+    #[cfg(unix)]
+    fn check_reading(
+        dir: &std::path::Path,
+        script: &str,
+        group: &str,
+        reads: &[std::path::PathBuf],
+    ) -> Option<i32> {
         let spec = LaunchSpec {
             program: "sh".into(),
             args: vec!["-c".into(), script.into()],
@@ -366,7 +415,7 @@ mod tests {
             cwd: Some(dir.to_path_buf()),
         };
         SystemProcessRunner
-            .run_check(&spec, Duration::from_secs(20), group)
+            .run_check(&spec, Duration::from_secs(20), group, reads)
             .unwrap()
             .exit_code
     }
@@ -414,6 +463,38 @@ mod tests {
         );
         let net = std::fs::read_to_string(dir.path().join("net.txt")).unwrap();
         assert_eq!(net.trim(), "down");
+
+        // The home folder is empty but for the tools: no keys, no sessions.
+        let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap());
+        for private in [".ssh", ".claude", ".gnupg", ".config"] {
+            if home.join(private).exists() {
+                let script = format!("test ! -e \"$HOME/{private}\"");
+                assert_eq!(check(dir.path(), &script, "t2"), Some(0), "{private}");
+            }
+        }
+
+        // A copy inside its project (under /tmp too) reads what it links to
+        // there, read-only.
+        let project = tempfile::tempdir().unwrap();
+        let copy = project.path().join(".hedy/worktrees/t1");
+        std::fs::create_dir_all(&copy).unwrap();
+        std::fs::create_dir_all(project.path().join("node_modules")).unwrap();
+        std::fs::write(project.path().join("node_modules/dep.js"), "ok").unwrap();
+        std::os::unix::fs::symlink(
+            project.path().join("node_modules"),
+            copy.join("node_modules"),
+        )
+        .unwrap();
+        let reads = [project.path().to_path_buf()];
+        assert_eq!(
+            check_reading(&copy, "grep -q ok node_modules/dep.js", "t2", &reads),
+            Some(0)
+        );
+        assert_ne!(
+            check_reading(&copy, "touch node_modules/new.js", "t2", &reads),
+            Some(0)
+        );
+        assert!(!project.path().join("node_modules/new.js").exists());
     }
 
     #[test]
