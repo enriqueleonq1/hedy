@@ -379,8 +379,11 @@ pub fn rules_prompt(rules: &[Source], change: &str) -> String {
          Rules:\n\
          - Only notes about code, files or how the project is built count; ignore notes about \
          how to talk or who does what.\n\
-         - A line that only might break a rule, or a rule that is vague about it, is not a \
-         break. When in doubt, leave it out.\n\
+         - Check every added line against every rule. Report each one that does what a rule \
+         says not to do, or not what it says to do, even when the break is small (a fixed \
+         color where a rule asks for a variable, one name in the wrong case).\n\
+         - Leave out a line only when it is unclear whether the rule applies to it at all; \
+         never report what a rule does not talk about.\n\
          - Report a break once, on the added line where it is, by the number after its +.\n\
          - Unchanged lines (space) are context: never report them.\n\
          - Reply with one line per break, in exactly this form:\n\
