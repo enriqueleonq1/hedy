@@ -854,6 +854,41 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             tr!("Modelo que revisa", "Model that reviews"),
         ),
         (
+            "skills try",
+            "",
+            tr!(
+                "Prueba una habilidad en tareas reales: cada una dos veces, con y sin ella, en copias aparte; gasta tokens",
+                "Try a skill on real tasks: each twice, with and without it, in separate copies; spends tokens"
+            ),
+        ),
+        (
+            "skills try",
+            "name",
+            tr!("Nombre de la habilidad", "Name of the skill"),
+        ),
+        (
+            "skills try",
+            "tasks",
+            tr!(
+                "Una tarea de prueba (hasta 3); sin ninguna, la IA propone",
+                "A test task (up to 3); with none, the AI proposes them"
+            ),
+        ),
+        ("skills try", "yes", tr!("Sin preguntar", "Without asking")),
+        (
+            "skills try",
+            "account",
+            tr!(
+                "Cuenta que propone las tareas (las tareas usan las del proyecto)",
+                "Account that proposes the tasks (the tasks use the project's)"
+            ),
+        ),
+        (
+            "skills try",
+            "model",
+            tr!("Modelo de las tareas", "Model of the tasks"),
+        ),
+        (
             "skills check",
             "",
             tr!(
@@ -1516,6 +1551,7 @@ fn value_names() -> Vec<(&'static str, String)> {
         ("task", tr!("TAREA", "TASK")),
         ("path", tr!("RUTA", "PATH")),
         ("names", tr!("NOMBRES", "NAMES")),
+        ("tasks", tr!("TAREA", "TASK")),
         ("to", tr!("CARPETA", "FOLDER")),
         ("cancel", tr!("NÚMERO", "NUMBER")),
         ("category", tr!("CATEGORÍA", "CATEGORY")),
@@ -1813,6 +1849,18 @@ pub enum SkillsCommand {
         review: bool,
         #[arg(long)]
         no_review: bool,
+        #[arg(long, short)]
+        account: Option<String>,
+        #[arg(long, short)]
+        model: Option<String>,
+    },
+
+    Try {
+        name: String,
+        #[arg(long = "task")]
+        tasks: Vec<String>,
+        #[arg(long, short)]
+        yes: bool,
         #[arg(long, short)]
         account: Option<String>,
         #[arg(long, short)]

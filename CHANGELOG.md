@@ -32,6 +32,11 @@ All notable changes to Hedy are listed here. The format follows
   Hedy measures it (size, a description that fits every task, overlap with your skills,
   dangerous commands, missing files) and an AI reads it against your notes, quoting what
   goes against them, what is vague and what really helps.
+- Try a skill for real: `hedy skills try <name>` runs up to 3 tasks twice each, with and
+  without the skill, in throwaway copies of the project, and says from what the runs did
+  (finished, tests passing, the skill used, tokens) whether it is useful, doubtful or
+  harmful. Nothing reaches the project; `hedy skills show` keeps the result until the skill
+  changes.
 - Personal sync: the same Hedy on every PC you use. Notes, proposals, skills, templates and
   themes travel through a private git repo of yours (GitHub, GitLab, Bitbucket, Gitea or your
   own server), encrypted and signed on each PC; the server never sees a note. Set it up in

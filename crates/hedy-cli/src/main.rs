@@ -8,6 +8,7 @@ mod mascot;
 mod memory_ask;
 mod review;
 mod skill_transfer;
+mod skill_trial;
 mod slash;
 mod spinner;
 mod style;
@@ -209,6 +210,20 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     model: model.as_deref(),
                 };
                 skill_transfer::import(&hedy, &dir, &path, global, replace, yes, &reviewer)
+            }
+            SkillsCommand::Try {
+                name,
+                tasks,
+                yes,
+                account,
+                model,
+            } => {
+                let reviewer = skill_transfer::Reviewer {
+                    wanted: None,
+                    account: account.as_deref(),
+                    model: model.as_deref(),
+                };
+                skill_trial::try_skill(&hedy, &dir, &name, &tasks, yes, &reviewer)
             }
             SkillsCommand::Check {
                 name,

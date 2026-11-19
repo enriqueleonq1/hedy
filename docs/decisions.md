@@ -846,6 +846,27 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
     `rm -rf /tmp`). Real check with Haiku: a skill asking for styled-components in a
     project whose note says CSS modules came back as a contradiction quoting both, plus
     "write clean code" as vague and the test command as helpful, in 7 s.
+  - **Level 3, trying it** (`domain/skill_trial.rs`, `application/skill_trial.rs`, `hedy
+    skills try <name>`; on demand only, since it spends tokens). Each task (1 to 3: the
+    user's `--task`, or proposed by the project's account from the skill alone, with no
+    tools and Haiku by default) runs twice as an ordinary project task, with the
+    project's phases and accounts, each in its own worktree: one with the skill and one
+    without it. The run without it gets it from nowhere: not in its plugin, not in its
+    worktree's `.agents/skills`, and `skill_list` / `skill_get` do not serve it (the
+    run is marked before its worktree and agent exist, in a setting by task id). The
+    runs show on the board and ask for permissions like any task; in the terminal they
+    are asked there, elsewhere declined. When every run has stopped they are judged by
+    what they did, never by an AI's opinion: finished without error and their last test
+    run not failing counts as a pass; more passes with the skill → útil, fewer →
+    contraproducente; the same → útil only if the skill was used and the runs with it
+    spent at least 15 % fewer tokens, else dudosa (context spent for nothing
+    measurable). Then the runs are discarded: nothing reaches the project. Ctrl+C
+    discards them and keeps no result (half a trial says the wrong thing). The result
+    is kept on this PC with the skill's version (`updated_at`) and dropped once the
+    skill changes. With so few tasks it is a hint, not a proof, and the CLI says so.
+    Real check with Haiku on a toy crate (a broken `add`, a skill saying "add a line to
+    CHANGELOG.md and run `cargo test`"): both runs fixed it, only the one with the
+    skill wrote the changelog, and it spent 106 % more tokens → dudosa.
 - **Not verified with the real CLIs yet:** that Codex, Gemini CLI, Kimi Code and
   Antigravity load `.agents/skills` in ACP / app-server mode (their docs describe the
   interactive CLI); that Codex and Kimi stop the root search at a linked worktree's

@@ -31,6 +31,7 @@ mod settings;
 mod ship;
 mod skill_check;
 mod skill_transfer;
+mod skill_trial;
 mod skills;
 mod status;
 mod sync;

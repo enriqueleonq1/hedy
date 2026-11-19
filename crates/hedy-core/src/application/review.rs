@@ -236,7 +236,7 @@ impl Hedy {
             return blocked(UndoBlocked::LocalChanges(error.message));
         }
         self.share_dependencies(&repo, &ws.worktree)?;
-        self.install_skills_in(&repo, &ws.worktree);
+        self.install_skills_in(&repo, &ws.worktree, &task.id);
         task.merge = None;
         task.ship = None;
         self.store.save_task(&task)?;
@@ -258,7 +258,7 @@ impl Hedy {
         self.source
             .attach_worktree(&repo, &ws.worktree, &ws.branch)?;
         self.share_dependencies(&repo, &ws.worktree)?;
-        self.install_skills_in(&repo, &ws.worktree);
+        self.install_skills_in(&repo, &ws.worktree, &task.id);
         self.store.save_task(&task)?;
         self.set_status(&mut task, TaskStatus::Review)?;
         Ok(task)

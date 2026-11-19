@@ -1552,6 +1552,15 @@ pub fn skills_show(hedy: &Hedy, dir: &Path, name: &str) -> Result<()> {
         SkillStatus::Proposed => tr!("propuesta", "proposal"),
     };
     println!("  {} {}", " ".repeat(ID_WIDTH), s.muted(status));
+    if let Some(result) = hedy.skill_trial(skill.id)? {
+        let verdict = crate::skill_trial::verdict(&s, &result);
+        println!(
+            "  {} {} {verdict} · {}",
+            " ".repeat(ID_WIDTH),
+            s.muted(tr!("Probada:", "Tried:")),
+            result.summary()
+        );
+    }
     println!();
     print_skill_body(&s, &skill.body);
     // Proposed updates of this skill, with their new text.

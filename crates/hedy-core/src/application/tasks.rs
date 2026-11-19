@@ -16,6 +16,7 @@ use crate::domain::carry::carried_prompt;
 use crate::domain::permissions::{self, AllowRule, Verdict};
 use crate::domain::phase::pipeline;
 use crate::domain::prompts;
+use crate::domain::skill_trial::TrialRef;
 use crate::domain::task::{SHARED_DEPENDENCY_DIRS, branch_name, title_from_prompt};
 use crate::domain::{
     Account, AccountId, AgentEvent, Attachment, Commit, Credentials, Decision, FileDiff,
@@ -143,6 +144,21 @@ impl Hedy {
         request: NewTask,
         carry: Option<Carry>,
     ) -> AppResult<Task> {
+        self.start_task_traced(request, carry, None)
+    }
+
+    /// A run of a skill trial: marked before its worktree and its agent
+    /// exist, so both leave the skill out when the run is without it.
+    pub(super) fn start_task_for_trial(&self, request: NewTask, run: TrialRef) -> AppResult<Task> {
+        self.start_task_traced(request, None, Some(run))
+    }
+
+    fn start_task_traced(
+        &self,
+        request: NewTask,
+        carry: Option<Carry>,
+        trial: Option<TrialRef>,
+    ) -> AppResult<Task> {
         let project = self.project_at(&request.project)?;
         let main_account = project.account.clone().ok_or(AppError::NoAccountResolved)?;
         if request.prompt.trim().is_empty() {
@@ -182,7 +198,16 @@ impl Hedy {
 
         let now = self.clock.now_ms();
         let id = self.new_task_id(now);
-        let title = title_from_prompt(&request.prompt);
+        let mut title = title_from_prompt(&request.prompt);
+        if let Some(run) = &trial {
+            self.mark_trial_run(&id, run)?;
+            let skill = &run.skill;
+            let label = match run.with_skill {
+                true => tr!("Prueba con «{skill}»", "Trial with «{skill}»"),
+                false => tr!("Prueba sin «{skill}»", "Trial without «{skill}»"),
+            };
+            title = format!("{label} · {title}");
+        }
         let (prompt, origin, images) = match carried {
             Some(carried) => (
                 carried_prompt(&carried.origin.context, &request.prompt),
@@ -269,7 +294,7 @@ impl Hedy {
         self.git
             .add_worktree(repo, &worktree, &branch, &base_commit)?;
         self.share_dependencies(repo, &worktree)?;
-        self.install_skills_in(repo, &worktree);
+        self.install_skills_in(repo, &worktree, id);
         Ok(Workspace {
             worktree,
             branch,
@@ -321,6 +346,7 @@ impl Hedy {
         if failed_now {
             self.notify(task, NoticeKind::Failed);
         }
+        self.after_trial_run(&task.id);
     }
 
     /// Tells the driving adapter about something the user may want to hear
@@ -705,6 +731,7 @@ impl Hedy {
                 if changed {
                     self.notify(&task, notice);
                 }
+                self.after_trial_run(id);
                 return Ok(());
             }
             AgentEvent::Usage(_) => {}
@@ -1077,6 +1104,7 @@ impl Hedy {
         if !task.status.is_closed() && task.status != TaskStatus::Failed {
             self.set_status(&mut task, TaskStatus::Review)?;
         }
+        self.after_trial_run(id);
         Ok(())
     }
 

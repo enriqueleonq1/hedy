@@ -796,6 +796,61 @@ fn skills_list_show_approve_reject_and_remove() {
 }
 
 #[test]
+fn skills_try_runs_each_task_with_and_without_the_skill_and_keeps_the_result() {
+    let env = Env::new();
+    let repo = commit_repo(&env);
+    env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy_in(&repo, &["use", "claude"]).assert().success();
+    seed_skills(&env, &repo);
+    env.hedy_in(
+        &repo,
+        &[
+            "skills",
+            "try",
+            "run-e2e-tests",
+            "--task",
+            "Arregla el saludo",
+        ],
+    )
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("--yes"));
+
+    env.hedy_in(
+        &repo,
+        &[
+            "skills",
+            "try",
+            "run-e2e-tests",
+            "--task",
+            "Arregla el saludo",
+            "--yes",
+        ],
+    )
+    .timeout(std::time::Duration::from_secs(60))
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("Dudosa"))
+    .stdout(predicate::str::contains(
+        "Con ella acierta 1 de 1; sin ella, 1 de 1",
+    ))
+    .stdout(predicate::str::contains("La IA no llegó a usarla"));
+    env.hedy_in(&repo, &["skills", "show", "run-e2e-tests"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Probada: Dudosa"));
+    // The runs are gone, and nothing reached the project.
+    env.hedy_in(&repo, &["tasks"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("descartada"));
+    assert_eq!(git(&repo, &["worktree", "list"]).lines().count(), 1);
+    assert_eq!(git(&repo, &["status", "--short"]), "");
+}
+
+#[test]
 fn skills_import_shows_first_and_export_writes_plain_files() {
     let env = Env::new();
     let repo = git_repo(&env, "code/agenda");

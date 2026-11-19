@@ -70,6 +70,8 @@ pub enum AppError {
     #[error("{}", self.message())]
     SkillReviewTimedOut,
     #[error("{}", self.message())]
+    TrialTasks,
+    #[error("{}", self.message())]
     EmptyPrompt,
     #[error("{}", self.message())]
     ProviderNotYetSupported(Provider),
@@ -517,6 +519,10 @@ impl AppError {
                     "the AI gave no review; try again"
                 ),
             },
+            Self::TrialTasks => tr!(
+                "elige de 1 a 3 tareas para probar la habilidad",
+                "pick 1 to 3 tasks to try the skill on"
+            ),
             Self::SkillReviewTimedOut => tr!(
                 "la IA tardó demasiado en revisar la habilidad; vuelve a intentarlo",
                 "the AI took too long to review the skill; try again"

@@ -388,12 +388,14 @@ impl Hedy {
     /// tasks, for the CLIs other than Claude Code (which gets them as a
     /// plugin for its sessions). The project's own checkout is the user's:
     /// their own `claude` or `codex` there never sees Hedy's skills.
-    fn skill_dirs(&self, project: &Path) -> AppResult<Vec<PathBuf>> {
+    /// A trial run without a skill never gets it (`except`).
+    fn skill_dirs(&self, project: &Path, except: Option<&str>) -> AppResult<Vec<PathBuf>> {
         let mut dirs = Vec::new();
         for task in self.store.tasks(project)? {
             if let Some(ws) = &task.workspace
                 && !task.status.is_closed()
                 && self.fs.exists(&ws.worktree)
+                && (except.is_none() || self.skill_left_out(&task.id).as_deref() != except)
             {
                 dirs.push(ws.worktree.clone());
             }
@@ -407,7 +409,7 @@ impl Hedy {
             return Ok(files);
         };
         self.tidy_skill_files(project, &mut files);
-        for dir in self.skill_dirs(project)? {
+        for dir in self.skill_dirs(project, Some(&skill.name))? {
             self.write_skill_files(project, &dir, skill, &mut files)?;
         }
         Ok(files)
@@ -462,7 +464,7 @@ impl Hedy {
         };
         // The project's own checkout: only an older Hedy's untouched copy.
         self.tidy_skill(project, skill, &mut files);
-        for dir in self.skill_dirs(project)? {
+        for dir in self.skill_dirs(project, None)? {
             for folder in SkillFolder::ALL {
                 let file = folder.file(&skill.name);
                 let path = dir.join(&file);
@@ -542,14 +544,15 @@ impl Hedy {
     /// that read `.agents/skills` (they are excluded from git, so
     /// `git worktree add` does not bring them). Best effort: the agents also
     /// read them through the memory tools.
-    pub(super) fn install_skills_in(&self, repo: &Path, worktree: &Path) {
+    pub(super) fn install_skills_in(&self, repo: &Path, worktree: &Path, task: &TaskId) {
         let mut files = SkillFiles::default();
         self.tidy_skill_files(repo, &mut files);
         let Ok(skills) = self.store.skills(Some(repo), false) else {
             return;
         };
+        let left_out = self.skill_left_out(task);
         for skill in skills {
-            if skill.status == SkillStatus::Approved {
+            if skill.status == SkillStatus::Approved && Some(&skill.name) != left_out.as_ref() {
                 let _ = self.write_skill_files(repo, worktree, &skill, &mut files);
             }
         }
@@ -570,6 +573,9 @@ impl Hedy {
             self.fs.remove_dir_all(&dir)?;
         }
         let mut skills = self.agent_skills(project)?;
+        if let Some(left_out) = self.skill_left_out(task) {
+            skills.retain(|s| s.name != left_out);
+        }
         skills.sort_by_key(|s| s.project.is_none());
         let mut names = std::collections::HashSet::new();
         skills.retain(|s| {
@@ -744,13 +750,27 @@ struct TaskSkills {
     author: String,
 }
 
+impl TaskSkills {
+    /// The skill this task's agents must not see (a trial run without it).
+    fn left_out(&self) -> Option<String> {
+        self.task.as_ref().and_then(|t| self.hedy.skill_left_out(t))
+    }
+
+    fn visible(&self) -> AppResult<Vec<Skill>> {
+        let left_out = self.left_out();
+        let mut skills = self.hedy.agent_skills(&self.project)?;
+        skills.retain(|s| Some(&s.name) != left_out.as_ref());
+        Ok(skills)
+    }
+}
+
 impl SkillTools for TaskSkills {
     fn list(&self) -> String {
         self.list_page(PageRequest::default())
     }
 
     fn list_page(&self, page: PageRequest) -> String {
-        match self.hedy.agent_skills(&self.project) {
+        match self.visible() {
             Ok(skills) if experiments::on(Experiment::Search8) => {
                 format_skill_page(&paginate(skills, page, SKILLS_PAGE, SKILLS_MAX))
             }
@@ -763,9 +783,10 @@ impl SkillTools for TaskSkills {
     }
 
     fn get(&self, name: &str) -> String {
+        let left_out = self.left_out();
         match self.hedy.read_skill_for_agent(&self.project, name) {
-            Ok(Some(skill)) => format_skill(&skill),
-            Ok(None) => tr!(
+            Ok(Some(skill)) if Some(&skill.name) != left_out.as_ref() => format_skill(&skill),
+            Ok(_) => tr!(
                 "No hay una habilidad aprobada con ese nombre; skill_list las lista.",
                 "There is no approved skill with that name; skill_list lists them."
             ),
