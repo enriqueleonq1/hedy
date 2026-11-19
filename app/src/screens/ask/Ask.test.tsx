@@ -20,7 +20,7 @@ describe("Asking the memory", () => {
 
   it("answers with cited sources, from the sidebar, and says when nothing is written", async () => {
     const { user } = renderAt("#activity");
-    await user.click(await screen.findByRole("button", { name: "Memoria" }));
+    await user.click(await screen.findByRole("button", { name: "Tu memoria" }));
     expect(window.location.hash).toBe("#ask");
     const panel = screen.getByRole("region", { name: "Pregunta a tu memoria" });
     expect(within(panel).getByText(/Pregunta lo que saben tus notas/)).toBeInTheDocument();
