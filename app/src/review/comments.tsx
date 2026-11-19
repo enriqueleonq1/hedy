@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useAction, useApi } from "../api/context";
 import type { HedyApi } from "../api/HedyApi";
@@ -42,6 +42,8 @@ export interface ReviewComment {
   createdAt: number;
   /** When it went to the AI (then it is history: dimmed, collapsed); `null` while pending. */
   sentAt: number | null;
+  /** What it came from, when not written by hand (a rule check's warning). */
+  source?: string | null;
 }
 
 export interface NewReviewComment {
@@ -53,6 +55,8 @@ export interface NewReviewComment {
   text: string;
   /** The lines' text, when the caller has it at hand (else it is read from the copy). */
   code?: string;
+  /** What it comes from, when not written by hand (a rule check's warning). */
+  source?: string;
 }
 
 export interface ReviewComments {
@@ -230,9 +234,14 @@ function CommentsStore({ task, children }: { task: Task | null; children: ReactN
   const comments = useMemo(() => (currentKey ? listOf(currentKey) : []), [currentKey, listOf]);
   const pending = useMemo(() => comments.filter((c) => c.sentAt === null), [comments]);
 
+  // A copy's comments as first read from storage, once: the update below may
+  // run twice (React's strict mode) and must not read back what it saved.
+  const disk = useRef(new Map<string, ReviewComment[]>());
   const change = useCallback((key: string, edit: (list: ReviewComment[]) => ReviewComment[]) => {
+    if (!disk.current.has(key)) disk.current.set(key, load(key));
+    const stored = disk.current.get(key) ?? [];
     setStore((s) => {
-      const next = edit(s[key] ?? load(key));
+      const next = edit(s[key] ?? stored);
       save(key, next);
       return { ...s, [key]: next };
     });
@@ -260,6 +269,7 @@ function CommentsStore({ task, children }: { task: Task | null; children: ReactN
         code: input.code ?? null,
         createdAt: Date.now(),
         sentAt: null,
+        source: input.source ?? null,
       };
       const key = copyKey(input.copy);
       change(key, (list) => [...list, comment]);
