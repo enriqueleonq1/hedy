@@ -610,7 +610,9 @@ fn memory_ask_answers_only_from_approved_notes_and_cites_them() {
         .env("FAKE_PROMPT_LOG", &log)
         .assert()
         .success()
-        .stdout(predicate::str::contains("Nada escrito en tu memoria responde eso"));
+        .stdout(predicate::str::contains(
+            "Nada escrito en tu memoria responde eso",
+        ));
     assert!(!log.exists());
 
     seed_memory(&env, &repo);
@@ -618,7 +620,9 @@ fn memory_ask_answers_only_from_approved_notes_and_cites_them() {
         .env("FAKE_PROMPT_LOG", &log)
         .assert()
         .success()
-        .stdout(predicate::str::contains("Se guardan en USD y se muestran en Bs [1]."))
+        .stdout(predicate::str::contains(
+            "Se guardan en USD y se muestran en Bs [1].",
+        ))
         .stdout(predicate::str::contains(
             "[1] Los precios se guardan en USD y se muestran también en Bs",
         ))
@@ -643,11 +647,14 @@ fn memory_ask_answers_only_from_approved_notes_and_cites_them() {
     assert_eq!(json["sources"][0]["cited"], true);
     assert_eq!(json["sources"][1]["cited"], false);
 
-    env.hedy_lang("en", &["-C", repo.to_str().unwrap(), "memory", "ask", question])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Yours · project agenda"))
-        .stdout(predicate::str::contains("Claude answered from 2 notes"));
+    env.hedy_lang(
+        "en",
+        &["-C", repo.to_str().unwrap(), "memory", "ask", question],
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("Yours · project agenda"))
+    .stdout(predicate::str::contains("Claude answered from 2 notes"));
     env.hedy_in(&repo, &["memory", "ask", "--team", "Nadie", question])
         .assert()
         .failure()
