@@ -3321,7 +3321,8 @@ rule instead of ignoring it.
   protected project there is refused. A protected project reads no global note. The account is
   the chosen one, else the project's; at its limit Hedy refuses and never moves to another.
 - **Git as data.** Diffs run with `--no-ext-diff --no-textconv` and fixed `a/` `b/` prefixes, so
-  no command of the user's config runs and no decrypting filter shows a secret. A range's ends
+  no external diff or textconv command runs and no decrypting filter shows a secret (clean
+  filters still run, as with `git status`). A range's ends
   must be commits (`HEAD:.env` and blob hashes are refused); one commit means its own change,
   against its first parent (a first commit against nothing). Uncommitted work includes new files
   not added yet (never read through a link; large or binary ones only named).
@@ -3372,5 +3373,5 @@ rule instead of ignoring it.
 ### Limits
 
 - In a shallow clone, the oldest commit shows as all new. Uncommitted work reads at most 200 new
-  files. "Ya no aplica" compares the note without its hidden characters; a note whose only
+  files; past that, the check says only part was checked. "Ya no aplica" compares the note without its hidden characters; a note whose only
   difference is one of them is taken as unchanged.

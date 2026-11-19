@@ -333,7 +333,7 @@ impl Git for GitCli {
         Ok(parse_unified(&patch))
     }
 
-    fn work_diff(&self, repo: &Path) -> PortResult<Vec<FileDiff>> {
+    fn work_diff(&self, repo: &Path) -> PortResult<(Vec<FileDiff>, usize)> {
         let base = if run(repo, &["rev-parse", "--verify", "-q", "HEAD"])?
             .status
             .success()
@@ -355,14 +355,14 @@ impl Git for GitCli {
                 "--exclude-standard",
             ],
         )?;
+        let new: Vec<&str> = others.split('\0').filter(|p| !p.is_empty()).collect();
+        let left = new.len().saturating_sub(UNTRACKED_MAX);
         files.extend(
-            others
-                .split('\0')
-                .filter(|p| !p.is_empty())
+            new.into_iter()
                 .take(UNTRACKED_MAX)
                 .map(|path| untracked_file(repo, path)),
         );
-        Ok(files)
+        Ok((files, left))
     }
 
     fn revs_diff(&self, repo: &Path, revs: &str) -> PortResult<Vec<FileDiff>> {
@@ -856,10 +856,10 @@ mod tests {
     fn diffs_uncommitted_work_and_ranges_without_reading_options() {
         let (_tmp, repo) = repo();
         let g = GitCli;
-        assert!(g.work_diff(&repo).unwrap().is_empty());
+        assert!(g.work_diff(&repo).unwrap().0.is_empty());
         fs::write(repo.join("app.py"), "def crear():\n    avisar()\n").unwrap();
-        let work = g.work_diff(&repo).unwrap();
-        assert_eq!(work.len(), 1);
+        let (work, left) = g.work_diff(&repo).unwrap();
+        assert_eq!((work.len(), left), (1, 0));
         assert_eq!(work[0].additions, 1);
         git(&repo, &["checkout", "-qb", "feat"]).unwrap();
         git(&repo, &["commit", "-qam", "Avisa"]).unwrap();
@@ -871,7 +871,6 @@ mod tests {
             range.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(),
             ["app.py", "nuevo.py"]
         );
-        // Never read as an option.
         // Uncommitted work: changed files and new ones not added yet; a new
         // protected one is only named.
         fs::write(repo.join("app.py"), "def crear():\n    avisar(1)\n").unwrap();
@@ -879,7 +878,7 @@ mod tests {
         fs::write(repo.join(".env"), "KEY=secret\n").unwrap();
         // A hard link to it is never read either.
         fs::hard_link(repo.join(".env"), repo.join("zz.txt")).unwrap();
-        let work = g.work_diff(&repo).unwrap();
+        let (work, _) = g.work_diff(&repo).unwrap();
         let summary: Vec<(&str, u32, usize)> = work
             .iter()
             .map(|f| (f.path.as_str(), f.additions, f.hunks.len()))
@@ -941,6 +940,7 @@ mod tests {
         let wt = apart.join("wt");
         git(&apart, &["worktree", "add", "-q", wt.to_str().unwrap()]).unwrap();
         assert!(g.main_root(&wt).is_err());
+        // Never read as an option.
         let out = repo.join("written");
         let option = format!("--output={}", out.display());
         assert!(g.revs_diff(&repo, &option).is_err());

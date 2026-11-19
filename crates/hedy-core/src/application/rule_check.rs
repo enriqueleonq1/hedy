@@ -94,7 +94,7 @@ impl Hedy {
         model: Option<&str>,
         timeout: Duration,
     ) -> AppResult<RuleCheck> {
-        let (project, diff) = self.rule_change(target)?;
+        let (project, diff, left) = self.rule_change(target)?;
         if diff.is_empty() {
             return Err(AppError::RulesNoChanges);
         }
@@ -118,7 +118,8 @@ impl Hedy {
             rules,
             files: change.files,
             protected: change.protected.clone(),
-            truncated: change.truncated,
+            // New files left unread mean part of the change was not judged.
+            truncated: change.truncated || left > 0,
             unread: false,
             account: None,
         };
@@ -177,8 +178,12 @@ impl Hedy {
     /// launch), and only its files count when it is a part of the
     /// repository; a change to another protected project inside it is
     /// refused (rule 4: its code only goes to its own account).
-    fn rule_change(&self, target: &RuleTarget) -> AppResult<(Option<PathBuf>, Vec<FileDiff>)> {
-        let (dir, roots, diff) = match target {
+    /// And how many new files were left unread.
+    fn rule_change(
+        &self,
+        target: &RuleTarget,
+    ) -> AppResult<(Option<PathBuf>, Vec<FileDiff>, usize)> {
+        let (dir, roots, diff, left) = match target {
             RuleTarget::Task(id) => {
                 let task = self.task(id)?;
                 if task.status.is_closed() {
@@ -186,7 +191,7 @@ impl Hedy {
                 }
                 // Its worktree is a copy of the project's repository.
                 let repo = self.repo_root(&task.project)?;
-                (task.project.clone(), vec![repo], self.task_diff(id)?)
+                (task.project.clone(), vec![repo], self.task_diff(id)?, 0)
             }
             RuleTarget::Staged(dir) | RuleTarget::Work(dir) | RuleTarget::Revs { dir, .. } => {
                 let revs = match target {
@@ -194,9 +199,9 @@ impl Hedy {
                     _ => None,
                 };
                 let worktree = self.repo_root(dir)?;
-                let diff = match (target, revs) {
-                    (RuleTarget::Staged(_), _) => self.git.staged_diff(&worktree)?,
-                    (_, Some(revs)) => self.git.revs_diff(&worktree, &revs)?,
+                let (diff, left) = match (target, revs) {
+                    (RuleTarget::Staged(_), _) => (self.git.staged_diff(&worktree)?, 0),
+                    (_, Some(revs)) => (self.git.revs_diff(&worktree, &revs)?, 0),
                     _ => self.git.work_diff(&worktree)?,
                 };
                 let main = self.git.main_root(&worktree)?;
@@ -217,7 +222,7 @@ impl Hedy {
                 if !roots.contains(&main) {
                     roots.push(main);
                 }
-                (dir, roots, diff)
+                (dir, roots, diff, left)
             }
         };
         let projects = self.projects()?;
@@ -255,7 +260,7 @@ impl Hedy {
                 });
             }
         }
-        Ok((project.map(|p| p.path), diff))
+        Ok((project.map(|p| p.path), diff, left))
     }
 }
 
@@ -462,6 +467,18 @@ mod tests {
                 .check_rules(&RuleTarget::Work(f.dir("/code/tienda")), None, None),
             Err(AppError::RulesNoChanges)
         );
+        // New files past the most read: only part of the change is judged.
+        f.hedy
+            .add_note(None, "Commits en una línea", Category::Convention)
+            .unwrap();
+        f.git.set_diff(change());
+        f.git.set_work_left(120);
+        answer(&f, "NO_BREAKS");
+        let check = f
+            .hedy
+            .check_rules(&RuleTarget::Work(f.dir("/code/tienda")), None, None)
+            .unwrap();
+        assert!(check.truncated);
         assert!(f.git.log().contains(&"diff work".to_owned()));
     }
 

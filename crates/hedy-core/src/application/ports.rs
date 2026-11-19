@@ -532,7 +532,8 @@ pub trait Git: Send + Sync {
     fn main_root(&self, repo: &Path) -> PortResult<PathBuf>;
     /// What is not committed yet in `repo`, staged or not, new files not
     /// added yet included (protected ones only named, never read).
-    fn work_diff(&self, repo: &Path) -> PortResult<Vec<FileDiff>>;
+    /// Also how many new files were left out, past the most read.
+    fn work_diff(&self, repo: &Path) -> PortResult<(Vec<FileDiff>, usize)>;
     /// `git commit -F <file with message>` (`-e` too when `edit`: git opens
     /// the user's editor) on what is staged, with the user's own hooks and
     /// signing settings, and git's output on the terminal (for `hedy commit`).

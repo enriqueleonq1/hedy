@@ -14,7 +14,7 @@ All notable changes to Hedy are listed here. The format follows
   summaries) run with no shell.
 - A protected file (`.env`, keys) in a folder whose name has a space or accents was read under
   another name, and its contents could go in `hedy commit`'s request. Git's diffs no longer run
-  the user's external diff or decrypting filters either.
+  decrypting textconv filters, whatever the user's diff settings.
 
 ### Added
 
@@ -41,7 +41,8 @@ All notable changes to Hedy are listed here. The format follows
   rules of the project and the team, and each one that goes against a rule gets a warning
   under it, citing the note. It only warns. In Cambios, "Revisar con tus reglas"; ask the AI to
   fix a warning, mark it as fine, or, when the rule no longer applies, change it (a team's is
-  proposed to whoever may change it) or add an exception for the project. From the terminal,
+  proposed to whoever may change it, or changed for the whole team if you may) or add an
+  exception for the project. From the terminal,
   `hedy review` (uncommitted work, `--staged`, a commit or a range), also in a git hook.
 - A context-saving package, on by default, measured on real tasks before turning it on: it cut
   cost by 30–41 %. Turn it off in Ajustes → Ahorro or with

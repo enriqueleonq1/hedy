@@ -11,17 +11,15 @@ import { useReviewComments } from "./comments";
 import { RuleChangeDialog } from "./RuleChange";
 import "../styles/rules.css";
 
-/**
- * "Revisar con tus reglas" (docs/decisions.md §37): a task's changes against
- * the written rules, each warning under its line and citing its note. Only a
- * warning: nothing here blocks accepting the changes.
- *
- * ```tsx
- * const rules = useRuleCheck(task, files);
- * <RulesBar task={task} copy={copy} rules={rules} />
- * <DiffView annotated={rules.linesOf(path)} annotate={(line) => …} … />
- * ```
- */
+// "Revisar con tus reglas" (docs/decisions.md §37): a task's changes against
+// the written rules, each warning under its line and citing its note. Only a
+// warning: nothing here blocks accepting the changes.
+//
+//   const rules = useRuleCheck(task, files);
+//   <RulesBar task={task} copy={copy} project={project} rules={rules} />
+//   <DiffView annotated={rules.linesOf(path)} annotate={(line) => …} … />
+
+/** A check as kept for its task. */
 interface Stored {
   check: RuleCheck;
   /** The changes' added lines as they were checked: when they change, the check is outdated. */
@@ -154,8 +152,7 @@ export function useRuleCheck(task: Task | null, files: FileDiff[]) {
     mutationKey: ["ruleCheck"],
     mutationFn: (vars) => api.checkTaskRules(vars.task),
     // A new check starts with no rule settled: it read the rules as they are now.
-    onSuccess: (check, vars) =>
-      client.setQueryData<Stored>(["ruleCheck", vars.task], { check, version: vars.version, settled: [] }),
+    onSuccess: (check, vars) => client.setQueryData<Stored>(["ruleCheck", vars.task], { check, version: vars.version, settled: [] }),
   });
   // A run outlives this view (another tab, another task): its state is read
   // from the cache, by task, so a second click never spends twice.
@@ -282,54 +279,52 @@ export function LineWarnings({ warnings, copy, rules }: { warnings: Warning[]; c
   const t = useT();
   const review = useReviewComments();
   return (
-    <>
-      <ul className="rl-warnings">
-        {warnings.map((w) => (
-          <li key={w.key} className="rl-warning">
-            <p className="rl-warning__head">
-              <span className="rl-warning__label">{t("rules.warning")}</span>
-              {w.rule && <span className="rl-warning__rule">{t("rules.quoted", { text: w.rule.text })}</span>}
-            </p>
-            <p className="rl-warning__message">{w.brk.message}</p>
-            {w.brk.fix && <p className="rl-warning__fix">{t("rules.fixed", { fix: w.brk.fix })}</p>}
-            <div className="rl-warning__foot">
-              {w.rule && <span className="rl-warning__where">{ruleWhere(w.rule, t)}</span>}
-              <span className="rl-warning__actions">
-                {commentOf(review, w) ? (
-                  <span className="rl-warning__added">{t("rules.inComments")}</span>
-                ) : (
-                  <Button
-                    small
-                    disabled={!review.canSend}
-                    onClick={() =>
-                      review.add({
-                        copy,
-                        path: w.brk.path,
-                        line: w.brk.line,
-                        side: "new",
-                        text: warningComment(w, t),
-                        code: w.brk.code,
-                        source: w.key,
-                      })
-                    }
-                  >
-                    {t("rules.fix")}
-                  </Button>
-                )}
-                <Button small variant="ghost" onClick={() => rules.dismiss(w)}>
-                  {t("rules.fine")}
+    <ul className="rl-warnings">
+      {warnings.map((w) => (
+        <li key={w.key} className="rl-warning">
+          <p className="rl-warning__head">
+            <span className="rl-warning__label">{t("rules.warning")}</span>
+            {w.rule && <span className="rl-warning__rule">{t("rules.quoted", { text: w.rule.text })}</span>}
+          </p>
+          <p className="rl-warning__message">{w.brk.message}</p>
+          {w.brk.fix && <p className="rl-warning__fix">{t("rules.fixed", { fix: w.brk.fix })}</p>}
+          <div className="rl-warning__foot">
+            {w.rule && <span className="rl-warning__where">{ruleWhere(w.rule, t)}</span>}
+            <span className="rl-warning__actions">
+              {commentOf(review, w) ? (
+                <span className="rl-warning__added">{t("rules.inComments")}</span>
+              ) : (
+                <Button
+                  small
+                  disabled={!review.canSend}
+                  onClick={() =>
+                    review.add({
+                      copy,
+                      path: w.brk.path,
+                      line: w.brk.line,
+                      side: "new",
+                      text: warningComment(w, t),
+                      code: w.brk.code,
+                      source: w.key,
+                    })
+                  }
+                >
+                  {t("rules.fix")}
                 </Button>
-                {w.rule && (
-                  <Button small variant="ghost" onClick={() => w.rule && rules.openChange(w.rule)}>
-                    {t("rules.change.open")}
-                  </Button>
-                )}
-              </span>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </>
+              )}
+              <Button small variant="ghost" onClick={() => rules.dismiss(w)}>
+                {t("rules.fine")}
+              </Button>
+              {w.rule && (
+                <Button small variant="ghost" onClick={() => w.rule && rules.openChange(w.rule)}>
+                  {t("rules.change.open")}
+                </Button>
+              )}
+            </span>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -373,8 +368,12 @@ export function RulesBar({
         {t("rules.noRules")} <span className="muted">{t("rules.noRulesHint")}</span>
       </>
     );
-  } else if (check.status === "nothing_to_check") {
+  } else if (check.status === "nothing_to_check" && !rules.outdated) {
     text = t("rules.nothing");
+  } else if (check.status === "nothing_to_check") {
+    // It added no line then; it may now.
+    tone = "warn";
+    text = t("rules.outdatedNow");
   } else if (check.status === "unread") {
     tone = "warn";
     text = t("rules.unread");
@@ -384,8 +383,7 @@ export function RulesBar({
   } else if (stale) {
     tone = "warn";
     // Warned lines that changed, or only new lines never checked.
-    text =
-      rules.settledCount > 0 ? t("rules.ruleChanged") : rules.gone > 0 ? t("rules.linesChanged") : t("rules.outdatedNow");
+    text = rules.settledCount > 0 ? t("rules.ruleChanged") : rules.gone > 0 ? t("rules.linesChanged") : t("rules.outdatedNow");
   } else if (rules.dismissedCount > 0) {
     text = t("rules.nothingPending");
   } else {
