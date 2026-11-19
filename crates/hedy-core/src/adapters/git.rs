@@ -430,18 +430,52 @@ impl Git for GitCli {
     }
 
     fn main_root(&self, repo: &Path) -> PortResult<PathBuf> {
-        let common = git(
+        let dirs = git(
             repo,
-            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+            &[
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-dir",
+                "--git-common-dir",
+            ],
         )?;
-        let common = PathBuf::from(common.trim());
-        // A bare repository's or an unusual layout's: the folder itself.
-        Ok(match common.file_name() {
-            Some(name) if name == ".git" => common
-                .parent()
-                .map_or_else(|| repo.to_owned(), Path::to_owned),
-            _ => repo.to_owned(),
-        })
+        let mut dirs = dirs.lines().map(|d| PathBuf::from(d.trim()));
+        let (Some(own), Some(common)) = (dirs.next(), dirs.next()) else {
+            return Err(PortError::new("git rev-parse: sin carpeta de git"));
+        };
+        // Not a worktree added from another checkout: it is the main one.
+        if own == common {
+            return Ok(repo.to_owned());
+        }
+        if common.file_name().is_some_and(|name| name == ".git")
+            && let Some(main) = common.parent()
+        {
+            return Ok(main.to_owned());
+        }
+        // A submodule's or a separate git folder's: where its config says,
+        // else refused, never guessed (the projects inside depend on it).
+        let configured = run(
+            repo,
+            &[
+                "--git-dir",
+                &common.to_string_lossy(),
+                "config",
+                "--path",
+                "core.worktree",
+            ],
+        )?;
+        let main = String::from_utf8_lossy(&configured.stdout)
+            .trim()
+            .to_owned();
+        if configured.status.success() && !main.is_empty() {
+            let main = common.join(main);
+            return fs::canonicalize(&main)
+                .map_err(|e| PortError::new(format!("{}: {e}", main.display())));
+        }
+        Err(PortError::new(tr!(
+            "no se encontró la carpeta principal de este worktree; revísalo desde ella",
+            "the main folder of this worktree was not found; check it from there"
+        )))
     }
 
     fn commit_staged(&self, repo: &Path, message: &str, edit: bool) -> PortResult<()> {
@@ -878,6 +912,35 @@ mod tests {
         let main = repo.canonicalize().unwrap();
         assert_eq!(g.main_root(&wt).unwrap().canonicalize().unwrap(), main);
         assert_eq!(g.main_root(&repo).unwrap().canonicalize().unwrap(), main);
+        // A separate git folder: a worktree of it is refused, never guessed.
+        let tmp = tempfile::tempdir().unwrap();
+        let apart = tmp.path().join("apart");
+        let store = tmp.path().join("apart.git");
+        git(
+            tmp.path(),
+            &[
+                "init",
+                "-q",
+                "-b",
+                "main",
+                "--separate-git-dir",
+                store.to_str().unwrap(),
+                apart.to_str().unwrap(),
+            ],
+        )
+        .unwrap();
+        for args in [
+            &["config", "user.email", "t@l"][..],
+            &["config", "user.name", "T"],
+            &["config", "commit.gpgsign", "false"],
+            &["commit", "-q", "--allow-empty", "-m", "Inicio"],
+        ] {
+            git(&apart, args).unwrap();
+        }
+        assert_eq!(g.main_root(&apart).unwrap(), apart);
+        let wt = apart.join("wt");
+        git(&apart, &["worktree", "add", "-q", wt.to_str().unwrap()]).unwrap();
+        assert!(g.main_root(&wt).is_err());
         let out = repo.join("written");
         let option = format!("--output={}", out.display());
         assert!(g.revs_diff(&repo, &option).is_err());
