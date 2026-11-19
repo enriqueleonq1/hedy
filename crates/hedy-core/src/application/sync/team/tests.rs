@@ -2474,3 +2474,42 @@ fn an_unreadable_protected_project_does_not_open_a_protected_copy() {
         );
     }
 }
+
+#[test]
+fn a_team_member_cannot_push_your_notes_out_of_the_graph() {
+    use crate::application::GraphKind;
+    const MAX: usize = 5;
+
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    luis.f
+        .hedy
+        .add_note(None, "Mi nota de siempre", Category::Preference)
+        .unwrap();
+    // A member's notes dated far in the future, more than the graph holds.
+    for i in 0..(MAX + 5) {
+        let body = json(&TeamNoteBody {
+            text: format!("ruido {i}"),
+            category: Category::Rule,
+            person: ana.f.hedy.team_status(&ana.team).unwrap().person,
+            author: "Ana".into(),
+            created_at: i64::MAX / 2,
+            topic: None,
+            updated_at: None,
+        });
+        forge(&ana, ItemKind::Note, Scope::Project("p".into()), body);
+    }
+    ana.sync();
+    luis.sync();
+    let g = luis.f.hedy.memory_graph_within(MAX).unwrap();
+    let notes: Vec<&str> = g
+        .nodes
+        .iter()
+        .filter(|n| n.kind == GraphKind::Note)
+        .map(|n| n.label.as_str())
+        .collect();
+    assert!(notes.contains(&"Mi nota de siempre"));
+    assert_eq!(notes.len(), MAX);
+    assert!(g.hidden_notes > 0);
+}

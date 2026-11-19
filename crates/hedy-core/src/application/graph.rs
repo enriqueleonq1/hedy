@@ -99,7 +99,7 @@ impl Builder {
         source: SourceRef,
         layer: SourceLayer,
     ) -> String {
-        let (label, _) = preview(text, NOTE_LABEL);
+        let (label, _) = preview(&reveal_hidden(text), NOTE_LABEL);
         self.node(&id, GraphKind::Note, &label, group);
         if let Some(node) = self.nodes.get_mut(&id) {
             node.source = Some(source);
@@ -176,6 +176,10 @@ impl Hedy {
     /// projects' too: it is only shown here) and every team's this PC
     /// reads, the newest [`GRAPH_NOTES_MAX`].
     pub fn memory_graph(&self) -> AppResult<MemoryGraph> {
+        self.memory_graph_within(GRAPH_NOTES_MAX)
+    }
+
+    pub(crate) fn memory_graph_within(&self, max_notes: usize) -> AppResult<MemoryGraph> {
         let projects = self.projects()?;
         let teams: Vec<_> = self.teams()?.into_iter().filter(|t| !t.waiting).collect();
         let mut notes: Vec<GraphNote> = Vec::new();
@@ -240,9 +244,17 @@ impl Hedy {
                 });
             }
         }
-        notes.sort_by_key(|n| std::cmp::Reverse(n.at));
-        let hidden = notes.len().saturating_sub(GRAPH_NOTES_MAX);
-        notes.truncate(GRAPH_NOTES_MAX);
+        // This person's notes first, then the newest; a date in the future
+        // (a team member's to write) counts as now.
+        let now = self.now_secs();
+        notes.sort_by_key(|n| {
+            (
+                !matches!(n.source, SourceRef::Local { .. }),
+                std::cmp::Reverse(n.at.min(now)),
+            )
+        });
+        let hidden = notes.len().saturating_sub(max_notes);
+        notes.truncate(max_notes);
 
         let mut g = Builder::default();
         let you = g.node("you", GraphKind::You, &tr!("Tú", "You"), "you");
@@ -260,7 +272,7 @@ impl Hedy {
             }
         }
         for team in &teams {
-            let (name, _) = preview(&team.name, HUB_LABEL);
+            let (name, _) = preview(&reveal_hidden(&team.name), HUB_LABEL);
             g.node(
                 &format!("t:{}", team.id),
                 GraphKind::Team,
@@ -288,7 +300,7 @@ impl Hedy {
             g.link(&id, &owner);
             if let Some((person, name, team)) = &note.person {
                 // "@": a team member, never taken for "Tú" or a project.
-                let (name, _) = preview(name, HUB_LABEL);
+                let (name, _) = preview(&reveal_hidden(name), HUB_LABEL);
                 let person = g.node(person, GraphKind::Person, &format!("@{name}"), "person");
                 g.link(&id, &person);
                 g.link(&person, team);

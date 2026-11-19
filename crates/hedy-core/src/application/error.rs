@@ -158,6 +158,10 @@ pub enum AppError {
     /// only go to their own account, from that project.
     #[error("{}", self.message())]
     AskTeamProtected,
+    /// Looking in the code needs Claude Code: the others read protected
+    /// files without asking.
+    #[error("{}", self.message())]
+    AskCodeNeedsClaude { account: String },
     #[error("{}", self.message())]
     ThemeNotFound(String),
     /// Rule 3: the chosen account is at its limit; no other is used.
@@ -667,6 +671,10 @@ impl AppError {
                     "the AI gave no answer; try again"
                 ),
             },
+            Self::AskCodeNeedsClaude { account } => tr!(
+                "buscar en el código necesita una cuenta de Claude Code: con «{account}» la IA podría leer archivos protegidos (.env, claves) sin pedir permiso",
+                "looking in the code needs a Claude Code account: with «{account}» the AI could read protected files (.env, keys) without asking"
+            ),
             Self::AskTeamProtected => tr!(
                 "las notas de ese equipo solo las lee la cuenta de su proyecto protegido: pregunta desde ese proyecto",
                 "that team's notes are only read by its protected project's account: ask from that project"

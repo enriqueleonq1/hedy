@@ -15,8 +15,9 @@ use crate::domain::ask::{
     parse_answer, parse_code_answer, pick_sources, question_prompt,
 };
 use crate::domain::sync::MemoryHome;
+use crate::domain::team::reveal_hidden;
 use crate::domain::{
-    Account, AccountId, Category, Note, NoteStatus, Phase, Project, Stage, policy,
+    Account, AccountId, Category, Note, NoteStatus, Phase, Project, Provider, Stage, policy,
 };
 use crate::tr;
 
@@ -86,6 +87,13 @@ impl Hedy {
             return Err(AppError::AskEmpty);
         }
         let (account, dir) = self.ask_account(&AskScope::Project(project.to_owned()), account)?;
+        // Only Claude Code keeps an agent off protected files (its deny
+        // rules, Hedy's hook, no shell); other CLIs read without asking.
+        if account.provider != Provider::Claude {
+            return Err(AppError::AskCodeNeedsClaude {
+                account: account.name.clone(),
+            });
+        }
         if self.account_at_limit(&account)? {
             return Err(AppError::AskAtLimit {
                 account: account.name.clone(),
@@ -167,7 +175,9 @@ impl Hedy {
                 account: None,
             });
         }
-        let (account, cwd) = self.ask_account(scope, account)?;
+        let (account, _) = self.ask_account(scope, account)?;
+        // It needs no file: an empty folder, even for a project's question.
+        let cwd = self.ask_dir()?;
         if self.account_at_limit(&account)? {
             return Err(AppError::AskAtLimit {
                 account: account.name.clone(),
@@ -239,10 +249,14 @@ impl Hedy {
         };
         let account = self.account(id.as_str())?;
         policy::check_launch(None, &account.id, &self.projects()?)?;
-        // An empty folder of its own: no project's or conversation's files.
+        Ok((account, self.ask_dir()?))
+    }
+
+    /// An empty folder of its own: no project's or conversation's files.
+    fn ask_dir(&self) -> AppResult<PathBuf> {
         let dir = self.fs.chats_dir().with_file_name("ask");
         self.fs.create_private_dir(&dir)?;
-        Ok((account, dir))
+        Ok(dir)
     }
 
     /// The account a question outside a project goes to when none is
@@ -356,10 +370,11 @@ impl Hedy {
                     SourceLayer::Project
                 },
                 project: n.project.as_deref().map(folder_name),
-                text: n.text,
+                // Shown as written, no hidden character reordering it.
+                text: reveal_hidden(&n.text),
                 category: n.category,
                 topic: n.topic,
-                author: Some(n.author),
+                author: Some(reveal_hidden(&n.author)),
                 team: Some(name.clone()),
                 at: n.updated_at.unwrap_or(n.created_at),
                 note: SourceRef::Team {
@@ -380,7 +395,7 @@ fn local_source(note: crate::domain::Note, projects: &[Project]) -> Option<Sourc
                 .find(|known| known.path == p)
                 .map_or_else(|| folder_name(p), |known| known.name.clone())
         }),
-        text: note.text,
+        text: reveal_hidden(&note.text),
         category: note.category,
         topic: note.topic,
         layer: SourceLayer::Mine,
@@ -480,6 +495,9 @@ mod tests {
         );
         assert_eq!(request.model.as_deref(), Some("haiku"));
         assert!(request.memory.is_none() && request.mcp.is_empty());
+        // It reads no file: an empty folder, not the project's.
+        assert_eq!(request.launch.cwd.as_deref(), Some(Path::new("/data/ask")));
+        assert!(request.no_shell);
         assert!(
             request
                 .prompt
@@ -671,5 +689,14 @@ mod tests {
             .unwrap();
         assert_eq!((none.text, none.proposal), (None, None));
         assert_eq!(f.hedy.memory(&tienda).unwrap().proposed.len(), 1);
+
+        // Another CLI could read a protected file without asking.
+        f.add_codex("Codex");
+        assert_eq!(
+            f.hedy.look_in_code("¿Fondo?", &tienda, Some("codex"), None),
+            Err(AppError::AskCodeNeedsClaude {
+                account: "Codex".into()
+            })
+        );
     }
 }
