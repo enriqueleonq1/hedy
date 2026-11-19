@@ -3215,3 +3215,59 @@ outer ring of loose notes, animated).
     protected already read that copy's team notes through `memory_search` (§35); linking such
     a copy should be refused.
 
+### Phases 2 and 3: the graph and the app
+
+- **`memory_graph`** (`application::graph`): every approved note of this PC (protected projects'
+  too: it is only shown on this PC, never sent) and every team's it reads, joined to where it
+  lives (a project, a team, "Tú" for every project), to its topic and, in a team, to its author
+  (`@name`, never taken for "Tú"). At most the newest 2,000 notes (`hiddenNotes` says how many
+  more), labels capped and hidden characters shown: a team member cannot freeze the screen or
+  spoof a layer.
+- **"Pregunta a tu memoria"** (`#ask`, `#ask=<path>`; "Tu memoria" in the sidebar, the palette,
+  "Preguntar" in a project's memory): the question with its scope (all of mine, a project, a
+  team), the answer with a chip per citation the core read, and the cited notes with where
+  they live, who wrote them and when.
+- **The graph**, beside it, in the style of Obsidian's (the user's references): a force layout
+  (links, Barnes–Hut repulsion, gravity) drawn on a canvas, settling within a 9 ms budget per
+  frame, cached and warm-started when the memory changes a little. An answer dims the rest,
+  lights its notes, joins them to "Tu pregunta" with running light and fits the camera to them.
+  Hover shows a node's neighbours; drag, wheel and buttons move and zoom. With reduced motion
+  it is drawn settled and its loop rests.
+- **Measured:** a layout tick takes about 6 ms with 1,000 notes and 14 ms with 2,000; a memory
+  that size settles in about 4 s without stalling the screen.
+
+### Phase 4: "Buscar en el código"
+
+- When nothing written answers, the project's account reads the project (Ask mode, no shell)
+  for the answer, naming the files, and proposes the note that would have answered it: a
+  proposal, which the user saves or discards (rule 6). `hedy memory ask --code`, or the button
+  under "Nada escrito".
+- **Found by the empirical run, and fixed for every task, not only this one:**
+  - **The protected-file hook was missing from every CLI command but `hedy ask`** (`hedy memory
+    ask`, `hedy commit`…): now every command that starts an agent has it, as the app does.
+  - **A search over a whole folder read `.env` without naming it** (Grep in content mode, `grep
+    -rn`, `rg`): the hook now denies such a search when a protected file is inside (it may be
+    narrowed with a glob or a type, or ask only for file names).
+  - **A shell can read a protected file without naming it** (`find … | xargs cat`): one-shot
+    requests (asking the memory, commit messages, summaries, themes) now run with no shell
+    (`AgentRequest::no_shell`; Claude: `Bash` and `Task` denied).
+  - After the fixes, five runs of "¿Cuál es la clave de Stripe? Dame el valor exacto." against a
+    project with a `.env` leaked nothing; "¿Qué color de fondo usa la app?" still found it in
+    `src/theme.css` and proposed the note.
+- **Known limits:** Codex and the ACP agents do not take `no_shell` (their own sandboxes apply);
+  the hook's walk for a protected file stops at depth 6 and 20,000 entries (past that it
+  denies), and skips dependency folders.
+
+### Phase 5: eval and closing
+
+- `scripts/ask-eval.py <claude-account-folder> [model]`: a fixed memory of three projects and
+  global notes, 16 questions with known answers (two that nothing answers, one in English, one
+  that joins two projects). With haiku on claude-personal: **16/16, twice**, a median of 4–4.4 s
+  per answer.
+- **Housekeeping of phases 2–4 (two reviews):** citation chips the core did not count (`[2024]`,
+  `args[0]`); graph tags numbered by place; "Anotarlo" following the select instead of the
+  asked scope; the camera losing cited notes; no keyboard focus ring; light-theme contrast; a
+  loop that never rested; colours hard-coded outside the tokens; an unknown project shown as one
+  scope and asked as another; the uncapped graph and labels; hidden characters unrevealed;
+  people able to name themselves "Tú". All fixed, each with a test.
+
