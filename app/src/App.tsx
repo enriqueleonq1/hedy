@@ -21,6 +21,7 @@ import { AccountsScreen } from "./screens/accounts/AccountsScreen";
 import { CreateProvider } from "./screens/create/CreateProvider";
 import { ActivityScreen } from "./screens/activity/ActivityScreen";
 import { MemoryScreen } from "./screens/memory/MemoryScreen";
+import { AskScreen } from "./screens/ask/AskScreen";
 import { Onboarding } from "./screens/onboarding/Onboarding";
 import { Settings } from "./screens/Settings";
 import { ThemeStudio } from "./screens/themes/ThemeStudio";
@@ -71,7 +72,7 @@ function Localized({ children }: { children: ReactNode }) {
 /**
  * `#accounts`, `#a=<id>` (accounts, that card), `#settings`, `#sync` (its sync card), `#activity`, `#p=<path>` (workspace; `&t=<id>`
  * that task, `&new` a new one, `&new&from=<id>` a new one continuing that conversation), `#m=<path>` (memory), `#k=<path>` (memory, skills tab), `#s=<path>` (status),
- * `#c` (a new quick question), `#c=<id>` (that conversation).
+ * `#c` (a new quick question), `#c=<id>` (that conversation), `#ask` (asking the memory; `#ask=<path>` about that project).
  */
 function viewFromHash(): View {
   const raw = window.location.hash.slice(1);
@@ -88,6 +89,8 @@ function viewFromHash(): View {
   }
   const hash = decodeURIComponent(raw);
   if (hash === "accounts" || hash === "settings" || hash === "activity") return { screen: hash };
+  if (hash === "ask") return { screen: "ask" };
+  if (hash.startsWith("ask=")) return { screen: "ask", project: hash.slice(4) };
   if (hash === "sync") return { screen: "settings", section: "sync" };
   if (hash === "teams") return { screen: "settings", section: "teams" };
   if (hash === "c") return { screen: "conversation" };
@@ -107,6 +110,7 @@ function hashFor(view: View): string {
   }
   if (view.screen === "memory") return `#${view.tab === "skills" ? "k" : "m"}=${encodeURIComponent(view.project)}`;
   if (view.screen === "status") return `#s=${encodeURIComponent(view.project)}`;
+  if (view.screen === "ask" && view.project) return `#ask=${encodeURIComponent(view.project)}`;
   if (view.screen === "accounts" && view.account) return `#a=${encodeURIComponent(view.account)}`;
   if (view.screen === "conversation") return view.task ? `#c=${encodeURIComponent(view.task)}` : "#c";
   if (view.screen === "settings" && view.section === "sync") return "#sync";
@@ -300,6 +304,15 @@ function Root() {
               initialTab={current.tab}
               onTab={(tab) => navigate({ screen: "memory", project: current.project, tab })}
               onBack={() => navigate({ screen: "workspace", project: current.project })}
+              onAsk={() => navigate({ screen: "ask", project: current.project })}
+            />
+          )}
+          {current.screen === "ask" && (
+            <AskScreen
+              key={current.project ?? ""}
+              overview={data}
+              project={current.project}
+              onOpenMemory={(project) => navigate({ screen: "memory", project })}
             />
           )}
         </Shell>

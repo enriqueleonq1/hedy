@@ -456,6 +456,7 @@ impl Hedy {
                 memory,
                 mcp,
                 conversation: task.conversation,
+                no_shell: false,
             },
             sink,
         )?;

@@ -215,6 +215,7 @@ impl Hedy {
                 "No uses herramientas: responde solo con el resumen.",
                 "Do not use tools: reply with the summary only."
             ),
+            no_shell: true,
             timeout,
         })?;
         match answer {

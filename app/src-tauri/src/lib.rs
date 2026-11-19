@@ -1,5 +1,6 @@
 //! Hedy desktop app: a driving adapter over `hedy-core`, like the CLI.
 
+mod ask;
 mod carry;
 mod code;
 mod commands;
@@ -114,6 +115,9 @@ pub fn run() {
             commands::handoff_task,
             commands::memory,
             commands::search_memory,
+            ask::ask_memory,
+            ask::memory_graph,
+            ask::look_in_code,
             commands::add_note,
             commands::edit_note,
             commands::approve_note,

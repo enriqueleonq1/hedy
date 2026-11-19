@@ -671,6 +671,10 @@ pub struct AgentRequest {
     /// A conversation (a question outside any project): the user comes and
     /// goes, so caches that outlive a pause pay off.
     pub conversation: bool,
+    /// Only the tools that read files (no shell, no subagents): a shell can
+    /// read a protected file without naming it (`find … | xargs cat`), so a
+    /// request that only needs to read goes without one.
+    pub no_shell: bool,
 }
 
 impl AgentRequest {

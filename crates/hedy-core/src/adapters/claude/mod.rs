@@ -62,6 +62,18 @@ impl ClaudeCodeLauncher {
 }
 
 const READ_ONLY_TOOLS_DENIED: &str = "Edit,Write,MultiEdit,NotebookEdit";
+/// Also denied when a request only reads (`no_shell`): the shell, and
+/// subagents that would have one.
+const SHELL_TOOLS_DENIED: &str = "Bash,Task";
+
+/// The tools a read-only request may not use.
+fn denied(request: &AgentRequest) -> String {
+    if request.no_shell {
+        format!("{READ_ONLY_TOOLS_DENIED},{SHELL_TOOLS_DENIED}")
+    } else {
+        READ_ONLY_TOOLS_DENIED.to_owned()
+    }
+}
 
 /// The built-in tools a Hedy task uses (the `lean-tools` experiment), out of
 /// the 22 Claude Code 2.1.306 loads in `-p` (cron, worktrees, workflows,
@@ -169,14 +181,14 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     match mode {
         TaskMode::Project => {}
         TaskMode::Ask => {
-            args.extend(["--disallowedTools".into(), READ_ONLY_TOOLS_DENIED.into()]);
+            args.extend(["--disallowedTools".into(), denied(request)]);
             system.push(tr!(
                 "Modo Pregunta de Hedy: responde y explica; no modifiques archivos.",
                 "Hedy's Ask mode: answer and explain; do not modify files."
             ));
         }
         TaskMode::Research => {
-            args.extend(["--disallowedTools".into(), READ_ONLY_TOOLS_DENIED.into()]);
+            args.extend(["--disallowedTools".into(), denied(request)]);
             allowed.extend(["WebSearch".into(), "WebFetch".into()]);
             system.push(tr!(
                 "Modo Research de Hedy: investiga (también en la web), cita tus fuentes y no modifiques archivos.",
@@ -465,6 +477,7 @@ pub(crate) mod tests {
             memory: None,
             mcp: vec![],
             conversation: false,
+            no_shell: false,
         }
     }
 
@@ -579,6 +592,16 @@ pub(crate) mod tests {
         let ask = args(&request(TaskMode::Ask, false), None).join(" ");
         assert!(ask.contains("--permission-mode default"));
         assert!(ask.contains("--disallowedTools Edit,Write,MultiEdit,NotebookEdit"));
+        assert!(!ask.contains("Bash,Task"));
+        let reading = args(
+            &AgentRequest {
+                no_shell: true,
+                ..request(TaskMode::Ask, false)
+            },
+            None,
+        )
+        .join(" ");
+        assert!(reading.contains("--disallowedTools Edit,Write,MultiEdit,NotebookEdit,Bash,Task"));
         let review = args(
             &AgentRequest {
                 phase: Phase::Review,

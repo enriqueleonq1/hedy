@@ -3,6 +3,7 @@
 // does not compile.
 
 import accounts from "./accounts";
+import ask from "./ask";
 import activity from "./activity";
 import carry from "./carry";
 import code from "./code";
@@ -62,6 +63,7 @@ const es = {
   ...themes.es,
   ...sync.es,
   ...team.es,
+  ...ask.es,
 };
 const en: Record<keyof typeof es, string> = {
   ...common.en,
@@ -92,6 +94,7 @@ const en: Record<keyof typeof es, string> = {
   ...themes.en,
   ...sync.en,
   ...team.en,
+  ...ask.en,
 };
 
 export type MessageKey = keyof typeof es;

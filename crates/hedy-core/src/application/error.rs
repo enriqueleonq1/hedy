@@ -143,6 +143,25 @@ pub enum AppError {
     SummaryFailed(Option<String>),
     #[error("{}", self.message())]
     SummaryTimedOut,
+    /// A question to the memory with no words.
+    #[error("{}", self.message())]
+    AskEmpty,
+    /// Rule 3: the account that answers is at its limit; no other is used.
+    #[error("{}", self.message())]
+    AskAtLimit { account: String },
+    /// No usable answer came back (with the agent's error, if any).
+    #[error("{}", self.message())]
+    AskFailed(Option<String>),
+    #[error("{}", self.message())]
+    AskTimedOut,
+    /// Rule 4: every project of the team here is protected, so its notes
+    /// only go to their own account, from that project.
+    #[error("{}", self.message())]
+    AskTeamProtected,
+    /// Looking in the code needs Claude Code: the others read protected
+    /// files without asking.
+    #[error("{}", self.message())]
+    AskCodeNeedsClaude { account: String },
     #[error("{}", self.message())]
     ThemeNotFound(String),
     /// Rule 3: the chosen account is at its limit; no other is used.
@@ -633,6 +652,36 @@ impl AppError {
             Self::SummaryTimedOut => tr!(
                 "la IA tardó demasiado en resumir; vuelve a intentarlo o lleva las preguntas tal cual",
                 "the AI took too long to summarize; try again or carry the questions as they are"
+            ),
+            Self::AskEmpty => tr!(
+                "escribe una pregunta para la memoria",
+                "write a question for the memory"
+            ),
+            Self::AskAtLimit { account } => tr!(
+                "la cuenta «{account}» está en su límite. Hedy no usa otra cuenta: elige otra tú o espera a que se renueve",
+                "account «{account}» is at its limit. Hedy does not use another account: pick another one yourself or wait for it to renew"
+            ),
+            Self::AskFailed(detail) => match detail {
+                Some(detail) => tr!(
+                    "no se pudo responder: {detail}",
+                    "could not answer: {detail}"
+                ),
+                None => tr!(
+                    "la IA no devolvió una respuesta; vuelve a intentarlo",
+                    "the AI gave no answer; try again"
+                ),
+            },
+            Self::AskCodeNeedsClaude { account } => tr!(
+                "buscar en el código necesita una cuenta de Claude Code: con «{account}» la IA podría leer archivos protegidos (.env, claves) sin pedir permiso",
+                "looking in the code needs a Claude Code account: with «{account}» the AI could read protected files (.env, keys) without asking"
+            ),
+            Self::AskTeamProtected => tr!(
+                "las notas de ese equipo solo las lee la cuenta de su proyecto protegido: pregunta desde ese proyecto",
+                "that team's notes are only read by its protected project's account: ask from that project"
+            ),
+            Self::AskTimedOut => tr!(
+                "la IA tardó demasiado en responder; vuelve a intentarlo",
+                "the AI took too long to answer; try again"
             ),
             Self::ThemeNotFound(id) => {
                 tr!("no existe el tema «{id}»", "theme «{id}» does not exist")

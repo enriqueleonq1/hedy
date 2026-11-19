@@ -98,6 +98,18 @@ export function CodeIcon() {
   );
 }
 
+/** Three joined dots: the memory as a graph. */
+export function GraphIcon() {
+  return (
+    <svg {...small} className="icon">
+      <circle cx="6" cy="6" r="2.5" />
+      <circle cx="18" cy="8" r="2.5" />
+      <circle cx="11" cy="18" r="2.5" />
+      <path d="M8.4 6.6 15.6 7.4M7 8.3l2.9 7.4M16.7 10.1l-4.3 5.8" />
+    </svg>
+  );
+}
+
 /** A speech bubble, small: a question that changes nothing. */
 export function AskIcon() {
   return (

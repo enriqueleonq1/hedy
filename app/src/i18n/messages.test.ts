@@ -1,4 +1,5 @@
 import accounts from "./messages/accounts";
+import ask from "./messages/ask";
 import activity from "./messages/activity";
 import carry from "./messages/carry";
 import code from "./messages/code";
@@ -31,6 +32,7 @@ import { translator } from ".";
 
 const AREAS = {
   accounts,
+  ask,
   activity,
   carry,
   code,

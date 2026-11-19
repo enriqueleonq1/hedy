@@ -914,6 +914,68 @@ export interface TeamStatus {
   layerMax: number;
 }
 
+/** Where a note of an answer lives (docs/decisions.md §36). */
+export type SourceLayer = "team" | "project" | "mine";
+
+/** Which note it is: one of this PC's, or a team's. */
+export type SourceRef = { kind: "local"; id: number } | { kind: "team"; team: string; uid: string };
+
+/** A note sent with a question, numbered from 1 in the answer's `sources`. */
+export interface MemorySource {
+  text: string;
+  category: NoteCategory;
+  topic: string | null;
+  layer: SourceLayer;
+  /** Who wrote it, in a team; `null` for this person's own notes. */
+  author: string | null;
+  team: string | null;
+  /** The project's folder name; `null` for every project (or a team project not on this PC). */
+  project: string | null;
+  /** Seconds. */
+  at: number;
+  note: SourceRef;
+}
+
+export interface MemoryAnswer {
+  /** `null`: nothing written answers the question. */
+  text: string | null;
+  sources: MemorySource[];
+  /** The notes it cites (1-based), in order. */
+  cited: number[];
+  /** The account that read the notes; `null` when nothing was sent. */
+  account: string | null;
+}
+
+/** What the project's files say when the memory has no answer. */
+export interface CodeLookup {
+  /** `null`: the files do not answer it either. */
+  text: string | null;
+  /** The note proposed from it, waiting for approval. */
+  proposal: Note | null;
+  account: string;
+}
+
+export type AskScope = { kind: "mine" } | { kind: "project"; project: string } | { kind: "team"; team: string };
+
+export type GraphKind = "you" | "team" | "project" | "topic" | "person" | "note";
+
+export interface GraphNode {
+  id: string;
+  kind: GraphKind;
+  label: string;
+  /** What it is coloured by: `you`, `team:<id>`, `project:<path>`, `topic` or `person`. */
+  group: string;
+  source: SourceRef | null;
+  layer: SourceLayer | null;
+}
+
+export interface MemoryGraph {
+  nodes: GraphNode[];
+  links: { source: string; target: string }[];
+  /** Older notes left out of the graph (it shows the newest 2,000). */
+  hiddenNotes: number;
+}
+
 export interface TeamNote {
   uid: string;
   text: string;

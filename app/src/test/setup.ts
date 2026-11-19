@@ -24,3 +24,8 @@ if (typeof Range !== "undefined") {
   Range.prototype.getClientRects ??= () => Object.assign([], { item: () => null }) as unknown as DOMRectList;
   Range.prototype.getBoundingClientRect ??= empty;
 }
+
+// jsdom draws nothing: a canvas has no 2D context (the memory graph checks for it).
+if (typeof HTMLCanvasElement !== "undefined") {
+  HTMLCanvasElement.prototype.getContext = (() => null) as unknown as HTMLCanvasElement["getContext"];
+}

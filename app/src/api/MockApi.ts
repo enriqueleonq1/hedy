@@ -21,6 +21,12 @@ import { resolveLanguage } from "../i18n";
 import { placeholders } from "../templates/placeholders";
 import { buildTheme } from "../theme/derive";
 import type {
+  AskScope,
+  CodeLookup,
+  GraphNode,
+  MemoryAnswer,
+  MemoryGraph,
+  MemorySource,
   MemoryHome,
   MemoryHomeKind,
   SyncConflict,
@@ -677,6 +683,145 @@ export class MockApi implements HedyApi {
         n.status === "approved" &&
         words.some((w) => `${n.text} ${n.topic ?? ""}`.toLowerCase().includes(w)),
     );
+  }
+
+  async askMemory(question: string, scope: AskScope, account?: string | null): Promise<MemoryAnswer> {
+    if (!question.trim()) throw "escribe una pregunta para la memoria";
+    await this.pause();
+    const terms = askTerms(question);
+    const scored = this.memorySources(scope)
+      .map((source) => ({ source, hits: terms.filter((t) => fold(`${source.text} ${source.topic ?? ""}`).includes(t)).length }))
+      .sort((a, b) => b.hits - a.hits || b.source.at - a.source.at);
+    const sources = scored.map((s) => s.source);
+    if (sources.length === 0) return { text: null, sources, cited: [], account: null };
+    const reader = this.state.accounts.find((a) => a.id === (account ?? this.state.defaultAccount)) ?? this.state.accounts[0];
+    const best = scored.filter((s) => s.hits > 0).slice(0, 2);
+    if (best.length === 0) return { text: null, sources, cited: [], account: reader?.name ?? null };
+    const cited = best.map((_, i) => i + 1);
+    const text = best.map((s, i) => `${s.source.text.replace(/\.$/, "")} [${i + 1}].`).join(" ");
+    return { text, sources, cited, account: reader?.name ?? null };
+  }
+
+  async lookInCode(question: string, project: string): Promise<CodeLookup> {
+    if (!question.trim()) throw "escribe una pregunta para la memoria";
+    await this.pause();
+    const reader = this.state.accounts.find((a) => a.id === (this.project(project).account ?? this.state.defaultAccount)) ?? this.state.accounts[0];
+    const account = reader?.name ?? "Claude";
+    if (/tipograf/i.test(question)) {
+      const text = "Los correos usan Inter a 15 px, definida en `emails/base.css`.";
+      const proposal = await this.proposeNote(project, "Los correos usan Inter a 15 px (emails/base.css).", account);
+      return { text, proposal, account };
+    }
+    return { text: null, proposal: null, account };
+  }
+
+  /** A note an agent proposes (it waits for approval). */
+  private async proposeNote(project: string, text: string, author: string): Promise<Note> {
+    const note: Note = {
+      id: this.notes.length + 1,
+      project,
+      text,
+      category: "convention",
+      author,
+      status: "proposed",
+      createdAt: Date.now() / 1000,
+      uses: 0,
+      lastUsed: null,
+      topic: null,
+      updatedAt: null,
+    };
+    this.notes.push(note);
+    return structuredClone(note);
+  }
+
+  /** What a question of `scope` reads, as the core picks it (protected projects only in their own). */
+  private memorySources(scope: AskScope): MemorySource[] {
+    const name = (path: string | null) => (path ? (path.split("/").pop() ?? path) : null);
+    const open = (path: string | null) => !path || !this.project(path).protected;
+    const local = this.notes
+      .filter((n) => n.status === "approved")
+      .filter((n) => (scope.kind === "project" ? this.inScope(scope.project, n) : scope.kind === "mine" && open(n.project)))
+      .map(
+        (n): MemorySource => ({
+          text: n.text,
+          category: n.category,
+          topic: n.topic,
+          layer: "mine",
+          author: null,
+          team: null,
+          project: name(n.project),
+          at: n.updatedAt ?? n.createdAt,
+          note: { kind: "local", id: n.id },
+        }),
+      );
+    const home = scope.kind === "project" ? this.homes.get(scope.project) : undefined;
+    const teams = this.teamList.filter((t) =>
+      scope.kind === "team" ? t.summary.id === scope.team : scope.kind === "mine" || (home?.kind === "team" && home.team === t.summary.id),
+    );
+    const team = teams.flatMap((t) =>
+      t.notes
+        .filter((n) => n.teamLayer || scope.kind !== "project" || n.project === scope.project)
+        .map(
+          (n): MemorySource => ({
+            text: n.text,
+            category: n.category,
+            topic: n.topic,
+            layer: n.teamLayer ? "team" : "project",
+            author: n.author,
+            team: t.summary.name,
+            project: name(n.project),
+            at: n.updatedAt ?? n.createdAt,
+            note: { kind: "team", team: t.summary.id, uid: n.uid },
+          }),
+        ),
+    );
+    return [...team, ...local];
+  }
+
+  async memoryGraph(): Promise<MemoryGraph> {
+    const nodes: GraphNode[] = [];
+    const links: MemoryGraph["links"] = [];
+    const seen = new Set<string>();
+    const node = (id: string, kind: GraphNode["kind"], label: string, group: string, extra: Partial<GraphNode> = {}) => {
+      if (!seen.has(id)) {
+        seen.add(id);
+        nodes.push({ id, kind, label, group, source: null, layer: null, ...extra });
+      }
+      return id;
+    };
+    const link = (a: string, b: string) => links.push({ source: a, target: b });
+    const topic = (from: string, name: string | null) => name && link(from, node(`topic:${name}`, "topic", `# ${name}`, "topic"));
+    node("you", "you", "Tú", "you");
+    for (const p of this.state.projects) {
+      node(`p:${p.path}`, "project", p.name, `project:${p.path}`);
+      const home = this.homes.get(p.path);
+      if (home?.kind === "team") link(`p:${p.path}`, `t:${home.team}`);
+    }
+    for (const t of this.teamList) node(`t:${t.summary.id}`, "team", t.summary.name, `team:${t.summary.id}`);
+    for (const n of this.notes.filter((n) => n.status === "approved")) {
+      const owner = n.project && seen.has(`p:${n.project}`) ? `p:${n.project}` : "you";
+      const id = node(`n:${n.id}`, "note", n.text, owner === "you" ? "you" : `project:${n.project}`, {
+        source: { kind: "local", id: n.id },
+        layer: "mine",
+      });
+      link(id, owner);
+      topic(id, n.topic);
+    }
+    for (const t of this.teamList) {
+      const team = `t:${t.summary.id}`;
+      for (const n of t.notes) {
+        const id = node(`n:${t.summary.id}:${n.uid}`, "note", n.text, `team:${t.summary.id}`, {
+          source: { kind: "team", team: t.summary.id, uid: n.uid },
+          layer: n.teamLayer ? "team" : "project",
+        });
+        link(id, !n.teamLayer && n.project && seen.has(`p:${n.project}`) ? `p:${n.project}` : team);
+        const person = node(`person:${t.summary.id}:${n.person}`, "person", `@${n.author}`, "person");
+        link(id, person);
+        link(person, team);
+        topic(id, n.topic);
+      }
+    }
+    return structuredClone({ nodes, links, hiddenNotes: 0 });
   }
 
   async addNote(project: string | null, text: string, category: NoteCategory): Promise<Note> {
@@ -3211,6 +3356,20 @@ export class MockApi implements HedyApi {
 
 /** A rough stand-in for the backend heuristic: same words, other numbers or a negation. */
 /** The approved note a proposal would change: same topic, same scope. */
+/** Lowercase, without accents: how the mock compares words. */
+function fold(text: string): string {
+  return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+/** The words of a question that say what it is about (four letters or more, not the asking ones). */
+function askTerms(question: string): string[] {
+  const asking = new Set(["como", "cual", "cuando", "donde", "quien", "usamos", "usan", "hacemos", "tenemos", "este", "esta", "equipo", "proyecto", "what", "when", "where", "which", "does"]);
+  return fold(question)
+    .split(/[^a-z0-9#]+/)
+    .filter((w) => w.length >= 4 && !asking.has(w))
+    .map((w) => (w.length > 5 && w.endsWith("s") ? w.slice(0, -1) : w));
+}
+
 function topicTarget(approved: Note[], proposal: Note): Note | null {
   if (!proposal.topic) return null;
   return approved.find((n) => n.id !== proposal.id && n.project === proposal.project && n.topic === proposal.topic) ?? null;

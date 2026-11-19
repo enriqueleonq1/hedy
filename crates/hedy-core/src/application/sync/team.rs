@@ -1038,6 +1038,68 @@ impl Hedy {
         self.space_is_set_up(&space).ok()?.then_some(space)
     }
 
+    /// The id of the team that holds the project in `path`, if any.
+    pub(crate) fn project_team_id(&self, path: &Path) -> Option<String> {
+        match self.project_team(path)? {
+            Space::Team(id) => Some(id),
+            Space::Personal => None,
+        }
+    }
+
+    /// The id of the team project `path` is on this PC (by its `origin`).
+    pub(crate) fn team_project_id_of(&self, team: &str, path: &Path) -> Option<String> {
+        self.team_project_id(&Space::Team(team.to_owned()), path)
+    }
+
+    /// Each team note's project id, by its uid (`None`: the team layer).
+    pub(crate) fn team_note_projects(
+        &self,
+        team: &str,
+    ) -> AppResult<BTreeMap<String, Option<String>>> {
+        let space = self.team_space(team)?;
+        Ok(self
+            .store
+            .sync_items(&space.id())?
+            .into_iter()
+            .filter(|c| c.kind == ItemKind::Note)
+            .map(|c| {
+                let project = match c.scope {
+                    Scope::Project(id) => Some(id),
+                    Scope::Global => None,
+                };
+                (c.uid, project)
+            })
+            .collect())
+    }
+
+    /// Which of the team's project notes may go to an account other than a
+    /// protected project's (rule 4).
+    pub(crate) fn team_protection(&self, team: &str) -> AppResult<TeamProtection> {
+        let space = self.team_space(team)?;
+        let home = MemoryHome::Team(team.to_owned());
+        let mut found = TeamProtection::default();
+        let (mut linked, mut unprotected) = (0, 0);
+        for project in self.projects()? {
+            if self.store.memory_home(&project.path)?.as_ref() != Some(&home) {
+                continue;
+            }
+            linked += 1;
+            let id = self.team_project_id(&space, &project.path);
+            if !project.protected {
+                unprotected += 1;
+                found.open.extend(id);
+            } else if let Some(id) = id {
+                found.protected.insert(id);
+            } else {
+                // Its id cannot be read now (no `origin`, folder gone): any
+                // note could be its own.
+                found.unknown = true;
+            }
+        }
+        found.only_protected = linked > 0 && unprotected == 0;
+        Ok(found)
+    }
+
     /// A team's notes as its replica holds them, with the name an admin
     /// wrote for each author: what an agent reads (no status, no projects).
     fn team_note_bodies(&self, space: &Space) -> Option<Vec<(Scope, String, TeamNoteBody)>> {
@@ -2782,6 +2844,26 @@ fn team_error(error: AppError) -> AppError {
 /// The team's notes a search shows, and how much of each.
 const TEAM_MATCHES: usize = 8;
 const TEAM_MATCH_CHARS: usize = 400;
+
+/// Which team project ids a protected project here holds (rule 4).
+#[derive(Debug, Default)]
+pub(crate) struct TeamProtection {
+    pub protected: HashSet<String>,
+    pub open: HashSet<String>,
+    /// A protected project here whose id cannot be read now.
+    pub unknown: bool,
+    /// Every project of the team here is protected.
+    pub only_protected: bool,
+}
+
+impl TeamProtection {
+    /// Whether a team project note (by its team project id) may go to an
+    /// account other than a protected project's. Failing closed: with a
+    /// protected project of unknown id, only the open projects' notes.
+    pub fn allows(&self, project: &str) -> bool {
+        !self.protected.contains(project) && (!self.unknown || self.open.contains(project))
+    }
+}
 
 /// Lowercase, without accents: how a search compares text.
 fn fold(text: &str) -> String {

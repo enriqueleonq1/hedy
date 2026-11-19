@@ -5,6 +5,7 @@ mod cli;
 mod commands;
 mod commit;
 mod mascot;
+mod memory_ask;
 mod slash;
 mod spinner;
 mod style;
@@ -70,13 +71,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
         None => std::env::current_dir()?,
     };
     let paths = HedyPaths::detect()?;
-    // The only command that runs an agent headless: with the hook that keeps
-    // it off protected files, as in the app.
+    // Every command that runs an agent (`ask`, `memory ask`, `commit`…) does
+    // so with the hook that keeps it off protected files, as in the app.
+    let hedy = adapters::system_with_hook(&paths, &std::env::current_exe()?)?;
     if let Command::Ask(args) = command {
-        let hedy = adapters::system_with_hook(&paths, &std::env::current_exe()?)?;
         return ask::ask(&hedy, args);
     }
-    let hedy = adapters::system(&paths)?;
 
     // The only command whose findings (not a failure) set the exit code.
     if let Command::Doctor = command {
@@ -162,6 +162,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         },
         Command::Memory { command } => match command.unwrap_or(MemoryCommand::List) {
             MemoryCommand::List => commands::memory_list(&hedy, &dir),
+            MemoryCommand::Ask(args) => memory_ask::memory_ask(&hedy, &dir, args),
             MemoryCommand::Approve { id } => commands::memory_approve(&hedy, id),
             MemoryCommand::Reject { id } => commands::memory_reject(&hedy, id),
         },

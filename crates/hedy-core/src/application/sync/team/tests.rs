@@ -2052,3 +2052,464 @@ fn a_join_cancelled_while_its_inviter_could_not_push_lets_nobody_in() {
     assert_eq!(people(&ana).len(), 1);
     assert!(server.file(&team_layout::offer(invite.number)).is_some());
 }
+
+// ── Asking the memory (§36) ─────────────────────────────────────────────
+
+#[test]
+fn a_question_in_a_team_project_reads_the_team_with_its_authors() {
+    use crate::application::AskScope;
+    use crate::domain::ask::SourceLayer;
+
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    ana.f
+        .hedy
+        .team_add_note(
+            &ana.team,
+            None,
+            "Fondo oscuro #0F1117",
+            Category::Convention,
+            None,
+        )
+        .unwrap();
+    luis.f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            Some(&luis.project),
+            "Los modales van sobre el panel",
+            Category::Convention,
+            None,
+        )
+        .unwrap();
+    luis.f
+        .hedy
+        .add_note(
+            Some(&luis.project),
+            "Mi atajo para el fondo",
+            Category::Preference,
+        )
+        .unwrap();
+    ana.sync();
+    luis.sync();
+    ana.sync();
+    luis.f
+        .agents
+        .reply_on_start(vec![crate::domain::AgentEvent::Finished {
+            ok: true,
+            summary: "Fondo #0F1117 [1].".into(),
+            duration_ms: None,
+        }]);
+
+    let a = luis
+        .f
+        .hedy
+        .ask_memory(
+            "¿Qué fondo usamos?",
+            &AskScope::Project(luis.project.clone()),
+            None,
+            None,
+        )
+        .unwrap();
+    let layers: Vec<(SourceLayer, Option<&str>)> = a
+        .sources
+        .iter()
+        .map(|s| (s.layer, s.author.as_deref()))
+        .collect();
+    assert!(layers.contains(&(SourceLayer::Team, Some("Ana"))));
+    assert!(layers.contains(&(SourceLayer::Project, Some("Luis"))));
+    assert!(layers.contains(&(SourceLayer::Mine, None)));
+    let prompt = luis.f.agents.last_request().prompt;
+    assert!(prompt.contains(
+        "where=\"team Tienda SA, every project\" by=\"Ana\" category=convention text=\"Fondo oscuro #0F1117\""
+    ));
+    assert!(
+        prompt.contains("where=\"team Tienda SA, project app\" by=\"Luis\" category=convention")
+    );
+
+    // The team alone: no note of this PC's own.
+    luis.f
+        .agents
+        .reply_on_start(vec![crate::domain::AgentEvent::Finished {
+            ok: true,
+            summary: "NOT_WRITTEN".into(),
+            duration_ms: None,
+        }]);
+    let a = luis
+        .f
+        .hedy
+        .ask_memory(
+            "¿Qué fondo usamos?",
+            &AskScope::Team(luis.team.clone()),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(a.text, None);
+    assert!(a.sources.iter().all(|s| s.layer != SourceLayer::Mine));
+    assert_eq!(a.sources.len(), 2);
+}
+
+#[test]
+fn a_teams_notes_hang_from_the_team_or_its_project_and_their_author() {
+    use crate::application::GraphKind;
+
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    ana.f
+        .hedy
+        .team_add_note(
+            &ana.team,
+            None,
+            "Fondo oscuro #0F1117",
+            Category::Convention,
+            None,
+        )
+        .unwrap();
+    luis.f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            Some(&luis.project),
+            "Modales sobre el panel",
+            Category::Convention,
+            Some("ui"),
+        )
+        .unwrap();
+    ana.sync();
+    luis.sync();
+    ana.sync();
+
+    let g = ana.f.hedy.memory_graph().unwrap();
+    let id_of = |label: &str| {
+        g.nodes
+            .iter()
+            .find(|n| n.label == label)
+            .unwrap()
+            .id
+            .clone()
+    };
+    let linked = |a: &str, b: &str| {
+        g.links
+            .iter()
+            .any(|l| (l.source == a && l.target == b) || (l.source == b && l.target == a))
+    };
+    let team = format!("t:{}", ana.team);
+    let project = format!("p:{}", ana.project.display());
+    assert_eq!(
+        g.nodes.iter().find(|n| n.id == team).unwrap().label,
+        "Tienda SA"
+    );
+    assert!(linked(&project, &team));
+    assert!(linked(&id_of("Fondo oscuro #0F1117"), &team));
+    assert!(linked(&id_of("Modales sobre el panel"), &project));
+    assert!(linked(&id_of("Modales sobre el panel"), &id_of("@Luis")));
+    assert!(linked(&id_of("Fondo oscuro #0F1117"), &id_of("@Ana")));
+    assert!(linked(&id_of("Modales sobre el panel"), "topic:ui"));
+    let people: Vec<&str> = g
+        .nodes
+        .iter()
+        .filter(|n| n.kind == GraphKind::Person)
+        .map(|n| n.label.as_str())
+        .collect();
+    assert_eq!(people, ["@Ana", "@Luis"]);
+    let note = g
+        .nodes
+        .iter()
+        .find(|n| n.label == "Modales sobre el panel")
+        .unwrap();
+    assert_eq!(note.group, format!("team:{}", ana.team));
+}
+
+#[test]
+fn a_protected_copys_team_notes_do_not_reach_another_account() {
+    use crate::application::AskScope;
+
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    // Another copy of the same repo on Luis's PC, protected for its account.
+    luis.f.add_claude("Seguro");
+    luis.f.fs.add_git_root("/code/app-seguro");
+    let secure = luis.f.dir("/code/app-seguro");
+    luis.f
+        .hedy
+        .use_account(&secure, "seguro", Some(true))
+        .unwrap();
+    luis.f.hedy.team_link_project(&luis.team, &secure).unwrap();
+    luis.f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            Some(&secure),
+            "Secreto del banco: la clave rota",
+            Category::Rule,
+            None,
+        )
+        .unwrap();
+    luis.f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            None,
+            "Fondo oscuro #0F1117",
+            Category::Convention,
+            None,
+        )
+        .unwrap_or_else(|_| TeamWriteOutcome::Suggested(String::new()));
+    luis.sync();
+    let answer = || {
+        luis.f
+            .agents
+            .reply_on_start(vec![crate::domain::AgentEvent::Finished {
+                ok: true,
+                summary: "x [1].".into(),
+                duration_ms: None,
+            }]);
+    };
+    for scope in [
+        AskScope::Team(luis.team.clone()),
+        AskScope::Mine,
+        AskScope::Project(luis.project.clone()),
+    ] {
+        answer();
+        let a = luis
+            .f
+            .hedy
+            .ask_memory("¿Secreto del banco, clave?", &scope, Some("trabajo"), None)
+            .unwrap();
+        assert!(
+            a.sources.iter().all(|s| !s.text.contains("Secreto")),
+            "{scope:?}"
+        );
+    }
+    // In the protected copy itself, with its account, it is there.
+    answer();
+    let a = luis
+        .f
+        .hedy
+        .ask_memory(
+            "¿Secreto del banco, clave?",
+            &AskScope::Project(secure),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(a.account.unwrap().id.as_str(), "seguro");
+    assert!(a.sources.iter().any(|s| s.text.contains("Secreto")));
+}
+
+#[test]
+fn a_team_held_only_by_protected_projects_stays_with_their_account() {
+    use crate::application::AskScope;
+
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    ana.f
+        .hedy
+        .team_add_note(
+            &ana.team,
+            None,
+            "Fondo oscuro #0F1117",
+            Category::Convention,
+            None,
+        )
+        .unwrap();
+    ana.sync();
+    luis.sync();
+    luis.f.add_claude("Personal");
+    luis.f
+        .hedy
+        .use_account(&luis.project, "trabajo", Some(true))
+        .unwrap();
+    assert_eq!(
+        luis.f.hedy.ask_memory(
+            "¿Fondo?",
+            &AskScope::Team(luis.team.clone()),
+            Some("personal"),
+            None
+        ),
+        Err(AppError::AskTeamProtected)
+    );
+    luis.f
+        .hedy
+        .add_note(None, "Fondo de mi terminal negro", Category::Preference)
+        .unwrap();
+    luis.f
+        .agents
+        .reply_on_start(vec![crate::domain::AgentEvent::Finished {
+            ok: true,
+            summary: "x [1].".into(),
+            duration_ms: None,
+        }]);
+    let a = luis
+        .f
+        .hedy
+        .ask_memory("¿Fondo?", &AskScope::Mine, Some("personal"), None)
+        .unwrap();
+    assert!(a.sources.iter().all(|s| !s.text.contains("#0F1117")));
+}
+
+#[test]
+fn an_unreadable_protected_copy_still_keeps_its_team_notes() {
+    use crate::application::AskScope;
+
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    luis.f.add_claude("Seguro");
+    luis.f.fs.add_git_root("/code/banco");
+    let banco = luis.f.dir("/code/banco");
+    luis.f.source.set_remotes_of(
+        &banco,
+        &[("origin", "git@github.com:empresa-org/banco.git")],
+    );
+    luis.f
+        .hedy
+        .use_account(&banco, "seguro", Some(true))
+        .unwrap();
+    luis.f.hedy.team_link_project(&luis.team, &banco).unwrap();
+    luis.f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            Some(&banco),
+            "Secreto del banco: la clave rota",
+            Category::Rule,
+            None,
+        )
+        .unwrap();
+    luis.sync();
+    // Its `origin` is gone: its id cannot be read now.
+    luis.f.source.set_remotes_of(
+        &banco,
+        &[("upstream", "git@github.com:empresa-org/banco.git")],
+    );
+    luis.f
+        .agents
+        .reply_on_start(vec![crate::domain::AgentEvent::Finished {
+            ok: true,
+            summary: "x [1].".into(),
+            duration_ms: None,
+        }]);
+    let a = luis
+        .f
+        .hedy
+        .ask_memory(
+            "¿Secreto del banco, clave?",
+            &AskScope::Team(luis.team.clone()),
+            None,
+            None,
+        )
+        .unwrap();
+    assert!(a.sources.iter().all(|s| !s.text.contains("Secreto")));
+}
+
+#[test]
+fn an_unreadable_protected_project_does_not_open_a_protected_copy() {
+    use crate::application::AskScope;
+
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    luis.f.add_claude("Seguro");
+    // A protected copy of "app" (same team project as the open one) …
+    luis.f.fs.add_git_root("/code/app-seguro");
+    let secure = luis.f.dir("/code/app-seguro");
+    luis.f
+        .hedy
+        .use_account(&secure, "seguro", Some(true))
+        .unwrap();
+    luis.f.hedy.team_link_project(&luis.team, &secure).unwrap();
+    luis.f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            Some(&secure),
+            "Secreto del banco: la clave rota",
+            Category::Rule,
+            None,
+        )
+        .unwrap();
+    // … and another protected project whose `origin` cannot be read now.
+    luis.f.add_claude("Banco");
+    luis.f.fs.add_git_root("/code/banco");
+    let banco = luis.f.dir("/code/banco");
+    luis.f.source.set_remotes_of(
+        &banco,
+        &[("origin", "git@github.com:empresa-org/banco.git")],
+    );
+    luis.f
+        .hedy
+        .use_account(&banco, "banco", Some(true))
+        .unwrap();
+    luis.f.hedy.team_link_project(&luis.team, &banco).unwrap();
+    luis.sync();
+    luis.f.source.set_remotes_of(
+        &banco,
+        &[("upstream", "git@github.com:empresa-org/banco.git")],
+    );
+    for scope in [
+        AskScope::Team(luis.team.clone()),
+        AskScope::Project(luis.project.clone()),
+    ] {
+        luis.f
+            .agents
+            .reply_on_start(vec![crate::domain::AgentEvent::Finished {
+                ok: true,
+                summary: "x [1].".into(),
+                duration_ms: None,
+            }]);
+        let a = luis
+            .f
+            .hedy
+            .ask_memory("¿Secreto del banco, clave?", &scope, Some("trabajo"), None)
+            .unwrap();
+        assert!(
+            a.sources.iter().all(|s| !s.text.contains("Secreto")),
+            "{scope:?}"
+        );
+    }
+}
+
+#[test]
+fn a_team_member_cannot_push_your_notes_out_of_the_graph() {
+    use crate::application::GraphKind;
+    const MAX: usize = 5;
+
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    luis.f
+        .hedy
+        .add_note(None, "Mi nota de siempre", Category::Preference)
+        .unwrap();
+    // A member's notes dated far in the future, more than the graph holds.
+    for i in 0..(MAX + 5) {
+        let body = json(&TeamNoteBody {
+            text: format!("ruido {i}"),
+            category: Category::Rule,
+            person: ana.f.hedy.team_status(&ana.team).unwrap().person,
+            author: "Ana".into(),
+            created_at: i64::MAX / 2,
+            topic: None,
+            updated_at: None,
+        });
+        forge(&ana, ItemKind::Note, Scope::Project("p".into()), body);
+    }
+    ana.sync();
+    luis.sync();
+    let g = luis.f.hedy.memory_graph_within(MAX).unwrap();
+    let notes: Vec<&str> = g
+        .nodes
+        .iter()
+        .filter(|n| n.kind == GraphKind::Note)
+        .map(|n| n.label.as_str())
+        .collect();
+    assert!(notes.contains(&"Mi nota de siempre"));
+    assert_eq!(notes.len(), MAX);
+    assert!(g.hidden_notes > 0);
+}

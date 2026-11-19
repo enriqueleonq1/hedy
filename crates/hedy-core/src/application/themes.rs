@@ -118,6 +118,7 @@ impl Hedy {
                 "No uses herramientas: responde solo con el JSON del tema.",
                 "Do not use tools: reply with the theme's JSON only."
             ),
+            no_shell: true,
             timeout,
         })?;
         match answer {

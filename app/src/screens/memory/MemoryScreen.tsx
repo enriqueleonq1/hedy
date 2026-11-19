@@ -31,12 +31,15 @@ export function MemoryScreen({
   overview,
   project,
   onBack,
+  onAsk,
   initialTab = "notes",
   onTab,
 }: {
   overview: Overview;
   project: string;
   onBack: () => void;
+  /** "Preguntar": ask this project's memory. */
+  onAsk?: () => void;
   initialTab?: Tab;
   /** The tab changed (to remember it in the address). */
   onTab?: (tab: Tab) => void;
@@ -98,6 +101,7 @@ export function MemoryScreen({
               {t("skills.newButton")}
             </Button>
           )}
+          {onAsk && <Button onClick={onAsk}>{t("ask.submit")}</Button>}
           <Button variant="ghost" onClick={onBack}>
             {t("memory.backToChat")}
           </Button>
