@@ -97,7 +97,14 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
       el.height = Math.round(height * dpr);
     };
     resize();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
+    // A resize clears the canvas: draw again, even when the loop rests.
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            resize();
+            wake.current();
+          });
     observer?.observe(el);
 
     // Its extent changes only while it settles.

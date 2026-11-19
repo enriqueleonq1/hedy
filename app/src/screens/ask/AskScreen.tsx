@@ -2,7 +2,7 @@
 // from the notes, each claim citing its own, beside the memory's graph,
 // which lights the notes that answered.
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { errorMessage, useApi } from "../../api/context";
@@ -74,6 +74,8 @@ export function AskScreen({
   const [found, setFound] = useState<CodeLookup | null>(null);
   const [decided, setDecided] = useState<"approved" | "discarded" | null>(null);
   const client = useQueryClient();
+  /** The answer on screen, to drop a lookup that comes back after a newer question. */
+  const askedRef = useRef(0);
 
   const scopes = useMemo(
     () => [
@@ -101,7 +103,8 @@ export function AskScreen({
     },
     onSuccess: (result, { text, where }) => {
       setSelected(null);
-      setAnswer((previous) => ({ result, asked: (previous?.asked ?? 0) + 1, question: text, scope: where }));
+      askedRef.current += 1;
+      setAnswer({ result, asked: askedRef.current, question: text, scope: where });
     },
     onError: (e) => {
       setAnswer(null);
@@ -110,9 +113,13 @@ export function AskScreen({
   });
 
   const look = useMutation({
-    mutationFn: ({ text, project }: { text: string; project: string }) => api.lookInCode(text, project),
+    mutationFn: ({ text, project }: { text: string; project: string; asked: number }) => api.lookInCode(text, project),
     onMutate: () => setError(null),
-    onSuccess: (lookup) => {
+    onSuccess: async (lookup, { project, asked }) => {
+      // Its proposal is in the project's memory now.
+      await client.invalidateQueries({ queryKey: ["memory", project] });
+      // A lookup for an earlier question does not land under a newer one.
+      if (asked !== askedRef.current) return;
       setFound(lookup);
       setDecided(null);
     },
@@ -207,7 +214,7 @@ export function AskScreen({
                     small
                     variant="primary"
                     disabled={look.isPending}
-                    onClick={() => answer && look.mutate({ text: answer.question, project: scopeProject })}
+                    onClick={() => answer && look.mutate({ text: answer.question, project: scopeProject, asked: answer.asked })}
                   >
                     {t("ask.code.look")}
                   </Button>
