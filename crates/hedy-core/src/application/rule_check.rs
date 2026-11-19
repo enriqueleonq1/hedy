@@ -5,7 +5,7 @@
 //! the memory; nothing is sent without rules or lines to judge, protected
 //! files go only by name, and it only warns: it never blocks.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use super::ask::{AskScope, local_source};
@@ -31,8 +31,10 @@ pub enum RuleTarget {
     Task(TaskId),
     /// What is staged in the repository at that folder.
     Staged(PathBuf),
-    /// `git diff <revs>` in the repository at that folder: `HEAD` for what
-    /// is not committed yet, `main..HEAD` for a branch.
+    /// What is not committed yet there, staged or not, new files included.
+    Work(PathBuf),
+    /// Commits there: a range (`main..HEAD`) or one commit's own change
+    /// (`a1b2c3`, `HEAD~1`).
     Revs { dir: PathBuf, revs: String },
 }
 
@@ -145,33 +147,81 @@ impl Hedy {
     }
 
     /// The project whose rules apply (`None`: a folder Hedy does not know)
-    /// and the change.
+    /// and the change. In a folder, the project is the folder's (as for a
+    /// launch), and only its files count when it is a part of the
+    /// repository; a change to another protected project inside it is
+    /// refused (rule 4: its code only goes to its own account).
     fn rule_change(&self, target: &RuleTarget) -> AppResult<(Option<PathBuf>, Vec<FileDiff>)> {
-        match target {
+        let dir = match target {
             RuleTarget::Task(id) => {
                 let task = self.task(id)?;
-                Ok((Some(task.project.clone()), self.task_diff(id)?))
-            }
-            RuleTarget::Staged(dir) => {
-                let repo = self.repo_root(dir)?;
-                let project = self.project_for(&repo)?.map(|p| p.path);
-                Ok((project, self.git.staged_diff(&repo)?))
-            }
-            RuleTarget::Revs { dir, revs } => {
-                let revs = revs.trim();
-                let plain = !revs.is_empty()
-                    && revs.len() <= REVS_MAX
-                    && !revs.starts_with('-')
-                    && !revs.chars().any(|c| c.is_whitespace() || c.is_control());
-                if !plain {
-                    return Err(AppError::RulesBadRevs(revs.to_owned()));
+                if task.status.is_closed() {
+                    return Err(AppError::TaskClosed(id.clone()));
                 }
-                let repo = self.repo_root(dir)?;
-                let project = self.project_for(&repo)?.map(|p| p.path);
-                Ok((project, self.git.revs_diff(&repo, revs)?))
+                return Ok((Some(task.project.clone()), self.task_diff(id)?));
+            }
+            RuleTarget::Staged(dir) | RuleTarget::Work(dir) | RuleTarget::Revs { dir, .. } => dir,
+        };
+        let repo = self.repo_root(dir)?;
+        let diff = match target {
+            RuleTarget::Staged(_) => self.git.staged_diff(&repo)?,
+            RuleTarget::Work(_) => self.git.work_diff(&repo)?,
+            RuleTarget::Revs { revs, .. } => self.git.revs_diff(&repo, &plain_revs(revs)?)?,
+            RuleTarget::Task(_) => unreachable!("a task returned above"),
+        };
+        let project = self.project_for(dir)?;
+        let projects = self.projects()?;
+        let inside = |path: &Path| {
+            path.strip_prefix(&repo)
+                .ok()
+                .filter(|rel| !rel.as_os_str().is_empty())
+                .map(|rel| format!("{}/", rel.to_string_lossy()))
+        };
+        let under = |file: &FileDiff, folder: &str| {
+            file.path.starts_with(folder)
+                || file
+                    .old_path
+                    .as_deref()
+                    .is_some_and(|p| p.starts_with(folder))
+        };
+        let diff: Vec<FileDiff> = match project.as_ref().and_then(|p| inside(&p.path)) {
+            Some(folder) => diff.into_iter().filter(|f| under(f, &folder)).collect(),
+            None => diff,
+        };
+        for other in projects.iter().filter(|p| p.protected) {
+            if project.as_ref().is_some_and(|p| p.path == other.path) {
+                continue;
+            }
+            if let Some(folder) = inside(&other.path)
+                && diff.iter().any(|f| under(f, &folder))
+            {
+                return Err(AppError::RulesProtectedInside {
+                    project: other.name.clone(),
+                });
             }
         }
+        Ok((project.map(|p| p.path), diff))
     }
+}
+
+/// A range or a commit as git reads it, never as an option or a file: a
+/// lone commit means its own change (`a1b2c3^!`), and `rev:path` (a file's
+/// contents) is refused, since it could compare a protected file.
+fn plain_revs(revs: &str) -> AppResult<String> {
+    let revs = revs.trim();
+    let plain = !revs.is_empty()
+        && revs.len() <= REVS_MAX
+        && !revs.starts_with('-')
+        && !revs.contains(':')
+        && !revs.chars().any(|c| c.is_whitespace() || c.is_control());
+    if !plain {
+        return Err(AppError::RulesBadRevs(revs.to_owned()));
+    }
+    Ok(if revs.contains("..") || revs.ends_with("^!") {
+        revs.to_owned()
+    } else {
+        format!("{revs}^!")
+    })
 }
 
 #[cfg(test)]
@@ -338,7 +388,7 @@ mod tests {
                 .contains("File \".env\" (modified): protected file")
         );
         assert!(!request.prompt.contains("sk_live"));
-        assert!(!request.prompt.contains("snake_case\" "));
+        assert!(!request.prompt.contains("Todo en snake_case"));
     }
 
     #[test]
@@ -357,23 +407,25 @@ mod tests {
 
         f.git.set_diff(Vec::new());
         assert_eq!(
-            f.hedy.check_rules(
-                &RuleTarget::Revs {
-                    dir: f.dir("/code/tienda"),
-                    revs: "HEAD".into()
-                },
-                None,
-                None
-            ),
+            f.hedy
+                .check_rules(&RuleTarget::Work(f.dir("/code/tienda")), None, None),
             Err(AppError::RulesNoChanges)
         );
-        assert!(f.git.log().contains(&"diff HEAD".to_owned()));
+        assert!(f.git.log().contains(&"diff work".to_owned()));
     }
 
     #[test]
     fn a_range_that_could_pass_for_an_option_is_refused() {
         let f = setup();
-        for revs in ["--output=/tmp/x", "", "main HEAD", "a\nb"] {
+        for revs in [
+            "--output=/tmp/x",
+            "",
+            "main HEAD",
+            "a\nb",
+            // A file's contents: it could compare a protected one.
+            "HEAD:.env..HEAD:notes.txt",
+            ":0:.env..:x",
+        ] {
             assert_eq!(
                 f.hedy.check_rules(
                     &RuleTarget::Revs {
@@ -387,6 +439,101 @@ mod tests {
             );
         }
         assert!(f.git.log().is_empty());
+        // One commit means its own change; a range stays as written.
+        for (revs, sent) in [
+            ("HEAD~1", "diff HEAD~1^!"),
+            ("a1b2c3^!", "diff a1b2c3^!"),
+            ("main..HEAD", "diff main..HEAD"),
+        ] {
+            let target = RuleTarget::Revs {
+                dir: f.dir("/code/tienda"),
+                revs: revs.into(),
+            };
+            assert_eq!(
+                f.hedy.check_rules(&target, None, None),
+                Err(AppError::RulesNoChanges)
+            );
+            assert_eq!(f.git.log().last().map(String::as_str), Some(sent));
+        }
+    }
+
+    fn at(path: &str) -> FileDiff {
+        let mut file = change().remove(0);
+        file.path = path.into();
+        file
+    }
+
+    #[test]
+    fn a_project_inside_a_repository_checks_only_its_files_and_guards_protected_ones() {
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        f.add_claude("Trabajo");
+        // Registered before the parent folder became a repository.
+        f.hedy
+            .use_account(&f.dir("/code/mono/banco"), "trabajo", Some(true))
+            .unwrap();
+        f.fs.add_git_root("/code/mono");
+        f.hedy
+            .set_setting(
+                crate::application::Setting::DefaultAccount,
+                Some("personal"),
+            )
+            .unwrap();
+        f.hedy
+            .add_note(None, "Commits en una línea", Category::Convention)
+            .unwrap();
+        f.hedy
+            .add_note(
+                Some(&f.dir("/code/mono/banco")),
+                "Los importes van en céntimos",
+                Category::Rule,
+            )
+            .unwrap();
+        f.git
+            .set_staged(vec![at("banco/src/pagos.ts"), at("web/src/inicio.ts")]);
+
+        // From the protected project: only its files, to its own account.
+        answer(&f, "NO_BREAKS");
+        let check = f
+            .hedy
+            .check_rules(&RuleTarget::Staged(f.dir("/code/mono/banco")), None, None)
+            .unwrap();
+        assert_eq!(check.account.unwrap().id.as_str(), "trabajo");
+        let prompt = f.agents.last_request().prompt;
+        assert!(prompt.contains("banco/src/pagos.ts") && !prompt.contains("inicio.ts"));
+
+        // From the rest of the repository: its change touches the protected
+        // project, whose code never goes to another account.
+        let calls = f.agents.calls().len();
+        assert_eq!(
+            f.hedy
+                .check_rules(&RuleTarget::Staged(f.dir("/code/mono")), None, None),
+            Err(AppError::RulesProtectedInside {
+                project: "banco".into()
+            })
+        );
+        assert_eq!(f.agents.calls().len(), calls);
+        // Without its files, the rest is checked as usual.
+        f.git.set_staged(vec![at("web/src/inicio.ts")]);
+        answer(&f, "NO_BREAKS");
+        let check = f
+            .hedy
+            .check_rules(&RuleTarget::Staged(f.dir("/code/mono")), None, None)
+            .unwrap();
+        assert_eq!(check.account.unwrap().id.as_str(), "personal");
+    }
+
+    #[test]
+    fn a_closed_task_is_said_to_be_closed() {
+        let f = setup();
+        f.git.set_diff(change());
+        let id = task(&f);
+        f.hedy.discard_task(&id).unwrap();
+        assert_eq!(
+            f.hedy
+                .check_rules(&RuleTarget::Task(id.clone()), None, None),
+            Err(AppError::TaskClosed(id))
+        );
     }
 
     #[test]

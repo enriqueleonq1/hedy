@@ -173,6 +173,10 @@ pub enum AppError {
     RulesFailed(Option<String>),
     #[error("{}", self.message())]
     RulesTimedOut,
+    /// Rule 4: the change touches another protected project's files, whose
+    /// code only goes to that project's account.
+    #[error("{}", self.message())]
+    RulesProtectedInside { project: String },
     #[error("{}", self.message())]
     ThemeNotFound(String),
     /// Rule 3: the chosen account is at its limit; no other is used.
@@ -712,6 +716,10 @@ impl AppError {
                     "the AI gave no review; try again"
                 ),
             },
+            Self::RulesProtectedInside { project } => tr!(
+                "el cambio toca archivos del proyecto protegido «{project}», que solo lee su propia cuenta: revísalo desde esa carpeta",
+                "the change touches files of the protected project «{project}», which only its own account reads: check it from that folder"
+            ),
             Self::RulesTimedOut => tr!(
                 "la IA tardó demasiado en revisar el cambio; vuelve a intentarlo",
                 "the AI took too long to check the change; try again"

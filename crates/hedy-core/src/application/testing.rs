@@ -701,6 +701,10 @@ impl Git for FakeGit {
     fn staged_diff(&self, _: &Path) -> PortResult<Vec<FileDiff>> {
         Ok(self.staged.lock().unwrap().clone())
     }
+    fn work_diff(&self, _: &Path) -> PortResult<Vec<FileDiff>> {
+        self.log.lock().unwrap().push("diff work".into());
+        Ok(self.diff.lock().unwrap().clone())
+    }
     fn revs_diff(&self, _: &Path, revs: &str) -> PortResult<Vec<FileDiff>> {
         self.log.lock().unwrap().push(format!("diff {revs}"));
         Ok(self.diff.lock().unwrap().clone())

@@ -7,10 +7,85 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use crate::application::ports::{Git, MergeOutcome, PortError, PortResult};
-use crate::domain::diff::{Commit, FileDiff, parse_unified};
+use crate::domain::diff::{Commit, DiffLine, FileDiff, FileStatus, Hunk, LineKind, parse_unified};
+use crate::domain::permissions::is_protected_path;
 use crate::tr;
 
 pub struct GitCli;
+
+/// Diff options that keep its format Hedy's whatever the user's config:
+/// no external diff or textconv (a decrypting driver, a command of the
+/// config), and the usual `a/` `b/` prefixes (`diff.noprefix`,
+/// `diff.mnemonicPrefix`).
+const DIFF_OPTIONS: &[&str] = &[
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+    "-M",
+];
+/// The empty tree: what a repository with no commit is compared to.
+const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+/// Most new, not yet added files read for the uncommitted work.
+const UNTRACKED_MAX: usize = 200;
+/// Larger new files are named only, as binary ones.
+const UNTRACKED_BYTES_MAX: u64 = 512 * 1024;
+
+fn diff_args<'a>(before: &[&'a str], after: &[&'a str]) -> Vec<&'a str> {
+    let mut args = vec!["diff"];
+    args.extend_from_slice(before);
+    args.extend_from_slice(DIFF_OPTIONS);
+    args.extend_from_slice(after);
+    args
+}
+
+/// A new file nobody added yet, as a diff: every line added. A protected
+/// one is never read; a binary or large one only named.
+fn untracked_file(repo: &Path, path: &str) -> FileDiff {
+    let mut file = FileDiff {
+        path: path.to_owned(),
+        old_path: None,
+        status: FileStatus::Added,
+        additions: 0,
+        deletions: 0,
+        binary: false,
+        hunks: Vec::new(),
+    };
+    if is_protected_path(path) {
+        return file;
+    }
+    let full = repo.join(path);
+    let small =
+        fs::symlink_metadata(&full).is_ok_and(|m| m.is_file() && m.len() <= UNTRACKED_BYTES_MAX);
+    let text = small
+        .then(|| fs::read(&full).ok())
+        .flatten()
+        .filter(|bytes| !bytes.contains(&0))
+        .and_then(|bytes| String::from_utf8(bytes).ok());
+    let Some(text) = text else {
+        file.binary = true;
+        return file;
+    };
+    let lines: Vec<DiffLine> = text
+        .lines()
+        .enumerate()
+        .map(|(i, line)| DiffLine {
+            kind: LineKind::Added,
+            old_line: None,
+            new_line: Some(i as u32 + 1),
+            text: line.to_owned(),
+        })
+        .collect();
+    file.additions = lines.len() as u32;
+    if !lines.is_empty() {
+        file.hunks.push(Hunk {
+            header: format!("@@ -0,0 +1,{} @@", lines.len()),
+            lines,
+        });
+    }
+    file
+}
 
 pub(super) fn run(dir: &Path, args: &[&str]) -> PortResult<Output> {
     Command::new("git")
@@ -101,17 +176,7 @@ impl Git for GitCli {
     fn diff(&self, worktree: &Path, base: &str) -> PortResult<Vec<FileDiff>> {
         // Staging inside the task's own worktree makes new files part of the diff.
         git(worktree, &["add", "--all"])?;
-        let patch = git(
-            worktree,
-            &[
-                "diff",
-                "--cached",
-                "--no-color",
-                "--no-ext-diff",
-                "-M",
-                base,
-            ],
-        )?;
+        let patch = git(worktree, &diff_args(&["--cached"], &[base]))?;
         Ok(parse_unified(&patch))
     }
 
@@ -243,11 +308,40 @@ impl Git for GitCli {
     }
 
     fn staged_diff(&self, repo: &Path) -> PortResult<Vec<FileDiff>> {
-        let patch = git(
-            repo,
-            &["diff", "--cached", "--no-color", "--no-ext-diff", "-M"],
-        )?;
+        let patch = git(repo, &diff_args(&["--cached"], &[]))?;
         Ok(parse_unified(&patch))
+    }
+
+    fn work_diff(&self, repo: &Path) -> PortResult<Vec<FileDiff>> {
+        let base = if run(repo, &["rev-parse", "--verify", "-q", "HEAD"])?
+            .status
+            .success()
+        {
+            "HEAD"
+        } else {
+            EMPTY_TREE
+        };
+        let patch = git(repo, &diff_args(&[], &[base, "--"]))?;
+        let mut files = parse_unified(&patch);
+        let others = git(
+            repo,
+            &[
+                "-c",
+                "core.quotePath=false",
+                "ls-files",
+                "-z",
+                "--others",
+                "--exclude-standard",
+            ],
+        )?;
+        files.extend(
+            others
+                .split('\0')
+                .filter(|p| !p.is_empty())
+                .take(UNTRACKED_MAX)
+                .map(|path| untracked_file(repo, path)),
+        );
+        Ok(files)
     }
 
     fn revs_diff(&self, repo: &Path, revs: &str) -> PortResult<Vec<FileDiff>> {
@@ -258,10 +352,7 @@ impl Git for GitCli {
                 "git diff: «{revs}» no es una revisión"
             )));
         }
-        let patch = git(
-            repo,
-            &["diff", "--no-color", "--no-ext-diff", "-M", revs, "--"],
-        )?;
+        let patch = git(repo, &diff_args(&[], &[revs, "--"]))?;
         Ok(parse_unified(&patch))
     }
 
@@ -659,6 +750,20 @@ mod tests {
             ["app.py", "nuevo.py"]
         );
         // Never read as an option.
+        // Uncommitted work: changed files and new ones not added yet; a new
+        // protected one is only named.
+        fs::write(repo.join("app.py"), "def crear():\n    avisar(1)\n").unwrap();
+        fs::write(repo.join("otro.py"), "y = 2\nz = 3\n").unwrap();
+        fs::write(repo.join(".env"), "KEY=secret\n").unwrap();
+        let work = g.work_diff(&repo).unwrap();
+        let summary: Vec<(&str, u32, usize)> = work
+            .iter()
+            .map(|f| (f.path.as_str(), f.additions, f.hunks.len()))
+            .collect();
+        assert_eq!(
+            summary,
+            [("app.py", 1, 1), (".env", 0, 0), ("otro.py", 2, 1)]
+        );
         let out = repo.join("written");
         let option = format!("--output={}", out.display());
         assert!(g.revs_diff(&repo, &option).is_err());

@@ -230,16 +230,17 @@ fn contradicts(a: &str, b: &str) -> bool {
 /// (accents, a plural "s") do not matter: what similar notes are compared by,
 /// and what the full-text index is searched with.
 pub fn key_words(text: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
+    let mut out: HashSet<String> = HashSet::new();
     for word in content_words(text) {
         let mut word: String = word.chars().map(ascii_fold).collect();
         if word.chars().count() > 3 && word.ends_with('s') {
             word.pop();
         }
-        if word.chars().count() >= 2 && !out.contains(&word) {
-            out.push(word);
+        if word.chars().count() >= 2 {
+            out.insert(word);
         }
     }
+    let mut out: Vec<String> = out.into_iter().collect();
     out.sort();
     out
 }
