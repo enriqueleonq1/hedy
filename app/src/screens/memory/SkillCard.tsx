@@ -149,7 +149,7 @@ export function SkillCard({
 }
 
 /** What a proposed update changes: the description before and after, and the steps line by line. */
-function Update({ before, after }: { before: Skill; after: Skill }) {
+export function Update({ before, after }: { before: Skill; after: Skill }) {
   const t = useT();
   return (
     <div className="skill__update">

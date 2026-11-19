@@ -21,6 +21,18 @@ import { resolveLanguage } from "../i18n";
 import { placeholders } from "../templates/placeholders";
 import { buildTheme } from "../theme/derive";
 import type {
+  TrialResult,
+  TrialOutcome,
+  TrialCheck,
+  StartedTrial,
+  SkillVerdict,
+  SkillReview,
+  SkillOverview,
+  SkillFinding,
+  ImportReport,
+  ImportPreview,
+  ImportCandidate,
+  ExportReport,
   AskScope,
   CodeLookup,
   GraphNode,
@@ -1071,7 +1083,221 @@ export class MockApi implements HedyApi {
   async removeSkill(id: number): Promise<SkillFiles> {
     const skill = this.skillById(id);
     this.skillList = this.skillList.filter((s) => s.id !== id);
+    this.outsideSkills.delete(id);
+    this.trialResults.delete(id);
     return skill.status === "approved" ? this.skillFiles() : { written: [], removed: [], skipped: [] };
+  }
+
+  // ------------------------------------------------ skills section
+
+  private outsideSkills = new Set<number>();
+  private trialResults = new Map<number, TrialResult>();
+  private trials = new Map<string, { skill: number; tasks: number; polls: number }>();
+
+  /** Like the backend's level 1, in small: size, steps, nothing dangerous. */
+  private measureSkill(description: string, body: string): { tokens: number; findings: SkillFinding[]; verdict: SkillVerdict } {
+    const tokens = Math.ceil((description.length + body.length) / 4);
+    const findings: SkillFinding[] = [];
+    if (tokens > 5000) findings.push({ kind: "long", tokens });
+    if (/todo sobre|everything about|cualquier tarea/i.test(description)) {
+      findings.push({ kind: "broadDescription", phrase: description.split(/[,.]/)[0] ?? description });
+    }
+    findings.push(/^\s*(\d+\.|-)\s/m.test(body) ? { kind: "concreteSteps" } : { kind: "noSteps" });
+    findings.push({ kind: "safe" });
+    const warnings = findings.filter((f) => f.kind === "long" || f.kind === "noSteps" || f.kind === "broadDescription").length;
+    return { tokens, findings, verdict: warnings >= 2 ? "doubtful" : "useful" };
+  }
+
+  private overviewOf(skill: Skill): SkillOverview {
+    const measured = this.measureSkill(skill.description, skill.body);
+    return {
+      skill: structuredClone(skill),
+      projectName: skill.project ? (this.state.projects.find((p) => p.path === skill.project)?.name ?? skill.project) : null,
+      replaces: skill.status === "proposed" ? structuredClone(this.skillTarget(skill)) : null,
+      outside: this.outsideSkills.has(skill.id),
+      ...measured,
+      trial: structuredClone(this.trialResults.get(skill.id) ?? null),
+    };
+  }
+
+  async skillsOverview(): Promise<SkillOverview[]> {
+    const name = (s: Skill) => (s.project ? (this.state.projects.find((p) => p.path === s.project)?.name ?? s.project) : "");
+    return [...this.skillList]
+      .sort((a, b) => name(a).localeCompare(name(b)) || a.name.localeCompare(b.name) || a.id - b.id)
+      .map((s) => this.overviewOf(s));
+  }
+
+  async setSkillOutside(id: number, on: boolean): Promise<SkillFiles> {
+    const skill = this.skillById(id);
+    if (skill.project === null || skill.status !== "approved") {
+      throw "solo una habilidad aprobada de un proyecto se puede usar también fuera de Hedy";
+    }
+    const paths = [".claude", ".agents"].map((d) => `${skill.project}/${d}/skills/${skill.name}/SKILL.md`);
+    if (on) this.outsideSkills.add(id);
+    else this.outsideSkills.delete(id);
+    return on ? { written: paths, removed: [], skipped: [] } : { written: [], removed: paths, skipped: [] };
+  }
+
+  /** The skills a sample download holds: one that helps and one that does not. */
+  private importSamples(source: string): { file: string; draft: SkillDraft }[] {
+    if (!source.trim()) throw "no hay habilidades que importar ahí";
+    const folder = source.replace(/\/SKILL\.md$/, "");
+    return [
+      {
+        file: `${folder}/revisar-pr/SKILL.md`,
+        draft: {
+          name: "revisar-pr",
+          description: "Antes de abrir un pull request.",
+          body: "1. Actualiza `CHANGELOG.md`.\n2. Corre `npm test`.\n3. Revisa que el título siga Conventional Commits.",
+          global: false,
+        },
+      },
+      {
+        file: `${folder}/mega-react-guide/SKILL.md`,
+        draft: {
+          name: "mega-react-guide",
+          description: "Todo sobre React: hooks, estado, estilos, tests y despliegue.",
+          body: "Escribe código limpio y bien testeado.\n".repeat(1200),
+          global: false,
+        },
+      },
+    ];
+  }
+
+  async previewSkillImport(project: string, source: string, global: boolean): Promise<ImportPreview> {
+    this.project(project);
+    const candidates: ImportCandidate[] = this.importSamples(source).map(({ file, draft }) => {
+      const taken = this.skillList.find(
+        (s) => s.status === "approved" && s.name === draft.name && s.project === (global ? null : project),
+      );
+      return {
+        source: file,
+        name: draft.name,
+        description: draft.description,
+        body: draft.body,
+        droppedKeys: [],
+        extraFiles: [],
+        replaces: structuredClone(taken ?? null),
+        problem: taken ? { kind: "nameTaken", message: "ya tienes una habilidad aprobada con ese nombre" } : null,
+        ...this.measureSkill(draft.description, draft.body),
+      };
+    });
+    return { candidates, total: candidates.length };
+  }
+
+  private sampleReview(): SkillReview {
+    return {
+      findings: [
+        {
+          kind: "contradicts",
+          rule: 1,
+          note: "Los estilos van en CSS modules",
+          says: "usa CSS-in-JS",
+        },
+        { kind: "vague", quote: "Escribe código limpio y bien testeado", why: "el modelo ya lo hace" },
+        { kind: "helpful", quote: "Corre `npm test`", why: "un paso concreto que se puede comprobar" },
+      ],
+      unread: false,
+      notes: 3,
+      durationMs: 6200,
+      verdict: "harmful",
+      account: "Claude Personal",
+    };
+  }
+
+  async reviewSkillImport(project: string, source: string, _global: boolean, file: string): Promise<SkillReview> {
+    this.project(project);
+    if (!this.importSamples(source).some((s) => s.file === file)) throw "no hay habilidades que importar ahí";
+    return this.sampleReview();
+  }
+
+  async importSkills(
+    project: string,
+    source: string,
+    global: boolean,
+    files: string[],
+    replace: string[],
+  ): Promise<ImportReport> {
+    const report: ImportReport = { imported: [], updated: [], skipped: [], files: this.skillFiles() };
+    for (const { draft } of this.importSamples(source).filter((s) => files.includes(s.file))) {
+      const scope = global ? null : project;
+      const taken = this.skillList.find((s) => s.status === "approved" && s.name === draft.name && s.project === scope);
+      if (taken && !replace.includes(draft.name)) {
+        report.skipped.push({ name: draft.name, problem: { kind: "nameTaken", message: "ya tienes una habilidad aprobada con ese nombre" } });
+        continue;
+      }
+      if (taken) {
+        Object.assign(taken, { description: draft.description, body: draft.body, updatedAt: Math.floor(Date.now() / 1000) });
+        report.updated.push(structuredClone(taken));
+        continue;
+      }
+      const change = await this.addSkill(project, { ...draft, global });
+      report.imported.push(change.skill);
+    }
+    return report;
+  }
+
+  async reviewSkill(id: number, project: string): Promise<SkillReview> {
+    this.skillById(id);
+    this.project(project);
+    return { ...this.sampleReview(), findings: [{ kind: "helpful", quote: "Corre `npm test`", why: "un paso concreto" }], verdict: "useful" };
+  }
+
+  async exportSkills(ids: number[], to: string): Promise<ExportReport> {
+    const skills = ids.map((id) => this.skillById(id));
+    return { written: skills.map((s) => `${to}/${s.name}/SKILL.md`), skipped: [] };
+  }
+
+  async proposeTrialTasks(project: string, id: number): Promise<string[]> {
+    this.project(project);
+    const skill = this.skillById(id);
+    return [`Usa «${skill.name}» para preparar el cambio del carrito.`, "Arregla el test de fechas que falla en `web/`."];
+  }
+
+  async trialCheck(project: string): Promise<TrialCheck> {
+    this.project(project);
+    return { check: "npm test", isolated: true };
+  }
+
+  async startSkillTrial(project: string, id: number, tasks: string[], check: string | null): Promise<StartedTrial> {
+    this.project(project);
+    if (check !== null && !check.trim()) throw "el comando de la comprobación está vacío";
+    this.skillById(id);
+    const prompts = tasks.map((t) => t.trim()).filter(Boolean);
+    if (prompts.length < 1 || prompts.length > 3) throw "elige de 1 a 3 tareas para probar la habilidad";
+    const trial = `k${this.trials.size + 1}`;
+    this.trials.set(trial, { skill: id, tasks: prompts.length, polls: 0 });
+    return { id: trial, tasks: prompts.flatMap((_, i) => [`${trial}-${i}-con`, `${trial}-${i}-sin`]) };
+  }
+
+  async cancelSkillTrial(_project: string, trial: string): Promise<void> {
+    this.trials.delete(trial);
+  }
+
+  /** The sample trial ends on the second look. */
+  async takeTrialOutcome(trial: string): Promise<TrialOutcome | null> {
+    const running = this.trials.get(trial);
+    if (!running) return null;
+    running.polls += 1;
+    if (running.polls < 2) return null;
+    this.trials.delete(trial);
+    const n = running.tasks;
+    const result: TrialResult = {
+      verdict: "useful",
+      tasks: n,
+      passedWith: n,
+      passedWithout: Math.max(0, n - 1),
+      used: n,
+      tokensWith: 12100 * n,
+      tokensWithout: 11200 * n,
+      costWithMicros: 0,
+      costWithoutMicros: 0,
+      checked: true,
+      restored: 0,
+      at: Math.floor(Date.now() / 1000),
+    };
+    this.trialResults.set(running.skill, result);
+    return { judged: structuredClone(result) };
   }
 
   async overview(): Promise<Overview> {
@@ -1340,6 +1566,10 @@ export class MockApi implements HedyApi {
 
   async pickFolder(): Promise<string | null> {
     return "/code/nuevo-proyecto";
+  }
+
+  async pickFile(): Promise<string | null> {
+    return "/home/tu/Descargas/skills/revisar-pr/SKILL.md";
   }
 
   private terminals = 0;

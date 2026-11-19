@@ -156,3 +156,14 @@ export function CollapseIcon({ collapsed }: { collapsed: boolean }) {
     </svg>
   );
 }
+
+/** A spark on a card: a skill, a procedure the AIs load when they need it. */
+export function SkillIcon() {
+  return (
+    <svg {...small} className="icon">
+      <rect x="3.5" y="5" width="13" height="15" rx="2" />
+      <path d="M7 10h6M7 14h4" />
+      <path d="M18.5 2.5v4M16.5 4.5h4" />
+    </svg>
+  );
+}

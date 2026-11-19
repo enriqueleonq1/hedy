@@ -11,7 +11,7 @@ import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 import { shortAccountLabel } from "./accounts";
 import { useFocusMode } from "./focusMode";
 import { SidebarRailProvider, useSidebarRail } from "./sidebarRail";
-import { AccountsIcon, ActivityIcon, CollapseIcon, GraphIcon, QuestionIcon, SettingsIcon } from "./ui/icons";
+import { AccountsIcon, ActivityIcon, CollapseIcon, GraphIcon, QuestionIcon, SettingsIcon, SkillIcon } from "./ui/icons";
 import { MenuButton } from "./ui/Menu";
 import { Mascot } from "./Mascot/Mascot";
 import { modKey, paletteKeys } from "./palette/keys";
@@ -27,6 +27,8 @@ export type View =
   /** `section`: scroll to the theme gallery ("Cambiar tema…"), the sync card or the teams card. */
   | { screen: "settings"; section?: "themes" | "sync" | "teams" }
   | { screen: "activity" }
+  /** Every skill in one place (`#skills`). */
+  | { screen: "skills" }
   /** "Pregunta a tu memoria"; `project`: about that project's memory. */
   | { screen: "ask"; project?: string }
   /**
@@ -196,6 +198,16 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
       >
         <GraphIcon />
         <span className="sidebar__name">{t("ask.nav")}</span>
+      </button>
+
+      <button
+        className="sidebar__item sidebar__nav"
+        aria-current={view.screen === "skills" ? "page" : undefined}
+        {...named(t("skillLib.nav"))}
+        onClick={() => onNavigate({ screen: "skills" })}
+      >
+        <SkillIcon />
+        <span className="sidebar__name">{t("skillLib.nav")}</span>
       </button>
 
       <section>

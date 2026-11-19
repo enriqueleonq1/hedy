@@ -78,6 +78,11 @@ export const tauriApi: HedyApi = {
     return typeof folder === "string" ? folder : null;
   },
 
+  pickFile: async () => {
+    const file = await open({ directory: false, multiple: false, filters: [{ name: "Markdown", extensions: ["md"] }] });
+    return typeof file === "string" ? file : null;
+  },
+
   terminalOpen: (request, { cols, rows }, onEvent) => {
     const channel = new Channel<TerminalEvent>();
     channel.onmessage = onEvent;
@@ -122,6 +127,19 @@ export const tauriApi: HedyApi = {
   approveSkill: (id) => invoke("approve_skill", { id }),
   rejectSkill: (id) => invoke("reject_skill", { id }),
   removeSkill: (id) => invoke("remove_skill", { id }),
+  skillsOverview: () => invoke("skills_overview"),
+  setSkillOutside: (id, on) => invoke("set_skill_outside", { id, on }),
+  previewSkillImport: (path, source, global) => invoke("preview_skill_import", { path, source, global }),
+  reviewSkillImport: (path, source, global, file) => invoke("review_skill_import", { path, source, global, file }),
+  importSkills: (path, source, global, files, replace) =>
+    invoke("import_skills", { path, source, global, files, replace }),
+  reviewSkill: (id, path) => invoke("review_skill", { id, path }),
+  exportSkills: (ids, to) => invoke("export_skills", { ids, to }),
+  proposeTrialTasks: (path, id) => invoke("propose_trial_tasks", { path, id }),
+  trialCheck: (path) => invoke("trial_check", { path }),
+  startSkillTrial: (path, id, tasks, check) => invoke("start_skill_trial", { path, id, tasks, check }),
+  cancelSkillTrial: (path, trial) => invoke("cancel_skill_trial", { path, trial }),
+  takeTrialOutcome: (trial) => invoke("take_trial_outcome", { trial }),
   codeCopy: (copy) => invoke("code_copy", { copy }),
   codeTree: (copy, options) => invoke("code_tree", { copy, ignored: options?.ignored ?? false }),
   readFile: (copy, path, rev) => invoke("read_file", { copy, path, rev: rev ?? null }),

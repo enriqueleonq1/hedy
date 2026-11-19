@@ -22,6 +22,7 @@ import rules from "./rules";
 import settings from "./settings";
 import ship from "./ship";
 import shell from "./shell";
+import skillLibrary from "./skillLibrary";
 import skills from "./skills";
 import statusbar from "./statusbar";
 import sync from "./sync";
@@ -45,6 +46,7 @@ const es = {
   ...settings.es,
   ...memory.es,
   ...skills.es,
+  ...skillLibrary.es,
   ...status.es,
   ...workspace.es,
   ...activity.es,
@@ -77,6 +79,7 @@ const en: Record<keyof typeof es, string> = {
   ...settings.en,
   ...memory.en,
   ...skills.en,
+  ...skillLibrary.en,
   ...status.en,
   ...workspace.en,
   ...activity.en,

@@ -65,7 +65,7 @@
 .rv-file:hover { background: var(--panel-2); }
 .rv-file--current,
 .rv-file--current:hover { background: var(--selection); }
-.rv-file__check { width: 15px; height: 15px; margin: 0 6px 0 8px; accent-color: var(--action); cursor: pointer; }
+.rv-file__check { margin: 0 6px 0 8px; }
 .rv-file__main {
   display: flex;
   align-items: center;
@@ -156,7 +156,7 @@
 }
 .rv-viewed:hover { background: var(--panel-2); color: var(--ink); }
 .rv-viewed:has(input:checked) { color: var(--action-text); }
-.rv-viewed input { width: 15px; height: 15px; margin: 0; accent-color: var(--action); cursor: pointer; }
+.rv-viewed input { margin: 0; }
 
 .rv-branch { margin: 0; overflow-wrap: anywhere; }
 

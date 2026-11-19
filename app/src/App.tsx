@@ -21,6 +21,7 @@ import { AccountsScreen } from "./screens/accounts/AccountsScreen";
 import { CreateProvider } from "./screens/create/CreateProvider";
 import { ActivityScreen } from "./screens/activity/ActivityScreen";
 import { MemoryScreen } from "./screens/memory/MemoryScreen";
+import { SkillsScreen } from "./screens/skills/SkillsScreen";
 import { AskScreen } from "./screens/ask/AskScreen";
 import { Onboarding } from "./screens/onboarding/Onboarding";
 import { Settings } from "./screens/Settings";
@@ -72,7 +73,7 @@ function Localized({ children }: { children: ReactNode }) {
 /**
  * `#accounts`, `#a=<id>` (accounts, that card), `#settings`, `#sync` (its sync card), `#activity`, `#p=<path>` (workspace; `&t=<id>`
  * that task, `&new` a new one, `&new&from=<id>` a new one continuing that conversation), `#m=<path>` (memory), `#k=<path>` (memory, skills tab), `#s=<path>` (status),
- * `#c` (a new quick question), `#c=<id>` (that conversation), `#ask` (asking the memory; `#ask=<path>` about that project).
+ * `#skills` (every skill), `#c` (a new quick question), `#c=<id>` (that conversation), `#ask` (asking the memory; `#ask=<path>` about that project).
  */
 function viewFromHash(): View {
   const raw = window.location.hash.slice(1);
@@ -88,7 +89,7 @@ function viewFromHash(): View {
     return { screen: "workspace", project };
   }
   const hash = decodeURIComponent(raw);
-  if (hash === "accounts" || hash === "settings" || hash === "activity") return { screen: hash };
+  if (hash === "accounts" || hash === "settings" || hash === "activity" || hash === "skills") return { screen: hash };
   if (hash === "ask") return { screen: "ask" };
   if (hash.startsWith("ask=")) return { screen: "ask", project: hash.slice(4) };
   if (hash === "sync") return { screen: "settings", section: "sync" };
@@ -260,6 +261,7 @@ function Root() {
               onOpenMemory={(project, tab) => navigate({ screen: "memory", project, tab })}
             />
           )}
+          {current.screen === "skills" && <SkillsScreen overview={data} />}
           {current.screen === "workspace" && (
             <Workspace
               key={current.project}

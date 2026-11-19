@@ -56,10 +56,18 @@ import type {
   DoctorReport,
   FileDiff,
   MemoryView,
+  ExportReport,
+  ImportPreview,
+  ImportReport,
   SkillChange,
   SkillDraft,
   SkillFiles,
+  SkillOverview,
+  SkillReview,
   SkillsView,
+  StartedTrial,
+  TrialCheck,
+  TrialOutcome,
   Note,
   NoteCategory,
   PhasePlan,
@@ -152,6 +160,8 @@ export interface HedyApi {
   /** Health check of the CLIs, the accounts, Hedy and the environment. */
   doctor(): Promise<DoctorReport>;
   pickFolder(): Promise<string | null>;
+  /** A Markdown file (a skill's SKILL.md), or null when cancelled. */
+  pickFile(): Promise<string | null>;
 
   terminalOpen(
     request: TerminalRequest,
@@ -300,6 +310,30 @@ export interface HedyApi {
   rejectSkill(id: number): Promise<void>;
   /** Deletes a skill and the files Hedy wrote for it. */
   removeSkill(id: number): Promise<SkillFiles>;
+  /** Every skill (global ones first, then each project's), measured, with its last trial. */
+  skillsOverview(): Promise<SkillOverview[]>;
+  /** "Usar también fuera de Hedy" for an approved project skill. */
+  setSkillOutside(id: number, on: boolean): Promise<SkillFiles>;
+  /** The skills in `source` (a SKILL.md, a folder or a project), ready to import: nothing is saved. */
+  previewSkillImport(project: string, source: string, global: boolean): Promise<ImportPreview>;
+  /** What the AI thinks of one skill to import (by its file), against the project's notes. */
+  reviewSkillImport(project: string, source: string, global: boolean, file: string): Promise<SkillReview>;
+  /** Imports the picked files of `source`, read again; `replace` names approved skills to update. */
+  importSkills(project: string, source: string, global: boolean, files: string[], replace: string[]): Promise<ImportReport>;
+  /** What the AI thinks of a skill Hedy has, against `project`'s notes. */
+  reviewSkill(id: number, project: string): Promise<SkillReview>;
+  /** Writes approved skills as `<to>/<name>/SKILL.md`; nothing is replaced. */
+  exportSkills(ids: number[], to: string): Promise<ExportReport>;
+  /** Up to three test tasks the project's account proposes from the skill alone. */
+  proposeTrialTasks(project: string, id: number): Promise<string[]>;
+  /** The command Hedy would run in each copy, and whether it runs isolated. */
+  trialCheck(project: string): Promise<TrialCheck>;
+  /** Each task twice, with and without the skill; `check: null` runs none. */
+  startSkillTrial(project: string, id: number, tasks: string[], check: string | null): Promise<StartedTrial>;
+  /** Discards a trial's runs; no result is kept. */
+  cancelSkillTrial(project: string, trial: string): Promise<void>;
+  /** How a trial ended, once; null while it runs. */
+  takeTrialOutcome(trial: string): Promise<TrialOutcome | null>;
 
   // ------------------------------------------------ code navigation (read-only)
   // Every call names its copy (`CodeCopy`); paths are relative to the copy and
