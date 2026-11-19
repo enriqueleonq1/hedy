@@ -32,6 +32,12 @@ All notable changes to Hedy are listed here. The format follows
   Hedy measures it (size, a description that fits every task, overlap with your skills,
   dangerous commands, missing files) and an AI reads it against your notes, quoting what
   goes against them, what is vague and what really helps.
+- A skills section in the app: every skill in one place (global and every project's), with a
+  search and filters, and the chosen one in detail: what it costs in context, what Hedy
+  measures, what the AI thinks against your notes, its last trial, and its steps. Import,
+  export and try skills from there. «Usar también fuera de Hedy» writes a project skill
+  where your usual Claude Code and other CLIs read it too (kept out of git); off by default.
+  Checkboxes and radio buttons look the same everywhere.
 - Try a skill for real: `hedy skills try <name>` runs up to 3 tasks twice each, with and
   without the skill, in throwaway copies of the project, and says from what the runs did
   (finished, the same check Hedy runs in each copy, the skill used, tokens) whether it is

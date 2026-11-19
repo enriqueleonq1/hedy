@@ -916,6 +916,25 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
     - **Not covered yet:** Codex and the ACP CLIs do not report loading a skill through
       `skill_get` (use stays unknown); a run left running by a crashed process is not
       tidied up at startup.
+- **The skills section** (Nov 19, 2026; `application/skill_library.rs`, `app/src/screens/skills`,
+  `#skills`). Every skill in one place: the global ones first, then each project's (proposals
+  included), each measured (level 1) beside the approved skills its agents see, with its last
+  trial while it is the version tried. List and detail, as chosen on the design canvas: search,
+  filters (all, global, per project, proposals), and per skill its context cost, the analysis,
+  the trial, the AI review against a project's notes (for a global skill, the user picks the
+  project), and its steps or, for a proposal, the change it proposes. Import, export (by id,
+  from any project) and trials run from there; a trial's runs ask for permissions in Activity
+  like any task. What is imported is read again from the source file by Hedy, never taken from
+  the page.
+  - **«Usar también fuera de Hedy»** (off by default; approved project skills only, never a
+    global one or a proposal): writes the skill in the project's `.claude/skills` and
+    `.agents/skills`, excluded from git (rule 7), never over a file of the user's own or
+    through a link. Kept per PC in a setting; the copies follow an edit, a rename, a move to
+    global (they go) and a removal, and are rewritten when the skill changes on another PC
+    (`refresh_skills_plugins`). K1's cleanup of old copies skips them. A trial refuses while
+    it is on: the run without the skill would see it.
+  - **Checkboxes and radio buttons** are native inputs drawn from the theme everywhere (only
+    the mark moves, not with reduced motion).
 - **Not verified with the real CLIs yet:** that Codex, Gemini CLI, Kimi Code and
   Antigravity load `.agents/skills` in ACP / app-server mode (their docs describe the
   interactive CLI); that Codex and Kimi stop the root search at a linked worktree's
