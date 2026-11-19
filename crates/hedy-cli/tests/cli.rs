@@ -627,9 +627,11 @@ fn memory_ask_answers_only_from_approved_notes_and_cites_them() {
             "[1] Los precios se guardan en USD y se muestran también en Bs",
         ))
         .stdout(predicate::str::contains("Tuya · proyecto agenda"))
-        .stdout(predicate::str::contains("Respondió Claude con 2 notas"));
+        .stdout(predicate::str::contains(
+            "Claude leyó 2 notas de tu memoria",
+        ));
     let prompt = fs::read_to_string(&log).unwrap();
-    assert!(prompt.contains("«¿En qué moneda van los precios?»"));
+    assert!(prompt.contains("¿En qué moneda van los precios?"));
     // Proposals are not memory yet.
     assert!(!prompt.contains("por SMS"));
 
@@ -654,7 +656,9 @@ fn memory_ask_answers_only_from_approved_notes_and_cites_them() {
     .assert()
     .success()
     .stdout(predicate::str::contains("Yours · project agenda"))
-    .stdout(predicate::str::contains("Claude answered from 2 notes"));
+    .stdout(predicate::str::contains(
+        "Claude read 2 notes of your memory",
+    ));
     env.hedy_in(&repo, &["memory", "ask", "--team", "Nadie", question])
         .assert()
         .failure()

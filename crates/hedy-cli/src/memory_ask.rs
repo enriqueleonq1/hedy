@@ -79,12 +79,13 @@ fn print_answer(answer: &MemoryAnswer) {
             )
         );
         println!(
-            "  {}\n",
+            "  {}",
             s.muted(&tr!(
                 "Cuando lo sepas, anótalo: tus IAs también lo sabrán.",
                 "When you know it, write it down: your AIs will know it too."
             ))
         );
+        print_reader(&s, answer);
         return;
     };
     println!("  {}\n", clean_text(text));
@@ -98,22 +99,29 @@ fn print_answer(answer: &MemoryAnswer) {
             println!("      {}", s.muted(place(source)));
         }
     }
-    let used = answer.sources.len();
-    if let Some(account) = &answer.account {
-        let name = clean(&account.name);
-        let line = if used == 1 {
-            tr!(
-                "Respondió {name} con 1 nota de tu memoria.",
-                "{name} answered from 1 note of your memory."
-            )
-        } else {
-            tr!(
-                "Respondió {name} con {used} notas de tu memoria.",
-                "{name} answered from {used} notes of your memory."
-            )
-        };
-        println!("\n  {}\n", s.muted(&line));
-    }
+    print_reader(&s, answer);
+}
+
+/// Which account read how many notes (nothing, when none was sent).
+fn print_reader(s: &Style, answer: &MemoryAnswer) {
+    let Some(account) = &answer.account else {
+        println!();
+        return;
+    };
+    let name = clean(&account.name);
+    let read = answer.sources.len();
+    let line = if read == 1 {
+        tr!(
+            "{name} leyó 1 nota de tu memoria.",
+            "{name} read 1 note of your memory."
+        )
+    } else {
+        tr!(
+            "{name} leyó {read} notas de tu memoria.",
+            "{name} read {read} notes of your memory."
+        )
+    };
+    println!("\n  {}\n", s.muted(&line));
 }
 
 /// Where a note lives and who wrote it, for the line under it.
@@ -130,11 +138,19 @@ fn place(source: &Source) -> String {
         }
         SourceLayer::Project => {
             let team = clean(source.team.as_deref().unwrap_or_default());
-            let project = clean(source.project.as_deref().unwrap_or_default());
-            parts.push(tr!(
-                "Equipo {team} · proyecto {project}",
-                "Team {team} · project {project}"
-            ));
+            match source.project.as_deref() {
+                Some(project) => {
+                    let project = clean(project);
+                    parts.push(tr!(
+                        "Equipo {team} · proyecto {project}",
+                        "Team {team} · project {project}"
+                    ));
+                }
+                None => parts.push(tr!(
+                    "Equipo {team} · un proyecto que no está en esta PC",
+                    "Team {team} · a project not on this PC"
+                )),
+            }
         }
         SourceLayer::Mine => match source.project.as_deref() {
             Some(project) => {
