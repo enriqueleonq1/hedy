@@ -59,9 +59,58 @@ fn diff_args<'a>(before: &[&'a str], after: &[&'a str]) -> Vec<&'a str> {
     args
 }
 
+/// The new files `.gitattributes` keeps from showing: a filter (git-crypt
+/// encrypts what is added; on disk it is plain) or no diff (`-diff`,
+/// `binary`). Git would show them as binary; read from disk they would not
+/// be. If git cannot say, every one is kept from showing.
+fn attribute_hidden(repo: &Path, paths: &[&str]) -> std::collections::HashSet<String> {
+    use std::process::Stdio;
+    let all = || paths.iter().map(|p| (*p).to_owned()).collect();
+    if paths.is_empty() {
+        return std::collections::HashSet::new();
+    }
+    let child = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["check-attr", "-z", "--stdin", "filter", "diff"])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn();
+    let Ok(mut child) = child else {
+        return all();
+    };
+    let input = paths.iter().map(|p| format!("{p}\0")).collect::<String>();
+    // Written from another thread: a long list fills the pipes both ways.
+    let stdin = child.stdin.take();
+    let writer = std::thread::spawn(move || {
+        if let Some(mut stdin) = stdin {
+            let _ = stdin.write_all(input.as_bytes());
+        }
+    });
+    let out = child.wait_with_output();
+    let _ = writer.join();
+    let Some(out) = out.ok().filter(|o| o.status.success()) else {
+        return all();
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    let fields: Vec<&str> = text.split('\0').collect();
+    fields
+        .chunks(3)
+        .filter(|f| match f {
+            [_, "filter", value] => !matches!(*value, "unspecified" | "unset"),
+            [_, "diff", value] => *value == "unset",
+            _ => false,
+        })
+        .map(|f| f[0].to_owned())
+        .collect()
+}
+
 /// A new file nobody added yet, as a diff: every line added. A protected
-/// one is never read; a binary or large one only named.
-fn untracked_file(repo: &Path, path: &str) -> FileDiff {
+/// one is never read; a binary or large one, or one `.gitattributes` keeps
+/// from showing, only named.
+fn untracked_file(repo: &Path, path: &str, hidden: bool) -> FileDiff {
     let mut file = FileDiff {
         path: path.to_owned(),
         old_path: None,
@@ -72,6 +121,10 @@ fn untracked_file(repo: &Path, path: &str) -> FileDiff {
         hunks: Vec::new(),
     };
     if is_protected_path(path) {
+        return file;
+    }
+    if hidden {
+        file.binary = true;
         return file;
     }
     let full = repo.join(path);
@@ -357,10 +410,11 @@ impl Git for GitCli {
         )?;
         let new: Vec<&str> = others.split('\0').filter(|p| !p.is_empty()).collect();
         let left = new.len().saturating_sub(UNTRACKED_MAX);
+        let read = &new[..new.len() - left];
+        let hidden = attribute_hidden(repo, read);
         files.extend(
-            new.into_iter()
-                .take(UNTRACKED_MAX)
-                .map(|path| untracked_file(repo, path)),
+            read.iter()
+                .map(|path| untracked_file(repo, path, hidden.contains(*path))),
         );
         Ok((files, left))
     }
@@ -878,6 +932,14 @@ mod tests {
         fs::write(repo.join(".env"), "KEY=secret\n").unwrap();
         // A hard link to it is never read either.
         fs::hard_link(repo.join(".env"), repo.join("zz.txt")).unwrap();
+        // Nor one `.gitattributes` encrypts or keeps from diffs.
+        fs::write(
+            repo.join(".gitattributes"),
+            "secreto.yaml filter=git-crypt diff=git-crypt\nprivado.txt -diff\n",
+        )
+        .unwrap();
+        fs::write(repo.join("secreto.yaml"), "password: hunter2\n").unwrap();
+        fs::write(repo.join("privado.txt"), "PRIVADO\n").unwrap();
         let (work, _) = g.work_diff(&repo).unwrap();
         let summary: Vec<(&str, u32, usize)> = work
             .iter()
@@ -888,12 +950,24 @@ mod tests {
             [
                 ("app.py", 1, 1),
                 (".env", 0, 0),
+                (".gitattributes", 2, 1),
                 ("otro.py", 2, 1),
+                ("privado.txt", 0, 0),
+                ("secreto.yaml", 0, 0),
                 ("zz.txt", 0, 0)
             ]
         );
+
         let lines = work.iter().flat_map(|f| &f.hunks).flat_map(|h| &h.lines);
-        assert!(lines.clone().all(|l| !l.text.contains("secret")));
+        assert!(
+            lines
+                .clone()
+                .all(|l| !l.text.contains("hunter2") && !l.text.contains("PRIVADO"))
+        );
+        for name in [".gitattributes", "secreto.yaml", "privado.txt"] {
+            fs::remove_file(repo.join(name)).unwrap();
+        }
+        assert!(lines.clone().all(|l| !l.text.contains("KEY=secret")));
         fs::remove_file(repo.join("zz.txt")).unwrap();
         assert!(g.revs_diff(&repo, "HEAD:.env..HEAD:app.py").is_err());
         // Two blobs by their hashes are no range of commits either.

@@ -36,7 +36,12 @@ fn print_notes(s: &Style, suggestion: &StagedSuggestion) {
         ))
     );
     if !suggestion.skipped.is_empty() {
-        let list = suggestion.skipped.join(", ");
+        let list = suggestion
+            .skipped
+            .iter()
+            .map(|p| crate::team::clean(p))
+            .collect::<Vec<_>>()
+            .join(", ");
         eprintln!(
             "{} {}",
             s.warn("⚠"),

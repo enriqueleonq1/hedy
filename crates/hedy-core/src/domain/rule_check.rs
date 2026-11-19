@@ -333,7 +333,7 @@ fn left_out(file: &FileDiff) -> Option<LeftOut> {
 
 /// A path as the request shows it: every hidden or control character
 /// shown, so nothing in it reorders or breaks the line.
-fn shown_path(path: &str) -> String {
+pub(crate) fn shown_path(path: &str) -> String {
     reveal_hidden(path)
         .chars()
         .map(|c| {

@@ -189,9 +189,15 @@ impl Hedy {
                 if task.status.is_closed() {
                     return Err(AppError::TaskClosed(id.clone()));
                 }
-                // Its worktree is a copy of the project's repository.
+                // Its worktree is a copy of the project's repository; that
+                // one may itself be a worktree of another checkout.
                 let repo = self.repo_root(&task.project)?;
-                (task.project.clone(), vec![repo], self.task_diff(id)?, 0)
+                let main = self.git.main_root(&repo)?;
+                let mut roots = vec![repo];
+                if !roots.contains(&main) {
+                    roots.push(main);
+                }
+                (task.project.clone(), roots, self.task_diff(id)?, 0)
             }
             RuleTarget::Staged(dir) | RuleTarget::Work(dir) | RuleTarget::Revs { dir, .. } => {
                 let revs = match target {
@@ -712,6 +718,44 @@ mod tests {
             .unwrap();
         assert_eq!(check.account.unwrap().id.as_str(), "trabajo");
         assert_eq!(check.files, 1);
+    }
+
+    #[test]
+    fn a_tasks_change_to_a_protected_project_of_the_main_checkout_is_refused() {
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        f.add_claude("Trabajo");
+        f.hedy
+            .use_account(&f.dir("/code/web/secret"), "trabajo", Some(true))
+            .unwrap();
+        f.fs.add_git_root("/code/web");
+        f.fs.add_git_root("/code/web-wt");
+        f.hedy
+            .use_account(&f.dir("/code/web-wt"), "personal", None)
+            .unwrap();
+        f.git.set_main_root("/code/web");
+        f.hedy
+            .add_note(None, "Commits en una línea", Category::Convention)
+            .unwrap();
+        f.git.set_diff(vec![at("secret/a.ts")]);
+        let id = f
+            .hedy
+            .start_task(NewTask {
+                images: Vec::new(),
+                project: f.dir("/code/web-wt"),
+                prompt: "Cambia secret".into(),
+                mode: TaskMode::Project,
+                model: None,
+                plan_first: false,
+            })
+            .unwrap()
+            .id;
+        assert_eq!(
+            f.hedy.check_rules(&RuleTarget::Task(id), None, None),
+            Err(AppError::RulesProtectedInside {
+                project: "secret".into()
+            })
+        );
     }
 
     #[test]

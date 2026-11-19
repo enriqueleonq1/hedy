@@ -15,6 +15,9 @@ All notable changes to Hedy are listed here. The format follows
 - A protected file (`.env`, keys) in a folder whose name has a space or accents was read under
   another name, and its contents could go in `hedy commit`'s request. Git's diffs no longer run
   decrypting textconv filters, whatever the user's diff settings.
+- Commit message suggestions ("Sugerir con IA", `hedy commit`) no longer send removed lines (a
+  secret being taken out) nor a protected file's contents in a task's changes, and file names
+  are printed without their control characters.
 
 ### Added
 

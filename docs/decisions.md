@@ -3325,7 +3325,8 @@ rule instead of ignoring it.
   filters still run, as with `git status`). A range's ends
   must be commits (`HEAD:.env` and blob hashes are refused); one commit means its own change,
   against its first parent (a first commit against nothing). Uncommitted work includes new files
-  not added yet (never read through a link; large or binary ones only named).
+  not added yet (never read through a link; large or binary ones, and those `.gitattributes`
+  encrypts or keeps from diffs, only named).
 - **Model text is the checker's.** A warning becomes a comment for the agent only on the user's
   click, marked "Aviso de la revisión automática con reglas (puede equivocarse)", the rule
   quoted and the model's words as what it saw and suggests; links, HTML and character
@@ -3364,6 +3365,10 @@ rule instead of ignoring it.
   with the working tree; the project was looked up from the repository root (another account);
   quadratic ranking on huge lines; worktrees, submodules and separate git folders (refused when
   the main folder is unknown); hard links; JSON escapes for hidden characters.
+- **Final round:** new files not added yet were read past `.gitattributes` (a git-crypt file
+  went in plain text); commit message suggestions sent removed lines and, for a task, protected
+  contents, and `hedy commit` printed names with control characters; a task's check did not see
+  a protected project of the main checkout.
 - **R3–R4:** a hidden character in a line dropped its warning and showed "clean"; a check
   started on one task was stored under another; a fix in place showed ✓ without a new check;
   "Corregir todo" could send text the comment card hid; the dialog lived inside the diff (lost
