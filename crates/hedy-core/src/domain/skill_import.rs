@@ -83,24 +83,38 @@ fn frontmatter(text: &str) -> Option<Frontmatter> {
             i += 1;
         }
         let value = scalar(rest.trim(), &lines[start..i]);
-        entries.push((key.trim().to_owned(), value));
+        let key = key.trim().trim_matches(['"', '\'']);
+        entries.push((key.to_owned(), value));
     }
     Some(Frontmatter { entries, end })
 }
 
 /// A YAML scalar: plain, quoted or a block (`|`, `>`). `None` for a nested
-/// map or list, or nothing at all.
+/// map or list, `null`, `~` or nothing at all.
 fn scalar(first: &str, more: &[&str]) -> Option<String> {
-    let more: Vec<&str> = more.iter().map(|l| l.trim()).collect();
+    let mut more: Vec<&str> = more.iter().map(|l| l.trim()).collect();
+    // A quoted value may start on the next line.
+    if first.is_empty() {
+        while more.first().is_some_and(|l| l.is_empty()) {
+            more.remove(0);
+        }
+        if let Some(next) = more.first().filter(|l| l.starts_with(['"', '\''])) {
+            return scalar(next, &more[1..]);
+        }
+    }
     let value = if first.starts_with(['|', '>']) {
         more.join("\n")
     } else if let Some(quoted) = first.strip_prefix('"') {
-        double_quoted(
-            &std::iter::once(quoted)
-                .chain(more)
-                .collect::<Vec<_>>()
-                .join(" "),
-        )
+        // A line ending in `\` goes on without a space.
+        let mut joined = quoted.to_owned();
+        for line in more {
+            match joined.strip_suffix('\\') {
+                Some(open) if !open.ends_with('\\') => joined.truncate(open.len()),
+                _ => joined.push(' '),
+            }
+            joined.push_str(line);
+        }
+        double_quoted(&joined)
     } else if let Some(quoted) = first.strip_prefix('\'') {
         let joined = std::iter::once(quoted)
             .chain(more)
@@ -115,21 +129,33 @@ fn scalar(first: &str, more: &[&str]) -> Option<String> {
         if nested {
             return None;
         }
-        more.join(" ")
+        plain(&more.join(" "))?
     } else {
-        let plain = std::iter::once(first)
-            .chain(more)
-            .collect::<Vec<_>>()
-            .join(" ");
-        match plain.find(" #") {
-            Some(comment) => plain[..comment].to_owned(),
-            None => plain,
-        }
+        plain(
+            &std::iter::once(first)
+                .chain(more)
+                .collect::<Vec<_>>()
+                .join(" "),
+        )?
     };
     let value = value.trim().to_owned();
     (!value.is_empty()).then_some(value)
 }
 
+/// A plain scalar without its comment; `None` for `null` or `~`.
+fn plain(text: &str) -> Option<String> {
+    let text = match text.find([' ', '\t']).and_then(|_| {
+        text.char_indices()
+            .find(|(i, c)| *c == '#' && text[..*i].ends_with([' ', '\t']))
+    }) {
+        Some((comment, _)) => &text[..comment],
+        None => text,
+    };
+    let text = text.trim();
+    (!matches!(text, "null" | "Null" | "NULL" | "~")).then(|| text.to_owned())
+}
+
+/// A double-quoted scalar's text up to its closing quote, escapes decoded.
 fn double_quoted(text: &str) -> String {
     let mut out = String::new();
     let mut chars = text.chars();
@@ -139,6 +165,19 @@ fn double_quoted(text: &str) -> String {
             '\\' => match chars.next() {
                 Some('n') => out.push('\n'),
                 Some('t') => out.push('\t'),
+                Some('r') => out.push('\r'),
+                Some('0') => out.push('\0'),
+                Some(hex @ ('x' | 'u' | 'U')) => {
+                    let digits = match hex {
+                        'x' => 2,
+                        'u' => 4,
+                        _ => 8,
+                    };
+                    let code: String = chars.by_ref().take(digits).collect();
+                    if let Some(c) = u32::from_str_radix(&code, 16).ok().and_then(char::from_u32) {
+                        out.push(c);
+                    }
+                }
                 Some(other) => out.push(other),
                 None => break,
             },
@@ -220,8 +259,28 @@ mod tests {
         assert_eq!(parsed.name.as_deref(), Some("it's"));
         assert_eq!(parsed.description.as_deref(), Some("Say \"hi\""));
 
-        let parsed = parse_skill_md("---\ndescription: Lint the\n  code first # always\n---\nx");
+        let parsed = parse_skill_md("---\ndescription: Lint the\n  code first\t# always\n---\nx");
         assert_eq!(parsed.description.as_deref(), Some("Lint the code first"));
+
+        // As official skills and YAML dumpers write them.
+        let parsed = parse_skill_md(
+            "---\n\"name\": caf\ndescription:\n  \"Solve \\\"hard\\\" problems,\n  caf\\u00e9 and \\xE9\\\n  t\"\nlicense: ~\n---\nx",
+        );
+        assert_eq!(parsed.name.as_deref(), Some("caf"));
+        assert_eq!(
+            parsed.description.as_deref(),
+            Some("Solve \"hard\" problems, café and ét")
+        );
+        assert_eq!(
+            parse_skill_md("---\ndescription: null\n---\nx").description,
+            None
+        );
+        assert_eq!(
+            parse_skill_md("---\ndescription: Use C# here\n---\nx")
+                .description
+                .as_deref(),
+            Some("Use C# here")
+        );
     }
 
     #[test]

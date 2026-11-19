@@ -112,16 +112,13 @@ pub(super) fn validated(
 }
 
 /// A skill from another of the user's PCs passes the same checks as one
-/// made here (and keeps its exact text): otherwise it waits in the replica.
+/// made here: otherwise it waits in the replica.
 pub(super) fn acceptable_synced(skill: &SkillBody) -> bool {
-    validated(&skill.name, &skill.description, &skill.body).is_ok_and(
-        |(name, description, body)| {
-            name == skill.name
-                && description == skill.description
-                && body == skill.body
-                && (skill.status == SkillStatus::Approved || !runs_commands(&body))
-        },
-    )
+    // The exact name (it becomes a folder); the text as it was saved there,
+    // by any version: an older one kept emoji selectors or `\r\n` lines.
+    validated(&skill.name, &skill.description, &skill.body).is_ok_and(|(name, _, body)| {
+        name == skill.name && (skill.status == SkillStatus::Approved || !runs_commands(&body))
+    })
 }
 
 impl Hedy {
@@ -196,7 +193,7 @@ impl Hedy {
     ) -> AppResult<Skill> {
         let project = self.project_at(project)?;
         let (name, description, body) = validated(name, description, body)?;
-        if runs_commands(&body) {
+        if runs_commands(&body) || runs_commands(&description) {
             return Err(DomainError::SkillRunsCommands.into());
         }
         Ok(self.store.add_skill(&NewSkill {

@@ -49,6 +49,12 @@ const CLAUDE_CODE_CREDENTIALS: &[&str] = &[
     "CLAUDE_CODE_USE_FOUNDRY",
 ];
 
+/// Set in every process Hedy starts (agents, logins, `hedy run`): what
+/// only the user may do (approving memory, importing skills) is refused
+/// there, so an agent cannot do it through a shell command. A second guard:
+/// the permission card for that command is the first.
+pub const AGENT_SESSION: &str = "HEDY_AGENT_SESSION";
+
 pub fn is_blocked(name: &str) -> bool {
     BLOCKED.contains(&name)
         || SESSION_LEFTOVERS.contains(&name)

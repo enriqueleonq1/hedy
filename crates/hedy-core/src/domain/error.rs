@@ -31,6 +31,8 @@ pub enum DomainError {
     #[error("{}", self.message())]
     SkillRunsCommands,
     #[error("{}", self.message())]
+    SkillHiddenText,
+    #[error("{}", self.message())]
     ApiKeyNotSupported { provider: Provider },
     #[error("{}", self.message())]
     NothingToLaunch,
@@ -123,12 +125,16 @@ impl DomainError {
                 "the skill's description must be one line of up to 1024 characters, without < or >, saying when to use it"
             ),
             Self::InvalidSkillBody => tr!(
-                "el contenido de la habilidad no puede estar vacío ni pasar de 100000 caracteres",
-                "the skill's body cannot be empty or longer than 100000 characters"
+                "el contenido de la habilidad no puede estar vacío ni pasar de 80000 caracteres",
+                "the skill's body cannot be empty or longer than 80000 characters"
             ),
             Self::SkillLooksSecret(kind) => tr!(
                 "la habilidad parece contener un secreto ({kind}); no se guardó. Quítalo y usa un marcador como $NOMBRE_VARIABLE o <tu clave>",
                 "the skill looks like it contains a secret ({kind}); it was not saved. Remove it and use a placeholder such as $VARIABLE_NAME or <your key>"
+            ),
+            Self::SkillHiddenText => tr!(
+                "la habilidad tiene texto oculto (caracteres invisibles o que reordenan el texto): las IAs lo leerían y tú no lo verías",
+                "the skill has hidden text (invisible characters or ones that reorder the text): the AIs would read it and you would not see it"
             ),
             Self::SkillRunsCommands => tr!(
                 "una habilidad propuesta no puede correr comandos al cargarse (!`…` o un bloque ```!); escribe el comando como un paso para que la IA lo pida",

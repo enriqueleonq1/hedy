@@ -1293,6 +1293,22 @@ impl FileSystem for FakeFs {
         files.push((path.to_owned(), contents.to_owned()));
         Ok(())
     }
+    fn create_text(&self, path: &Path, contents: &str) -> PortResult<bool> {
+        if self.exists(path) || self.is_symlink(path) {
+            return Ok(false);
+        }
+        self.write_text(path, contents)?;
+        Ok(true)
+    }
+    fn read_regular_text(&self, path: &Path, max_bytes: u64) -> PortResult<Option<String>> {
+        if self.is_symlink(path) {
+            return Err(PortError::new("not a regular file"));
+        }
+        match self.read_text(path)? {
+            Some(text) if text.len() as u64 > max_bytes => Err(PortError::new("too big")),
+            text => Ok(text),
+        }
+    }
     fn write_private_file(&self, path: &Path, contents: &[u8]) -> PortResult<()> {
         let mut blobs = self.blobs.lock().unwrap();
         if blobs.iter().any(|(p, _)| p == path) {

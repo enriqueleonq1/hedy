@@ -7,13 +7,15 @@ use anyhow::Result;
 use hedy_core::application::{Hedy, ImportCandidate};
 use hedy_core::tr;
 
-use crate::commands::{hint, print_skill_files, project_here, short_path};
+use crate::commands::{hint, print_skill_files, project_here, refuse_in_agent_session, short_path};
 use crate::style::Style;
 use crate::sync::confirmed;
 use crate::team::clean;
 
 /// Characters of each description shown in the preview.
 const DESCRIPTION_SHOWN: usize = 100;
+/// Lines of each body shown in the preview.
+const BODY_LINES_SHOWN: usize = 6;
 
 pub fn import(
     hedy: &Hedy,
@@ -23,19 +25,29 @@ pub fn import(
     replace: bool,
     yes: bool,
 ) -> Result<()> {
+    refuse_in_agent_session()?;
     let s = Style::for_stdout();
     let project = project_here(hedy, dir)?;
-    let source = dir.join(source);
-    let preview = hedy.preview_import(&project.path, &source, global)?;
+    let path = dir.join(source);
+    let found = hedy.preview_import(&project.path, &path, global)?;
+    let preview = &found.candidates;
     println!();
     println!(
         "  {}  {}",
         tr!("Habilidades encontradas", "Skills found"),
-        s.muted(short_path(&source))
+        s.muted(short_path(&path))
     );
     println!();
-    for candidate in &preview {
+    for candidate in preview {
         print_candidate(&s, candidate, replace);
+    }
+    if found.total > preview.len() {
+        let (shown, total) = (preview.len(), found.total);
+        let line = tr!(
+            "Se muestran las primeras {shown} de {total}: importa el resto por carpetas.",
+            "Showing the first {shown} of {total}: import the rest folder by folder."
+        );
+        println!("  {}", s.warn(line));
     }
     let ready = preview
         .iter()
@@ -51,10 +63,25 @@ pub fn import(
         "¿Importar {ready} a {name}? Tus IAs las usarán dentro de Hedy. [s/N] ",
         "Import {ready} into {name}? Your AIs will use them inside Hedy. [y/N] "
     );
-    if !confirmed(yes, &question, "hedy skills import <ruta> --yes")? {
+    let mut again = format!(
+        "hedy skills import {}",
+        shell_word(&source.to_string_lossy())
+    );
+    for (on, flag) in [(global, " --global"), (replace, " --replace")] {
+        if on {
+            again.push_str(flag);
+        }
+    }
+    again.push_str(" --yes");
+    if !confirmed(yes, &question, &again)? {
+        println!("{}", tr!("No se importó nada.", "Nothing was imported."));
         return Ok(());
     }
-    let report = hedy.import_skills(&project.path, &preview, replace)?;
+    let replacing: Vec<String> = match replace {
+        true => preview.iter().map(|c| c.draft.name.clone()).collect(),
+        false => Vec::new(),
+    };
+    let report = hedy.import_skills(&project.path, preview, &replacing)?;
     let (imported, updated) = (report.imported.len(), report.updated.len());
     let done = match (imported, updated) {
         (n, 0) => tr!("{n} importadas.", "{n} imported."),
@@ -110,6 +137,24 @@ fn print_candidate(s: &Style, candidate: &ImportCandidate, replace: bool) {
     if let Some(note) = note {
         println!("    {note}");
     }
+    // What the AIs would read: its size and how it starts.
+    let body = &candidate.draft.body;
+    if candidate.problem.is_none() && !body.is_empty() {
+        let (lines, chars) = (body.lines().count(), body.chars().count());
+        println!(
+            "    {}",
+            s.muted(tr!(
+                "{lines} líneas · {chars} caracteres:",
+                "{lines} lines · {chars} characters:"
+            ))
+        );
+        for line in body.lines().take(BODY_LINES_SHOWN) {
+            println!("    {} {}", s.muted("│"), shortened(&clean(line)));
+        }
+        if lines > BODY_LINES_SHOWN {
+            println!("    {} {}", s.muted("│"), s.muted("…"));
+        }
+    }
     if !candidate.dropped_keys.is_empty() {
         let keys = clean(&candidate.dropped_keys.join(", "));
         println!(
@@ -126,6 +171,17 @@ fn print_candidate(s: &Style, candidate: &ImportCandidate, replace: bool) {
                 "not imported (Hedy keeps only the text): {files}"
             ))
         );
+    }
+}
+
+/// A path as the user would type it again in a shell.
+fn shell_word(text: &str) -> String {
+    let plain = text
+        .chars()
+        .all(|c| c.is_alphanumeric() || "/._-~".contains(c));
+    match plain {
+        true => text.to_owned(),
+        false => format!("'{}'", clean(text).replace('\'', "'\\''")),
     }
 }
 

@@ -789,6 +789,13 @@ pub trait FileSystem: Send + Sync {
     fn read_text(&self, path: &Path) -> PortResult<Option<String>>;
     /// Creates or replaces a file, creating its parent folders.
     fn write_text(&self, path: &Path, contents: &str) -> PortResult<()>;
+    /// Creates a file (and its parent folders) only when nothing is at
+    /// `path`, not even a link: `false` when something is.
+    fn create_text(&self, path: &Path, contents: &str) -> PortResult<bool>;
+    /// A regular file's text, at most `max_bytes`; `None` when it does not
+    /// exist. Fails for a link, a device or a pipe, a bigger file or one that
+    /// is not UTF-8: someone else's folder can hold any of them.
+    fn read_regular_text(&self, path: &Path, max_bytes: u64) -> PortResult<Option<String>>;
     /// Writes a file readable only by the user (its folder too), creating
     /// the folder when missing. Fails when the file already exists.
     fn write_private_file(&self, path: &Path, contents: &[u8]) -> PortResult<()>;

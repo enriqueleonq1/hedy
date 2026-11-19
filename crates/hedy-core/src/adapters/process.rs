@@ -23,6 +23,7 @@ pub(crate) fn command(spec: &LaunchSpec) -> Command {
     cmd.args(&spec.args);
     cmd.env_clear().envs(allowed_env());
     cmd.env(crate::i18n::ENV_VAR, crate::i18n::language().code());
+    cmd.env(crate::domain::env::AGENT_SESSION, "1");
     // So the CLI's hooks run with Hedy's experiments (docs/decisions.md §33).
     let (name, value) = crate::experiments::child_env();
     cmd.env(name, value);
@@ -215,6 +216,8 @@ mod tests {
             );
         }
         assert!(envs.contains(&("CLAUDE_CONFIG_DIR".as_ref(), Some("/acc".as_ref()))));
+        // Marked as Hedy's, so `hedy` refuses to approve from inside it.
+        assert!(envs.contains(&("HEDY_AGENT_SESSION".as_ref(), Some("1".as_ref()))));
     }
 
     #[test]

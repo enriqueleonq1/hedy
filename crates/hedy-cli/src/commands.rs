@@ -1377,6 +1377,7 @@ pub fn memory_list(hedy: &Hedy, dir: &Path) -> Result<()> {
 }
 
 pub fn memory_approve(hedy: &Hedy, id: i64) -> Result<()> {
+    refuse_in_agent_session()?;
     let s = Style::for_stdout();
     let note = hedy.approve_note(id)?;
     let text = s.muted(fit(&note.text, NOTE_WIDTH));
@@ -1436,7 +1437,8 @@ fn print_skill_line(s: &Style, skill: &Skill) {
         s.bold(&skill.name),
         s.muted(details.join(" · "))
     );
-    for line in wrap(&skill.description, NOTE_WIDTH) {
+    let description = crate::team::clean(&skill.description);
+    for line in wrap(&description, NOTE_WIDTH) {
         println!("  {} {line}", " ".repeat(ID_WIDTH));
     }
 }
@@ -1529,13 +1531,10 @@ pub fn skills_list(hedy: &Hedy, dir: &Path) -> Result<()> {
 }
 
 fn print_skill_body(s: &Style, body: &str) {
-    // An agent's or an imported text: no escapes reach the terminal.
+    // An agent's or an imported text: hidden characters are shown as
+    // ⟦U+…⟧, so no escape reaches the terminal and nothing hides.
     for line in body.lines() {
-        let line: String = line
-            .chars()
-            .filter(|c| !hedy_core::domain::team::is_hidden(*c))
-            .collect();
-        println!("    {line}");
+        println!("    {}", hedy_core::domain::team::reveal_hidden(line));
     }
     if body.is_empty() {
         println!("    {}", s.muted("—"));
@@ -1572,7 +1571,7 @@ pub fn skills_show(hedy: &Hedy, dir: &Path, name: &str) -> Result<()> {
             ))
         );
         if proposal.skill.description != skill.description {
-            println!("  {}", proposal.skill.description);
+            println!("  {}", crate::team::clean(&proposal.skill.description));
         }
         print_skill_body(&s, &proposal.skill.body);
     }
@@ -1580,7 +1579,23 @@ pub fn skills_show(hedy: &Hedy, dir: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// What only the user may do (rule 6) is refused in a session Hedy started
+/// for an AI: an agent cannot approve through a shell command.
+pub(crate) fn refuse_in_agent_session() -> Result<()> {
+    if std::env::var_os(hedy_core::domain::env::AGENT_SESSION).is_some() {
+        bail!(
+            "{}",
+            tr!(
+                "una IA no puede aprobar ni importar: hazlo tú desde tu terminal o desde la app",
+                "an AI cannot approve or import: do it yourself from your terminal or the app"
+            )
+        );
+    }
+    Ok(())
+}
+
 pub fn skills_approve(hedy: &Hedy, id: i64) -> Result<()> {
+    refuse_in_agent_session()?;
     let s = Style::for_stdout();
     let change = hedy.approve_skill(id)?;
     let name = s.bold(&change.skill.name);
