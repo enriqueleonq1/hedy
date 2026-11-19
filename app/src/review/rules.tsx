@@ -7,6 +7,7 @@ import type { FileDiff, MemorySource, RuleBreak, RuleCheck, Task } from "../api/
 import { Button } from "../components/ui/Button";
 import { useT, type MessageKey, type Translate } from "../i18n";
 import { useReviewComments } from "./comments";
+import { RuleChangeDialog } from "./RuleChange";
 import "../styles/rules.css";
 
 /**
@@ -88,7 +89,14 @@ function fingerprint(text: string): string {
 function changesVersion(files: FileDiff[]): string {
   return fingerprint(
     files
-      .map((f) => `${f.path}\u0000${f.hunks.flatMap((h) => h.lines).filter((l) => l.kind === "added").map((l) => `${l.newLine}:${l.text}`).join("\u0001")}`)
+      .map(
+        (f) =>
+          `${f.path}\u0000${f.hunks
+            .flatMap((h) => h.lines)
+            .filter((l) => l.kind === "added")
+            .map((l) => `${l.newLine}:${l.text}`)
+            .join("\u0001")}`,
+      )
       .join("\u0002"),
   );
 }
@@ -105,7 +113,14 @@ function stillThere(brk: RuleBreak, files: FileDiff[]): boolean {
  * link, image or HTML (a hidden `<!-- … -->` would be sent, not shown).
  */
 function plain(text: string): string {
-  return text.replace(/[\\[\]<>]/g, (c) => `\\${c}`);
+  return (
+    text
+      // `&#x202E;` would turn into a hidden character, `[a](…)` and `<…>` into a link or HTML.
+      .replace(/[\\[\]<>&]/g, (c) => `\\${c}`)
+      // A bare address would turn into a link too.
+      .replace(/:\/\//g, ":\\/\\/")
+      .replace(/\bwww\./gi, (w) => `${w.slice(0, 3)}\\.`)
+  );
 }
 
 /**
@@ -116,9 +131,7 @@ function plain(text: string): string {
 export function warningComment(w: Warning, t: Translate): string {
   const rule = plain(w.rule?.text ?? "");
   const message = plain(w.brk.message);
-  return w.brk.fix
-    ? t("rules.commentFix", { rule, message, fix: plain(w.brk.fix) })
-    : t("rules.comment", { rule, message });
+  return w.brk.fix ? t("rules.commentFix", { rule, message, fix: plain(w.brk.fix) }) : t("rules.comment", { rule, message });
 }
 
 export function useRuleCheck(task: Task | null, files: FileDiff[]) {
@@ -137,7 +150,11 @@ export function useRuleCheck(task: Task | null, files: FileDiff[]) {
   const run = useMutation<RuleCheck, unknown, Run>({
     mutationKey: ["ruleCheck"],
     mutationFn: (vars) => api.checkTaskRules(vars.task),
-    onSuccess: (check, vars) => client.setQueryData<Stored>(["ruleCheck", vars.task], { check, version: vars.version }),
+    onSuccess: (check, vars) =>
+      client.setQueryData<Stored>(["ruleCheck", vars.task], {
+        check,
+        version: vars.version,
+      }),
   });
   // A run outlives this view (another tab, another task): its state is read
   // from the cache, by task, so a second click never spends twice.
@@ -153,14 +170,14 @@ export function useRuleCheck(task: Task | null, files: FileDiff[]) {
   const last = runs.filter((r) => r.task === taskId).sort((a, b) => b.at - a.at)[0];
   const running = last?.status === "pending";
 
-  const [dismissed, setDismissed] = useState<{ task: string; keys: Set<string> }>(() => ({
+  const [dismissed, setDismissed] = useState<{
+    task: string;
+    keys: Set<string>;
+  }>(() => ({
     task: taskId,
     keys: loadDismissed(taskId),
   }));
-  const keys = useMemo(
-    () => (dismissed.task === taskId ? dismissed.keys : loadDismissed(taskId)),
-    [dismissed, taskId],
-  );
+  const keys = useMemo(() => (dismissed.task === taskId ? dismissed.keys : loadDismissed(taskId)), [dismissed, taskId]);
 
   const check = stored.data?.check ?? null;
   const outdated = !!stored.data && stored.data.version !== version;
@@ -170,7 +187,11 @@ export function useRuleCheck(task: Task | null, files: FileDiff[]) {
         .filter((brk) => stillThere(brk, files))
         .map((brk) => {
           const rule = check?.rules[brk.rule - 1];
-          return { brk, rule, key: fingerprint([brk.path, brk.line, rule?.text ?? brk.rule, brk.raw].join("\u0000")) };
+          return {
+            brk,
+            rule,
+            key: fingerprint([brk.path, brk.line, rule?.text ?? brk.rule, brk.raw].join("\u0000")),
+          };
         }),
     [check, files],
   );
@@ -210,6 +231,11 @@ export function useRuleCheck(task: Task | null, files: FileDiff[]) {
     /** How many of those warnings the user dismissed ("Está bien así"). */
     dismissedCount: all.length - shown.length,
     dismiss: (w: Warning) => setKeys((k) => k.add(w.key)),
+    /** Every warning citing that rule: it was changed, proposed or excepted. */
+    settleRule: (text: string) =>
+      setKeys((k) => {
+        for (const w of all) if (w.rule?.text === text) k.add(w.key);
+      }),
     restoreAll: () => setKeys((k) => k.clear()),
     countFor: (path: string) => [...(byPath.get(path)?.values() ?? [])].reduce((n, list) => n + list.length, 0),
     /** The file's warnings by the number of their line (the same map while they do not change). */
@@ -238,56 +264,75 @@ function commentOf(review: ReturnType<typeof useReviewComments>, w: Warning) {
 export function LineWarnings({
   warnings,
   copy,
+  project,
   rules,
 }: {
   warnings: Warning[];
   copy: CodeCopy;
+  /** The task's project: an exception to a rule is written there. */
+  project: string;
   rules: RuleChecking;
 }) {
   const t = useT();
   const review = useReviewComments();
+  const [changing, setChanging] = useState<MemorySource | null>(null);
   return (
-    <ul className="rl-warnings">
-      {warnings.map((w) => (
-        <li key={w.key} className="rl-warning">
-          <p className="rl-warning__head">
-            <span className="rl-warning__label">{t("rules.warning")}</span>
-            {w.rule && <q className="rl-warning__rule">{w.rule.text}</q>}
-          </p>
-          <p className="rl-warning__message">{w.brk.message}</p>
-          {w.brk.fix && <p className="rl-warning__fix">{t("rules.fixed", { fix: w.brk.fix })}</p>}
-          <div className="rl-warning__foot">
-            {w.rule && <span className="rl-warning__where">{ruleWhere(w.rule, t)}</span>}
-            <span className="rl-warning__actions">
-              {commentOf(review, w) ? (
-                <span className="rl-warning__added">{t("rules.inComments")}</span>
-              ) : (
-                <Button
-                  small
-                  disabled={!review.canSend}
-                  onClick={() =>
-                    review.add({
-                      copy,
-                      path: w.brk.path,
-                      line: w.brk.line,
-                      side: "new",
-                      text: warningComment(w, t),
-                      code: w.brk.code,
-                      source: w.key,
-                    })
-                  }
-                >
-                  {t("rules.fix")}
+    <>
+      <ul className="rl-warnings">
+        {warnings.map((w) => (
+          <li key={w.key} className="rl-warning">
+            <p className="rl-warning__head">
+              <span className="rl-warning__label">{t("rules.warning")}</span>
+              {w.rule && <span className="rl-warning__rule">{t("rules.quoted", { text: w.rule.text })}</span>}
+            </p>
+            <p className="rl-warning__message">{w.brk.message}</p>
+            {w.brk.fix && <p className="rl-warning__fix">{t("rules.fixed", { fix: w.brk.fix })}</p>}
+            <div className="rl-warning__foot">
+              {w.rule && <span className="rl-warning__where">{ruleWhere(w.rule, t)}</span>}
+              <span className="rl-warning__actions">
+                {commentOf(review, w) ? (
+                  <span className="rl-warning__added">{t("rules.inComments")}</span>
+                ) : (
+                  <Button
+                    small
+                    disabled={!review.canSend}
+                    onClick={() =>
+                      review.add({
+                        copy,
+                        path: w.brk.path,
+                        line: w.brk.line,
+                        side: "new",
+                        text: warningComment(w, t),
+                        code: w.brk.code,
+                        source: w.key,
+                      })
+                    }
+                  >
+                    {t("rules.fix")}
+                  </Button>
+                )}
+                <Button small variant="ghost" onClick={() => rules.dismiss(w)}>
+                  {t("rules.fine")}
                 </Button>
-              )}
-              <Button small variant="ghost" onClick={() => rules.dismiss(w)}>
-                {t("rules.fine")}
-              </Button>
-            </span>
-          </div>
-        </li>
-      ))}
-    </ul>
+                {w.rule && (
+                  <Button small variant="ghost" onClick={() => setChanging(w.rule ?? null)}>
+                    {t("rules.change.open")}
+                  </Button>
+                )}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {changing && (
+        <RuleChangeDialog
+          rule={changing}
+          project={project}
+          onClose={() => setChanging(null)}
+          onDone={() => rules.settleRule(changing.text)}
+        />
+      )}
+    </>
   );
 }
 
@@ -319,8 +364,6 @@ export function RulesBar({
   let tone = "idle";
   if (rules.running) {
     text = <span className="muted">{t("rules.checking")}</span>;
-  } else if (agentRunning) {
-    text = <span className="muted">{t("rules.waitAgent")}</span>;
   } else if (!check) {
     text = <span className="muted">{t("rules.checkHint")}</span>;
   } else if (check.status === "no_rules") {
@@ -339,7 +382,8 @@ export function RulesBar({
     text = <strong>{plural(lines, "rules.linesOne", "rules.lines")}</strong>;
   } else if (stale) {
     tone = "warn";
-    text = t("rules.linesChanged");
+    // Warned lines that changed, or only new lines never checked.
+    text = rules.gone > 0 ? t("rules.linesChanged") : t("rules.outdatedNow");
   } else if (rules.dismissedCount > 0) {
     text = t("rules.nothingPending");
   } else {
@@ -400,11 +444,10 @@ export function RulesBar({
           )}
         </p>
       )}
+      {agentRunning && <p className="muted small">{t("rules.waitAgent")}</p>}
       {rules.error !== null && <p className="error-text small">{errorMessage(rules.error, t)}</p>}
       {rules.outdated && check && lines > 0 && <p className="muted small">{t("rules.outdated")}</p>}
-      {check && check.protected.length > 0 && (
-        <p className="muted small">{t("rules.protected", { list: check.protected.join(", ") })}</p>
-      )}
+      {check && check.protected.length > 0 && <p className="muted small">{t("rules.protected", { list: check.protected.join(", ") })}</p>}
       {check?.truncated && <p className="muted small">{t("rules.truncated")}</p>}
     </section>
   );

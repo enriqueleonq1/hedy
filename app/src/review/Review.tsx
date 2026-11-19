@@ -442,7 +442,12 @@ export function Changes({ project, task }: { project: string; task: Task | null 
                   focusSeq={review.selectedFile === current.path ? review.selectSeq : 0}
                   annotated={rules.linesOf(current.path)}
                   annotate={(line) => (
-                    <LineWarnings warnings={rules.linesOf(current.path).get(line) ?? []} copy={copy} rules={rules} />
+                    <LineWarnings
+                      warnings={rules.linesOf(current.path).get(line) ?? []}
+                      copy={copy}
+                      project={project}
+                      rules={rules}
+                    />
                   )}
                 />
               </section>
