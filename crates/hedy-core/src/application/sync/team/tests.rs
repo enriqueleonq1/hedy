@@ -2121,11 +2121,12 @@ fn a_question_in_a_team_project_reads_the_team_with_its_authors() {
     assert!(layers.contains(&(SourceLayer::Project, Some("Luis"))));
     assert!(layers.contains(&(SourceLayer::Mine, None)));
     let prompt = luis.f.agents.last_request().prompt;
+    assert!(prompt.contains(
+        "where=\"team Tienda SA, every project\" by=\"Ana\" category=convention text=\"Fondo oscuro #0F1117\""
+    ));
     assert!(
-        prompt
-            .contains("(team Tienda SA, every project, by Ana, convention) «Fondo oscuro #0F1117»")
+        prompt.contains("where=\"team Tienda SA, project app\" by=\"Luis\" category=convention")
     );
-    assert!(prompt.contains("(team Tienda SA, project app, by Luis, convention)"));
 
     // The team alone: no note of this PC's own.
     luis.f
@@ -2220,4 +2221,134 @@ fn a_teams_notes_hang_from_the_team_or_its_project_and_their_author() {
         .find(|n| n.label == "Modales sobre el panel")
         .unwrap();
     assert_eq!(note.group, format!("team:{}", ana.team));
+}
+
+#[test]
+fn a_protected_copys_team_notes_do_not_reach_another_account() {
+    use crate::application::AskScope;
+
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    // Another copy of the same repo on Luis's PC, protected for its account.
+    luis.f.add_claude("Seguro");
+    luis.f.fs.add_git_root("/code/app-seguro");
+    let secure = luis.f.dir("/code/app-seguro");
+    luis.f
+        .hedy
+        .use_account(&secure, "seguro", Some(true))
+        .unwrap();
+    luis.f.hedy.team_link_project(&luis.team, &secure).unwrap();
+    luis.f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            Some(&secure),
+            "Secreto del banco: la clave rota",
+            Category::Rule,
+            None,
+        )
+        .unwrap();
+    luis.f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            None,
+            "Fondo oscuro #0F1117",
+            Category::Convention,
+            None,
+        )
+        .unwrap_or_else(|_| TeamWriteOutcome::Suggested(String::new()));
+    luis.sync();
+    let answer = || {
+        luis.f
+            .agents
+            .reply_on_start(vec![crate::domain::AgentEvent::Finished {
+                ok: true,
+                summary: "x [1].".into(),
+                duration_ms: None,
+            }]);
+    };
+    for scope in [
+        AskScope::Team(luis.team.clone()),
+        AskScope::Mine,
+        AskScope::Project(luis.project.clone()),
+    ] {
+        answer();
+        let a = luis
+            .f
+            .hedy
+            .ask_memory("¿Secreto del banco, clave?", &scope, Some("trabajo"), None)
+            .unwrap();
+        assert!(
+            a.sources.iter().all(|s| !s.text.contains("Secreto")),
+            "{scope:?}"
+        );
+    }
+    // In the protected copy itself, with its account, it is there.
+    answer();
+    let a = luis
+        .f
+        .hedy
+        .ask_memory(
+            "¿Secreto del banco, clave?",
+            &AskScope::Project(secure),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(a.account.unwrap().id.as_str(), "seguro");
+    assert!(a.sources.iter().any(|s| s.text.contains("Secreto")));
+}
+
+#[test]
+fn a_team_held_only_by_protected_projects_stays_with_their_account() {
+    use crate::application::AskScope;
+
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    ana.f
+        .hedy
+        .team_add_note(
+            &ana.team,
+            None,
+            "Fondo oscuro #0F1117",
+            Category::Convention,
+            None,
+        )
+        .unwrap();
+    ana.sync();
+    luis.sync();
+    luis.f.add_claude("Personal");
+    luis.f
+        .hedy
+        .use_account(&luis.project, "trabajo", Some(true))
+        .unwrap();
+    assert_eq!(
+        luis.f.hedy.ask_memory(
+            "¿Fondo?",
+            &AskScope::Team(luis.team.clone()),
+            Some("personal"),
+            None
+        ),
+        Err(AppError::AskTeamProtected)
+    );
+    luis.f
+        .hedy
+        .add_note(None, "Fondo de mi terminal negro", Category::Preference)
+        .unwrap();
+    luis.f
+        .agents
+        .reply_on_start(vec![crate::domain::AgentEvent::Finished {
+            ok: true,
+            summary: "x [1].".into(),
+            duration_ms: None,
+        }]);
+    let a = luis
+        .f
+        .hedy
+        .ask_memory("¿Fondo?", &AskScope::Mine, Some("personal"), None)
+        .unwrap();
+    assert!(a.sources.iter().all(|s| !s.text.contains("#0F1117")));
 }

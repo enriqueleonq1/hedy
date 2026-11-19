@@ -1046,6 +1046,53 @@ impl Hedy {
         }
     }
 
+    /// The id of the team project `path` is on this PC (by its `origin`).
+    pub(crate) fn team_project_id_of(&self, team: &str, path: &Path) -> Option<String> {
+        self.team_project_id(&Space::Team(team.to_owned()), path)
+    }
+
+    /// Each team note's project id, by its uid (`None`: the team layer).
+    pub(crate) fn team_note_projects(
+        &self,
+        team: &str,
+    ) -> AppResult<BTreeMap<String, Option<String>>> {
+        let space = self.team_space(team)?;
+        Ok(self
+            .store
+            .sync_items(&space.id())?
+            .into_iter()
+            .filter(|c| c.kind == ItemKind::Note)
+            .map(|c| {
+                let project = match c.scope {
+                    Scope::Project(id) => Some(id),
+                    Scope::Global => None,
+                };
+                (c.uid, project)
+            })
+            .collect())
+    }
+
+    /// The team's project ids that a protected project on this PC holds
+    /// (rule 4: their notes only go to its account), and whether every
+    /// project of the team here is protected.
+    pub(crate) fn team_protection(&self, team: &str) -> AppResult<(HashSet<String>, bool)> {
+        let space = self.team_space(team)?;
+        let home = MemoryHome::Team(team.to_owned());
+        let (mut protected, mut linked, mut open) = (HashSet::new(), 0, 0);
+        for project in self.projects()? {
+            if self.store.memory_home(&project.path)?.as_ref() != Some(&home) {
+                continue;
+            }
+            linked += 1;
+            if !project.protected {
+                open += 1;
+            } else if let Some(id) = self.team_project_id(&space, &project.path) {
+                protected.insert(id);
+            }
+        }
+        Ok((protected, linked > 0 && open == 0))
+    }
+
     /// A team's notes as its replica holds them, with the name an admin
     /// wrote for each author: what an agent reads (no status, no projects).
     fn team_note_bodies(&self, space: &Space) -> Option<Vec<(Scope, String, TeamNoteBody)>> {

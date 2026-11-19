@@ -71,7 +71,7 @@ impl Hedy {
         if question.is_empty() {
             return Err(AppError::AskEmpty);
         }
-        let (account, cwd) = self.ask_account(scope, account)?;
+        // The notes first: with none to send, no account is needed.
         let sources = pick_sources(&question, self.ask_sources(scope)?);
         if sources.is_empty() {
             return Ok(MemoryAnswer {
@@ -81,6 +81,7 @@ impl Hedy {
                 account: None,
             });
         }
+        let (account, cwd) = self.ask_account(scope, account)?;
         if self.account_at_limit(&account)? {
             return Err(AppError::AskAtLimit {
                 account: account.name.clone(),
@@ -129,7 +130,17 @@ impl Hedy {
         account: Option<&str>,
     ) -> AppResult<(Account, PathBuf)> {
         if let AskScope::Project(path) = scope {
-            let (project, account) = self.resolve_account(path, account)?;
+            let resolved = match self.resolve_account(path, account) {
+                // No account for the project and no default: the only one.
+                Err(AppError::NoAccountResolved) if account.is_none() => {
+                    match self.only_account()? {
+                        Some(only) => self.resolve_account(path, Some(only.as_str())),
+                        None => Err(AppError::NoAccountResolved),
+                    }
+                }
+                other => other,
+            };
+            let (project, account) = resolved?;
             let project = project.ok_or_else(|| AppError::ProjectNotFound(path.clone()))?;
             return Ok((account, project.path));
         }
@@ -141,8 +152,8 @@ impl Hedy {
         };
         let account = self.account(id.as_str())?;
         policy::check_launch(None, &account.id, &self.projects()?)?;
-        // An empty folder of Hedy's own: no project's files or instructions.
-        let dir = self.fs.chats_dir();
+        // An empty folder of its own: no project's or conversation's files.
+        let dir = self.fs.chats_dir().with_file_name("ask");
         self.fs.create_private_dir(&dir)?;
         Ok((account, dir))
     }
@@ -162,16 +173,21 @@ impl Hedy {
                 }
             }
         }
-        if let Some(id) = self.default_account_id()? {
-            return Ok(Some(id));
+        match self.default_account_id()? {
+            Some(id) => Ok(Some(id)),
+            None => self.only_account(),
         }
+    }
+
+    fn only_account(&self) -> AppResult<Option<AccountId>> {
         let accounts = self.accounts()?;
         Ok((accounts.len() == 1).then(|| accounts[0].id.clone()))
     }
 
     /// Every note of `scope` that may go to its account. A protected
     /// project's go only to its own account, which answers nowhere else
-    /// (rule 4): only a question in that project reads them.
+    /// (rule 4): only a question in that project reads them, its team notes
+    /// included (another copy here of the same repo does not).
     fn ask_sources(&self, scope: &AskScope) -> AppResult<Vec<Source>> {
         let projects = self.projects()?;
         let allowed = |path: &Path| {
@@ -191,12 +207,23 @@ impl Hedy {
                     .notes(Some(&project.path), Self::with_global(&project))?;
                 sources.extend(notes.into_iter().filter_map(|n| local_source(n, &projects)));
                 if let Some(team) = self.project_team_id(&project.path) {
-                    sources
-                        .extend(self.team_sources(&team, |p| p == Some(project.path.as_path()))?);
+                    let own = self.team_project_id_of(&team, &project.path);
+                    let (protected, _) = self.team_protection(&team)?;
+                    let shared =
+                        project.protected || own.as_ref().is_none_or(|id| !protected.contains(id));
+                    sources.extend(self.team_sources(&team, |id| {
+                        shared && id.is_some() && id == own.as_deref()
+                    })?);
                 }
             }
             AskScope::Team(team) => {
-                sources.extend(self.team_sources(team, |p| p.is_none_or(allowed))?);
+                let (protected, only) = self.team_protection(team)?;
+                if only {
+                    return Err(AppError::AskTeamProtected);
+                }
+                sources.extend(
+                    self.team_sources(team, |id| id.is_none_or(|id| !protected.contains(id)))?,
+                );
             }
             AskScope::Mine => {
                 let mut notes = self.store.notes(None, false)?;
@@ -205,38 +232,42 @@ impl Hedy {
                 }
                 sources.extend(notes.into_iter().filter_map(|n| local_source(n, &projects)));
                 for team in self.teams()?.into_iter().filter(|t| !t.waiting) {
-                    // A team this PC cannot read now does not stop the rest.
-                    sources.extend(
-                        self.team_sources(&team.id, |p| p.is_none_or(allowed))
+                    // A team only protected projects hold stays out; one this
+                    // PC cannot read now does not stop the rest.
+                    if let Ok((protected, false)) = self.team_protection(&team.id) {
+                        sources.extend(
+                            self.team_sources(&team.id, |id| {
+                                id.is_none_or(|id| !protected.contains(id))
+                            })
                             .unwrap_or_default(),
-                    );
+                        );
+                    }
                 }
             }
         }
         Ok(sources)
     }
 
-    /// A team's notes: its layer, and the project notes `keep` accepts (by
-    /// the project's folder here, `None` when it is not on this PC).
+    /// A team's notes: its layer, and the project notes `keep` accepts by
+    /// their team project id.
     fn team_sources(
         &self,
         team: &str,
-        keep: impl Fn(Option<&Path>) -> bool,
+        keep: impl Fn(Option<&str>) -> bool,
     ) -> AppResult<Vec<Source>> {
         let name = self.team_status(team)?.summary.name;
+        let projects = self.team_note_projects(team)?;
         Ok(self
             .team_notes(team)?
             .into_iter()
-            .filter(|n| n.team_layer || keep(n.project.as_deref()))
+            .filter(|n| n.team_layer || keep(projects.get(&n.uid).and_then(|id| id.as_deref())))
             .map(|n| Source {
                 layer: if n.team_layer {
                     SourceLayer::Team
                 } else {
                     SourceLayer::Project
                 },
-                project: n.project.as_deref().map(folder_name).or_else(|| {
-                    (!n.team_layer).then(|| tr!("otro proyecto", "another project").to_owned())
-                }),
+                project: n.project.as_deref().map(folder_name),
                 text: n.text,
                 category: n.category,
                 topic: n.topic,
@@ -361,12 +392,14 @@ mod tests {
         );
         assert_eq!(request.model.as_deref(), Some("haiku"));
         assert!(request.memory.is_none() && request.mcp.is_empty());
-        assert!(request.prompt.contains("«¿Qué color de fondo usamos?»"));
         assert!(
-            request.prompt.contains(
-                "[1] (own note, project tienda, convention) «El fondo oscuro es #0F1117»"
-            )
+            request
+                .prompt
+                .contains("Question: \"¿Qué color de fondo usamos?\"")
         );
+        assert!(request.prompt.contains(
+            "[1] where=\"own note, project tienda\" category=convention text=\"El fondo oscuro es #0F1117\""
+        ));
         assert!(!request.prompt.contains("negro puro"));
     }
 
@@ -386,7 +419,7 @@ mod tests {
         assert!(a.sources.is_empty() && a.account.is_none());
         assert!(f.agents.calls().is_empty());
         // Outside a project it runs in an empty folder of Hedy's own.
-        assert!(f.fs.dirs().contains(Path::new("/data/chats")));
+        assert!(!f.fs.dirs().contains(Path::new("/data/ask")));
 
         f.hedy
             .add_note(None, "Commits en una línea", Category::Convention)
@@ -404,6 +437,12 @@ mod tests {
         assert_eq!(a.text, None);
         assert_eq!(a.sources.len(), 1);
         assert!(a.account.is_some());
+        // Outside a project it runs in an empty folder of its own.
+        assert_eq!(
+            f.agents.last_request().launch.cwd.as_deref(),
+            Some(Path::new("/data/ask"))
+        );
+        assert!(f.fs.dirs().contains(Path::new("/data/ask")));
     }
 
     #[test]

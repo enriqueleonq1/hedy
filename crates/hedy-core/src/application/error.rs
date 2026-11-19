@@ -154,6 +154,10 @@ pub enum AppError {
     AskFailed(Option<String>),
     #[error("{}", self.message())]
     AskTimedOut,
+    /// Rule 4: every project of the team here is protected, so its notes
+    /// only go to their own account, from that project.
+    #[error("{}", self.message())]
+    AskTeamProtected,
     #[error("{}", self.message())]
     ThemeNotFound(String),
     /// Rule 3: the chosen account is at its limit; no other is used.
@@ -663,6 +667,10 @@ impl AppError {
                     "the AI gave no answer; try again"
                 ),
             },
+            Self::AskTeamProtected => tr!(
+                "las notas de ese equipo solo las lee la cuenta de su proyecto protegido: pregunta desde ese proyecto",
+                "that team's notes are only read by its protected project's account: ask from that project"
+            ),
             Self::AskTimedOut => tr!(
                 "la IA tardó demasiado en responder; vuelve a intentarlo",
                 "the AI took too long to answer; try again"
