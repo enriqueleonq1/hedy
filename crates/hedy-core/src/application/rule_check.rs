@@ -152,23 +152,34 @@ impl Hedy {
     /// repository; a change to another protected project inside it is
     /// refused (rule 4: its code only goes to its own account).
     fn rule_change(&self, target: &RuleTarget) -> AppResult<(Option<PathBuf>, Vec<FileDiff>)> {
-        let dir = match target {
+        let (dir, repo, diff) = match target {
             RuleTarget::Task(id) => {
                 let task = self.task(id)?;
                 if task.status.is_closed() {
                     return Err(AppError::TaskClosed(id.clone()));
                 }
-                return Ok((Some(task.project.clone()), self.task_diff(id)?));
+                // Its worktree is a copy of the project's repository.
+                let repo = self.repo_root(&task.project)?;
+                (task.project.clone(), repo, self.task_diff(id)?)
             }
-            RuleTarget::Staged(dir) | RuleTarget::Work(dir) | RuleTarget::Revs { dir, .. } => dir,
+            RuleTarget::Staged(dir) => {
+                let repo = self.repo_root(dir)?;
+                let diff = self.git.staged_diff(&repo)?;
+                (dir.clone(), repo, diff)
+            }
+            RuleTarget::Work(dir) => {
+                let repo = self.repo_root(dir)?;
+                let diff = self.git.work_diff(&repo)?;
+                (dir.clone(), repo, diff)
+            }
+            RuleTarget::Revs { dir, revs } => {
+                let revs = plain_revs(revs)?;
+                let repo = self.repo_root(dir)?;
+                let diff = self.git.revs_diff(&repo, &revs)?;
+                (dir.clone(), repo, diff)
+            }
         };
-        let repo = self.repo_root(dir)?;
-        let diff = match target {
-            RuleTarget::Staged(_) => self.git.staged_diff(&repo)?,
-            RuleTarget::Work(_) => self.git.work_diff(&repo)?,
-            RuleTarget::Revs { revs, .. } => self.git.revs_diff(&repo, &plain_revs(revs)?)?,
-            RuleTarget::Task(_) => unreachable!("a task returned above"),
-        };
+        let dir = dir.as_path();
         let project = self.project_for(dir)?;
         let projects = self.projects()?;
         let inside = |path: &Path| {
@@ -204,9 +215,9 @@ impl Hedy {
     }
 }
 
-/// A range or a commit as git reads it, never as an option or a file: a
-/// lone commit means its own change (`a1b2c3^!`), and `rev:path` (a file's
-/// contents) is refused, since it could compare a protected file.
+/// A range or a commit as git reads it, never as an option or a file:
+/// `rev:path` (a file's contents) is refused, since it could compare a
+/// protected file.
 fn plain_revs(revs: &str) -> AppResult<String> {
     let revs = revs.trim();
     let plain = !revs.is_empty()
@@ -217,11 +228,7 @@ fn plain_revs(revs: &str) -> AppResult<String> {
     if !plain {
         return Err(AppError::RulesBadRevs(revs.to_owned()));
     }
-    Ok(if revs.contains("..") || revs.ends_with("^!") {
-        revs.to_owned()
-    } else {
-        format!("{revs}^!")
-    })
+    Ok(revs.to_owned())
 }
 
 #[cfg(test)]
@@ -439,12 +446,7 @@ mod tests {
             );
         }
         assert!(f.git.log().is_empty());
-        // One commit means its own change; a range stays as written.
-        for (revs, sent) in [
-            ("HEAD~1", "diff HEAD~1^!"),
-            ("a1b2c3^!", "diff a1b2c3^!"),
-            ("main..HEAD", "diff main..HEAD"),
-        ] {
+        for (revs, sent) in [("HEAD~1", "diff HEAD~1"), ("main..HEAD", "diff main..HEAD")] {
             let target = RuleTarget::Revs {
                 dir: f.dir("/code/tienda"),
                 revs: revs.into(),

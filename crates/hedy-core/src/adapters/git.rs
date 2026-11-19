@@ -25,12 +25,18 @@ const DIFF_OPTIONS: &[&str] = &[
     "--dst-prefix=b/",
     "-M",
 ];
-/// The empty tree: what a repository with no commit is compared to.
-const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 /// Most new, not yet added files read for the uncommitted work.
 const UNTRACKED_MAX: usize = 200;
 /// Larger new files are named only, as binary ones.
 const UNTRACKED_BYTES_MAX: u64 = 512 * 1024;
+
+/// The empty tree (what a repository with no commit, or a first commit, is
+/// compared to), in the repository's own hash.
+fn empty_tree(repo: &Path) -> PortResult<String> {
+    Ok(git(repo, &["hash-object", "-t", "tree", "/dev/null"])?
+        .trim()
+        .to_owned())
+}
 
 fn diff_args<'a>(before: &[&'a str], after: &[&'a str]) -> Vec<&'a str> {
     let mut args = vec!["diff"];
@@ -56,8 +62,12 @@ fn untracked_file(repo: &Path, path: &str) -> FileDiff {
         return file;
     }
     let full = repo.join(path);
-    let small =
-        fs::symlink_metadata(&full).is_ok_and(|m| m.is_file() && m.len() <= UNTRACKED_BYTES_MAX);
+    // Never through a link: a symbolic one is not a file, and a hard one
+    // may be a protected file under another name.
+    let small = fs::symlink_metadata(&full).is_ok_and(|m| {
+        use std::os::unix::fs::MetadataExt as _;
+        m.is_file() && m.len() <= UNTRACKED_BYTES_MAX && m.nlink() == 1
+    });
     let text = small
         .then(|| fs::read(&full).ok())
         .flatten()
@@ -317,11 +327,11 @@ impl Git for GitCli {
             .status
             .success()
         {
-            "HEAD"
+            "HEAD".to_owned()
         } else {
-            EMPTY_TREE
+            empty_tree(repo)?
         };
-        let patch = git(repo, &diff_args(&[], &[base, "--"]))?;
+        let patch = git(repo, &diff_args(&[], &[&base, "--"]))?;
         let mut files = parse_unified(&patch);
         let others = git(
             repo,
@@ -346,13 +356,40 @@ impl Git for GitCli {
 
     fn revs_diff(&self, repo: &Path, revs: &str) -> PortResult<Vec<FileDiff>> {
         // Never read as an option (`--output=…` writes a file), nor as a
-        // path (`--` after it).
-        if revs.starts_with('-') {
+        // path (`--` after it), nor as a file's contents (`HEAD:.env`).
+        if revs.starts_with('-') || revs.contains(':') {
             return Err(PortError::new(format!(
                 "git diff: «{revs}» no es una revisión"
             )));
         }
-        let patch = git(repo, &diff_args(&[], &[revs, "--"]))?;
+        if revs.contains("..") {
+            let patch = git(repo, &diff_args(&[], &[revs, "--"]))?;
+            return Ok(parse_unified(&patch));
+        }
+        // One commit: its own change, against its first parent (a merge's
+        // too), or against nothing for a first commit.
+        let commit = revs.strip_suffix("^!").unwrap_or(revs);
+        let line = git(
+            repo,
+            &[
+                "rev-list",
+                "--parents",
+                "-n",
+                "1",
+                "--end-of-options",
+                commit,
+            ],
+        )?;
+        let mut ids = line.split_whitespace();
+        let id = ids
+            .next()
+            .ok_or_else(|| PortError::new(format!("git rev-list: «{commit}» no es un commit")))?
+            .to_owned();
+        let parent = match ids.next() {
+            Some(parent) => parent.to_owned(),
+            None => empty_tree(repo)?,
+        };
+        let patch = git(repo, &diff_args(&[], &[&parent, &id, "--"]))?;
         Ok(parse_unified(&patch))
     }
 
@@ -734,9 +771,9 @@ mod tests {
     fn diffs_uncommitted_work_and_ranges_without_reading_options() {
         let (_tmp, repo) = repo();
         let g = GitCli;
-        assert!(g.revs_diff(&repo, "HEAD").unwrap().is_empty());
+        assert!(g.work_diff(&repo).unwrap().is_empty());
         fs::write(repo.join("app.py"), "def crear():\n    avisar()\n").unwrap();
-        let work = g.revs_diff(&repo, "HEAD").unwrap();
+        let work = g.work_diff(&repo).unwrap();
         assert_eq!(work.len(), 1);
         assert_eq!(work[0].additions, 1);
         git(&repo, &["checkout", "-qb", "feat"]).unwrap();
@@ -755,6 +792,8 @@ mod tests {
         fs::write(repo.join("app.py"), "def crear():\n    avisar(1)\n").unwrap();
         fs::write(repo.join("otro.py"), "y = 2\nz = 3\n").unwrap();
         fs::write(repo.join(".env"), "KEY=secret\n").unwrap();
+        // A hard link to it is never read either.
+        fs::hard_link(repo.join(".env"), repo.join("zz.txt")).unwrap();
         let work = g.work_diff(&repo).unwrap();
         let summary: Vec<(&str, u32, usize)> = work
             .iter()
@@ -762,12 +801,49 @@ mod tests {
             .collect();
         assert_eq!(
             summary,
-            [("app.py", 1, 1), (".env", 0, 0), ("otro.py", 2, 1)]
+            [
+                ("app.py", 1, 1),
+                (".env", 0, 0),
+                ("otro.py", 2, 1),
+                ("zz.txt", 0, 0)
+            ]
         );
+        let lines = work.iter().flat_map(|f| &f.hunks).flat_map(|h| &h.lines);
+        assert!(lines.clone().all(|l| !l.text.contains("secret")));
+        fs::remove_file(repo.join("zz.txt")).unwrap();
+        assert!(g.revs_diff(&repo, "HEAD:.env..HEAD:app.py").is_err());
         let out = repo.join("written");
         let option = format!("--output={}", out.display());
         assert!(g.revs_diff(&repo, &option).is_err());
         assert!(!out.exists());
+    }
+
+    #[test]
+    fn one_commit_is_its_own_change_first_and_merge_commits_too() {
+        let (_tmp, repo) = repo();
+        let g = GitCli;
+        // The first commit: against nothing, not the working tree.
+        fs::write(repo.join("app.py"), "cambiado\n").unwrap();
+        let first = g.revs_diff(&repo, "HEAD").unwrap();
+        assert_eq!(first.len(), 1);
+        assert_eq!((first[0].additions, first[0].deletions), (2, 0));
+        git(&repo, &["commit", "-qam", "Cambio"]).unwrap();
+        let one = g.revs_diff(&repo, "HEAD").unwrap();
+        assert_eq!((one[0].additions, one[0].deletions), (1, 2));
+        assert_eq!(g.revs_diff(&repo, "HEAD^!").unwrap(), one);
+        // A merge: what it brings over its first parent.
+        git(&repo, &["checkout", "-qb", "rama", "HEAD~1"]).unwrap();
+        fs::write(repo.join("otro.py"), "x = 1\n").unwrap();
+        git(&repo, &["add", "otro.py"]).unwrap();
+        git(&repo, &["commit", "-qm", "Otro"]).unwrap();
+        git(&repo, &["checkout", "-q", "main"]).unwrap();
+        git(&repo, &["merge", "-q", "--no-edit", "--no-ff", "rama"]).unwrap();
+        let merge = g.revs_diff(&repo, "HEAD").unwrap();
+        assert_eq!(
+            merge.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(),
+            ["otro.py"]
+        );
+        assert!(g.revs_diff(&repo, "no-such-thing").is_err());
     }
 
     #[test]

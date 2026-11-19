@@ -285,6 +285,8 @@ enum LeftOut {
     Lock,
     Generated,
     Deleted,
+    /// A rename, a mode change, only removed lines: nothing to judge.
+    NoAddedLines,
 }
 
 impl LeftOut {
@@ -295,6 +297,7 @@ impl LeftOut {
             Self::Lock => "lock file, contents not sent",
             Self::Generated => "generated file, contents not sent",
             Self::Deleted => "deleted",
+            Self::NoAddedLines => "no added lines",
         }
     }
 }
@@ -316,6 +319,13 @@ fn left_out(file: &FileDiff) -> Option<LeftOut> {
         Some(LeftOut::Generated)
     } else if file.status == FileStatus::Deleted {
         Some(LeftOut::Deleted)
+    } else if !file
+        .hunks
+        .iter()
+        .flat_map(|h| &h.lines)
+        .any(|l| l.kind == LineKind::Added)
+    {
+        Some(LeftOut::NoAddedLines)
     } else {
         None
     }
@@ -344,7 +354,13 @@ fn quoted_path(shown: &str) -> String {
 
 /// A line of code as sent: hidden characters shown, cut at [`LINE_CHARS`].
 fn one_line(text: &str) -> String {
-    let shown = reveal_hidden(text.trim_end_matches(['\r', '\n']));
+    // Cut first: a line of megabytes is not walked whole.
+    let start: String = text
+        .trim_end_matches(['\r', '\n'])
+        .chars()
+        .take(LINE_CHARS + 1)
+        .collect();
+    let shown = reveal_hidden(&start);
     let mut cut: String = shown.chars().take(LINE_CHARS).collect();
     if cut.chars().count() < shown.chars().count() {
         cut.push('…');
@@ -427,20 +443,21 @@ pub fn parse_breaks(raw: &str, change: &SentChange, rules: usize) -> Vec<RuleBre
         let Some(rest) = break_line(line) else {
             continue;
         };
-        let Some((path, number, rest)) = place(rest) else {
+        let Some((path, first, last, rest)) = place(rest) else {
             continue;
         };
         let shown = path.strip_prefix("./").unwrap_or(&path);
-        let Some((real, code)) = change
-            .added
-            .get(shown)
-            .and_then(|lines| lines.get(&number))
-            .zip(change.paths.get(shown))
-            .map(|(code, real)| (real, code))
+        let (Some(lines), Some(real)) = (change.added.get(shown), change.paths.get(shown)) else {
+            continue;
+        };
+        // In a range, its first added line (an unchanged one may open it).
+        let Some((number, code)) = (first..=last.min(first.saturating_add(50)))
+            .find_map(|n| lines.get(&n).map(|code| (n, code)))
         else {
             continue;
         };
-        let (cited, rest) = citations(rest.trim_start(), rules);
+        let rest = rest.trim_start().trim_start_matches(['-', '—', ':', ' ']);
+        let (cited, rest) = citations(rest, rules);
         // The fix is after the last " => ": code in the message may have one.
         let (message, fix) = match rest.rsplit_once(" => ") {
             Some((message, fix)) => (sentence(message), Some(sentence(fix))),
@@ -472,19 +489,25 @@ pub fn parse_breaks(raw: &str, change: &SentChange, rules: usize) -> Vec<RuleBre
 /// What follows `BREAK` on a line of the answer, without the list marker,
 /// bold or colon around it.
 fn break_line(line: &str) -> Option<&str> {
-    let mut line = line
-        .trim()
-        .trim_start_matches(['-', '*', '•', '>', '`', '_', ' ']);
+    let trimmed = line.trim();
+    let mut line = trimmed.trim_start_matches(['-', '*', '•', '>', '`', '_', ' ']);
+    let lead = &trimmed[..trimmed.len() - line.len()];
     // A numbered list: `1. BREAK`, `2) BREAK`.
     let digits = line.len() - line.trim_start_matches(|c: char| c.is_ascii_digit()).len();
     if digits > 0 && line[digits..].starts_with(['.', ')']) {
         line = line[digits + 1..].trim_start_matches(['*', '_', '`', ' ']);
     }
     let rest = strip_prefix_ignore_case(line, BREAK)?;
-    Some(
-        rest.trim_start_matches(['*', '_', ':', ' '])
-            .trim_end_matches(['`', '*', '_', ' ']),
-    )
+    let mut rest = rest.trim_start_matches(['*', '_', ':', ' ']);
+    // A backtick or bold around the whole line closes at its end; one in
+    // the fix (`user_id_`, `` `userName` ``) is kept.
+    if lead.contains('`') {
+        rest = rest.strip_suffix('`').unwrap_or(rest);
+    }
+    if lead.contains("**") && rest.matches("**").count() % 2 == 1 {
+        rest = rest.strip_suffix("**").unwrap_or(rest);
+    }
+    Some(rest)
 }
 
 fn strip_prefix_ignore_case<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
@@ -493,10 +516,10 @@ fn strip_prefix_ignore_case<'a>(text: &'a str, prefix: &str) -> Option<&'a str> 
         .then(|| &text[prefix.len()..])
 }
 
-/// `"path":14 rest`, `` `path`:14 ``, `path:14`, `path:L14:3` or
-/// `path:14-16` (a range gives its first line): the path, the line and what
+/// `"path":14 rest`, `` `path`:14 ``, `path:14`, `path:L14:3`, `"path"
+/// line 14` or `path:14-16`: the path, the first and last line, and what
 /// follows.
-fn place(text: &str) -> Option<(String, u32, &str)> {
+fn place(text: &str) -> Option<(String, u32, u32, &str)> {
     let (path, after) = if let Some(quoted) = text.strip_prefix('"') {
         let mut path = String::new();
         let mut chars = quoted.char_indices();
@@ -529,16 +552,35 @@ fn place(text: &str) -> Option<(String, u32, &str)> {
         })?;
         (word[..at].to_owned(), &text[at..])
     };
-    let after = after.trim_start_matches('`').strip_prefix(':')?;
-    let after = after.trim_start().trim_start_matches(['+', 'L', 'l']);
-    let digits = after.len() - after.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-    let number: u32 = after[..digits].parse().ok()?;
-    let mut rest = &after[digits..];
-    // A range names its first line; a column is left out.
-    if let Some(more) = rest.strip_prefix(['-', '–', ':']) {
+    let after = after.trim_start_matches('`');
+    let after = match after.strip_prefix(':') {
+        Some(after) => after,
+        None => {
+            let spaced = after.trim_start();
+            strip_prefix_ignore_case(spaced, "line ")
+                .or_else(|| strip_prefix_ignore_case(spaced, "línea "))?
+        }
+    };
+    let (first, mut rest) = line_number(after)?;
+    let mut last = first;
+    if let Some(more) = rest.strip_prefix(['-', '–']) {
+        // A range: `14-16`.
+        if let Some((to, after)) = line_number(more) {
+            last = to.max(first);
+            rest = after;
+        }
+    } else if let Some(more) = rest.strip_prefix(':') {
+        // A column is left out.
         rest = more.trim_start_matches(|c: char| c.is_ascii_digit());
     }
-    Some((path, number, rest))
+    Some((path, first, last, rest))
+}
+
+/// A line number (`14`, `+14`, `L14`) and what follows it.
+fn line_number(text: &str) -> Option<(u32, &str)> {
+    let text = text.trim_start().trim_start_matches(['+', 'L', 'l']);
+    let digits = text.len() - text.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    Some((text[..digits].parse().ok()?, &text[digits..]))
 }
 
 /// The rules cited at the start of `text` (`[1]`, `[1, 3]`, `[R1]`,
@@ -780,10 +822,20 @@ mod tests {
             sent.files,
             "every file named has lines"
         );
-        // Only removed lines: nothing to judge.
+        // Only removed lines, a rename, a mode change: named, nothing to
+        // judge, and the change is not "too long" for them.
         let gone = file("a.ts", vec![line(LineKind::Removed, Some(1), None, "x")]);
-        let sent = change_for_prompt(&[gone]);
-        assert_eq!((sent.files, sent.added.len()), (0, 0));
+        let mut moved = file("b.ts", Vec::new());
+        moved.status = FileStatus::Renamed;
+        moved.old_path = Some("c.ts".into());
+        moved.hunks.clear();
+        let sent = change_for_prompt(&[gone, moved, clientes()]);
+        assert_eq!((sent.files, sent.added.len()), (1, 1));
+        assert!(!sent.truncated);
+        assert!(
+            sent.text
+                .contains("File \"b.ts\" (renamed): no added lines\n")
+        );
     }
 
     #[test]
@@ -839,6 +891,29 @@ mod tests {
                 (14, 1, "cuatro", None),
                 (14, 3, "cuatro", None),
                 (13, 3, "cinco", None),
+            ]
+        );
+        // A range opened by an unchanged line, a dash before the rules, a
+        // fix ending in an underscore or a backtick, and `line 14`.
+        let more = parse_breaks(
+            "BREAK \"src/api/clientes.ts\":12-13 - [1] cinco => renombra a user_id_\n\
+             BREAK \"src/api/clientes.ts\" line 14 [2] seis => usa `userName`\n\
+             `BREAK \"src/api/clientes.ts\":14 [3] siete`\n\
+             **BREAK \"src/api/clientes.ts\":13 [3] ocho**",
+            &sent,
+            3,
+        );
+        let got: Vec<(u32, usize, &str, Option<&str>)> = more
+            .iter()
+            .map(|b| (b.line, b.rule, b.message.as_str(), b.fix.as_deref()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                (13, 1, "cinco", Some("renombra a user_id_")),
+                (14, 2, "seis", Some("usa `userName`")),
+                (14, 3, "siete", None),
+                (13, 3, "ocho", None),
             ]
         );
         // `[1-3]` on the same line adds nothing new: each (line, rule) once.

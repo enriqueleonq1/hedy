@@ -523,7 +523,9 @@ pub trait Git: Send + Sync {
     fn list_files(&self, repo: &Path) -> PortResult<Vec<String>>;
     /// What is staged in `repo` (`git diff --cached`); nothing is staged here.
     fn staged_diff(&self, repo: &Path) -> PortResult<Vec<FileDiff>>;
-    /// `git diff <revs>` in `repo`: `main..HEAD`, `a1b2c3^!`... Read only.
+    /// Commits in `repo`: a range (`main..HEAD`), or one commit's own change
+    /// (`a1b2c3`: against its first parent, or nothing for a first
+    /// commit). Read only.
     fn revs_diff(&self, repo: &Path, revs: &str) -> PortResult<Vec<FileDiff>>;
     /// What is not committed yet in `repo`, staged or not, new files not
     /// added yet included (protected ones only named, never read).
