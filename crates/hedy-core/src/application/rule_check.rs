@@ -162,7 +162,7 @@ impl Hedy {
     /// repository; a change to another protected project inside it is
     /// refused (rule 4: its code only goes to its own account).
     fn rule_change(&self, target: &RuleTarget) -> AppResult<(Option<PathBuf>, Vec<FileDiff>)> {
-        let (dir, repo, diff) = match target {
+        let (dir, roots, diff) = match target {
             RuleTarget::Task(id) => {
                 let task = self.task(id)?;
                 if task.status.is_closed() {
@@ -170,7 +170,7 @@ impl Hedy {
                 }
                 // Its worktree is a copy of the project's repository.
                 let repo = self.repo_root(&task.project)?;
-                (task.project.clone(), repo, self.task_diff(id)?)
+                (task.project.clone(), vec![repo], self.task_diff(id)?)
             }
             RuleTarget::Staged(dir) | RuleTarget::Work(dir) | RuleTarget::Revs { dir, .. } => {
                 let revs = match target {
@@ -183,21 +183,37 @@ impl Hedy {
                     (_, Some(revs)) => self.git.revs_diff(&worktree, &revs)?,
                     _ => self.git.work_diff(&worktree)?,
                 };
-                // In a worktree (a task's, or one of the user's), the
-                // projects are where its main checkout has the same folder.
                 let main = self.git.main_root(&worktree)?;
                 let dir = self.fs.canonicalize(dir)?;
-                let rel = dir.strip_prefix(&worktree).unwrap_or(Path::new(""));
-                (main.join(rel), main, diff)
+                let projects = self.projects()?;
+                // A project registered in the worktree itself (a second
+                // checkout used as a project of its own) is the folder's;
+                // else, in a worktree (a task's, or one of the user's), the
+                // projects are where its main checkout has the same folder.
+                let own =
+                    find_for_dir(&projects, &dir).is_some_and(|p| p.path.starts_with(&worktree));
+                let dir = if own {
+                    dir
+                } else {
+                    main.join(dir.strip_prefix(&worktree).unwrap_or(Path::new("")))
+                };
+                let mut roots = vec![worktree];
+                if !roots.contains(&main) {
+                    roots.push(main);
+                }
+                (dir, roots, diff)
             }
         };
         let projects = self.projects()?;
         let project = find_for_dir(&projects, &dir).cloned();
+        // A project's folder in the change, by its place in either checkout.
         let inside = |path: &Path| {
-            path.strip_prefix(&repo)
-                .ok()
-                .filter(|rel| !rel.as_os_str().is_empty())
-                .map(|rel| format!("{}/", rel.to_string_lossy()))
+            roots.iter().find_map(|root| {
+                path.strip_prefix(root)
+                    .ok()
+                    .filter(|rel| !rel.as_os_str().is_empty())
+                    .map(|rel| format!("{}/", rel.to_string_lossy()))
+            })
         };
         let under = |file: &FileDiff, folder: &str| {
             file.path.starts_with(folder)
@@ -548,6 +564,9 @@ mod tests {
             ("I think it is fine", true),
             ("BREAK \"otro.ts\":3 [1] un archivo que no está", true),
             ("no_breaks", false),
+            ("`NO_BREAKS`.", false),
+            // The marker does not cover for a break that was dropped.
+            ("BREAK \"zzz.js\":1 [1] x\nOtherwise NO_BREAKS", true),
             ("BREAK \"src/api/clientes.ts\":14 [1] snake", false),
         ] {
             answer(&f, raw);
@@ -598,6 +617,38 @@ mod tests {
         assert_eq!(check.account.unwrap().id.as_str(), "trabajo");
         let prompt = f.agents.last_request().prompt;
         assert!(prompt.contains("banco/src/pagos.ts") && !prompt.contains("inicio.ts"));
+    }
+
+    #[test]
+    fn a_worktree_that_is_a_project_of_its_own_keeps_its_account() {
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        f.add_claude("Trabajo");
+        f.fs.add_git_root("/code/web");
+        f.fs.add_git_root("/code/web-wt");
+        f.hedy
+            .use_account(&f.dir("/code/web"), "personal", None)
+            .unwrap();
+        f.hedy
+            .use_account(&f.dir("/code/web-wt"), "trabajo", Some(true))
+            .unwrap();
+        f.git.set_main_root("/code/web");
+        f.hedy
+            .add_note(
+                Some(&f.dir("/code/web-wt")),
+                "Los importes van en céntimos",
+                Category::Rule,
+            )
+            .unwrap();
+        f.git.set_staged(change());
+        answer(&f, "NO_BREAKS");
+        let check = f
+            .hedy
+            .check_rules(&RuleTarget::Staged(f.dir("/code/web-wt")), None, None)
+            .unwrap();
+        assert_eq!(check.account.unwrap().id.as_str(), "trabajo");
+        let texts: Vec<&str> = check.rules.iter().map(|r| r.text.as_str()).collect();
+        assert_eq!(texts, ["Los importes van en céntimos"]);
     }
 
     #[test]

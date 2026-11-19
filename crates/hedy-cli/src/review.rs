@@ -100,7 +100,17 @@ pub fn review(hedy: &Hedy, dir: &Path, options: ReviewOptions) -> Result<()> {
         // Nothing to check is no failure: `git commit --amend` in a hook.
         Err(AppError::RulesNoChanges) => {
             if options.json {
-                let value = json!({ "status": Status::NoChanges.as_str() });
+                // The same keys as a check, so a script reads `.breaks` alike.
+                let value = json!({
+                    "status": Status::NoChanges.as_str(),
+                    "breaks": [],
+                    "rules": [],
+                    "files": 0,
+                    "protected": [],
+                    "truncated": false,
+                    "account": null,
+                    "model": options.model,
+                });
                 println!("{}", safe_json(&value)?);
             } else {
                 println!(

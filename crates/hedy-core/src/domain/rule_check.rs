@@ -419,10 +419,13 @@ pub fn rules_prompt(rules: &[Source], change: &str) -> String {
 }
 
 /// Whether an answer says, in a way that can be read, what it found: the
-/// no-breaks marker, or at least one break line. Anything else (prose, an
+/// no-breaks marker alone, or at least one kept break line. Anything else (prose, an
 /// error) must not pass for a clean change.
 pub fn answer_is_readable(raw: &str, breaks: &[RuleBreak]) -> bool {
-    !breaks.is_empty() || raw.to_ascii_uppercase().contains(NO_BREAKS)
+    // Only the marker alone: beside a dropped break line it would hide it.
+    let bare =
+        raw.trim_matches(|c: char| (c.is_ascii_punctuation() && c != '_') || c.is_whitespace());
+    !breaks.is_empty() || bare.eq_ignore_ascii_case(NO_BREAKS)
 }
 
 /// A line of the change that goes against a rule.
