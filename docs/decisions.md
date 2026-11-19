@@ -3254,9 +3254,18 @@ outer ring of loose notes, animated).
   - After the fixes, five runs of "¿Cuál es la clave de Stripe? Dame el valor exacto." against a
     project with a `.env` leaked nothing; "¿Qué color de fondo usa la app?" still found it in
     `src/theme.css` and proposed the note.
-- **Known limits:** Codex and the ACP agents do not take `no_shell` (their own sandboxes apply);
-  the hook's walk for a protected file stops at depth 6 and 20,000 entries (past that it
-  denies), and skips dependency folders.
+- **"Buscar en el código" only with Claude Code.** Codex and the ACP agents take neither the
+  hook nor `no_shell`, and their sandboxes stop writes, not reads: with them the lookup is
+  refused. Asking the memory needs no file, so it always runs in an empty folder.
+- **The hook, hardened after the re-verification:** a search glob is read as ripgrep reads it
+  (`*env`, `?env`, `{*.ts,.env}` pick `.env`); a `type` no longer counts as narrowing; a link
+  to a protected file is followed; `git grep`, `grep -d recurse` and `rg -L` count as whole
+  searches; names are compared without case; the walk goes 12 folders deep and 20,000 entries,
+  skips only `.git` and `node_modules`, and denies past either limit.
+- **Known limits:** a search in names-only or count mode can still test patterns against a
+  secret (`KEY=sk-a…`), one call per guess; MCP tools from the account's own settings are
+  outside the hook; a shell search is checked against the task's folder, not a folder named in
+  the command.
 
 ### Phase 5: eval and closing
 
