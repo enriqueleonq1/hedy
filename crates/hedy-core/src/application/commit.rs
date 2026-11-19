@@ -126,7 +126,7 @@ impl Hedy {
         Ok(self.git.commit_staged(&repo, &message, edit)?)
     }
 
-    fn repo_root(&self, dir: &Path) -> AppResult<PathBuf> {
+    pub(super) fn repo_root(&self, dir: &Path) -> AppResult<PathBuf> {
         let dir = self.fs.canonicalize(dir)?;
         Ok(self.fs.git_root(&dir).ok_or(ShipError::NotARepository)?)
     }

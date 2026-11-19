@@ -250,6 +250,21 @@ impl Git for GitCli {
         Ok(parse_unified(&patch))
     }
 
+    fn revs_diff(&self, repo: &Path, revs: &str) -> PortResult<Vec<FileDiff>> {
+        // Never read as an option (`--output=…` writes a file), nor as a
+        // path (`--` after it).
+        if revs.starts_with('-') {
+            return Err(PortError::new(format!(
+                "git diff: «{revs}» no es una revisión"
+            )));
+        }
+        let patch = git(
+            repo,
+            &["diff", "--no-color", "--no-ext-diff", "-M", revs, "--"],
+        )?;
+        Ok(parse_unified(&patch))
+    }
+
     fn commit_staged(&self, repo: &Path, message: &str, edit: bool) -> PortResult<()> {
         // In the repository's own git folder, so nothing shows up as a change.
         let file = git(repo, &["rev-parse", "--git-path", "HEDY_COMMIT_MSG"])?;
@@ -622,6 +637,32 @@ mod tests {
         git(tmp.path(), &["init", "-q", "-b", "main"]).unwrap();
         let err = GitCli.head_commit(tmp.path()).unwrap_err();
         assert!(err.message.contains("no tiene commits"));
+    }
+
+    #[test]
+    fn diffs_uncommitted_work_and_ranges_without_reading_options() {
+        let (_tmp, repo) = repo();
+        let g = GitCli;
+        assert!(g.revs_diff(&repo, "HEAD").unwrap().is_empty());
+        fs::write(repo.join("app.py"), "def crear():\n    avisar()\n").unwrap();
+        let work = g.revs_diff(&repo, "HEAD").unwrap();
+        assert_eq!(work.len(), 1);
+        assert_eq!(work[0].additions, 1);
+        git(&repo, &["checkout", "-qb", "feat"]).unwrap();
+        git(&repo, &["commit", "-qam", "Avisa"]).unwrap();
+        fs::write(repo.join("nuevo.py"), "x = 1\n").unwrap();
+        git(&repo, &["add", "nuevo.py"]).unwrap();
+        git(&repo, &["commit", "-qm", "Nuevo"]).unwrap();
+        let range = g.revs_diff(&repo, "main..feat").unwrap();
+        assert_eq!(
+            range.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(),
+            ["app.py", "nuevo.py"]
+        );
+        // Never read as an option.
+        let out = repo.join("written");
+        let option = format!("--output={}", out.display());
+        assert!(g.revs_diff(&repo, &option).is_err());
+        assert!(!out.exists());
     }
 
     #[test]
