@@ -1038,6 +1038,14 @@ impl Hedy {
         self.space_is_set_up(&space).ok()?.then_some(space)
     }
 
+    /// The id of the team that holds the project in `path`, if any.
+    pub(crate) fn project_team_id(&self, path: &Path) -> Option<String> {
+        match self.project_team(path)? {
+            Space::Team(id) => Some(id),
+            Space::Personal => None,
+        }
+    }
+
     /// A team's notes as its replica holds them, with the name an admin
     /// wrote for each author: what an agent reads (no status, no projects).
     fn team_note_bodies(&self, space: &Space) -> Option<Vec<(Scope, String, TeamNoteBody)>> {

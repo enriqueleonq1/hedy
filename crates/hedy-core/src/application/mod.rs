@@ -2,6 +2,7 @@
 
 mod accounts;
 mod activity;
+mod ask;
 mod attachments;
 mod briefing;
 mod carry;
@@ -44,6 +45,7 @@ use std::sync::{Arc, Mutex};
 
 pub use accounts::NewAccount;
 pub use activity::{MAX_FINISHED, RECENT_HOURS, TaskActivity};
+pub use ask::{AskScope, MemoryAnswer};
 pub use attachments::NewImage;
 pub use carry::{Carry, ConversationContext};
 pub use code::{

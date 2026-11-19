@@ -143,6 +143,17 @@ pub enum AppError {
     SummaryFailed(Option<String>),
     #[error("{}", self.message())]
     SummaryTimedOut,
+    /// A question to the memory with no words.
+    #[error("{}", self.message())]
+    AskEmpty,
+    /// Rule 3: the account that answers is at its limit; no other is used.
+    #[error("{}", self.message())]
+    AskAtLimit { account: String },
+    /// No usable answer came back (with the agent's error, if any).
+    #[error("{}", self.message())]
+    AskFailed(Option<String>),
+    #[error("{}", self.message())]
+    AskTimedOut,
     #[error("{}", self.message())]
     ThemeNotFound(String),
     /// Rule 3: the chosen account is at its limit; no other is used.
@@ -633,6 +644,28 @@ impl AppError {
             Self::SummaryTimedOut => tr!(
                 "la IA tardó demasiado en resumir; vuelve a intentarlo o lleva las preguntas tal cual",
                 "the AI took too long to summarize; try again or carry the questions as they are"
+            ),
+            Self::AskEmpty => tr!(
+                "escribe una pregunta para la memoria",
+                "write a question for the memory"
+            ),
+            Self::AskAtLimit { account } => tr!(
+                "la cuenta «{account}» está en su límite. Hedy no usa otra cuenta: elige otra tú o espera a que se renueve",
+                "account «{account}» is at its limit. Hedy does not use another account: pick another one yourself or wait for it to renew"
+            ),
+            Self::AskFailed(detail) => match detail {
+                Some(detail) => tr!(
+                    "no se pudo responder: {detail}",
+                    "could not answer: {detail}"
+                ),
+                None => tr!(
+                    "la IA no devolvió una respuesta; vuelve a intentarlo",
+                    "the AI gave no answer; try again"
+                ),
+            },
+            Self::AskTimedOut => tr!(
+                "la IA tardó demasiado en responder; vuelve a intentarlo",
+                "the AI took too long to answer; try again"
             ),
             Self::ThemeNotFound(id) => {
                 tr!("no existe el tema «{id}»", "theme «{id}» does not exist")

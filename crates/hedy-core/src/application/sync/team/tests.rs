@@ -2052,3 +2052,100 @@ fn a_join_cancelled_while_its_inviter_could_not_push_lets_nobody_in() {
     assert_eq!(people(&ana).len(), 1);
     assert!(server.file(&team_layout::offer(invite.number)).is_some());
 }
+
+// ── Asking the memory (§36) ─────────────────────────────────────────────
+
+#[test]
+fn a_question_in_a_team_project_reads_the_team_with_its_authors() {
+    use crate::application::AskScope;
+    use crate::domain::ask::SourceLayer;
+
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    ana.f
+        .hedy
+        .team_add_note(
+            &ana.team,
+            None,
+            "Fondo oscuro #0F1117",
+            Category::Convention,
+            None,
+        )
+        .unwrap();
+    luis.f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            Some(&luis.project),
+            "Los modales van sobre el panel",
+            Category::Convention,
+            None,
+        )
+        .unwrap();
+    luis.f
+        .hedy
+        .add_note(
+            Some(&luis.project),
+            "Mi atajo para el fondo",
+            Category::Preference,
+        )
+        .unwrap();
+    ana.sync();
+    luis.sync();
+    ana.sync();
+    luis.f
+        .agents
+        .reply_on_start(vec![crate::domain::AgentEvent::Finished {
+            ok: true,
+            summary: "Fondo #0F1117 [1].".into(),
+            duration_ms: None,
+        }]);
+
+    let a = luis
+        .f
+        .hedy
+        .ask_memory(
+            "¿Qué fondo usamos?",
+            &AskScope::Project(luis.project.clone()),
+            None,
+            None,
+        )
+        .unwrap();
+    let layers: Vec<(SourceLayer, Option<&str>)> = a
+        .sources
+        .iter()
+        .map(|s| (s.layer, s.author.as_deref()))
+        .collect();
+    assert!(layers.contains(&(SourceLayer::Team, Some("Ana"))));
+    assert!(layers.contains(&(SourceLayer::Project, Some("Luis"))));
+    assert!(layers.contains(&(SourceLayer::Mine, None)));
+    let prompt = luis.f.agents.last_request().prompt;
+    assert!(
+        prompt
+            .contains("(team Tienda SA, every project, by Ana, convention) «Fondo oscuro #0F1117»")
+    );
+    assert!(prompt.contains("(team Tienda SA, project app, by Luis, convention)"));
+
+    // The team alone: no note of this PC's own.
+    luis.f
+        .agents
+        .reply_on_start(vec![crate::domain::AgentEvent::Finished {
+            ok: true,
+            summary: "NOT_WRITTEN".into(),
+            duration_ms: None,
+        }]);
+    let a = luis
+        .f
+        .hedy
+        .ask_memory(
+            "¿Qué fondo usamos?",
+            &AskScope::Team(luis.team.clone()),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(a.text, None);
+    assert!(a.sources.iter().all(|s| s.layer != SourceLayer::Mine));
+    assert_eq!(a.sources.len(), 2);
+}
