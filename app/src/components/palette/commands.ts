@@ -133,7 +133,7 @@ export function usePaletteCommands({
   commands.push(
     { id: "nav:welcome", group: "nav", label: t("shell.home"), run: () => onNavigate({ screen: "welcome" }) },
     { id: "nav:activity", group: "nav", label: t("activity.title"), run: () => onNavigate({ screen: "activity" }) },
-    { id: "nav:ask", group: "nav", label: t("ask.nav"), run: () => onNavigate({ screen: "ask" }) },
+    { id: "nav:ask", group: "nav", label: t("ask.title"), run: () => onNavigate({ screen: "ask" }) },
     {
       id: "nav:accounts",
       group: "nav",

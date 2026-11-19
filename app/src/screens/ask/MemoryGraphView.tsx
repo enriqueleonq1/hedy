@@ -97,7 +97,6 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
     let lastShowAll = 0;
     let focusAt = 0;
     const start = performance.now();
-    let query = { x: 0, y: 0 };
 
     const point = (e: MouseEvent) => {
       const box = el.getBoundingClientRect();
@@ -204,9 +203,8 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
         if (citedNodes.length > 0) {
           const x = citedNodes.reduce((sum, n) => sum + n.x, 0) / citedNodes.length;
           const y = citedNodes.reduce((sum, n) => sum + n.y, 0) / citedNodes.length;
-          query = { x, y: y - 16 };
-          c.tx = query.x;
-          c.ty = query.y;
+          c.tx = x;
+          c.ty = y;
           c.tz = 1.6;
         }
       } else if (!ready) {
@@ -270,8 +268,9 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
 
       // The question, joined to the notes that answer it by running light.
       if (lit.length > 0 && !hover) {
-        const qx = cx + (query.x - c.x) * k;
-        const qy = cy + (query.y - c.y) * k;
+        // Above and to the left of the notes it joins, clear of them.
+        const qx = Math.max(60, lit.reduce((sum, n) => sum + n.sx, 0) / lit.length - 70);
+        const qy = Math.max(40, Math.min(...lit.map((n) => n.sy)) - 70);
         ctx.setLineDash([3, 5]);
         ctx.lineWidth = 1.2;
         ctx.strokeStyle = tk.focus ?? "#9D85FF";
