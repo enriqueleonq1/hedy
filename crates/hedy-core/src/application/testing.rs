@@ -558,6 +558,8 @@ pub struct FakeGit {
     files: Mutex<Vec<String>>,
     staged: Mutex<Vec<FileDiff>>,
     commits: Mutex<Vec<Commit>>,
+    /// What `main_root` answers; `None`: the folder itself.
+    main: Mutex<Option<PathBuf>>,
 }
 
 impl Default for FakeGit {
@@ -577,6 +579,7 @@ impl Default for FakeGit {
             files: Mutex::default(),
             staged: Mutex::default(),
             commits: Mutex::default(),
+            main: Mutex::default(),
         }
     }
 }
@@ -616,6 +619,10 @@ impl FakeGit {
     /// The next `reset_keep` fails with git's message.
     pub fn fail_reset(&self, message: &str) {
         *self.reset_error.lock().unwrap() = Some(message.into());
+    }
+    /// The folder is a worktree of the repository at `main`.
+    pub fn set_main_root(&self, main: &str) {
+        *self.main.lock().unwrap() = Some(main.into());
     }
     pub fn set_diff(&self, diff: Vec<FileDiff>) {
         *self.diff.lock().unwrap() = diff;
@@ -700,6 +707,10 @@ impl Git for FakeGit {
     }
     fn staged_diff(&self, _: &Path) -> PortResult<Vec<FileDiff>> {
         Ok(self.staged.lock().unwrap().clone())
+    }
+    fn main_root(&self, repo: &Path) -> PortResult<PathBuf> {
+        let main = self.main.lock().unwrap().clone();
+        Ok(main.unwrap_or_else(|| repo.to_owned()))
     }
     fn work_diff(&self, _: &Path) -> PortResult<Vec<FileDiff>> {
         self.log.lock().unwrap().push("diff work".into());
@@ -1276,7 +1287,9 @@ impl FileSystem for FakeFs {
             .lock()
             .unwrap()
             .iter()
-            .find(|root| dir.starts_with(root))
+            .filter(|root| dir.starts_with(root))
+            // The nearest, like `.git` found going up.
+            .max_by_key(|root| root.components().count())
             .cloned()
     }
 }

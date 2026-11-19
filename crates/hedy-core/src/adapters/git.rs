@@ -373,8 +373,32 @@ impl Git for GitCli {
                 "git diff: «{revs}» no es una revisión"
             )));
         }
+        // git's own message would be in the system's language, with a hint
+        // about paths that does not apply here.
+        let unknown = |_: PortError| {
+            PortError::new(tr!(
+                "«{revs}» no es un commit ni un rango de commits de este repositorio",
+                "«{revs}» is not a commit or a range of commits of this repository"
+            ))
+        };
         if revs.contains("..") {
-            let patch = git(repo, &diff_args(&[], &[revs, "--"]))?;
+            // Both ends commits: two blobs (`<hash of .env>..<hash>`) would
+            // compare a file's contents under no name.
+            let (from, to) = revs
+                .split_once("...")
+                .or_else(|| revs.split_once(".."))
+                .unwrap_or((revs, ""));
+            for end in [from, to].into_iter().filter(|e| !e.is_empty()) {
+                let commit = format!("{end}^{{commit}}");
+                let found = run(
+                    repo,
+                    &["rev-parse", "--verify", "-q", "--end-of-options", &commit],
+                )?;
+                if !found.status.success() {
+                    return Err(unknown(PortError::new(String::new())));
+                }
+            }
+            let patch = git(repo, &diff_args(&[], &[revs, "--"])).map_err(unknown)?;
             return Ok(parse_unified(&patch));
         }
         // One commit: its own change, against its first parent (a merge's
@@ -390,11 +414,12 @@ impl Git for GitCli {
                 "--end-of-options",
                 commit,
             ],
-        )?;
+        )
+        .map_err(unknown)?;
         let mut ids = line.split_whitespace();
         let id = ids
             .next()
-            .ok_or_else(|| PortError::new(format!("git rev-list: «{commit}» no es un commit")))?
+            .ok_or_else(|| unknown(PortError::new(String::new())))?
             .to_owned();
         let parent = match ids.next() {
             Some(parent) => parent.to_owned(),
@@ -402,6 +427,21 @@ impl Git for GitCli {
         };
         let patch = git(repo, &diff_args(&[], &[&parent, &id, "--"]))?;
         Ok(parse_unified(&patch))
+    }
+
+    fn main_root(&self, repo: &Path) -> PortResult<PathBuf> {
+        let common = git(
+            repo,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        )?;
+        let common = PathBuf::from(common.trim());
+        // A bare repository's or an unusual layout's: the folder itself.
+        Ok(match common.file_name() {
+            Some(name) if name == ".git" => common
+                .parent()
+                .map_or_else(|| repo.to_owned(), Path::to_owned),
+            _ => repo.to_owned(),
+        })
     }
 
     fn commit_staged(&self, repo: &Path, message: &str, edit: bool) -> PortResult<()> {
@@ -823,6 +863,21 @@ mod tests {
         assert!(lines.clone().all(|l| !l.text.contains("secret")));
         fs::remove_file(repo.join("zz.txt")).unwrap();
         assert!(g.revs_diff(&repo, "HEAD:.env..HEAD:app.py").is_err());
+        // Two blobs by their hashes are no range of commits either.
+        let blob = git(&repo, &["rev-parse", "HEAD:app.py"]).unwrap();
+        let blobs = format!("{0}..{0}", blob.trim());
+        assert!(g.revs_diff(&repo, &blobs).is_err());
+        assert!(g.revs_diff(&repo, "main...feat").is_ok());
+        // A worktree's main checkout is the repository's.
+        let wt = repo.join(".hedy/worktrees/t1");
+        git(
+            &repo,
+            &["worktree", "add", "-q", wt.to_str().unwrap(), "main"],
+        )
+        .unwrap();
+        let main = repo.canonicalize().unwrap();
+        assert_eq!(g.main_root(&wt).unwrap().canonicalize().unwrap(), main);
+        assert_eq!(g.main_root(&repo).unwrap().canonicalize().unwrap(), main);
         let out = repo.join("written");
         let option = format!("--output={}", out.display());
         assert!(g.revs_diff(&repo, &option).is_err());

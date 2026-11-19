@@ -15,7 +15,7 @@ use crate::commands::age_label;
 use crate::spinner;
 use crate::style::Style;
 use crate::sync::now;
-use crate::team::{clean, clean_text, pick};
+use crate::team::{clean, clean_text, pick, safe_json};
 
 pub fn memory_ask(hedy: &Hedy, dir: &Path, args: MemoryAsk) -> Result<()> {
     let question = args.question.join(" ");
@@ -43,7 +43,7 @@ pub fn memory_ask(hedy: &Hedy, dir: &Path, args: MemoryAsk) -> Result<()> {
         },
     )?;
     if args.json {
-        println!("{}", serde_json::to_string_pretty(&as_json(&answer))?);
+        println!("{}", safe_json(&as_json(&answer))?);
         return Ok(());
     }
     print_answer(&answer);
@@ -89,7 +89,7 @@ fn look_in_code(hedy: &Hedy, dir: &Path, question: &str, args: &MemoryAsk) -> Re
             "proposal": found.proposal.as_ref().map(|n| json!({ "id": n.id, "text": n.text })),
             "account": found.account.id.as_str(),
         });
-        println!("{}", serde_json::to_string_pretty(&value)?);
+        println!("{}", safe_json(&value)?);
         return Ok(());
     }
     let s = Style::for_stdout();

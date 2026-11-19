@@ -1679,6 +1679,30 @@ fn review_warns_on_lines_that_break_a_rule_and_never_sends_secrets() {
     assert_eq!(json["rules"][0]["n"], 1);
     assert_eq!(json["account"], "claude-personal");
     assert_eq!(json["protected"], serde_json::json!([".env"]));
+    assert_eq!(json["status"], "checked");
+
+    // An answer that says nothing readable is not a clean change.
+    hedy_review(&env, &repo, "es", &[])
+        .env("FAKE_ANSWER", "Creo que está todo bien.")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "No se pudo leer la respuesta de la IA",
+        ))
+        .stdout(predicate::str::contains("Ninguna línea nueva").not());
+    // Nothing staged: nothing to check, and a hook is not blocked.
+    hedy_review(&env, &repo, "es", &["--staged"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No hay cambios que revisar"));
+    let out = hedy_review(&env, &repo, "es", &["--staged", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["status"], "no_changes");
     hedy_review(&env, &repo, "en", &[])
         .assert()
         .success()
@@ -1695,14 +1719,27 @@ fn review_warns_on_lines_that_break_a_rule_and_never_sends_secrets() {
     hedy_review(&env, &repo, "es", &["HEAD"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("1 archivo(s) contra 1 regla(s)"));
+        .stdout(predicate::str::contains("1 archivo contra 1 regla"));
+    // A line breaking two rules is one line, with both under it.
+    let two = r#"BREAK \"app.js\":2 [1][1] dos veces"#;
+    hedy_review(&env, &repo, "es", &["--staged"])
+        .env("FAKE_ANSWER", two)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 línea no sigue tus reglas"));
     hedy_review(&env, &repo, "es", &["HEAD~1..HEAD"])
         .assert()
         .success();
     hedy_review(&env, &repo, "es", &["HEAD:.env"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("no es un rango de commits"));
+        .stderr(predicate::str::contains("no es un commit ni un rango"));
+    hedy_review(&env, &repo, "en", &["nope"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "«nope» is not a commit or a range of commits of this repository",
+        ));
     hedy_review(&env, &repo, "es", &["--staged", "HEAD"])
         .assert()
         .failure();

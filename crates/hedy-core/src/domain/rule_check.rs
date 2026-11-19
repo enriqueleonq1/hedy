@@ -418,6 +418,13 @@ pub fn rules_prompt(rules: &[Source], change: &str) -> String {
     prompt
 }
 
+/// Whether an answer says, in a way that can be read, what it found: the
+/// no-breaks marker, or at least one break line. Anything else (prose, an
+/// error) must not pass for a clean change.
+pub fn answer_is_readable(raw: &str, breaks: &[RuleBreak]) -> bool {
+    !breaks.is_empty() || raw.to_ascii_uppercase().contains(NO_BREAKS)
+}
+
 /// A line of the change that goes against a rule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]

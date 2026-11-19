@@ -12,8 +12,9 @@ use super::ask::{AskScope, local_source};
 use super::one_shot::{OneShot, OneShotFailure};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::ask::Source;
+use crate::domain::project::find_for_dir;
 use crate::domain::rule_check::{
-    RuleBreak, change_for_prompt, parse_breaks, pick_rules, rules_prompt,
+    RuleBreak, answer_is_readable, change_for_prompt, parse_breaks, pick_rules, rules_prompt,
 };
 use crate::domain::{Account, FileDiff, Phase, Stage, TaskId};
 use crate::tr;
@@ -49,6 +50,9 @@ pub struct RuleCheck {
     pub protected: Vec<String>,
     /// The change did not all fit: only its start was judged.
     pub truncated: bool,
+    /// The answer said neither what breaks a rule nor that nothing does:
+    /// no break found does not mean the change is clean.
+    pub unread: bool,
     /// Whose tokens it spent; `None` when nothing was sent.
     pub account: Option<Account>,
 }
@@ -99,6 +103,7 @@ impl Hedy {
             files: change.files,
             protected: change.protected.clone(),
             truncated: change.truncated,
+            unread: false,
             account: None,
         };
         if rules.is_empty() || change.added.is_empty() {
@@ -129,8 +134,12 @@ impl Hedy {
             no_shell: true,
             timeout,
         })?;
-        let breaks = match answer {
-            Ok(raw) => parse_breaks(&raw, &change, rules.len()),
+        let (breaks, readable) = match answer {
+            Ok(raw) => {
+                let breaks = parse_breaks(&raw, &change, rules.len());
+                let readable = answer_is_readable(&raw, &breaks);
+                (breaks, readable)
+            }
             Err(OneShotFailure::AtLimit) => {
                 return Err(AppError::AskAtLimit {
                     account: account.name.clone(),
@@ -141,6 +150,7 @@ impl Hedy {
         };
         Ok(RuleCheck {
             breaks,
+            unread: !readable,
             account: Some(account),
             ..nothing(rules)
         })
@@ -162,26 +172,27 @@ impl Hedy {
                 let repo = self.repo_root(&task.project)?;
                 (task.project.clone(), repo, self.task_diff(id)?)
             }
-            RuleTarget::Staged(dir) => {
-                let repo = self.repo_root(dir)?;
-                let diff = self.git.staged_diff(&repo)?;
-                (dir.clone(), repo, diff)
-            }
-            RuleTarget::Work(dir) => {
-                let repo = self.repo_root(dir)?;
-                let diff = self.git.work_diff(&repo)?;
-                (dir.clone(), repo, diff)
-            }
-            RuleTarget::Revs { dir, revs } => {
-                let revs = plain_revs(revs)?;
-                let repo = self.repo_root(dir)?;
-                let diff = self.git.revs_diff(&repo, &revs)?;
-                (dir.clone(), repo, diff)
+            RuleTarget::Staged(dir) | RuleTarget::Work(dir) | RuleTarget::Revs { dir, .. } => {
+                let revs = match target {
+                    RuleTarget::Revs { revs, .. } => Some(plain_revs(revs)?),
+                    _ => None,
+                };
+                let worktree = self.repo_root(dir)?;
+                let diff = match (target, revs) {
+                    (RuleTarget::Staged(_), _) => self.git.staged_diff(&worktree)?,
+                    (_, Some(revs)) => self.git.revs_diff(&worktree, &revs)?,
+                    _ => self.git.work_diff(&worktree)?,
+                };
+                // In a worktree (a task's, or one of the user's), the
+                // projects are where its main checkout has the same folder.
+                let main = self.git.main_root(&worktree)?;
+                let dir = self.fs.canonicalize(dir)?;
+                let rel = dir.strip_prefix(&worktree).unwrap_or(Path::new(""));
+                (main.join(rel), main, diff)
             }
         };
-        let dir = dir.as_path();
-        let project = self.project_for(dir)?;
         let projects = self.projects()?;
+        let project = find_for_dir(&projects, &dir).cloned();
         let inside = |path: &Path| {
             path.strip_prefix(&repo)
                 .ok()
@@ -526,6 +537,70 @@ mod tests {
     }
 
     #[test]
+    fn an_answer_that_cannot_be_read_is_not_a_clean_change() {
+        let f = setup();
+        f.hedy
+            .add_note(None, "Commits en una línea", Category::Convention)
+            .unwrap();
+        f.git.set_staged(change());
+        let staged = RuleTarget::Staged(f.dir("/code/tienda"));
+        for (raw, unread) in [
+            ("I think it is fine", true),
+            ("BREAK \"otro.ts\":3 [1] un archivo que no está", true),
+            ("no_breaks", false),
+            ("BREAK \"src/api/clientes.ts\":14 [1] snake", false),
+        ] {
+            answer(&f, raw);
+            let check = f.hedy.check_rules(&staged, None, None).unwrap();
+            assert_eq!(check.unread, unread, "{raw}");
+        }
+    }
+
+    #[test]
+    fn from_a_worktree_the_projects_are_those_of_its_main_checkout() {
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        f.add_claude("Trabajo");
+        f.hedy
+            .use_account(&f.dir("/code/mono/banco"), "trabajo", Some(true))
+            .unwrap();
+        f.fs.add_git_root("/code/mono");
+        f.hedy
+            .use_account(&f.dir("/code/mono"), "personal", None)
+            .unwrap();
+        f.fs.add_git_root("/code/mono/.hedy/worktrees/t1");
+        f.git.set_main_root("/code/mono");
+        f.hedy
+            .add_note(None, "Commits en una línea", Category::Convention)
+            .unwrap();
+        f.hedy
+            .add_note(
+                Some(&f.dir("/code/mono/banco")),
+                "Los importes van en céntimos",
+                Category::Rule,
+            )
+            .unwrap();
+        f.git
+            .set_staged(vec![at("banco/src/pagos.ts"), at("web/src/inicio.ts")]);
+        let worktree = f.dir("/code/mono/.hedy/worktrees/t1");
+        assert_eq!(
+            f.hedy
+                .check_rules(&RuleTarget::Staged(worktree.clone()), None, None),
+            Err(AppError::RulesProtectedInside {
+                project: "banco".into()
+            })
+        );
+        answer(&f, "NO_BREAKS");
+        let check = f
+            .hedy
+            .check_rules(&RuleTarget::Staged(worktree.join("banco")), None, None)
+            .unwrap();
+        assert_eq!(check.account.unwrap().id.as_str(), "trabajo");
+        let prompt = f.agents.last_request().prompt;
+        assert!(prompt.contains("banco/src/pagos.ts") && !prompt.contains("inicio.ts"));
+    }
+
+    #[test]
     fn a_closed_task_is_said_to_be_closed() {
         let f = setup();
         f.git.set_diff(change());
@@ -559,7 +634,7 @@ mod tests {
         ));
         answer(&f, "NO_BREAKS");
         let check = f.hedy.check_rules(&staged, None, None).unwrap();
-        assert!(check.breaks.is_empty());
+        assert!(check.breaks.is_empty() && !check.unread);
         assert_eq!(check.account.unwrap().id.as_str(), "trabajo");
         // A protected project reads no global note either (as its agents).
         let texts: Vec<&str> = check.rules.iter().map(|r| r.text.as_str()).collect();

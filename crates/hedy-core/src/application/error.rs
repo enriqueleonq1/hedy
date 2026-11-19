@@ -703,8 +703,8 @@ impl AppError {
                 "there are no changes to check"
             ),
             Self::RulesBadRevs(revs) => tr!(
-                "«{revs}» no es un rango de commits (por ejemplo, main..HEAD)",
-                "«{revs}» is not a range of commits (for example, main..HEAD)"
+                "«{revs}» no es un commit ni un rango de commits (por ejemplo, main..HEAD)",
+                "«{revs}» is not a commit or a range of commits (for example, main..HEAD)"
             ),
             Self::RulesFailed(detail) => match detail {
                 Some(detail) => tr!(

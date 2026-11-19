@@ -527,6 +527,9 @@ pub trait Git: Send + Sync {
     /// (`a1b2c3`: against its first parent, or nothing for a first
     /// commit). Read only.
     fn revs_diff(&self, repo: &Path, revs: &str) -> PortResult<Vec<FileDiff>>;
+    /// The main checkout of the repository `repo` belongs to: `repo` itself,
+    /// or the one a worktree was added from.
+    fn main_root(&self, repo: &Path) -> PortResult<PathBuf>;
     /// What is not committed yet in `repo`, staged or not, new files not
     /// added yet included (protected ones only named, never read).
     fn work_diff(&self, repo: &Path) -> PortResult<Vec<FileDiff>>;
