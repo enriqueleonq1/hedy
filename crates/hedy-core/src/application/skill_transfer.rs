@@ -13,8 +13,11 @@ use super::ports::{NewSkill, SkillRevision};
 use super::skills::{SkillDraft, SkillFiles, validated};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::memory::USER_AUTHOR;
-use crate::domain::skill::{BODY_MAX, find_secret, normalize_skill_name, runs_commands};
+use crate::domain::skill::{
+    BODY_MAX, check_visible, find_secret, normalize_skill_name, runs_commands,
+};
 use crate::domain::skill_import::{parse_skill_md, portable_skill_file};
+use crate::domain::team::strip_hidden;
 use crate::domain::{DomainError, Skill, SkillStatus};
 use crate::tr;
 
@@ -44,8 +47,9 @@ pub enum ImportProblem {
     BadBody,
     /// It looks like it holds a secret: nothing of it is shown.
     LooksSecret { what: String },
-    /// Characters the reader cannot see, which the AIs would read.
-    HiddenText,
+    /// Characters the reader cannot see, which the AIs would read: shown
+    /// around the first one, each as `⟦U+…⟧`.
+    HiddenText { at: String },
     /// It would run commands as soon as Claude Code loads it, without asking.
     RunsCommands,
     /// An approved skill already has its name (import replacing to update it).
@@ -62,7 +66,7 @@ impl ImportProblem {
             DomainError::InvalidSkillName(name) => Self::BadName { name },
             DomainError::InvalidSkillDescription => Self::BadDescription,
             DomainError::SkillLooksSecret(what) => Self::LooksSecret { what: what.into() },
-            DomainError::SkillHiddenText => Self::HiddenText,
+            DomainError::SkillHiddenText(at) => Self::HiddenText { at },
             DomainError::SkillRunsCommands => Self::RunsCommands,
             _ => Self::BadBody,
         }
@@ -85,7 +89,7 @@ impl ImportProblem {
                 "parece contener un secreto ({what}): no se muestra ni se importa",
                 "it looks like it holds a secret ({what}): it is not shown or imported"
             ),
-            Self::HiddenText => DomainError::SkillHiddenText.to_string(),
+            Self::HiddenText { at } => DomainError::SkillHiddenText(at.clone()).to_string(),
             Self::RunsCommands => tr!(
                 "corre comandos en cuanto Claude Code la carga (!`…` o un bloque ```!), sin preguntar",
                 "it runs commands as soon as Claude Code loads it (!`…` or a ```! block), without asking"
@@ -450,7 +454,10 @@ fn checked(
 ) -> (SkillDraft, Option<Skill>, Option<ImportProblem>) {
     // Before anything else: a secret is never shown again, not even in the
     // preview, whatever else is wrong.
-    if let Some(what) = find_secret(&draft.description).or_else(|| find_secret(&draft.body)) {
+    let visible = |text: &str| strip_hidden(text);
+    let secret =
+        find_secret(&visible(&draft.description)).or_else(|| find_secret(&visible(&draft.body)));
+    if let Some(what) = secret {
         let draft = SkillDraft {
             description: String::new(),
             body: String::new(),
@@ -462,10 +469,19 @@ fn checked(
     let (name, description, body) = match validated(&draft.name, &draft.description, &draft.body) {
         Ok(valid) => valid,
         Err(AppError::Domain(error)) => {
-            return (draft.clone(), None, Some(ImportProblem::from_domain(error)));
+            let problem = ImportProblem::from_domain(error);
+            let mut draft = draft.clone();
+            if matches!(problem, ImportProblem::LooksSecret { .. }) {
+                draft.description.clear();
+                draft.body.clear();
+            }
+            return (draft, None, Some(problem));
         }
         Err(_) => return (draft.clone(), None, Some(ImportProblem::BadBody)),
     };
+    if let Err(error) = check_visible(&body) {
+        return (draft.clone(), None, Some(ImportProblem::from_domain(error)));
+    }
     let replaces = approved.iter().find(|s| s.name == name).cloned();
     let unchanged = replaces
         .as_ref()
@@ -604,7 +620,10 @@ mod tests {
         );
         assert_eq!(by_name("lint").problem, None);
         assert_eq!(by_name("same").problem, Some(ImportProblem::Unchanged));
-        assert_eq!(by_name("smuggle").problem, Some(ImportProblem::HiddenText));
+        assert!(matches!(
+            &by_name("smuggle").problem,
+            Some(ImportProblem::HiddenText { at }) if at.ends_with("cargo fmt⟦U+E0049⟧⟦U+E0067⟧")
+        ));
         // A secret is not repeated, whatever else is wrong.
         let key = by_name("key");
         assert!(matches!(

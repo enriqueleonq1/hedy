@@ -278,6 +278,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     category,
                 } => team::add(&hedy, &dir, &pick()?, &text.join(" "), everyone, &category),
                 TeamCommand::Publish { id, everyone } => {
+                    commands::refuse_in_agent_session()?;
                     team::publish(&hedy, &pick()?, id, everyone)
                 }
                 TeamCommand::Review {
@@ -285,7 +286,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     accept,
                     reject,
                     yes,
-                } => team::review(&hedy, &pick()?, id.as_deref(), accept, reject, yes),
+                } => {
+                    if accept || reject {
+                        commands::refuse_in_agent_session()?;
+                    }
+                    team::review(&hedy, &pick()?, id.as_deref(), accept, reject, yes)
+                }
                 TeamCommand::Role { person, admin, .. } => {
                     team::role(&hedy, &pick()?, &person, admin)
                 }

@@ -1840,9 +1840,9 @@ impl Hedy {
                     return Ok(false);
                 };
                 // Checked as one made here: its name becomes a folder.
-                if !super::skills::acceptable_synced(&body) {
+                let Some(body) = super::skills::synced_skill(body) else {
                     return Ok(false);
-                }
+                };
                 self.store
                     .write_synced_skill(row, project.as_deref(), &body)?
                     .to_string()

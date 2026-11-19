@@ -49,7 +49,13 @@ impl TerminalRequest {
     pub fn spec(&self, hedy: &Hedy) -> AppResult<LaunchSpec> {
         match self {
             Self::Login { account } => hedy.login_spec(account),
-            Self::Run { path } => Ok(hedy.resolve_run(path, None, vec![])?.spec),
+            Self::Run { path } => {
+                let mut spec = hedy.resolve_run(path, None, vec![])?.spec;
+                // An AI's session: `hedy` refuses to approve from inside it.
+                spec.env
+                    .push((hedy_core::domain::env::AGENT_SESSION.into(), "1".into()));
+                Ok(spec)
+            }
             Self::Shell { path } => {
                 let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
                 let dir = path

@@ -769,9 +769,16 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
     reach the session plugins even if a later one fails; a protected project's refusal of
     global skills stops the import before anything is saved.
   - **Refused, as in agent proposals:** commands on load (`!`cmd``, ```` ```! ````, in
-    the body or the description) and hidden text (invisible tag characters, bidi marks;
-    an emoji's joiners are fine): the agents would read what the user cannot see. `hedy
-    skills show` marks any hidden character as `⟦U+…⟧`.
+    the body or the description; a proposal is checked again when approved, since one may
+    come from an older version through sync) and hidden text (invisible tag characters,
+    bidi marks, zero-width characters; an emoji's joiners are fine), shown where it is:
+    the agents would read what the user cannot see. Only text from someone else is refused
+    for it: a skill the user writes, or one already saved, may keep a zero-width space
+    pasted from the web. `hedy skills show` marks any hidden character as `⟦U+…⟧`.
+    Secrets are looked for with hidden characters taken out, so one cannot split a key.
+  - **Descriptions** cannot hold `---`: Claude Code's frontmatter reader ends at the first
+    `---`, even inside quotes, so the rest of the line would become the body (and could
+    run a command on load).
   - **Parser:** a small YAML reader (plain, quoted and block scalars, a quoted value on
     the next line, `\x`/`\u`/`\U` escapes, `null`/`~`, quoted keys, comments; nested
     values count as dropped keys), checked against js-yaml on the 57 official skills.
@@ -782,10 +789,14 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
     already there is replaced, and a link (at the file or the skill's folder) is never
     written through. The folder is the user's choice and is not added to
     `.git/info/exclude`: they may want to commit it.
-  - **Only the user:** every process Hedy starts carries `HEDY_AGENT_SESSION=1`, and
-    `hedy skills import`, `hedy skills approve` and `hedy memory approve` refuse to run
-    there, so an agent cannot approve through a shell command it was allowed to run. A
-    second guard (an agent could unset it): the permission card is the first.
+  - **Only the user:** every process Hedy starts for an AI carries `HEDY_AGENT_SESSION=1`
+    (agents, `hedy run`, the app's AI terminal; not the user's own shell terminal), and
+    `hedy skills import`, `hedy skills approve`, `hedy memory approve`, `hedy team
+    publish` and `hedy team review --accept/--reject` refuse to run there, so an agent
+    cannot approve through a shell command it was allowed to run. A second guard: an agent
+    could run `env -u HEDY_AGENT_SESSION hedy …`; the permission card is the first.
+  - **Sync:** a skill from another of the user's PCs is saved as this version saves its
+    own (description and body normalized), with its exact name.
   - **Checked against 57 official Claude Code skills** (the plugin marketplace on this
     machine): 52 import as they are; 2 run commands on load and 3 have `<` or `>` in the
     description (Hedy's rule, from the Agent Skills docs; Claude Code itself accepts it).

@@ -31,7 +31,7 @@ pub enum DomainError {
     #[error("{}", self.message())]
     SkillRunsCommands,
     #[error("{}", self.message())]
-    SkillHiddenText,
+    SkillHiddenText(String),
     #[error("{}", self.message())]
     ApiKeyNotSupported { provider: Provider },
     #[error("{}", self.message())]
@@ -121,8 +121,8 @@ impl DomainError {
                 "invalid skill name: «{name}» (lowercase letters, digits and dashes, up to 64 characters; e.g. run-e2e-tests)"
             ),
             Self::InvalidSkillDescription => tr!(
-                "la descripción de la habilidad debe ser una línea de hasta 1024 caracteres, sin < ni >, que diga cuándo usarla",
-                "the skill's description must be one line of up to 1024 characters, without < or >, saying when to use it"
+                "la descripción de la habilidad debe ser una línea de hasta 1024 caracteres, sin < ni > ni ---, que diga cuándo usarla",
+                "the skill's description must be one line of up to 1024 characters, without <, > or ---, saying when to use it"
             ),
             Self::InvalidSkillBody => tr!(
                 "el contenido de la habilidad no puede estar vacío ni pasar de 80000 caracteres",
@@ -132,9 +132,9 @@ impl DomainError {
                 "la habilidad parece contener un secreto ({kind}); no se guardó. Quítalo y usa un marcador como $NOMBRE_VARIABLE o <tu clave>",
                 "the skill looks like it contains a secret ({kind}); it was not saved. Remove it and use a placeholder such as $VARIABLE_NAME or <your key>"
             ),
-            Self::SkillHiddenText => tr!(
-                "la habilidad tiene texto oculto (caracteres invisibles o que reordenan el texto): las IAs lo leerían y tú no lo verías",
-                "the skill has hidden text (invisible characters or ones that reorder the text): the AIs would read it and you would not see it"
+            Self::SkillHiddenText(at) => tr!(
+                "la habilidad tiene texto oculto (caracteres invisibles o que reordenan el texto), que las IAs leerían y tú no verías: «{at}»",
+                "the skill has hidden text (invisible characters or ones that reorder the text), which the AIs would read and you would not see: “{at}”"
             ),
             Self::SkillRunsCommands => tr!(
                 "una habilidad propuesta no puede correr comandos al cargarse (!`…` o un bloque ```!); escribe el comando como un paso para que la IA lo pida",

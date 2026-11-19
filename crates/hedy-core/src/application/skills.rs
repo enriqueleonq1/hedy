@@ -15,7 +15,7 @@ use super::{AppError, AppResult, Hedy};
 use crate::domain::memory::{USER_AUTHOR, preview};
 use crate::domain::recall::{PageRequest, Paged, SKILLS_MAX, SKILLS_PAGE, paginate};
 use crate::domain::skill::{
-    SkillFolder, find_secret, is_managed, normalize_body, normalize_description,
+    SkillFolder, check_visible, find_secret, is_managed, normalize_body, normalize_description,
     normalize_skill_name, plugin_manifest, runs_commands, skill_file,
 };
 use crate::domain::sync::SkillBody;
@@ -112,12 +112,17 @@ pub(super) fn validated(
 }
 
 /// A skill from another of the user's PCs passes the same checks as one
-/// made here: otherwise it waits in the replica.
-pub(super) fn acceptable_synced(skill: &SkillBody) -> bool {
-    // The exact name (it becomes a folder); the text as it was saved there,
-    // by any version: an older one kept emoji selectors or `\r\n` lines.
-    validated(&skill.name, &skill.description, &skill.body).is_ok_and(|(name, _, body)| {
-        name == skill.name && (skill.status == SkillStatus::Approved || !runs_commands(&body))
+/// made here (`None`: it waits in the replica) and is saved as this version
+/// saves its own. Its name must be exact (it becomes a folder); a proposal
+/// may not run commands on load (an older version did not check them).
+pub(super) fn synced_skill(skill: SkillBody) -> Option<SkillBody> {
+    let (name, description, body) = validated(&skill.name, &skill.description, &skill.body).ok()?;
+    let commands = runs_commands(&body) || runs_commands(&description);
+    let usable = name == skill.name && (skill.status == SkillStatus::Approved || !commands);
+    usable.then_some(SkillBody {
+        description,
+        body,
+        ..skill
     })
 }
 
@@ -196,6 +201,7 @@ impl Hedy {
         if runs_commands(&body) || runs_commands(&description) {
             return Err(DomainError::SkillRunsCommands.into());
         }
+        check_visible(&body)?;
         Ok(self.store.add_skill(&NewSkill {
             project: Some(project.path),
             name,
@@ -258,6 +264,10 @@ impl Hedy {
                 skill: proposal,
                 files: SkillFiles::default(),
             });
+        }
+        // Checked again: one may have come from an older version's sync.
+        if runs_commands(&proposal.body) || runs_commands(&proposal.description) {
+            return Err(DomainError::SkillRunsCommands.into());
         }
         let mut files = SkillFiles::default();
         let approved = match update_target(&self.skills_beside(&proposal)?, &proposal) {
@@ -1181,28 +1191,23 @@ mod tests {
             created_at: 1,
             updated_at: None,
         };
-        assert!(acceptable_synced(&body(
-            "lint",
-            "1. lint",
-            SkillStatus::Approved
-        )));
+        let approved = SkillStatus::Approved;
+        assert!(synced_skill(body("lint", "1. lint", approved)).is_some());
         for name in ["../../.claude/skills/x", "lint\nhooks: x", "Lint"] {
-            assert!(!acceptable_synced(&body(
-                name,
-                "1. lint",
-                SkillStatus::Approved
-            )));
+            assert!(synced_skill(body(name, "1. lint", approved)).is_none());
         }
-        assert!(!acceptable_synced(&body(
-            "lint",
-            "token sk-abcdef0123456789abcdef",
-            SkillStatus::Approved
-        )));
-        assert!(!acceptable_synced(&body(
-            "lint",
-            "!`id`",
-            SkillStatus::Proposed
-        )));
+        let secret = "token sk-abcdef0123456789abcdef";
+        assert!(synced_skill(body("lint", secret, approved)).is_none());
+        assert!(synced_skill(body("lint", "!`id`", SkillStatus::Proposed)).is_none());
+        // Saved as this version saves its own.
+        let mut older = body("lint", "1. a\r\n2. b", approved);
+        older.description = "⚠️ Lint\u{1b}[2J first".into();
+        let saved = synced_skill(older).unwrap();
+        assert_eq!(saved.description, "⚠️ Lint[2J first");
+        assert_eq!(saved.body, "1. a\n2. b");
+        let mut proposal = body("lint", "1. lint", SkillStatus::Proposed);
+        proposal.description = "Tests --- !`id` then deploy".into();
+        assert!(synced_skill(proposal).is_none());
     }
 
     #[test]

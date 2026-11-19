@@ -77,6 +77,11 @@ pub fn hidden_chars(text: &str) -> Vec<char> {
         .collect()
 }
 
+/// Where the first hidden character is (as [`hidden_chars`] finds them).
+pub fn first_hidden(chars: &[char]) -> Option<usize> {
+    (0..chars.len()).find(|&i| hidden_at(chars, i))
+}
+
 /// `text` with each hidden character shown as `⟦U+202E⟧`, for a reviewer.
 pub fn reveal_hidden(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
