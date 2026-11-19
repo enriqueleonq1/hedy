@@ -207,13 +207,14 @@ impl Hedy {
         let projects = self.projects()?;
         let project = find_for_dir(&projects, &dir).cloned();
         // A project's folder in the change, by its place in either checkout.
+        // The first root holding it decides (the worktree's own first): a
+        // project at a worktree's root is that whole checkout.
         let inside = |path: &Path| {
-            roots.iter().find_map(|root| {
-                path.strip_prefix(root)
-                    .ok()
-                    .filter(|rel| !rel.as_os_str().is_empty())
-                    .map(|rel| format!("{}/", rel.to_string_lossy()))
-            })
+            roots
+                .iter()
+                .find_map(|root| path.strip_prefix(root).ok())
+                .filter(|rel| !rel.as_os_str().is_empty())
+                .map(|rel| format!("{}/", rel.to_string_lossy()))
         };
         let under = |file: &FileDiff, folder: &str| {
             file.path.starts_with(folder)
@@ -649,6 +650,35 @@ mod tests {
         assert_eq!(check.account.unwrap().id.as_str(), "trabajo");
         let texts: Vec<&str> = check.rules.iter().map(|r| r.text.as_str()).collect();
         assert_eq!(texts, ["Los importes van en céntimos"]);
+
+        // One inside the main checkout: its whole change, not "no changes".
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        f.add_claude("Trabajo");
+        f.hedy
+            .use_account(&f.dir("/code/web/inner"), "trabajo", Some(true))
+            .unwrap();
+        f.fs.add_git_root("/code/web");
+        f.fs.add_git_root("/code/web/inner");
+        f.git.set_main_root("/code/web");
+        f.hedy
+            .add_note(None, "Commits en una línea", Category::Convention)
+            .unwrap();
+        f.hedy
+            .add_note(
+                Some(&f.dir("/code/web/inner")),
+                "Los importes van en céntimos",
+                Category::Rule,
+            )
+            .unwrap();
+        f.git.set_staged(change());
+        answer(&f, "NO_BREAKS");
+        let check = f
+            .hedy
+            .check_rules(&RuleTarget::Staged(f.dir("/code/web/inner")), None, None)
+            .unwrap();
+        assert_eq!(check.account.unwrap().id.as_str(), "trabajo");
+        assert_eq!(check.files, 1);
     }
 
     #[test]

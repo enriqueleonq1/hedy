@@ -717,8 +717,8 @@ impl AppError {
                 ),
             },
             Self::RulesProtectedInside { project } => tr!(
-                "el cambio toca archivos del proyecto protegido «{project}», que solo lee su propia cuenta: revísalo desde esa carpeta",
-                "the change touches files of the protected project «{project}», which only its own account reads: check it from that folder"
+                "el cambio toca archivos del proyecto protegido «{project}», que solo lee su propia cuenta: esos archivos se revisan desde ese proyecto",
+                "the change touches files of the protected project «{project}», which only its own account reads: those files are checked from that project"
             ),
             Self::RulesTimedOut => tr!(
                 "la IA tardó demasiado en revisar el cambio; vuelve a intentarlo",
