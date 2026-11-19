@@ -12,10 +12,13 @@
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use serde_json::{Value, json};
 
-use crate::domain::permissions::{is_blocked_name, protected_file_reason, whole_search_root};
+use crate::domain::permissions::{
+    is_blocked_name, matches, protected_file_reason, whole_search_root,
+};
 use crate::domain::read_guard::{self, FileStamp, ReadKey, ReadRecord};
 use crate::experiments::{self, Experiment};
 use crate::tr;
@@ -45,11 +48,23 @@ fn decide_with(input: &str, guard: Option<&Path>) -> Option<String> {
         .or_else(|| linked_protected(&input["tool_input"], &cwd))
         .or_else(|| {
             let root = whole_search_root(tool, &input["tool_input"], &cwd)?;
-            let name = protected_inside(&root)?;
-            Some(tr!(
-                "La búsqueda leería «{name}» (archivo protegido) sin nombrarlo: acótala con un glob (por ejemplo *.ts), o pide solo los nombres de los archivos.",
-                "The search would read «{name}» (protected file) without naming it: narrow it with a glob (for example *.ts), or ask only for file names."
-            ))
+            // `rg --no-ignore` / `-u` reads what git ignores too.
+            let unignored = input["tool_input"]["command"].as_str().is_some_and(|command| {
+                command.split_whitespace().any(|w| {
+                    w.starts_with("--no-ignore")
+                        || (w.starts_with("-u") && w[1..].chars().all(|c| c == 'u'))
+                })
+            });
+            Some(match protected_inside(&root, !unignored)? {
+                Inside::Protected(name) => tr!(
+                    "La búsqueda leería «{name}» (archivo protegido) sin nombrarlo: acótala con un glob (por ejemplo *.ts), o pide solo los nombres de los archivos.",
+                    "The search would read «{name}» (protected file) without naming it: narrow it with a glob (for example *.ts), or ask only for file names."
+                ),
+                Inside::TooLarge => tr!(
+                    "La búsqueda recorre demasiadas carpetas para comprobar que no lee un archivo protegido: acótala con un glob (por ejemplo *.ts) o una carpeta.",
+                    "The search covers too many folders to check it reads no protected file: narrow it with a glob (for example *.ts) or a folder."
+                ),
+            })
         })
         .or_else(|| {
         let dir = guard?;
@@ -91,46 +106,103 @@ fn linked_protected(input: &Value, cwd: &Path) -> Option<String> {
         })
 }
 
-/// The name of a protected file under `root`, if any (a file `root` itself
-/// counts too). Past its limits it says there may be one: a search that
-/// large is narrowed first.
-fn protected_inside(root: &Path) -> Option<String> {
+/// What a whole search would read under its folder.
+#[derive(Debug, PartialEq, Eq)]
+enum Inside {
+    /// A protected file, by name.
+    Protected(String),
+    /// More than can be checked: the search is narrowed first.
+    TooLarge,
+}
+
+/// The `.gitignore` names (`target`, `dist/`, `*.log`) of a folder, added to
+/// its parent's: a search skips what git ignores, and so does the walk.
+fn ignored_names(dir: &Path, parent: &Rc<Vec<String>>) -> Rc<Vec<String>> {
+    let Ok(text) = std::fs::read_to_string(dir.join(".gitignore")) else {
+        return parent.clone();
+    };
+    let mut names = (**parent).clone();
+    names.extend(text.lines().filter_map(|line| {
+        let line = line.trim().trim_start_matches('/').trim_end_matches('/');
+        // A path inside (`a/b`) or a negation is left to git: not skipped.
+        (!line.is_empty() && !line.starts_with(['#', '!']) && !line.contains('/'))
+            .then(|| line.to_owned())
+    }));
+    Rc::new(names)
+}
+
+/// A protected file under `root` (a file `root` itself counts too), looking
+/// where a search would: not in what git ignores. Past its limits it cannot
+/// tell, and says so.
+fn protected_inside(root: &Path, respect_ignored: bool) -> Option<Inside> {
     if root.is_file() {
         let name = root.file_name()?.to_string_lossy().into_owned();
-        return is_blocked_name(&name).then_some(name);
+        return is_blocked_name(&name).then_some(Inside::Protected(name));
     }
-    let mut stack = vec![(root.to_path_buf(), 0)];
+    let base = Rc::new(
+        std::fs::read_to_string(root.join(".git/info/exclude"))
+            .map(|text| {
+                text.lines()
+                    .map(|l| {
+                        l.trim()
+                            .trim_start_matches('/')
+                            .trim_end_matches('/')
+                            .to_owned()
+                    })
+                    .filter(|l| !l.is_empty() && !l.starts_with(['#', '!']) && !l.contains('/'))
+                    .collect()
+            })
+            .unwrap_or_default(),
+    );
+    let mut stack = vec![(root.to_path_buf(), 0, ignored_names(root, &base))];
     let mut seen = 0;
-    while let Some((dir, depth)) = stack.pop() {
+    // Folders reached through a link too (`rg -L`), each once.
+    let mut visited = std::collections::HashSet::new();
+    while let Some((dir, depth, ignored)) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
         for entry in entries.flatten() {
-            seen += 1;
-            if seen > PROTECTED_ENTRIES {
-                return Some(".env".into());
-            }
             let name = entry.file_name().to_string_lossy().into_owned();
+            // A protected file is never skipped, even if git ignores it.
+            if is_blocked_name(&name) {
+                return Some(Inside::Protected(name));
+            }
             let Ok(kind) = entry.file_type() else {
                 continue;
             };
-            if kind.is_dir() {
-                if SKIPPED_DIRS.contains(&name.as_str()) {
-                    continue;
-                }
-                if depth >= PROTECTED_DEPTH {
-                    return Some(".env".into());
-                }
-                stack.push((entry.path(), depth + 1));
-            } else if is_blocked_name(&name) {
-                return Some(name);
+            let skipped = SKIPPED_DIRS.contains(&name.as_str())
+                || (respect_ignored && ignored.iter().any(|pattern| matches(pattern, &name)));
+            let folder = if kind.is_dir() {
+                Some(entry.path())
             } else if kind.is_symlink()
                 && let Ok(real) = std::fs::canonicalize(entry.path())
-                && let Some(target) = real.file_name().map(|n| n.to_string_lossy().into_owned())
-                && is_blocked_name(&target)
             {
-                return Some(target);
+                if !real.is_dir() {
+                    let target = real.file_name()?.to_string_lossy().into_owned();
+                    if is_blocked_name(&target) {
+                        return Some(Inside::Protected(target));
+                    }
+                    None
+                } else {
+                    visited.insert(real.clone()).then_some(real)
+                }
+            } else {
+                None
+            };
+            let Some(folder) = folder.filter(|_| !skipped) else {
+                continue;
+            };
+            seen += 1;
+            if seen > PROTECTED_ENTRIES || depth >= PROTECTED_DEPTH {
+                return Some(Inside::TooLarge);
             }
+            let names = ignored_names(&folder, &ignored);
+            stack.push((folder, depth + 1, names));
+        }
+        seen += 1;
+        if seen > PROTECTED_ENTRIES {
+            return Some(Inside::TooLarge);
         }
     }
     None
@@ -295,6 +367,43 @@ mod tests {
         assert!(decide_with(&read("docs.txt"), None).is_some());
         assert_eq!(decide_with(&read("src/app.ts"), None), None);
         std::fs::remove_file(dir.join("docs.txt")).unwrap();
+        // In a folder reached through a link (`rg -L`), and with a loop.
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join(".env"), "X=1").unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.join("lnk")).unwrap();
+        std::os::unix::fs::symlink(dir, dir.join("src/loop")).unwrap();
+        std::fs::rename(dir.join("src/config/.env"), dir.join("src/config/env.bak")).unwrap();
+        assert!(decide_with(&input("Bash", json!({"command": "rg -L K"})), None).is_some());
+        std::fs::remove_file(dir.join("lnk")).unwrap();
+        std::fs::rename(dir.join("src/config/env.bak"), dir.join("src/config/.env")).unwrap();
+        // A large build folder git ignores is not looked through.
+        std::fs::write(dir.join(".gitignore"), "target/\n").unwrap();
+        for i in 0..(PROTECTED_ENTRIES + 10) {
+            std::fs::create_dir_all(dir.join(format!("target/d{}/e{i}", i % 50))).unwrap();
+        }
+        std::fs::remove_file(dir.join("src/config/.env")).unwrap();
+        let rg = || decide_with(&input("Bash", json!({"command": "rg KEY"})), None);
+        assert_eq!(rg(), None);
+        // Unless the search reads what git ignores.
+        std::fs::write(dir.join("target/d0/.env"), "K=1").unwrap();
+        assert!(
+            decide_with(
+                &input("Bash", json!({"command": "rg --no-ignore KEY"})),
+                None
+            )
+            .is_some()
+        );
+        assert!(decide_with(&input("Bash", json!({"command": "rg -uu KEY"})), None).is_some());
+        std::fs::remove_file(dir.join("target/d0/.env")).unwrap();
+        // Not ignored, it is too large to check: narrowed first, no file named.
+        std::fs::remove_file(dir.join(".gitignore")).unwrap();
+        let denied = rg().unwrap();
+        assert!(
+            denied.contains("demasiadas") || denied.contains("too many"),
+            "{denied}"
+        );
+        std::fs::remove_dir_all(dir.join("target")).unwrap();
+        std::fs::write(dir.join("src/config/.env"), "KEY=secreto").unwrap();
         // A protected file in a skipped folder (dependencies) does not count.
         std::fs::remove_file(dir.join("src/config/.env")).unwrap();
         std::fs::create_dir_all(dir.join("node_modules/x")).unwrap();

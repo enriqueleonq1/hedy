@@ -3260,8 +3260,12 @@ outer ring of loose notes, animated).
 - **The hook, hardened after the re-verification:** a search glob is read as ripgrep reads it
   (`*env`, `?env`, `{*.ts,.env}` pick `.env`); a `type` no longer counts as narrowing; a link
   to a protected file is followed; `git grep`, `grep -d recurse` and `rg -L` count as whole
-  searches; names are compared without case; the walk goes 12 folders deep and 20,000 entries,
-  skips only `.git` and `node_modules`, and denies past either limit.
+  searches; names are compared without case; a negated glob (`!*.ts`) or an escaped one
+  (`\.env`) narrows nothing; each command of a pipeline is checked on its own (`rg K | head -c
+  99`); `git -C . grep`, `rgrep` and `ugrep -r` count; folders reached through a link are
+  looked through. The walk skips `.git`, `node_modules` and what the repo's `.gitignore` files
+  ignore (as ripgrep does; not with `--no-ignore` or `-u`), goes 12 folders deep and 20,000
+  folders, and past either asks to narrow the search instead of naming a file.
 - **Known limits:** a search in names-only or count mode can still test patterns against a
   secret (`KEY=sk-a…`), one call per guess; MCP tools from the account's own settings are
   outside the hook; a shell search is checked against the task's folder, not a folder named in

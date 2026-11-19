@@ -119,6 +119,28 @@ describe("Asking the memory", () => {
     await waitFor(() => expect(asked).toHaveBeenCalledWith("¿Precios?", { kind: "mine" }));
   });
 
+  it("drops a code lookup that comes back after a newer question was asked", async () => {
+    const api = MockApi.withSampleData();
+    let release: (() => void) | undefined;
+    const real = api.lookInCode.bind(api);
+    api.lookInCode = async (q, p) => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return real(q, p);
+    };
+    const { user } = renderAt("#ask=%2Fcode%2Fhedy", api);
+    const panel = await screen.findByRole("region", { name: "Pregunta a tu memoria" });
+    await user.type(within(panel).getByLabelText("Pregunta"), "¿Qué tipografía usan los correos?");
+    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+    await user.click(await within(panel).findByRole("button", { name: "Buscar en el código" }));
+    await user.clear(within(panel).getByLabelText("Pregunta"));
+    await user.type(within(panel).getByLabelText("Pregunta"), "¿En qué moneda se guardan los precios?");
+    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+    await within(panel).findByRole("heading", { name: "Fuentes" });
+    release?.();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(within(panel).queryByText(/Según el código del proyecto/)).toBeNull();
+  });
+
   it("refuses an empty question", async () => {
     renderAt("#ask");
     const panel = await screen.findByRole("region", { name: "Pregunta a tu memoria" });

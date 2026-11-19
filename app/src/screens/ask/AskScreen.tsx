@@ -97,13 +97,14 @@ export function AskScreen({
   const ask = useMutation({
     mutationFn: ({ text, where }: { text: string; where: string }) => api.askMemory(text, toScope(where)),
     onMutate: () => {
+      // From here on, a code lookup for the earlier answer is out of date.
+      askedRef.current += 1;
       setError(null);
       setFound(null);
       setDecided(null);
     },
     onSuccess: (result, { text, where }) => {
       setSelected(null);
-      askedRef.current += 1;
       setAnswer({ result, asked: askedRef.current, question: text, scope: where });
     },
     onError: (e) => {
@@ -152,6 +153,9 @@ export function AskScreen({
   };
   // The project the answer was asked about (not what the select says now).
   const scopeProject = answer?.scope.startsWith("project:") ? answer.scope.slice(8) : null;
+  // Looking in the code needs a Claude Code account (the core refuses others).
+  const lookAccount = overview.projects.find((p) => p.path === scopeProject)?.account ?? overview.defaultAccount;
+  const canLook = overview.accounts.find((a) => a.id === lookAccount)?.provider === "claude";
 
   return (
     <div className="ask">
@@ -210,6 +214,7 @@ export function AskScreen({
               <p className="small muted">{t("ask.notWrittenHint")}</p>
               {scopeProject && !found && (
                 <div className="row">
+                  {canLook && (
                   <Button
                     small
                     variant="primary"
@@ -218,6 +223,7 @@ export function AskScreen({
                   >
                     {t("ask.code.look")}
                   </Button>
+                  )}
                   <Button small onClick={() => onOpenMemory(scopeProject)}>
                     {t("ask.write")}
                   </Button>
