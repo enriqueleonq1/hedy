@@ -14,6 +14,17 @@ pub const ALL_NOTES_TOKENS: usize = 6_000;
 pub const BEST_NOTES: usize = 24;
 /// Longest question, in characters.
 pub const QUESTION_MAX: usize = 1_000;
+/// Words of the asking itself, not of what is asked: they match nothing.
+const QUESTION_WORDS: &[&str] = &[
+    "qué", "cómo", "cuál", "cuáles", "cuándo", "dónde", "quién", "quiénes", "cuánto", "cuánta",
+    "cuántos", "cuántas", "usamos", "usan", "usa", "usar", "hacemos", "hacen", "hace", "tenemos",
+    "tienen", "tiene", "debemos", "debo", "puedo", "podemos", "hay", "nuestro", "nuestra",
+    "nuestros", "nuestras", "este", "esta", "estos", "estas", "ese", "esa", "equipo", "proyecto",
+    "what", "how", "when", "where", "who", "which", "why", "do", "does", "did", "we", "our",
+    "us", "use", "used", "this", "that", "these", "team", "project", "should", "can", "you",
+    "your", "my", "are", "for",
+];
+
 /// What the model replies when the notes do not answer.
 pub const NOT_WRITTEN: &str = "NOT_WRITTEN";
 
@@ -74,7 +85,9 @@ impl Source {
 /// share a word with it, at most [`BEST_NOTES`]. Empty: nothing written
 /// can answer it, and no tokens need be spent.
 pub fn pick_sources(question: &str, sources: Vec<Source>) -> Vec<Source> {
-    let terms = key_words(question);
+    let asking = key_words(&QUESTION_WORDS.join(" "));
+    let mut terms = key_words(question);
+    terms.retain(|t| !asking.contains(t));
     let total: usize = sources.iter().map(|s| estimate_tokens(&s.text) + 16).sum();
     let mut scored: Vec<(usize, Source)> = sources
         .into_iter()
@@ -285,7 +298,10 @@ mod tests {
         let picked = pick_sources("¿Cómo nombran las variables?", sources.clone());
         assert_eq!(picked.len(), 1);
         assert!(picked[0].text.contains("camelCase"));
-        assert!(pick_sources("¿Qué tipografía usan los correos?", sources).is_empty());
+        assert!(pick_sources("¿Qué tipografía usan los correos?", sources.clone()).is_empty());
+        // The asking words match nothing on their own.
+        sources.push(source("Los tests usan la base de pruebas de este equipo", SourceLayer::Team, 501));
+        assert!(pick_sources("¿Qué usan en este equipo para los correos?", sources).is_empty());
     }
 
     #[test]

@@ -101,13 +101,18 @@ fn print_answer(answer: &MemoryAnswer) {
     let used = answer.sources.len();
     if let Some(account) = &answer.account {
         let name = clean(&account.name);
-        println!(
-            "\n  {}\n",
-            s.muted(&tr!(
+        let line = if used == 1 {
+            tr!(
+                "Respondió {name} con 1 nota de tu memoria.",
+                "{name} answered from 1 note of your memory."
+            )
+        } else {
+            tr!(
                 "Respondió {name} con {used} notas de tu memoria.",
                 "{name} answered from {used} notes of your memory."
-            ))
-        );
+            )
+        };
+        println!("\n  {}\n", s.muted(&line));
     }
 }
 

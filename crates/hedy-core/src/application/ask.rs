@@ -141,7 +141,10 @@ impl Hedy {
         };
         let account = self.account(id.as_str())?;
         policy::check_launch(None, &account.id, &self.projects()?)?;
-        Ok((account, self.fs.chats_dir()))
+        // An empty folder of Hedy's own: no project's files or instructions.
+        let dir = self.fs.chats_dir();
+        self.fs.create_private_dir(&dir)?;
+        Ok((account, dir))
     }
 
     /// The account a question outside a project goes to when none is
@@ -382,6 +385,8 @@ mod tests {
         assert_eq!(a.text, None);
         assert!(a.sources.is_empty() && a.account.is_none());
         assert!(f.agents.calls().is_empty());
+        // Outside a project it runs in an empty folder of Hedy's own.
+        assert!(f.fs.dirs().contains(Path::new("/data/chats")));
 
         f.hedy
             .add_note(None, "Commits en una línea", Category::Convention)
