@@ -6,6 +6,13 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- Agents never read a protected file (`.env`, keys) through a search over a whole folder, a
+  search glob, a link or a shell pipeline, and every `hedy` command that starts an agent now
+  runs it with that guard (before, only `hedy ask` did). One-shot requests (commit messages,
+  summaries) run with no shell.
+
 ### Added
 
 - Personal sync: the same Hedy on every PC you use. Notes, proposals, skills, templates and
@@ -21,6 +28,12 @@ All notable changes to Hedy are listed here. The format follows
   People join with a one-time invite code, members suggest changes and admins review them, and
   removing someone changes the key. Every PC checks who was allowed to write what. In
   Ajustes → Equipos or with `hedy team`. See [docs/team.md](docs/team.md).
+- Ask your memory: a question answered only from what is written in your notes, your
+  projects' and your teams', each claim citing its note (who wrote it, where it lives, when).
+  When nothing written answers, it says so, and can look in the project's code and propose
+  the note that would have answered it, for you to keep or discard. In the app, "Tu memoria"
+  shows the answer beside a living graph of the memory, in the style of Obsidian's, that
+  lights the notes it used. From the terminal, `hedy memory ask`.
 - A context-saving package, on by default, measured on real tasks before turning it on: it cut
   cost by 30–41 %. Turn it off in Ajustes → Ahorro or with
   `hedy config set context_saving off`; `hedy doctor` says whether it is on.
