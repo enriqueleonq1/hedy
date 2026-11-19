@@ -38,6 +38,19 @@ fn empty_tree(repo: &Path) -> PortResult<String> {
         .to_owned())
 }
 
+/// A file with no other name (a hard link may be a protected file).
+#[cfg(unix)]
+fn single_link(meta: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+    meta.nlink() == 1
+}
+
+/// Elsewhere the links of a file are not known: it is only named.
+#[cfg(not(unix))]
+fn single_link(_: &fs::Metadata) -> bool {
+    false
+}
+
 fn diff_args<'a>(before: &[&'a str], after: &[&'a str]) -> Vec<&'a str> {
     let mut args = vec!["diff"];
     args.extend_from_slice(before);
@@ -64,10 +77,8 @@ fn untracked_file(repo: &Path, path: &str) -> FileDiff {
     let full = repo.join(path);
     // Never through a link: a symbolic one is not a file, and a hard one
     // may be a protected file under another name.
-    let small = fs::symlink_metadata(&full).is_ok_and(|m| {
-        use std::os::unix::fs::MetadataExt as _;
-        m.is_file() && m.len() <= UNTRACKED_BYTES_MAX && m.nlink() == 1
-    });
+    let small = fs::symlink_metadata(&full)
+        .is_ok_and(|m| m.is_file() && m.len() <= UNTRACKED_BYTES_MAX && single_link(&m));
     let text = small
         .then(|| fs::read(&full).ok())
         .flatten()
