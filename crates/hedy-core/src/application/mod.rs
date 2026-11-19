@@ -15,6 +15,7 @@ mod detect;
 mod doctor;
 mod error;
 mod files;
+mod graph;
 mod launch;
 mod memory;
 mod memory_home;
@@ -59,6 +60,7 @@ pub use detect::DetectedCli;
 pub use doctor::{Check, CheckArea, CheckLevel, DoctorReport};
 pub use error::{AppError, AppResult, UndoBlocked};
 pub use files::MAX_PROJECT_FILES;
+pub use graph::{GraphKind, GraphLink, GraphNode, MemoryGraph};
 pub use launch::{Resolved, RunLimitWarning};
 pub use memory::{
     MemoryServerCommand, MemoryView, Proposal, format_note, format_note_page, format_notes,

@@ -2149,3 +2149,75 @@ fn a_question_in_a_team_project_reads_the_team_with_its_authors() {
     assert!(a.sources.iter().all(|s| s.layer != SourceLayer::Mine));
     assert_eq!(a.sources.len(), 2);
 }
+
+#[test]
+fn a_teams_notes_hang_from_the_team_or_its_project_and_their_author() {
+    use crate::application::GraphKind;
+
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    ana.f
+        .hedy
+        .team_add_note(
+            &ana.team,
+            None,
+            "Fondo oscuro #0F1117",
+            Category::Convention,
+            None,
+        )
+        .unwrap();
+    luis.f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            Some(&luis.project),
+            "Modales sobre el panel",
+            Category::Convention,
+            Some("ui"),
+        )
+        .unwrap();
+    ana.sync();
+    luis.sync();
+    ana.sync();
+
+    let g = ana.f.hedy.memory_graph().unwrap();
+    let id_of = |label: &str| {
+        g.nodes
+            .iter()
+            .find(|n| n.label == label)
+            .unwrap()
+            .id
+            .clone()
+    };
+    let linked = |a: &str, b: &str| {
+        g.links
+            .iter()
+            .any(|l| (l.source == a && l.target == b) || (l.source == b && l.target == a))
+    };
+    let team = format!("t:{}", ana.team);
+    let project = format!("p:{}", ana.project.display());
+    assert_eq!(
+        g.nodes.iter().find(|n| n.id == team).unwrap().label,
+        "Tienda SA"
+    );
+    assert!(linked(&project, &team));
+    assert!(linked(&id_of("Fondo oscuro #0F1117"), &team));
+    assert!(linked(&id_of("Modales sobre el panel"), &project));
+    assert!(linked(&id_of("Modales sobre el panel"), &id_of("Luis")));
+    assert!(linked(&id_of("Fondo oscuro #0F1117"), &id_of("Ana")));
+    assert!(linked(&id_of("Modales sobre el panel"), "topic:ui"));
+    let people: Vec<&str> = g
+        .nodes
+        .iter()
+        .filter(|n| n.kind == GraphKind::Person)
+        .map(|n| n.label.as_str())
+        .collect();
+    assert_eq!(people, ["Ana", "Luis"]);
+    let note = g
+        .nodes
+        .iter()
+        .find(|n| n.label == "Modales sobre el panel")
+        .unwrap();
+    assert_eq!(note.group, format!("team:{}", ana.team));
+}

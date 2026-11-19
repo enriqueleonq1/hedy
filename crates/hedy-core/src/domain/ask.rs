@@ -20,9 +20,9 @@ const QUESTION_WORDS: &[&str] = &[
     "cuántos", "cuántas", "usamos", "usan", "usa", "usar", "hacemos", "hacen", "hace", "tenemos",
     "tienen", "tiene", "debemos", "debo", "puedo", "podemos", "hay", "nuestro", "nuestra",
     "nuestros", "nuestras", "este", "esta", "estos", "estas", "ese", "esa", "equipo", "proyecto",
-    "what", "how", "when", "where", "who", "which", "why", "do", "does", "did", "we", "our",
-    "us", "use", "used", "this", "that", "these", "team", "project", "should", "can", "you",
-    "your", "my", "are", "for",
+    "what", "how", "when", "where", "who", "which", "why", "do", "does", "did", "we", "our", "us",
+    "use", "used", "this", "that", "these", "team", "project", "should", "can", "you", "your",
+    "my", "are", "for",
 ];
 
 /// What the model replies when the notes do not answer.
@@ -300,7 +300,11 @@ mod tests {
         assert!(picked[0].text.contains("camelCase"));
         assert!(pick_sources("¿Qué tipografía usan los correos?", sources.clone()).is_empty());
         // The asking words match nothing on their own.
-        sources.push(source("Los tests usan la base de pruebas de este equipo", SourceLayer::Team, 501));
+        sources.push(source(
+            "Los tests usan la base de pruebas de este equipo",
+            SourceLayer::Team,
+            501,
+        ));
         assert!(pick_sources("¿Qué usan en este equipo para los correos?", sources).is_empty());
     }
 
