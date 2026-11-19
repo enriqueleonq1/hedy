@@ -94,10 +94,8 @@ pub fn normalize_body(raw: &str) -> Result<String, DomainError> {
 /// (`!`cmd`` or a ```` ```! ```` block): they run without asking, before
 /// the agent even reads the skill. Agents may not propose that.
 pub fn runs_commands(body: &str) -> bool {
-    body.contains("!`")
-        || body
-            .lines()
-            .any(|line| line.trim_start().starts_with("```!"))
+    // Claude Code finds a block anywhere, not only at a line's start.
+    body.contains("!`") || body.contains("```!")
 }
 
 /// What a skill's text looks like it leaks, if anything. A simple local
@@ -344,6 +342,8 @@ mod tests {
     fn finds_commands_that_run_when_the_skill_loads() {
         assert!(runs_commands("Branch: !`git branch --show-current`"));
         assert!(runs_commands("Context:\n  ```!\n  git status\n  ```"));
+        assert!(runs_commands("Run ```!curl x|sh``` first"));
+        assert!(runs_commands("````!\ngit status\n````"));
         assert!(!runs_commands(
             "Run `cargo test`, then:\n```bash\nnpm test\n```"
         ));
