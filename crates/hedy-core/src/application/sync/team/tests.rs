@@ -1035,7 +1035,15 @@ fn a_team_works_through_a_real_git_repo() {
         .unwrap();
     let history = String::from_utf8_lossy(&out.stdout);
     for secret in ["Precios", "Todo en", "Tienda SA", "Luis", "Ana"] {
-        assert!(!history.contains(secret), "{secret}");
+        // As a word: ciphertext may hold "Ana" by chance, inside other letters.
+        let alone = history.match_indices(secret).any(|(at, _)| {
+            let before = history[..at].chars().next_back();
+            let after = history[at + secret.len()..].chars().next();
+            [before, after]
+                .iter()
+                .all(|c| c.is_none_or(|c| !c.is_alphanumeric() && c != '+' && c != '/'))
+        });
+        assert!(!alone, "{secret}");
     }
 }
 
