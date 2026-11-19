@@ -1105,6 +1105,7 @@ mod tests {
             mcp: vec![],
             conversation: false,
             no_shell: false,
+            plugins: Vec::new(),
         };
         let session = ApiAgentLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
@@ -1393,6 +1394,7 @@ mod tests {
             mcp: vec![],
             conversation: false,
             no_shell: false,
+            plugins: Vec::new(),
         };
         let mut session = ApiAgentLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))

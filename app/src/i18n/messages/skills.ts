@@ -56,8 +56,8 @@ const es = {
     "Todas, también las de todos los proyectos, están en las herramientas de Hedy (skill_list y skill_get), para cualquier IA que lea la memoria.",
   "skills.where.own": "Si ya tienes una habilidad tuya con el mismo nombre, Hedy no la toca.",
 
-  "skills.files.written": "Habilidad «{name}» lista: {n} archivos escritos.",
-  "skills.files.writtenNone": "Habilidad «{name}» lista: la leen con las herramientas de Hedy.",
+  "skills.files.written": "Habilidad «{name}» lista: tus IAs la usan dentro de Hedy ({n} tareas abiertas ya la tienen).",
+  "skills.files.writtenNone": "Habilidad «{name}» lista: tus IAs la usan dentro de Hedy.",
   "skills.files.removed": "Habilidad «{name}» borrada: {n} archivos quitados.",
   "skills.files.removedNone": "Habilidad «{name}» borrada.",
   "skills.files.skipped": "No se tocó {path}: ya existe y no es de Hedy. Renombra la habilidad para tener las dos.",
@@ -118,8 +118,8 @@ const en: Record<keyof typeof es, string> = {
     "All of them, including those for every project, are in Hedy's tools (skill_list and skill_get), for any AI that reads the memory.",
   "skills.where.own": "If you already have a skill of your own with the same name, Hedy leaves it alone.",
 
-  "skills.files.written": "Skill «{name}» ready: {n} files written.",
-  "skills.files.writtenNone": "Skill «{name}» ready: the AIs read it through Hedy's tools.",
+  "skills.files.written": "Skill «{name}» ready: your AIs use it inside Hedy ({n} open tasks have it already).",
+  "skills.files.writtenNone": "Skill «{name}» ready: your AIs use it inside Hedy.",
   "skills.files.removed": "Skill «{name}» deleted: {n} files removed.",
   "skills.files.removedNone": "Skill «{name}» deleted.",
   "skills.files.skipped": "{path} was left alone: it exists and is not Hedy's. Rename the skill to keep both.",

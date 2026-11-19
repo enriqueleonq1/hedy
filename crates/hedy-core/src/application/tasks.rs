@@ -431,6 +431,14 @@ impl Hedy {
         } else {
             self.code_map_servers(&task.project)?
         };
+        // Claude Code gets the skills as a plugin for this session only.
+        let plugins = match (&backend, &project) {
+            (AgentBackend::ClaudeCode, Some(project)) => self
+                .skills_plugin(&project.path, &task.id)?
+                .into_iter()
+                .collect(),
+            _ => Vec::new(),
+        };
         let number = self.sessions.fetch_add(1, Ordering::Relaxed) + 1;
         let hedy = self.clone();
         let id = task.id.clone();
@@ -457,6 +465,7 @@ impl Hedy {
                 mcp,
                 conversation: task.conversation,
                 no_shell: false,
+                plugins,
             },
             sink,
         )?;
@@ -1098,6 +1107,7 @@ impl Hedy {
         if let Some(ws) = &task.workspace {
             self.git
                 .remove_worktree(&task.project, &ws.worktree, &ws.branch)?;
+            self.forget_skills_plugin(&task.id);
         }
         self.set_status(&mut task, TaskStatus::Discarded)?;
         self.clear_queue(id)?;

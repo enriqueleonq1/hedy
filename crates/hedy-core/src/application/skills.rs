@@ -14,7 +14,7 @@ use crate::domain::memory::{USER_AUTHOR, preview};
 use crate::domain::recall::{PageRequest, Paged, SKILLS_MAX, SKILLS_PAGE, paginate};
 use crate::domain::skill::{
     SkillFolder, find_secret, is_managed, normalize_body, normalize_description,
-    normalize_skill_name, skill_file,
+    normalize_skill_name, plugin_manifest, skill_file,
 };
 use crate::domain::{DomainError, Project, Skill, SkillStatus, TaskId};
 use crate::experiments::{self, Experiment};
@@ -329,16 +329,18 @@ impl Hedy {
         Ok(SkillFiles::default())
     }
 
-    /// Folders where a project's CLIs work: the project itself (`false`)
-    /// and the worktrees of its open tasks (`true`).
-    fn skill_dirs(&self, project: &Path) -> AppResult<Vec<(PathBuf, bool)>> {
-        let mut dirs = vec![(project.to_owned(), false)];
+    /// Where Hedy writes a project's skills: only the worktrees of its open
+    /// tasks, for the CLIs other than Claude Code (which gets them as a
+    /// plugin for its sessions). The project's own checkout is the user's:
+    /// their own `claude` or `codex` there never sees Hedy's skills.
+    fn skill_dirs(&self, project: &Path) -> AppResult<Vec<PathBuf>> {
+        let mut dirs = Vec::new();
         for task in self.store.tasks(project)? {
             if let Some(ws) = &task.workspace
                 && !task.status.is_closed()
                 && self.fs.exists(&ws.worktree)
             {
-                dirs.push((ws.worktree.clone(), true));
+                dirs.push(ws.worktree.clone());
             }
         }
         Ok(dirs)
@@ -349,50 +351,39 @@ impl Hedy {
         let Some(project) = &skill.project else {
             return Ok(files);
         };
-        for (dir, worktree) in self.skill_dirs(project)? {
-            self.write_skill_files(project, &dir, worktree, skill, &mut files)?;
+        self.tidy_skill_files(project)?;
+        for dir in self.skill_dirs(project)? {
+            self.write_skill_files(project, &dir, skill, &mut files)?;
         }
         Ok(files)
     }
 
-    /// Writes an approved skill in each CLI's folder inside `dir`, after
-    /// excluding it from git. A file Hedy did not write is never replaced.
-    ///
-    /// Claude Code reads the main checkout's `.claude/skills` from a
-    /// worktree that has none, so a worktree only gets Claude's copy when it
-    /// already has that folder (committed by the team); otherwise the
-    /// user's own uncommitted skills would stop loading there.
+    /// Writes an approved skill in the cross-tool folder (`.agents/skills`)
+    /// of a task's worktree, after excluding it from git. A file Hedy did not
+    /// write is never replaced.
     fn write_skill_files(
         &self,
         repo: &Path,
         dir: &Path,
-        worktree: bool,
         skill: &Skill,
         files: &mut SkillFiles,
     ) -> AppResult<()> {
-        for folder in SkillFolder::ALL {
-            if worktree
-                && folder == SkillFolder::Claude
-                && !self.fs.exists(&dir.join(folder.path()))
-            {
-                continue;
-            }
-            let path = dir.join(folder.file(&skill.name));
-            if self
-                .fs
-                .read_text(&path)?
-                .is_some_and(|text| !is_managed(&text))
-            {
-                files.skipped.push(path);
-                continue;
-            }
-            if self.fs.git_root(repo).is_some() {
-                self.git
-                    .ensure_excluded(repo, &folder.exclude_pattern(&skill.name))?;
-            }
-            self.fs.write_text(&path, &skill_file(skill))?;
-            files.written.push(path);
+        let folder = SkillFolder::Agents;
+        let path = dir.join(folder.file(&skill.name));
+        if self
+            .fs
+            .read_text(&path)?
+            .is_some_and(|text| !is_managed(&text))
+        {
+            files.skipped.push(path);
+            return Ok(());
         }
+        if self.fs.git_root(repo).is_some() {
+            self.git
+                .ensure_excluded(repo, &folder.exclude_pattern(&skill.name))?;
+        }
+        self.fs.write_text(&path, &skill_file(skill))?;
+        files.written.push(path);
         Ok(())
     }
 
@@ -401,7 +392,10 @@ impl Hedy {
         let Some(project) = &skill.project else {
             return Ok(files);
         };
-        for (dir, _) in self.skill_dirs(project)? {
+        // The project's own checkout too: copies an older Hedy left there.
+        let mut dirs = vec![project.clone()];
+        dirs.extend(self.skill_dirs(project)?);
+        for dir in dirs {
             for folder in SkillFolder::ALL {
                 let path = dir.join(folder.file(&skill.name));
                 if !self
@@ -413,29 +407,101 @@ impl Hedy {
                 }
                 self.fs.remove_file(&path)?;
                 files.removed.push(path);
-                // Empty folders left behind go too: `<name>`, `skills`, `.claude`.
-                let mut empty = dir.join(folder.path()).join(&skill.name);
-                loop {
-                    self.fs.remove_empty_dir(&empty)?;
-                    if !empty.pop() || empty == dir {
-                        break;
-                    }
-                }
+                self.remove_empty_skill_dirs(&dir, folder, &skill.name)?;
             }
         }
         Ok(files)
     }
 
-    /// A new task worktree gets the project's approved skills (they are
-    /// excluded from git, so `git worktree add` does not bring them).
-    pub(super) fn install_skills_in(&self, repo: &Path, worktree: &Path) -> AppResult<()> {
-        let mut files = SkillFiles::default();
-        for skill in self.store.skills(Some(repo), false)? {
-            if skill.status == SkillStatus::Approved {
-                self.write_skill_files(repo, worktree, true, &skill, &mut files)?;
+    /// The folders a removed skill file leaves empty: `<name>`, `skills`,
+    /// `.claude` or `.agents`.
+    fn remove_empty_skill_dirs(
+        &self,
+        dir: &Path,
+        folder: SkillFolder,
+        name: &str,
+    ) -> AppResult<()> {
+        let mut empty = dir.join(folder.path()).join(name);
+        loop {
+            self.fs.remove_empty_dir(&empty)?;
+            if !empty.pop() || empty == dir {
+                break;
             }
         }
         Ok(())
+    }
+
+    /// An older Hedy also wrote approved skills in the project's own
+    /// checkout, where the user's own CLIs read them. Those copies go, but
+    /// only where they are exactly what Hedy wrote: one edited by hand stays.
+    fn tidy_skill_files(&self, project: &Path) -> AppResult<()> {
+        for skill in self.store.skills(Some(project), false)? {
+            let written = skill_file(&skill);
+            for folder in SkillFolder::ALL {
+                let path = project.join(folder.file(&skill.name));
+                if self.fs.read_text(&path)?.as_deref() == Some(written.as_str()) {
+                    self.fs.remove_file(&path)?;
+                    self.remove_empty_skill_dirs(project, folder, &skill.name)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// A new task worktree gets the project's approved skills for the CLIs
+    /// that read `.agents/skills` (they are excluded from git, so
+    /// `git worktree add` does not bring them).
+    pub(super) fn install_skills_in(&self, repo: &Path, worktree: &Path) -> AppResult<()> {
+        self.tidy_skill_files(repo)?;
+        let mut files = SkillFiles::default();
+        for skill in self.store.skills(Some(repo), false)? {
+            if skill.status == SkillStatus::Approved {
+                self.write_skill_files(repo, worktree, &skill, &mut files)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Claude Code's plugin with the approved skills of the project (and the
+    /// global ones), for one task's sessions only (`--plugin-dir`): nothing
+    /// goes in the repository or in `~/.claude`. `None` with no skill.
+    pub(super) fn skills_plugin(
+        &self,
+        project: &Path,
+        task: &TaskId,
+    ) -> AppResult<Option<PathBuf>> {
+        let dir = self.skills_plugin_dir(task);
+        if self.fs.exists(&dir) {
+            self.fs.remove_dir_all(&dir)?;
+        }
+        let skills = self.agent_skills(project)?;
+        if skills.is_empty() {
+            return Ok(None);
+        }
+        self.fs
+            .write_text(&dir.join(".claude-plugin/plugin.json"), &plugin_manifest())?;
+        for skill in &skills {
+            self.fs.write_text(
+                &dir.join("skills").join(&skill.name).join("SKILL.md"),
+                &skill_file(skill),
+            )?;
+        }
+        Ok(Some(dir))
+    }
+
+    /// A closed task's plugin is of no use any more.
+    pub(super) fn forget_skills_plugin(&self, task: &TaskId) {
+        let dir = self.skills_plugin_dir(task);
+        if self.fs.exists(&dir) {
+            let _ = self.fs.remove_dir_all(&dir);
+        }
+    }
+
+    fn skills_plugin_dir(&self, task: &TaskId) -> PathBuf {
+        self.fs
+            .chats_dir()
+            .with_file_name("skills-plugins")
+            .join(task.as_str())
     }
 
     /// Approved skills an agent may read in the project containing `path`.
@@ -623,7 +689,6 @@ mod tests {
     use crate::application::ports::FileSystem;
     use crate::application::testing::Fixture;
     use crate::domain::TaskMode;
-    use crate::domain::skill::MANAGED_MARKER;
 
     const CLAUDE_FILE: &str = "/code/agenda/.claude/skills/run-e2e-tests/SKILL.md";
     const AGENTS_FILE: &str = "/code/agenda/.agents/skills/run-e2e-tests/SKILL.md";
@@ -652,8 +717,24 @@ mod tests {
             .unwrap()
     }
 
+    fn start(f: &Fixture) -> PathBuf {
+        f.hedy
+            .start_task(NewTask {
+                images: Vec::new(),
+                project: f.dir("/code/agenda"),
+                prompt: "Arregla el login".into(),
+                mode: TaskMode::Project,
+                model: None,
+                plan_first: false,
+            })
+            .unwrap()
+            .workspace
+            .unwrap()
+            .worktree
+    }
+
     #[test]
-    fn proposals_wait_and_approval_writes_each_cli_folder() {
+    fn approval_keeps_the_skill_in_hedy_and_out_of_the_project() {
         let f = setup();
         let agenda = f.dir("/code/agenda");
         let proposal = propose(&f, "1. npm run build\n2. npm run test:e2e");
@@ -665,26 +746,13 @@ mod tests {
             "proposals stay hidden"
         );
         assert!(tools.get("run-e2e-tests").contains("No hay una habilidad"));
-        assert!(f.fs.files().is_empty());
 
         let change = f.hedy.approve_skill(proposal.id).unwrap();
         assert_eq!(change.skill.status, SkillStatus::Approved);
-        assert_eq!(
-            change.files.written,
-            [PathBuf::from(CLAUDE_FILE), PathBuf::from(AGENTS_FILE)]
-        );
-        let file = f.fs.file(CLAUDE_FILE).unwrap();
-        assert!(file.starts_with("---\nname: run-e2e-tests\n"));
-        assert!(file.contains(MANAGED_MARKER) && file.contains("npm run test:e2e"));
-        assert_eq!(f.fs.file(AGENTS_FILE), Some(file));
-        assert_eq!(
-            f.git.excluded(),
-            [
-                "/.claude/skills/run-e2e-tests/",
-                "/.agents/skills/run-e2e-tests/"
-            ]
-        );
-
+        // Nothing in the project: the user's own CLIs there never see it.
+        assert!(change.files.written.is_empty());
+        assert!(f.fs.files().is_empty());
+        assert!(f.git.excluded().is_empty());
         assert_eq!(
             tools.list(),
             "- run-e2e-tests [proyecto]: Run the end-to-end tests before a release."
@@ -697,6 +765,119 @@ mod tests {
             f.hedy.reject_skill(proposal.id),
             Err(AppError::SkillNotAProposal(_))
         ));
+    }
+
+    #[test]
+    fn a_task_gets_the_skills_claude_as_a_plugin_the_others_in_its_worktree() {
+        let f = setup();
+        f.hedy.approve_skill(propose(&f, "1. npm test").id).unwrap();
+        let wt = start(&f);
+        // The other CLIs read `.agents/skills` in the task's own worktree.
+        let agents = wt.join(".agents/skills/run-e2e-tests/SKILL.md");
+        assert!(f.fs.read_text(&agents).unwrap().is_some());
+        assert!(
+            f.fs.read_text(&wt.join(".claude/skills/run-e2e-tests/SKILL.md"))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            f.git
+                .excluded()
+                .contains(&"/.agents/skills/run-e2e-tests/".to_owned()),
+            "kept out of git"
+        );
+        // Claude Code gets them as a plugin for this session only.
+        let request = f.agents.last_request();
+        assert_eq!(request.plugins.len(), 1);
+        let plugin = &request.plugins[0];
+        assert!(plugin.starts_with("/data/skills-plugins"));
+        let manifest =
+            f.fs.read_text(&plugin.join(".claude-plugin/plugin.json"))
+                .unwrap();
+        assert!(manifest.unwrap().contains("\"name\": \"hedy\""));
+        let skill =
+            f.fs.read_text(&plugin.join("skills/run-e2e-tests/SKILL.md"))
+                .unwrap()
+                .unwrap();
+        assert!(skill.contains("npm test"));
+        // The project's own checkout stays untouched.
+        assert!(f.fs.file(CLAUDE_FILE).is_none() && f.fs.file(AGENTS_FILE).is_none());
+
+        // A later skill reaches the open worktree; removing it takes it away.
+        let lint = f
+            .hedy
+            .propose_skill(
+                &f.dir("/code/agenda"),
+                "lint",
+                "Lint first.",
+                "1. npm run lint",
+                "Codex",
+                None,
+            )
+            .unwrap();
+        f.fs.add_existing(&wt.to_string_lossy());
+        let change = f.hedy.approve_skill(lint.id).unwrap();
+        assert_eq!(
+            change.files.written,
+            [wt.join(".agents/skills/lint/SKILL.md")]
+        );
+        let files = f.hedy.remove_skill(lint.id).unwrap();
+        assert_eq!(files.removed, [wt.join(".agents/skills/lint/SKILL.md")]);
+    }
+
+    #[test]
+    fn only_claude_gets_the_plugin_and_none_without_skills() {
+        let f = setup();
+        let wt = start(&f);
+        assert!(f.agents.last_request().plugins.is_empty(), "no skills yet");
+        let _ = wt;
+        f.hedy.approve_skill(propose(&f, "1. npm test").id).unwrap();
+        f.add_codex("Codex");
+        f.hedy
+            .use_account(&f.dir("/code/agenda"), "codex", None)
+            .unwrap();
+        start(&f);
+        assert!(f.agents.last_request().plugins.is_empty());
+    }
+
+    #[test]
+    fn copies_an_older_hedy_left_in_the_project_go_but_edited_ones_stay() {
+        let f = setup();
+        let change = f.hedy.approve_skill(propose(&f, "1. npm test").id).unwrap();
+        // As an older Hedy wrote them, one of them edited by hand since.
+        f.fs.add_file(CLAUDE_FILE, &skill_file(&change.skill));
+        f.fs.add_file(
+            AGENTS_FILE,
+            &format!("{}\n4. mine", skill_file(&change.skill)),
+        );
+        start(&f);
+        assert!(f.fs.file(CLAUDE_FILE).is_none());
+        assert!(f.fs.file(AGENTS_FILE).unwrap().ends_with("4. mine"));
+        assert!(
+            f.fs.removed_dirs()
+                .contains(&f.dir("/code/agenda/.claude/skills/run-e2e-tests"))
+        );
+    }
+
+    #[test]
+    fn a_users_own_skill_file_is_never_overwritten_or_deleted() {
+        let f = setup();
+        let wt = start(&f);
+        f.fs.add_existing(&wt.to_string_lossy());
+        let own = wt.join(".agents/skills/run-e2e-tests/SKILL.md");
+        f.fs.add_file(
+            &own.to_string_lossy(),
+            "---\nname: run-e2e-tests\n---\nMine",
+        );
+        let change = f.hedy.approve_skill(propose(&f, "1. npm test").id).unwrap();
+        assert_eq!(change.files.skipped, std::slice::from_ref(&own));
+        assert!(change.files.written.is_empty());
+        let files = f.hedy.remove_skill(change.skill.id).unwrap();
+        assert!(files.removed.is_empty());
+        assert_eq!(
+            f.fs.read_text(&own).unwrap().unwrap(),
+            "---\nname: run-e2e-tests\n---\nMine"
+        );
     }
 
     #[test]
@@ -727,7 +908,7 @@ mod tests {
             Some(old.id)
         );
         assert!(
-            f.fs.file(AGENTS_FILE).unwrap().contains("1. npm test"),
+            tools.get("run-e2e-tests").contains("1. npm test"),
             "not yet"
         );
 
@@ -751,38 +932,50 @@ mod tests {
             ("Headless now.", "Codex")
         );
         assert!(change.skill.updated_at.is_some());
-        assert!(f.fs.file(AGENTS_FILE).unwrap().contains("--headless"));
+        assert!(tools.get("run-e2e-tests").contains("--headless"));
         let view = f.hedy.skills(&agenda).unwrap();
         assert_eq!((view.approved.len(), view.proposed.len()), (1, 0));
     }
 
     #[test]
-    fn a_users_own_skill_file_is_never_overwritten_or_deleted() {
+    fn editing_an_approved_skill_moves_its_worktree_files() {
         let f = setup();
-        f.fs.add_file(CLAUDE_FILE, "---\nname: run-e2e-tests\n---\nMine");
-        let change = f.hedy.approve_skill(propose(&f, "1. npm test").id).unwrap();
-        assert_eq!(change.files.skipped, [PathBuf::from(CLAUDE_FILE)]);
-        assert_eq!(change.files.written, [PathBuf::from(AGENTS_FILE)]);
+        let agenda = f.dir("/code/agenda");
+        let skill = f
+            .hedy
+            .approve_skill(propose(&f, "1. npm test").id)
+            .unwrap()
+            .skill;
+        let wt = start(&f);
+        f.fs.add_existing(&wt.to_string_lossy());
+        let draft = SkillDraft {
+            name: "e2e".into(),
+            description: "Run the e2e tests.".into(),
+            body: "1. npm run e2e".into(),
+            global: false,
+        };
+        let change = f.hedy.edit_skill(skill.id, &agenda, &draft).unwrap();
+        assert_eq!(change.skill.name, "e2e");
+        assert_eq!(change.skill.author, "Claude", "the author stays");
         assert_eq!(
-            f.fs.file(CLAUDE_FILE).unwrap(),
-            "---\nname: run-e2e-tests\n---\nMine"
+            change.files.removed,
+            [wt.join(".agents/skills/run-e2e-tests/SKILL.md")]
         );
-
-        let files = f.hedy.remove_skill(change.skill.id).unwrap();
-        assert_eq!(files.removed, [PathBuf::from(AGENTS_FILE)]);
-        assert!(f.fs.file(CLAUDE_FILE).is_some(), "still the user's");
-        assert_eq!(f.fs.file(AGENTS_FILE), None);
-        let removed = f.fs.removed_dirs();
-        assert!(removed.contains(&f.dir("/code/agenda/.agents/skills/run-e2e-tests")));
-        assert!(removed.contains(&f.dir("/code/agenda/.agents")));
-        assert!(!removed.contains(&f.dir("/code/agenda")));
-        assert!(
-            f.hedy
-                .skills(&f.dir("/code/agenda"))
+        let renamed =
+            f.fs.read_text(&wt.join(".agents/skills/e2e/SKILL.md"))
                 .unwrap()
-                .approved
-                .is_empty()
-        );
+                .unwrap();
+        assert!(renamed.contains("npm run e2e"));
+
+        // To global: the worktree copy goes, the tools keep serving it.
+        let global = SkillDraft {
+            global: true,
+            ..draft
+        };
+        let change = f.hedy.edit_skill(skill.id, &agenda, &global).unwrap();
+        assert_eq!(change.files.removed.len(), 1);
+        let tools = f.hedy.skill_tools(&agenda, None, "x").unwrap();
+        assert!(tools.list().contains("e2e [global]"));
     }
 
     #[test]
@@ -870,89 +1063,6 @@ mod tests {
             f.hedy.skill_named(&agenda, "Commits").unwrap().id,
             change.skill.id
         );
-    }
-
-    #[test]
-    fn editing_an_approved_skill_moves_its_files() {
-        let f = setup();
-        let agenda = f.dir("/code/agenda");
-        let skill = f
-            .hedy
-            .approve_skill(propose(&f, "1. npm test").id)
-            .unwrap()
-            .skill;
-        let draft = SkillDraft {
-            name: "e2e".into(),
-            description: "Run the e2e tests.".into(),
-            body: "1. npm run e2e".into(),
-            global: false,
-        };
-        let change = f.hedy.edit_skill(skill.id, &agenda, &draft).unwrap();
-        assert_eq!(change.skill.name, "e2e");
-        assert_eq!(change.skill.author, "Claude", "the author stays");
-        assert_eq!(change.files.removed.len(), 2);
-        assert!(f.fs.file(AGENTS_FILE).is_none());
-        let renamed =
-            f.fs.file("/code/agenda/.agents/skills/e2e/SKILL.md")
-                .unwrap();
-        assert!(renamed.contains("npm run e2e"));
-
-        // To global: the files go, the MCP tools keep serving it.
-        let global = SkillDraft {
-            global: true,
-            ..draft
-        };
-        let change = f.hedy.edit_skill(skill.id, &agenda, &global).unwrap();
-        assert_eq!(change.files.removed.len(), 2);
-        assert!(f.fs.files().is_empty());
-        let tools = f.hedy.skill_tools(&agenda, None, "x").unwrap();
-        assert!(tools.list().contains("e2e [global]"));
-    }
-
-    #[test]
-    fn task_worktrees_get_the_approved_skills() {
-        let f = setup();
-        let agenda = f.dir("/code/agenda");
-        f.hedy.approve_skill(propose(&f, "1. npm test").id).unwrap();
-        let task = f
-            .hedy
-            .start_task(NewTask {
-                images: Vec::new(),
-                project: agenda.clone(),
-                prompt: "Arregla el login".into(),
-                mode: TaskMode::Project,
-                model: None,
-                plan_first: false,
-            })
-            .unwrap();
-        let wt = task.workspace.unwrap().worktree;
-        let read = |path: PathBuf| f.fs.read_text(&path).unwrap();
-        // Claude Code reads the main checkout's skills from a worktree
-        // without its own `.claude/skills`.
-        assert!(read(wt.join(".agents/skills/run-e2e-tests/SKILL.md")).is_some());
-        assert!(read(wt.join(".claude/skills/run-e2e-tests/SKILL.md")).is_none());
-
-        // An open worktree that has the folder (committed by the team)
-        // follows later changes, Claude's copy included.
-        f.fs.add_existing(&wt.to_string_lossy());
-        f.fs.add_existing(&wt.join(".claude/skills").to_string_lossy());
-        let lint = f
-            .hedy
-            .propose_skill(
-                &agenda,
-                "lint",
-                "Lint first.",
-                "1. npm run lint",
-                "Codex",
-                None,
-            )
-            .unwrap();
-        f.hedy.approve_skill(lint.id).unwrap();
-        assert!(read(wt.join(".claude/skills/lint/SKILL.md")).is_some());
-        assert!(read(wt.join(".agents/skills/lint/SKILL.md")).is_some());
-
-        let files = f.hedy.remove_skill(lint.id).unwrap();
-        assert_eq!(files.removed.len(), 4, "project and worktree, both folders");
     }
 
     #[test]

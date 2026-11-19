@@ -171,6 +171,7 @@ impl Hedy {
         let after = self.git.head_commit(&task.project)?;
         self.git
             .remove_worktree(&task.project, &ws.worktree, &ws.branch)?;
+        self.forget_skills_plugin(&task.id);
         task.merge = Some(MergeRecord {
             before,
             after,

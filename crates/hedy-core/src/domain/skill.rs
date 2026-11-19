@@ -247,6 +247,17 @@ impl SkillFolder {
 /// skill is never touched.
 pub const MANAGED_MARKER: &str = "<!-- hedy: managed skill -->";
 
+/// The name of the Claude Code plugin that carries Hedy's skills: they
+/// show as `/hedy:<name>`.
+pub const SKILLS_PLUGIN: &str = "hedy";
+
+/// The plugin's manifest (`.claude-plugin/plugin.json`).
+pub fn plugin_manifest() -> String {
+    format!(
+        "{{\n  \"name\": \"{SKILLS_PLUGIN}\",\n  \"description\": \"Skills approved in Hedy, for its sessions only\",\n  \"version\": \"1.0.0\"\n}}\n"
+    )
+}
+
 pub fn is_managed(contents: &str) -> bool {
     contents.contains(MANAGED_MARKER)
 }

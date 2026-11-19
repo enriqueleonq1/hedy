@@ -697,18 +697,23 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
   `skill_get {name}` (the whole skill), progressive like `memory_search` /
   `memory_get`. Claude already pre-allows `mcp__hedy-memory`. Turning the memory off for
   an account also turns these tools off; the native files below stay.
-- **Native files.** Approving a project skill writes `.claude/skills/<name>/SKILL.md` and
-  `.agents/skills/<name>/SKILL.md` (one copy each, no symlinks: only Codex documents
-  following them) in the project and in the worktrees of its open tasks, and new
-  worktrees get them when they are created. Each folder is added to
-  `.git/info/exclude` (`/.claude/skills/<name>/`, `/.agents/skills/<name>/`, anchored, so
-  it also covers worktrees) before the file is written, so a task's diff and commit
-  never include them. Editing, renaming, moving to global or deleting rewrites or
-  removes them (and empty folders left behind); the exclude lines stay, harmless.
-  - **Claude in worktrees:** a worktree only gets Claude's copy when it already has a
-    `.claude/skills` folder (committed by the team). Otherwise Claude Code reads the
-    main checkout's, which also keeps the user's own uncommitted skills working there;
-    writing a `.claude/skills` into the worktree would hide them.
+- **Native files, inside Hedy only** (changed Nov 19, 2026: a user's own `claude` in the
+  project was loading Hedy's skills too). Nothing is written in the project's own checkout:
+  - **Claude Code** gets the approved skills (the project's and the global ones) as a
+    plugin for each session only: Hedy writes `<data>/skills-plugins/<task>/`
+    (`.claude-plugin/plugin.json` named `hedy`, `skills/<name>/SKILL.md`) and launches
+    with `--plugin-dir` ("for this session only" in Claude Code's CLI reference); they
+    show as `/hedy:<name>`. Verified with Claude Code 2.1.306: the session's `init` lists
+    `hedy:run-e2e-tests`, a plain `claude` in the same folder does not. The folder goes
+    when the task is accepted or discarded.
+  - **Codex, Gemini CLI, Kimi Code, Antigravity** document no per-session skills folder,
+    so Hedy writes `.agents/skills/<name>/SKILL.md` only in the worktrees of open tasks
+    (Hedy's own folders), excluded from git (`/.agents/skills/<name>/`); new worktrees get
+    them when created. Editing, renaming, moving to global or deleting rewrites or removes
+    them.
+  - **Older copies:** an earlier Hedy wrote them in the project too. When a task starts or
+    a skill changes, a copy there that is exactly what Hedy wrote is removed (with empty
+    folders); one edited by hand stays.
   - **Never overwrite the user's files:** every file Hedy writes carries the line
     `<!-- hedy: managed skill -->`; a file at that path without it is the user's and is
     skipped (the UI and `hedy skills` warn), and never deleted.

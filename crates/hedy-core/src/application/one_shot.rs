@@ -71,6 +71,7 @@ impl Hedy {
                 mcp: Vec::new(),
                 conversation: false,
                 no_shell: shot.no_shell,
+                plugins: Vec::new(),
             },
             sink,
         )?;

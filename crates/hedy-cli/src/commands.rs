@@ -1585,6 +1585,13 @@ pub fn skills_approve(hedy: &Hedy, id: i64) -> Result<()> {
         tr!("Habilidad {name} actualizada.", "Skill {name} updated.")
     };
     println!("{} {done}", s.ok("✔"));
+    println!(
+        "  {}",
+        s.muted(tr!(
+            "Tus IAs la usan dentro de Hedy; tu Claude Code o Codex de siempre no la ven.",
+            "Your AIs use it inside Hedy; your usual Claude Code or Codex do not see it."
+        ))
+    );
     print_skill_files(&s, &change.files);
     Ok(())
 }

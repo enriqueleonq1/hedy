@@ -170,6 +170,11 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     .map(String::from)
     .to_vec();
     args.extend(["--settings".into(), settings(hook)]);
+    // Hedy's skills, for this session only: the user's own `claude` in the
+    // same repository never sees them.
+    for plugin in &request.plugins {
+        args.extend(["--plugin-dir".into(), plugin.to_string_lossy().into_owned()]);
+    }
     // A reviewer reads and comments, like a question.
     let mode = if request.phase == Phase::Review {
         TaskMode::Ask
@@ -478,7 +483,18 @@ pub(crate) mod tests {
             mcp: vec![],
             conversation: false,
             no_shell: false,
+            plugins: Vec::new(),
         }
+    }
+
+    #[test]
+    fn hedys_skills_come_as_a_plugin_for_the_session_only() {
+        let mut request = request(TaskMode::Project, false);
+        assert!(!args(&request, None).contains(&"--plugin-dir".to_owned()));
+        request.plugins = vec![std::path::PathBuf::from("/data/skills-plugins/t-1")];
+        let args = args(&request, None);
+        let at = args.iter().position(|a| a == "--plugin-dir").unwrap();
+        assert_eq!(args[at + 1], "/data/skills-plugins/t-1");
     }
 
     #[test]

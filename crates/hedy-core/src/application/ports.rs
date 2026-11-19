@@ -686,6 +686,9 @@ pub struct AgentRequest {
     /// read a protected file without naming it (`find … | xargs cat`), so a
     /// request that only needs to read goes without one.
     pub no_shell: bool,
+    /// Claude Code plugins for this session only (`--plugin-dir`): Hedy's
+    /// approved skills, never written where the user's own `claude` reads.
+    pub plugins: Vec<PathBuf>,
 }
 
 impl AgentRequest {

@@ -979,12 +979,9 @@ export class MockApi implements HedyApi {
   }
 
   /** Writes or removes the mock's skill files: two per project skill. */
-  private skillFiles(skill: Skill, kind: "written" | "removed"): SkillFiles {
-    const files: SkillFiles = { written: [], removed: [], skipped: [] };
-    if (skill.project) {
-      files[kind] = [".claude/skills", ".agents/skills"].map((dir) => `${skill.project}/${dir}/${skill.name}/SKILL.md`);
-    }
-    return files;
+  /** Like the backend: skills stay inside Hedy, so the sample project gets no file. */
+  private skillFiles(): SkillFiles {
+    return { written: [], removed: [], skipped: [] };
   }
 
   private checkDraft(draft: SkillDraft): string {
@@ -1029,13 +1026,12 @@ export class MockApi implements HedyApi {
     };
     if (this.skillTarget(skill)) throw `ya hay otra habilidad aprobada llamada «${name}»`;
     this.skillList.push(skill);
-    return { skill: structuredClone(skill), files: this.skillFiles(skill, "written") };
+    return { skill: structuredClone(skill), files: this.skillFiles() };
   }
 
   async editSkill(id: number, path: string, draft: SkillDraft): Promise<SkillChange> {
     const skill = this.skillById(id);
     const name = this.checkDraft(draft);
-    const before = structuredClone(skill);
     Object.assign(skill, {
       name,
       description: draft.description.trim(),
@@ -1044,8 +1040,8 @@ export class MockApi implements HedyApi {
       updatedAt: Math.floor(Date.now() / 1000),
     });
     if (skill.status !== "approved") return { skill: structuredClone(skill), files: { written: [], removed: [], skipped: [] } };
-    const removed = this.skillFiles(before, "removed").removed;
-    return { skill: structuredClone(skill), files: { ...this.skillFiles(skill, "written"), removed } };
+    const removed = this.skillFiles().removed;
+    return { skill: structuredClone(skill), files: { ...this.skillFiles(), removed } };
   }
 
   async approveSkill(id: number): Promise<SkillChange> {
@@ -1064,7 +1060,7 @@ export class MockApi implements HedyApi {
     } else {
       proposal.status = "approved";
     }
-    return { skill: structuredClone(approved), files: this.skillFiles(approved, "written") };
+    return { skill: structuredClone(approved), files: this.skillFiles() };
   }
 
   async rejectSkill(id: number): Promise<void> {
@@ -1075,7 +1071,7 @@ export class MockApi implements HedyApi {
   async removeSkill(id: number): Promise<SkillFiles> {
     const skill = this.skillById(id);
     this.skillList = this.skillList.filter((s) => s.id !== id);
-    return skill.status === "approved" ? this.skillFiles(skill, "removed") : { written: [], removed: [], skipped: [] };
+    return skill.status === "approved" ? this.skillFiles() : { written: [], removed: [], skipped: [] };
   }
 
   async overview(): Promise<Overview> {

@@ -64,7 +64,7 @@ describe("Skills", () => {
     const proposed = await screen.findByRole("region", { name: "Propuestas por tus IAs · para aprobar" });
     // An update replaces the approved skill.
     await user.click(within(proposed).getByRole("button", { name: "Aprobar cambio" }));
-    expect(await screen.findByText("Habilidad «correr-tests» lista: 2 archivos escritos.")).toBeInTheDocument();
+    expect(await screen.findByText("Habilidad «correr-tests» lista: tus IAs la usan dentro de Hedy.")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("tab", { name: /1 por aprobar/ })).toBeInTheDocument());
     const own = screen.getByRole("region", { name: "De este proyecto" });
     expect(within(own).getAllByRole("listitem", { name: "correr-tests" })).toHaveLength(1);
@@ -76,7 +76,7 @@ describe("Skills", () => {
     await user.clear(name);
     await user.type(name, "nuevo endpoint");
     await user.click(screen.getByRole("button", { name: "Guardar y aprobar" }));
-    expect(await screen.findByText("Habilidad «nuevo-endpoint» lista: 2 archivos escritos.")).toBeInTheDocument();
+    expect(await screen.findByText("Habilidad «nuevo-endpoint» lista: tus IAs la usan dentro de Hedy.")).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.queryByRole("region", { name: "Propuestas por tus IAs · para aprobar" })).not.toBeInTheDocument(),
     );
@@ -85,7 +85,7 @@ describe("Skills", () => {
     const publish = screen.getByRole("listitem", { name: "publicar-version" });
     await user.click(within(publish).getByRole("button", { name: "Borrar" }));
     await user.click(within(publish).getByRole("button", { name: "¿Borrarla?" }));
-    expect(await screen.findByText("Habilidad «publicar-version» borrada: 2 archivos quitados.")).toBeInTheDocument();
+    expect(await screen.findByText("Habilidad «publicar-version» borrada.")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole("listitem", { name: "publicar-version" })).not.toBeInTheDocument());
   });
 
@@ -104,7 +104,7 @@ describe("Skills", () => {
     await user.type(within(dialog).getByRole("textbox", { name: /Pasos/ }), "npm run lint");
     await user.click(within(dialog).getByRole("radio", { name: "Todos los proyectos" }));
     await user.click(save);
-    expect(await screen.findByText("Habilidad «lint» lista: la leen con las herramientas de Hedy.")).toBeInTheDocument();
+    expect(await screen.findByText("Habilidad «lint» lista: tus IAs la usan dentro de Hedy.")).toBeInTheDocument();
     const view = await api.skills("/code/hedy");
     expect(view.approved.find((s) => s.name === "lint")?.project).toBeNull();
   });

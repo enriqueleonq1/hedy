@@ -737,15 +737,9 @@ fn skills_list_show_approve_reject_and_remove() {
         .stdout(predicate::str::contains("Todavía no hay habilidades"));
 
     let (update, lint) = seed_skills(&env, &repo);
-    let skill_file = repo.join(".claude/skills/run-e2e-tests/SKILL.md");
-    assert!(
-        fs::read_to_string(&skill_file)
-            .unwrap()
-            .contains("npm run build")
-    );
-    let exclude = fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
-    assert!(exclude.contains("/.claude/skills/run-e2e-tests/"));
-    assert!(exclude.contains("/.agents/skills/run-e2e-tests/"));
+    // Inside Hedy only: nothing in the project for the user's own CLIs.
+    assert!(!repo.join(".claude/skills").exists());
+    assert!(!repo.join(".agents/skills").exists());
 
     env.hedy_in(&repo, &["skills", "list"])
         .assert()
@@ -774,20 +768,20 @@ fn skills_list_show_approve_reject_and_remove() {
         .stdout(predicate::str::contains(
             "Habilidad run-e2e-tests actualizada",
         ));
-    assert!(
-        fs::read_to_string(&skill_file)
-            .unwrap()
-            .contains("--headless")
-    );
+    env.hedy_in(&repo, &["skills", "show", "run-e2e-tests"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--headless"));
 
     // A skill of the user's own with the same name is left alone.
     let mine = repo.join(".agents/skills/run-e2e-tests/SKILL.md");
+    fs::create_dir_all(mine.parent().unwrap()).unwrap();
     fs::write(&mine, "---\nname: run-e2e-tests\n---\nMine").unwrap();
     env.hedy_in(&repo, &["skills", "remove", "run-e2e-tests"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Habilidad run-e2e-tests borrada"));
-    assert!(!skill_file.exists() && !repo.join(".claude").exists());
+    assert!(!repo.join(".claude").exists());
     assert_eq!(
         fs::read_to_string(&mine).unwrap(),
         "---\nname: run-e2e-tests\n---\nMine"
@@ -824,7 +818,7 @@ fn skills_speak_english() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Skill lint approved"))
-        .stdout(predicate::str::contains("wrote "));
+        .stdout(predicate::str::contains("Your AIs use it inside Hedy"));
     env.hedy_lang("en", &["skills", "reject", &update.to_string()])
         .assert()
         .success()
