@@ -431,17 +431,6 @@ impl Hedy {
         } else {
             self.code_map_servers(&task.project)?
         };
-        // Claude Code gets the skills as a plugin for this session only.
-        // Without it (a full disk) it still reads them with skill_get.
-        let plugins = match (&backend, &project) {
-            (AgentBackend::ClaudeCode, Some(project)) => self
-                .skills_plugin(&project.path, &task.id)
-                .ok()
-                .flatten()
-                .into_iter()
-                .collect(),
-            _ => Vec::new(),
-        };
         let number = self.sessions.fetch_add(1, Ordering::Relaxed) + 1;
         let hedy = self.clone();
         let id = task.id.clone();
@@ -453,6 +442,18 @@ impl Hedy {
         if let Some(mut old) = live.remove(&task.id) {
             old.session.stop();
         }
+        // Claude Code gets the skills as a plugin for this session only
+        // (built under the lock, as refreshes are). Without it (a full disk)
+        // it still reads them with skill_get.
+        let plugins = match (&backend, &project) {
+            (AgentBackend::ClaudeCode, Some(project)) => self
+                .skills_plugin(&project.path, &task.id)
+                .ok()
+                .flatten()
+                .into_iter()
+                .collect(),
+            _ => Vec::new(),
+        };
         let session = self.agents.start(
             AgentRequest {
                 backend,

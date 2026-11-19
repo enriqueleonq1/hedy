@@ -583,9 +583,12 @@ impl Hedy {
 
     /// Keeps the session plugins in step with the skills: rebuilt for open
     /// tasks, so an edited or deleted skill leaves no copy behind, and gone
-    /// for tasks that are closed or no longer exist. After every change to
-    /// the skills and when the app starts. Best effort.
+    /// for tasks that are closed or no longer exist. Open tasks keep theirs:
+    /// a session may be using it, also one of the app while this runs in
+    /// `hedy`. After every change to the skills and when the app starts.
+    /// Under the sessions' lock, so it never races a launch here. Best effort.
     pub fn refresh_skills_plugins(&self) {
+        let _launches = self.live.lock().unwrap();
         let Ok(entries) = self.fs.entries(&self.skills_plugins_root()) else {
             return;
         };
@@ -595,9 +598,7 @@ impl Hedy {
             };
             match self.store.task(&id) {
                 Ok(Some(task)) if !task.status.is_closed() && !task.conversation => {
-                    if self.skills_plugin(&task.project, &id).is_err() {
-                        self.forget_skills_plugin(&id);
-                    }
+                    let _ = self.skills_plugin(&task.project, &id);
                 }
                 Ok(_) => self.forget_skills_plugin(&id),
                 Err(_) => {}

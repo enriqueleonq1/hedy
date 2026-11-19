@@ -705,10 +705,12 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
     with `--plugin-dir` ("for this session only" in Claude Code's CLI reference); they
     show as `/hedy:<name>`. Verified with Claude Code 2.1.306: the session's `init` lists
     `hedy:run-e2e-tests`, a plain `claude` in the same folder does not. The folder (only
-    the user can read it) is rebuilt at every launch, and for every open task whenever a
-    skill is approved, edited or removed, so no copy of a deleted skill stays; it goes when
-    the task is accepted (merged or kept on its branch) or discarded, and the app sweeps
-    those of closed or deleted tasks at start. A project skill wins over a global one with
+    the user can read it) is rebuilt at every launch, under the same lock as the sessions.
+    Whenever a skill is approved, edited or removed (in the app or with `hedy skills`),
+    the folders of open tasks are rebuilt, so no copy of a deleted skill stays, and those
+    of closed or deleted tasks removed; the app does the same at start. It also goes when
+    the task is accepted (merged or kept on its branch) or discarded. Ask and Research
+    tasks stay open in review, so theirs stays, kept in step, until they are closed. A project skill wins over a global one with
     its name (as in `skill_get`), and at most 50 go, the project's first. Running sessions
     keep the list they started with until their next launch. If the folder cannot be
     written, the session starts without it (the MCP tools still serve the skills).
