@@ -1,20 +1,24 @@
 //! Trying a skill on real tasks (level 3, docs/decisions.md): each task runs
 //! twice as an ordinary task, each in its own worktree, one with the skill
 //! and one without (its plugin, its worktree files and the memory tools
-//! leave it out). When every run has stopped, they are compared and
-//! discarded: nothing reaches the project. The result stays with the skill
-//! on this PC.
+//! leave it out). Once a run stops, Hedy runs the same check in its copy
+//! (the project's test command, or the user's). When every run has, they
+//! are compared and discarded: nothing reaches the project. The result
+//! stays with the skill's version on this PC.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::Duration;
 
 use super::ask::AskScope;
 use super::one_shot::{OneShot, OneShotFailure};
 use super::{AppError, AppResult, Hedy, NewTask};
-use crate::domain::skill::check_visible;
+use crate::domain::briefing;
+use crate::domain::launch::LaunchSpec;
+use crate::domain::skill::{SkillFolder, check_visible};
 use crate::domain::skill_trial::{
-    TRIAL_TASKS_MAX, TrialRef, TrialResult, judge, parse_trial_tasks, run_from_events,
-    trial_tasks_prompt,
+    TRIAL_TASKS_MAX, TrialOutcome, TrialRef, TrialResult, fingerprint, judge, parse_trial_tasks,
+    run_from_events, trial_tasks_prompt, void_reason,
 };
 use crate::domain::{
     Phase, Provider, Skill, SkillStatus, Stage, Task, TaskId, TaskMode, TaskStatus,
@@ -25,9 +29,22 @@ use crate::tr;
 const RUN_KEY: &str = "skill_trial.run.";
 /// Settings key of a skill's last result (by skill id).
 const RESULT_KEY: &str = "skill_trial.result.";
+/// Settings key of how a trial ended, until its driver reads it.
+const OUTCOME_KEY: &str = "skill_trial.outcome.";
+/// Longest a check may take in one copy.
+const CHECK_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// Two runs that stop at once judge their trial once.
 static JUDGING: Mutex<()> = Mutex::new(());
+
+/// A trial that started: its id, its runs (with, without, with, …) and the
+/// check Hedy runs in each copy.
+#[derive(Debug, Clone)]
+pub struct StartedTrial {
+    pub id: String,
+    pub tasks: Vec<Task>,
+    pub check: Option<String>,
+}
 
 impl Hedy {
     /// Up to three small tasks of the project where an agent would need the
@@ -41,6 +58,11 @@ impl Hedy {
         model: Option<&str>,
     ) -> AppResult<Vec<String>> {
         let project = self.project_at(project)?;
+        // The runs need the project's account: nothing is spent without one.
+        project
+            .account
+            .as_ref()
+            .ok_or(AppError::NoAccountResolved)?;
         let skill = self.trial_skill(&project.path, skill_id)?;
         let scope = AskScope::Project(project.path.clone());
         let (account, _) = self.ask_account(&scope, account)?;
@@ -80,18 +102,31 @@ impl Hedy {
         }
     }
 
+    /// The check Hedy would run in each copy: the project's test command,
+    /// guessed from its files.
+    pub fn trial_check(&self, project: &Path) -> AppResult<Option<String>> {
+        let project = self.project_at(project)?;
+        let files = self
+            .code
+            .files_at(&project.path, "HEAD")
+            .unwrap_or_default();
+        Ok(briefing::test_command(&files))
+    }
+
     /// Starts a trial of an approved skill: each of `tasks` (1 to 3) as two
     /// project tasks, one with the skill and one without, through the
     /// project's own phases and accounts (`model` for all, if given). They
     /// are ordinary tasks: they show on the board and ask for permissions
-    /// like any other. If one cannot start, those already started go.
+    /// like any other. `check` (else [`Hedy::trial_check`]) runs in each
+    /// copy once its run stops. If one cannot start, the whole trial goes.
     pub fn start_skill_trial(
         &self,
         project: &Path,
         skill_id: i64,
         tasks: &[String],
         model: Option<&str>,
-    ) -> AppResult<Vec<Task>> {
+        check: Option<&str>,
+    ) -> AppResult<StartedTrial> {
         let project = self.project_at(project)?;
         let skill = self.trial_skill(&project.path, skill_id)?;
         let prompts: Vec<&str> = tasks
@@ -102,18 +137,34 @@ impl Hedy {
         if prompts.is_empty() || prompts.len() > TRIAL_TASKS_MAX {
             return Err(AppError::TrialTasks);
         }
+        // A copy the user's CLIs read in the repo would reach the run
+        // without it too.
+        for folder in SkillFolder::ALL {
+            let path = project.path.join(folder.file(&skill.name));
+            if self.fs.exists(&path) {
+                return Err(AppError::TrialSkillOutside(path));
+            }
+        }
+        let check = match check.map(str::trim).filter(|c| !c.is_empty()) {
+            Some(check) => Some(check.to_owned()),
+            None => self.trial_check(&project.path)?,
+        };
         let trial = format!("k{:x}", self.clock.now_ms());
-        let mut started: Vec<Task> = Vec::new();
+        let version = fingerprint(&skill.name, &skill.description, &skill.body);
+        let mut started = Vec::new();
         for (index, prompt) in prompts.iter().enumerate() {
             for with_skill in [true, false] {
                 let run = TrialRef {
                     trial: trial.clone(),
                     skill: skill.name.clone(),
                     skill_id,
-                    skill_version: skill.updated_at,
                     with_skill,
                     index,
                     tasks: prompts.len(),
+                    check: check.clone(),
+                    checked: None,
+                    stopped: false,
+                    version: version.clone(),
                 };
                 let request = NewTask {
                     images: Vec::new(),
@@ -126,42 +177,76 @@ impl Hedy {
                 match self.start_task_for_trial(request, run) {
                     Ok(task) => started.push(task),
                     Err(error) => {
-                        for task in &started {
-                            let _ = self.discard_task(&task.id);
-                            self.forget_trial_run(&task.id);
-                        }
+                        self.cancel_skill_trial(&project.path, &trial);
                         return Err(error);
                     }
                 }
             }
         }
-        Ok(started)
+        Ok(StartedTrial {
+            id: trial,
+            tasks: started,
+            check,
+        })
     }
 
-    /// Stops a trial before it is judged: its runs are discarded and no
-    /// result is kept (a half trial would say the wrong thing).
-    pub fn cancel_skill_trial(&self, tasks: &[TaskId]) {
-        for id in tasks {
-            if let Ok(task) = self.task(id)
-                && !task.status.is_closed()
-            {
-                self.forget_trial_run(id);
-                let _ = self.discard_task(id);
+    /// Stops a trial before it is judged: every run carrying its id (also
+    /// one that failed to start) is discarded and no result is kept (half a
+    /// trial would say the wrong thing).
+    pub fn cancel_skill_trial(&self, project: &Path, trial: &str) {
+        let _judging = JUDGING.lock().unwrap_or_else(|e| e.into_inner());
+        let runs = self.trial_runs(project, trial);
+        for (task, _) in &runs {
+            self.forget_trial_run(&task.id);
+        }
+        for (task, _) in &runs {
+            if !task.status.is_closed() {
+                let _ = self.discard_task(&task.id);
             }
-            self.forget_trial_run(id);
         }
     }
 
+    /// The trial has ended and its runs are gone: judged or voided (its
+    /// outcome is kept), or cancelled (no run is marked or open).
+    pub fn trial_settled(&self, trial: &str, tasks: &[TaskId]) -> bool {
+        let key = format!("{OUTCOME_KEY}{trial}");
+        matches!(self.store.get_setting(&key), Ok(Some(_)))
+            || tasks.iter().all(|id| {
+                self.trial_of(id).is_none() && self.task(id).is_ok_and(|t| t.status.is_closed())
+            })
+    }
+
+    /// How a trial ended, read once (its driver shows it).
+    pub fn take_trial_outcome(&self, trial: &str) -> AppResult<Option<TrialOutcome>> {
+        let key = format!("{OUTCOME_KEY}{trial}");
+        let saved = self.store.get_setting(&key)?;
+        if saved.is_some() {
+            self.store.set_setting(&key, None)?;
+        }
+        Ok(saved.and_then(|json| serde_json::from_str(&json).ok()))
+    }
+
     /// The last trial's result for a skill, on this PC, while the skill is
-    /// still the version tried.
+    /// the one tried and its text has not changed since.
     pub fn skill_trial(&self, skill_id: i64) -> AppResult<Option<TrialResult>> {
         let saved = self.store.get_setting(&format!("{RESULT_KEY}{skill_id}"))?;
         let Some(result) = saved.and_then(|json| serde_json::from_str::<TrialResult>(&json).ok())
         else {
             return Ok(None);
         };
-        let current = self.store.skill(skill_id)?.map(|s| s.updated_at);
-        Ok((current == Some(result.skill_version)).then_some(result))
+        let current = self.store.skill(skill_id)?;
+        let same = current.is_some_and(|s| {
+            s.name == result.skill
+                && fingerprint(&s.name, &s.description, &s.body) == result.version
+        });
+        Ok(same.then_some(result))
+    }
+
+    /// A removed skill's result goes with it (ids are reused).
+    pub(super) fn forget_skill_trial(&self, skill_id: i64) {
+        let _ = self
+            .store
+            .set_setting(&format!("{RESULT_KEY}{skill_id}"), None);
     }
 
     /// The approved skill a trial is about, seen from `project`, whose text
@@ -193,60 +278,146 @@ impl Hedy {
             .set_setting(&format!("{RUN_KEY}{}", task.as_str()), Some(&json))?)
     }
 
-    fn forget_trial_run(&self, task: &TaskId) {
+    pub(super) fn forget_trial_run(&self, task: &TaskId) {
         let _ = self
             .store
             .set_setting(&format!("{RUN_KEY}{}", task.as_str()), None);
     }
 
-    /// The skill a task's agents must not see: the one its trial run is
-    /// without.
-    pub(super) fn skill_left_out(&self, task: &TaskId) -> Option<String> {
+    /// The skill a task's agents must not see (by id: a rename mid-trial
+    /// does not bring it back): the one its trial run is without.
+    pub(super) fn skill_left_out(&self, task: &TaskId) -> Option<i64> {
         self.trial_of(task)
             .filter(|run| !run.with_skill)
-            .map(|run| run.skill)
+            .map(|run| run.skill_id)
     }
 
-    /// After a run stops (finished, failed or stopped): once every run of its
-    /// trial has, they are compared, the result is kept for the skill and
-    /// the runs are discarded. Best effort.
-    pub(super) fn after_trial_run(&self, task: &TaskId) {
-        let Some(run) = self.trial_of(task) else {
-            return;
-        };
-        let _judging = JUDGING.lock().unwrap_or_else(|e| e.into_inner());
-        let Ok(project) = self.task(task).map(|t| t.project) else {
-            return;
-        };
-        let Ok(tasks) = self.store.tasks(&project) else {
-            return;
-        };
-        let runs: Vec<(Task, TrialRef)> = tasks
+    /// A trial run cannot be accepted or continued: it is a measurement.
+    pub(super) fn refuse_trial_run(&self, task: &TaskId) -> AppResult<()> {
+        match self.trial_of(task) {
+            Some(_) => Err(AppError::TrialRun),
+            None => Ok(()),
+        }
+    }
+
+    /// The user stopped a trial run: the trial will keep no result.
+    pub(super) fn trial_run_stopped(&self, task: &TaskId) {
+        if let Some(mut run) = self.trial_of(task) {
+            run.stopped = true;
+            let _ = self.mark_trial_run(task, &run);
+        }
+    }
+
+    fn trial_runs(&self, project: &Path, trial: &str) -> Vec<(Task, TrialRef)> {
+        self.store
+            .tasks(project)
+            .unwrap_or_default()
             .into_iter()
             .filter_map(|t| {
                 let of = self.trial_of(&t.id)?;
-                (of.trial == run.trial).then_some((t, of))
+                (of.trial == trial).then_some((t, of))
             })
-            .collect();
+            .collect()
+    }
+
+    /// Hedy's check in a run's copy: passed when it exits 0 in time.
+    fn run_trial_check(&self, worktree: PathBuf, check: &str) -> bool {
+        let spec = LaunchSpec {
+            program: "sh".into(),
+            args: vec!["-c".into(), check.to_owned()],
+            env: Vec::new(),
+            cwd: Some(worktree),
+        };
+        self.runner
+            .run_captured_within(&spec, CHECK_TIMEOUT)
+            .is_ok_and(|out| out.exit_code == Some(0))
+    }
+
+    /// After a run stops (finished, failed, stopped or discarded): its check
+    /// runs in its copy; once every run of its trial is done, they are
+    /// compared (or the trial is voided), the outcome is kept and the runs
+    /// are discarded. Best effort.
+    pub(super) fn after_trial_run(&self, task: &TaskId) {
+        let Some(mut run) = self.trial_of(task) else {
+            return;
+        };
+        let Ok(current) = self.task(task) else {
+            return;
+        };
         let stopped =
             |t: &Task| !matches!(t.status, TaskStatus::Running | TaskStatus::WaitingApproval);
-        if runs.len() < run.tasks * 2 || !runs.iter().all(|(t, _)| stopped(t)) {
+        // This run's check, outside the lock: it can take minutes.
+        if !run.checked() && !run.stopped && stopped(&current) && !current.status.is_closed() {
+            let passed = match (&current.workspace, &run.check) {
+                (Some(ws), Some(check)) if current.status == TaskStatus::Review => {
+                    self.run_trial_check(ws.worktree.clone(), check)
+                }
+                _ => false,
+            };
+            run.checked = Some(passed);
+            if self.trial_of(task).is_some() {
+                let _ = self.mark_trial_run(task, &run);
+            }
+        }
+        let _judging = JUDGING.lock().unwrap_or_else(|e| e.into_inner());
+        let runs = self.trial_runs(&current.project, &run.trial);
+        let done = |(t, of): &(Task, TrialRef)| {
+            t.status.is_closed() || of.stopped || (stopped(t) && of.checked())
+        };
+        if runs.len() < run.tasks * 2 || !runs.iter().all(done) {
             return;
         }
         let measured: Vec<_> = runs
             .iter()
-            .map(|(t, of)| run_from_events(of, &self.store.events(&t.id).unwrap_or_default()))
+            .map(|(t, of)| {
+                let mut of = of.clone();
+                of.stopped |= t.status.is_closed();
+                let events = self.store.events(&t.id).unwrap_or_default();
+                let can_tell = self
+                    .account(t.account.as_str())
+                    .is_ok_and(|a| a.provider == Provider::Claude);
+                run_from_events(&of, &events, t.status == TaskStatus::Failed, can_tell)
+            })
             .collect();
-        let result = judge(&measured, self.now_secs(), run.skill_version);
-        if let Ok(json) = serde_json::to_string(&result) {
-            let key = format!("{RESULT_KEY}{}", run.skill_id);
-            let _ = self.store.set_setting(&key, Some(&json));
+        let outcome = match void_reason(&measured) {
+            Some(reason) => TrialOutcome::Void(reason),
+            None => {
+                let result = judge(&measured, &run, self.now_secs());
+                if let Ok(json) = serde_json::to_string(&result) {
+                    let key = format!("{RESULT_KEY}{}", run.skill_id);
+                    let _ = self.store.set_setting(&key, Some(&json));
+                }
+                TrialOutcome::Judged(result)
+            }
+        };
+        // Marks first: discarding a run calls back here, and must find none.
+        for (t, _) in &runs {
+            self.forget_trial_run(&t.id);
         }
         for (t, _) in &runs {
+            self.drop_trial_proposals(&t.project, &t.id);
             if !t.status.is_closed() {
                 let _ = self.discard_task(&t.id);
             }
-            self.forget_trial_run(&t.id);
+        }
+        // Last: whoever waits for the outcome finds everything tidied up.
+        if let Ok(json) = serde_json::to_string(&outcome) {
+            let key = format!("{OUTCOME_KEY}{}", run.trial);
+            let _ = self.store.set_setting(&key, Some(&json));
+        }
+    }
+
+    /// Skills a trial run proposed go with it: a skill under trial must not
+    /// fill the review queue. (Notes carry no task: they stay proposals,
+    /// which only the user approves.)
+    fn drop_trial_proposals(&self, project: &Path, task: &TaskId) {
+        if let Ok(skills) = self.store.skills(Some(project), true) {
+            for skill in skills {
+                if skill.status == SkillStatus::Proposed && skill.source_task.as_ref() == Some(task)
+                {
+                    let _ = self.store.delete_skill(skill.id);
+                }
+            }
         }
     }
 }
@@ -258,7 +429,8 @@ mod tests {
     use crate::application::ports::FileSystem;
     use crate::application::testing::Fixture;
     use crate::domain::skill_check::Verdict;
-    use crate::domain::{AgentEvent, UsageSample};
+    use crate::domain::skill_trial::TrialVoid;
+    use crate::domain::{AgentEvent, LimitLevel, UsageSample};
 
     fn setup() -> (Fixture, Skill) {
         let f = Fixture::new();
@@ -267,6 +439,7 @@ mod tests {
         f.hedy
             .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
+        f.runner.reply_to("sh -c npm test", "ok", 0);
         let skill = f
             .hedy
             .add_skill(
@@ -283,7 +456,19 @@ mod tests {
         (f, skill)
     }
 
-    fn finish(f: &Fixture, n: usize, tests_pass: bool, used: bool, tokens: u64) {
+    fn start(f: &Fixture, skill: &Skill) -> StartedTrial {
+        f.hedy
+            .start_skill_trial(
+                &f.dir("/code/agenda"),
+                skill.id,
+                &["Prepara un PR del carrito".into()],
+                None,
+                Some("npm test"),
+            )
+            .unwrap()
+    }
+
+    fn finish(f: &Fixture, n: usize, ok: bool, used: bool, tokens: u64) {
         if used {
             f.agents.emit_from(
                 n,
@@ -295,13 +480,6 @@ mod tests {
         }
         f.agents.emit_from(
             n,
-            AgentEvent::TestsRun {
-                command: "npm test".into(),
-                passed: tests_pass,
-            },
-        );
-        f.agents.emit_from(
-            n,
             AgentEvent::Usage(UsageSample {
                 input_tokens: tokens,
                 ..Default::default()
@@ -310,26 +488,30 @@ mod tests {
         f.agents.emit_from(
             n,
             AgentEvent::Finished {
-                ok: true,
+                ok,
                 summary: "listo".into(),
                 duration_ms: None,
             },
         );
     }
 
+    fn outcome(f: &Fixture, trial: &StartedTrial) -> TrialOutcome {
+        f.hedy.take_trial_outcome(&trial.id).unwrap().unwrap()
+    }
+
+    fn all_discarded(f: &Fixture, trial: &StartedTrial) -> bool {
+        trial.tasks.iter().all(|t| {
+            f.hedy.task(&t.id).unwrap().status == TaskStatus::Discarded
+                && f.hedy.trial_of(&t.id).is_none()
+        })
+    }
+
     #[test]
     fn a_trial_runs_each_task_with_and_without_the_skill_then_keeps_only_the_result() {
         let (f, skill) = setup();
         let agenda = f.dir("/code/agenda");
-        let tasks = f
-            .hedy
-            .start_skill_trial(
-                &agenda,
-                skill.id,
-                &["Prepara un PR del carrito".into()],
-                None,
-            )
-            .unwrap();
+        let trial = start(&f, &skill);
+        let tasks = &trial.tasks;
         assert_eq!(tasks.len(), 2);
         assert!(tasks[0].title.starts_with("Prueba con «pr-checklist»"));
         assert!(tasks[1].title.starts_with("Prueba sin «pr-checklist»"));
@@ -351,26 +533,47 @@ mod tests {
         assert!(!tools(&tasks[1]).get("pr-checklist").contains("CHANGELOG"));
         assert!(!tools(&tasks[1]).list().contains("pr-checklist"));
 
-        // One run stops: nothing is judged yet.
+        // A trial run is a measurement: not accepted, not continued.
+        assert!(matches!(
+            f.hedy.accept_task(&tasks[0].id),
+            Err(AppError::TrialRun)
+        ));
+        assert!(matches!(
+            f.hedy.send_message(&tasks[0].id, "y añade un test"),
+            Err(AppError::TrialRun)
+        ));
+
+        // One run stops: its check runs in its copy; nothing is judged yet.
         finish(&f, 0, true, true, 12_000);
-        assert_eq!(f.hedy.skill_trial(skill.id).unwrap(), None);
+        let check = f.runner.captured().pop().unwrap();
+        assert_eq!(check.args, ["-c", "npm test"]);
         assert_eq!(
-            f.hedy.task(&tasks[0].id).unwrap().status,
-            TaskStatus::Review
+            check.cwd,
+            tasks[0].workspace.as_ref().map(|w| w.worktree.clone())
         );
+        assert_eq!(f.hedy.skill_trial(skill.id).unwrap(), None);
+        assert!(!f.hedy.trial_settled(&trial.id, &[tasks[0].id.clone()]));
 
         // Both: judged, kept for the skill, and the runs go.
         finish(&f, 1, false, false, 11_000);
+        let ids: Vec<_> = tasks.iter().map(|t| t.id.clone()).collect();
+        assert!(f.hedy.trial_settled(&trial.id, &ids));
+        let TrialOutcome::Judged(judged) = outcome(&f, &trial) else {
+            panic!("judged")
+        };
         let result = f.hedy.skill_trial(skill.id).unwrap().unwrap();
+        assert_eq!(result, judged);
         assert_eq!(result.verdict, Verdict::Useful);
         assert_eq!(
             (result.passed_with, result.passed_without, result.used),
-            (1, 0, 1)
+            (1, 0, Some(1))
         );
-        for task in &tasks {
-            assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Discarded);
-            assert!(f.hedy.trial_of(&task.id).is_none());
-        }
+        assert!(all_discarded(&f, &trial));
+        assert_eq!(
+            f.hedy.take_trial_outcome(&trial.id).unwrap(),
+            None,
+            "read once"
+        );
 
         // A later version of the skill was never tried.
         let draft = SkillDraft {
@@ -384,18 +587,99 @@ mod tests {
     }
 
     #[test]
-    fn a_trial_needs_one_to_three_tasks_and_an_approved_skill() {
+    fn a_limit_or_a_run_the_user_ends_keeps_no_result() {
+        let (f, skill) = setup();
+        // A run hits the account's limit.
+        let trial = start(&f, &skill);
+        f.agents.emit_from(
+            0,
+            AgentEvent::LimitWarning {
+                account: "Personal".into(),
+                level: LimitLevel::Reached,
+                percent: Some(100.0),
+                resets_at: None,
+            },
+        );
+        finish(&f, 0, false, false, 0);
+        finish(&f, 1, true, false, 9_000);
+        assert_eq!(outcome(&f, &trial), TrialOutcome::Void(TrialVoid::Limit));
+        assert_eq!(f.hedy.skill_trial(skill.id).unwrap(), None);
+        assert!(all_discarded(&f, &trial));
+
+        // The user discards one run (from the app): the other goes too.
+        let trial = start(&f, &skill);
+        finish(&f, 2, true, true, 9_000);
+        f.hedy.discard_task(&trial.tasks[1].id).unwrap();
+        assert_eq!(outcome(&f, &trial), TrialOutcome::Void(TrialVoid::Stopped));
+        assert!(all_discarded(&f, &trial));
+
+        // The user stops one run.
+        let trial = start(&f, &skill);
+        f.hedy.stop_task(&trial.tasks[0].id).unwrap();
+        finish(&f, 5, true, false, 9_000);
+        assert_eq!(outcome(&f, &trial), TrialOutcome::Void(TrialVoid::Stopped));
+        assert!(all_discarded(&f, &trial));
+        assert_eq!(f.hedy.skill_trial(skill.id).unwrap(), None);
+    }
+
+    #[test]
+    fn a_cancelled_trial_leaves_nothing() {
+        let (f, skill) = setup();
+        let trial = start(&f, &skill);
+        f.hedy.cancel_skill_trial(&f.dir("/code/agenda"), &trial.id);
+        assert!(all_discarded(&f, &trial));
+        assert_eq!(f.hedy.take_trial_outcome(&trial.id).unwrap(), None);
+        let ids: Vec<_> = trial.tasks.iter().map(|t| t.id.clone()).collect();
+        assert!(f.hedy.trial_settled(&trial.id, &ids));
+    }
+
+    #[test]
+    fn a_result_never_moves_to_another_skill() {
+        let (f, skill) = setup();
+        let agenda = f.dir("/code/agenda");
+        let trial = start(&f, &skill);
+        finish(&f, 0, true, true, 9_000);
+        finish(&f, 1, true, false, 9_000);
+        outcome(&f, &trial);
+        assert!(f.hedy.skill_trial(skill.id).unwrap().is_some());
+        f.hedy.remove_skill(skill.id).unwrap();
+        let other = f
+            .hedy
+            .add_skill(
+                &agenda,
+                &SkillDraft {
+                    name: "deploy".into(),
+                    description: "Before deploying.".into(),
+                    body: "1. Run `make deploy`".into(),
+                    global: false,
+                },
+            )
+            .unwrap()
+            .skill;
+        assert_eq!(f.hedy.skill_trial(other.id).unwrap(), None);
+    }
+
+    #[test]
+    fn a_trial_needs_one_to_three_tasks_an_approved_skill_and_no_copy_outside() {
         let (f, skill) = setup();
         let agenda = f.dir("/code/agenda");
         for tasks in [vec![], vec![" ".to_owned()], vec!["x".to_owned(); 4]] {
             assert!(matches!(
-                f.hedy.start_skill_trial(&agenda, skill.id, &tasks, None),
+                f.hedy
+                    .start_skill_trial(&agenda, skill.id, &tasks, None, None),
                 Err(AppError::TrialTasks)
             ));
         }
         assert!(matches!(
-            f.hedy.start_skill_trial(&agenda, 999, &["x".into()], None),
+            f.hedy
+                .start_skill_trial(&agenda, 999, &["x".into()], None, None),
             Err(AppError::SkillNotFound(_))
+        ));
+        f.fs.add_file("/code/agenda/.claude/skills/pr-checklist/SKILL.md", "mine");
+        assert!(matches!(
+            f.hedy
+                .start_skill_trial(&agenda, skill.id, &["x".into()], None, None),
+            Err(AppError::TrialSkillOutside(_))
         ));
         assert!(f.agents.requests().is_empty(), "nothing started");
     }

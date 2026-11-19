@@ -376,6 +376,7 @@ impl Hedy {
     pub fn remove_skill(&self, id: i64) -> AppResult<SkillFiles> {
         let skill = self.skill_or_error(id)?;
         self.store.delete_skill(id)?;
+        self.forget_skill_trial(id);
         if skill.status == SkillStatus::Approved {
             let files = self.uninstall_skill(&skill)?;
             self.refresh_skills_plugins();
@@ -389,13 +390,13 @@ impl Hedy {
     /// plugin for its sessions). The project's own checkout is the user's:
     /// their own `claude` or `codex` there never sees Hedy's skills.
     /// A trial run without a skill never gets it (`except`).
-    fn skill_dirs(&self, project: &Path, except: Option<&str>) -> AppResult<Vec<PathBuf>> {
+    fn skill_dirs(&self, project: &Path, except: Option<i64>) -> AppResult<Vec<PathBuf>> {
         let mut dirs = Vec::new();
         for task in self.store.tasks(project)? {
             if let Some(ws) = &task.workspace
                 && !task.status.is_closed()
                 && self.fs.exists(&ws.worktree)
-                && (except.is_none() || self.skill_left_out(&task.id).as_deref() != except)
+                && (except.is_none() || self.skill_left_out(&task.id) != except)
             {
                 dirs.push(ws.worktree.clone());
             }
@@ -409,7 +410,7 @@ impl Hedy {
             return Ok(files);
         };
         self.tidy_skill_files(project, &mut files);
-        for dir in self.skill_dirs(project, Some(&skill.name))? {
+        for dir in self.skill_dirs(project, Some(skill.id))? {
             self.write_skill_files(project, &dir, skill, &mut files)?;
         }
         Ok(files)
@@ -552,7 +553,7 @@ impl Hedy {
         };
         let left_out = self.skill_left_out(task);
         for skill in skills {
-            if skill.status == SkillStatus::Approved && Some(&skill.name) != left_out.as_ref() {
+            if skill.status == SkillStatus::Approved && Some(skill.id) != left_out {
                 let _ = self.write_skill_files(repo, worktree, &skill, &mut files);
             }
         }
@@ -574,7 +575,7 @@ impl Hedy {
         }
         let mut skills = self.agent_skills(project)?;
         if let Some(left_out) = self.skill_left_out(task) {
-            skills.retain(|s| s.name != left_out);
+            skills.retain(|s| s.id != left_out);
         }
         skills.sort_by_key(|s| s.project.is_none());
         let mut names = std::collections::HashSet::new();
@@ -752,14 +753,14 @@ struct TaskSkills {
 
 impl TaskSkills {
     /// The skill this task's agents must not see (a trial run without it).
-    fn left_out(&self) -> Option<String> {
+    fn left_out(&self) -> Option<i64> {
         self.task.as_ref().and_then(|t| self.hedy.skill_left_out(t))
     }
 
     fn visible(&self) -> AppResult<Vec<Skill>> {
         let left_out = self.left_out();
         let mut skills = self.hedy.agent_skills(&self.project)?;
-        skills.retain(|s| Some(&s.name) != left_out.as_ref());
+        skills.retain(|s| Some(s.id) != left_out);
         Ok(skills)
     }
 }
@@ -785,7 +786,7 @@ impl SkillTools for TaskSkills {
     fn get(&self, name: &str) -> String {
         let left_out = self.left_out();
         match self.hedy.read_skill_for_agent(&self.project, name) {
-            Ok(Some(skill)) if Some(&skill.name) != left_out.as_ref() => format_skill(&skill),
+            Ok(Some(skill)) if Some(skill.id) != left_out => format_skill(&skill),
             Ok(_) => tr!(
                 "No hay una habilidad aprobada con ese nombre; skill_list las lista.",
                 "There is no approved skill with that name; skill_list lists them."

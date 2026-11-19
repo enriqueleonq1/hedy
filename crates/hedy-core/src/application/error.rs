@@ -72,6 +72,10 @@ pub enum AppError {
     #[error("{}", self.message())]
     TrialTasks,
     #[error("{}", self.message())]
+    TrialSkillOutside(std::path::PathBuf),
+    #[error("{}", self.message())]
+    TrialRun,
+    #[error("{}", self.message())]
     EmptyPrompt,
     #[error("{}", self.message())]
     ProviderNotYetSupported(Provider),
@@ -522,6 +526,17 @@ impl AppError {
             Self::TrialTasks => tr!(
                 "elige de 1 a 3 tareas para probar la habilidad",
                 "pick 1 to 3 tasks to try the skill on"
+            ),
+            Self::TrialSkillOutside(path) => {
+                let path = path.display();
+                tr!(
+                    "la habilidad también está en {path}, así que la ejecución sin ella la vería; quítala de ahí para probarla",
+                    "the skill is also at {path}, so the run without it would see it; remove it from there to try it"
+                )
+            }
+            Self::TrialRun => tr!(
+                "es una ejecución de prueba de una habilidad: no se acepta ni se continúa, se descarta sola al terminar",
+                "it is a trial run of a skill: it cannot be accepted or continued, it is discarded on its own when it ends"
             ),
             Self::SkillReviewTimedOut => tr!(
                 "la IA tardó demasiado en revisar la habilidad; vuelve a intentarlo",

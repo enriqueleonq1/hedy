@@ -849,24 +849,45 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
   - **Level 3, trying it** (`domain/skill_trial.rs`, `application/skill_trial.rs`, `hedy
     skills try <name>`; on demand only, since it spends tokens). Each task (1 to 3: the
     user's `--task`, or proposed by the project's account from the skill alone, with no
-    tools and Haiku by default) runs twice as an ordinary project task, with the
-    project's phases and accounts, each in its own worktree: one with the skill and one
-    without it. The run without it gets it from nowhere: not in its plugin, not in its
-    worktree's `.agents/skills`, and `skill_list` / `skill_get` do not serve it (the
-    run is marked before its worktree and agent exist, in a setting by task id). The
-    runs show on the board and ask for permissions like any task; in the terminal they
-    are asked there, elsewhere declined. When every run has stopped they are judged by
-    what they did, never by an AI's opinion: finished without error and their last test
-    run not failing counts as a pass; more passes with the skill → útil, fewer →
-    contraproducente; the same → útil only if the skill was used and the runs with it
-    spent at least 15 % fewer tokens, else dudosa (context spent for nothing
-    measurable). Then the runs are discarded: nothing reaches the project. Ctrl+C
-    discards them and keeps no result (half a trial says the wrong thing). The result
-    is kept on this PC with the skill's version (`updated_at`) and dropped once the
-    skill changes. With so few tasks it is a hint, not a proof, and the CLI says so.
-    Real check with Haiku on a toy crate (a broken `add`, a skill saying "add a line to
-    CHANGELOG.md and run `cargo test`"): both runs fixed it, only the one with the
-    skill wrote the changelog, and it spent 106 % more tokens → dudosa.
+    tools and Haiku by default; `--yes` only with `--task`, so tasks an AI made up from
+    someone else's skill are always read first) runs twice as an ordinary project task,
+    with the project's phases and accounts, each in its own worktree: one with the skill
+    and one without it.
+    - **The run without it gets it from nowhere:** not in its plugin, not in its
+      worktree's `.agents/skills`, and `skill_list` / `skill_get` do not serve it. The
+      run is marked (by skill id, so a rename does not bring it back) before its
+      worktree and agent exist. A copy in the repo's `.claude/skills` or
+      `.agents/skills` refuses the trial; one Hedy cannot see (the account's own folder)
+      shows up as the run without it loading it, which voids the trial.
+    - **Judged by Hedy's check, never by the agent's tests:** once a run stops, Hedy
+      runs the same command in its copy (`--check`, else the project's test command
+      guessed from its files; 10 minutes at most). A run passes when it finished, its
+      task did not fail and the check exits 0; with no check, passing is only finishing,
+      and the result says so. A skill cannot pass by telling the agent not to test.
+      More passes with it → útil, fewer → contraproducente; the same → útil only if the
+      skill was seen used (only Claude Code reports it; for the other CLIs use is
+      unknown, never "not used") and the runs with it spent at least 15 % less (tokens,
+      else the CLI's cost estimate; none reported is no saving), else dudosa.
+    - **No verdict when it would say the wrong thing:** a run that hit a subscription
+      limit (Hedy never moves it to another account), one the user stopped or discarded,
+      one that never reached the model, or the skill loaded without it. Ctrl+C, a closed
+      terminal or `kill` cancels: every run carrying the trial's id is discarded, also
+      one that failed to start.
+    - **Runs are measurements:** they show on the board and ask for permissions like any
+      task (in the terminal, one at a time, only those no rule answered, with line
+      breaks shown as ⏎; elsewhere declined), but cannot be accepted or continued. Once
+      all are done they are discarded with the skills they proposed; nothing reaches the
+      project's folder. What the user allows runs in the copies, which share the repo's
+      git settings, and the CLI says so.
+    - **The result** is kept on this PC with the skill's name and a fingerprint of its
+      text, dropped when the skill changes or is removed (ids are reused). With so few
+      tasks it is a hint, not a proof, and the CLI says so.
+    - **Real check with Haiku** on a toy crate (a broken `add`, a skill saying "add a
+      line to CHANGELOG.md and run `cargo test`"): both runs fixed it, only the one with
+      the skill wrote the changelog, and it spent 106 % more tokens → dudosa.
+    - **Not covered yet:** Codex and the ACP CLIs do not report loading a skill through
+      `skill_get` (use stays unknown); a run left running by a crashed process is not
+      tidied up at startup.
 - **Not verified with the real CLIs yet:** that Codex, Gemini CLI, Kimi Code and
   Antigravity load `.agents/skills` in ACP / app-server mode (their docs describe the
   interactive CLI); that Codex and Kimi stop the root search at a linked worktree's

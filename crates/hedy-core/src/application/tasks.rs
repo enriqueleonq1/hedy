@@ -148,16 +148,24 @@ impl Hedy {
     }
 
     /// A run of a skill trial: marked before its worktree and its agent
-    /// exist, so both leave the skill out when the run is without it.
+    /// exist, so both leave the skill out when the run is without it. A run
+    /// that never became a task leaves no mark (one that failed is found by
+    /// its mark and discarded with its trial).
     pub(super) fn start_task_for_trial(&self, request: NewTask, run: TrialRef) -> AppResult<Task> {
-        self.start_task_traced(request, None, Some(run))
+        let id = self.new_task_id(self.clock.now_ms());
+        self.mark_trial_run(&id, &run)?;
+        let started = self.start_task_traced(request, None, Some((id.clone(), run)));
+        if started.is_err() && self.task(&id).is_err() {
+            self.forget_trial_run(&id);
+        }
+        started
     }
 
     fn start_task_traced(
         &self,
         request: NewTask,
         carry: Option<Carry>,
-        trial: Option<TrialRef>,
+        trial: Option<(TaskId, TrialRef)>,
     ) -> AppResult<Task> {
         let project = self.project_at(&request.project)?;
         let main_account = project.account.clone().ok_or(AppError::NoAccountResolved)?;
@@ -197,10 +205,12 @@ impl Hedy {
         };
 
         let now = self.clock.now_ms();
-        let id = self.new_task_id(now);
+        let id = match &trial {
+            Some((id, _)) => id.clone(),
+            None => self.new_task_id(now),
+        };
         let mut title = title_from_prompt(&request.prompt);
-        if let Some(run) = &trial {
-            self.mark_trial_run(&id, run)?;
+        if let Some((_, run)) = &trial {
             let skill = &run.skill;
             let label = match run.with_skill {
                 true => tr!("Prueba con «{skill}»", "Trial with «{skill}»"),
@@ -334,6 +344,9 @@ impl Hedy {
 
     fn fail(&self, task: &mut Task, error: &AppError) {
         self.stop_session(&task.id);
+        if self.task(&task.id).is_ok_and(|t| t.status.is_closed()) {
+            return;
+        }
         self.hold_queue(&task.id, HoldReason::Failed);
         let _ = self.record(
             &task.id,
@@ -622,6 +635,11 @@ impl Hedy {
 
     fn handle_event(&self, id: &TaskId, event: AgentEvent) -> AppResult<()> {
         let mut task = self.task(id)?;
+        // A late event of a task closed meanwhile (another process discarded
+        // it) is kept, but never reopens it.
+        if task.status.is_closed() {
+            return self.record(id, event);
+        }
         match &event {
             AgentEvent::PermissionRequest {
                 request_id,
@@ -805,6 +823,16 @@ impl Hedy {
         f(running)
     }
 
+    /// The card still waits for the user (not answered by a rule, by the
+    /// app or by an ended session).
+    pub fn is_permission_pending(&self, id: &TaskId, request_id: &str) -> bool {
+        self.live
+            .lock()
+            .unwrap()
+            .get(id)
+            .is_some_and(|running| running.pending.contains_key(request_id))
+    }
+
     /// Answers a permission card.
     pub fn answer_permission(
         &self,
@@ -969,7 +997,11 @@ impl Hedy {
         if others_waiting {
             return Ok(());
         }
+        // The agent may have finished meanwhile: only a waiting task runs again.
         let mut task = self.task(id)?;
+        if task.status != TaskStatus::WaitingApproval {
+            return Ok(());
+        }
         self.set_status(&mut task, TaskStatus::Running)
     }
 
@@ -1098,6 +1130,7 @@ impl Hedy {
 
     /// Stops the agent; the worktree stays for review.
     pub fn stop_task(&self, id: &TaskId) -> AppResult<()> {
+        self.trial_run_stopped(id);
         self.stop_session(id);
         self.hold_queue(id, HoldReason::Stopped);
         let mut task = self.task(id)?;
@@ -1144,6 +1177,8 @@ impl Hedy {
         self.forget_skills_plugin(&task.id);
         self.set_status(&mut task, TaskStatus::Discarded)?;
         self.clear_queue(id)?;
+        // A trial run discarded by the user voids its trial.
+        self.after_trial_run(id);
         Ok(task)
     }
 

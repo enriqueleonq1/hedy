@@ -874,7 +874,22 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
                 "A test task (up to 3); with none, the AI proposes them"
             ),
         ),
-        ("skills try", "yes", tr!("Sin preguntar", "Without asking")),
+        (
+            "skills try",
+            "check",
+            tr!(
+                "Comando que Hedy corre en cada copia para ver si acierta (por defecto, los tests del proyecto)",
+                "Command Hedy runs in each copy to see whether it passes (by default, the project's tests)"
+            ),
+        ),
+        (
+            "skills try",
+            "yes",
+            tr!(
+                "Sin preguntar (solo con --task)",
+                "Without asking (only with --task)"
+            ),
+        ),
         (
             "skills try",
             "account",
@@ -1552,6 +1567,7 @@ fn value_names() -> Vec<(&'static str, String)> {
         ("path", tr!("RUTA", "PATH")),
         ("names", tr!("NOMBRES", "NAMES")),
         ("tasks", tr!("TAREA", "TASK")),
+        ("check", tr!("COMANDO", "COMMAND")),
         ("to", tr!("CARPETA", "FOLDER")),
         ("cancel", tr!("NÚMERO", "NUMBER")),
         ("category", tr!("CATEGORÍA", "CATEGORY")),
@@ -1859,6 +1875,8 @@ pub enum SkillsCommand {
         name: String,
         #[arg(long = "task")]
         tasks: Vec<String>,
+        #[arg(long)]
+        check: Option<String>,
         #[arg(long, short)]
         yes: bool,
         #[arg(long, short)]

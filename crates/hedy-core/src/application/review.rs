@@ -44,6 +44,7 @@ impl Hedy {
         if task.status.is_closed() {
             return Err(AppError::TaskClosed(id.clone()));
         }
+        self.refuse_trial_run(id)?;
         if !task.mode.changes_files() {
             return Err(AppError::TaskWithoutChanges(id.clone()));
         }

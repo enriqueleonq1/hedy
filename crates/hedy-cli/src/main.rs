@@ -214,6 +214,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             SkillsCommand::Try {
                 name,
                 tasks,
+                check,
                 yes,
                 account,
                 model,
@@ -223,7 +224,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     account: account.as_deref(),
                     model: model.as_deref(),
                 };
-                skill_trial::try_skill(&hedy, &dir, &name, &tasks, yes, &reviewer)
+                skill_trial::try_skill(&hedy, &dir, &name, &tasks, check.as_deref(), yes, &reviewer)
             }
             SkillsCommand::Check {
                 name,
