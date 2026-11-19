@@ -972,6 +972,8 @@ export interface GraphNode {
 export interface MemoryGraph {
   nodes: GraphNode[];
   links: { source: string; target: string }[];
+  /** Older notes left out of the graph (it shows the newest 2,000). */
+  hiddenNotes: number;
 }
 
 export interface TeamNote {

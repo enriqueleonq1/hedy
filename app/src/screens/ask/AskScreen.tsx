@@ -2,7 +2,7 @@
 // from the notes, each claim citing its own, beside the memory's graph,
 // which lights the notes that answered.
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { errorMessage, useApi } from "../../api/context";
@@ -11,6 +11,7 @@ import { Button } from "../../components/ui/Button";
 import { timeAgo } from "../../format";
 import { useT, type Translate } from "../../i18n";
 import { useTeams } from "../../team/hooks";
+import { answerParts, revealHidden } from "./citations";
 import { MemoryGraphView } from "./MemoryGraphView";
 import "../../styles/ask.css";
 
@@ -28,25 +29,25 @@ function place(source: MemorySource, t: Translate): string {
   return source.project ? t("ask.place.mineProject", { project: source.project }) : t("ask.place.mine");
 }
 
-/** The answer's text with each citation as a chip that shows its note. */
-function AnswerText({ text, onCite }: { text: string; onCite: (n: number) => void }) {
+/** Longest note text shown in a source (the full note opens in its memory). */
+const SOURCE_CHARS = 600;
+
+/** The answer's text with each citation the core read as a chip that shows its note. */
+function AnswerText({ text, cited, onCite }: { text: string; cited: number[]; onCite: (n: number) => void }) {
   const t = useT();
-  const parts: ReactNode[] = [];
-  const pattern = /\[(\d+(?:, \d+)*)\]/g;
-  let last = 0;
-  for (const match of text.matchAll(pattern)) {
-    parts.push(text.slice(last, match.index));
-    (match[1] ?? "").split(", ").forEach((n) =>
-      parts.push(
-        <button key={`${match.index}-${n}`} type="button" className="ask-cite" aria-label={t("ask.cite", { n })} onClick={() => onCite(Number(n))}>
-          {n}
-        </button>,
-      ),
-    );
-    last = match.index + match[0].length;
-  }
-  parts.push(text.slice(last));
-  return <p className="ask-answer__text">{parts}</p>;
+  return (
+    <p className="ask-answer__text">
+      {answerParts(text, cited).map((part, i) =>
+        "text" in part
+          ? part.text
+          : part.cite.map((n) => (
+              <button key={`${i}-${n}`} type="button" className="ask-cite" aria-label={t("ask.cite", { n })} onClick={() => onCite(n)}>
+                {n}
+              </button>
+            )),
+      )}
+    </p>
+  );
 }
 
 export function AskScreen({
@@ -64,9 +65,10 @@ export function AskScreen({
   const teamList = useTeams().data;
   const teams = useMemo(() => teamList ?? [], [teamList]);
   const graph = useQuery({ queryKey: MEMORY_GRAPH_KEY, queryFn: () => api.memoryGraph() });
-  const [scope, setScope] = useState<string>(project ? `project:${project}` : "mine");
+  const [chosen, setChosen] = useState<string>(project ? `project:${project}` : "mine");
   const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState<{ result: MemoryAnswer; asked: number } | null>(null);
+  /** The answer, with the question and scope it was asked with. */
+  const [answer, setAnswer] = useState<{ result: MemoryAnswer; asked: number; question: string; scope: string } | null>(null);
   const [selected, setSelected] = useState<GraphNode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [found, setFound] = useState<CodeLookup | null>(null);
@@ -81,6 +83,8 @@ export function AskScreen({
     ],
     [overview.projects, teams, t],
   );
+  // A project not on the list (removed, or an old link): all of mine, as shown.
+  const scope = scopes.some((s) => s.value === chosen) ? chosen : "mine";
   const toScope = (value: string): AskScope =>
     value.startsWith("project:")
       ? { kind: "project", project: value.slice(8) }
@@ -89,21 +93,26 @@ export function AskScreen({
         : { kind: "mine" };
 
   const ask = useMutation({
-    mutationFn: () => api.askMemory(question.trim(), toScope(scope)),
-    onSuccess: (result) => {
+    mutationFn: ({ text, where }: { text: string; where: string }) => api.askMemory(text, toScope(where)),
+    onMutate: () => {
       setError(null);
-      setSelected(null);
       setFound(null);
       setDecided(null);
-      setAnswer((previous) => ({ result, asked: (previous?.asked ?? 0) + 1 }));
     },
-    onError: (e) => setError(errorMessage(e, t)),
+    onSuccess: (result, { text, where }) => {
+      setSelected(null);
+      setAnswer((previous) => ({ result, asked: (previous?.asked ?? 0) + 1, question: text, scope: where }));
+    },
+    onError: (e) => {
+      setAnswer(null);
+      setError(errorMessage(e, t));
+    },
   });
 
   const look = useMutation({
-    mutationFn: (project: string) => api.lookInCode(question.trim(), project),
+    mutationFn: ({ text, project }: { text: string; project: string }) => api.lookInCode(text, project),
+    onMutate: () => setError(null),
     onSuccess: (lookup) => {
-      setError(null);
       setFound(lookup);
       setDecided(null);
     },
@@ -124,8 +133,9 @@ export function AskScreen({
   });
 
   const result = answer?.result;
+  // The cited notes with their number, for the graph's tags.
   const cited = useMemo(
-    () => (result ? result.cited.flatMap((n) => (result.sources[n - 1] ? [result.sources[n - 1] as MemorySource] : [])) : []),
+    () => (result ? result.cited.flatMap((n) => (result.sources[n - 1] ? [{ ref: (result.sources[n - 1] as MemorySource).note, n }] : [])) : []),
     [result],
   );
   const showSource = (n: number) => {
@@ -133,7 +143,8 @@ export function AskScreen({
     const node = source && graph.data?.nodes.find((g) => g.source && JSON.stringify(g.source) === JSON.stringify(source.note));
     if (node) setSelected(node);
   };
-  const scopeProject = scope.startsWith("project:") ? scope.slice(8) : null;
+  // The project the answer was asked about (not what the select says now).
+  const scopeProject = answer?.scope.startsWith("project:") ? answer.scope.slice(8) : null;
 
   return (
     <div className="ask">
@@ -148,12 +159,12 @@ export function AskScreen({
           className="ask-form"
           onSubmit={(e) => {
             e.preventDefault();
-            if (question.trim() && !ask.isPending) ask.mutate();
+            if (question.trim() && !ask.isPending) ask.mutate({ text: question.trim(), where: scope });
           }}
         >
           <label className="ask-form__scope">
             <span>{t("ask.scope")}</span>
-            <select value={scope} onChange={(e) => setScope(e.target.value)}>
+            <select value={scope} onChange={(e) => setChosen(e.target.value)}>
               {scopes.map((s) => (
                 <option key={s.value} value={s.value}>
                   {s.label}
@@ -178,13 +189,13 @@ export function AskScreen({
           </div>
         </form>
 
+        {error && (
+          <p className="error-text" role="alert">
+            {error}
+          </p>
+        )}
         <div className="ask__body" aria-live="polite">
           {ask.isPending && <p className="ask__thinking">{t("ask.thinking")}</p>}
-          {error && (
-            <p className="error-text" role="alert">
-              {error}
-            </p>
-          )}
           {!ask.isPending && !result && !error && <p className="ask__empty">{t("ask.empty")}</p>}
           {!ask.isPending && result && result.text === null && (
             <div className="ask-answer ask-answer--none">
@@ -192,7 +203,12 @@ export function AskScreen({
               <p className="small muted">{t("ask.notWrittenHint")}</p>
               {scopeProject && !found && (
                 <div className="row">
-                  <Button small variant="primary" disabled={look.isPending} onClick={() => look.mutate(scopeProject)}>
+                  <Button
+                    small
+                    variant="primary"
+                    disabled={look.isPending}
+                    onClick={() => answer && look.mutate({ text: answer.question, project: scopeProject })}
+                  >
                     {t("ask.code.look")}
                   </Button>
                   <Button small onClick={() => onOpenMemory(scopeProject)}>
@@ -210,7 +226,7 @@ export function AskScreen({
               {found.proposal && (
                 <div className="ask-code__proposal">
                   <span className="small muted">{t("ask.code.proposal", { account: found.account })}</span>
-                  <blockquote>«{found.proposal.text}»</blockquote>
+                  <blockquote>«{revealHidden(found.proposal.text)}»</blockquote>
                   {decided === null ? (
                     <div className="row">
                       <Button
@@ -241,7 +257,7 @@ export function AskScreen({
           )}
           {!ask.isPending && result?.text && (
             <div className="ask-answer">
-              <AnswerText text={result.text} onCite={showSource} />
+              <AnswerText text={result.text} cited={result.cited} onCite={showSource} />
               {cited.length > 0 && (
                 <>
                   <h2 className="ask__label">{t("ask.sources")}</h2>
@@ -255,9 +271,13 @@ export function AskScreen({
                             {n}
                           </button>
                           <span className="ask-source__body">
-                            <span className="ask-source__text">{source.text}</span>
+                            <span className="ask-source__text">
+                              {revealHidden(source.text.length > SOURCE_CHARS ? `${source.text.slice(0, SOURCE_CHARS)}…` : source.text)}
+                            </span>
                             <span className="ask-source__meta">
-                              {[place(source, t), source.author, timeAgo(source.at, t)].filter(Boolean).join(" · ")}
+                              {[place(source, t), source.author && t("ask.by", { author: source.author }), timeAgo(source.at, t)]
+                                .filter(Boolean)
+                                .join(" · ")}
                             </span>
                           </span>
                         </li>
@@ -283,17 +303,19 @@ export function AskScreen({
                   {t("ask.node.close")}
                 </button>
               </div>
-              <p className="ask-node__text">{selected.label}</p>
+              <p className="ask-node__text">{revealHidden(selected.label)}</p>
             </aside>
           )}
         </div>
       </section>
 
       {graph.data && graph.data.nodes.some((n) => n.kind === "note") ? (
-        <MemoryGraphView graph={graph.data} cited={cited.map((s) => s.note)} answer={answer?.asked ?? 0} onSelect={setSelected} />
+        <MemoryGraphView graph={graph.data} cited={cited} answer={answer?.asked ?? 0} onSelect={setSelected} />
       ) : (
         <div className="ask-graph ask-graph--empty">
-          <p>{graph.isLoading ? t("ask.thinking") : t("ask.graph.empty")}</p>
+          <p role={graph.isError ? "alert" : undefined}>
+            {graph.isLoading ? t("ask.thinking") : graph.isError ? errorMessage(graph.error, t) : t("ask.graph.empty")}
+          </p>
         </div>
       )}
     </div>

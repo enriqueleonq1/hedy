@@ -4,7 +4,8 @@ import { QueryClient } from "@tanstack/react-query";
 
 import { App } from "../../App";
 import { MockApi } from "../../api/MockApi";
-import { buildSim, extent, nodeOf, settle } from "./graphLayout";
+import { answerParts, revealHidden } from "./citations";
+import { buildSim, extent, nodeOf, remember, settle, SETTLE_TICKS } from "./graphLayout";
 
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
 
@@ -78,10 +79,68 @@ describe("Asking the memory", () => {
     expect(window.location.hash).toBe("#m=%2Fcode%2Fhedy");
   });
 
+  it("makes chips only of the core's citations", async () => {
+    const api = MockApi.withSampleData();
+    const real = api.askMemory.bind(api);
+    api.askMemory = async (_q, scope) => ({
+      ...(await real("¿En qué moneda se guardan los precios?", scope)),
+      text: "Desde [2024] usamos `items[2]` y args[0] [1].",
+      cited: [1],
+    });
+    const { user } = renderAt("#ask", api);
+    const panel = await screen.findByRole("region", { name: "Pregunta a tu memoria" });
+    await user.type(within(panel).getByLabelText("Pregunta"), "¿precios?");
+    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+    await within(panel).findByRole("heading", { name: "Fuentes" });
+    const text = panel.querySelector(".ask-answer__text") as HTMLElement;
+    expect(within(text).getAllByRole("button").map((b) => b.textContent)).toEqual(["1"]);
+    expect(text).toHaveTextContent("Desde [2024] usamos `items[2]` y args[0]");
+  });
+
+  it("keeps the asked project for writing it down, whatever the select says now", async () => {
+    const { user } = renderAt("#ask=%2Fcode%2Fhedy");
+    const panel = await screen.findByRole("region", { name: "Pregunta a tu memoria" });
+    await user.type(within(panel).getByLabelText("Pregunta"), "¿Qué tipografía usan los boletines?");
+    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+    await within(panel).findByText("Nada escrito en tu memoria responde eso.");
+    await user.selectOptions(within(panel).getByLabelText("Ámbito"), "Todo lo mío");
+    await user.click(within(panel).getByRole("button", { name: "Anotarlo" }));
+    expect(window.location.hash).toBe("#m=%2Fcode%2Fhedy");
+  });
+
+  it("asks all of mine for a project that is not on the list, as the select shows", async () => {
+    const api = MockApi.withSampleData();
+    const asked = vi.spyOn(api, "askMemory");
+    const { user } = renderAt("#ask=%2Fno%2Fexiste", api);
+    const panel = await screen.findByRole("region", { name: "Pregunta a tu memoria" });
+    expect(within(panel).getByLabelText("Ámbito")).toHaveDisplayValue("Todo lo mío");
+    await user.type(within(panel).getByLabelText("Pregunta"), "¿Precios?");
+    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+    await waitFor(() => expect(asked).toHaveBeenCalledWith("¿Precios?", { kind: "mine" }));
+  });
+
   it("refuses an empty question", async () => {
     renderAt("#ask");
     const panel = await screen.findByRole("region", { name: "Pregunta a tu memoria" });
     expect(within(panel).getByRole("button", { name: "Preguntar" })).toBeDisabled();
+  });
+});
+
+describe("Citations and hidden characters", () => {
+  it("reads citations as the core does", () => {
+    expect(answerParts("A [1]. B [2, 3] y `x[1]` y v[1] y [9].", [1, 2, 3])).toEqual([
+      { text: "A " },
+      { cite: [1] },
+      { text: ". B " },
+      { cite: [2, 3] },
+      { text: " y `x[1]` y v[1] y [9]." },
+    ]);
+    expect(answerParts("Tecla ` y luego [1].", [1])).toEqual([{ text: "Tecla ` y luego " }, { cite: [1] }, { text: "." }]);
+  });
+
+  it("shows hidden characters", () => {
+    expect(revealHidden("rm\u202e -rf")).toBe("rm⟦U+202E⟧ -rf");
+    expect(revealHidden("sin nada")).toBe("sin nada");
   });
 });
 
@@ -111,5 +170,20 @@ describe("The graph's layout", () => {
     const median = (xs: number[]) => xs.sort((x, y) => x - y)[Math.floor(xs.length / 2)] ?? 0;
     expect(median(loose.map(dist))).toBeGreaterThan(median(linked.map(dist)));
     expect(nodeOf(a, { kind: "local", id: 1000 })?.node.label).toBe("Suelta 0");
+  });
+
+  it("starts a memory that changed a little from where it was, and one that did not as it was", async () => {
+    const graph = await MockApi.withSampleData().memoryGraph();
+    const first = buildSim(graph);
+    settle(first);
+    remember(first);
+    const same = buildSim(graph);
+    expect(same.ticks).toBe(SETTLE_TICKS);
+    const grown = { ...graph, nodes: [...graph.nodes, { id: "n:5000", kind: "note" as const, label: "Nueva", group: "you", source: { kind: "local" as const, id: 5000 }, layer: "mine" as const }], links: [...graph.links, { source: "n:5000", target: "you" }] };
+    const warm = buildSim(grown);
+    expect(warm.ticks).toBeGreaterThan(0);
+    expect(warm.ticks).toBeLessThan(SETTLE_TICKS);
+    const before = first.byId.get("you");
+    expect([warm.byId.get("you")?.x, warm.byId.get("you")?.y]).toEqual([before?.x, before?.y]);
   });
 });

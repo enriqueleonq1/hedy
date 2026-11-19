@@ -9,12 +9,15 @@ import { useEffect, useMemo, useRef } from "react";
 
 import type { GraphNode, MemoryGraph, SourceRef } from "../../api/types";
 import { useT } from "../../i18n";
-import { useThemeTokens } from "../../theme/ThemeProvider";
-import { accountPalette } from "../../theme/tokens";
+import { useThemeName, useThemeTokens } from "../../theme/ThemeProvider";
+import { accountPalette, DEFAULT_ACCOUNT_COLOR, themes } from "../../theme/tokens";
+import { revealHidden } from "./citations";
 import { alphaAt, buildSim, extent, nodeOf, remember, settle, settled, tick, type SimNode } from "./graphLayout";
 
 /** Fill colours (never text): teams, then projects, by order of appearance. */
-const hex = (label: string) => accountPalette.find((c) => c.label === label)?.hex ?? "#7AA2F7";
+const hex = (label: string) => accountPalette.find((c) => c.label === label)?.hex ?? DEFAULT_ACCOUNT_COLOR;
+/** Tokens a theme might lack (a derived one): the dark theme's. */
+const FALLBACK = themes.dark;
 const TEAM_COLORS = [hex("color.purple"), hex("color.pink")];
 const PROJECT_COLORS = [hex("color.cyan"), hex("color.blue"), hex("color.teal"), hex("color.orange")];
 
@@ -32,8 +35,8 @@ interface Camera {
 
 export interface GraphProps {
   graph: MemoryGraph;
-  /** The notes the answer cites, in order (their number is their place + 1). */
-  cited: SourceRef[];
+  /** The notes the answer cites, with their number in it. */
+  cited: { ref: SourceRef; n: number }[];
   /** Changes with each answer: the camera flies to its notes. */
   answer: number;
   onSelect: (node: GraphNode) => void;
@@ -45,12 +48,16 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
   const canvas = useRef<HTMLCanvasElement>(null);
   const sim = useMemo(() => buildSim(graph), [graph]);
   const cam = useRef<Camera>({ x: 0, y: 0, z: 1, tx: 0, ty: 0, tz: 1 });
-  const live = useRef({ cited, answer, onSelect, tokens, showAll: 0 });
+  const light = useThemeName() === "light";
+  const live = useRef({ cited, answer, onSelect, tokens, light });
   const showAll = useRef(0);
+  /** Draws again when the loop rests (reduced motion, nothing moving). */
+  const wake = useRef<() => void>(() => {});
 
   useEffect(() => {
-    live.current = { cited, answer, onSelect, tokens, showAll: showAll.current };
-  }, [cited, answer, onSelect, tokens]);
+    live.current = { cited, answer, onSelect, tokens, light };
+    wake.current();
+  }, [cited, answer, onSelect, tokens, light]);
 
   const colors = useMemo(() => {
     const map = new Map<string, string>();
@@ -76,7 +83,7 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
       remember(sim);
     }
     const colorOf = (n: SimNode) =>
-      n.node.kind === "person" ? (live.current.tokens.muted ?? "#9AA5CE") : (colors.get(n.node.group) ?? hex("color.blue"));
+      n.node.kind === "person" ? (live.current.tokens.muted ?? FALLBACK.muted) : (colors.get(n.node.group) ?? hex("color.blue"));
 
     let width = 1;
     let height = 1;
@@ -93,7 +100,9 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
     observer?.observe(el);
 
-    const scale = () => (Math.min(width, height) * 0.46) / extent(sim).radius;
+    // Its extent changes only while it settles.
+    let ext = extent(sim);
+    const scale = () => (Math.min(width, height) * 0.46) / ext.radius;
     let hover: SimNode | null = null;
     let drag: { x: number; y: number; cx: number; cy: number; moved: boolean } | null = null;
     let lastAnswer = -1;
@@ -121,6 +130,7 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
       return best;
     };
     const onMove = (e: MouseEvent) => {
+      wakeUp();
       const p = point(e);
       const c = cam.current;
       if (drag) {
@@ -134,12 +144,14 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
       el.style.cursor = hover ? "pointer" : "grab";
     };
     const onDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      wakeUp();
       const p = point(e);
       drag = { x: p.x, y: p.y, cx: cam.current.x, cy: cam.current.y, moved: false };
       el.style.cursor = "grabbing";
     };
     const onUp = (e: MouseEvent) => {
-      if (drag && !drag.moved && e.target === el) {
+      if (drag && !drag.moved && e.target === el && e.button === 0) {
         const p = point(e);
         const n = nearest(p.x, p.y);
         if (n) live.current.onSelect(n.node);
@@ -149,9 +161,11 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
     };
     const onLeave = () => {
       hover = null;
+      wakeUp();
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      wakeUp();
       const c = cam.current;
       c.tz = Math.min(6, Math.max(0.35, c.tz * Math.exp(-e.deltaY * 0.0015)));
     };
@@ -175,36 +189,50 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
       const x = Math.min(n.sx + 12, width - w - 8);
       const y = Math.max(8, n.sy - 30);
       ctx.globalAlpha = alpha;
-      ctx.fillStyle = tk.panel ?? "#16161E";
+      ctx.fillStyle = tk.panel ?? FALLBACK.panel;
       pill(x, y, w, 24, 8);
       ctx.fill();
       ctx.strokeStyle = colorOf(n);
       ctx.lineWidth = 1;
       pill(x, y, w, 24, 8);
       ctx.stroke();
-      ctx.fillStyle = tk.ink ?? "#C0CAF5";
+      ctx.fillStyle = tk.ink ?? FALLBACK.ink;
       ctx.fillText(text, x + 9, y + 16);
     };
 
     let raf = 0;
+    const wakeUp = () => {
+      if (!raf) raf = requestAnimationFrame(frame);
+    };
+    wake.current = wakeUp;
+    const short = (text: string) => {
+      const shown = revealHidden(text);
+      return shown.length > 60 ? `${shown.slice(0, 59)}…` : shown;
+    };
     const frame = (now: number) => {
-      const { tokens: tk, cited: refs, answer: asked } = live.current;
+      raf = 0;
+      const { tokens: tk, cited: refs, answer: asked, light: lightTheme } = live.current;
       // Settles a little each frame, within a budget, so the screen never stalls.
       if (!settled(sim)) {
         const until = performance.now() + FRAME_BUDGET_MS;
         do tick(sim);
         while (!settled(sim) && performance.now() < until);
         if (settled(sim)) remember(sim);
+        ext = extent(sim);
       }
       const ready = settled(sim) || alphaAt(sim.ticks) < 0.05;
       const c = cam.current;
-      const citedNodes = refs.map((r) => nodeOf(sim, r)).filter((n): n is SimNode => n !== undefined);
+      const numberOf = new Map<SimNode, number>();
+      for (const c of refs) {
+        const node = nodeOf(sim, c.ref);
+        if (node && !numberOf.has(node)) numberOf.set(node, c.n);
+      }
+      const citedNodes = [...numberOf.keys()];
       if (showAll.current !== lastShowAll) {
         lastShowAll = showAll.current;
         lastAnswer = asked;
-        const e = extent(sim);
-        c.tx = e.x;
-        c.ty = e.y;
+        c.tx = ext.x;
+        c.ty = ext.y;
         c.tz = 1;
       } else if (ready && asked !== lastAnswer) {
         lastAnswer = asked;
@@ -214,12 +242,13 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
           const y = citedNodes.reduce((sum, n) => sum + n.y, 0) / citedNodes.length;
           c.tx = x;
           c.ty = y;
-          c.tz = 1.6;
+          // Near, but with every cited note on screen.
+          const far = Math.max(1, ...citedNodes.map((n) => Math.hypot(n.x - x, n.y - y)));
+          c.tz = Math.max(0.35, Math.min(1.6, (0.36 * Math.min(width, height)) / (scale() * far)));
         }
       } else if (!ready) {
-        const e = extent(sim);
-        c.tx = e.x;
-        c.ty = e.y;
+        c.tx = ext.x;
+        c.ty = ext.y;
       }
       const ease = reduce ? 1 : 0.07;
       c.x += (c.tx - c.x) * ease;
@@ -246,12 +275,12 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.globalAlpha = 1;
-      ctx.fillStyle = tk.bg ?? "#1A1B26";
+      ctx.fillStyle = tk.bg ?? FALLBACK.bg;
       ctx.fillRect(0, 0, width, height);
 
       // Links: faint, and those of the focus in its colour.
       ctx.lineWidth = Math.max(0.35, 0.5 * c.z);
-      ctx.strokeStyle = tk.lineStrong ?? "#414868";
+      ctx.strokeStyle = tk.lineStrong ?? FALLBACK.lineStrong;
       ctx.globalAlpha = (focused ? 0.25 : 0.55) * intro;
       ctx.beginPath();
       const hot = [];
@@ -282,7 +311,7 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
         const qy = Math.max(40, Math.min(...lit.map((n) => n.sy)) - 70);
         ctx.setLineDash([3, 5]);
         ctx.lineWidth = 1.2;
-        ctx.strokeStyle = tk.focus ?? "#9D85FF";
+        ctx.strokeStyle = tk.focus ?? FALLBACK.focus;
         ctx.globalAlpha = 0.6 * glow;
         for (const n of lit) {
           ctx.beginPath();
@@ -292,7 +321,7 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
         }
         ctx.setLineDash([]);
         if (!reduce) {
-          ctx.fillStyle = tk.ink ?? "#C0CAF5";
+          ctx.fillStyle = tk.ink ?? FALLBACK.ink;
           lit.forEach((n, i) => {
             for (let p = 0; p < 3; p++) {
               const u = (now / 1500 + p / 3 + i * 0.17) % 1;
@@ -314,15 +343,15 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
         }
         const pulse = reduce ? 0.5 : (Math.sin(now * 0.004) + 1) / 2;
         ctx.save();
-        ctx.shadowColor = tk.focus ?? "#9D85FF";
+        ctx.shadowColor = tk.focus ?? FALLBACK.focus;
         ctx.shadowBlur = 22;
-        ctx.fillStyle = tk.ink ?? "#C0CAF5";
+        ctx.fillStyle = tk.ink ?? FALLBACK.ink;
         ctx.globalAlpha = glow;
         ctx.beginPath();
         ctx.arc(qx, qy, 5.5, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
-        ctx.strokeStyle = tk.focus ?? "#9D85FF";
+        ctx.strokeStyle = tk.focus ?? FALLBACK.focus;
         ctx.globalAlpha = 0.6 * (1 - pulse) * glow;
         ctx.lineWidth = 1.2;
         ctx.beginPath();
@@ -331,7 +360,7 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
         ctx.globalAlpha = glow;
         ctx.font = '600 11px "JetBrains Mono Variable", ui-monospace, monospace';
         ctx.textAlign = "center";
-        ctx.fillStyle = tk.ink ?? "#C0CAF5";
+        ctx.fillStyle = tk.ink ?? FALLBACK.ink;
         ctx.fillText(t("ask.graph.question"), qx, qy - 16);
       }
 
@@ -360,6 +389,13 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
           ctx.beginPath();
           ctx.arc(n.sx, n.sy, r, 0, Math.PI * 2);
           ctx.fill();
+          // On a light background the palette's fills need an edge to stand out.
+          if (lightTheme) {
+            ctx.strokeStyle = tk.ink ?? FALLBACK.ink;
+            ctx.globalAlpha *= 0.45;
+            ctx.lineWidth = 0.8;
+            ctx.stroke();
+          }
         }
       }
 
@@ -369,26 +405,35 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
       for (const n of sim.nodes) {
         const main = n.node.kind === "team" || n.node.kind === "project" || n.node.kind === "you";
         if (!n.hub || (!main && c.z < 1.3 && !focus.has(n))) continue;
-        ctx.globalAlpha = intro * (focused ? (focus.has(n) ? 0.95 : 0.12) : 0.8);
-        ctx.fillStyle = main ? (tk.ink ?? "#C0CAF5") : (tk.muted ?? "#9AA5CE");
+        ctx.globalAlpha = intro * (focused ? (focus.has(n) ? 1 : 0.12) : 1);
+        ctx.fillStyle = main ? (tk.ink ?? FALLBACK.ink) : (tk.muted ?? FALLBACK.muted);
         ctx.font = `${main ? 600 : 500} 11px "Inter Variable", system-ui, sans-serif`;
-        ctx.fillText(n.node.label, n.sx, n.sy + n.r * (0.55 + 0.45 * c.z) + 13);
+        ctx.fillText(short(n.node.label), n.sx, n.sy + n.r * (0.55 + 0.45 * c.z) + 13);
       }
       ctx.font = '500 12px "Inter Variable", system-ui, sans-serif';
       ctx.textAlign = "left";
-      const short = (text: string) => (text.length > 60 ? `${text.slice(0, 59)}…` : text);
       if (hover) {
-        const text = hover.hub ? t("ask.graph.links", { name: hover.node.label, n: hover.nb.length }) : short(hover.node.label);
+        const text = hover.hub ? t("ask.graph.links", { name: short(hover.node.label), n: hover.nb.length }) : short(hover.node.label);
         tag(hover, text, 0.95, tk);
       } else {
-        lit.forEach((n, i) => tag(n, `${i + 1} · ${short(n.node.label)}`, 0.95 * glow, tk));
+        for (const n of lit) tag(n, `${numberOf.get(n) ?? ""} · ${short(n.node.label)}`, 0.95 * glow, tk);
       }
       ctx.globalAlpha = 1;
-      raf = requestAnimationFrame(frame);
+      // With reduced motion, nothing moves once it is settled and the camera
+      // is there: the loop rests until something changes.
+      const still =
+        reduce &&
+        settled(sim) &&
+        !drag &&
+        Math.abs(c.tx - c.x) + Math.abs(c.ty - c.y) + Math.abs(c.tz - c.z) < 0.001 &&
+        showAll.current === lastShowAll &&
+        asked === lastAnswer;
+      if (!still) raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => {
       cancelAnimationFrame(raf);
+      wake.current = () => {};
       observer?.disconnect();
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mousedown", onDown);
@@ -403,6 +448,7 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
   const zoom = (factor: number) => {
     const c = cam.current;
     c.tz = Math.min(6, Math.max(0.35, c.tz * factor));
+    wake.current();
   };
 
   return (
@@ -428,6 +474,7 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
           type="button"
           onClick={() => {
             showAll.current++;
+            wake.current();
           }}
         >
           {t("ask.graph.all")}
@@ -437,7 +484,9 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
         {groups.map(([group, color]) => (
           <li key={group}>
             <span className="ask-graph__dot" style={{ background: color }} aria-hidden />
-            {graph.nodes.find((n) => n.group === group && n.kind !== "note")?.label ?? group}
+            {group.startsWith("team:")
+              ? t("ask.graph.team", { name: revealHidden(graph.nodes.find((n) => n.group === group && n.kind === "team")?.label ?? "") })
+              : revealHidden(graph.nodes.find((n) => n.group === group && n.kind === "project")?.label ?? group)}
           </li>
         ))}
         <li>
@@ -449,6 +498,9 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
           {t("ask.graph.topics")}
         </li>
       </ul>
+      {graph.hiddenNotes > 0 && (
+        <p className="ask-graph__hidden">{t("ask.graph.hidden", { n: notes, hidden: graph.hiddenNotes })}</p>
+      )}
       <p className="ask-graph__count">{t("ask.graph.count", { notes, links: graph.links.length })}</p>
     </div>
   );

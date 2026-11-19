@@ -815,13 +815,13 @@ export class MockApi implements HedyApi {
           layer: n.teamLayer ? "team" : "project",
         });
         link(id, !n.teamLayer && n.project && seen.has(`p:${n.project}`) ? `p:${n.project}` : team);
-        const person = node(`person:${t.summary.id}:${n.person}`, "person", n.author, "person");
+        const person = node(`person:${t.summary.id}:${n.person}`, "person", `@${n.author}`, "person");
         link(id, person);
         link(person, team);
         topic(id, n.topic);
       }
     }
-    return structuredClone({ nodes, links });
+    return structuredClone({ nodes, links, hiddenNotes: 0 });
   }
 
   async addNote(project: string | null, text: string, category: NoteCategory): Promise<Note> {

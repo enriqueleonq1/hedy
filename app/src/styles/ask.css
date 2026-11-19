@@ -48,11 +48,11 @@
   display: flex;
   gap: var(--space-2);
   padding: 6px 6px 6px var(--space-3);
-  border: 1px solid var(--focus);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-lg);
   background: var(--panel-2);
-  box-shadow: 0 0 0 4px var(--accent-soft);
 }
+.ask-form__row:focus-within { border-color: var(--focus); box-shadow: 0 0 0 4px var(--accent-soft); }
 .ask-form__row input {
   flex: 1;
   min-width: 0;
@@ -166,7 +166,17 @@
   pointer-events: none;
 }
 .ask-graph__legend li { display: flex; align-items: center; gap: 6px; }
-.ask-graph__dot { width: 8px; height: 8px; border-radius: 50%; }
+.ask-graph__dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 1px var(--line-strong); }
+.ask-graph__hidden {
+  position: absolute;
+  left: var(--space-4);
+  right: var(--space-4);
+  bottom: calc(var(--space-7) + 28px);
+  margin: 0;
+  font-size: var(--text-caption);
+  color: var(--muted);
+  pointer-events: none;
+}
 .ask-graph__count {
   position: absolute;
   left: var(--space-4);

@@ -56,6 +56,7 @@ pub struct GraphLink {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MemoryGraph {
     pub nodes: Vec<GraphNode>,
     pub links: Vec<GraphLink>,

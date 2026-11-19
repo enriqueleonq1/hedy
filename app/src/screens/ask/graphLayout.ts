@@ -78,6 +78,10 @@ function seedOf(graph: MemoryGraph): number {
 
 /** Settled layouts, by graph: coming back to the screen shows it at once. */
 const settledLayouts = new Map<number, Map<string, { x: number; y: number }>>();
+/** The last settled layout: a memory that changed a little starts from it. */
+let lastLayout = new Map<string, { x: number; y: number }>();
+/** Ticks left to a layout that mostly starts from the last one. */
+const WARM_TICKS = 70;
 
 /** Remembers the settled layout of `sim` for the next time it is built. */
 export function remember(sim: Sim): void {
@@ -86,6 +90,7 @@ export function remember(sim: Sim): void {
   for (const n of sim.nodes) layout.set(n.node.id, { x: n.x, y: n.y });
   if (settledLayouts.size > 8) settledLayouts.clear();
   settledLayouts.set(sim.seed, layout);
+  lastLayout = layout;
 }
 
 export function buildSim(graph: MemoryGraph): Sim {
@@ -126,16 +131,29 @@ export function buildSim(graph: MemoryGraph): Sim {
     l.strength = 1 / Math.min(l.s.nb.length, l.t.nb.length);
   }
   const ready = known !== undefined && nodes.every((n) => known.has(n.node.id));
-  if (ready) {
+  // The same memory: as it was. One that changed a little: from where it
+  // was, new notes beside a neighbour, and only a short settle.
+  const from = ready ? known : lastLayout;
+  let found = 0;
+  for (const n of nodes) {
+    const at = from.get(n.node.id);
+    if (at) {
+      n.x = at.x;
+      n.y = at.y;
+      found++;
+    }
+  }
+  const warm = !ready && nodes.length > 0 && found / nodes.length >= 0.8;
+  if (warm) {
     for (const n of nodes) {
-      const at = known.get(n.node.id);
-      if (at) {
-        n.x = at.x;
-        n.y = at.y;
+      const near = from.has(n.node.id) ? undefined : n.nb.find((m) => from.has(m.node.id));
+      if (near) {
+        n.x = near.x + (rnd() - 0.5) * 30;
+        n.y = near.y + (rnd() - 0.5) * 30;
       }
     }
   }
-  return { nodes, links, byId, ticks: ready ? SETTLE_TICKS : 0, seed };
+  return { nodes, links, byId, ticks: ready ? SETTLE_TICKS : warm ? SETTLE_TICKS - WARM_TICKS : 0, seed };
 }
 
 /** How strongly the simulation still moves at its `ticks`-th tick (1 → 0.001). */
