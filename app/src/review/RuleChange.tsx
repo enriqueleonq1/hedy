@@ -13,6 +13,17 @@ import { refreshTeams } from "../team/hooks";
 type Choice = "change" | "remove" | "exception";
 
 /**
+ * A note's text without its hidden characters: the check shows them written
+ * out (`⟦U+200B⟧`), the memory as they are.
+ */
+function comparable(text: string): string {
+  return text
+    .replace(/⟦U\+[0-9A-F]{4,6}⟧/g, "")
+    .replace(/[\p{Cc}\p{Cf}\p{Co}\p{Zl}\p{Zp}\u{FE00}-\u{FE0F}]/gu, "")
+    .trim();
+}
+
+/**
  * "La regla ya no aplica" (docs/decisions.md §37): instead of ignoring a
  * warning, the rule itself is fixed. The user's own note changes now; a
  * team's goes to whoever looks after it as a suggestion (rule 6: nobody's
@@ -58,7 +69,7 @@ export function RuleChangeDialog({
     staleTime: 0,
     gcTime: 0,
   });
-  const changedSince = now.data === null || (!!now.data && now.data.text.trim() !== rule.text.trim());
+  const changedSince = now.data === null || (!!now.data && comparable(now.data.text) !== comparable(rule.text));
   const forEveryone = !!team && !!now.data?.canEdit;
 
   const written = choice === "change" ? text.trim() : choice === "exception" ? exception.trim() : "x";

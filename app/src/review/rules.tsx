@@ -26,6 +26,8 @@ interface Stored {
   check: RuleCheck;
   /** The changes' added lines as they were checked: when they change, the check is outdated. */
   version: string;
+  /** Rules changed, removed or excepted since this check (by note): their warnings wait for a new one. */
+  settled: string[];
 }
 
 interface Run {
@@ -151,11 +153,9 @@ export function useRuleCheck(task: Task | null, files: FileDiff[]) {
   const run = useMutation<RuleCheck, unknown, Run>({
     mutationKey: ["ruleCheck"],
     mutationFn: (vars) => api.checkTaskRules(vars.task),
+    // A new check starts with no rule settled: it read the rules as they are now.
     onSuccess: (check, vars) =>
-      client.setQueryData<Stored>(["ruleCheck", vars.task], {
-        check,
-        version: vars.version,
-      }),
+      client.setQueryData<Stored>(["ruleCheck", vars.task], { check, version: vars.version, settled: [] }),
   });
   // A run outlives this view (another tab, another task): its state is read
   // from the cache, by task, so a second click never spends twice.
@@ -198,8 +198,7 @@ export function useRuleCheck(task: Task | null, files: FileDiff[]) {
   );
   // Rules changed, removed or excepted here: their warnings wait for a new
   // check (in memory only; nothing the user dismissed).
-  const [settled, setSettled] = useState<{ task: string; refs: Set<string> }>({ task: taskId, refs: new Set() });
-  const settledRefs = useMemo(() => (settled.task === taskId ? settled.refs : new Set<string>()), [settled, taskId]);
+  const settledRefs = useMemo(() => new Set(stored.data?.settled ?? []), [stored.data]);
   const [changing, setChanging] = useState<{ task: string; rule: MemorySource } | null>(null);
   const isSettled = useCallback((w: Warning) => !!w.rule && settledRefs.has(noteRef(w.rule)), [settledRefs]);
   const shown = useMemo(() => all.filter((w) => !keys.has(w.key) && !isSettled(w)), [all, keys, isSettled]);
@@ -241,7 +240,10 @@ export function useRuleCheck(task: Task | null, files: FileDiff[]) {
     /** Warnings of rules changed here since the check: they wait for a new one. */
     settledCount: all.filter((w) => !keys.has(w.key) && isSettled(w)).length,
     /** The rule was changed, removed or excepted: its warnings wait for a new check. */
-    settle: (rule: MemorySource) => setSettled({ task: taskId, refs: new Set([...settledRefs, noteRef(rule)]) }),
+    settle: (rule: MemorySource) =>
+      client.setQueryData<Stored | null>(["ruleCheck", taskId], (s) =>
+        s ? { ...s, settled: [...new Set([...s.settled, noteRef(rule)])] } : s,
+      ),
     /** The rule the "Ya no aplica" dialog is open for. */
     changing: changing?.task === taskId ? changing.rule : null,
     openChange: (rule: MemorySource) => setChanging({ task: taskId, rule }),
@@ -462,8 +464,12 @@ export function RulesBar({
             project={project}
             onClose={() => {
               rules.closeChange();
-              // Its warning may be gone with the change: back to the bar, not to nowhere.
-              requestAnimationFrame(() => bar.current?.focus());
+              // Its warning may be gone with the change: back to the bar, not to
+              // nowhere (where its button is still there, the dialog went back to it).
+              requestAnimationFrame(() => {
+                const at = document.activeElement;
+                if (!at || at === document.body || !at.isConnected) bar.current?.focus({ preventScroll: true });
+              });
             }}
             onDone={rules.settle}
           />,

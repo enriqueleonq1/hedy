@@ -51,8 +51,12 @@ pub async fn check_task_rules(
     account: Option<String>,
 ) -> CommandResult<RuleCheckDto> {
     blocking(&state, move |h| {
-        Ok(h.check_rules(&RuleTarget::Task(TaskId::new(task)), account.as_deref(), None)?
-            .into())
+        Ok(h.check_rules(
+            &RuleTarget::Task(TaskId::new(task)),
+            account.as_deref(),
+            None,
+        )?
+        .into())
     })
     .await
 }

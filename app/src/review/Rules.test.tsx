@@ -167,6 +167,11 @@ describe("Checking the changes against the rules", () => {
     expect(within(bar).queryByText(/descartado/)).toBeNull();
     expect(within(bar).getByRole("button", { name: "Volver a revisar" })).toHaveClass("btn--primary");
     await waitFor(() => expect(bar).toHaveFocus());
+
+    // A new check reads the rule as it is now: its warnings show again.
+    await user.click(within(bar).getByRole("button", { name: "Volver a revisar" }));
+    expect(await within(bar).findByText("2 líneas no siguen tus reglas")).toBeInTheDocument();
+    expect(within(table()).getByText(/salvo los de las leyes locales/)).toBeInTheDocument();
   });
 
   it("offers only an exception for a rule that changed since the check", async () => {
