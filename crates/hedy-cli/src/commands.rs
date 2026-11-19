@@ -69,7 +69,7 @@ fn greeting(hedy: &Hedy) -> String {
 }
 
 /// Muted text whose `quoted` parts are painted as commands.
-fn hint(s: &Style, text: &str) -> String {
+pub(crate) fn hint(s: &Style, text: &str) -> String {
     if !s.enabled() {
         return text.to_owned();
     }
@@ -328,7 +328,7 @@ fn usd(cost: Option<f64>) -> String {
 }
 
 /// `~/…` path, keeping its end when it is long.
-fn short_path(path: &Path) -> String {
+pub(crate) fn short_path(path: &Path) -> String {
     const MAX: usize = 40;
     let path = tilde(path);
     let len = path.chars().count();
@@ -1407,7 +1407,7 @@ pub fn memory_reject(hedy: &Hedy, id: i64) -> Result<()> {
     Ok(())
 }
 
-fn project_here(hedy: &Hedy, dir: &Path) -> Result<Project> {
+pub(crate) fn project_here(hedy: &Hedy, dir: &Path) -> Result<Project> {
     match hedy.project_for(dir)? {
         Some(project) => Ok(project),
         None => bail!(
@@ -1443,7 +1443,7 @@ fn print_skill_line(s: &Style, skill: &Skill) {
 
 /// Tells what happened to the CLIs' skill files, warning about the user's
 /// own files that were left alone.
-fn print_skill_files(s: &Style, files: &SkillFiles) {
+pub(crate) fn print_skill_files(s: &Style, files: &SkillFiles) {
     for path in &files.written {
         let path = short_path(path);
         println!("  {}", s.muted(tr!("escrita {path}", "wrote {path}")));
@@ -1529,7 +1529,12 @@ pub fn skills_list(hedy: &Hedy, dir: &Path) -> Result<()> {
 }
 
 fn print_skill_body(s: &Style, body: &str) {
+    // An agent's or an imported text: no escapes reach the terminal.
     for line in body.lines() {
+        let line: String = line
+            .chars()
+            .filter(|c| !hedy_core::domain::team::is_hidden(*c))
+            .collect();
         println!("    {line}");
     }
     if body.is_empty() {

@@ -67,7 +67,7 @@ pub struct SkillFiles {
 }
 
 impl SkillFiles {
-    fn extend(&mut self, other: SkillFiles) {
+    pub(super) fn extend(&mut self, other: SkillFiles) {
         self.written.extend(other.written);
         self.removed.extend(other.removed);
         self.skipped.extend(other.skipped);
@@ -95,7 +95,11 @@ fn update_target(skills: &[Skill], proposal: &Skill) -> Option<Skill> {
 }
 
 /// Name, description and body checked: slug, limits and no secrets.
-fn validated(name: &str, description: &str, body: &str) -> AppResult<(String, String, String)> {
+pub(super) fn validated(
+    name: &str,
+    description: &str,
+    body: &str,
+) -> AppResult<(String, String, String)> {
     let name = normalize_skill_name(name)?;
     let description = normalize_description(description)?;
     let body = normalize_body(body)?;
@@ -121,7 +125,7 @@ pub(super) fn acceptable_synced(skill: &SkillBody) -> bool {
 }
 
 impl Hedy {
-    fn skill_or_error(&self, id: i64) -> AppResult<Skill> {
+    pub(super) fn skill_or_error(&self, id: i64) -> AppResult<Skill> {
         self.store
             .skill(id)?
             .ok_or_else(|| AppError::SkillNotFound(id.to_string()))
@@ -235,7 +239,11 @@ impl Hedy {
         Ok(SkillChange { skill, files })
     }
 
-    fn skill_scope(&self, project: &Project, global: bool) -> AppResult<Option<PathBuf>> {
+    pub(super) fn skill_scope(
+        &self,
+        project: &Project,
+        global: bool,
+    ) -> AppResult<Option<PathBuf>> {
         match (global, project.protected) {
             (true, true) => Err(AppError::GlobalSkillInProtectedProject),
             (true, false) => Ok(None),
@@ -381,7 +389,7 @@ impl Hedy {
         Ok(dirs)
     }
 
-    fn install_skill(&self, skill: &Skill) -> AppResult<SkillFiles> {
+    pub(super) fn install_skill(&self, skill: &Skill) -> AppResult<SkillFiles> {
         let mut files = SkillFiles::default();
         let Some(project) = &skill.project else {
             return Ok(files);
@@ -502,7 +510,7 @@ impl Hedy {
     /// behind a link, and, in a git repository, excluded and untracked as
     /// Hedy left it (a copy someone committed stays). Best effort: the
     /// skill itself lives in Hedy either way.
-    fn tidy_skill(&self, project: &Path, skill: &Skill, files: &mut SkillFiles) {
+    pub(super) fn tidy_skill(&self, project: &Path, skill: &Skill, files: &mut SkillFiles) {
         let written = skill_file(skill);
         let in_git = self.fs.git_root(project).is_some();
         for folder in SkillFolder::ALL {

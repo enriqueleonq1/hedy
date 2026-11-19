@@ -14,7 +14,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Install the CLI: `cargo install --path crates/hedy-cli` (binary `hedy`)
 - Isolated manual testing: `HEDY_DATA_DIR=/tmp/hedy-test hedy status`
 - Learned skills from the terminal: `hedy skills` (`list`, `show <name>`, `approve <id>`,
-  `reject <id>`, `remove <name>`); in the UI, `#k=<path>` opens a project's skills tab
+  `reject <id>`, `remove <name>`, `import <path> [--global] [--replace] [--yes]`,
+  `export [names] --to <folder>`); in the UI, `#k=<path>` opens a project's skills tab
 - Prompt templates from the CLI: `hedy template list|add <name> [--project] --text …|remove <name>`
 - Ask the memory (docs/decisions.md §36): `hedy memory ask "<question>"` (`--team`, `--all`,
   `--code` to look in the project's files and propose a note, `--json`); answers only from the

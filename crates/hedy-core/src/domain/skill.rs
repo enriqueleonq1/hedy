@@ -43,9 +43,10 @@ pub struct Skill {
 pub const NAME_MAX: usize = 64;
 /// Longest description, as in the Agent Skills format.
 pub const DESCRIPTION_MAX: usize = 1024;
-/// Longest body, in characters (Claude Code suggests keeping `SKILL.md`
-/// under 500 lines; this is about that much text).
-pub const BODY_MAX: usize = 20_000;
+/// Longest body, in characters. Claude Code suggests keeping `SKILL.md`
+/// under 500 lines, but loads the body only when the skill is used, and
+/// official skills reach 75,000 characters.
+pub const BODY_MAX: usize = 100_000;
 
 /// Names Claude Code reserves for its own skill folders.
 const RESERVED: &[&str] = &["synced", "anthropic-skills"];
@@ -73,9 +74,14 @@ pub fn normalize_skill_name(raw: &str) -> Result<String, DomainError> {
 }
 
 /// The description on one line, without angle brackets (CLIs read it from
-/// YAML frontmatter, and Claude rejects XML tags in it).
+/// YAML frontmatter, and Claude rejects XML tags in it) or hidden characters
+/// (it is printed in terminals; an imported one is someone else's text).
 pub fn normalize_description(raw: &str) -> Result<String, DomainError> {
-    let line = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let visible: String = raw
+        .chars()
+        .filter(|c| !super::team::is_hidden(*c))
+        .collect();
+    let line = visible.split_whitespace().collect::<Vec<_>>().join(" ");
     if line.is_empty() || line.chars().count() > DESCRIPTION_MAX || line.contains(['<', '>']) {
         return Err(DomainError::InvalidSkillDescription);
     }
@@ -270,7 +276,7 @@ pub fn is_managed(contents: &str) -> bool {
     contents.contains(MANAGED_MARKER)
 }
 
-fn yaml_string(text: &str) -> String {
+pub(super) fn yaml_string(text: &str) -> String {
     format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
@@ -331,6 +337,10 @@ mod tests {
             "Run the e2e tests. Use before a release."
         );
         assert!(normalize_description("   ").is_err());
+        assert_eq!(
+            normalize_description("Looks \u{1b}[2Jfine\u{202e}").unwrap(),
+            "Looks [2Jfine"
+        );
         assert!(normalize_description("Use <b>this</b>").is_err());
         assert!(normalize_description(&"x".repeat(1025)).is_err());
         assert!(normalize_body("  \n ").is_err());

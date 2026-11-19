@@ -7,6 +7,7 @@ mod commit;
 mod mascot;
 mod memory_ask;
 mod review;
+mod skill_transfer;
 mod slash;
 mod spinner;
 mod style;
@@ -192,6 +193,13 @@ fn run(cli: Cli) -> Result<ExitCode> {
             SkillsCommand::Approve { id } => commands::skills_approve(&hedy, id),
             SkillsCommand::Reject { id } => commands::skills_reject(&hedy, id),
             SkillsCommand::Remove { name } => commands::skills_remove(&hedy, &dir, &name),
+            SkillsCommand::Import {
+                path,
+                global,
+                replace,
+                yes,
+            } => skill_transfer::import(&hedy, &dir, &path, global, replace, yes),
+            SkillsCommand::Export { names, to } => skill_transfer::export(&hedy, &dir, &names, &to),
         },
         Command::Template { command } => match command.unwrap_or(TemplateCommand::List) {
             TemplateCommand::List => commands::template_list(&hedy, &dir),

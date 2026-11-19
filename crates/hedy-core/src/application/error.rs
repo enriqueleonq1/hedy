@@ -64,6 +64,8 @@ pub enum AppError {
     #[error("{}", self.message())]
     GlobalSkillInProtectedProject,
     #[error("{}", self.message())]
+    NoSkillsToImport(PathBuf),
+    #[error("{}", self.message())]
     EmptyPrompt,
     #[error("{}", self.message())]
     ProviderNotYetSupported(Provider),
@@ -501,6 +503,13 @@ impl AppError {
                 "un proyecto protegido no comparte habilidades globales: déjala en el proyecto",
                 "a protected project does not share global skills: keep it in the project"
             ),
+            Self::NoSkillsToImport(path) => {
+                let path = path.display();
+                tr!(
+                    "no hay habilidades en {path}: elige un SKILL.md, la carpeta de una habilidad o una carpeta de habilidades (como .claude/skills)",
+                    "there are no skills in {path}: pick a SKILL.md, a skill's folder or a folder of skills (such as .claude/skills)"
+                )
+            }
             Self::EmptyPrompt => tr!("escribe qué quieres que haga", "write what you want done"),
             Self::ProviderNotYetSupported(provider) => tr!(
                 "las tareas con {provider} todavía no están disponibles en Hedy",

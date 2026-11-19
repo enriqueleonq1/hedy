@@ -685,8 +685,10 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
   pattern as note topics (§12), separate concept.
 - **Proposing.** `skill_propose {name, description, body}` in the memory MCP server and
   the API agent. The name is turned into a slug; Claude's reserved names (`synced`,
-  `anthropic-skills`) are refused; bodies up to 20,000 characters. A local heuristic
-  refuses text that looks like a secret (known key prefixes such as `sk-`, `ghp_`,
+  `anthropic-skills`) are refused; bodies up to 100,000 characters (raised from 20,000 on
+  Nov 19, 2026: 11 of 57 official Claude Code skills were longer, up to 75,000; Claude
+  Code loads the body only when the skill is used). A local heuristic refuses text that
+  looks like a secret (known key prefixes such as `sk-`, `ghp_`,
   `AKIA`, `AIza`; private keys; JWTs; `TOKEN=value` assignments of secret-looking names
   that are not placeholders such as `$TOKEN` or `<your key>`), with an error that never
   repeats the value. The guidance asks only agents that may change the project, at the
@@ -743,7 +745,34 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
   projects neither see nor create global skills.
 - **UI and CLI.** A "Habilidades" / "Skills" tab in the memory screen (`#k=<path>`) and
   `hedy skills` with `list`, `show <name>`, `approve <id>`,
-  `reject <id>` and `remove <name>`.
+  `reject <id>`, `remove <name>`, `import <path>` and `export [names] --to <folder>`.
+- **Import and export** (Nov 19, 2026; `application/skill_transfer.rs`,
+  `domain/skill_import.rs`). Skills travel as `SKILL.md` files, the Agent Skills format
+  every CLI reads.
+  - **Import** takes a `SKILL.md` (or a loose `.md`, named after the file), a skill's
+    folder, a folder of skill folders (`~/.claude/skills`) or a project (its
+    `.claude/skills`, `.agents/skills` or a plugin's `skills`), up to 100 skills. It is
+    previewed first: each skill with what stops it (unreadable, a broken rule, commands on
+    load, a name already approved, a name repeated in the import), the frontmatter keys
+    Hedy drops (`allowed-tools`, `hooks`, `model`… Hedy keeps only name, description and
+    body) and the other files in its folder, which are not imported (scripts, references:
+    steps that use them may not work). Then only what the user saw goes in, checked
+    again, approved at once (the user chose them; author "user"). A name already approved
+    in the same scope is skipped unless the user asks to replace it (same id). Commands
+    on load (`!`cmd``, ```` ```! ````) are refused, as in agent proposals: an imported
+    skill is someone else's text. Frontmatter is read by a small parser (plain, quoted and
+    block scalars; nested values count as dropped keys); Hedy's own marker lines are
+    removed, so a file an older Hedy wrote comes back as it was approved.
+  - **Export** writes the approved skills a project sees (a project skill before a global
+    one with its name), all or by name, as `<folder>/<name>/SKILL.md` without Hedy's
+    marker: the copies are the user's own, so Hedy's writer would never touch one placed
+    in `.agents/skills`. A file already there (or a link) is never replaced. The folder is
+    the user's choice and is not added to `.git/info/exclude`: they may want to commit it.
+  - **Checked against 57 official Claude Code skills** (the plugin marketplace on this
+    machine): 52 import as they are; 2 run commands on load and 3 have `<` or `>` in the
+    description (Hedy's rule, from the Agent Skills docs; Claude Code itself accepts it).
+  - **Terminal:** text from someone else's file is printed without control or reordering
+    characters, and descriptions are saved without them (`normalize_description`).
 - **Not verified with the real CLIs yet:** that Codex, Gemini CLI, Kimi Code and
   Antigravity load `.agents/skills` in ACP / app-server mode (their docs describe the
   interactive CLI); that Codex and Kimi stop the root search at a linked worktree's

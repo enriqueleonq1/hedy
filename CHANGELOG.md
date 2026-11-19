@@ -24,6 +24,10 @@ All notable changes to Hedy are listed here. The format follows
 
 ### Added
 
+- Import and export skills as `SKILL.md` files, the format every CLI reads:
+  `hedy skills import <path>` shows first what goes in, what does not and why (commands that
+  run on load, secrets, names you already have, files Hedy does not keep), then asks;
+  `hedy skills export --to <folder>` writes plain copies and never replaces a file.
 - Personal sync: the same Hedy on every PC you use. Notes, proposals, skills, templates and
   themes travel through a private git repo of yours (GitHub, GitLab, Bitbucket, Gitea or your
   own server), encrypted and signed on each PC; the server never sees a note. Set it up in

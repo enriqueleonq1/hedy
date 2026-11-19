@@ -123,8 +123,8 @@ impl DomainError {
                 "the skill's description must be one line of up to 1024 characters, without < or >, saying when to use it"
             ),
             Self::InvalidSkillBody => tr!(
-                "el contenido de la habilidad no puede estar vacío ni pasar de 20000 caracteres",
-                "the skill's body cannot be empty or longer than 20000 characters"
+                "el contenido de la habilidad no puede estar vacío ni pasar de 100000 caracteres",
+                "the skill's body cannot be empty or longer than 100000 characters"
             ),
             Self::SkillLooksSecret(kind) => tr!(
                 "la habilidad parece contener un secreto ({kind}); no se guardó. Quítalo y usa un marcador como $NOMBRE_VARIABLE o <tu clave>",
