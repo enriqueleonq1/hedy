@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { errorMessage, useApi } from "../api/context";
 import type { MemorySource } from "../api/types";
@@ -41,9 +41,29 @@ export function RuleChangeDialog({
   const [error, setError] = useState<string | null>(null);
   const team = rule.note.kind === "team" ? rule.note : null;
   const local = rule.note.kind === "local" ? rule.note : null;
+  // The note as it is now, not as the check saw it: it may have changed or
+  // gone since (and a new note may have taken its number). A team's also
+  // says whether this person may change it for everyone.
+  const now = useQuery({
+    queryKey: ["ruleNow", rule.note],
+    queryFn: async () => {
+      if (team) {
+        const note = (await api.teamNotes(team.team)).find((n) => n.uid === team.uid);
+        return note ? { text: note.text, canEdit: note.canEdit } : null;
+      }
+      const note = (await api.memory(project)).notes.find((n) => n.id === local?.id);
+      return note ? { text: note.text, canEdit: true } : null;
+    },
+    staleTime: 0,
+    gcTime: 0,
+  });
+  const changedSince = now.data === null || (!!now.data && now.data.text.trim() !== rule.text.trim());
+  const forEveryone = !!team && !!now.data?.canEdit;
 
   const written = choice === "change" ? text.trim() : choice === "exception" ? exception.trim() : "x";
   const unchanged = choice === "change" && text.trim() === rule.text.trim();
+  // Only an exception (a note of its own) is safe on a rule that changed.
+  const blocked = choice !== "exception" && (now.isPending || now.isError || changedSince);
 
   const submit = async () => {
     setBusy(true);
@@ -54,7 +74,9 @@ export function RuleChangeDialog({
         toast.info(t("rules.change.excepted"));
       } else if (team) {
         const write = await api.teamEditNote(team.team, team.uid, choice === "remove" ? null : text.trim());
-        toast.info(t(write.published ? "rules.change.saved" : "rules.change.suggested"));
+        toast.info(
+          t(!write.published ? "rules.change.suggested" : choice === "remove" ? "rules.change.removedTeam" : "rules.change.savedTeam"),
+        );
       } else if (local) {
         if (choice === "remove") await api.forgetNote(local.id);
         else await api.editNote(local.id, text.trim(), rule.category);
@@ -83,18 +105,39 @@ export function RuleChangeDialog({
       footer={
         <>
           <Button onClick={onClose}>{t("common.cancel")}</Button>
-          <Button variant="primary" disabled={busy || !written || unchanged} onClick={() => void submit()}>
-            {choice === "exception" ? t("rules.change.addException") : team ? t("rules.change.propose") : t("rules.change.apply")}
+          <Button
+            variant={choice === "remove" ? "danger" : "primary"}
+            disabled={busy || blocked || !written || unchanged}
+            onClick={() => void submit()}
+          >
+            {choice === "exception"
+              ? t("rules.change.addException")
+              : !team
+                ? choice === "remove"
+                  ? t("rules.change.removeNow")
+                  : t("rules.change.apply")
+                : !forEveryone
+                  ? t("rules.change.propose")
+                  : choice === "remove"
+                    ? t("rules.change.removeAll")
+                    : t("rules.change.applyAll")}
           </Button>
         </>
       }
     >
       <div className="rl-change">
         <p className="muted">
-          {team
-            ? t("rules.change.teamHint", { team: rule.team ?? t("rules.teamNoName") })
-            : t("rules.change.ownHint")}
+          {!team
+            ? t("rules.change.ownHint")
+            : forEveryone
+              ? t("rules.change.teamEditHint", { team: rule.team ?? t("rules.teamNoName") })
+              : t("rules.change.teamHint", { team: rule.team ?? t("rules.teamNoName") })}
         </p>
+        {changedSince && (
+          <p className="error-text" role="alert">
+            {t("rules.change.changedSince")}
+          </p>
+        )}
         <div className="rl-change__now">
           <span className="rl-change__label">{t("rules.change.now")}</span>
           <p>{rule.text}</p>
@@ -132,7 +175,9 @@ export function RuleChangeDialog({
           </label>
         )}
         {choice === "remove" && (
-          <p className="muted">{team ? t("rules.change.removeTeam") : t("rules.change.removeOwn")}</p>
+          <p className="muted">
+            {!team ? t("rules.change.removeOwn") : forEveryone ? t("rules.change.removeTeamNow") : t("rules.change.removeTeam")}
+          </p>
         )}
         {error && (
           <p className="error-text" role="alert">

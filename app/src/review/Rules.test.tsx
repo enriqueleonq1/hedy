@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient } from "@tanstack/react-query";
 
@@ -142,7 +142,7 @@ describe("Checking the changes against the rules", () => {
     const table = () => screen.getByRole("table", { name: /impuestos/ });
 
     // Its own note: changed at once; every warning citing it is settled.
-    await user.click(within(table()).getByRole("button", { name: "La regla ya no aplica" }));
+    await user.click(within(table()).getByRole("button", { name: "Ya no aplica" }));
     let dialog = await screen.findByRole("dialog", { name: "¿La regla ya no aplica?" });
     expect(within(dialog).getByText(/Es tuya: el cambio vale desde ya/)).toBeInTheDocument();
     const save = within(dialog).getByRole("button", { name: "Guardar" });
@@ -150,6 +150,7 @@ describe("Checking the changes against the rules", () => {
     const field = within(dialog).getByLabelText("Pasa a decir");
     await user.clear(field);
     await user.type(field, "Los comentarios del código van en inglés, salvo los de las leyes locales");
+    await waitFor(() => expect(save).toBeEnabled());
     await user.click(save);
     expect(edit).toHaveBeenCalledWith(
       expect.any(Number),
@@ -160,10 +161,14 @@ describe("Checking the changes against the rules", () => {
     expect(within(bar).getByText(/Nada pendiente/)).toBeInTheDocument();
     expect(within(bar).getByText(/2 descartados/)).toBeInTheDocument();
 
-    // Shown again: an exception for this project only, or removing it.
+    // Shown again: the rule changed since the check, so only an exception is offered.
     await user.click(within(bar).getByRole("button", { name: "Mostrar" }));
-    await user.click(within(table()).getByRole("button", { name: "La regla ya no aplica" }));
+    await user.click(within(table()).getByRole("button", { name: "Ya no aplica" }));
     dialog = await screen.findByRole("dialog", { name: "¿La regla ya no aplica?" });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/cambió o se quitó desde la revisión/);
+    await user.click(within(dialog).getByRole("radio", { name: "Quitarla" }));
+    expect(within(dialog).getByRole("button", { name: "Quitarla" })).toBeDisabled();
+    expect(forget).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole("radio", { name: "Solo una excepción para este proyecto" }));
     await user.type(within(dialog).getByLabelText("La excepción"), "los comentarios legales citan la ley en español");
     await user.click(within(dialog).getByRole("button", { name: "Añadir la excepción" }));
@@ -172,13 +177,23 @@ describe("Checking the changes against the rules", () => {
       "Excepción a «Los comentarios del código van en inglés» en este proyecto: los comentarios legales citan la ley en español",
       "convention",
     );
+    expect(await screen.findByText("Excepción añadida a la memoria del proyecto.")).toBeInTheDocument();
+  });
 
-    await user.click(within(bar).getByRole("button", { name: "Mostrar" }));
-    await user.click(within(table()).getByRole("button", { name: "La regla ya no aplica" }));
-    dialog = await screen.findByRole("dialog", { name: "¿La regla ya no aplica?" });
+  it("removes its own rule", async () => {
+    const { api, user } = setup();
+    const forget = vi.spyOn(api, "forgetNote");
+    await openTask(user);
+    const bar = screen.getByRole("region", { name: "Revisar con tus reglas" });
+    await user.click(within(bar).getByRole("button", { name: "Revisar con tus reglas" }));
+    await within(bar).findByText("2 líneas no siguen tus reglas");
+    await user.click(within(screen.getByRole("table", { name: /impuestos/ })).getByRole("button", { name: "Ya no aplica" }));
+    const dialog = await screen.findByRole("dialog", { name: "¿La regla ya no aplica?" });
     await user.click(within(dialog).getByRole("radio", { name: "Quitarla" }));
     expect(within(dialog).getByText(/tus IAs dejan de leerla/)).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "Guardar" }));
+    const remove = within(dialog).getByRole("button", { name: "Quitarla" });
+    await waitFor(() => expect(remove).toBeEnabled());
+    await user.click(remove);
     expect(forget).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("Regla quitada.")).toBeInTheDocument();
   });

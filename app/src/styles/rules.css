@@ -54,7 +54,8 @@
 .rl-warning__label { color: var(--warn-ink); font-weight: 600; }
 .rl-warning__rule { color: var(--muted); }
 .rl-warning__fix { color: var(--muted); }
-.rl-warning__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 2px; }
+/* Where the rule lives, then what to do, each on its own line: three actions fit a narrow panel. */
+.rl-warning__foot { display: grid; justify-items: start; gap: 8px; margin-top: 2px; }
 .rl-warning__where {
   padding: 2px 8px;
   border-radius: var(--radius-pill);
@@ -63,7 +64,7 @@
   font-size: var(--text-caption);
   font-weight: 600;
 }
-.rl-warning__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.rl-warning__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rl-warning__added { color: var(--muted); font-size: var(--text-caption); align-self: center; }
 
 /* Beside the comments' badge, before the counts: pushed right like it. */

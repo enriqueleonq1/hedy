@@ -44,7 +44,7 @@ const es = {
   "rules.team": "Equipo {team}",
   "rules.teamNoName": "Equipo",
   "rules.everyProject": "todos los proyectos",
-  "rules.change.open": "La regla ya no aplica",
+  "rules.change.open": "Ya no aplica",
   "rules.change.title": "¿La regla ya no aplica?",
   "rules.change.ownHint": "Es tuya: el cambio vale desde ya, y tus IAs la leerán así.",
   "rules.change.teamHint": "Es del equipo «{team}»: si no la escribiste tú, se le propone el cambio a quien puede cambiarla.",
@@ -66,6 +66,14 @@ const es = {
   "rules.change.removed": "Regla quitada.",
   "rules.change.suggested": "Enviado como sugerencia: quien puede cambiar la regla la revisa.",
   "rules.change.excepted": "Excepción añadida a la memoria del proyecto.",
+  "rules.change.teamEditHint": "Es del equipo «{team}» y puedes cambiarla: el cambio vale para todo el equipo.",
+  "rules.change.removeTeamNow": "Se quita para todo el equipo: sus IAs dejan de leerla.",
+  "rules.change.removeNow": "Quitarla",
+  "rules.change.removeAll": "Quitarla para todo el equipo",
+  "rules.change.applyAll": "Guardar para todo el equipo",
+  "rules.change.savedTeam": "Regla cambiada para todo el equipo.",
+  "rules.change.removedTeam": "Regla quitada para todo el equipo.",
+  "rules.change.changedSince": "La regla cambió o se quitó desde la revisión: vuelve a revisar el cambio. Sí puedes añadir una excepción.",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -112,7 +120,7 @@ const en: Record<keyof typeof es, string> = {
   "rules.team": "Team {team}",
   "rules.teamNoName": "Team",
   "rules.everyProject": "every project",
-  "rules.change.open": "The rule no longer applies",
+  "rules.change.open": "No longer applies",
   "rules.change.title": "The rule no longer applies?",
   "rules.change.ownHint": "It is yours: the change counts from now on, and your AIs will read it so.",
   "rules.change.teamHint": "It belongs to the team “{team}”: unless you wrote it, the change is proposed to whoever may change it.",
@@ -134,6 +142,14 @@ const en: Record<keyof typeof es, string> = {
   "rules.change.removed": "Rule removed.",
   "rules.change.suggested": "Sent as a suggestion: whoever may change the rule reviews it.",
   "rules.change.excepted": "Exception added to the project's memory.",
+  "rules.change.teamEditHint": "It belongs to the team “{team}” and you may change it: the change counts for the whole team.",
+  "rules.change.removeTeamNow": "It is removed for the whole team: their AIs stop reading it.",
+  "rules.change.removeNow": "Remove it",
+  "rules.change.removeAll": "Remove it for the whole team",
+  "rules.change.applyAll": "Save for the whole team",
+  "rules.change.savedTeam": "Rule changed for the whole team.",
+  "rules.change.removedTeam": "Rule removed for the whole team.",
+  "rules.change.changedSince": "The rule changed or was removed since the check: check the change again. You can still add an exception.",
 };
 
 export default { es, en };
