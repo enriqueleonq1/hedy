@@ -13,10 +13,16 @@ use crate::domain::NoteStatus;
 use crate::domain::ask::{SourceLayer, SourceRef};
 use crate::domain::memory::preview;
 use crate::domain::sync::MemoryHome;
+use crate::domain::team::reveal_hidden;
 use crate::tr;
 
 /// Longest label of a note, in characters (the full text opens on click).
 const NOTE_LABEL: usize = 120;
+/// Longest label of a team, a topic or a person.
+const HUB_LABEL: usize = 60;
+/// Notes in the graph, at most (the newest): past this, drawing it would
+/// stall the screen, and a team member could fill it on purpose.
+pub const GRAPH_NOTES_MAX: usize = 2_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -53,6 +59,8 @@ pub struct GraphLink {
 pub struct MemoryGraph {
     pub nodes: Vec<GraphNode>,
     pub links: Vec<GraphLink>,
+    /// Older notes left out ([`GRAPH_NOTES_MAX`]).
+    pub hidden_notes: usize,
 }
 
 /// Builds the graph without repeating a node or a link.
@@ -108,6 +116,7 @@ impl Builder {
 
     fn topic(&mut self, note: &str, topic: Option<&str>) {
         if let Some(topic) = topic.map(str::trim).filter(|t| !t.is_empty()) {
+            let (topic, _) = preview(&reveal_hidden(topic), HUB_LABEL);
             let id = self.node(
                 &format!("topic:{topic}"),
                 GraphKind::Topic,
@@ -118,7 +127,7 @@ impl Builder {
         }
     }
 
-    fn finish(mut self) -> MemoryGraph {
+    fn finish(mut self, hidden_notes: usize) -> MemoryGraph {
         MemoryGraph {
             nodes: self
                 .order
@@ -130,6 +139,7 @@ impl Builder {
                 .into_iter()
                 .map(|(source, target)| GraphLink { source, target })
                 .collect(),
+            hidden_notes,
         }
     }
 }
@@ -138,16 +148,103 @@ fn project_group(path: &std::path::Path) -> String {
     format!("project:{}", path.display())
 }
 
+/// A note for the graph, from this PC or a team.
+struct GraphNote {
+    id: String,
+    text: String,
+    topic: Option<String>,
+    at: i64,
+    group: String,
+    owner: Owner,
+    source: SourceRef,
+    layer: SourceLayer,
+    /// A team member: their node, name and team's node.
+    person: Option<(String, String, String)>,
+}
+
+enum Owner {
+    You,
+    Project(PathBuf),
+    Team(String),
+    /// A project of the team that is not on this PC.
+    TeamElsewhere(String),
+}
+
 impl Hedy {
     /// The memory as a graph: every approved note of this PC (protected
     /// projects' too: it is only shown here) and every team's this PC
-    /// reads.
+    /// reads, the newest [`GRAPH_NOTES_MAX`].
     pub fn memory_graph(&self) -> AppResult<MemoryGraph> {
-        let mut g = Builder::default();
-        let you = g.node("you", GraphKind::You, &tr!("Tú", "You"), "you");
         let projects = self.projects()?;
         let teams: Vec<_> = self.teams()?.into_iter().filter(|t| !t.waiting).collect();
-        let mut project_ids: BTreeMap<PathBuf, String> = BTreeMap::new();
+        let mut notes: Vec<GraphNote> = Vec::new();
+        let mut local = self.store.notes(None, false)?;
+        for project in &projects {
+            local.extend(self.store.notes(Some(&project.path), false)?);
+        }
+        for note in local
+            .into_iter()
+            .filter(|n| n.status == NoteStatus::Approved)
+        {
+            let here = note
+                .project
+                .clone()
+                .filter(|p| projects.iter().any(|known| &known.path == p));
+            notes.push(GraphNote {
+                id: format!("n:{}", note.id),
+                group: here
+                    .as_deref()
+                    .map_or_else(|| "you".to_owned(), project_group),
+                owner: here.map_or(Owner::You, Owner::Project),
+                text: note.text,
+                topic: note.topic,
+                at: note.updated_at.unwrap_or(note.created_at),
+                source: SourceRef::Local { id: note.id },
+                layer: SourceLayer::Mine,
+                person: None,
+            });
+        }
+        for team in &teams {
+            // A team this PC cannot read now leaves only its node.
+            for note in self.team_notes(&team.id).unwrap_or_default() {
+                let owner = match (&note.project, note.team_layer) {
+                    (_, true) => Owner::Team(team.id.clone()),
+                    (Some(path), false) if projects.iter().any(|p| &p.path == path) => {
+                        Owner::Project(path.clone())
+                    }
+                    (Some(_), false) => Owner::Team(team.id.clone()),
+                    (None, false) => Owner::TeamElsewhere(team.id.clone()),
+                };
+                notes.push(GraphNote {
+                    id: format!("n:{}:{}", team.id, note.uid),
+                    group: format!("team:{}", team.id),
+                    owner,
+                    text: note.text,
+                    topic: note.topic,
+                    at: note.updated_at.unwrap_or(note.created_at),
+                    source: SourceRef::Team {
+                        team: team.id.clone(),
+                        uid: note.uid.clone(),
+                    },
+                    layer: if note.team_layer {
+                        SourceLayer::Team
+                    } else {
+                        SourceLayer::Project
+                    },
+                    person: Some((
+                        format!("person:{}:{}", team.id, note.person.as_str()),
+                        note.author,
+                        format!("t:{}", team.id),
+                    )),
+                });
+            }
+        }
+        notes.sort_by_key(|n| std::cmp::Reverse(n.at));
+        let hidden = notes.len().saturating_sub(GRAPH_NOTES_MAX);
+        notes.truncate(GRAPH_NOTES_MAX);
+
+        let mut g = Builder::default();
+        let you = g.node("you", GraphKind::You, &tr!("Tú", "You"), "you");
         for project in &projects {
             let id = g.node(
                 &format!("p:{}", project.path.display()),
@@ -158,98 +255,46 @@ impl Hedy {
             if let Ok(Some(MemoryHome::Team(team))) = self.store.memory_home(&project.path)
                 && teams.iter().any(|t| t.id == team)
             {
-                let team_id = format!("t:{team}");
-                g.link(&id, &team_id);
+                g.link(&id, &format!("t:{team}"));
             }
-            project_ids.insert(project.path.clone(), id);
         }
         for team in &teams {
+            let (name, _) = preview(&team.name, HUB_LABEL);
             g.node(
                 &format!("t:{}", team.id),
                 GraphKind::Team,
-                &team.name,
+                &name,
                 &format!("team:{}", team.id),
             );
         }
-
-        let mut notes = self.store.notes(None, false)?;
-        for project in &projects {
-            notes.extend(self.store.notes(Some(&project.path), false)?);
-        }
-        for note in notes
-            .into_iter()
-            .filter(|n| n.status == NoteStatus::Approved)
-        {
-            let (owner, group) = match note
-                .project
-                .as_ref()
-                .and_then(|p| project_ids.get(p).map(|id| (id, p)))
-            {
-                Some((id, path)) => (id.clone(), project_group(path)),
-                None => (you.clone(), "you".to_owned()),
+        for note in notes {
+            let id = g.note(note.id, &note.text, &note.group, note.source, note.layer);
+            let owner = match &note.owner {
+                Owner::You => you.clone(),
+                Owner::Project(path) => format!("p:{}", path.display()),
+                Owner::Team(team) => format!("t:{team}"),
+                Owner::TeamElsewhere(team) => {
+                    let project = g.node(
+                        &format!("tp:{team}"),
+                        GraphKind::Project,
+                        &tr!("Otros proyectos", "Other projects"),
+                        &format!("team:{team}"),
+                    );
+                    g.link(&project, &format!("t:{team}"));
+                    project
+                }
             };
-            let id = g.note(
-                format!("n:{}", note.id),
-                &note.text,
-                &group,
-                SourceRef::Local { id: note.id },
-                SourceLayer::Mine,
-            );
             g.link(&id, &owner);
+            if let Some((person, name, team)) = &note.person {
+                // "@": a team member, never taken for "Tú" or a project.
+                let (name, _) = preview(name, HUB_LABEL);
+                let person = g.node(person, GraphKind::Person, &format!("@{name}"), "person");
+                g.link(&id, &person);
+                g.link(&person, team);
+            }
             g.topic(&id, note.topic.as_deref());
         }
-
-        for team in &teams {
-            let team_node = format!("t:{}", team.id);
-            let group = format!("team:{}", team.id);
-            // A team this PC cannot read now leaves only its node.
-            for note in self.team_notes(&team.id).unwrap_or_default() {
-                let layer = if note.team_layer {
-                    SourceLayer::Team
-                } else {
-                    SourceLayer::Project
-                };
-                let id = g.note(
-                    format!("n:{}:{}", team.id, note.uid),
-                    &note.text,
-                    &group,
-                    SourceRef::Team {
-                        team: team.id.clone(),
-                        uid: note.uid.clone(),
-                    },
-                    layer,
-                );
-                let owner = match (&note.project, note.team_layer) {
-                    (_, true) => team_node.clone(),
-                    (Some(path), false) => match project_ids.get(path) {
-                        Some(project) => project.clone(),
-                        None => team_node.clone(),
-                    },
-                    (None, false) => {
-                        // A project of the team that is not on this PC.
-                        let project = g.node(
-                            &format!("tp:{}", team.id),
-                            GraphKind::Project,
-                            &tr!("Otros proyectos", "Other projects"),
-                            &group,
-                        );
-                        g.link(&project, &team_node);
-                        project
-                    }
-                };
-                g.link(&id, &owner);
-                let person = g.node(
-                    &format!("person:{}:{}", team.id, note.person.as_str()),
-                    GraphKind::Person,
-                    &note.author,
-                    "person",
-                );
-                g.link(&id, &person);
-                g.link(&person, &team_node);
-                g.topic(&id, note.topic.as_deref());
-            }
-        }
-        Ok(g.finish())
+        Ok(g.finish(hidden))
     }
 }
 
@@ -330,5 +375,37 @@ mod tests {
         assert!(g.links.iter().all(|l| {
             g.nodes.iter().any(|n| n.id == l.source) && g.nodes.iter().any(|n| n.id == l.target)
         }));
+    }
+
+    #[test]
+    fn a_huge_memory_shows_its_newest_notes_and_says_how_many_are_left_out() {
+        let f = Fixture::new();
+        for i in 0..(GRAPH_NOTES_MAX + 50) {
+            f.clock.advance(1);
+            f.hedy
+                .add_note(None, &format!("nota {i}"), Category::Convention)
+                .unwrap();
+        }
+        let g = f.hedy.memory_graph().unwrap();
+        let notes = kinds(&g, GraphKind::Note);
+        assert_eq!(notes.len(), GRAPH_NOTES_MAX);
+        assert_eq!(g.hidden_notes, 50);
+        assert!(notes.contains(&format!("nota {}", GRAPH_NOTES_MAX + 49).as_str()));
+        assert!(!notes.contains(&"nota 0"));
+    }
+
+    #[test]
+    fn a_topic_label_is_short_and_shows_hidden_characters() {
+        let mut g = Builder::default();
+        let n = g.note(
+            "n:1".into(),
+            "x",
+            "you",
+            SourceRef::Local { id: 1 },
+            SourceLayer::Mine,
+        );
+        g.topic(&n, Some(&format!("{}\u{202e}", "a".repeat(100_000))));
+        let g = g.finish(0);
+        assert!(g.nodes.iter().all(|n| n.label.chars().count() <= 70));
     }
 }

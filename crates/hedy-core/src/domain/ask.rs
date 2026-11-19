@@ -302,6 +302,8 @@ pub fn parse_answer(raw: &str, count: usize) -> ParsedAnswer {
         .filter(|w| !w.is_empty())
         .collect::<Vec<_>>()
         .join(" ");
+    // Shown as written, but no hidden character reorders it.
+    let text = reveal_hidden(&text);
     ParsedAnswer {
         text: (!text.is_empty()).then_some(text),
         cited,
@@ -408,13 +410,14 @@ pub fn parse_code_answer(raw: &str) -> CodeAnswer {
                 });
                 if !rest.is_empty() {
                     let one: String = rest.split_whitespace().collect::<Vec<_>>().join(" ");
-                    note = Some(one.chars().take(CODE_NOTE_CHARS).collect());
+                    let cut: String = one.chars().take(CODE_NOTE_CHARS).collect();
+                    note = Some(reveal_hidden(&cut));
                 }
             }
             None => text.push(line),
         }
     }
-    let text = text.join("\n").trim().to_owned();
+    let text = reveal_hidden(text.join("\n").trim());
     CodeAnswer {
         text: (!text.is_empty()).then_some(text),
         note,
@@ -687,6 +690,17 @@ mod tests {
         let long = parse_code_answer(&format!("x\nNOTE: {}", "a ".repeat(400)));
         assert_eq!(long.note.unwrap().chars().count(), CODE_NOTE_CHARS);
         assert!(code_prompt("¿Fondo \"x\"?").contains("Question: \"¿Fondo \\\"x\\\"?\""));
+    }
+
+    #[test]
+    fn hidden_characters_in_an_answer_are_shown() {
+        let text = parse_answer("Ejecuta rm -rf ./build\u{202e} [1]", 1)
+            .text
+            .unwrap();
+        assert!(text.contains("⟦U+202E⟧"), "{text}");
+        let code = parse_code_answer("Ver x\u{200b}.\nNOTE: Nota\u{2066} oculta");
+        assert!(code.text.unwrap().contains("⟦U+200B⟧"));
+        assert!(code.note.unwrap().contains("⟦U+2066⟧"));
     }
 
     #[test]

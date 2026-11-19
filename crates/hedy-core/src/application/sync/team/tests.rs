@@ -2205,8 +2205,8 @@ fn a_teams_notes_hang_from_the_team_or_its_project_and_their_author() {
     assert!(linked(&project, &team));
     assert!(linked(&id_of("Fondo oscuro #0F1117"), &team));
     assert!(linked(&id_of("Modales sobre el panel"), &project));
-    assert!(linked(&id_of("Modales sobre el panel"), &id_of("Luis")));
-    assert!(linked(&id_of("Fondo oscuro #0F1117"), &id_of("Ana")));
+    assert!(linked(&id_of("Modales sobre el panel"), &id_of("@Luis")));
+    assert!(linked(&id_of("Fondo oscuro #0F1117"), &id_of("@Ana")));
     assert!(linked(&id_of("Modales sobre el panel"), "topic:ui"));
     let people: Vec<&str> = g
         .nodes
@@ -2214,7 +2214,7 @@ fn a_teams_notes_hang_from_the_team_or_its_project_and_their_author() {
         .filter(|n| n.kind == GraphKind::Person)
         .map(|n| n.label.as_str())
         .collect();
-    assert_eq!(people, ["Ana", "Luis"]);
+    assert_eq!(people, ["@Ana", "@Luis"]);
     let note = g
         .nodes
         .iter()
