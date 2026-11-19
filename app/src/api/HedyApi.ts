@@ -26,6 +26,9 @@ import type {
   ShipState,
   ImageInput,
   ImageSupport,
+  AskScope,
+  MemoryAnswer,
+  MemoryGraph,
   MemoryHome,
   MemoryHomeKind,
   SyncConflict,
@@ -260,6 +263,10 @@ export interface HedyApi {
   handoffTask(id: string, account: string, model: string | null): Promise<void>;
   memory(project: string): Promise<MemoryView>;
   searchMemory(project: string, query: string): Promise<Note[]>;
+  /** A question answered only from the notes, each claim citing its own (docs/decisions.md §36). */
+  askMemory(question: string, scope: AskScope, account?: string | null): Promise<MemoryAnswer>;
+  /** Every note this person can read here, as a graph (only shown on this PC). */
+  memoryGraph(): Promise<MemoryGraph>;
   /** A note written by the user; `project: null` makes it global. */
   addNote(project: string | null, text: string, category: NoteCategory): Promise<Note>;
   editNote(id: number, text: string, category: NoteCategory): Promise<Note>;

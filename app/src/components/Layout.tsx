@@ -11,7 +11,7 @@ import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 import { shortAccountLabel } from "./accounts";
 import { useFocusMode } from "./focusMode";
 import { SidebarRailProvider, useSidebarRail } from "./sidebarRail";
-import { AccountsIcon, ActivityIcon, CollapseIcon, QuestionIcon, SettingsIcon } from "./ui/icons";
+import { AccountsIcon, ActivityIcon, CollapseIcon, GraphIcon, QuestionIcon, SettingsIcon } from "./ui/icons";
 import { MenuButton } from "./ui/Menu";
 import { Mascot } from "./Mascot/Mascot";
 import { modKey, paletteKeys } from "./palette/keys";
@@ -27,6 +27,8 @@ export type View =
   /** `section`: scroll to the theme gallery ("Cambiar tema…"), the sync card or the teams card. */
   | { screen: "settings"; section?: "themes" | "sync" | "teams" }
   | { screen: "activity" }
+  /** "Pregunta a tu memoria"; `project`: about that project's memory. */
+  | { screen: "ask"; project?: string }
   /**
    * `task`: open that task instead of the most recent open one; `null`: a new task,
    * continuing conversation `carry` when given ("Llevar a un proyecto").
@@ -184,6 +186,16 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
             {needsYou}
           </span>
         )}
+      </button>
+
+      <button
+        className="sidebar__item sidebar__nav"
+        aria-current={view.screen === "ask" ? "page" : undefined}
+        {...named(t("ask.nav"))}
+        onClick={() => onNavigate({ screen: "ask" })}
+      >
+        <GraphIcon />
+        <span className="sidebar__name">{t("ask.nav")}</span>
       </button>
 
       <section>
