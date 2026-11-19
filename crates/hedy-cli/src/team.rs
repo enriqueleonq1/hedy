@@ -86,14 +86,14 @@ pub fn pick(hedy: &Hedy, dir: &Path, team: Option<&str>) -> Result<String> {
 
 /// What another PC wrote, fit for the terminal: one line, without controls
 /// or the marks that reorder text (it could fake a line, or move the cursor).
-fn clean(text: &str) -> String {
+pub(crate) fn clean(text: &str) -> String {
     let text: String = text.chars().filter(|c| !hidden(*c)).collect();
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// A note's text for the terminal: each of its lines cleaned and indented
 /// under the first.
-fn clean_text(text: &str) -> String {
+pub(crate) fn clean_text(text: &str) -> String {
     text.lines()
         .map(clean)
         .filter(|l| !l.is_empty())

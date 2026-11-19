@@ -5,6 +5,7 @@ mod cli;
 mod commands;
 mod commit;
 mod mascot;
+mod memory_ask;
 mod slash;
 mod spinner;
 mod style;
@@ -162,6 +163,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         },
         Command::Memory { command } => match command.unwrap_or(MemoryCommand::List) {
             MemoryCommand::List => commands::memory_list(&hedy, &dir),
+            MemoryCommand::Ask(args) => memory_ask::memory_ask(&hedy, &dir, args),
             MemoryCommand::Approve { id } => commands::memory_approve(&hedy, id),
             MemoryCommand::Reject { id } => commands::memory_reject(&hedy, id),
         },

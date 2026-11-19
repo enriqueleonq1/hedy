@@ -32,6 +32,12 @@ if [ "$1" = -p ] && [ "$2" = --input-format ]; then
       continue ;;
     esac
     case "$line" in *'"type":"user"'*) ;; *) continue ;; esac
+    case "$line" in *NOT_WRITTEN*)
+      # A question to the memory (`hedy memory ask`).
+      [ -n "$FAKE_PROMPT_LOG" ] && printf '%s\n' "$line" >> "$FAKE_PROMPT_LOG"
+      echo '{"type":"result","subtype":"success","is_error":false,"result":"'"${FAKE_ANSWER:-Se guardan en USD y se muestran en Bs [1] [9].}"'","usage":{"input_tokens":5,"output_tokens":2}}'
+      continue ;;
+    esac
     case "$line" in *[Cc]ommit*)
       # A one-shot commit message request (`hedy commit`).
       [ -n "$FAKE_PROMPT_LOG" ] && printf '%s\n' "$line" >> "$FAKE_PROMPT_LOG"
@@ -586,6 +592,66 @@ fn memory_lists_approves_and_rejects_proposals() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("note 999 does not exist"));
+}
+
+#[test]
+fn memory_ask_answers_only_from_approved_notes_and_cites_them() {
+    let env = Env::new();
+    let repo = env.repo("code/agenda");
+    env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy_in(&repo, &["use", "claude"]).assert().success();
+    let log = env.path("prompts.log");
+    let question = "¿En qué moneda van los precios?";
+
+    // Nothing written: nothing is sent, no tokens are spent.
+    env.hedy_in(&repo, &["memory", "ask", question])
+        .env("FAKE_PROMPT_LOG", &log)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Nada escrito en tu memoria responde eso"));
+    assert!(!log.exists());
+
+    seed_memory(&env, &repo);
+    env.hedy_in(&repo, &["memory", "ask", question])
+        .env("FAKE_PROMPT_LOG", &log)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Se guardan en USD y se muestran en Bs [1]."))
+        .stdout(predicate::str::contains(
+            "[1] Los precios se guardan en USD y se muestran también en Bs",
+        ))
+        .stdout(predicate::str::contains("Tuya · proyecto agenda"))
+        .stdout(predicate::str::contains("Respondió Claude con 2 notas"));
+    let prompt = fs::read_to_string(&log).unwrap();
+    assert!(prompt.contains("«¿En qué moneda van los precios?»"));
+    // Proposals are not memory yet.
+    assert!(!prompt.contains("por SMS"));
+
+    let out = env
+        .hedy_in(&repo, &["memory", "ask", "--json", question])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["cited"], serde_json::json!([1]));
+    assert_eq!(json["account"], "claude");
+    assert_eq!(json["sources"][0]["layer"], "mine");
+    assert_eq!(json["sources"][0]["cited"], true);
+    assert_eq!(json["sources"][1]["cited"], false);
+
+    env.hedy_lang("en", &["-C", repo.to_str().unwrap(), "memory", "ask", question])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Yours · project agenda"))
+        .stdout(predicate::str::contains("Claude answered from 2 notes"));
+    env.hedy_in(&repo, &["memory", "ask", "--team", "Nadie", question])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no está en el equipo «Nadie»"));
 }
 
 /// A real git repository (skill files are excluded through `.git/info/exclude`).

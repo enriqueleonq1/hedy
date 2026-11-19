@@ -575,6 +575,52 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             ),
         ),
         (
+            "memory ask",
+            "",
+            tr!(
+                "Pregunta a tu memoria: responde solo con lo escrito y cita cada nota",
+                "Ask your memory: it answers only from what is written and cites each note"
+            ),
+        ),
+        ("memory ask", "question", tr!("La pregunta", "The question")),
+        (
+            "memory ask",
+            "team",
+            tr!(
+                "Solo la memoria de ese equipo (por su nombre)",
+                "Only that team's memory (by its name)"
+            ),
+        ),
+        (
+            "memory ask",
+            "all",
+            tr!(
+                "Toda tu memoria: tus notas, las de tus proyectos y las de tus equipos (por defecto fuera de un proyecto)",
+                "All your memory: your notes, your projects' and your teams' (the default outside a project)"
+            ),
+        ),
+        (
+            "memory ask",
+            "account",
+            tr!(
+                "Cuenta que responde (por defecto, la del proyecto)",
+                "Account that answers (by default, the project's)"
+            ),
+        ),
+        (
+            "memory ask",
+            "model",
+            tr!("Modelo que responde", "Model that answers"),
+        ),
+        (
+            "memory ask",
+            "json",
+            tr!(
+                "Respuesta y fuentes en JSON, para scripts",
+                "Answer and sources as JSON, for scripts"
+            ),
+        ),
+        (
             "memory approve",
             "",
             tr!(
@@ -1526,6 +1572,8 @@ pub enum AccountCommand {
 pub enum MemoryCommand {
     List,
 
+    Ask(MemoryAsk),
+
     Approve { id: i64 },
 
     Reject { id: i64 },
@@ -1752,6 +1800,22 @@ pub struct AskArgs {
         value_name = "ID"
     )]
     pub follow: Option<String>,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct MemoryAsk {
+    #[arg(required = true)]
+    pub question: Vec<String>,
+    #[arg(long, conflicts_with = "all")]
+    pub team: Option<String>,
+    #[arg(long)]
+    pub all: bool,
+    #[arg(long, short)]
+    pub account: Option<String>,
+    #[arg(long, short)]
+    pub model: Option<String>,
     #[arg(long)]
     pub json: bool,
 }
