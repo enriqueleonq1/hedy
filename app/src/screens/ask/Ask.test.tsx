@@ -54,13 +54,25 @@ describe("Asking the memory", () => {
     expect(within(sources).getByText(/Equipo Plataforma · capa del equipo · \w+/)).toBeInTheDocument();
   });
 
-  it("starts from a project's memory, and offers to write down what is not written", async () => {
-    const { user } = renderAt("#m=%2Fcode%2Fhedy");
+  it("starts from a project's memory, looks in the code for what is not written, or opens the memory", async () => {
+    const { api, user } = renderAt("#m=%2Fcode%2Fhedy");
     await user.click(await screen.findByRole("button", { name: "Preguntar" }));
     expect(window.location.hash).toBe("#ask=%2Fcode%2Fhedy");
     const panel = screen.getByRole("region", { name: "Pregunta a tu memoria" });
     expect(within(panel).getByLabelText("Ámbito")).toHaveDisplayValue(/^Proyecto · hedy$/);
     await user.type(within(panel).getByLabelText("Pregunta"), "¿Qué tipografía usan los correos?");
+    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+    // Not written: the project's code answers, and its note waits for approval.
+    await user.click(await within(panel).findByRole("button", { name: "Buscar en el código" }));
+    expect(await within(panel).findByText(/Inter a 15 px, definida en/)).toBeInTheDocument();
+    expect(within(panel).getByText("«Los correos usan Inter a 15 px (emails/base.css).»")).toBeInTheDocument();
+    expect((await api.memory("/code/hedy")).proposed.some((p) => p.note.text.includes("Inter"))).toBe(true);
+    await user.click(within(panel).getByRole("button", { name: "Guardar en la memoria" }));
+    expect(await within(panel).findByRole("status")).toHaveTextContent("Guardada");
+    expect((await api.memory("/code/hedy")).notes.some((n) => n.text.includes("Inter"))).toBe(true);
+
+    await user.clear(within(panel).getByLabelText("Pregunta"));
+    await user.type(within(panel).getByLabelText("Pregunta"), "¿Qué tipografía usan los boletines?");
     await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
     await user.click(await within(panel).findByRole("button", { name: "Anotarlo" }));
     expect(window.location.hash).toBe("#m=%2Fcode%2Fhedy");

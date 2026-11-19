@@ -117,6 +117,7 @@ pub fn run() {
             commands::search_memory,
             ask::ask_memory,
             ask::memory_graph,
+            ask::look_in_code,
             commands::add_note,
             commands::edit_note,
             commands::approve_note,

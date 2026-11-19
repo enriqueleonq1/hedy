@@ -22,6 +22,7 @@ import { placeholders } from "../templates/placeholders";
 import { buildTheme } from "../theme/derive";
 import type {
   AskScope,
+  CodeLookup,
   GraphNode,
   MemoryAnswer,
   MemoryGraph,
@@ -699,6 +700,38 @@ export class MockApi implements HedyApi {
     const cited = best.map((_, i) => i + 1);
     const text = best.map((s, i) => `${s.source.text.replace(/\.$/, "")} [${i + 1}].`).join(" ");
     return { text, sources, cited, account: reader?.name ?? null };
+  }
+
+  async lookInCode(question: string, project: string): Promise<CodeLookup> {
+    if (!question.trim()) throw "escribe una pregunta para la memoria";
+    await this.pause();
+    const reader = this.state.accounts.find((a) => a.id === (this.project(project).account ?? this.state.defaultAccount)) ?? this.state.accounts[0];
+    const account = reader?.name ?? "Claude";
+    if (/tipograf/i.test(question)) {
+      const text = "Los correos usan Inter a 15 px, definida en `emails/base.css`.";
+      const proposal = await this.proposeNote(project, "Los correos usan Inter a 15 px (emails/base.css).", account);
+      return { text, proposal, account };
+    }
+    return { text: null, proposal: null, account };
+  }
+
+  /** A note an agent proposes (it waits for approval). */
+  private async proposeNote(project: string, text: string, author: string): Promise<Note> {
+    const note: Note = {
+      id: this.notes.length + 1,
+      project,
+      text,
+      category: "convention",
+      author,
+      status: "proposed",
+      createdAt: Date.now() / 1000,
+      uses: 0,
+      lastUsed: null,
+      topic: null,
+      updatedAt: null,
+    };
+    this.notes.push(note);
+    return structuredClone(note);
   }
 
   /** What a question of `scope` reads, as the core picks it (protected projects only in their own). */

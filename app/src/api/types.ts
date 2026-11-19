@@ -946,6 +946,15 @@ export interface MemoryAnswer {
   account: string | null;
 }
 
+/** What the project's files say when the memory has no answer. */
+export interface CodeLookup {
+  /** `null`: the files do not answer it either. */
+  text: string | null;
+  /** The note proposed from it, waiting for approval. */
+  proposal: Note | null;
+  account: string;
+}
+
 export type AskScope = { kind: "mine" } | { kind: "project"; project: string } | { kind: "team"; team: string };
 
 export type GraphKind = "you" | "team" | "project" | "topic" | "person" | "note";

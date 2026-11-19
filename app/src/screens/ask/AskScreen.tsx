@@ -3,10 +3,10 @@
 // which lights the notes that answered.
 
 import { useMemo, useState, type ReactNode } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { errorMessage, useApi } from "../../api/context";
-import type { AskScope, GraphNode, MemoryAnswer, MemorySource, Overview } from "../../api/types";
+import type { AskScope, CodeLookup, GraphNode, MemoryAnswer, MemorySource, Overview } from "../../api/types";
 import { Button } from "../../components/ui/Button";
 import { timeAgo } from "../../format";
 import { useT, type Translate } from "../../i18n";
@@ -69,6 +69,9 @@ export function AskScreen({
   const [answer, setAnswer] = useState<{ result: MemoryAnswer; asked: number } | null>(null);
   const [selected, setSelected] = useState<GraphNode | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [found, setFound] = useState<CodeLookup | null>(null);
+  const [decided, setDecided] = useState<"approved" | "discarded" | null>(null);
+  const client = useQueryClient();
 
   const scopes = useMemo(
     () => [
@@ -90,7 +93,32 @@ export function AskScreen({
     onSuccess: (result) => {
       setError(null);
       setSelected(null);
+      setFound(null);
+      setDecided(null);
       setAnswer((previous) => ({ result, asked: (previous?.asked ?? 0) + 1 }));
+    },
+    onError: (e) => setError(errorMessage(e, t)),
+  });
+
+  const look = useMutation({
+    mutationFn: (project: string) => api.lookInCode(question.trim(), project),
+    onSuccess: (lookup) => {
+      setError(null);
+      setFound(lookup);
+      setDecided(null);
+    },
+    onError: (e) => setError(errorMessage(e, t)),
+  });
+  const decide = useMutation({
+    mutationFn: async ({ id, keep }: { id: number; keep: boolean }) => {
+      if (keep) await api.approveNote(id);
+      else await api.forgetNote(id);
+      return keep;
+    },
+    onSuccess: async (keep) => {
+      setDecided(keep ? "approved" : "discarded");
+      await client.invalidateQueries({ queryKey: MEMORY_GRAPH_KEY });
+      if (scopeProject) await client.invalidateQueries({ queryKey: ["memory", scopeProject] });
     },
     onError: (e) => setError(errorMessage(e, t)),
   });
@@ -162,10 +190,52 @@ export function AskScreen({
             <div className="ask-answer ask-answer--none">
               <p className="ask-answer__text">{t("ask.notWritten")}</p>
               <p className="small muted">{t("ask.notWrittenHint")}</p>
-              {scopeProject && (
-                <Button small onClick={() => onOpenMemory(scopeProject)}>
-                  {t("ask.write")}
-                </Button>
+              {scopeProject && !found && (
+                <div className="row">
+                  <Button small variant="primary" disabled={look.isPending} onClick={() => look.mutate(scopeProject)}>
+                    {t("ask.code.look")}
+                  </Button>
+                  <Button small onClick={() => onOpenMemory(scopeProject)}>
+                    {t("ask.write")}
+                  </Button>
+                </div>
+              )}
+              {look.isPending && <p className="ask__thinking">{t("ask.code.reading")}</p>}
+            </div>
+          )}
+          {found && !ask.isPending && (
+            <div className="ask-answer ask-code">
+              <span className="ask__label">{t("ask.code.title")}</span>
+              <p className="ask-answer__text">{found.text ?? t("ask.code.none")}</p>
+              {found.proposal && (
+                <div className="ask-code__proposal">
+                  <span className="small muted">{t("ask.code.proposal", { account: found.account })}</span>
+                  <blockquote>«{found.proposal.text}»</blockquote>
+                  {decided === null ? (
+                    <div className="row">
+                      <Button
+                        small
+                        variant="primary"
+                        disabled={decide.isPending}
+                        onClick={() => found.proposal && decide.mutate({ id: found.proposal.id, keep: true })}
+                      >
+                        {t("ask.code.approve")}
+                      </Button>
+                      <Button
+                        small
+                        variant="ghost"
+                        disabled={decide.isPending}
+                        onClick={() => found.proposal && decide.mutate({ id: found.proposal.id, keep: false })}
+                      >
+                        {t("ask.code.discard")}
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="small muted" role="status">
+                      {t(decided === "approved" ? "ask.code.approved" : "ask.code.discarded")}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}

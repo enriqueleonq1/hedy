@@ -3,7 +3,8 @@
 
 use std::path::PathBuf;
 
-use hedy_core::application::{AskScope, MemoryAnswer, MemoryGraph};
+use hedy_core::application::{AskScope, CodeLookup, MemoryAnswer, MemoryGraph};
+use hedy_core::domain::Note;
 use hedy_core::domain::ask::Source;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -63,6 +64,42 @@ pub async fn ask_memory(
     blocking(&state, move |h| {
         Ok(
             h.ask_memory(&question, &scope.into(), account.as_deref(), None)?
+                .into(),
+        )
+    })
+    .await
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeLookupDto {
+    /// `None`: the project's files do not answer it either.
+    pub text: Option<String>,
+    /// The note proposed from it, waiting for the user's approval.
+    pub proposal: Option<Note>,
+    pub account: String,
+}
+
+impl From<CodeLookup> for CodeLookupDto {
+    fn from(c: CodeLookup) -> Self {
+        Self {
+            text: c.text,
+            proposal: c.proposal,
+            account: c.account.name,
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn look_in_code(
+    state: State<'_, AppState>,
+    question: String,
+    project: PathBuf,
+    account: Option<String>,
+) -> CommandResult<CodeLookupDto> {
+    blocking(&state, move |h| {
+        Ok(
+            h.look_in_code(&question, &project, account.as_deref(), None)?
                 .into(),
         )
     })

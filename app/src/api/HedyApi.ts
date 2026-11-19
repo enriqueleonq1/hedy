@@ -27,6 +27,7 @@ import type {
   ImageInput,
   ImageSupport,
   AskScope,
+  CodeLookup,
   MemoryAnswer,
   MemoryGraph,
   MemoryHome,
@@ -267,6 +268,8 @@ export interface HedyApi {
   askMemory(question: string, scope: AskScope, account?: string | null): Promise<MemoryAnswer>;
   /** Every note this person can read here, as a graph (only shown on this PC). */
   memoryGraph(): Promise<MemoryGraph>;
+  /** "Buscar en el código": the project's files answer, and a note is proposed (never approved by itself). */
+  lookInCode(question: string, project: string, account?: string | null): Promise<CodeLookup>;
   /** A note written by the user; `project: null` makes it global. */
   addNote(project: string | null, text: string, category: NoteCategory): Promise<Note>;
   editNote(id: number, text: string, category: NoteCategory): Promise<Note>;
