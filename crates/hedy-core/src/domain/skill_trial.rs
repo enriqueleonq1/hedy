@@ -281,13 +281,22 @@ impl TrialResult {
             line.push(' ');
             line.push_str(&tr!("La IA no llegó a usarla.", "The AI never used it."));
         }
-        if self.restored > 0 {
-            let n = self.restored;
-            line.push(' ');
-            line.push_str(&tr!(
-                "Antes de comprobar, Hedy devolvió {n} archivos de tests cambiados a como estaban.",
-                "Before checking, Hedy put {n} changed test files back as they were."
-            ));
+        match self.restored {
+            0 => {}
+            1 => {
+                line.push(' ');
+                line.push_str(&tr!(
+                    "Antes de comprobar, Hedy devolvió un archivo de tests cambiado a como estaba.",
+                    "Before checking, Hedy put one changed test file back as it was."
+                ));
+            }
+            n => {
+                line.push(' ');
+                line.push_str(&tr!(
+                    "Antes de comprobar, Hedy devolvió {n} archivos de tests cambiados a como estaban.",
+                    "Before checking, Hedy put {n} changed test files back as they were."
+                ));
+            }
         }
         line
     }
@@ -378,7 +387,8 @@ pub fn configures_the_check(path: &str) -> bool {
         || path.ends_with("/.cargo/config.toml")
         || matches!(
             name,
-            "conftest.py"
+            "pyproject.toml"
+                | "conftest.py"
                 | "pytest.ini"
                 | "tox.ini"
                 | "setup.cfg"
@@ -437,12 +447,44 @@ const TEST_TABLES: &[&str] = &[
     "tool.coverage",
 ];
 
+/// `[package]` keys that decide which tests Cargo builds and what runs at
+/// build time (`autotests = false` skips `tests/`, `build` can rewrite them).
+const PACKAGE_TEST_KEYS: &[&str] = &[
+    "autotests",
+    "autobenches",
+    "autoexamples",
+    "autobins",
+    "autolib",
+    "build",
+];
+
+/// `[package]`'s lines that set one of [`PACKAGE_TEST_KEYS`].
+fn package_test_lines(text: &str) -> Vec<String> {
+    toml_tables(text)
+        .into_iter()
+        .filter(|(name, _)| name == "package")
+        .flat_map(|(_, body)| {
+            body.lines()
+                .filter(|l| package_test_key(l))
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn package_test_key(line: &str) -> bool {
+    let key = line.split('=').next().unwrap_or("").trim();
+    PACKAGE_TEST_KEYS.contains(&key)
+}
+
 /// A TOML file's tables, as written: the top (no header) first.
 fn toml_tables(text: &str) -> Vec<(String, String)> {
     let mut tables = vec![(String::new(), String::new())];
     for line in text.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with('[') && !trimmed.starts_with("[\"") {
+            // `[lib] # comment` is still `[lib]`.
+            let trimmed = trimmed.split('#').next().unwrap_or(trimmed).trim();
             let name = trimmed
                 .trim_matches(|c| c == '[' || c == ']')
                 .trim()
@@ -473,13 +515,31 @@ pub fn restore_test_tables(base: &str, current: &str) -> Option<String> {
             .collect()
     };
     let old = pick(base, true);
-    if old == pick(current, true) {
+    let old_keys = package_test_lines(base);
+    if old == pick(current, true) && old_keys == package_test_lines(current) {
         return None;
     }
-    let mut out: String = pick(current, false)
-        .into_iter()
-        .map(|(_, body)| body)
-        .collect();
+    let mut out = String::new();
+    for (name, body) in pick(current, false) {
+        if name != "package" {
+            out.push_str(&body);
+            continue;
+        }
+        // `[package]` keeps the run's keys but its test keys come back.
+        let mut lines = body.lines();
+        if let Some(header) = lines.next() {
+            out.push_str(header);
+            out.push('\n');
+        }
+        for line in old_keys
+            .iter()
+            .map(String::as_str)
+            .chain(lines.filter(|l| !package_test_key(l)))
+        {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
     for (_, body) in old {
         if !out.ends_with("\n\n") {
             out.push('\n');
@@ -775,6 +835,17 @@ mod tests {
         assert!(restored.contains("serde = \"1\"") && restored.contains("test = true"));
         assert!(!restored.contains("harness"));
         assert_eq!(restore_test_tables(base, base), None);
+        let skips =
+            "[package]\nname = \"c\"\nautotests = false\nbuild = \"gen.rs\"\n\n[dependencies]\n";
+        let fixed = restore_test_tables(base, skips).unwrap();
+        assert!(!fixed.contains("autotests") && !fixed.contains("gen.rs"));
+        let commented = "[package]\nname = \"c\"\n\n[lib] # tests off\ntest = false\n";
+        assert!(
+            !restore_test_tables(base, commented)
+                .unwrap()
+                .contains("test = false")
+        );
+        assert!(fixed.contains("name = \"c\""));
         let py = "[project]\nname = \"a\"\n";
         let py_gamed = "[project]\nname = \"a\"\n\n[tool.pytest.ini_options]\naddopts = \"-k x\"\n";
         assert!(

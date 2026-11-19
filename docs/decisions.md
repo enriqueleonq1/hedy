@@ -865,9 +865,10 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
       the project's test command guessed from its files and shown before starting; 10
       minutes at most). Before it, the files that decide it are put back as the base
       commit has them (tests, test configuration, `build.rs`, `Makefile`; the test keys
-      of `package.json` (`scripts`, `jest`…), and the test tables of `Cargo.toml` and
-      `pyproject.toml` (`[lib]`, `[[test]]`, `[tool.pytest…]`), keeping the run's
-      dependencies); new test configuration (`.cargo/config.toml`, a new `conftest.py`…)
+      of `package.json` (`scripts`, `jest`…), the test tables of `Cargo.toml` and
+      `pyproject.toml` (`[lib]`, `[[test]]`, `[tool.pytest…]`) and `[package]`'s
+      `autotests`, `autolib`, `build`…, keeping the run's dependencies; dotted keys at
+      the top level are not read); new test configuration (`.cargo/config.toml`, a new `conftest.py`…)
       is removed, a renamed test comes back under its old name only, and new test files
       stay, since a task may ask for them. So a run cannot pass by rewriting its tests;
       the result says how many files were touched. When no copy passes, with the skill
@@ -881,9 +882,11 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
       trial's checks). On Linux with bubblewrap it runs isolated: no network, no IPC,
       its own processes (gone when it ends), the system read-only, `/run` (the
       session bus, the keyring's way in), `/tmp` and the home folder empty but for the
-      tools' folders (`~/.cargo` without its credentials, `~/.rustup`, `~/.npm`,
-      `~/.cache`…), the project read-only (what the copy links to: `node_modules`,
-      `.git`), only the copy writable, killed with Hedy; tools are told they are offline (`CARGO_NET_OFFLINE`,
+      tools' folders (`~/.cargo` without its credentials, `~/.rustup`, `~/.npm`, and
+      only the tools' own folders of `~/.cache`, where other programs keep sockets and
+      tokens), from the project only what the copy links to (`.git` and the shared
+      dependency folders, read-only; never `.env`), only the copy writable, killed
+      with Hedy; tools are told they are offline (`CARGO_NET_OFFLINE`,
       `npm_config_offline`), so a check that needs to download fails rather than
       hangs. Without bubblewrap (macOS, or not installed) it runs as the user, and the
       CLI warns before starting. A run passes when it finished, its

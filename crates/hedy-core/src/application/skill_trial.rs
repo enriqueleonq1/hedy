@@ -24,6 +24,7 @@ use crate::domain::skill_trial::{
     guards_the_check, judge, parse_trial_tasks, restore_scripts, restore_test_tables,
     run_from_events, trial_tasks_prompt, void_reason,
 };
+use crate::domain::task::SHARED_DEPENDENCY_DIRS;
 use crate::domain::{
     Phase, Provider, Skill, SkillStatus, Stage, Task, TaskId, TaskMode, TaskStatus,
 };
@@ -337,6 +338,13 @@ impl Hedy {
 
     /// Hedy's check in a run's copy: passed when it exits 0 in time.
     fn run_trial_check(&self, trial: &str, ws: &Workspace, project: &Path, check: &str) -> bool {
+        // What the copy links to in the project, read-only: its git data and
+        // the shared dependency folders; never the rest (`.env` and the like).
+        let reads: Vec<_> = std::iter::once(".git")
+            .chain(SHARED_DEPENDENCY_DIRS.iter().copied())
+            .map(|name| project.join(name))
+            .filter(|path| self.fs.exists(path))
+            .collect();
         let spec = LaunchSpec {
             program: "sh".into(),
             args: vec!["-c".into(), check.to_owned()],
@@ -344,7 +352,7 @@ impl Hedy {
             cwd: Some(ws.worktree.clone()),
         };
         self.runner
-            .run_check(&spec, CHECK_TIMEOUT, trial, &[project.to_path_buf()])
+            .run_check(&spec, CHECK_TIMEOUT, trial, &reads)
             .is_ok_and(|out| out.exit_code == Some(0))
     }
 
@@ -444,8 +452,25 @@ impl Hedy {
             return 0;
         };
         let mut restored = 0;
+        // A test moved with a plain `mv` shows as deleted + new: once the old
+        // one is back, a new file with the same bytes goes.
+        let new_tests: Vec<String> = changes
+            .iter()
+            .filter(|c| matches!(c.kind, ChangeKind::Added | ChangeKind::Untracked))
+            .filter(|c| guards_the_check(&c.path) && !configures_the_check(&c.path))
+            .map(|c| c.path.clone())
+            .collect();
+        let same_bytes = |old: &str, new: &str| {
+            let read = |rev, path| self.code.read_file(dir, rev, path, RESTORE_MAX);
+            matches!((read(Some(base), old), read(None, new)), (Ok(Some(a)), Ok(Some(b))) if a.bytes == b.bytes)
+        };
         for change in changes {
             let new = matches!(change.kind, ChangeKind::Added | ChangeKind::Untracked);
+            if change.kind == ChangeKind::Deleted && guards_the_check(&change.path) {
+                for copy in new_tests.iter().filter(|n| same_bytes(&change.path, n)) {
+                    let _ = self.fs.remove_file(&dir.join(copy));
+                }
+            }
             if new && configures_the_check(&change.path) {
                 restored += usize::from(self.fs.remove_file(&dir.join(&change.path)).is_ok());
                 continue;

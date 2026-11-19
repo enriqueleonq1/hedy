@@ -36,7 +36,6 @@ const HOME_TOOLS: &[&str] = &[
     ".rustup",
     ".npm",
     ".nvm",
-    ".cache",
     ".local/bin",
     ".local/lib",
     ".pyenv",
@@ -47,6 +46,20 @@ const HOME_TOOLS: &[&str] = &[
     ".m2",
     ".yarn",
     ".pnpm-store",
+    // Only the tools' caches: other programs keep sockets and tokens in
+    // `~/.cache` too (git's credential cache, Hugging Face…).
+    ".cache/pip",
+    ".cache/uv",
+    ".cache/pypoetry",
+    ".cache/go-build",
+    ".cache/yarn",
+    ".cache/pnpm",
+    ".cache/deno",
+    ".cache/node-gyp",
+    ".cache/ms-playwright",
+    ".cache/Cypress",
+    ".cache/puppeteer",
+    ".cache/sccache",
 ];
 /// Files inside those that hold credentials: shown empty.
 const HOME_SECRETS: &[&str] = &[".cargo/credentials", ".cargo/credentials.toml"];
@@ -485,7 +498,8 @@ mod tests {
             copy.join("node_modules"),
         )
         .unwrap();
-        let reads = [project.path().to_path_buf()];
+        std::fs::write(project.path().join(".env"), "SECRET=1").unwrap();
+        let reads = [project.path().join("node_modules")];
         assert_eq!(
             check_reading(&copy, "grep -q ok node_modules/dep.js", "t2", &reads),
             Some(0)
@@ -495,6 +509,11 @@ mod tests {
             Some(0)
         );
         assert!(!project.path().join("node_modules/new.js").exists());
+        assert_ne!(
+            check_reading(&copy, "cat ../../../.env", "t2", &reads),
+            Some(0),
+            "no .env"
+        );
     }
 
     #[test]
