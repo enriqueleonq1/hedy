@@ -967,8 +967,10 @@ export interface RuleBreak {
   message: string;
   /** How to follow the rule, when the AI says. */
   fix: string | null;
-  /** The line as it was checked. */
+  /** The line as it was checked, to show: trimmed, cut, hidden characters shown. */
   code: string;
+  /** The line exactly as the change had it, to find it again (never shown). */
+  raw: string;
 }
 
 /**

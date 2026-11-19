@@ -742,12 +742,12 @@ export class MockApi implements HedyApi {
       const code = line.text.trim();
       const comment = /^(#|\/\/)\s*(.*)$/.exec(code)?.[2] ?? "";
       if (english && /[áéíóúñ]|\b(el|la|se|por|como|del)\b/i.test(comment)) {
-        breaks.push({ path, line: line.newLine ?? 0, rule: english, message: "El comentario está en español.", fix: "Escríbelo en inglés.", code });
+        breaks.push({ path, line: line.newLine ?? 0, rule: english, message: "El comentario está en español.", fix: "Escríbelo en inglés.", code, raw: line.text });
       }
       const snake = /\b(?:const|let|var)\s+([a-z]+_[a-z0-9_]+)/.exec(code)?.[1];
       if (camel && snake && /\.(ts|tsx|js|jsx)$/.test(path)) {
         const fixed = snake.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
-        breaks.push({ path, line: line.newLine ?? 0, rule: camel, message: `\`${snake}\` no va en camelCase.`, fix: `Llámala \`${fixed}\`.`, code });
+        breaks.push({ path, line: line.newLine ?? 0, rule: camel, message: `\`${snake}\` no va en camelCase.`, fix: `Llámala \`${fixed}\`.`, code, raw: line.text });
       }
     }
     return { status: "checked", breaks, rules, ...base, account: reader?.name ?? "Claude" };

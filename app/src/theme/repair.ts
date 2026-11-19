@@ -34,6 +34,8 @@ export const TEXT_PAIRS: readonly (readonly [fg: string, bg: string])[] = [
   ["warning", "panel2"],
   ["danger", "panel"],
   ["warnInk", "warnBg"],
+  // Where a rule lives, on a warning of the rules check (docs/decisions.md §37).
+  ["actionText", "accentSoft"],
   ["diffAddInk", "diffAddBg"],
   ["diffDelInk", "diffDelBg"],
   // A proposed change to a note: before and after.

@@ -441,8 +441,12 @@ pub struct RuleBreak {
     pub message: String,
     /// How to follow it, when the model says.
     pub fix: Option<String>,
-    /// The line as it is in the change.
+    /// The line as it is in the change, to show: trimmed, cut, every hidden
+    /// character shown.
     pub code: String,
+    /// The line exactly as the change has it, to find it again (never to
+    /// show: it may hold hidden characters).
+    pub raw: String,
 }
 
 /// Reads the model's answer to [`rules_prompt`]. A break counts only on an
@@ -492,6 +496,7 @@ pub fn parse_breaks(raw: &str, change: &SentChange, rules: usize) -> Vec<RuleBre
                     message: message.clone(),
                     fix: fix.clone(),
                     code: one_line(code.trim()),
+                    raw: code.clone(),
                 });
             }
         }
@@ -970,6 +975,7 @@ mod tests {
             ]
         );
         assert_eq!(breaks[0].code, "const user_name = data.user_name;");
+        assert_eq!(breaks[0].raw, "  const user_name = data.user_name;");
         assert!(parse_breaks(NO_BREAKS, &sent, 2).is_empty());
         assert!(parse_breaks("", &sent, 2).is_empty());
     }

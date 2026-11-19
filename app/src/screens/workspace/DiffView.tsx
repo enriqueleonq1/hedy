@@ -164,7 +164,8 @@ export function DiffView({
   layout = "unified",
   focusLine = null,
   focusSeq = 0,
-  annotations,
+  annotated,
+  annotate,
 }: {
   copy: CodeCopy;
   file: FileDiff;
@@ -172,8 +173,13 @@ export function DiffView({
   /** A line of the new side to show (and move to) when `focusSeq` changes. */
   focusLine?: number | null;
   focusSeq?: number;
-  /** Shown under lines of the new side, by their number (the rules' warnings). */
-  annotations?: Map<number, ReactNode>;
+  /**
+   * Lines of the new side with something under them (the rules' warnings), by
+   * number; the same map while they do not change, so nothing is redone.
+   */
+  annotated?: ReadonlyMap<number, unknown>;
+  /** What goes under such a line. */
+  annotate?: (line: number) => ReactNode;
 }) {
   const t = useT();
   const api = useApi();
@@ -219,12 +225,12 @@ export function DiffView({
       if (at >= 0) set.add(at);
     }
     if (focusIndex >= 0) set.add(focusIndex);
-    for (const n of annotations?.keys() ?? []) {
+    for (const n of annotated?.keys() ?? []) {
       const at = indexOfLine(lines, "new", n);
       if (at >= 0) set.add(at);
     }
     return set;
-  }, [lines, extra, comments, anchorOf, focusIndex, annotations]);
+  }, [lines, extra, comments, anchorOf, focusIndex, annotated]);
   const segs = useMemo(
     () => (source.kind === "full" ? buildSegments(lines, visible) : source.kind === "hunks" ? source.segments : []),
     [source, lines, visible],
@@ -574,7 +580,8 @@ export function DiffView({
   /** What is shown under a line of the new side (nothing under a removed one). */
   const annotationRow = (index: number | null, side: Side | null) => {
     const line = index === null ? undefined : lines[index];
-    const node = line && line.kind !== "removed" && line.newLine !== null ? annotations?.get(line.newLine) : undefined;
+    const n = line && line.kind !== "removed" ? line.newLine : null;
+    const node = n !== null && annotated?.has(n) ? annotate?.(n) : undefined;
     return (
       node && (
         <div role="row" className={`rd-thread rd-thread--rules${side ? ` rd-thread--${side}` : ""}`}>

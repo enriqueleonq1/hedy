@@ -18,7 +18,7 @@ import { DiffView, type DiffLayout } from "../screens/workspace/DiffView";
 import { useReviewed } from "../screens/workspace/reviewed";
 import { ShipPanel } from "../screens/workspace/ship/ShipPanel";
 import { useReviewComments } from "./comments";
-import { LineWarnings, RulesBar, useRuleCheck } from "./rules";
+import { forgetDismissed, LineWarnings, RulesBar, useRuleCheck } from "./rules";
 import { HistoryDialog } from "./HistoryDialog";
 import { PencilIcon } from "../code/icons";
 import { CheckIcon, CommentIcon, DisclosureIcon, ExternalIcon, FileIcon, SplitIcon, UnifiedIcon } from "./icons";
@@ -138,6 +138,10 @@ export function Changes({ project, task }: { project: string; task: Task | null 
   const taskId = task?.id ?? "";
   const copy = useMemo<CodeCopy>(() => ({ kind: "task", task: taskId }), [taskId]);
   const rules = useRuleCheck(editable ? task : null, diff.data ?? NO_FILES);
+  const closedTask = task && !isOpen(task) ? task.id : null;
+  useEffect(() => {
+    if (closedTask) forgetDismissed(closedTask);
+  }, [closedTask]);
 
   // The agent changed files: what the code views cached for this copy is stale.
   const updatedAt = diff.dataUpdatedAt;
@@ -325,7 +329,7 @@ export function Changes({ project, task }: { project: string; task: Task | null 
               </div>
             </header>
 
-            <RulesBar task={task} copy={copy} rules={rules} />
+            <RulesBar task={task} copy={copy} rules={rules} onAddedAll={() => setPreview(true)} />
 
             <ul className="rv-files" aria-label={t("workspace.changes.files")} title={t("review.keys")}>
               {files.map((f) => {
@@ -373,6 +377,10 @@ export function Changes({ project, task }: { project: string; task: Task | null 
                       )}
                       {warned > 0 && (
                         <span className="rv-file__rules" title={warnedLabel}>
+                          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                            <path d="M8 2.5 14.5 13.5h-13z" />
+                            <path d="M8 6.5v3M8 11.5v.01" />
+                          </svg>
                           {warned}
                           <span className="sr-only"> {warnedLabel}</span>
                         </span>
@@ -432,14 +440,10 @@ export function Changes({ project, task }: { project: string; task: Task | null 
                   layout={layout}
                   focusLine={review.selectedFile === current.path ? review.selectedLine : null}
                   focusSeq={review.selectedFile === current.path ? review.selectSeq : 0}
-                  annotations={
-                    new Map(
-                      [...rules.linesOf(current.path)].map(([line, warnings]) => [
-                        line,
-                        <LineWarnings key={line} warnings={warnings} copy={copy} rules={rules} />,
-                      ]),
-                    )
-                  }
+                  annotated={rules.linesOf(current.path)}
+                  annotate={(line) => (
+                    <LineWarnings warnings={rules.linesOf(current.path).get(line) ?? []} copy={copy} rules={rules} />
+                  )}
                 />
               </section>
             )}

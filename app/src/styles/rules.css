@@ -10,7 +10,8 @@
   border-radius: 10px;
   background: var(--panel);
 }
-.rl-bar--warn { border-color: var(--warn-line); background: var(--warn-bg); }
+/* Only its edge and its headline: text and links keep the panel under them. */
+.rl-bar--warn { border-color: var(--warn-line); }
 .rl-bar--ok .rl-bar__text::before {
   content: "✓ ";
   color: var(--success);
@@ -52,31 +53,35 @@
 .rl-warning__head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
 .rl-warning__label { color: var(--warn-ink); font-weight: 600; }
 .rl-warning__rule { color: var(--muted); }
-.rl-warning__rule::before { content: "«"; }
-.rl-warning__rule::after { content: "»"; }
 .rl-warning__fix { color: var(--muted); }
 .rl-warning__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 2px; }
 .rl-warning__where {
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent-soft);
   color: var(--action-text);
-  font-size: 12px;
+  font-size: var(--text-caption);
   font-weight: 600;
 }
 .rl-warning__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
-.rl-warning__added { color: var(--muted); font-size: 12px; align-self: center; }
+.rl-warning__added { color: var(--muted); font-size: var(--text-caption); align-self: center; }
 
+/* Beside the comments' badge, before the counts: pushed right like it. */
 .rv-file__rules {
-  display: inline-grid;
-  place-items: center;
-  min-width: 18px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  padding: 0 6px 0 4px;
   height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--warn-bg);
   box-shadow: inset 0 0 0 1px var(--warn-line);
   color: var(--warn-ink);
-  font-size: 11px;
+  font-size: var(--text-caption);
   font-weight: 600;
 }
+.rv-file__rules svg { width: 11px; height: 11px; }
+.rv-file__notes + .rv-file__rules { margin-left: 6px; }
+.rv-file__rules + .rv-file__stats { margin-left: 8px; }
