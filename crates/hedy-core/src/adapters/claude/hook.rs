@@ -48,14 +48,10 @@ fn decide_with(input: &str, guard: Option<&Path>) -> Option<String> {
         .or_else(|| linked_protected(&input["tool_input"], &cwd))
         .or_else(|| {
             let root = whole_search_root(tool, &input["tool_input"], &cwd)?;
-            // `rg --no-ignore` / `-u` reads what git ignores too.
-            let unignored = input["tool_input"]["command"].as_str().is_some_and(|command| {
-                command.split_whitespace().any(|w| {
-                    w.starts_with("--no-ignore")
-                        || (w.starts_with("-u") && w[1..].chars().all(|c| c == 'u'))
-                })
-            });
-            Some(match protected_inside(&root, !unignored)? {
+            let respect = input["tool_input"]["command"]
+                .as_str()
+                .is_some_and(respects_gitignore);
+            Some(match protected_inside(&root, respect)? {
                 Inside::Protected(name) => tr!(
                     "La búsqueda leería «{name}» (archivo protegido) sin nombrarlo: acótala con un glob (por ejemplo *.ts), o pide solo los nombres de los archivos.",
                     "The search would read «{name}» (protected file) without naming it: narrow it with a glob (for example *.ts), or ask only for file names."
@@ -106,6 +102,28 @@ fn linked_protected(input: &Value, cwd: &Path) -> Option<String> {
         })
 }
 
+/// Whether a shell search leaves out what git ignores, as the walk may:
+/// only ripgrep and ag do, and not with `--no-ignore…`, `--unrestricted` or
+/// a `u` among its short flags (`-uu`, `-uL`). grep, ack, `git grep` and
+/// the Grep tool are taken to read everything.
+fn respects_gitignore(command: &str) -> bool {
+    let words: Vec<&str> = command.split_whitespace().collect();
+    let program = |w: &&str| w.rsplit('/').next().unwrap_or(w).to_owned();
+    let readers_of_all = ["grep", "egrep", "fgrep", "rgrep", "ugrep", "ack", "git"];
+    words
+        .iter()
+        .any(|w| matches!(program(w).as_str(), "rg" | "ag"))
+        && !words
+            .iter()
+            .any(|w| readers_of_all.contains(&program(w).as_str()))
+        && !words.iter().any(|w| {
+            w.starts_with("--no-ignore")
+                || w.starts_with("--unrestricted")
+                || w.starts_with("--skip-vcs-ignores")
+                || (w.starts_with('-') && !w.starts_with("--") && w.contains('u'))
+        })
+}
+
 /// What a whole search would read under its folder.
 #[derive(Debug, PartialEq, Eq)]
 enum Inside {
@@ -125,7 +143,9 @@ fn ignored_names(dir: &Path, parent: &Rc<Vec<String>>) -> Rc<Vec<String>> {
     names.extend(text.lines().filter_map(|line| {
         let line = line.trim().trim_start_matches('/').trim_end_matches('/');
         // A path inside (`a/b`) or a negation is left to git: not skipped.
-        (!line.is_empty() && !line.starts_with(['#', '!']) && !line.contains('/'))
+        // Only wildcards (`*`) would hide folders that `!` lines bring back.
+        let wildcard_only = line.chars().all(|c| matches!(c, '*' | '?'));
+        (!line.is_empty() && !line.starts_with(['#', '!']) && !line.contains('/') && !wildcard_only)
             .then(|| line.to_owned())
     }));
     Rc::new(names)
@@ -384,6 +404,21 @@ mod tests {
         std::fs::remove_file(dir.join("src/config/.env")).unwrap();
         let rg = || decide_with(&input("Bash", json!({"command": "rg KEY"})), None);
         assert_eq!(rg(), None);
+        // grep, ack and `git grep` read what git ignores: never skipped for them.
+        std::fs::write(dir.join("target/d1/.env"), "K=1").unwrap();
+        for command in [
+            "grep -r KEY .",
+            "rg -uL KEY",
+            "git grep --no-index KEY",
+            "rg --unrestricted KEY",
+            "ack KEY",
+        ] {
+            assert!(
+                decide_with(&input("Bash", json!({"command": command})), None).is_some(),
+                "{command}"
+            );
+        }
+        std::fs::remove_file(dir.join("target/d1/.env")).unwrap();
         // Unless the search reads what git ignores.
         std::fs::write(dir.join("target/d0/.env"), "K=1").unwrap();
         assert!(

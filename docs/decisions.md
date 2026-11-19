@@ -3263,9 +3263,11 @@ outer ring of loose notes, animated).
   searches; names are compared without case; a negated glob (`!*.ts`) or an escaped one
   (`\.env`) narrows nothing; each command of a pipeline is checked on its own (`rg K | head -c
   99`); `git -C . grep`, `rgrep` and `ugrep -r` count; folders reached through a link are
-  looked through. The walk skips `.git`, `node_modules` and what the repo's `.gitignore` files
-  ignore (as ripgrep does; not with `--no-ignore` or `-u`), goes 12 folders deep and 20,000
-  folders, and past either asks to narrow the search instead of naming a file.
+  looked through. The walk skips `.git` and `node_modules`, and what the repo's `.gitignore`
+  files ignore only for `rg` and `ag` (which skip it too; not with `--no-ignore…`,
+  `--unrestricted` or `-u`): grep, ack, `git grep` and the Grep tool are taken to read
+  everything. It goes 12 folders deep and 20,000 folders, and past either asks to narrow the
+  search instead of naming a file.
 - **Known limits:** a search in names-only or count mode can still test patterns against a
   secret (`KEY=sk-a…`), one call per guess; MCP tools from the account's own settings are
   outside the hook; a shell search is checked against the task's folder, not a folder named in
@@ -3277,7 +3279,9 @@ outer ring of loose notes, animated).
   global notes, 16 questions with known answers (two that nothing answers, one in English, one
   that joins two projects). With haiku on claude-personal: **16/16, twice**, a median of 4–4.4 s
   per answer.
-- **Housekeeping of phases 2–4 (two reviews):** citation chips the core did not count (`[2024]`,
+- **The last empirical run** (after every fix): the eval 16/16 again (median 3.1 s), and five
+  more tries at the Stripe key leaked nothing.
+- **Housekeeping of phases 2–4 (two reviews, three re-verification rounds):** citation chips the core did not count (`[2024]`,
   `args[0]`); graph tags numbered by place; "Anotarlo" following the select instead of the
   asked scope; the camera losing cited notes; no keyboard focus ring; light-theme contrast; a
   loop that never rested; colours hard-coded outside the tokens; an unknown project shown as one

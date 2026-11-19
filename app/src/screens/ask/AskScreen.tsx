@@ -154,7 +154,10 @@ export function AskScreen({
   // The project the answer was asked about (not what the select says now).
   const scopeProject = answer?.scope.startsWith("project:") ? answer.scope.slice(8) : null;
   // Looking in the code needs a Claude Code account (the core refuses others).
-  const lookAccount = overview.projects.find((p) => p.path === scopeProject)?.account ?? overview.defaultAccount;
+  const lookAccount =
+    overview.projects.find((p) => p.path === scopeProject)?.account ??
+    overview.defaultAccount ??
+    (overview.accounts.length === 1 ? overview.accounts[0]?.id : null);
   const canLook = overview.accounts.find((a) => a.id === lookAccount)?.provider === "claude";
 
   return (
