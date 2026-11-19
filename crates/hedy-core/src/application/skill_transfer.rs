@@ -222,9 +222,9 @@ impl Hedy {
                 )
             );
             if !unseen && !candidate.draft.body.is_empty() {
-                let replacing = candidate.replaces.as_ref().map(|s| s.name.clone());
+                let replacing = candidate.replaces.as_ref().map(|s| s.id);
                 candidate.findings =
-                    self.measure_skill(&project.path, &candidate.text(), replacing.as_deref())?;
+                    self.measure_skill(&project.path, &candidate.text(), replacing)?;
                 candidate.verdict = predicted(&candidate.findings);
             }
         }

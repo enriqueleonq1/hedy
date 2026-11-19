@@ -50,17 +50,17 @@ fn review_model(account: &Account) -> Option<String> {
 impl Hedy {
     /// Level 1 for a skill seen from `project`, beside every approved skill
     /// the project's agents see (its own and the global ones), without the
-    /// one named `replacing`.
+    /// one it would replace (by id: a global one with its name still counts).
     pub(super) fn measure_skill(
         &self,
         project: &Path,
         skill: &SkillText,
-        replacing: Option<&str>,
+        replacing: Option<i64>,
     ) -> AppResult<Vec<Finding>> {
         let others: Vec<(String, String)> = self
             .agent_skills(project)?
             .into_iter()
-            .filter(|s| Some(s.name.as_str()) != replacing)
+            .filter(|s| Some(s.id) != replacing)
             .map(|s| (s.name, s.body))
             .collect();
         Ok(measure(skill, &others))
@@ -82,6 +82,7 @@ impl Hedy {
         model: Option<&str>,
     ) -> AppResult<SkillReview> {
         check_visible(skill.body)?;
+        check_visible(skill.description)?;
         let project = self.project_at(project)?;
         let scope = AskScope::Project(project.path.clone());
         let text = format!("{} {}", skill.description, skill.body);
@@ -148,7 +149,7 @@ impl Hedy {
             body: &skill.body,
             extra_files: &[],
         };
-        let findings = self.measure_skill(project, &text, Some(&skill.name))?;
+        let findings = self.measure_skill(project, &text, Some(skill.id))?;
         let verdict = predicted(&findings);
         Ok((findings, verdict))
     }

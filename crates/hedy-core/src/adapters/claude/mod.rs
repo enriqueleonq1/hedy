@@ -251,7 +251,8 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     if let Some(session) = &request.resume {
         args.extend(["--resume".into(), session.clone()]);
     }
-    if experiments::on(Experiment::LeanTools) {
+    // A request with no tools keeps none, whatever the experiment.
+    if experiments::on(Experiment::LeanTools) && !request.no_tools {
         args.extend(["--tools".into(), lean_tools(request, mode)]);
     }
     args
@@ -642,6 +643,7 @@ pub(crate) mod tests {
         let at = bare.iter().position(|a| a == "--tools").unwrap();
         assert_eq!(bare[at + 1], "", "no tool at all");
         assert!(bare.contains(&"--strict-mcp-config".to_owned()));
+        assert_eq!(bare.iter().filter(|a| *a == "--tools").count(), 1);
         assert!(bare.contains(&"--disable-slash-commands".to_owned()));
         let review = args(
             &AgentRequest {

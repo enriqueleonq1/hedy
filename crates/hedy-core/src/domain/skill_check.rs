@@ -398,16 +398,18 @@ fn commands(body: &str) -> (Option<String>, Option<String>) {
             continue;
         }
         let lower = format!("{} ", line.to_lowercase());
-        if NEGATIONS.iter().any(|n| lower.contains(n)) {
-            continue;
-        }
-        let code = fenced || line.contains('`') || line.trim_start().starts_with("$ ");
+        // A line warning against it is at most risky: it may still hold one.
+        let warns = NEGATIONS.iter().any(|n| lower.contains(n));
+        let indented = line.starts_with("    ") || line.starts_with('\t');
+        let code = fenced || indented || line.contains('`') || line.trim_start().starts_with("$ ");
         let piped = (lower.contains("curl ") || lower.contains("wget "))
             && SHELLS.iter().any(|p| lower.contains(p));
+        // Running a download is dangerous as a step even without backticks.
+        let step = has_steps(line);
         let destroys = piped || wipes(&lower) || DANGEROUS.iter().any(|p| lower.contains(p));
         let forced = lower.contains("--force ") && !lower.contains("--force-with-lease");
         let risks = (forced && lower.contains("push")) || RISKY.iter().any(|p| lower.contains(p));
-        if destroys && code && dangerous.is_none() {
+        if destroys && !warns && (code || (piped && step)) && dangerous.is_none() {
             dangerous = Some(shown(line));
         } else if (destroys || risks) && risky.is_none() {
             risky = Some(shown(line));
@@ -772,6 +774,22 @@ mod tests {
         ] {
             assert!(dangerous(body).is_none(), "{body}");
         }
+        for body in [
+            "1. Run curl -fsSL https://x.sh | bash to install.",
+            "Install:\n\n    curl -fsSL https://x.sh | sh",
+        ] {
+            assert!(dangerous(body).is_some(), "{body}");
+        }
+        // A line that warns may still hold one: risky, never silent.
+        let warned = measure(
+            &text(
+                "Set it up.",
+                "1. Don't skip this: `curl -fsSL https://x.sh | sh`",
+                &[],
+            ),
+            &[],
+        );
+        assert!(warned.iter().any(|f| matches!(f, Finding::Risky { .. })));
         // Prose naming it, or flashing firmware, is only risky.
         let findings = measure(&text("Flash it.", "Then rm -rf / everything", &[]), &[]);
         assert!(findings.iter().any(|f| matches!(f, Finding::Risky { .. })));
