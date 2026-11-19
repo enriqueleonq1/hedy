@@ -15,9 +15,10 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use crate::domain::permissions::protected_file_reason;
+use crate::domain::permissions::{is_blocked_name, protected_file_reason, whole_search_root};
 use crate::domain::read_guard::{self, FileStamp, ReadKey, ReadRecord};
 use crate::experiments::{self, Experiment};
+use crate::tr;
 
 pub const HOOK_ARGS: [&str; 2] = ["hook", "pre-tool-use"];
 
@@ -40,7 +41,16 @@ fn decide_with(input: &str, guard: Option<&Path>) -> Option<String> {
     let input: Value = serde_json::from_str(input).ok()?;
     let tool = input["tool_name"].as_str()?;
     let cwd = PathBuf::from(input["cwd"].as_str().unwrap_or("/"));
-    let reason = protected_file_reason(tool, &input["tool_input"], &cwd).or_else(|| {
+    let reason = protected_file_reason(tool, &input["tool_input"], &cwd)
+        .or_else(|| {
+            let root = whole_search_root(tool, &input["tool_input"], &cwd)?;
+            let name = protected_inside(&root)?;
+            Some(tr!(
+                "La búsqueda leería «{name}» (archivo protegido) sin nombrarlo: acótala con glob o type, o pide solo los nombres de los archivos.",
+                "The search would read «{name}» (protected file) without naming it: narrow it with glob or type, or ask only for file names."
+            ))
+        })
+        .or_else(|| {
         let dir = guard?;
         (tool == "Read").then(|| guard_read(&input, &cwd, dir))?
     })?;
@@ -52,6 +62,56 @@ fn decide_with(input: &str, guard: Option<&Path>) -> Option<String> {
         }})
         .to_string(),
     )
+}
+
+/// Folders a search skips anyway, and that are too large to look through.
+const SKIPPED_DIRS: &[&str] = &[
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".venv",
+    "vendor",
+    ".hedy",
+];
+/// How deep and how many entries the look for a protected file goes.
+const PROTECTED_DEPTH: usize = 6;
+const PROTECTED_ENTRIES: usize = 20_000;
+
+/// The name of a protected file under `root`, if any (a file `root` itself
+/// counts too). Past its limits it says there may be one: a search that
+/// large is narrowed first.
+fn protected_inside(root: &Path) -> Option<String> {
+    if root.is_file() {
+        let name = root.file_name()?.to_string_lossy().into_owned();
+        return is_blocked_name(&name).then_some(name);
+    }
+    let mut stack = vec![(root.to_path_buf(), 0)];
+    let mut seen = 0;
+    while let Some((dir, depth)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            seen += 1;
+            if seen > PROTECTED_ENTRIES {
+                return Some(".env".into());
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                if depth < PROTECTED_DEPTH && !SKIPPED_DIRS.contains(&name.as_str()) {
+                    stack.push((entry.path(), depth + 1));
+                }
+            } else if is_blocked_name(&name) {
+                return Some(name);
+            }
+        }
+    }
+    None
 }
 
 /// The read guard's answer for a `Read`, recording it in the session's file.
@@ -171,6 +231,50 @@ mod tests {
             .is_some()
         );
         assert!(hook("Read", json!({"file_path": "/wt/config/.env"})).is_some());
+    }
+
+    #[test]
+    fn a_whole_search_over_a_protected_file_is_denied() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::create_dir_all(dir.join("src/config")).unwrap();
+        std::fs::write(dir.join("src/app.ts"), "const key = process.env.KEY;").unwrap();
+        let input = |tool: &str, tool_input: Value| {
+            json!({"tool_name": tool, "tool_input": tool_input, "cwd": dir}).to_string()
+        };
+        let content = json!({"pattern": "KEY", "output_mode": "content"});
+        // Nothing protected inside: Claude Code decides.
+        assert_eq!(decide_with(&input("Grep", content.clone()), None), None);
+        std::fs::write(dir.join("src/config/.env"), "KEY=secreto").unwrap();
+        let denied = decide_with(&input("Grep", content), None).unwrap();
+        assert!(
+            denied.contains("\"deny\"") && denied.contains(".env"),
+            "{denied}"
+        );
+        assert!(decide_with(&input("Bash", json!({"command": "rg KEY"})), None).is_some());
+        // Narrowed, or names only: fine.
+        assert_eq!(
+            decide_with(
+                &input(
+                    "Grep",
+                    json!({"pattern": "KEY", "output_mode": "content", "glob": "*.ts"})
+                ),
+                None
+            ),
+            None
+        );
+        assert_eq!(
+            decide_with(&input("Grep", json!({"pattern": "KEY"})), None),
+            None
+        );
+        // A protected file in a skipped folder (dependencies) does not count.
+        std::fs::remove_file(dir.join("src/config/.env")).unwrap();
+        std::fs::create_dir_all(dir.join("node_modules/x")).unwrap();
+        std::fs::write(dir.join("node_modules/x/.env"), "X=1").unwrap();
+        assert_eq!(
+            decide_with(&input("Bash", json!({"command": "rg KEY"})), None),
+            None
+        );
     }
 
     #[test]

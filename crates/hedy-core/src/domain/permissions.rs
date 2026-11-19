@@ -70,7 +70,7 @@ fn matches(pattern: &str, name: &str) -> bool {
     glob(&chars(pattern), &chars(name))
 }
 
-fn is_blocked_name(name: &str) -> bool {
+pub(crate) fn is_blocked_name(name: &str) -> bool {
     DEFAULT_BLOCKED.iter().any(|p| matches(p, name))
 }
 
@@ -250,6 +250,54 @@ pub fn protected_file_reason(tool: &str, input: &Value, work_dir: &Path) -> Opti
     None
 }
 
+/// The folder a search would read whole, showing what it finds: a `Grep`
+/// in content mode, or a recursive `grep`/`rg`/`ag`/`ack` in the shell,
+/// with nothing narrowing which files (`glob`, `type`, `--include`, `-g`,
+/// `-t`). A protected file inside it would be read without being named, so
+/// the hook looks for one there.
+pub fn whole_search_root(tool: &str, input: &Value, work_dir: &Path) -> Option<PathBuf> {
+    match tool {
+        "Grep" => {
+            let content = input["output_mode"].as_str() == Some("content");
+            let narrowed = input["glob"].as_str().is_some() || input["type"].as_str().is_some();
+            (content && !narrowed)
+                .then(|| normalize(work_dir, Path::new(input["path"].as_str().unwrap_or("."))))
+        }
+        "Bash" => {
+            let words = shell_words(input["command"].as_str()?);
+            let program = |w: &str| w.rsplit('/').next().unwrap_or(w).to_owned();
+            let grep = words
+                .iter()
+                .any(|w| matches!(program(w).as_str(), "grep" | "egrep" | "fgrep"))
+                && words.iter().any(|w| {
+                    w == "--recursive"
+                        || w == "--dereference-recursive"
+                        || (w.starts_with('-') && !w.starts_with("--") && w.contains(['r', 'R']))
+                });
+            let searcher = words
+                .iter()
+                .any(|w| matches!(program(w).as_str(), "rg" | "ag" | "ack"));
+            // Narrowed to some files, or showing only names or counts.
+            let narrowed = words.iter().any(|w| {
+                [
+                    "--include",
+                    "--glob",
+                    "--type",
+                    "-g",
+                    "-t",
+                    "--files-with-matches",
+                    "--count",
+                ]
+                .iter()
+                .any(|flag| w == flag || w.starts_with(&format!("{flag}=")))
+                    || (w.starts_with('-') && !w.starts_with("--") && w.contains(['l', 'L', 'c']))
+            });
+            ((grep || searcher) && !narrowed).then(|| work_dir.to_owned())
+        }
+        _ => None,
+    }
+}
+
 /// One-line description of a request for the permission card.
 pub fn summarize(tool: &str, input: &Value) -> String {
     let field = |key: &str| input[key].as_str().map(str::to_owned);
@@ -275,6 +323,39 @@ mod tests {
 
     fn verdict(tool: &str, input: Value, remembered: &[AllowRule]) -> Verdict {
         evaluate(tool, &input, Path::new(WT), remembered)
+    }
+
+    #[test]
+    fn a_whole_search_is_told_from_a_narrowed_one() {
+        let wt = Path::new(WT);
+        let root = |tool: &str, input: Value| whole_search_root(tool, &input, wt);
+        assert_eq!(
+            root("Grep", json!({"pattern": "KEY", "output_mode": "content"})),
+            Some(wt.to_owned())
+        );
+        assert_eq!(
+            root(
+                "Grep",
+                json!({"pattern": "KEY", "output_mode": "content", "path": "src"})
+            ),
+            Some(wt.join("src"))
+        );
+        assert_eq!(
+            root(
+                "Grep",
+                json!({"pattern": "KEY", "output_mode": "content", "glob": "*.ts"})
+            ),
+            None
+        );
+        assert_eq!(root("Grep", json!({"pattern": "KEY"})), None);
+        assert!(root("Bash", json!({"command": "grep -rn KEY ."})).is_some());
+        assert!(root("Bash", json!({"command": "cd x && /usr/bin/rg KEY"})).is_some());
+        assert_eq!(root("Bash", json!({"command": "rg -g '*.ts' KEY"})), None);
+        assert_eq!(root("Bash", json!({"command": "grep -rl KEY ."})), None);
+        assert_eq!(
+            root("Bash", json!({"command": "grep KEY src/app.ts"})),
+            None
+        );
     }
 
     #[test]
