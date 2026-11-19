@@ -54,17 +54,28 @@ pub fn import(
     println!();
     let importable = |c: &ImportCandidate| c.problem.is_none() && (c.replaces.is_none() || replace);
     let to_review = preview.iter().filter(|c| importable(c)).count();
-    let review = reviewer.wanted.unwrap_or(to_review <= AUTO_REVIEWS);
+    // On its own only where the user is looking, before deciding: never in
+    // a script, nor before a question that cannot be asked.
+    let review = reviewer
+        .wanted
+        .unwrap_or(crate::sync::interactive() && to_review <= AUTO_REVIEWS);
     for candidate in preview {
         print_candidate(&s, candidate, replace);
-        let ai = (review && importable(candidate))
-            .then(|| ai_review(hedy, &project.path, &candidate.text(), reviewer));
+        let ai = (review && importable(candidate)).then(|| {
+            ai_review(
+                hedy,
+                &project.path,
+                &candidate.text(),
+                &candidate.findings,
+                reviewer,
+            )
+        });
         print_analysis(&s, &candidate.findings, ai.as_ref());
     }
     if !review && to_review > 0 && reviewer.wanted.is_none() {
         let line = tr!(
-            "La IA no las revisó (son {to_review}, una petición cada una): añade `--review` para que lo haga.",
-            "The AI did not review them ({to_review}, one request each): add `--review` to have it do so."
+            "La IA no las revisó contra tus notas (una petición por habilidad): añade `--review` para que lo haga.",
+            "The AI did not review them against your notes (one request per skill): add `--review` to have it do so."
         );
         println!("  {}", hint(&s, &line));
     }
@@ -174,13 +185,17 @@ fn print_candidate(s: &Style, candidate: &ImportCandidate, replace: bool) {
     let body = &candidate.draft.body;
     if candidate.problem.is_none() && !body.is_empty() {
         let (lines, chars) = (body.lines().count(), body.chars().count());
-        println!(
-            "    {}",
-            s.muted(tr!(
-                "{lines} líneas · {chars} caracteres:",
-                "{lines} lines · {chars} characters:"
-            ))
-        );
+        let size = match lines {
+            1 => tr!(
+                "1 línea · {chars} caracteres:",
+                "1 line · {chars} characters:"
+            ),
+            n => tr!(
+                "{n} líneas · {chars} caracteres:",
+                "{n} lines · {chars} characters:"
+            ),
+        };
+        println!("    {}", s.muted(size));
         for line in body.lines().take(BODY_LINES_SHOWN) {
             println!("    {} {}", s.muted("│"), shortened(&clean(line)));
         }
@@ -223,12 +238,13 @@ fn ai_review(
     hedy: &Hedy,
     project: &Path,
     skill: &SkillText,
+    measured: &[Finding],
     reviewer: &Reviewer,
 ) -> Result<SkillReview, String> {
     let name = clean(skill.name);
     spinner::while_running(
         &tr!("La IA revisa {name}…", "The AI reviews {name}…"),
-        || hedy.review_skill(project, skill, reviewer.account, reviewer.model),
+        || hedy.review_skill(project, skill, measured, reviewer.account, reviewer.model),
     )
     .map_err(|e| clean(&e.to_string()))
 }
@@ -239,6 +255,7 @@ fn print_analysis(s: &Style, measured: &[Finding], ai: Option<&Result<SkillRevie
         return;
     }
     let mark = |weight: Weight| match weight {
+        Weight::Info => s.muted("·"),
         Weight::Good => s.ok("✓"),
         Weight::Warning => s.warn("!"),
         Weight::Bad => s.error("✕"),
@@ -270,8 +287,8 @@ fn print_analysis(s: &Style, measured: &[Finding], ai: Option<&Result<SkillRevie
             println!(
                 "    {}",
                 s.muted(tr!(
-                    "Lo que ve la IA · {who} · {secs} s · {notes}, nada del código",
-                    "What the AI sees · {who} · {secs} s · {notes}, none of the code"
+                    "Lo que opina la IA · {who} · {secs} s · {notes}, nada del código",
+                    "What the AI thinks · {who} · {secs} s · {notes}, none of the code"
                 ))
             );
             if review.unread {
@@ -310,7 +327,11 @@ fn print_analysis(s: &Style, measured: &[Finding], ai: Option<&Result<SkillRevie
         None => {}
     }
     let verdict = match predicted(&all) {
-        Verdict::Useful => s.ok(tr!("Probablemente útil", "Probably useful")),
+        // Nothing found against it is not proof that it helps.
+        Verdict::Useful => s.muted(tr!(
+            "Nada en contra (sin probar)",
+            "Nothing against it (untested)"
+        )),
         Verdict::Doubtful => s.warn(tr!("Dudosa", "Doubtful")),
         Verdict::Harmful => s.error(tr!("Probablemente contraproducente", "Probably harmful")),
         Verdict::Untested => s.muted(tr!("Sin probar", "Untested")),
@@ -323,15 +344,15 @@ pub fn check(hedy: &Hedy, dir: &Path, name: &str, reviewer: &Reviewer) -> Result
     let s = Style::for_stdout();
     let project = project_here(hedy, dir)?;
     let skill = hedy.skill_named(&project.path, name)?;
-    let (findings, _) = hedy.measure_approved_skill(&skill)?;
+    let (findings, _) = hedy.measure_approved_skill(&project.path, &skill)?;
     let text = SkillText {
         name: &skill.name,
         description: &skill.description,
         body: &skill.body,
         extra_files: &[],
     };
-    let ai =
-        (reviewer.wanted != Some(false)).then(|| ai_review(hedy, &project.path, &text, reviewer));
+    let ai = (reviewer.wanted != Some(false))
+        .then(|| ai_review(hedy, &project.path, &text, &findings, reviewer));
     println!();
     println!("  {}", s.bold(clean(&skill.name)));
     println!("    {}", shortened(&clean(&skill.description)));

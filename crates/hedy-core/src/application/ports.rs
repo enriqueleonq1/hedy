@@ -686,6 +686,9 @@ pub struct AgentRequest {
     /// read a protected file without naming it (`find … | xargs cat`), so a
     /// request that only needs to read goes without one.
     pub no_shell: bool,
+    /// No tools at all, no MCP server and no skill: a request that carries
+    /// someone else's text (a skill, a change) and only needs to answer.
+    pub no_tools: bool,
     /// Claude Code plugins for this session only (`--plugin-dir`): Hedy's
     /// approved skills, never written where the user's own `claude` reads.
     pub plugins: Vec<PathBuf>,

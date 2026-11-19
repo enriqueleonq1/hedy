@@ -469,6 +469,7 @@ impl Hedy {
                 mcp,
                 conversation: task.conversation,
                 no_shell: false,
+                no_tools: false,
                 plugins,
             },
             sink,

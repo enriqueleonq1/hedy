@@ -19,6 +19,7 @@ use crate::domain::skill::{
     normalize_skill_name, plugin_manifest, runs_commands, skill_file,
 };
 use crate::domain::sync::SkillBody;
+use crate::domain::team::strip_hidden;
 use crate::domain::{DomainError, Project, Skill, SkillStatus, TaskId};
 use crate::experiments::{self, Experiment};
 use crate::tr;
@@ -104,7 +105,8 @@ pub(super) fn validated(
     let description = normalize_description(description)?;
     let body = normalize_body(body)?;
     for text in [&description, &body] {
-        if let Some(kind) = find_secret(text) {
+        // A secret split by a zero-width space or a soft hyphen is one too.
+        if let Some(kind) = find_secret(&strip_hidden(text)) {
             return Err(DomainError::SkillLooksSecret(kind).into());
         }
     }
@@ -118,7 +120,9 @@ pub(super) fn validated(
 pub(super) fn synced_skill(skill: SkillBody) -> Option<SkillBody> {
     let (name, description, body) = validated(&skill.name, &skill.description, &skill.body).ok()?;
     let commands = runs_commands(&body) || runs_commands(&description);
-    let usable = name == skill.name && (skill.status == SkillStatus::Approved || !commands);
+    // A proposal is someone else's text until the user approves it.
+    let proposed_ok = !commands && check_visible(&body).is_ok();
+    let usable = name == skill.name && (skill.status == SkillStatus::Approved || proposed_ok);
     usable.then_some(SkillBody {
         description,
         body,
@@ -269,6 +273,7 @@ impl Hedy {
         if runs_commands(&proposal.body) || runs_commands(&proposal.description) {
             return Err(DomainError::SkillRunsCommands.into());
         }
+        check_visible(&proposal.body)?;
         let mut files = SkillFiles::default();
         let approved = match update_target(&self.skills_beside(&proposal)?, &proposal) {
             Some(target) => {
@@ -630,7 +635,7 @@ impl Hedy {
     }
 
     /// Approved skills an agent may read in the project containing `path`.
-    fn agent_skills(&self, path: &Path) -> AppResult<Vec<Skill>> {
+    pub(super) fn agent_skills(&self, path: &Path) -> AppResult<Vec<Skill>> {
         Ok(self.skills(path)?.approved)
     }
 
@@ -1208,6 +1213,15 @@ mod tests {
         let mut proposal = body("lint", "1. lint", SkillStatus::Proposed);
         proposal.description = "Tests --- !`id` then deploy".into();
         assert!(synced_skill(proposal).is_none());
+        // A proposal with hidden text (an older version let it in) waits;
+        // the user's own approved text may keep a zero-width space.
+        let hidden = "1. fmt\u{e0049}\u{e0067}";
+        assert!(synced_skill(body("lint", hidden, SkillStatus::Proposed)).is_none());
+        let pasted = "1. npm\u{200b} test";
+        assert!(synced_skill(body("lint", pasted, approved)).is_some());
+        // A secret split by a zero-width space is still one.
+        let split = "token sk-proj-abc123\u{200b}def456ghi789jkl0";
+        assert!(synced_skill(body("lint", split, approved)).is_none());
     }
 
     #[test]

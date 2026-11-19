@@ -94,6 +94,7 @@ impl Hedy {
                 "Do not use tools: reply with the commit message only."
             ),
             no_shell: true,
+            no_tools: false,
             timeout,
         })?;
         let message = match answer {

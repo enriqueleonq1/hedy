@@ -1105,6 +1105,7 @@ mod tests {
             mcp: vec![],
             conversation: false,
             no_shell: false,
+            no_tools: false,
             plugins: Vec::new(),
         };
         let session = ApiAgentLauncher
@@ -1394,6 +1395,7 @@ mod tests {
             mcp: vec![],
             conversation: false,
             no_shell: false,
+            no_tools: false,
             plugins: Vec::new(),
         };
         let mut session = ApiAgentLauncher

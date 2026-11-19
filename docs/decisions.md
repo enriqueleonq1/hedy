@@ -776,9 +776,13 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
     for it: a skill the user writes, or one already saved, may keep a zero-width space
     pasted from the web. `hedy skills show` marks any hidden character as `⟦U+…⟧`.
     Secrets are looked for with hidden characters taken out, so one cannot split a key.
-  - **Descriptions** cannot hold `---`: Claude Code's frontmatter reader ends at the first
-    `---`, even inside quotes, so the rest of the line would become the body (and could
-    run a command on load).
+  - **`---` in a description:** Claude Code's frontmatter reader ends at the first `---`,
+    even inside quotes, so the rest of the line would become the body (and could run a
+    command on load). Hedy writes a third dash in a row as `\x2D` (the same text to any
+    YAML reader), so the text stays and nothing ends there. Synced proposals pass the
+    hidden-text check too, and approving any proposal checks commands and hidden text
+    again. A secret is looked for with hidden characters removed and words split on `=`
+    (`export KEY=sk-…`).
   - **Parser:** a small YAML reader (plain, quoted and block scalars, a quoted value on
     the next line, `\x`/`\u`/`\U` escapes, `null`/`~`, quoted keys, comments; nested
     values count as dropped keys), checked against js-yaml on the 57 official skills.
@@ -810,21 +814,33 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
   - **Level 1, what Hedy measures** (free, for every skill being imported and in `hedy
     skills check`): size (a warning past ~5,000 tokens, or ~2,000 when the description
     fits almost any task; never bad by itself, since the body loads only when used), a
-    description too short or too broad ("everything about", "cualquier tarea"…), overlap
-    with an approved skill (60 % of the shorter one's key words), dangerous commands
-    (`rm -rf /`, `curl … | sh`, `mkfs.`, `drop table`, `--dangerously-skip-permissions`…)
-    and risky ones (`sudo`, `--no-verify`, a forced push, `reset --hard`…), steps that
-    use files not imported, and no concrete steps at all.
-  - **Level 2, what the AI sees against the notes** (one read-only request through the
-    project's account, never another, like the rule check: only the skill and the
-    project's notes go, picked as for a change, never the code). It reports
-    contradictions (citing a note that was sent), vague instructions and parts that
-    really help, each quoting the skill: a quote not in the skill or a note number not
-    sent is dropped. In `hedy skills import` it runs on its own for up to 3 skills to
-    import, else with `--review`; `--no-review` skips it.
+    description too short or too broad ("everything about", "cualquier tarea"…; not
+    "always use this skill when", the usual trigger wording), overlap with any approved
+    skill the project sees (60 % of the shorter one's key words), dangerous commands (in
+    code only: `rm -rf /` or `~` but not `/tmp/x`, a download piped or fed to a shell,
+    `base64 -d |`, `mkfs.`, `drop table`, `--dangerously-skip-permissions`…; the same in
+    prose is only risky, and a line warning against it — never, nunca, avoid — counts for
+    nothing) and risky ones (`sudo`, `--no-verify`, a forced push, `reset --hard`, `dd`,
+    `~/.ssh`…), steps that use files not imported, and no concrete steps at all. Finding
+    none of the dangerous patterns is said as a neutral note, never as a reassurance: the
+    list cannot catch everything.
+  - **Level 2, what the AI thinks against the notes** (one request through the project's
+    account, never another, like the rule check: only the skill and the project's notes
+    go, picked as for a change, never the code; Haiku by default on a Claude account).
+    The request has no tools at all (`--tools ""`, `--strict-mcp-config`,
+    `--disable-slash-commands`; the rule check too): the skill is someone else's text, and
+    a web tool the account allows could send the notes out. Hidden text is refused before
+    anything is sent. It reports contradictions (citing a note that was sent), vague
+    instructions and parts that really help, each quoting the skill (Markdown marks,
+    closing punctuation and the usual quote styles do not matter; a quote not in the
+    skill or a note number not sent is dropped). It is shown as the AI's opinion: the
+    skill's author can steer it. In `hedy skills import` it runs on its own only in a
+    terminal and for up to 3 skills to import, else with `--review`; `--no-review` skips
+    it. Not covered: Gemini's web search over ACP does not ask.
   - **Verdict:** anything bad (a dangerous command, a contradiction) suggests
-    contraproducente, two or more warnings dudosa, else útil. Only a suggestion: level 3,
-    trying the skill on real tasks with and without it, is what can tell.
+    contraproducente, two or more warnings dudosa (the AI's vague lines count as one),
+    else "nothing against it (untested)": the AI's helpful lines never raise it. Only a
+    suggestion: level 3, trying the skill on real tasks with and without it, can tell.
   - **Calibrated on the 57 official Claude Code skills:** 41 useful, 15 doubtful (mostly
     their scripts are not imported), 1 harmful (a hookify guide whose example pattern is
     `rm -rf /tmp`). Real check with Haiku: a skill asking for styled-components in a

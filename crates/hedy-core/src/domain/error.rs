@@ -121,8 +121,8 @@ impl DomainError {
                 "invalid skill name: «{name}» (lowercase letters, digits and dashes, up to 64 characters; e.g. run-e2e-tests)"
             ),
             Self::InvalidSkillDescription => tr!(
-                "la descripción de la habilidad debe ser una línea de hasta 1024 caracteres, sin < ni > ni ---, que diga cuándo usarla",
-                "the skill's description must be one line of up to 1024 characters, without <, > or ---, saying when to use it"
+                "la descripción de la habilidad debe ser una línea de hasta 1024 caracteres, sin < ni >, que diga cuándo usarla",
+                "the skill's description must be one line of up to 1024 characters, without < or >, saying when to use it"
             ),
             Self::InvalidSkillBody => tr!(
                 "el contenido de la habilidad no puede estar vacío ni pasar de 80000 caracteres",

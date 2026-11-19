@@ -115,6 +115,7 @@ impl Hedy {
                 "Change nothing: only read the project's files."
             ),
             no_shell: true,
+            no_tools: false,
             timeout,
         })?;
         let CodeAnswer { text, note } = match answer {
@@ -199,6 +200,7 @@ impl Hedy {
                 "Do not use tools: answer only from the notes you were given."
             ),
             no_shell: true,
+            no_tools: false,
             timeout,
         })?;
         let ParsedAnswer { text, cited } = match answer {

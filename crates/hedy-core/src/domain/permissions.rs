@@ -411,6 +411,9 @@ pub fn summarize(tool: &str, input: &Value) -> String {
         "WebFetch" => field("url"),
         "WebSearch" => field("query"),
         "Grep" | "Glob" => field("pattern"),
+        // Which skill: what a trial looks for (`hedy:pr-checklist`).
+        "Skill" => field("skill").or_else(|| field("command")),
+        t if t.ends_with("skill_get") => field("name"),
         _ => None,
     }
     .unwrap_or_else(|| tool.to_owned())

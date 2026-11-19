@@ -660,6 +660,7 @@ for line in sys.stdin:
             mcp: vec![],
             conversation: false,
             no_shell: false,
+            no_tools: false,
             plugins: Vec::new(),
         };
         let _session = CodexLauncher
@@ -690,6 +691,7 @@ for line in sys.stdin:
             mcp: vec![],
             conversation: false,
             no_shell: false,
+            no_tools: false,
             plugins: Vec::new(),
         };
         assert!(mcp_overrides(&request).is_empty());
@@ -739,6 +741,7 @@ for line in sys.stdin:
             mcp: vec![],
             conversation: false,
             no_shell: false,
+            no_tools: false,
             plugins: Vec::new(),
         };
         let session = CodexLauncher
@@ -900,6 +903,7 @@ for line in sys.stdin:
             mcp: vec![],
             conversation: false,
             no_shell: false,
+            no_tools: false,
             plugins: Vec::new(),
         };
         let mut session = CodexLauncher.start(request, Arc::new(|_| {})).unwrap();

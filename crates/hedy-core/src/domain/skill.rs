@@ -80,12 +80,7 @@ pub fn normalize_skill_name(raw: &str) -> Result<String, DomainError> {
 pub fn normalize_description(raw: &str) -> Result<String, DomainError> {
     let visible = super::team::strip_hidden(raw);
     let line = visible.split_whitespace().collect::<Vec<_>>().join(" ");
-    // `---` would end Claude Code's frontmatter early, even inside quotes.
-    if line.is_empty()
-        || line.chars().count() > DESCRIPTION_MAX
-        || line.contains(['<', '>'])
-        || line.contains("---")
-    {
+    if line.is_empty() || line.chars().count() > DESCRIPTION_MAX || line.contains(['<', '>']) {
         return Err(DomainError::InvalidSkillDescription);
     }
     Ok(line)
@@ -144,7 +139,7 @@ pub fn find_secret(text: &str) -> Option<&'static str> {
     if text.contains("-----BEGIN") && text.contains("PRIVATE KEY") {
         return Some("private key");
     }
-    for word in text.split(|c: char| c.is_whitespace() || "\"'`()[]{},;".contains(c)) {
+    for word in text.split(|c: char| c.is_whitespace() || "\"'`()[]{},;=".contains(c)) {
         if let Some(kind) = secret_token(word) {
             return Some(kind);
         }
@@ -308,8 +303,23 @@ pub fn is_managed(contents: &str) -> bool {
     contents.contains(MANAGED_MARKER)
 }
 
+/// A double-quoted YAML string. A third dash in a row is written `\x2D`:
+/// Claude Code's frontmatter reader ends at the first `---`, even inside
+/// quotes, and the rest of the line would become the body.
 pub(super) fn yaml_string(text: &str) -> String {
-    format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
+    let mut out = String::from("\"");
+    let mut dashes = 0;
+    for c in text.chars() {
+        dashes = if c == '-' { dashes + 1 } else { 0 };
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '-' if dashes >= 3 => out.push_str("\\x2D"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// The `SKILL.md` Hedy writes for an approved skill: YAML frontmatter with
@@ -382,8 +392,10 @@ mod tests {
             "Line separator end"
         );
         assert!(normalize_description("Use <b>this</b>").is_err());
-        assert!(normalize_description("Tests --- !`id` then deploy").is_err());
-        assert!(normalize_description("End-to-end -- fast").is_ok());
+        // Kept; the file writes it so no reader ends the frontmatter there.
+        let dashed = normalize_description("Tests --- !`id` then deploy").unwrap();
+        assert_eq!(yaml_string(&dashed), "\"Tests --\\x2D !`id` then deploy\"");
+        assert!(!yaml_string("a ---- b").contains("---"));
         assert!(normalize_description(&"x".repeat(1025)).is_err());
         assert!(normalize_body("  \n ").is_err());
         assert!(normalize_body(&"x".repeat(BODY_MAX + 1)).is_err());
@@ -422,6 +434,7 @@ mod tests {
     fn finds_secret_looking_text() {
         let leaks = [
             "Use the key sk-proj-abc123def456ghi789jkl0 for the API",
+            "export KEY=sk-proj-abc123def456ghi789jkl0",
             "export GITHUB_TOKEN=ghp_1234567890abcdefghijklmnopqrstuvwxyz",
             "OPENAI_API_KEY=abcd1234efgh5678",
             "password: hunter2hunter2",

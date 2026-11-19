@@ -149,6 +149,7 @@ impl Hedy {
                 "Do not use tools: review only the change you were given."
             ),
             no_shell: true,
+            no_tools: true,
             timeout,
         })?;
         let (breaks, readable) = match answer {
