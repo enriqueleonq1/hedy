@@ -162,6 +162,21 @@ pub enum AppError {
     /// files without asking.
     #[error("{}", self.message())]
     AskCodeNeedsClaude { account: String },
+    /// Checking the rules of a change that has none.
+    #[error("{}", self.message())]
+    RulesNoChanges,
+    /// A range of commits that is not one (or could pass for an option).
+    #[error("{}", self.message())]
+    RulesBadRevs(String),
+    /// No usable check came back (with the agent's error, if any).
+    #[error("{}", self.message())]
+    RulesFailed(Option<String>),
+    #[error("{}", self.message())]
+    RulesTimedOut,
+    /// Rule 4: the change touches another protected project's files, whose
+    /// code only goes to that project's account.
+    #[error("{}", self.message())]
+    RulesProtectedInside { project: String },
     #[error("{}", self.message())]
     ThemeNotFound(String),
     /// Rule 3: the chosen account is at its limit; no other is used.
@@ -682,6 +697,32 @@ impl AppError {
             Self::AskTimedOut => tr!(
                 "la IA tardó demasiado en responder; vuelve a intentarlo",
                 "the AI took too long to answer; try again"
+            ),
+            Self::RulesNoChanges => tr!(
+                "no hay cambios que revisar",
+                "there are no changes to check"
+            ),
+            Self::RulesBadRevs(revs) => tr!(
+                "«{revs}» no es un commit ni un rango de commits (por ejemplo, main..HEAD)",
+                "«{revs}» is not a commit or a range of commits (for example, main..HEAD)"
+            ),
+            Self::RulesFailed(detail) => match detail {
+                Some(detail) => tr!(
+                    "no se pudo revisar el cambio: {detail}",
+                    "could not check the change: {detail}"
+                ),
+                None => tr!(
+                    "la IA no devolvió la revisión; vuelve a intentarlo",
+                    "the AI gave no review; try again"
+                ),
+            },
+            Self::RulesProtectedInside { project } => tr!(
+                "el cambio toca archivos del proyecto protegido «{project}», que solo lee su propia cuenta: esos archivos se revisan desde ese proyecto",
+                "the change touches files of the protected project «{project}», which only its own account reads: those files are checked from that project"
+            ),
+            Self::RulesTimedOut => tr!(
+                "la IA tardó demasiado en revisar el cambio; vuelve a intentarlo",
+                "the AI took too long to check the change; try again"
             ),
             Self::ThemeNotFound(id) => {
                 tr!("no existe el tema «{id}»", "theme «{id}» does not exist")

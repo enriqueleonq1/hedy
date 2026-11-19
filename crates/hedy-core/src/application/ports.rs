@@ -523,6 +523,17 @@ pub trait Git: Send + Sync {
     fn list_files(&self, repo: &Path) -> PortResult<Vec<String>>;
     /// What is staged in `repo` (`git diff --cached`); nothing is staged here.
     fn staged_diff(&self, repo: &Path) -> PortResult<Vec<FileDiff>>;
+    /// Commits in `repo`: a range (`main..HEAD`), or one commit's own change
+    /// (`a1b2c3`: against its first parent, or nothing for a first
+    /// commit). Read only.
+    fn revs_diff(&self, repo: &Path, revs: &str) -> PortResult<Vec<FileDiff>>;
+    /// The main checkout of the repository `repo` belongs to: `repo` itself,
+    /// or the one a worktree was added from.
+    fn main_root(&self, repo: &Path) -> PortResult<PathBuf>;
+    /// What is not committed yet in `repo`, staged or not, new files not
+    /// added yet included (protected ones only named, never read).
+    /// Also how many new files were left out, past the most read.
+    fn work_diff(&self, repo: &Path) -> PortResult<(Vec<FileDiff>, usize)>;
     /// `git commit -F <file with message>` (`-e` too when `edit`: git opens
     /// the user's editor) on what is staged, with the user's own hooks and
     /// signing settings, and git's output on the terminal (for `hedy commit`).

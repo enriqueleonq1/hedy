@@ -432,6 +432,9 @@ impl CodeReader for GitCli {
                     "--no-index",
                     "--no-color",
                     "--no-ext-diff",
+                    "--no-textconv",
+                    "--src-prefix=a/",
+                    "--dst-prefix=b/",
                     &unified,
                     "--",
                     "/dev/null",
@@ -440,7 +443,17 @@ impl CodeReader for GitCli {
             )?;
             String::from_utf8_lossy(&out.stdout).into_owned()
         } else {
-            let mut args = vec!["diff", "--no-color", "--no-ext-diff", "-M", &unified, base];
+            let mut args = vec![
+                "diff",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--src-prefix=a/",
+                "--dst-prefix=b/",
+                "-M",
+                &unified,
+                base,
+            ];
             args.extend(to);
             args.push("--");
             args.extend(old_path);

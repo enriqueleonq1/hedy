@@ -71,8 +71,13 @@ pub(crate) fn matches(pattern: &str, name: &str) -> bool {
 }
 
 pub(crate) fn is_blocked_name(name: &str) -> bool {
-    // On a disk that ignores case, `.ENV` opens `.env`.
-    let name = name.to_lowercase();
+    // On a disk that ignores case, `.ENV` opens `.env`; an invisible
+    // character (`.env` + U+202E) does not make it another name.
+    let name: String = name
+        .chars()
+        .filter(|c| !crate::domain::team::is_hidden(*c))
+        .collect::<String>()
+        .to_lowercase();
     DEFAULT_BLOCKED.iter().any(|p| matches(p, &name))
 }
 
@@ -481,6 +486,7 @@ mod tests {
         let typed = json!({"pattern": "K", "output_mode": "content", "type": "sh"});
         assert!(whole_search_root("Grep", &typed, wt).is_some());
         assert!(is_blocked_name(".ENV") && is_protected_path("conf/ID_RSA"));
+        assert!(is_protected_path("app/.env\u{202e}") && is_blocked_name("\u{200b}.env"));
     }
 
     #[test]

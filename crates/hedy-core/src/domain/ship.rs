@@ -6,6 +6,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::diff::{FileDiff, LineKind};
+use super::permissions::is_protected_path;
+use super::rule_check::shown_path;
 use crate::tr;
 
 /// The main folder's git state, as `git status --porcelain=v2 --branch` tells it.
@@ -367,28 +369,32 @@ pub fn conventional_subject(title: &str) -> String {
     format!("{kind}: {subject}")
 }
 
-/// The diff as plain text for an agent, cut at `max_chars`: file headers and
-/// changed lines, without context lines.
+/// The changes as a commit message request shows them: each file's path
+/// (hidden characters shown) and counts, then its hunks' added lines. A
+/// removed line is not sent (it may be a secret being taken out), nor a
+/// protected file's contents (`.env`, keys).
 pub fn diff_for_prompt(files: &[FileDiff], max_chars: usize) -> String {
     let mut out = String::new();
     for file in files {
         out.push_str(&format!(
             "--- {} (+{} -{})\n",
-            file.path, file.additions, file.deletions
+            shown_path(&file.path),
+            file.additions,
+            file.deletions
         ));
+        if is_protected_path(&file.path) || file.old_path.as_deref().is_some_and(is_protected_path)
+        {
+            out.push_str("(protected file, contents not sent)\n");
+            continue;
+        }
         if file.binary {
             out.push_str("(binary)\n");
         }
         for hunk in &file.hunks {
             out.push_str(&hunk.header);
             out.push('\n');
-            for line in &hunk.lines {
-                let sign = match line.kind {
-                    LineKind::Added => '+',
-                    LineKind::Removed => '-',
-                    LineKind::Context => continue,
-                };
-                out.push(sign);
+            for line in hunk.lines.iter().filter(|l| l.kind == LineKind::Added) {
+                out.push('+');
                 out.push_str(&line.text);
                 out.push('\n');
             }
@@ -455,7 +461,11 @@ pub fn staged_commit_prompt(recent: &[String], diff: &str, secrets: &[String]) -
     let hidden = if secrets.is_empty() {
         String::new()
     } else {
-        let list = secrets.join(", ");
+        let list = secrets
+            .iter()
+            .map(|p| shown_path(p))
+            .collect::<Vec<_>>()
+            .join(", ");
         tr!(
             "\n\nTambién cambian estos archivos privados, cuyo contenido no se muestra: {list}",
             "\n\nThese private files change too; their contents are not shown: {list}"
@@ -765,11 +775,14 @@ mod tests {
     #[test]
     fn the_diff_for_the_agent_has_only_changed_lines_and_a_cap() {
         let text = diff_for_prompt(&diff(), 10_000);
-        assert_eq!(
-            text,
-            "--- app.py (+1 -1)\n@@ -1,3 +1,3 @@\n-    pass\n+    return 1\n"
-        );
+        assert_eq!(text, "--- app.py (+1 -1)\n@@ -1,3 +1,3 @@\n+    return 1\n");
         assert!(diff_for_prompt(&diff(), 10).ends_with("(diff truncated)\n"));
+        // A protected file goes by name; a path's control characters are shown.
+        let mut secret = diff();
+        secret[0].path = "conf/.env.\u{1b}]0;x".into();
+        let text = diff_for_prompt(&secret, 10_000);
+        assert!(!text.contains("return 1") && !text.contains('\u{1b}'));
+        assert!(text.contains("(protected file, contents not sent)"));
         let prompt = commit_message_prompt("Arregla x", &["feat: a".into()], &text);
         assert!(prompt.contains("Conventional Commits"));
         assert!(prompt.contains("- feat: a"));

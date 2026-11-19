@@ -957,6 +957,43 @@ export interface CodeLookup {
 
 export type AskScope = { kind: "mine" } | { kind: "project"; project: string } | { kind: "team"; team: string };
 
+/** A line a change adds that goes against a written rule (docs/decisions.md §37). */
+export interface RuleBreak {
+  path: string;
+  /** Its number in the new file. */
+  line: number;
+  /** The rule it breaks, 1-based among the check's `rules`. */
+  rule: number;
+  message: string;
+  /** How to follow the rule, when the AI says. */
+  fix: string | null;
+  /** The line as it was checked, to show: trimmed, cut, hidden characters shown. */
+  code: string;
+  /** The line exactly as the change had it, to find it again (never shown). */
+  raw: string;
+}
+
+/**
+ * How a check ended: `checked`; `unread` (the answer could not be read: not a
+ * clean change); `no_rules` and `nothing_to_check` (nothing was sent).
+ */
+export type RuleCheckStatus = "checked" | "unread" | "no_rules" | "nothing_to_check";
+
+export interface RuleCheck {
+  status: RuleCheckStatus;
+  breaks: RuleBreak[];
+  /** Every rule sent, numbered from 1 in this order. */
+  rules: MemorySource[];
+  /** Files whose lines were checked. */
+  files: number;
+  /** Protected files of the change: named, never sent. */
+  protected: string[];
+  /** Only part of the change was checked. */
+  truncated: boolean;
+  /** The account that checked; `null` when nothing was sent. */
+  account: string | null;
+}
+
 export type GraphKind = "you" | "team" | "project" | "topic" | "person" | "note";
 
 export interface GraphNode {

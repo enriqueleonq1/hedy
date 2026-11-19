@@ -1,0 +1,103 @@
+/* "Revisar con tus reglas" (docs/decisions.md §37): the bar above the files
+   and the warnings under the lines of the diff. */
+
+.rl-bar {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+/* Only its edge and its headline: text and links keep the panel under them. */
+.rl-bar--warn { border-color: var(--warn-line); }
+.rl-bar--ok .rl-bar__text::before {
+  content: "✓ ";
+  color: var(--success);
+  font-weight: 600;
+}
+.rl-bar__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.rl-bar__text { flex: 1 1 260px; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.rl-bar--warn .rl-bar__text strong { color: var(--warn-ink); }
+.rl-bar__tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.rl-bar__meta { margin: 0; }
+.rl-bar__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--action-text);
+  font: inherit;
+  cursor: pointer;
+}
+.rl-bar__link:hover { text-decoration: underline; }
+.rl-bar p.muted, .rl-bar p.error-text { margin: 0; }
+
+.rl-warnings {
+  display: grid;
+  gap: 8px;
+  max-width: 720px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rl-warning {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--warn-line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.rl-warning p { margin: 0; overflow-wrap: anywhere; }
+.rl-warning__head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.rl-warning__label { color: var(--warn-ink); font-weight: 600; }
+.rl-warning__rule { color: var(--muted); }
+.rl-warning__fix { color: var(--muted); }
+/* Where the rule lives, then what to do, each on its own line: three actions fit a narrow panel. */
+.rl-warning__foot { display: grid; justify-items: start; gap: 8px; margin-top: 2px; }
+.rl-warning__where {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--action-text);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+.rl-warning__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rl-warning__added { color: var(--muted); font-size: var(--text-caption); align-self: center; }
+
+/* Beside the comments' badge, before the counts: pushed right like it. */
+.rv-file__rules {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  padding: 0 6px 0 4px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background: var(--warn-bg);
+  box-shadow: inset 0 0 0 1px var(--warn-line);
+  color: var(--warn-ink);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+.rv-file__rules svg { width: 11px; height: 11px; }
+/* The row's own gap spaces them. */
+.rv-file__notes + .rv-file__rules,
+.rv-file__rules + .rv-file__stats { margin-left: 0; }
+
+/* "La regla ya no aplica": change it, remove it, or except this project. */
+.rl-change { display: grid; gap: 12px; }
+.rl-change p { margin: 0; overflow-wrap: anywhere; }
+.rl-change__label {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--muted);
+}
+.rl-change__now { display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); }
+.rl-change__choices { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
+.rl-change__choice { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.rl-change__field { display: grid; gap: 4px; }
+.rl-change__field textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; }

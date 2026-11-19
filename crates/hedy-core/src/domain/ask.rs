@@ -151,7 +151,7 @@ fn score(terms: &[String], source: &Source) -> (usize, usize) {
 /// Whether two key words are forms of one: equal, or the shorter begins
 /// the longer, being five letters or more ("deploy", "deployment"), or four
 /// and most of it ("guia", "guias", but not "tipo", "tipografia").
-fn same_word(a: &str, b: &str) -> bool {
+pub(crate) fn same_word(a: &str, b: &str) -> bool {
     let (short, long) = if a.len() <= b.len() { (a, b) } else { (b, a) };
     short == long
         || (long.starts_with(short)
@@ -202,7 +202,7 @@ pub fn question_prompt(question: &str, sources: &[Source]) -> String {
 /// A field of the request: on one line, at most `max` characters, every
 /// hidden character shown, inside double quotes it cannot close, and with
 /// no bracket that could pass for another note's number (`[1]` → `(1)`).
-fn quoted(text: &str, max: usize) -> String {
+pub(crate) fn quoted(text: &str, max: usize) -> String {
     let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut cut: String = line.chars().take(max).collect();
     if cut.chars().count() < line.chars().count() {

@@ -26,6 +26,7 @@ pub mod ports;
 mod projects;
 mod queue;
 mod review;
+mod rule_check;
 mod settings;
 mod ship;
 mod skills;
@@ -71,6 +72,7 @@ pub use metrics::{ProjectStatus, TestRun, UsageSummary};
 pub use plan_usage::{LimitCheck, PLAN_USAGE_MIN_INTERVAL_SECS, PlanUsageState};
 pub use projects::NewProject;
 pub use review::AcceptPreview;
+pub use rule_check::{RuleCheck, RuleTarget};
 pub use settings::{CUSTOM_THEME_PREFIX, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, Setting, THEMES};
 pub use ship::{
     FolderStatus, NewPullRequest, PullRequestDraft, Pulled, Pushed, ShipError, ShipState,

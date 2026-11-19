@@ -221,7 +221,7 @@ impl Hedy {
 
     /// The account that answers, checked like a launch, and the folder it
     /// runs in.
-    fn ask_account(
+    pub(super) fn ask_account(
         &self,
         scope: &AskScope,
         account: Option<&str>,
@@ -253,7 +253,7 @@ impl Hedy {
     }
 
     /// An empty folder of its own: no project's or conversation's files.
-    fn ask_dir(&self) -> AppResult<PathBuf> {
+    pub(super) fn ask_dir(&self) -> AppResult<PathBuf> {
         let dir = self.fs.chats_dir().with_file_name("ask");
         self.fs.create_private_dir(&dir)?;
         Ok(dir)
@@ -289,7 +289,7 @@ impl Hedy {
     /// project's go only to its own account, which answers nowhere else
     /// (rule 4): only a question in that project reads them, its team notes
     /// included (another copy here of the same repo does not).
-    fn ask_sources(&self, scope: &AskScope) -> AppResult<Vec<Source>> {
+    pub(super) fn ask_sources(&self, scope: &AskScope) -> AppResult<Vec<Source>> {
         let projects = self.projects()?;
         let allowed = |path: &Path| {
             projects
@@ -387,7 +387,7 @@ impl Hedy {
 }
 
 /// A note of this PC as a source; proposals are not memory yet.
-fn local_source(note: crate::domain::Note, projects: &[Project]) -> Option<Source> {
+pub(super) fn local_source(note: crate::domain::Note, projects: &[Project]) -> Option<Source> {
     (note.status == NoteStatus::Approved).then(|| Source {
         project: note.project.as_deref().map(|p| {
             projects

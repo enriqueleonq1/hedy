@@ -18,10 +18,13 @@ import { DiffView, type DiffLayout } from "../screens/workspace/DiffView";
 import { useReviewed } from "../screens/workspace/reviewed";
 import { ShipPanel } from "../screens/workspace/ship/ShipPanel";
 import { useReviewComments } from "./comments";
+import { forgetDismissed, LineWarnings, RulesBar, useRuleCheck } from "./rules";
 import { HistoryDialog } from "./HistoryDialog";
 import { PencilIcon } from "../code/icons";
 import { CheckIcon, CommentIcon, DisclosureIcon, ExternalIcon, FileIcon, SplitIcon, UnifiedIcon } from "./icons";
 import "../styles/reviewer.css";
+
+const NO_FILES: FileDiff[] = [];
 
 /** Narrower than this, the side-by-side view would squeeze the code: unified only. */
 const SPLIT_MIN_WIDTH = 720;
@@ -134,6 +137,11 @@ export function Changes({ project, task }: { project: string; task: Task | null 
   const layout: DiffLayout = layoutChoice === "split" && splitFits ? "split" : "unified";
   const taskId = task?.id ?? "";
   const copy = useMemo<CodeCopy>(() => ({ kind: "task", task: taskId }), [taskId]);
+  const rules = useRuleCheck(editable ? task : null, diff.data ?? NO_FILES);
+  const closedTask = task && !isOpen(task) ? task.id : null;
+  useEffect(() => {
+    if (closedTask) forgetDismissed(closedTask);
+  }, [closedTask]);
 
   // The agent changed files: what the code views cached for this copy is stale.
   const updatedAt = diff.dataUpdatedAt;
@@ -208,7 +216,8 @@ export function Changes({ project, task }: { project: string; task: Task | null 
     if (e.key !== "j" && e.key !== "k") return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const target = e.target as HTMLElement;
-    if (target.closest("input:not([type=checkbox]), textarea, select, [contenteditable='true']")) return;
+    // Nor from a dialog opened from here (its events bubble through the portal).
+    if (target.closest("input:not([type=checkbox]), textarea, select, [contenteditable='true'], [role='dialog']")) return;
     if (files.length === 0) return;
     e.preventDefault();
     const index = current ? files.indexOf(current) : -1;
@@ -321,10 +330,14 @@ export function Changes({ project, task }: { project: string; task: Task | null 
               </div>
             </header>
 
+            <RulesBar task={task} copy={copy} project={project} rules={rules} onAddedAll={() => setPreview(true)} />
+
             <ul className="rv-files" aria-label={t("workspace.changes.files")} title={t("review.keys")}>
               {files.map((f) => {
                 const done = reviewed.isReviewed(f);
                 const notes = commentCount(f.path);
+                const warned = rules.countFor(f.path);
+                const warnedLabel = warned === 1 ? t("rules.badgeOne") : t("rules.badge", { n: warned });
                 return (
                   <li
                     key={f.path}
@@ -361,6 +374,16 @@ export function Changes({ project, task }: { project: string; task: Task | null 
                           <CommentIcon />
                           {notes}
                           <span className="sr-only"> {pendingLabel(notes)}</span>
+                        </span>
+                      )}
+                      {warned > 0 && (
+                        <span className="rv-file__rules" title={warnedLabel}>
+                          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                            <path d="M8 2.5 14.5 13.5h-13z" />
+                            <path d="M8 6.5v3M8 11.5v.01" />
+                          </svg>
+                          {warned}
+                          <span className="sr-only"> {warnedLabel}</span>
                         </span>
                       )}
                       <span className="rv-file__stats">
@@ -418,6 +441,10 @@ export function Changes({ project, task }: { project: string; task: Task | null 
                   layout={layout}
                   focusLine={review.selectedFile === current.path ? review.selectedLine : null}
                   focusSeq={review.selectedFile === current.path ? review.selectSeq : 0}
+                  annotated={rules.linesOf(current.path)}
+                  annotate={(line) => (
+                    <LineWarnings warnings={rules.linesOf(current.path).get(line) ?? []} copy={copy} rules={rules} />
+                  )}
                 />
               </section>
             )}

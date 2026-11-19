@@ -38,6 +38,12 @@ if [ "$1" = -p ] && [ "$2" = --input-format ]; then
       echo '{"type":"result","subtype":"success","is_error":false,"result":"'"${FAKE_ANSWER:-Se guardan en USD y se muestran en Bs [1] [9].}"'","usage":{"input_tokens":5,"output_tokens":2}}'
       continue ;;
     esac
+    case "$line" in *NO_BREAKS*)
+      # A change checked against the rules (`hedy review`).
+      [ -n "$FAKE_PROMPT_LOG" ] && printf '%s\n' "$line" >> "$FAKE_PROMPT_LOG"
+      echo '{"type":"result","subtype":"success","is_error":false,"result":"'"${FAKE_ANSWER:-NO_BREAKS}"'","usage":{"input_tokens":5,"output_tokens":2}}'
+      continue ;;
+    esac
     case "$line" in *[Cc]ommit*)
       # A one-shot commit message request (`hedy commit`).
       [ -n "$FAKE_PROMPT_LOG" ] && printf '%s\n' "$line" >> "$FAKE_PROMPT_LOG"
@@ -1588,6 +1594,155 @@ fn commit_suggests_a_message_for_the_staged_changes_without_secrets() {
         git(&repo, &["log", "-1", "--format=%s"]),
         "fix(app): export x\n"
     );
+}
+
+fn hedy_review(env: &Env, repo: &Path, language: &str, args: &[&str]) -> Command {
+    let mut cmd = env.hedy_lang(language, &["-C", repo.to_str().unwrap(), "review"]);
+    cmd.args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("FAKE_PROMPT_LOG", env.path("prompts.log"));
+    cmd
+}
+
+#[test]
+fn review_warns_on_lines_that_break_a_rule_and_never_sends_secrets() {
+    let env = Env::new();
+    add_accounts(&env, &[&["Claude personal", "--claude"]]);
+    let repo = commit_repo(&env);
+    env.hedy_in(&repo, &["use", "claude-personal"])
+        .assert()
+        .success();
+    fs::write(
+        repo.join("app.js"),
+        "export const x = 1;\nexport const total_price = 2;\n",
+    )
+    .unwrap();
+    fs::write(repo.join(".env"), "TOKEN=sk-secreto\n").unwrap();
+    let log = env.path("prompts.log");
+
+    // No rules written: nothing is sent, no tokens are spent.
+    hedy_review(&env, &repo, "es", &[])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No hay reglas escritas"));
+    assert!(!log.exists());
+
+    {
+        use hedy_core::adapters::{self, HedyPaths};
+        use hedy_core::domain::Category;
+        let hedy = adapters::system(&HedyPaths::at(env.path("data"))).unwrap();
+        hedy.add_note(
+            Some(&repo),
+            "Las constantes exportadas van en MAYÚSCULAS",
+            Category::Convention,
+        )
+        .unwrap();
+    }
+    let answer = r#"BREAK \"app.js\":2 [1] total_price no va en mayúsculas => TOTAL_PRICE\nBREAK \"app.js\":1 [1] una línea sin cambiar"#;
+    hedy_review(&env, &repo, "es", &[])
+        .env("FAKE_ANSWER", answer)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 línea no sigue tus reglas"))
+        .stdout(predicate::str::contains(
+            "app.js:2  export const total_price = 2;",
+        ))
+        .stdout(predicate::str::contains(
+            "total_price no va en mayúsculas → TOTAL_PRICE",
+        ))
+        .stdout(predicate::str::contains(
+            "[1] «Las constantes exportadas van en MAYÚSCULAS» · Tuya · proyecto web",
+        ))
+        .stdout(predicate::str::contains("Solo es un aviso"))
+        .stdout(
+            predicate::str::contains("Archivos protegidos").and(predicate::str::contains(".env")),
+        )
+        .stdout(predicate::str::contains("una línea sin cambiar").not());
+    let prompt = fs::read_to_string(&log).unwrap();
+    assert!(prompt.contains("total_price"), "{prompt}");
+    assert!(prompt.contains("MAYÚSCULAS"), "{prompt}");
+    assert!(!prompt.contains("sk-secreto"), "{prompt}");
+
+    // As JSON, for a hook; and a clean change.
+    let out = hedy_review(&env, &repo, "es", &["--json"])
+        .env("FAKE_ANSWER", answer)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["breaks"][0]["path"], "app.js");
+    assert_eq!(json["breaks"][0]["line"], 2);
+    assert_eq!(json["breaks"][0]["fix"], "TOTAL_PRICE");
+    assert_eq!(json["rules"][0]["n"], 1);
+    assert_eq!(json["account"], "claude-personal");
+    assert_eq!(json["protected"], serde_json::json!([".env"]));
+    assert_eq!(json["status"], "checked");
+
+    // An answer that says nothing readable is not a clean change.
+    hedy_review(&env, &repo, "es", &[])
+        .env("FAKE_ANSWER", "Creo que está todo bien.")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "No se pudo leer la respuesta de la IA",
+        ))
+        .stdout(predicate::str::contains("Ninguna línea nueva").not());
+    // Nothing staged: nothing to check, and a hook is not blocked.
+    hedy_review(&env, &repo, "es", &["--staged"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No hay cambios que revisar"));
+    let out = hedy_review(&env, &repo, "es", &["--staged", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["status"], "no_changes");
+    hedy_review(&env, &repo, "en", &[])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "No new line goes against your rules.",
+        ));
+
+    // Staged only, one commit, a range; a file's contents are refused.
+    git(&repo, &["add", "app.js"]);
+    hedy_review(&env, &repo, "es", &["--staged"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Ninguna línea nueva va contra"));
+    hedy_review(&env, &repo, "es", &["HEAD"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 archivo contra 1 regla"));
+    // A line breaking two rules is one line, with both under it.
+    let two = r#"BREAK \"app.js\":2 [1][1] dos veces"#;
+    hedy_review(&env, &repo, "es", &["--staged"])
+        .env("FAKE_ANSWER", two)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 línea no sigue tus reglas"));
+    hedy_review(&env, &repo, "es", &["HEAD~1..HEAD"])
+        .assert()
+        .success();
+    hedy_review(&env, &repo, "es", &["HEAD:.env"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no es un commit ni un rango"));
+    hedy_review(&env, &repo, "en", &["nope"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "«nope» is not a commit or a range of commits of this repository",
+        ));
+    hedy_review(&env, &repo, "es", &["--staged", "HEAD"])
+        .assert()
+        .failure();
 }
 
 #[test]

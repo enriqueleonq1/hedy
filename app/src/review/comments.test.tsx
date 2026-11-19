@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { StrictMode, type ReactNode } from "react";
 
 import { ApiProvider } from "../api/context";
 import { MockApi } from "../api/MockApi";
@@ -11,7 +11,7 @@ import { formatReviewMessage, ReviewCommentsProvider, useReviewComments, type Re
 
 const TASK = { kind: "task" as const, task: "s5" };
 
-async function setup(taskId = "s5", project = "/code/hedy") {
+async function setup(taskId = "s5", project = "/code/hedy", strict = false) {
   const api = MockApi.withSampleData().withSampleActivity();
   api.delayMs = 0;
   const found = (await api.tasks(project)).find((t) => t.id === taskId) as Task;
@@ -19,7 +19,7 @@ async function setup(taskId = "s5", project = "/code/hedy") {
   const sample = (await api.tasks("/code/hedy")).find((t) => t.id === "s5") as Task;
   const task = { ...found, workspace: found.workspace ?? sample.workspace };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const wrapper = ({ children }: { children: ReactNode }) => (
+  const tree = (children: ReactNode) => (
     <QueryClientProvider client={client}>
       <ApiProvider api={api}>
         <ToastProvider>
@@ -28,6 +28,7 @@ async function setup(taskId = "s5", project = "/code/hedy") {
       </ApiProvider>
     </QueryClientProvider>
   );
+  const wrapper = ({ children }: { children: ReactNode }) => (strict ? <StrictMode>{tree(children)}</StrictMode> : tree(children));
   const hook = renderHook(() => useReviewComments(), { wrapper });
   return { api, task, ...hook };
 }
@@ -50,6 +51,17 @@ function comment(extra: Partial<ReviewComment>): ReviewComment {
 
 describe("review comments", () => {
   afterEach(() => localStorage.clear());
+
+  it("adds a first comment once, even when React runs the update twice", async () => {
+    const { result } = await setup("s5", "/code/hedy", true);
+    act(() => {
+      result.current.add({ copy: TASK, path: "facturas/impuestos.py", line: 16, side: "new", text: "Una vez", code: "x", source: "k1" });
+    });
+    expect(result.current.comments).toHaveLength(1);
+    expect(result.current.comments[0]?.source).toBe("k1");
+    const stored: unknown[] = JSON.parse(localStorage.getItem("hedy.review.comments.task:s5") ?? "[]");
+    expect(stored).toHaveLength(1);
+  });
 
   it("adds, edits and removes comments, kept per task across reloads", async () => {
     const { result, unmount } = await setup();

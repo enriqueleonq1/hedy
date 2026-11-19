@@ -7,10 +7,159 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use crate::application::ports::{Git, MergeOutcome, PortError, PortResult};
-use crate::domain::diff::{Commit, FileDiff, parse_unified};
+use crate::domain::diff::{Commit, DiffLine, FileDiff, FileStatus, Hunk, LineKind, parse_unified};
+use crate::domain::permissions::is_protected_path;
 use crate::tr;
 
 pub struct GitCli;
+
+/// Diff options that keep its format Hedy's whatever the user's config:
+/// no external diff or textconv (a decrypting driver, a command of the
+/// config), and the usual `a/` `b/` prefixes (`diff.noprefix`,
+/// `diff.mnemonicPrefix`).
+const DIFF_OPTIONS: &[&str] = &[
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+    "-M",
+];
+/// Most new, not yet added files read for the uncommitted work.
+const UNTRACKED_MAX: usize = 200;
+/// Larger new files are named only, as binary ones.
+const UNTRACKED_BYTES_MAX: u64 = 512 * 1024;
+
+/// The empty tree (what a repository with no commit, or a first commit, is
+/// compared to), in the repository's own hash.
+fn empty_tree(repo: &Path) -> PortResult<String> {
+    Ok(git(repo, &["hash-object", "-t", "tree", "/dev/null"])?
+        .trim()
+        .to_owned())
+}
+
+/// A file with no other name (a hard link may be a protected file).
+#[cfg(unix)]
+fn single_link(meta: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+    meta.nlink() == 1
+}
+
+/// Elsewhere the links of a file are not known: it is only named.
+#[cfg(not(unix))]
+fn single_link(_: &fs::Metadata) -> bool {
+    false
+}
+
+fn diff_args<'a>(before: &[&'a str], after: &[&'a str]) -> Vec<&'a str> {
+    let mut args = vec!["diff"];
+    args.extend_from_slice(before);
+    args.extend_from_slice(DIFF_OPTIONS);
+    args.extend_from_slice(after);
+    args
+}
+
+/// The new files `.gitattributes` keeps from showing: a filter (git-crypt
+/// encrypts what is added; on disk it is plain) or no diff (`-diff`,
+/// `binary`). Git would show them as binary; read from disk they would not
+/// be. If git cannot say, every one is kept from showing.
+fn attribute_hidden(repo: &Path, paths: &[&str]) -> std::collections::HashSet<String> {
+    use std::process::Stdio;
+    let all = || paths.iter().map(|p| (*p).to_owned()).collect();
+    if paths.is_empty() {
+        return std::collections::HashSet::new();
+    }
+    let child = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["check-attr", "-z", "--stdin", "filter", "diff"])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn();
+    let Ok(mut child) = child else {
+        return all();
+    };
+    let input = paths.iter().map(|p| format!("{p}\0")).collect::<String>();
+    // Written from another thread: a long list fills the pipes both ways.
+    let stdin = child.stdin.take();
+    let writer = std::thread::spawn(move || {
+        if let Some(mut stdin) = stdin {
+            let _ = stdin.write_all(input.as_bytes());
+        }
+    });
+    let out = child.wait_with_output();
+    let _ = writer.join();
+    let Some(out) = out.ok().filter(|o| o.status.success()) else {
+        return all();
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    let fields: Vec<&str> = text.split('\0').collect();
+    fields
+        .chunks(3)
+        .filter(|f| match f {
+            [_, "filter", value] => !matches!(*value, "unspecified" | "unset"),
+            [_, "diff", value] => *value == "unset",
+            _ => false,
+        })
+        .map(|f| f[0].to_owned())
+        .collect()
+}
+
+/// A new file nobody added yet, as a diff: every line added. A protected
+/// one is never read; a binary or large one, or one `.gitattributes` keeps
+/// from showing, only named.
+fn untracked_file(repo: &Path, path: &str, hidden: bool) -> FileDiff {
+    let mut file = FileDiff {
+        path: path.to_owned(),
+        old_path: None,
+        status: FileStatus::Added,
+        additions: 0,
+        deletions: 0,
+        binary: false,
+        hunks: Vec::new(),
+    };
+    if is_protected_path(path) {
+        return file;
+    }
+    if hidden {
+        file.binary = true;
+        return file;
+    }
+    let full = repo.join(path);
+    // Never through a link: a symbolic one is not a file, and a hard one
+    // may be a protected file under another name.
+    let small = fs::symlink_metadata(&full)
+        .is_ok_and(|m| m.is_file() && m.len() <= UNTRACKED_BYTES_MAX && single_link(&m));
+    let text = small
+        .then(|| fs::read(&full).ok())
+        .flatten()
+        .filter(|bytes| !bytes.contains(&0))
+        .and_then(|bytes| String::from_utf8(bytes).ok());
+    let Some(text) = text else {
+        file.binary = true;
+        return file;
+    };
+    let lines: Vec<DiffLine> = text
+        .lines()
+        .enumerate()
+        .map(|(i, line)| DiffLine {
+            kind: LineKind::Added,
+            old_line: None,
+            new_line: Some(i as u32 + 1),
+            text: line.to_owned(),
+        })
+        .collect();
+    file.additions = lines.len() as u32;
+    if !lines.is_empty() {
+        file.hunks.push(Hunk {
+            header: format!("@@ -0,0 +1,{} @@", lines.len()),
+            lines,
+        });
+    }
+    file
+}
 
 pub(super) fn run(dir: &Path, args: &[&str]) -> PortResult<Output> {
     Command::new("git")
@@ -101,17 +250,7 @@ impl Git for GitCli {
     fn diff(&self, worktree: &Path, base: &str) -> PortResult<Vec<FileDiff>> {
         // Staging inside the task's own worktree makes new files part of the diff.
         git(worktree, &["add", "--all"])?;
-        let patch = git(
-            worktree,
-            &[
-                "diff",
-                "--cached",
-                "--no-color",
-                "--no-ext-diff",
-                "-M",
-                base,
-            ],
-        )?;
+        let patch = git(worktree, &diff_args(&["--cached"], &[base]))?;
         Ok(parse_unified(&patch))
     }
 
@@ -243,11 +382,154 @@ impl Git for GitCli {
     }
 
     fn staged_diff(&self, repo: &Path) -> PortResult<Vec<FileDiff>> {
-        let patch = git(
-            repo,
-            &["diff", "--cached", "--no-color", "--no-ext-diff", "-M"],
-        )?;
+        let patch = git(repo, &diff_args(&["--cached"], &[]))?;
         Ok(parse_unified(&patch))
+    }
+
+    fn work_diff(&self, repo: &Path) -> PortResult<(Vec<FileDiff>, usize)> {
+        let base = if run(repo, &["rev-parse", "--verify", "-q", "HEAD"])?
+            .status
+            .success()
+        {
+            "HEAD".to_owned()
+        } else {
+            empty_tree(repo)?
+        };
+        let patch = git(repo, &diff_args(&[], &[&base, "--"]))?;
+        let mut files = parse_unified(&patch);
+        let others = git(
+            repo,
+            &[
+                "-c",
+                "core.quotePath=false",
+                "ls-files",
+                "-z",
+                "--others",
+                "--exclude-standard",
+            ],
+        )?;
+        let new: Vec<&str> = others.split('\0').filter(|p| !p.is_empty()).collect();
+        let left = new.len().saturating_sub(UNTRACKED_MAX);
+        let read = &new[..new.len() - left];
+        let hidden = attribute_hidden(repo, read);
+        files.extend(
+            read.iter()
+                .map(|path| untracked_file(repo, path, hidden.contains(*path))),
+        );
+        Ok((files, left))
+    }
+
+    fn revs_diff(&self, repo: &Path, revs: &str) -> PortResult<Vec<FileDiff>> {
+        // Never read as an option (`--output=…` writes a file), nor as a
+        // path (`--` after it), nor as a file's contents (`HEAD:.env`).
+        if revs.starts_with('-') || revs.contains(':') {
+            return Err(PortError::new(format!(
+                "git diff: «{revs}» no es una revisión"
+            )));
+        }
+        // git's own message would be in the system's language, with a hint
+        // about paths that does not apply here.
+        let unknown = |_: PortError| {
+            PortError::new(tr!(
+                "«{revs}» no es un commit ni un rango de commits de este repositorio",
+                "«{revs}» is not a commit or a range of commits of this repository"
+            ))
+        };
+        if revs.contains("..") {
+            // Both ends commits: two blobs (`<hash of .env>..<hash>`) would
+            // compare a file's contents under no name.
+            let (from, to) = revs
+                .split_once("...")
+                .or_else(|| revs.split_once(".."))
+                .unwrap_or((revs, ""));
+            for end in [from, to].into_iter().filter(|e| !e.is_empty()) {
+                let commit = format!("{end}^{{commit}}");
+                let found = run(
+                    repo,
+                    &["rev-parse", "--verify", "-q", "--end-of-options", &commit],
+                )?;
+                if !found.status.success() {
+                    return Err(unknown(PortError::new(String::new())));
+                }
+            }
+            let patch = git(repo, &diff_args(&[], &[revs, "--"])).map_err(unknown)?;
+            return Ok(parse_unified(&patch));
+        }
+        // One commit: its own change, against its first parent (a merge's
+        // too), or against nothing for a first commit.
+        let commit = revs.strip_suffix("^!").unwrap_or(revs);
+        let line = git(
+            repo,
+            &[
+                "rev-list",
+                "--parents",
+                "-n",
+                "1",
+                "--end-of-options",
+                commit,
+            ],
+        )
+        .map_err(unknown)?;
+        let mut ids = line.split_whitespace();
+        let id = ids
+            .next()
+            .ok_or_else(|| unknown(PortError::new(String::new())))?
+            .to_owned();
+        let parent = match ids.next() {
+            Some(parent) => parent.to_owned(),
+            None => empty_tree(repo)?,
+        };
+        let patch = git(repo, &diff_args(&[], &[&parent, &id, "--"]))?;
+        Ok(parse_unified(&patch))
+    }
+
+    fn main_root(&self, repo: &Path) -> PortResult<PathBuf> {
+        let dirs = git(
+            repo,
+            &[
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-dir",
+                "--git-common-dir",
+            ],
+        )?;
+        let mut dirs = dirs.lines().map(|d| PathBuf::from(d.trim()));
+        let (Some(own), Some(common)) = (dirs.next(), dirs.next()) else {
+            return Err(PortError::new("git rev-parse: sin carpeta de git"));
+        };
+        // Not a worktree added from another checkout: it is the main one.
+        if own == common {
+            return Ok(repo.to_owned());
+        }
+        if common.file_name().is_some_and(|name| name == ".git")
+            && let Some(main) = common.parent()
+        {
+            return Ok(main.to_owned());
+        }
+        // A submodule's or a separate git folder's: where its config says,
+        // else refused, never guessed (the projects inside depend on it).
+        let configured = run(
+            repo,
+            &[
+                "--git-dir",
+                &common.to_string_lossy(),
+                "config",
+                "--path",
+                "core.worktree",
+            ],
+        )?;
+        let main = String::from_utf8_lossy(&configured.stdout)
+            .trim()
+            .to_owned();
+        if configured.status.success() && !main.is_empty() {
+            let main = common.join(main);
+            return fs::canonicalize(&main)
+                .map_err(|e| PortError::new(format!("{}: {e}", main.display())));
+        }
+        Err(PortError::new(tr!(
+            "no se encontró la carpeta principal de este worktree; revísalo desde ella",
+            "the main folder of this worktree was not found; check it from there"
+        )))
     }
 
     fn commit_staged(&self, repo: &Path, message: &str, edit: bool) -> PortResult<()> {
@@ -622,6 +904,149 @@ mod tests {
         git(tmp.path(), &["init", "-q", "-b", "main"]).unwrap();
         let err = GitCli.head_commit(tmp.path()).unwrap_err();
         assert!(err.message.contains("no tiene commits"));
+    }
+
+    #[test]
+    fn diffs_uncommitted_work_and_ranges_without_reading_options() {
+        let (_tmp, repo) = repo();
+        let g = GitCli;
+        assert!(g.work_diff(&repo).unwrap().0.is_empty());
+        fs::write(repo.join("app.py"), "def crear():\n    avisar()\n").unwrap();
+        let (work, left) = g.work_diff(&repo).unwrap();
+        assert_eq!((work.len(), left), (1, 0));
+        assert_eq!(work[0].additions, 1);
+        git(&repo, &["checkout", "-qb", "feat"]).unwrap();
+        git(&repo, &["commit", "-qam", "Avisa"]).unwrap();
+        fs::write(repo.join("nuevo.py"), "x = 1\n").unwrap();
+        git(&repo, &["add", "nuevo.py"]).unwrap();
+        git(&repo, &["commit", "-qm", "Nuevo"]).unwrap();
+        let range = g.revs_diff(&repo, "main..feat").unwrap();
+        assert_eq!(
+            range.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(),
+            ["app.py", "nuevo.py"]
+        );
+        // Uncommitted work: changed files and new ones not added yet; a new
+        // protected one is only named.
+        fs::write(repo.join("app.py"), "def crear():\n    avisar(1)\n").unwrap();
+        fs::write(repo.join("otro.py"), "y = 2\nz = 3\n").unwrap();
+        fs::write(repo.join(".env"), "KEY=secret\n").unwrap();
+        // A hard link to it is never read either.
+        fs::hard_link(repo.join(".env"), repo.join("zz.txt")).unwrap();
+        // Nor one `.gitattributes` encrypts or keeps from diffs.
+        fs::write(
+            repo.join(".gitattributes"),
+            "secreto.yaml filter=git-crypt diff=git-crypt\nprivado.txt -diff\n",
+        )
+        .unwrap();
+        fs::write(repo.join("secreto.yaml"), "password: hunter2\n").unwrap();
+        fs::write(repo.join("privado.txt"), "PRIVADO\n").unwrap();
+        let (work, _) = g.work_diff(&repo).unwrap();
+        let summary: Vec<(&str, u32, usize)> = work
+            .iter()
+            .map(|f| (f.path.as_str(), f.additions, f.hunks.len()))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("app.py", 1, 1),
+                (".env", 0, 0),
+                (".gitattributes", 2, 1),
+                ("otro.py", 2, 1),
+                ("privado.txt", 0, 0),
+                ("secreto.yaml", 0, 0),
+                ("zz.txt", 0, 0)
+            ]
+        );
+
+        let lines = work.iter().flat_map(|f| &f.hunks).flat_map(|h| &h.lines);
+        assert!(
+            lines
+                .clone()
+                .all(|l| !l.text.contains("hunter2") && !l.text.contains("PRIVADO"))
+        );
+        for name in [".gitattributes", "secreto.yaml", "privado.txt"] {
+            fs::remove_file(repo.join(name)).unwrap();
+        }
+        assert!(lines.clone().all(|l| !l.text.contains("KEY=secret")));
+        fs::remove_file(repo.join("zz.txt")).unwrap();
+        assert!(g.revs_diff(&repo, "HEAD:.env..HEAD:app.py").is_err());
+        // Two blobs by their hashes are no range of commits either.
+        let blob = git(&repo, &["rev-parse", "HEAD:app.py"]).unwrap();
+        let blobs = format!("{0}..{0}", blob.trim());
+        assert!(g.revs_diff(&repo, &blobs).is_err());
+        assert!(g.revs_diff(&repo, "main...feat").is_ok());
+        // A worktree's main checkout is the repository's.
+        let wt = repo.join(".hedy/worktrees/t1");
+        git(
+            &repo,
+            &["worktree", "add", "-q", wt.to_str().unwrap(), "main"],
+        )
+        .unwrap();
+        let main = repo.canonicalize().unwrap();
+        assert_eq!(g.main_root(&wt).unwrap().canonicalize().unwrap(), main);
+        assert_eq!(g.main_root(&repo).unwrap().canonicalize().unwrap(), main);
+        // A separate git folder: a worktree of it is refused, never guessed.
+        let tmp = tempfile::tempdir().unwrap();
+        let apart = tmp.path().join("apart");
+        let store = tmp.path().join("apart.git");
+        git(
+            tmp.path(),
+            &[
+                "init",
+                "-q",
+                "-b",
+                "main",
+                "--separate-git-dir",
+                store.to_str().unwrap(),
+                apart.to_str().unwrap(),
+            ],
+        )
+        .unwrap();
+        for args in [
+            &["config", "user.email", "t@l"][..],
+            &["config", "user.name", "T"],
+            &["config", "commit.gpgsign", "false"],
+            &["commit", "-q", "--allow-empty", "-m", "Inicio"],
+        ] {
+            git(&apart, args).unwrap();
+        }
+        assert_eq!(g.main_root(&apart).unwrap(), apart);
+        let wt = apart.join("wt");
+        git(&apart, &["worktree", "add", "-q", wt.to_str().unwrap()]).unwrap();
+        assert!(g.main_root(&wt).is_err());
+        // Never read as an option.
+        let out = repo.join("written");
+        let option = format!("--output={}", out.display());
+        assert!(g.revs_diff(&repo, &option).is_err());
+        assert!(!out.exists());
+    }
+
+    #[test]
+    fn one_commit_is_its_own_change_first_and_merge_commits_too() {
+        let (_tmp, repo) = repo();
+        let g = GitCli;
+        // The first commit: against nothing, not the working tree.
+        fs::write(repo.join("app.py"), "cambiado\n").unwrap();
+        let first = g.revs_diff(&repo, "HEAD").unwrap();
+        assert_eq!(first.len(), 1);
+        assert_eq!((first[0].additions, first[0].deletions), (2, 0));
+        git(&repo, &["commit", "-qam", "Cambio"]).unwrap();
+        let one = g.revs_diff(&repo, "HEAD").unwrap();
+        assert_eq!((one[0].additions, one[0].deletions), (1, 2));
+        assert_eq!(g.revs_diff(&repo, "HEAD^!").unwrap(), one);
+        // A merge: what it brings over its first parent.
+        git(&repo, &["checkout", "-qb", "rama", "HEAD~1"]).unwrap();
+        fs::write(repo.join("otro.py"), "x = 1\n").unwrap();
+        git(&repo, &["add", "otro.py"]).unwrap();
+        git(&repo, &["commit", "-qm", "Otro"]).unwrap();
+        git(&repo, &["checkout", "-q", "main"]).unwrap();
+        git(&repo, &["merge", "-q", "--no-edit", "--no-ff", "rama"]).unwrap();
+        let merge = g.revs_diff(&repo, "HEAD").unwrap();
+        assert_eq!(
+            merge.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(),
+            ["otro.py"]
+        );
+        assert!(g.revs_diff(&repo, "no-such-thing").is_err());
     }
 
     #[test]

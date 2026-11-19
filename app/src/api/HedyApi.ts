@@ -29,6 +29,7 @@ import type {
   AskScope,
   CodeLookup,
   MemoryAnswer,
+  RuleCheck,
   MemoryGraph,
   MemoryHome,
   MemoryHomeKind,
@@ -268,6 +269,12 @@ export interface HedyApi {
   askMemory(question: string, scope: AskScope, account?: string | null): Promise<MemoryAnswer>;
   /** Every note this person can read here, as a graph (only shown on this PC). */
   memoryGraph(): Promise<MemoryGraph>;
+  /**
+   * "Revisar con tus reglas": a task's changes against the written rules of
+   * its project, each break on an added line citing its note (docs/decisions.md §37).
+   * Spends a few tokens of the project's account, only with rules and lines to check.
+   */
+  checkTaskRules(task: string, account?: string | null): Promise<RuleCheck>;
   /** "Buscar en el código": the project's files answer, and a note is proposed (never approved by itself). */
   lookInCode(question: string, project: string, account?: string | null): Promise<CodeLookup>;
   /** A note written by the user; `project: null` makes it global. */

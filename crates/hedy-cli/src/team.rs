@@ -91,6 +91,25 @@ pub(crate) fn clean(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// JSON for the terminal or a script: every hidden or control character
+/// (U+009B starts an escape sequence on some terminals, U+202E reorders the
+/// text) written as `\uXXXX`, so `jq -r` is the only one that shows it.
+pub(crate) fn safe_json(value: &serde_json::Value) -> serde_json::Result<String> {
+    let text = serde_json::to_string_pretty(value)?;
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if hedy_core::domain::team::is_hidden(c) {
+            let mut units = [0u16; 2];
+            for unit in c.encode_utf16(&mut units) {
+                out.push_str(&format!("\\u{unit:04x}"));
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    Ok(out)
+}
+
 /// A note's text for the terminal: each of its lines cleaned and indented
 /// under the first.
 pub(crate) fn clean_text(text: &str) -> String {
@@ -1032,4 +1051,19 @@ pub fn leave(hedy: &Hedy, team: &str, yes: bool, here: bool) -> Result<()> {
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_shows_hidden_characters_only_as_escapes() {
+        let value = serde_json::json!({ "path": "b\u{202e}idi\u{9b}1.js", "emoji": "👩‍💻 ok" });
+        let text = safe_json(&value).unwrap();
+        assert!(!text.contains('\u{202e}') && !text.contains('\u{9b}'));
+        assert!(text.contains("b\\u202eidi\\u009b1.js"));
+        let back: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, value);
+    }
 }
