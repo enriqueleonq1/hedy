@@ -2862,11 +2862,7 @@ impl TeamProtection {
     /// account other than a protected project's. Failing closed: with a
     /// protected project of unknown id, only the open projects' notes.
     pub fn allows(&self, project: &str) -> bool {
-        if self.unknown {
-            self.open.contains(project)
-        } else {
-            !self.protected.contains(project)
-        }
+        !self.protected.contains(project) && (!self.unknown || self.open.contains(project))
     }
 }
 

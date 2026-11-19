@@ -2407,3 +2407,70 @@ fn an_unreadable_protected_copy_still_keeps_its_team_notes() {
         .unwrap();
     assert!(a.sources.iter().all(|s| !s.text.contains("Secreto")));
 }
+
+#[test]
+fn an_unreadable_protected_project_does_not_open_a_protected_copy() {
+    use crate::application::AskScope;
+
+    let (_server, ana, luis) = team_of_two();
+    ana.link();
+    luis.link();
+    luis.f.add_claude("Seguro");
+    // A protected copy of "app" (same team project as the open one) …
+    luis.f.fs.add_git_root("/code/app-seguro");
+    let secure = luis.f.dir("/code/app-seguro");
+    luis.f
+        .hedy
+        .use_account(&secure, "seguro", Some(true))
+        .unwrap();
+    luis.f.hedy.team_link_project(&luis.team, &secure).unwrap();
+    luis.f
+        .hedy
+        .team_add_note(
+            &luis.team,
+            Some(&secure),
+            "Secreto del banco: la clave rota",
+            Category::Rule,
+            None,
+        )
+        .unwrap();
+    // … and another protected project whose `origin` cannot be read now.
+    luis.f.add_claude("Banco");
+    luis.f.fs.add_git_root("/code/banco");
+    let banco = luis.f.dir("/code/banco");
+    luis.f.source.set_remotes_of(
+        &banco,
+        &[("origin", "git@github.com:empresa-org/banco.git")],
+    );
+    luis.f
+        .hedy
+        .use_account(&banco, "banco", Some(true))
+        .unwrap();
+    luis.f.hedy.team_link_project(&luis.team, &banco).unwrap();
+    luis.sync();
+    luis.f.source.set_remotes_of(
+        &banco,
+        &[("upstream", "git@github.com:empresa-org/banco.git")],
+    );
+    for scope in [
+        AskScope::Team(luis.team.clone()),
+        AskScope::Project(luis.project.clone()),
+    ] {
+        luis.f
+            .agents
+            .reply_on_start(vec![crate::domain::AgentEvent::Finished {
+                ok: true,
+                summary: "x [1].".into(),
+                duration_ms: None,
+            }]);
+        let a = luis
+            .f
+            .hedy
+            .ask_memory("¿Secreto del banco, clave?", &scope, Some("trabajo"), None)
+            .unwrap();
+        assert!(
+            a.sources.iter().all(|s| !s.text.contains("Secreto")),
+            "{scope:?}"
+        );
+    }
+}
