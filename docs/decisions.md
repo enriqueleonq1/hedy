@@ -3288,3 +3288,89 @@ outer ring of loose notes, animated).
   scope and asked as another; the uncapped graph and labels; hidden characters unrevealed;
   people able to name themselves "Tú". All fixed, each with a test.
 
+
+## 37. Checking a change against the written rules (Nov 19, 2026)
+
+Asking the memory (§36) answers questions; this uses the same memory the other way round: a
+change is checked against the notes an agent of its project reads, and each line that goes
+against one gets a warning that cites it. The look was chosen on a canvas: warnings under the
+line in the diff (option A), with `hedy review` for the terminal and "Ya no aplica" to fix a
+rule instead of ignoring it.
+
+### Decisions
+
+- **Only a warning.** Nothing is blocked: not accepting a task, not a commit. `hedy review`
+  exits 0 on breaks and when there is nothing to check; a real error (no account, an account at
+  its limit) exits 1, so a hook runs `hedy review --staged || true`.
+- **Never "clean" by mistake.** A warning counts only on a line the change adds that was sent,
+  citing a rule that was sent; anything else is dropped. An answer that is neither `NO_BREAKS`
+  nor a kept break is "unread", not a clean change. Warned lines that changed since, new lines
+  never checked, or a rule changed since, all ask for a new check instead of showing ✓.
+- **What is sent.** The added lines and their context, numbered (removed lines are left out: a
+  secret being taken out would be sent). Protected files (`.env`, keys, also under a renamed,
+  quoted, spaced or invisible-character name), lock files, generated, binary and deleted files
+  only by name. At most 24,000 characters, each file its fair share, the rest counted; lines cut
+  at 300 characters. The rules: the whole memory while it fits 6,000 tokens, else rules and
+  conventions first, those sharing words with the change before the rest, at most 40.
+- **Data, not instructions.** Rules and paths are quoted and escaped; the change is marked as
+  data, and a comment in it asking for `NO_BREAKS` was ignored in every run. One read-only
+  request with no tools and no shell, in an empty folder, like asking the memory.
+- **Rules 3 and 4.** The project is the folder's (as for a launch); in a worktree, where its main
+  checkout has the same folder, unless a project is registered in the worktree itself. Only the
+  project's subfolder counts when it is part of a repository, and a change touching another
+  protected project there is refused. A protected project reads no global note. The account is
+  the chosen one, else the project's; at its limit Hedy refuses and never moves to another.
+- **Git as data.** Diffs run with `--no-ext-diff --no-textconv` and fixed `a/` `b/` prefixes, so
+  no command of the user's config runs and no decrypting filter shows a secret. A range's ends
+  must be commits (`HEAD:.env` and blob hashes are refused); one commit means its own change,
+  against its first parent (a first commit against nothing). Uncommitted work includes new files
+  not added yet (never read through a link; large or binary ones only named).
+- **Model text is the checker's.** A warning becomes a comment for the agent only on the user's
+  click, marked "Aviso de la revisión automática con reglas (puede equivocarse)", the rule
+  quoted and the model's words as what it saw and suggests; links, HTML and character
+  references in them are escaped, so the comment shows exactly what is sent.
+- **"Ya no aplica" fixes the rule.** The user's own note changes or goes at once; a team's goes
+  as a suggestion unless this person may change it (then the dialog says it counts for the whole
+  team). The note is read again first: one that changed or went since the check can only get an
+  exception. An exception is a note of the user's own in the project; only those count as
+  exceptions to the model (a team note claiming to be one could switch a rule off for everyone).
+
+### Phases
+
+- **R1, the engine** (`domain::rule_check`, `application::rule_check`, `Git::revs_diff`,
+  `work_diff`, `main_root`). Empirical run with claude-personal: 12/12 planted breaks found,
+  clean changes clean, the injection ignored, 3–7 s.
+- **R2, `hedy review`** (`--staged`, a commit or a range, `--task`, `--json` with `status`), and
+  a pre-commit hook that warns without blocking (`git commit --amend` passes).
+- **R3, the app.** "Revisar con tus reglas" in Cambios (spends tokens only on a click; the run
+  outlives the tab and belongs to its task), a card under each line ("Pedir que lo corrija",
+  "Está bien así"), a count beside each file. Dismissed warnings are kept as fingerprints.
+- **R4, "Ya no aplica"**: change, remove, or an exception for this project.
+- **R5, real eval** (`scripts/rules-eval.py <claude-account-folder> [model] [runs]`): nine
+  cases (each kind of rule, a clean multi-file change, an exception, an injection, several
+  breaks at once). haiku and sonnet found 18/18 with no wrong warning; sonnet's median 2.7 s,
+  haiku's 5.8 s. With a subtle case (`background: #000`) haiku caught it 2 times in 6 before the
+  prompt asked for small breaks too; sonnet caught it 4 in 4 after.
+
+### Housekeeping (two reviews per phase, fixes with a test that failed before)
+
+- **Found on the way, older than this:** a `.env` in a folder with a space or with accents was
+  read as another name and its contents went in `hedy commit`'s request (git writes those paths
+  quoted or with a tab after them); the first review comment of a task was saved twice under
+  React's strict mode.
+- **R1–R2:** paths with brackets (`app/[id]`) lost their warnings; the model's usual formats
+  (lists, bold, `[R1]`, `line:column`, `=>` in code) were dropped; a single commit was compared
+  with the working tree; the project was looked up from the repository root (another account);
+  quadratic ranking on huge lines; worktrees, submodules and separate git folders (refused when
+  the main folder is unknown); hard links; JSON escapes for hidden characters.
+- **R3–R4:** a hidden character in a line dropped its warning and showed "clean"; a check
+  started on one task was stored under another; a fix in place showed ✓ without a new check;
+  "Corregir todo" could send text the comment card hid; the dialog lived inside the diff (lost
+  with its line, `j`/`k`), said "propose" where an admin's change counts at once, and could edit
+  a note that had changed or taken another's number.
+
+### Limits
+
+- In a shallow clone, the oldest commit shows as all new. Uncommitted work reads at most 200 new
+  files. "Ya no aplica" compares the note without its hidden characters; a note whose only
+  difference is one of them is taken as unchanged.

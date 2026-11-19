@@ -22,7 +22,9 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
   tokens; use claude-personal): `scripts/ask-eval.py <claude-account-folder> [model]`
 - Check a change against the written rules (docs/decisions.md §37): `hedy review` (uncommitted
   work; `--staged`, a commit or `main..HEAD`, `--task <id>`, `--json`); only warns, citing each
-  note. In a pre-commit hook: `hedy review --staged || true`
+  note. In a pre-commit hook: `hedy review --staged || true`. In the app, Cambios → "Revisar con
+  tus reglas". Real eval (spends tokens; use claude-personal):
+  `scripts/rules-eval.py <claude-account-folder> [model] [runs]`
 - Health check (CLIs and their versions, accounts, Hedy, environment): `hedy doctor`
 - Running and recent tasks across projects: `hedy tasks`
 - Personal sync (docs/sync.md): `hedy sync` (`setup <url>`, `join <url>`, `now`, `conflicts`,
