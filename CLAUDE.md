@@ -16,6 +16,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Learned skills from the terminal: `hedy skills` (`list`, `show <name>`, `approve <id>`,
   `reject <id>`, `remove <name>`); in the UI, `#k=<path>` opens a project's skills tab
 - Prompt templates from the CLI: `hedy template list|add <name> [--project] --text …|remove <name>`
+- Ask the memory (docs/decisions.md §36): `hedy memory ask "<question>"` (`--team`, `--all`,
+  `--json`); answers only from the notes and cites each
 - Health check (CLIs and their versions, accounts, Hedy, environment): `hedy doctor`
 - Running and recent tasks across projects: `hedy tasks`
 - Personal sync (docs/sync.md): `hedy sync` (`setup <url>`, `join <url>`, `now`, `conflicts`,
