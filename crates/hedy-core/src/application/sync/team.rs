@@ -2845,7 +2845,6 @@ fn team_error(error: AppError) -> AppError {
 const TEAM_MATCHES: usize = 8;
 const TEAM_MATCH_CHARS: usize = 400;
 
-/// Lowercase, without accents: how a search compares text.
 /// Which team project ids a protected project here holds (rule 4).
 #[derive(Debug, Default)]
 pub(crate) struct TeamProtection {
@@ -2866,6 +2865,7 @@ impl TeamProtection {
     }
 }
 
+/// Lowercase, without accents: how a search compares text.
 fn fold(text: &str) -> String {
     text.to_lowercase()
         .chars()
