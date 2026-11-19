@@ -461,7 +461,11 @@ pub fn staged_commit_prompt(recent: &[String], diff: &str, secrets: &[String]) -
     let hidden = if secrets.is_empty() {
         String::new()
     } else {
-        let list = secrets.join(", ");
+        let list = secrets
+            .iter()
+            .map(|p| shown_path(p))
+            .collect::<Vec<_>>()
+            .join(", ");
         tr!(
             "\n\nTambién cambian estos archivos privados, cuyo contenido no se muestra: {list}",
             "\n\nThese private files change too; their contents are not shown: {list}"
