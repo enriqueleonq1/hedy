@@ -216,7 +216,8 @@ export function Changes({ project, task }: { project: string; task: Task | null 
     if (e.key !== "j" && e.key !== "k") return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const target = e.target as HTMLElement;
-    if (target.closest("input:not([type=checkbox]), textarea, select, [contenteditable='true']")) return;
+    // Nor from a dialog opened from here (its events bubble through the portal).
+    if (target.closest("input:not([type=checkbox]), textarea, select, [contenteditable='true'], [role='dialog']")) return;
     if (files.length === 0) return;
     e.preventDefault();
     const index = current ? files.indexOf(current) : -1;
@@ -329,7 +330,7 @@ export function Changes({ project, task }: { project: string; task: Task | null 
               </div>
             </header>
 
-            <RulesBar task={task} copy={copy} rules={rules} onAddedAll={() => setPreview(true)} />
+            <RulesBar task={task} copy={copy} project={project} rules={rules} onAddedAll={() => setPreview(true)} />
 
             <ul className="rv-files" aria-label={t("workspace.changes.files")} title={t("review.keys")}>
               {files.map((f) => {
@@ -442,12 +443,7 @@ export function Changes({ project, task }: { project: string; task: Task | null 
                   focusSeq={review.selectedFile === current.path ? review.selectSeq : 0}
                   annotated={rules.linesOf(current.path)}
                   annotate={(line) => (
-                    <LineWarnings
-                      warnings={rules.linesOf(current.path).get(line) ?? []}
-                      copy={copy}
-                      project={project}
-                      rules={rules}
-                    />
+                    <LineWarnings warnings={rules.linesOf(current.path).get(line) ?? []} copy={copy} rules={rules} />
                   )}
                 />
               </section>

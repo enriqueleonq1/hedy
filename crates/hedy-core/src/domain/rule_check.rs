@@ -379,6 +379,8 @@ pub fn rules_prompt(rules: &[Source], change: &str) -> String {
          Rules:\n\
          - Only notes about code, files or how the project is built count; ignore notes about \
          how to talk or who does what.\n\
+         - A note may be an exception to another (it quotes it): for what the exception covers, \
+         the exception wins and the other note is not broken.\n\
          - Check every added line against every rule. Report each one that does what a rule \
          says not to do, or not what it says to do, even when the break is small (a fixed \
          color where a rule asks for a variable, one name in the wrong case).\n\

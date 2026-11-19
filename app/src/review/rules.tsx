@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { errorMessage, useApi } from "../api/context";
@@ -195,7 +196,13 @@ export function useRuleCheck(task: Task | null, files: FileDiff[]) {
         }),
     [check, files],
   );
-  const shown = useMemo(() => all.filter((w) => !keys.has(w.key)), [all, keys]);
+  // Rules changed, removed or excepted here: their warnings wait for a new
+  // check (in memory only; nothing the user dismissed).
+  const [settled, setSettled] = useState<{ task: string; refs: Set<string> }>({ task: taskId, refs: new Set() });
+  const settledRefs = useMemo(() => (settled.task === taskId ? settled.refs : new Set<string>()), [settled, taskId]);
+  const [changing, setChanging] = useState<{ task: string; rule: MemorySource } | null>(null);
+  const isSettled = useCallback((w: Warning) => !!w.rule && settledRefs.has(noteRef(w.rule)), [settledRefs]);
+  const shown = useMemo(() => all.filter((w) => !keys.has(w.key) && !isSettled(w)), [all, keys, isSettled]);
   const byPath = useMemo(() => {
     const map = new Map<string, Map<number, Warning[]>>();
     for (const w of shown) {
@@ -229,13 +236,16 @@ export function useRuleCheck(task: Task | null, files: FileDiff[]) {
     /** Warnings whose lines changed since the check (not a clean change: check again). */
     gone: (check?.breaks.length ?? 0) - all.length,
     /** How many of those warnings the user dismissed ("Está bien así"). */
-    dismissedCount: all.length - shown.length,
+    dismissedCount: all.filter((w) => keys.has(w.key)).length,
     dismiss: (w: Warning) => setKeys((k) => k.add(w.key)),
-    /** Every warning citing that rule: it was changed, proposed or excepted. */
-    settleRule: (text: string) =>
-      setKeys((k) => {
-        for (const w of all) if (w.rule?.text === text) k.add(w.key);
-      }),
+    /** Warnings of rules changed here since the check: they wait for a new one. */
+    settledCount: all.filter((w) => !keys.has(w.key) && isSettled(w)).length,
+    /** The rule was changed, removed or excepted: its warnings wait for a new check. */
+    settle: (rule: MemorySource) => setSettled({ task: taskId, refs: new Set([...settledRefs, noteRef(rule)]) }),
+    /** The rule the "Ya no aplica" dialog is open for. */
+    changing: changing?.task === taskId ? changing.rule : null,
+    openChange: (rule: MemorySource) => setChanging({ task: taskId, rule }),
+    closeChange: () => setChanging(null),
     restoreAll: () => setKeys((k) => k.clear()),
     countFor: (path: string) => [...(byPath.get(path)?.values() ?? [])].reduce((n, list) => n + list.length, 0),
     /** The file's warnings by the number of their line (the same map while they do not change). */
@@ -244,6 +254,11 @@ export function useRuleCheck(task: Task | null, files: FileDiff[]) {
 }
 
 export type RuleChecking = ReturnType<typeof useRuleCheck>;
+
+/** Which note a rule is (one text may be in two layers). */
+function noteRef(rule: MemorySource): string {
+  return rule.note.kind === "local" ? `local:${rule.note.id}` : `team:${rule.note.team}:${rule.note.uid}`;
+}
 
 /** Where a rule lives and who wrote it, short. */
 function ruleWhere(rule: MemorySource, t: Translate): string {
@@ -261,21 +276,9 @@ function commentOf(review: ReturnType<typeof useReviewComments>, w: Warning) {
 }
 
 /** The cards under one line of the diff: what breaks which rule, and what to do. */
-export function LineWarnings({
-  warnings,
-  copy,
-  project,
-  rules,
-}: {
-  warnings: Warning[];
-  copy: CodeCopy;
-  /** The task's project: an exception to a rule is written there. */
-  project: string;
-  rules: RuleChecking;
-}) {
+export function LineWarnings({ warnings, copy, rules }: { warnings: Warning[]; copy: CodeCopy; rules: RuleChecking }) {
   const t = useT();
   const review = useReviewComments();
-  const [changing, setChanging] = useState<MemorySource | null>(null);
   return (
     <>
       <ul className="rl-warnings">
@@ -315,7 +318,7 @@ export function LineWarnings({
                   {t("rules.fine")}
                 </Button>
                 {w.rule && (
-                  <Button small variant="ghost" onClick={() => setChanging(w.rule ?? null)}>
+                  <Button small variant="ghost" onClick={() => w.rule && rules.openChange(w.rule)}>
                     {t("rules.change.open")}
                   </Button>
                 )}
@@ -324,14 +327,6 @@ export function LineWarnings({
           </li>
         ))}
       </ul>
-      {changing && (
-        <RuleChangeDialog
-          rule={changing}
-          project={project}
-          onClose={() => setChanging(null)}
-          onDone={() => rules.settleRule(changing.text)}
-        />
-      )}
     </>
   );
 }
@@ -340,11 +335,14 @@ export function LineWarnings({
 export function RulesBar({
   task,
   copy,
+  project,
   rules,
   onAddedAll,
 }: {
   task: Task;
   copy: CodeCopy;
+  /** The task's project: an exception to a rule is written there. */
+  project: string;
   rules: RuleChecking;
   /** Every warning became a comment: show what will be sent. */
   onAddedAll?: () => void;
@@ -358,7 +356,8 @@ export function RulesBar({
   const pending = rules.shown.filter((w) => !commentOf(review, w));
   const lines = new Set(rules.shown.map((w) => `${w.brk.path}:${w.brk.line}`)).size;
   // What changed since the check was never checked: never "clean" then.
-  const stale = rules.outdated || rules.gone > 0;
+  const stale = rules.outdated || rules.gone > 0 || rules.settledCount > 0;
+  const bar = useRef<HTMLElement>(null);
 
   let text: React.ReactNode;
   let tone = "idle";
@@ -383,7 +382,8 @@ export function RulesBar({
   } else if (stale) {
     tone = "warn";
     // Warned lines that changed, or only new lines never checked.
-    text = rules.gone > 0 ? t("rules.linesChanged") : t("rules.outdatedNow");
+    text =
+      rules.settledCount > 0 ? t("rules.ruleChanged") : rules.gone > 0 ? t("rules.linesChanged") : t("rules.outdatedNow");
   } else if (rules.dismissedCount > 0) {
     text = t("rules.nothingPending");
   } else {
@@ -392,7 +392,13 @@ export function RulesBar({
   }
 
   return (
-    <section className={`rl-bar rl-bar--${tone}`} aria-label={t("rules.check")} aria-busy={rules.running || undefined}>
+    <section
+      ref={bar}
+      tabIndex={-1}
+      className={`rl-bar rl-bar--${tone}`}
+      aria-label={t("rules.check")}
+      aria-busy={rules.running || undefined}
+    >
       <div className="rl-bar__row">
         <p className="rl-bar__text" role="status">
           {text}
@@ -449,6 +455,20 @@ export function RulesBar({
       {rules.outdated && check && lines > 0 && <p className="muted small">{t("rules.outdated")}</p>}
       {check && check.protected.length > 0 && <p className="muted small">{t("rules.protected", { list: check.protected.join(", ") })}</p>}
       {check?.truncated && <p className="muted small">{t("rules.truncated")}</p>}
+      {rules.changing &&
+        createPortal(
+          <RuleChangeDialog
+            rule={rules.changing}
+            project={project}
+            onClose={() => {
+              rules.closeChange();
+              // Its warning may be gone with the change: back to the bar, not to nowhere.
+              requestAnimationFrame(() => bar.current?.focus());
+            }}
+            onDone={rules.settle}
+          />,
+          document.body,
+        )}
     </section>
   );
 }

@@ -50,7 +50,8 @@ describe("changing a team's rule", () => {
     await user.click(propose);
     expect(edit).toHaveBeenCalledWith("t-1", "n-9", "Los modales van sobre el color de panel, salvo los de confirmación");
     expect(await screen.findByText(/Enviado como sugerencia/)).toBeInTheDocument();
-    expect(done).toHaveBeenCalled();
+    // A suggestion changes nothing yet: nothing is settled.
+    expect(done).not.toHaveBeenCalled();
   });
 
   it("proposes removing it: it holds meanwhile", async () => {

@@ -7,6 +7,7 @@ import { Button } from "../components/ui/Button";
 import { Dialog } from "../components/ui/Dialog";
 import { useToast } from "../components/ui/Toast";
 import { useT } from "../i18n";
+import { MEMORY_GRAPH_KEY } from "../screens/ask/AskScreen";
 import { refreshTeams } from "../team/hooks";
 
 type Choice = "change" | "remove" | "exception";
@@ -27,8 +28,8 @@ export function RuleChangeDialog({
   rule: MemorySource;
   project: string;
   onClose: () => void;
-  /** It was changed, proposed or excepted: its warnings are settled. */
-  onDone: () => void;
+  /** It changed (or got an exception) here: its warnings wait for a new check. A mere suggestion settles nothing. */
+  onDone: (rule: MemorySource) => void;
 }) {
   const t = useT();
   const api = useApi();
@@ -69,11 +70,14 @@ export function RuleChangeDialog({
     setBusy(true);
     setError(null);
     try {
+      let settled = true;
       if (choice === "exception") {
         await api.addNote(project, t("rules.change.exceptionNote", { rule: rule.text, text: exception.trim() }), "convention");
         toast.info(t("rules.change.excepted"));
       } else if (team) {
         const write = await api.teamEditNote(team.team, team.uid, choice === "remove" ? null : text.trim());
+        // A suggestion changes nothing yet: the rule still holds.
+        settled = write.published;
         toast.info(
           t(!write.published ? "rules.change.suggested" : choice === "remove" ? "rules.change.removedTeam" : "rules.change.savedTeam"),
         );
@@ -82,8 +86,12 @@ export function RuleChangeDialog({
         else await api.editNote(local.id, text.trim(), rule.category);
         toast.info(t(choice === "remove" ? "rules.change.removed" : "rules.change.saved"));
       }
-      await refreshTeams(client);
-      onDone();
+      await Promise.all([
+        refreshTeams(client),
+        client.invalidateQueries({ queryKey: MEMORY_GRAPH_KEY }),
+        client.invalidateQueries({ queryKey: ["status", project] }),
+      ]);
+      if (settled) onDone(rule);
       onClose();
     } catch (e) {
       setError(errorMessage(e, t));
@@ -102,9 +110,13 @@ export function RuleChangeDialog({
     <Dialog
       title={t("rules.change.title")}
       onClose={onClose}
+      // Mid-save, closing would not undo it.
+      dismissible={!busy}
       footer={
         <>
-          <Button onClick={onClose}>{t("common.cancel")}</Button>
+          <Button disabled={busy} onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
           <Button
             variant={choice === "remove" ? "danger" : "primary"}
             disabled={busy || blocked || !written || unchanged}
@@ -133,6 +145,7 @@ export function RuleChangeDialog({
               ? t("rules.change.teamEditHint", { team: rule.team ?? t("rules.teamNoName") })
               : t("rules.change.teamHint", { team: rule.team ?? t("rules.teamNoName") })}
         </p>
+        {!team && !rule.project && <p className="muted">{t("rules.change.everyProject")}</p>}
         {changedSince && (
           <p className="error-text" role="alert">
             {t("rules.change.changedSince")}
@@ -151,7 +164,10 @@ export function RuleChangeDialog({
                 name="rule-change"
                 value={o.value}
                 checked={choice === o.value}
-                onChange={() => setChoice(o.value)}
+                onChange={() => {
+                  setChoice(o.value);
+                  setError(null);
+                }}
               />
               {o.label}
             </label>
@@ -163,6 +179,7 @@ export function RuleChangeDialog({
             <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} />
           </label>
         )}
+        {choice === "change" && (unchanged || !text.trim()) && <p className="muted small">{t("rules.change.writeNew")}</p>}
         {choice === "exception" && (
           <label className="rl-change__field">
             <span className="rl-change__label">{t("rules.change.exceptionLabel")}</span>
