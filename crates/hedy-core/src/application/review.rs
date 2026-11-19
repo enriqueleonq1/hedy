@@ -141,6 +141,7 @@ impl Hedy {
         if mode == AcceptMode::Branch {
             self.source
                 .remove_worktree_keep_branch(&task.project, &ws.worktree)?;
+            self.forget_skills_plugin(&task.id);
             task.merge = None;
             task.ship = Some(Shipment {
                 branch: ws.branch.clone(),
@@ -235,7 +236,7 @@ impl Hedy {
             return blocked(UndoBlocked::LocalChanges(error.message));
         }
         self.share_dependencies(&repo, &ws.worktree)?;
-        self.install_skills_in(&repo, &ws.worktree)?;
+        self.install_skills_in(&repo, &ws.worktree);
         task.merge = None;
         task.ship = None;
         self.store.save_task(&task)?;
@@ -257,7 +258,7 @@ impl Hedy {
         self.source
             .attach_worktree(&repo, &ws.worktree, &ws.branch)?;
         self.share_dependencies(&repo, &ws.worktree)?;
-        self.install_skills_in(&repo, &ws.worktree)?;
+        self.install_skills_in(&repo, &ws.worktree);
         self.store.save_task(&task)?;
         self.set_status(&mut task, TaskStatus::Review)?;
         Ok(task)

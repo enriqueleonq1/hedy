@@ -184,7 +184,7 @@ export interface Skill {
   description: string;
   /** The steps, in Markdown. */
   body: string;
-  /** null: a global skill (every non-protected project, only through Hedy's tools). */
+  /** null: a global skill (every non-protected project; Claude Code's plugin and Hedy's tools). */
   project: string | null;
   status: "proposed" | "approved";
   /** "user" or the AI that proposed it. */

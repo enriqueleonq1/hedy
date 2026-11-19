@@ -29,6 +29,8 @@ pub enum DomainError {
     #[error("{}", self.message())]
     SkillLooksSecret(&'static str),
     #[error("{}", self.message())]
+    SkillRunsCommands,
+    #[error("{}", self.message())]
     ApiKeyNotSupported { provider: Provider },
     #[error("{}", self.message())]
     NothingToLaunch,
@@ -127,6 +129,10 @@ impl DomainError {
             Self::SkillLooksSecret(kind) => tr!(
                 "la habilidad parece contener un secreto ({kind}); no se guardó. Quítalo y usa un marcador como $NOMBRE_VARIABLE o <tu clave>",
                 "the skill looks like it contains a secret ({kind}); it was not saved. Remove it and use a placeholder such as $VARIABLE_NAME or <your key>"
+            ),
+            Self::SkillRunsCommands => tr!(
+                "una habilidad propuesta no puede correr comandos al cargarse (!`…` o un bloque ```!); escribe el comando como un paso para que la IA lo pida",
+                "a proposed skill cannot run commands when it loads (!`…` or a ```! block); write the command as a step for the AI to ask for"
             ),
             Self::ApiKeyNotSupported { provider } => tr!(
                 "{provider} no admite cuentas por API key",

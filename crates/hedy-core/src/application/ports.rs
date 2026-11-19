@@ -775,6 +775,10 @@ pub trait FileSystem: Send + Sync {
     /// folders hold CLI logins.
     fn create_private_dir(&self, path: &Path) -> PortResult<()>;
     fn exists(&self, path: &Path) -> bool;
+    /// Whether `path` itself is a symbolic link (not followed).
+    fn is_symlink(&self, path: &Path) -> bool;
+    /// The entries of a folder; empty when it does not exist.
+    fn entries(&self, dir: &Path) -> PortResult<Vec<PathBuf>>;
     /// Whether files can be created in `dir` (writes and removes a probe file).
     fn check_writable(&self, dir: &Path) -> PortResult<()>;
     /// `link` → `target`.

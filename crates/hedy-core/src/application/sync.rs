@@ -1839,6 +1839,10 @@ impl Hedy {
                 let Ok(body) = serde_json::from_str::<SkillBody>(body) else {
                     return Ok(false);
                 };
+                // Checked as one made here: its name becomes a folder.
+                if !super::skills::acceptable_synced(&body) {
+                    return Ok(false);
+                }
                 self.store
                     .write_synced_skill(row, project.as_deref(), &body)?
                     .to_string()

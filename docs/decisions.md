@@ -704,23 +704,41 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
     (`.claude-plugin/plugin.json` named `hedy`, `skills/<name>/SKILL.md`) and launches
     with `--plugin-dir` ("for this session only" in Claude Code's CLI reference); they
     show as `/hedy:<name>`. Verified with Claude Code 2.1.306: the session's `init` lists
-    `hedy:run-e2e-tests`, a plain `claude` in the same folder does not. The folder goes
-    when the task is accepted or discarded.
+    `hedy:run-e2e-tests`, a plain `claude` in the same folder does not. The folder (only
+    the user can read it) is rebuilt at every launch, and for every open task whenever a
+    skill is approved, edited or removed, so no copy of a deleted skill stays; it goes when
+    the task is accepted (merged or kept on its branch) or discarded, and the app sweeps
+    those of closed or deleted tasks at start. A project skill wins over a global one with
+    its name (as in `skill_get`), and at most 50 go, the project's first. Running sessions
+    keep the list they started with until their next launch. If the folder cannot be
+    written, the session starts without it (the MCP tools still serve the skills).
+    `/hedy:<name>` commands are the project's: they are never offered in another project.
   - **Codex, Gemini CLI, Kimi Code, Antigravity** document no per-session skills folder,
     so Hedy writes `.agents/skills/<name>/SKILL.md` only in the worktrees of open tasks
     (Hedy's own folders), excluded from git (`/.agents/skills/<name>/`); new worktrees get
     them when created. Editing, renaming, moving to global or deleting rewrites or removes
-    them.
+    them. A path through a symbolic link (a repository may link `.agents/skills` to
+    `.claude/skills` or to a folder outside it) is skipped, so a skill can never end up
+    committed on accept or outside the worktree. Ask and Research tasks have no worktree:
+    those CLIs read the skills only through the MCP tools there.
   - **Older copies:** an earlier Hedy wrote them in the project too. When a task starts or
-    a skill changes, a copy there that is exactly what Hedy wrote is removed (with empty
-    folders); one edited by hand stays.
+    a skill changes, a copy of an approved skill there is removed (with empty folders, and
+    reported) only when it is exactly what Hedy wrote (for an update, the text it
+    replaces), git still excludes it as Hedy left it (a copy someone committed stays), and
+    no link is on its path. One edited by hand stays, also when the skill is deleted.
+    Best effort: a failure there never stops a task.
+  - **Commands on load:** Claude Code runs `!`cmd`` and ```` ```! ```` blocks when a skill
+    loads, without asking. An agent's proposal with them is refused; a skill the user
+    writes may have them. Skills from another of the user's PCs (personal sync) pass the
+    same checks as local ones, or wait in the replica.
   - **Never overwrite the user's files:** every file Hedy writes carries the line
     `<!-- hedy: managed skill -->`; a file at that path without it is the user's and is
     skipped (the UI and `hedy skills` warn), and never deleted.
-- **Global skills: only through the MCP tools.** Hedy does not write into
+- **Global skills: Claude Code's plugin and the MCP tools.** Hedy does not write into
   `~/.claude/skills`, `$CODEX_HOME`, `~/.agents/skills` or any account folder: rule 1 says
   Hedy only picks the folder at launch, and `~/.agents/skills` would be shared by every
-  account. Protected projects neither see nor create global skills.
+  account. The other CLIs read global skills only through the MCP tools. Protected
+  projects neither see nor create global skills.
 - **UI and CLI.** A "Habilidades" / "Skills" tab in the memory screen (`#k=<path>`) and
   `hedy skills` with `list`, `show <name>`, `approve <id>`,
   `reject <id>` and `remove <name>`.

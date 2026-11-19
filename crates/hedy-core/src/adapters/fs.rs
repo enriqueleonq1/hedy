@@ -81,6 +81,25 @@ impl FileSystem for LocalFileSystem {
         path.exists()
     }
 
+    fn is_symlink(&self, path: &Path) -> bool {
+        fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink())
+    }
+
+    fn entries(&self, dir: &Path) -> PortResult<Vec<PathBuf>> {
+        let entries = match fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(io_error("leer", dir, e)),
+        };
+        entries
+            .map(|entry| {
+                entry
+                    .map(|e| e.path())
+                    .map_err(|e| io_error("leer", dir, e))
+            })
+            .collect()
+    }
+
     fn check_writable(&self, dir: &Path) -> PortResult<()> {
         let probe = dir.join(format!(".hedy-doctor-{}", std::process::id()));
         fs::write(&probe, b"").map_err(|e| io_error("escribir en", dir, e))?;
@@ -156,6 +175,9 @@ impl FileSystem for LocalFileSystem {
     }
 
     fn remove_empty_dir(&self, path: &Path) -> PortResult<()> {
+        if self.is_symlink(path) {
+            return Ok(());
+        }
         let empty = fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_none());
         if empty {
             fs::remove_dir(path).map_err(|e| io_error("borrar", path, e))?;
@@ -259,6 +281,28 @@ mod tests {
         fs_.remove_dir_all(&project).unwrap();
         assert!(!project.exists());
         fs_.remove_dir_all(&project).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_are_seen_and_never_removed_as_empty_folders() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"), tmp.path().join("chats"));
+        let target = tmp.path().join("shared");
+        fs::create_dir(&target).unwrap();
+        let link = tmp.path().join("skills");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(fs_.is_symlink(&link));
+        assert!(!fs_.is_symlink(&target));
+        assert!(!fs_.is_symlink(&tmp.path().join("missing")));
+
+        fs_.remove_empty_dir(&link).unwrap();
+        assert!(fs_.is_symlink(&link), "a link to an empty folder stays");
+
+        let mut entries = fs_.entries(tmp.path()).unwrap();
+        entries.sort();
+        assert_eq!(entries, vec![target, link]);
+        assert!(fs_.entries(&tmp.path().join("missing")).unwrap().is_empty());
     }
 
     #[cfg(unix)]

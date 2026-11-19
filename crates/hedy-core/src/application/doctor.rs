@@ -701,7 +701,7 @@ impl Hedy {
 mod tests {
     use super::*;
     use crate::application::NewAccount;
-    use crate::application::ports::{ProjectRepository, SettingsRepository};
+    use crate::application::ports::{FileSystem, ProjectRepository, SettingsRepository};
     use crate::application::testing::Fixture;
     use crate::domain::{Project, Provider};
 
@@ -842,6 +842,9 @@ mod tests {
         f.runner.install("codex");
         let claude = f.add_claude("Personal");
         f.add_codex("ChatGPT");
+        // Its folder was deleted after Hedy set it up.
+        f.fs.remove_dir_all(std::path::Path::new("/data/accounts/chatgpt"))
+            .unwrap();
         f.fs.add_existing("/data/accounts/personal");
         f.runner.reply_to(
             "claude auth status --json",

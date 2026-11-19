@@ -18,6 +18,9 @@ All notable changes to Hedy are listed here. The format follows
 - Commit message suggestions ("Sugerir con IA", `hedy commit`) no longer send removed lines (a
   secret being taken out) nor a protected file's contents in a task's changes, and file names
   are printed without their control characters.
+- An AI can no longer propose a skill that runs commands as soon as Claude Code loads it
+  (`!`…`` or a ```` ```! ```` block), and skills from your other PCs pass the same checks as
+  local ones.
 
 ### Added
 
@@ -85,6 +88,10 @@ More of Hedy from the terminal.
 ### Changed
 
 - The app notices conversations started from the terminal without a restart.
+- Approved skills stay inside Hedy: Claude Code gets them as a plugin for Hedy's sessions
+  only (`/hedy:<name>`), the other CLIs in each task's own folder. Your project and your
+  usual `claude` or `codex` outside Hedy no longer see them, and the copies an older Hedy
+  left in your project are removed unless you edited or committed them.
 
 ## [1.0.1] - 2026-11-16
 

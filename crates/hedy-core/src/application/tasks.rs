@@ -269,7 +269,7 @@ impl Hedy {
         self.git
             .add_worktree(repo, &worktree, &branch, &base_commit)?;
         self.share_dependencies(repo, &worktree)?;
-        self.install_skills_in(repo, &worktree)?;
+        self.install_skills_in(repo, &worktree);
         Ok(Workspace {
             worktree,
             branch,
@@ -432,9 +432,12 @@ impl Hedy {
             self.code_map_servers(&task.project)?
         };
         // Claude Code gets the skills as a plugin for this session only.
+        // Without it (a full disk) it still reads them with skill_get.
         let plugins = match (&backend, &project) {
             (AgentBackend::ClaudeCode, Some(project)) => self
-                .skills_plugin(&project.path, &task.id)?
+                .skills_plugin(&project.path, &task.id)
+                .ok()
+                .flatten()
                 .into_iter()
                 .collect(),
             _ => Vec::new(),
@@ -1107,8 +1110,8 @@ impl Hedy {
         if let Some(ws) = &task.workspace {
             self.git
                 .remove_worktree(&task.project, &ws.worktree, &ws.branch)?;
-            self.forget_skills_plugin(&task.id);
         }
+        self.forget_skills_plugin(&task.id);
         self.set_status(&mut task, TaskStatus::Discarded)?;
         self.clear_queue(id)?;
         Ok(task)

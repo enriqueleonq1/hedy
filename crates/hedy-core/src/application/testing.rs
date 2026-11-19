@@ -1127,6 +1127,8 @@ pub struct FakeFs {
     /// Folders created by `create_new_dir`, then gone with `remove_dir_all`.
     created: Mutex<Vec<PathBuf>>,
     deleted_trees: Mutex<Vec<PathBuf>>,
+    /// Paths that are symbolic links (as found in a repository).
+    symlinked: Mutex<HashSet<PathBuf>>,
 }
 
 impl FakeFs {
@@ -1141,6 +1143,9 @@ impl FakeFs {
     }
     pub fn symlinks(&self) -> Vec<(PathBuf, PathBuf)> {
         self.links.lock().unwrap().clone()
+    }
+    pub fn add_symlink(&self, path: &str) {
+        self.symlinked.lock().unwrap().insert(path.into());
     }
     pub fn make_read_only(&self, path: &str) {
         self.read_only.lock().unwrap().insert(path.into());
@@ -1211,6 +1216,10 @@ impl FileSystem for FakeFs {
     fn remove_dir_all(&self, path: &Path) -> PortResult<()> {
         self.existing.lock().unwrap().remove(path);
         self.dirs.lock().unwrap().remove(path);
+        self.files
+            .lock()
+            .unwrap()
+            .retain(|(p, _)| !p.starts_with(path));
         self.deleted_trees.lock().unwrap().push(path.to_owned());
         Ok(())
     }
@@ -1220,7 +1229,24 @@ impl FileSystem for FakeFs {
     }
     fn exists(&self, path: &Path) -> bool {
         self.existing.lock().unwrap().contains(path)
-            || self.files.lock().unwrap().iter().any(|(p, _)| p == path)
+            // A file's folders exist too.
+            || self.files.lock().unwrap().iter().any(|(p, _)| p.starts_with(path))
+    }
+    fn is_symlink(&self, path: &Path) -> bool {
+        self.symlinked.lock().unwrap().contains(path)
+    }
+    fn entries(&self, dir: &Path) -> PortResult<Vec<PathBuf>> {
+        let mut paths: Vec<PathBuf> = self.existing.lock().unwrap().iter().cloned().collect();
+        paths.extend(self.dirs.lock().unwrap().iter().cloned());
+        paths.extend(self.files.lock().unwrap().iter().map(|(p, _)| p.clone()));
+        let mut entries: Vec<PathBuf> = paths
+            .iter()
+            .filter_map(|p| p.strip_prefix(dir).ok()?.components().next())
+            .map(|first| dir.join(first))
+            .collect();
+        entries.sort();
+        entries.dedup();
+        Ok(entries)
     }
     fn check_writable(&self, dir: &Path) -> PortResult<()> {
         if self.read_only.lock().unwrap().contains(dir) {
@@ -1253,7 +1279,13 @@ impl FileSystem for FakeFs {
             .map(|(_, text)| text.clone()))
     }
     fn write_text(&self, path: &Path, contents: &str) -> PortResult<()> {
-        if self.read_only.lock().unwrap().contains(path) {
+        if self
+            .read_only
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|r| path.starts_with(r))
+        {
             return Err(PortError::new("permission denied"));
         }
         let mut files = self.files.lock().unwrap();

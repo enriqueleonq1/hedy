@@ -51,12 +51,12 @@ const es = {
 
   "skills.where.title": "Dónde la leen tus IAs",
   "skills.where.native":
-    "Las de este proyecto se escriben como archivos de cada CLI: .claude/skills (Claude Code) y .agents/skills (Codex, Gemini CLI, Kimi Code y Antigravity), en el proyecto y en las carpetas de sus tareas. Hedy los excluye de git en .git/info/exclude.",
+    "Se quedan dentro de Hedy. Claude Code las recibe solo en las sesiones que abre Hedy, como el complemento «hedy» (/hedy:<nombre>). Codex, Gemini CLI, Kimi Code y Antigravity las leen en .agents/skills dentro de la carpeta de cada tarea, excluida de git. Tu proyecto y tus CLIs de siempre no las ven.",
   "skills.where.tools":
     "Todas, también las de todos los proyectos, están en las herramientas de Hedy (skill_list y skill_get), para cualquier IA que lea la memoria.",
   "skills.where.own": "Si ya tienes una habilidad tuya con el mismo nombre, Hedy no la toca.",
 
-  "skills.files.written": "Habilidad «{name}» lista: tus IAs la usan dentro de Hedy ({n} tareas abiertas ya la tienen).",
+  "skills.files.written": "Habilidad «{name}» lista: tus IAs la usan dentro de Hedy ({n} tareas abiertas, desde su próxima sesión).",
   "skills.files.writtenNone": "Habilidad «{name}» lista: tus IAs la usan dentro de Hedy.",
   "skills.files.removed": "Habilidad «{name}» borrada: {n} archivos quitados.",
   "skills.files.removedNone": "Habilidad «{name}» borrada.",
@@ -113,12 +113,12 @@ const en: Record<keyof typeof es, string> = {
 
   "skills.where.title": "Where your AIs read them",
   "skills.where.native":
-    "This project's skills are written as each CLI's own files: .claude/skills (Claude Code) and .agents/skills (Codex, Gemini CLI, Kimi Code and Antigravity), in the project and in its task folders. Hedy keeps them out of git in .git/info/exclude.",
+    "They stay inside Hedy. Claude Code gets them only in the sessions Hedy starts, as the «hedy» plugin (/hedy:<name>). Codex, Gemini CLI, Kimi Code and Antigravity read them from .agents/skills in each task's folder, kept out of git. Your project and your usual CLIs never see them.",
   "skills.where.tools":
     "All of them, including those for every project, are in Hedy's tools (skill_list and skill_get), for any AI that reads the memory.",
   "skills.where.own": "If you already have a skill of your own with the same name, Hedy leaves it alone.",
 
-  "skills.files.written": "Skill «{name}» ready: your AIs use it inside Hedy ({n} open tasks have it already).",
+  "skills.files.written": "Skill «{name}» ready: your AIs use it inside Hedy ({n} open tasks, from their next session).",
   "skills.files.writtenNone": "Skill «{name}» ready: your AIs use it inside Hedy.",
   "skills.files.removed": "Skill «{name}» deleted: {n} files removed.",
   "skills.files.removedNone": "Skill «{name}» deleted.",
