@@ -392,6 +392,11 @@ pub fn parse_code_answer(raw: &str) -> CodeAnswer {
     let mut text: Vec<&str> = Vec::new();
     let mut note = None;
     for line in raw.lines() {
+        let bare = line
+            .trim_matches(|c: char| (c.is_ascii_punctuation() && c != '_') || c.is_whitespace());
+        if bare.eq_ignore_ascii_case(NOT_FOUND) {
+            continue;
+        }
         match line
             .trim()
             .trim_start_matches(['*', '-', ' '])
@@ -677,6 +682,8 @@ mod tests {
             Some("El fondo oscuro es #0F1117 (src/theme.ts).")
         );
         assert_eq!(parse_code_answer("NOT_FOUND.").text, None);
+        let marked = parse_code_answer("**NOT_FOUND**\nNo hay nada sobre eso.");
+        assert_eq!(marked.text.as_deref(), Some("No hay nada sobre eso."));
         let long = parse_code_answer(&format!("x\nNOTE: {}", "a ".repeat(400)));
         assert_eq!(long.note.unwrap().chars().count(), CODE_NOTE_CHARS);
         assert!(code_prompt("¿Fondo \"x\"?").contains("Question: \"¿Fondo \\\"x\\\"?\""));

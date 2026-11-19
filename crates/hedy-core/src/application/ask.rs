@@ -106,6 +106,7 @@ impl Hedy {
                 "No cambies nada: solo lee los archivos del proyecto.",
                 "Change nothing: only read the project's files."
             ),
+            no_shell: true,
             timeout,
         })?;
         let CodeAnswer { text, note } = match answer {
@@ -187,6 +188,7 @@ impl Hedy {
                 "No uses herramientas: responde solo con las notas que te di.",
                 "Do not use tools: answer only from the notes you were given."
             ),
+            no_shell: true,
             timeout,
         })?;
         let ParsedAnswer { text, cited } = match answer {
@@ -659,6 +661,8 @@ mod tests {
         );
         assert_eq!(request.launch.cwd.as_deref(), Some(tienda.as_path()));
         assert!(request.prompt.contains("only read them, change nothing"));
+        // No shell: it could read a protected file without naming it.
+        assert!(request.no_shell);
 
         answer(&f, "NOT_FOUND");
         let none = f

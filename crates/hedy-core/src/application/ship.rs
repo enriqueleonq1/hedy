@@ -647,6 +647,7 @@ impl Hedy {
                 "No uses herramientas: responde solo con el mensaje de commit.",
                 "Do not use tools: reply with the commit message only."
             ),
+            no_shell: true,
             timeout,
         })?;
         let result = match answer {
