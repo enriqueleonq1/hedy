@@ -75,6 +75,7 @@ impl Hedy {
                 no_shell: shot.no_shell,
                 no_tools: shot.no_tools,
                 plugins: Vec::new(),
+                output: None,
             },
             sink,
         )?;

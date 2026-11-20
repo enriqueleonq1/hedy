@@ -62,6 +62,6 @@ pub use provider::Provider;
 pub use queue::{HoldReason, QueuedMessage};
 pub use ship::{AcceptMode, GhState, PullRequest, Shipment};
 pub use skill::{Skill, SkillStatus};
-pub use task::{LimitWait, MergeRecord, Task, TaskId, TaskMode, TaskStatus, Workspace};
+pub use task::{LimitWait, MergeRecord, OutputFile, Task, TaskId, TaskMode, TaskStatus, Workspace};
 pub use template::{PromptTemplate, TemplateId};
 pub use theme::{CustomTheme, ThemeBase, ThemeDraft, ThemeOrigin};

@@ -90,6 +90,7 @@ import type {
   DetectedCli,
   DoctorReport,
   FileDiff,
+  OutputFile,
   MemoryView,
   NewAccountInput,
   NewConversationInput,
@@ -1843,6 +1844,8 @@ export class MockApi implements HedyApi {
   /** Delay between scripted events (0 in tests). */
   delayMs = 250;
   private tasksById = new Map<string, Task>();
+  /** What questions wrote in their own folder. */
+  private outputs = new Map<string, OutputFile[]>();
   private eventsById = new Map<string, AgentEvent[]>();
   private diffs = new Map<string, FileDiff[]>();
   private eventListeners = new Set<(taskId: string, event: AgentEvent) => void>();
@@ -2402,6 +2405,12 @@ export class MockApi implements HedyApi {
     );
     // The same changes the code views read from the sample repository.
     this.diffs.set("s5", this.code.taskDiff("/code/hedy", "s5"));
+    // A question that left a document and a page, outside the project.
+    this.outputs.set("c1", [
+      { path: "oauth-vs-oidc.md", bytes: 4_812, opens: true },
+      { path: "diagrama/index.html", bytes: 12_340, opens: true },
+      { path: "instalar.sh", bytes: 640, opens: false },
+    ]);
     // A question outside any project, already answered.
     add(
       "c1",
@@ -2500,6 +2509,22 @@ export class MockApi implements HedyApi {
 
   async taskDiff(id: string): Promise<FileDiff[]> {
     return [...(this.diffs.get(id) ?? [])];
+  }
+
+  async taskOutputs(id: string): Promise<OutputFile[]> {
+    if (!this.tasksById.has(id)) throw `no existe la tarea ${id}`;
+    return [...(this.outputs.get(id) ?? [])];
+  }
+
+  async openOutput(id: string, path: string): Promise<void> {
+    const file = (this.outputs.get(id) ?? []).find((f) => f.path === path);
+    if (!file) throw `«${path}» no es un archivo que escribió la tarea`;
+    if (!file.opens) throw `Hedy no abre «${path}»: es un tipo de archivo que podría ejecutar algo.`;
+  }
+
+  async saveOutput(id: string, path: string, folder: string): Promise<string> {
+    if (!(this.outputs.get(id) ?? []).some((f) => f.path === path)) throw `«${path}» no es un archivo que escribió la tarea`;
+    return `${folder}/${path.split("/").pop()}`;
   }
 
   async acceptPreview(id: string): Promise<AcceptPreview> {

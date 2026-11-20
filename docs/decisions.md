@@ -3658,6 +3658,39 @@ worktree on a `hedy/…` branch (§10), since only its work can be accepted, shi
   (checked out elsewhere). A task the app left "running" when it closed keeps its copy, and
   its next turn reuses it.
 - **Known gap.** A skill approved during a turn reaches the next turn's copy, not the open one.
-- **Not covered here.** A question still cannot write a document (next: a folder of the
-  task's own, outside the repo). A copy does not stop Codex or an ACP agent from reading
+- **Not covered here.** A copy does not stop Codex or an ACP agent from reading
   outside it by an absolute path: Hedy only sees what they ask permission for.
+
+## 39. What a question writes goes outside the project (Nov 20, 2026)
+
+A question or research asked for a document, a page or another file writes it in the task's
+own folder in Hedy's data folder (`outputs/<task id>/`, private to the user), never in the
+project. Putting something in the project is a «Cambiar código» task the user starts.
+
+- **Who may write there.** Claude Code and the API agent, where Hedy answers every write.
+  Codex and the ACP agents stay read-only (their sandbox or Hedy refuses the change).
+- **Claude Code.** Its Ask/Research tools no longer deny `Edit`, `Write` and `MultiEdit`
+  (only `NotebookEdit`); `--add-dir` gives it the folder and the mode's system text names it.
+  A write usually reaches Hedy as `can_use_tool`, but an allow rule in the account's or the
+  repository's Claude settings (`"Edit"`, `"Write(*)"`) skips that, and a Claude question
+  works in the real project. So the `PreToolUse` hook gets the folder (`HEDY_OUTPUT_DIR`) and
+  denies any write whose path, from the agent's folder and after links, is not inside it: the
+  hook's deny beats any allow rule. Without the hook (no host binary), the tools stay denied.
+- **Hedy's answer** (`Hedy::output_write`). Every path is read as the agent meant it (relative
+  to its own folder, the project for Claude) and must land in the task's folder, also after
+  links: then it is allowed with no card ("En la carpeta de la tarea"). Anywhere else it is
+  refused with the folder to use. Protected files are refused as always. The shell keeps its
+  cards, as before.
+- **The API agent** gets `write_file` and `edit_file` (no shell) in a question, and resolves
+  their paths inside that folder.
+- **After the turn.** The chat shows "Archivos que escribió" with each file's size, «Abrir»
+  (the system's app: a page opens in the browser) and «Guardar en…» (a folder the user picks;
+  a taken name becomes «name (2).ext», nothing is overwritten). Only paths from the folder's
+  listing are opened or saved; links in it are left out. «Abrir» only for documents, pages,
+  images and data (`OutputFile::opens`): an agent steered by something it read could write a
+  `.desktop` or a `.jar`, which only «Guardar en…» offers. The folder goes when the task is
+  discarded or the conversation deleted; an empty one (nothing written) when the app starts.
+- **Changed from the plan.** A page opens in the browser, not in «Vista previa»: that tab only
+  embeds local dev servers (its CSP allows nothing else), and a page with scripts from a CDN
+  would not work there.
+

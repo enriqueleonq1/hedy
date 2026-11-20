@@ -77,6 +77,34 @@ pub struct Workspace {
     pub base_commit: String,
 }
 
+/// A file a read-only task wrote in its own folder, outside the project (a
+/// document, a page): `path` is relative to that folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputFile {
+    pub path: String,
+    pub bytes: u64,
+    /// Whether Hedy opens it with the system's app: only documents, pages,
+    /// images and data, never something that could run (`.desktop`, `.jar`).
+    pub opens: bool,
+}
+
+/// Types a question's file may be opened as, from its name.
+const OPENABLE: &[&str] = &[
+    "md", "markdown", "txt", "html", "htm", "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg",
+    "csv", "tsv", "json",
+];
+
+impl OutputFile {
+    pub fn new(path: String, bytes: u64) -> Self {
+        let opens = path
+            .rsplit_once('.')
+            .filter(|(stem, _)| !stem.ends_with('/') && !stem.is_empty())
+            .is_some_and(|(_, ext)| OPENABLE.contains(&ext.to_lowercase().as_str()));
+        Self { path, bytes, opens }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Task {
@@ -268,6 +296,30 @@ pub fn branch_name(title: &str, id: &TaskId) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_documents_pages_images_and_data_open() {
+        for path in [
+            "informe.md",
+            "sitio/index.HTML",
+            "a.pdf",
+            "datos.csv",
+            "logo.svg",
+        ] {
+            assert!(OutputFile::new(path.into(), 1).opens, "{path}");
+        }
+        for path in [
+            "x.desktop",
+            "a.jar",
+            "run.command",
+            "sin-tipo",
+            ".md",
+            "dir/.html",
+            "a.sh",
+        ] {
+            assert!(!OutputFile::new(path.into(), 1).opens, "{path}");
+        }
+    }
+
     use super::*;
 
     #[test]

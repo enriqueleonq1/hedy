@@ -55,6 +55,7 @@ import type {
   DetectedCli,
   DoctorReport,
   FileDiff,
+  OutputFile,
   MemoryView,
   ExportReport,
   ImportPick,
@@ -238,6 +239,12 @@ export interface HedyApi {
   restoreBuiltinTemplates(): Promise<void>;
   stopTask(id: string): Promise<void>;
   taskDiff(id: string): Promise<FileDiff[]>;
+  /** What a question wrote in its own folder, outside the project. */
+  taskOutputs(id: string): Promise<OutputFile[]>;
+  /** Opens one of those files with the system's app (a page in the browser). */
+  openOutput(id: string, path: string): Promise<void>;
+  /** Copies one into `folder` without overwriting anything; where it went. */
+  saveOutput(id: string, path: string, folder: string): Promise<string>;
   /** What accepting would do (branch, files, lines, message, tests); changes nothing. */
   acceptPreview(id: string): Promise<AcceptPreview>;
   /**

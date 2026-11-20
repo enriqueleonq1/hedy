@@ -17,7 +17,8 @@ use std::rc::Rc;
 use serde_json::{Value, json};
 
 use crate::domain::permissions::{
-    is_blocked_name, matches, protected_file_reason, whole_search_root,
+    is_blocked_name, is_write_tool, matches, protected_file_reason, whole_search_root,
+    written_paths,
 };
 use crate::domain::read_guard::{self, FileStamp, ReadKey, ReadRecord};
 use crate::experiments::{self, Experiment};
@@ -25,13 +26,19 @@ use crate::tr;
 
 pub const HOOK_ARGS: [&str; 2] = ["hook", "pre-tool-use"];
 
+/// Set on a question's `claude` (docs/decisions.md §39): the only folder its
+/// writes may go to. The hook's deny beats any allow rule in the account's or
+/// the repository's Claude settings, which would skip Hedy's own answer.
+pub const OUTPUT_ENV: &str = "HEDY_OUTPUT_DIR";
+
 /// Tools the hook is registered for.
 pub const HOOK_MATCHER: &str = "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob";
 
 /// Hook output for a tool call, or `None` to let Claude Code decide as usual.
 pub fn decide(input: &str) -> Option<String> {
     let guard = experiments::on(Experiment::ReadGuard).then(guard_dir);
-    decide_with(input, guard.as_deref())
+    let output = std::env::var_os(OUTPUT_ENV).map(PathBuf::from);
+    decide_in(input, guard.as_deref(), output.as_deref())
 }
 
 /// Where the read guard keeps each session's reads.
@@ -40,11 +47,19 @@ fn guard_dir() -> PathBuf {
 }
 
 /// [`decide`]; with `guard`, the read guard keeps its sessions there.
+#[cfg(test)]
 fn decide_with(input: &str, guard: Option<&Path>) -> Option<String> {
+    decide_in(input, guard, None)
+}
+
+/// [`decide_with`]; with `output`, writes may go only there.
+fn decide_in(input: &str, guard: Option<&Path>, output: Option<&Path>) -> Option<String> {
     let input: Value = serde_json::from_str(input).ok()?;
     let tool = input["tool_name"].as_str()?;
     let cwd = PathBuf::from(input["cwd"].as_str().unwrap_or("/"));
-    let reason = protected_file_reason(tool, &input["tool_input"], &cwd)
+    let reason = output
+        .and_then(|output| write_outside(tool, &input["tool_input"], &cwd, output))
+        .or_else(|| protected_file_reason(tool, &input["tool_input"], &cwd))
         .or_else(|| linked_protected(&input["tool_input"], &cwd))
         .or_else(|| {
             let root = whole_search_root(tool, &input["tool_input"], &cwd)?;
@@ -74,6 +89,33 @@ fn decide_with(input: &str, guard: Option<&Path>) -> Option<String> {
         }})
         .to_string(),
     )
+}
+
+/// Why a question's write may not go where it asks: every path, as the
+/// agent meant it from `cwd` and after links, must be inside `output`.
+fn write_outside(tool: &str, input: &Value, cwd: &Path, output: &Path) -> Option<String> {
+    if !is_write_tool(tool) {
+        return None;
+    }
+    let root = output.canonicalize().ok();
+    let paths = written_paths(tool, input, cwd);
+    let inside = |path: &PathBuf| {
+        // A new file: where its closest existing folder really is.
+        let Some(existing) = path.ancestors().find(|p| p.symlink_metadata().is_ok()) else {
+            return false;
+        };
+        let rest = path.strip_prefix(existing).unwrap_or(Path::new(""));
+        let real = existing.canonicalize().map(|real| real.join(rest));
+        matches!((&root, real), (Some(root), Ok(real)) if real.starts_with(root))
+    };
+    if !paths.is_empty() && paths.iter().all(inside) {
+        return None;
+    }
+    let folder = output.display();
+    Some(tr!(
+        "En una pregunta no se cambia el proyecto: escribe el archivo en {folder}.",
+        "A question does not change the project: write the file in {folder}."
+    ))
 }
 
 /// Folders too large to look through that hold no project secrets: git's
@@ -491,6 +533,43 @@ mod tests {
         assert_eq!(
             command(Path::new("/opt/My App/hedy's")),
             r"'/opt/My App/hedy'\''s' hook pre-tool-use"
+        );
+    }
+
+    #[test]
+    fn a_questions_writes_stay_in_its_folder_whatever_claude_allows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        let (project, output) = (root.join("agenda"), root.join("salida"));
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&output).unwrap();
+        let call = |tool: &str, path: &Path| {
+            json!({"tool_name": tool, "cwd": project, "tool_input": {"file_path": path, "content": "x"}})
+                .to_string()
+        };
+        let decide = |input: String| decide_in(&input, None, Some(&output));
+        assert_eq!(decide(call("Write", &output.join("informe.md"))), None);
+        assert_eq!(decide(call("Edit", &output.join("sub/nuevo.md"))), None);
+        for path in [
+            project.join("src/x.rs"),
+            PathBuf::from("informe.md"),
+            output.join("../agenda/x.rs"),
+        ] {
+            let out = decide(call("Write", &path)).unwrap_or_default();
+            assert!(out.contains("\"deny\""), "{path:?}: {out}");
+        }
+        // A link in the folder that leads out of it.
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&project, output.join("atajo")).unwrap();
+            let out = decide(call("Write", &output.join("atajo/x.rs"))).unwrap_or_default();
+            assert!(out.contains("\"deny\""), "{out}");
+        }
+        // Reads and any other task are left alone.
+        assert_eq!(decide(call("Read", &project.join("src/x.rs"))), None);
+        assert_eq!(
+            decide_with(&call("Write", &project.join("x.rs")), None),
+            None
         );
     }
 }

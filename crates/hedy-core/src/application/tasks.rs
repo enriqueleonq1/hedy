@@ -357,6 +357,29 @@ impl Hedy {
         Ok(())
     }
 
+    /// A read-only task's write: allowed with no card when every path (as
+    /// the agent meant it, from its folder) lands in the task's own folder,
+    /// also after links; refused anywhere else.
+    fn output_write(&self, task: &Task, tool: &str, input: &Value) -> Verdict {
+        let output = self.output_folder(&task.id);
+        let dir = task.work_dir();
+        if let Some(reason) = permissions::protected_file_reason(tool, input, &dir) {
+            return Verdict::Deny(reason);
+        }
+        let paths = permissions::written_paths(tool, input, &dir);
+        // Both sides canonical (a data folder under a link, `/home` →
+        // `/var/home`, still matches).
+        let inside = !paths.is_empty() && paths.iter().all(|p| self.really_inside(p, &output));
+        if inside {
+            return Verdict::Allow;
+        }
+        let folder = output.display();
+        Verdict::Deny(tr!(
+            "En una pregunta no se cambia el proyecto: escribe el archivo en {folder}.",
+            "A question does not change the project: write the file in {folder}."
+        ))
+    }
+
     /// Copies read-only tasks no longer need: a turn's copy left behind (the
     /// app closed mid-turn) and the worktree and `hedy/…` branch that read-only
     /// tasks got before they worked without a branch. Never a running task's,
@@ -368,6 +391,10 @@ impl Hedy {
         let mut removed = 0;
         for project in projects {
             for task in self.tasks(&project.path).unwrap_or_default() {
+                // The folder of a question that wrote nothing.
+                if !self.is_running(&task.id) {
+                    let _ = self.fs.remove_empty_dir(&self.output_folder(&task.id));
+                }
                 let mut task = {
                     // Read again just before: the user may have resumed it.
                     let _status = self.status_lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -591,6 +618,7 @@ impl Hedy {
         // Tokens belong to this session's account, even after a handoff.
         let spender = account.id.clone();
         let sink = Arc::new(move |event| hedy.on_agent_event(&id, number, &spender, event));
+        let output = self.output_for(task, &backend)?;
         // Held while starting, so events that arrive early wait for the session.
         let mut live = self.live.lock().unwrap();
         if let Some(mut old) = live.remove(&task.id) {
@@ -625,6 +653,7 @@ impl Hedy {
                 no_shell: false,
                 no_tools: false,
                 plugins,
+                output,
             },
             sink,
         )?;
@@ -768,8 +797,12 @@ impl Hedy {
                 let Some(running) = live.get_mut(id) else {
                     return Ok(());
                 };
+                // A question writes only in its own folder, outside the
+                // project, and needs nobody to approve that.
+                let output_write = !task.mode.changes_files() && permissions::is_write_tool(tool);
                 let dir = task.work_dir();
                 let verdict = match permissions::evaluate(tool, input, &dir, &running.rules) {
+                    _ if output_write => self.output_write(&task, tool, input),
                     Verdict::Deny(reason) => Verdict::Deny(reason),
                     // Written as inside, but a link (a shared `node_modules`)
                     // takes it out.
@@ -796,10 +829,12 @@ impl Hedy {
                         running.session.answer(request_id, true, None)?;
                         drop(live);
                         self.record(id, event.clone())?;
-                        return self.record(
-                            id,
-                            resolved(Decision::Allow, Some("Permitido en este chat".into())),
-                        );
+                        let reason = if output_write {
+                            tr!("En la carpeta de la tarea", "In the task's folder")
+                        } else {
+                            "Permitido en este chat".into()
+                        };
+                        return self.record(id, resolved(Decision::Allow, Some(reason)));
                     }
                     Verdict::Deny(reason) => {
                         running.session.answer(request_id, false, Some(&reason))?;
@@ -1356,6 +1391,7 @@ impl Hedy {
                 .remove_worktree(&task.project, &ws.worktree, &ws.branch)?;
         }
         let _ = self.close_copy(&mut task);
+        let _ = self.remove_outputs(&task.id);
         self.forget_skills_plugin(&task.id);
         self.set_status(&mut task, TaskStatus::Discarded)?;
         self.clear_queue(id)?;

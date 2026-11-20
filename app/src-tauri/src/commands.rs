@@ -11,8 +11,8 @@ use hedy_core::application::{
 use hedy_core::domain::ImageSupport;
 use hedy_core::domain::command::reports_commands;
 use hedy_core::domain::{
-    AgentEvent, Category, Color, Commit, Decision, FileDiff, Note, PhasePlan, QueuedMessage,
-    TaskId, TemplateId,
+    AgentEvent, Category, Color, Commit, Decision, FileDiff, Note, OutputFile, PhasePlan,
+    QueuedMessage, TaskId, TemplateId,
 };
 use tauri::State;
 use tauri::ipc::Channel;
@@ -518,6 +518,35 @@ pub async fn stop_task(state: State<'_, AppState>, id: String) -> CommandResult<
 #[tauri::command]
 pub async fn task_diff(state: State<'_, AppState>, id: String) -> CommandResult<Vec<FileDiff>> {
     blocking(&state, move |h| h.task_diff(&task_id(id))).await
+}
+
+/// What a question wrote in its own folder (documents, pages).
+#[tauri::command]
+pub async fn task_outputs(
+    state: State<'_, AppState>,
+    id: String,
+) -> CommandResult<Vec<OutputFile>> {
+    blocking(&state, move |h| h.task_outputs(&task_id(id))).await
+}
+
+#[tauri::command]
+pub async fn open_output(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+) -> CommandResult<()> {
+    blocking(&state, move |h| h.open_output(&task_id(id), &path)).await
+}
+
+/// Copies one of a question's files into `folder`; where it went.
+#[tauri::command]
+pub async fn save_output(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+    folder: PathBuf,
+) -> CommandResult<PathBuf> {
+    blocking(&state, move |h| h.save_output(&task_id(id), &path, &folder)).await
 }
 
 /// What accepting would do: shown in the review sheet before anything changes.

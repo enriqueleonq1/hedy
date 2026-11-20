@@ -136,6 +136,7 @@ impl Hedy {
         self.store.delete_task(id)?;
         self.fs.remove_dir_all(&folder)?;
         self.remove_attachments(id)?;
+        self.remove_outputs(id)?;
         Ok(())
     }
 
@@ -432,7 +433,8 @@ mod tests {
             f.fs.deleted_trees(),
             vec![
                 chat.project.clone(),
-                PathBuf::from("/data/attachments").join(chat.id.as_str())
+                PathBuf::from("/data/attachments").join(chat.id.as_str()),
+                PathBuf::from("/data/outputs").join(chat.id.as_str())
             ]
         );
         assert!(f.hedy.conversations().unwrap().is_empty());

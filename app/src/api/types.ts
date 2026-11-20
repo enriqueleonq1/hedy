@@ -868,6 +868,14 @@ export interface DiffLine {
   text: string;
 }
 
+/** A file a question wrote in its own folder, outside the project (`path` relative to it). */
+export interface OutputFile {
+  path: string;
+  bytes: number;
+  /** Hedy opens it (a document, a page, an image, data); anything that could run is only saved. */
+  opens: boolean;
+}
+
 export interface FileDiff {
   path: string;
   oldPath: string | null;

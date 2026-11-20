@@ -251,6 +251,11 @@ fn names(path: &Path, work_dir: &Path, name: &str) -> bool {
         })
 }
 
+/// Whether `tool` writes files (`Write`, `Edit`...).
+pub fn is_write_tool(tool: &str) -> bool {
+    WRITE_TOOLS.contains(&tool)
+}
+
 /// The files a change request writes, as `work_dir` sees them (none for a
 /// tool that does not write).
 pub fn written_paths(tool: &str, input: &Value, work_dir: &Path) -> Vec<PathBuf> {

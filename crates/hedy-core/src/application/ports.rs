@@ -727,6 +727,9 @@ pub struct AgentRequest {
     /// Claude Code plugins for this session only (`--plugin-dir`): Hedy's
     /// approved skills, never written where the user's own `claude` reads.
     pub plugins: Vec<PathBuf>,
+    /// A read-only task's own folder outside the project: the only place it
+    /// may write (a document or a page it was asked for).
+    pub output: Option<PathBuf>,
 }
 
 impl AgentRequest {
@@ -802,6 +805,9 @@ pub trait FileSystem: Send + Sync {
     /// Where images attached to messages are kept, one folder per task.
     /// Never inside a repository.
     fn attachments_dir(&self) -> PathBuf;
+    /// Where read-only tasks write what they are asked for (documents,
+    /// pages), one folder per task. Never inside a repository.
+    fn outputs_dir(&self) -> PathBuf;
     /// The user's home folder, if known.
     fn home_dir(&self) -> Option<PathBuf>;
     /// Creates `path` (and missing parents). Fails when `path` already
@@ -839,6 +845,12 @@ pub trait FileSystem: Send + Sync {
     fn write_private_file(&self, path: &Path, contents: &[u8]) -> PortResult<()>;
     /// A file's bytes; `None` when it does not exist.
     fn read_bytes(&self, path: &Path) -> PortResult<Option<Vec<u8>>>;
+    /// The regular files under `dir` (links and what they lead to left out),
+    /// relative to it with `/`, and their sizes. Empty when `dir` is missing.
+    fn files_beneath(&self, dir: &Path) -> PortResult<Vec<(String, u64)>>;
+    /// Copies a regular file to `to`, which must not exist yet: nothing is
+    /// ever overwritten.
+    fn copy_to_new(&self, from: &Path, to: &Path) -> PortResult<()>;
     /// Deletes a file; nothing happens when it does not exist.
     fn remove_file(&self, path: &Path) -> PortResult<()>;
     /// Creates or replaces `rel` inside `root` (making its folders), never

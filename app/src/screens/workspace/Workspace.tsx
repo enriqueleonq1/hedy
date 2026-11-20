@@ -84,6 +84,7 @@ import { jumpDigit, TaskSwitcher } from "./TaskSwitcher";
 import { Timeline } from "./Timeline";
 import { ClosingBar } from "./ClosingBar";
 import { EndCard } from "./EndCard";
+import { OutputsCard } from "./OutputsCard";
 import { ProjectHead, ProjectTasks } from "./ProjectHome";
 import { TaskDetails } from "./TaskDetails";
 
@@ -421,18 +422,21 @@ export function Workspace({
             mascot={mascot}
             scrollKey={queue.length}
             footer={
-              carryable && task?.status === "review" ? (
-                <CarrySuggestion onCarry={startCarry} onNote={startNote} />
-              ) : !solo ? (
-                <EndCard
-                  task={task}
-                  events={history}
-                  onReview={() => {
-                    openPanel();
-                    pressPanelShortcut("G");
-                  }}
-                />
-              ) : undefined
+              <>
+                <OutputsCard task={task} events={history} />
+                {carryable && task?.status === "review" ? (
+                  <CarrySuggestion onCarry={startCarry} onNote={startNote} />
+                ) : !solo ? (
+                  <EndCard
+                    task={task}
+                    events={history}
+                    onReview={() => {
+                      openPanel();
+                      pressPanelShortcut("G");
+                    }}
+                  />
+                ) : undefined}
+              </>
             }
           />
         ) : (

@@ -2505,6 +2505,16 @@ a.link-button { display: inline-flex; align-items: center; text-decoration: none
 .end-card h3 { font: 600 var(--text-headline) var(--font-ui); color: var(--ink); }
 .end-card p { font-size: var(--text-callout); }
 .end-card .actions { margin-top: 6px; }
+.outputs { display: grid; gap: 2px; margin-top: 4px; }
+.outputs__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.outputs__name { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; color: var(--ink); }
+.outputs__size { color: var(--muted); font-size: var(--text-caption); }
 
 /* A closed task keeps no composer: what became of it, and what follows. */
 .closing-bar {
