@@ -10,6 +10,8 @@
   border-radius: var(--radius-md);
   background: var(--panel);
 }
+/* Before any check: a row, not a card. */
+.rl-bar--compact { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 0; border: 0; background: none; }
 /* Only its edge and its headline: text and links keep the panel under them. */
 .rl-bar--warn { border-color: var(--warn-line); }
 .rl-bar--ok .rl-bar__text::before {

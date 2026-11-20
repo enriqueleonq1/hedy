@@ -1,3 +1,4 @@
+import { useApi } from "../../api/context";
 import type { Task } from "../../api/types";
 import { Button } from "../../components/ui/Button";
 import { useT } from "../../i18n";
@@ -20,6 +21,7 @@ export function ClosingBar({
   onNewTask: (prompt?: string) => void;
 }) {
   const t = useT();
+  const api = useApi();
   const undo = useUndoAccept(task);
   const kept = !!task.ship?.kept;
   const branch = task.ship?.branch ?? task.workspace?.baseBranch ?? "";
@@ -47,8 +49,14 @@ export function ClosingBar({
                 {t("closed.undo")}
               </Button>
             )}
-            {task.ship && (
-              <Button onClick={onOpenPanel}>{kept ? t("closed.openPr") : t("closed.publish")}</Button>
+            {task.ship?.pullRequest ? (
+              <Button onClick={() => void api.openLink(task.ship?.pullRequest?.url ?? "")}>{t("ship.prOpen")}</Button>
+            ) : (
+              // Published already: the panel has what is left (a PR from the branch).
+              task.ship &&
+              (kept || !task.ship.pushedTo) && (
+                <Button onClick={onOpenPanel}>{kept ? t("closed.openPr") : t("closed.publish")}</Button>
+              )
             )}
           </>
         )}

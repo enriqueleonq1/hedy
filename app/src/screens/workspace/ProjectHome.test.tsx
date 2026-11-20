@@ -134,8 +134,8 @@ describe("A task's header", () => {
 
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Detalles de la tarea" })).toBeNull());
-    const crumb = within(head).getByRole("button", { name: "hedy /" });
-    expect(crumb).toHaveAttribute("title", "Inicio de hedy");
+    const crumb = within(head).getByRole("button", { name: "Volver a hedy" });
+    expect(crumb).toHaveTextContent("hedy /");
     await user.click(crumb);
     expect(await screen.findByRole("navigation", { name: "Secciones del proyecto" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "hedy" })).toBeInTheDocument();

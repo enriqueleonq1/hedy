@@ -11,6 +11,7 @@ import type { CodeCopy, CopyInfo, MatchRange } from "../api/codeTypes";
 import type { Task } from "../api/types";
 import { TerminalView } from "../components/Terminal/TerminalView";
 import { clampSize, ResizeHandle } from "../components/ui/ResizeHandle";
+import { Segmented } from "../components/ui/controls";
 import { Select } from "../components/ui/Select";
 import { TabBar, type TabItem } from "../components/ui/TabBar";
 import { codeKeys, copyKey, sameCopy, useFileNavigator, type NavigatorTarget } from "../files/navigator";
@@ -23,7 +24,7 @@ import "../styles/edit.css";
 import { defaultCopy, taskHasCopy } from "./copies";
 import { useUnsavedChanges } from "./editor/unsaved";
 import { Explorer } from "./explorer/Explorer";
-import { FilesIcon, LockIcon, PreviewIcon, ReviewIcon, SearchIcon, TerminalIcon } from "./icons";
+import { FilesIcon, LockIcon, PreviewIcon, ReviewIcon, TerminalIcon } from "./icons";
 import { panelShortcut, shortcutAria, shortcutLabel, type PanelShortcut } from "./keys";
 
 import { SearchView } from "./search/SearchView";
@@ -319,15 +320,21 @@ export function SidePanel({ project, task, hidden = false, onRequestOpen, review
   const copyLabel = (c: CodeCopy) => (c.kind === "folder" ? t("code.copy.folder") : t("code.copy.task", { title: taskTitle(c.task) }));
 
   const tabs: TabItem<PanelTab>[] = [
-    { id: "explorer", label: t("code.tab.explorer"), icon: <FilesIcon />, shortcut: shortcutLabel("explorer"), keyshortcuts: shortcutAria("explorer") },
-    { id: "search", label: t("code.tab.search"), icon: <SearchIcon />, shortcut: shortcutLabel("search"), keyshortcuts: shortcutAria("search") },
     {
       id: "review",
-      label: t("code.tab.review"),
+      label: hasChanges ? t("code.tab.changesN", { n: diff.data?.length ?? 0 }) : t("code.tab.review"),
       icon: <ReviewIcon />,
       shortcut: shortcutLabel("review"),
       keyshortcuts: shortcutAria("review"),
-      dot: hasChanges && tab !== "review",
+    },
+    // The files and their search share a tab: the search is a view of the files.
+    {
+      id: "explorer",
+      label: t("code.tab.explorer"),
+      icon: <FilesIcon />,
+      shortcut: shortcutLabel("explorer"),
+      keyshortcuts: shortcutAria("explorer"),
+      controls: tab === "search" ? `${idPrefix}-panel-search` : undefined,
     },
     { id: "terminal", label: t("common.terminal"), icon: <TerminalIcon /> },
     { id: "preview", label: t("workspace.tab.preview"), icon: <PreviewIcon /> },
@@ -374,13 +381,24 @@ export function SidePanel({ project, task, hidden = false, onRequestOpen, review
       <TabBar
         label={t("code.panel.tabs")}
         tabs={tabs}
-        value={tab}
-        onChange={(next) => update({ tab: next, viewing: false })}
+        value={tab === "search" ? "explorer" : tab}
+        onChange={(next) => update({ tab: next === "explorer" && tab === "search" ? "search" : next, viewing: false })}
         idPrefix={idPrefix}
       />
       <div className="side-panel__views">
         {opened.code && (
           <div className="side-view side-view--code" hidden={!isCode}>
+            <div className="files-mode">
+              <Segmented<"explorer" | "search">
+                label={t("code.tab.explorer")}
+                value={tab === "search" ? "search" : "explorer"}
+                onChange={(view) => show(view, { focus: view === "search" })}
+                options={[
+                  { value: "explorer", label: t("code.files.tree") },
+                  { value: "search", label: `${t("code.tab.search")} · ${shortcutLabel("search")}` },
+                ]}
+              />
+            </div>
             <CopyBar
               copies={copies}
               copy={copy}
@@ -418,7 +436,7 @@ export function SidePanel({ project, task, hidden = false, onRequestOpen, review
               <div
                 role="tabpanel"
                 id={`${idPrefix}-panel-search`}
-                aria-labelledby={`${idPrefix}-tab-search`}
+                aria-labelledby={`${idPrefix}-tab-explorer`}
                 className="browse__pane"
                 hidden={tab !== "search"}
               >

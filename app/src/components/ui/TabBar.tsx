@@ -14,6 +14,8 @@ export interface TabItem<T extends string> {
   keyshortcuts?: string;
   /** A small dot: something new there (changes to review). */
   dot?: boolean;
+  /** The panel it shows now, when not `${idPrefix}-panel-${id}` (a tab with two views). */
+  controls?: string;
 }
 
 export function TabBar<T extends string>({
@@ -64,7 +66,7 @@ export function TabBar<T extends string>({
               type="button"
               role="tab"
               id={`${idPrefix}-tab-${tab.id}`}
-              aria-controls={`${idPrefix}-panel-${tab.id}`}
+              aria-controls={tab.controls ?? `${idPrefix}-panel-${tab.id}`}
               aria-selected={selected}
               aria-keyshortcuts={tab.keyshortcuts}
               tabIndex={selected ? 0 : -1}

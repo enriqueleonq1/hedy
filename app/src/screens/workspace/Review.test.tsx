@@ -34,7 +34,7 @@ describe("Review before accepting", () => {
   it("shows what will be merged, warns about failed tests and uses the edited message", async () => {
     const { api, user } = setup();
     await openReviewTask(user, /^Inicio/);
-    await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
+    await user.click(screen.getByRole("button", { name: "Aceptar cambios…" }));
 
     const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" });
     expect(
@@ -65,7 +65,7 @@ describe("Review before accepting", () => {
   it("cancels without merging", async () => {
     const { api, user } = setup();
     await openReviewTask(user, /^Inicio/);
-    await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
+    await user.click(screen.getByRole("button", { name: "Aceptar cambios…" }));
     const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" });
     await user.click(within(sheet).getByRole("button", { name: "Cancelar" }));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -76,7 +76,7 @@ describe("Review before accepting", () => {
   it("undoes the merge from the toast and the task comes back to review", async () => {
     const { user } = setup();
     await openReviewTask(user, /^Inicio/);
-    await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
+    await user.click(screen.getByRole("button", { name: "Aceptar cambios…" }));
     const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" });
     await user.click(await within(sheet).findByRole("button", { name: "Aceptar y unir" }));
 
@@ -90,7 +90,7 @@ describe("Review before accepting", () => {
   it("explains why an undo is not safe, from the accepted task", async () => {
     const { api, user } = setup();
     await openReviewTask(user, /^Inicio/);
-    await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
+    await user.click(screen.getByRole("button", { name: "Aceptar cambios…" }));
     const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" });
     await user.click(await within(sheet).findByRole("button", { name: "Aceptar y unir" }));
     await screen.findByText(/ya se aceptó/);
@@ -122,21 +122,70 @@ describe("Review before accepting", () => {
     expect(second).toHaveAttribute("aria-current", "true");
 
     await user.click(within(files).getByRole("checkbox", { name: "Marcar facturas/impuestos.py como visto" }));
-    await user.click(screen.getByRole("checkbox", { name: "Visto" }));
-    expect(screen.getByText("2 de 3 vistos")).toBeInTheDocument();
+    expect(screen.getByText("1 de 3 vistos")).toBeInTheDocument();
     expect(within(files).getByRole("button", { name: /^facturas\/impuestos\.py.*, visto/ })).toBeInTheDocument();
 
     // Typing in a field never moves the selection.
     await user.click(screen.getByLabelText("Responde o pide algo más"));
     await user.keyboard("j");
+    await user.keyboard("v");
     expect(second).toHaveAttribute("aria-current", "true");
+    expect(screen.getByText("1 de 3 vistos")).toBeInTheDocument();
+  });
+
+  it("marks a file seen and goes to the next one not seen, with the button or V, and undoes it", async () => {
+    const { user } = setup();
+    const files = await openReviewTask(user, /^Inicio/);
+    const first = within(files).getByRole("button", { name: /^facturas\/impuestos\.py/ });
+    const second = within(files).getByRole("button", { name: /^facturas\/totales\.py/ });
+    const third = within(files).getByRole("button", { name: /^tests\/test_facturas\.py/ });
+    // The second file was seen already: "Visto y siguiente" skips it.
+    await user.click(within(files).getByRole("checkbox", { name: "Marcar facturas/totales.py como visto" }));
+    expect(first).toHaveAttribute("aria-current", "true");
+
+    const next = screen.getByRole("button", { name: "Visto y siguiente" });
+    expect(next).toHaveAttribute("aria-keyshortcuts", "V");
+    await user.click(next);
+    expect(screen.getByText("2 de 3 vistos")).toBeInTheDocument();
+    expect(third).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("table", { name: "Cambios en tests/test_facturas.py" })).toBeInTheDocument();
+
+    // The v key does the same; with every file seen, the selection stays.
+    third.focus();
+    await user.keyboard("v");
+    expect(screen.getByText("Todo visto")).toBeInTheDocument();
+    expect(third).toHaveAttribute("aria-current", "true");
+    expect(within(files).getByRole("button", { name: /^tests\/test_facturas\.py.*, visto/ })).toBeInTheDocument();
+
+    // Once seen, the header offers to unmark it.
+    expect(screen.queryByRole("button", { name: "Visto y siguiente" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Visto · quitar" }));
+    expect(screen.getByText("2 de 3 vistos")).toBeInTheDocument();
+    expect(within(files).getByRole("checkbox", { name: "Marcar tests/test_facturas.py como visto" })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Visto y siguiente" })).toBeInTheDocument();
+    expect(second).not.toHaveAttribute("aria-current", "true");
+  });
+
+  it("asks the AI to fix the failing tests from the accept sheet", async () => {
+    const { api, user } = setup();
+    const queue = vi.spyOn(api, "queueMessage");
+    await openReviewTask(user, /^Inicio/);
+    await user.click(screen.getByRole("button", { name: "Aceptar cambios…" }));
+    const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" });
+    await within(sheet).findByText(/Los últimos tests fallaron/);
+    await user.click(within(sheet).getByRole("button", { name: "Pedir que arregle los tests" }));
+    await waitFor(() =>
+      expect(queue).toHaveBeenCalledWith("s5", "Los tests fallan. Arréglalos sin cambiar lo que comprueban."),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.commitMessages.has("s5")).toBe(false);
   });
 
   it("works in English", async () => {
     const { user } = setup("en");
     await openReviewTask(user, /^Home/);
     expect(screen.getByText("0 of 3 viewed")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Accept changes" }));
+    await user.click(screen.getByRole("button", { name: "Accept changes…" }));
     const sheet = await screen.findByRole("dialog", { name: "Accept changes" });
     expect(await within(sheet).findByText("Files: 3")).toBeInTheDocument();
     expect(within(sheet).getByText(/The last tests failed: .*You can still merge\./)).toBeInTheDocument();

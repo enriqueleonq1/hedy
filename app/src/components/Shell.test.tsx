@@ -232,7 +232,7 @@ describe("Shell", () => {
     expect(tabs()).toHaveLength(2);
     expect(selected()).toBe("Terminal · hedy");
 
-    await user.click(screen.getByRole("button", { name: "hedy /" }));
+    await user.click(screen.getByRole("button", { name: "Volver a hedy" }));
     await user.click(within(await screen.findByRole("region", { name: "Listas" })).getByRole("button", { name: /^Arregla el cálculo/ }));
     await screen.findByRole("heading", { level: 1, name: "Arregla el cálculo de impuestos en las facturas" });
     await user.keyboard("{Control>}j{/Control}");

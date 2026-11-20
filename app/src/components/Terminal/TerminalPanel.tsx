@@ -118,6 +118,7 @@ export function TerminalPanel() {
           <TerminalView
             key={s.key}
             request={s.request}
+            input={s.input}
             active={panelOpen && s.key === activeKey}
             onExit={() => {
               markExited(s.key);

@@ -161,10 +161,7 @@ export function Workspace({
   overview: Overview;
   /** `null`: no project, a quick question ("conversation"). */
   project: string | null;
-  /**
-   * The task to show: an id, or `null` for a new one. Unset, a project opens
-   * on its own home (a new task) and a conversation on the most recent open one.
-   */
+  /** The task to show: an id; `null` or unset, a new one (a project's home). */
   task?: string | null;
   /** Text to start the composer of a new task with. */
   draft?: string;
@@ -183,12 +180,9 @@ export function Workspace({
   const info = solo ? undefined : overview.projects.find((p) => p.path === project);
   const asking = useConversationAccount(overview, solo);
 
-  // A project opens on its home; a conversation, by default, on the most recent open one.
+  // A project opens on its home (a new task); a task, only when asked for.
   const list = useMemo(() => tasks.data ?? [], [tasks.data]);
-  const task =
-    chosen === null || (chosen === undefined && !solo)
-      ? null
-      : (list.find((t) => t.id === chosen) ?? (chosen === undefined ? list.find(isOpen) : undefined) ?? null);
+  const task = chosen ? (list.find((t) => t.id === chosen) ?? null) : null;
 
   // A conversation shows its own account; a new one, the one picked for it.
   const account: Account | undefined = solo
@@ -214,6 +208,8 @@ export function Workspace({
   const taskId = task?.id;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Not behind a dialog (Detalles, a sheet): the task under it would change.
+      if (document.querySelector('[aria-modal="true"]')) return;
       const digit = jumpDigit(e);
       const target = digit ? list[digit - 1] : undefined;
       if (!target) return;
@@ -264,7 +260,9 @@ export function Workspace({
   );
   /** A new task in this project, its composer started with `prompt` when given. */
   const newTask = (prompt?: string) => {
-    if (prompt) setFill({ label: "", text: prompt, caret: prompt.length, n: (fill?.n ?? 0) + 1, scope: project });
+    if (prompt && task) {
+      setFill({ label: "", text: prompt, caret: prompt.length, mode: task.mode, n: (fill?.n ?? 0) + 1, scope: project });
+    }
     onSelectTask(null);
   };
   const answering = !!task && (task.status === "running" || task.status === "waitingApproval");
@@ -320,8 +318,8 @@ export function Workspace({
         <header className="chat__head">
           <div className="chat__title">
             {!solo && (
-              <button type="button" className="chat__crumb" onClick={() => onSelectTask(null)} title={t("project.home", { name })}>
-                {name} /
+              <button type="button" className="chat__crumb" onClick={() => onSelectTask(null)} aria-label={t("project.home", { name })}>
+                <span aria-hidden>{name} /</span>
               </button>
             )}
             <div className="chat__title-row">
@@ -456,7 +454,15 @@ export function Workspace({
         {task && <QueuedMessages task={task} queue={queue} agent={agent} cardWaiting={task.status === "waitingApproval"} />}
 
         {task && !solo && !isOpen(task) ? (
-          <ClosingBar task={task} onOpenPanel={openPanel} onNewTask={newTask} />
+          <ClosingBar
+            task={task}
+            onOpenPanel={() => {
+              // Straight to the accepted task's publish steps, with the focus there.
+              openPanel();
+              pressPanelShortcut("G");
+            }}
+            onNewTask={newTask}
+          />
         ) : (
         <Composer
           key={task?.id ?? "new"}

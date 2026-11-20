@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -45,22 +45,32 @@ async function setup(taskId: string | null, options: { onRequestOpen?: () => voi
 }
 
 describe("SidePanel", () => {
-  it("opens a task on its review and shows each view from its tab", async () => {
-    const { user } = await setup("s5");
-    expect(screen.getByRole("tab", { name: "Revisión" })).toHaveAttribute("aria-selected", "true");
+  it("shows four tabs, Cambios first with the task's count, and each view from its tab", async () => {
+    const { api, user } = await setup("s5");
+    const count = (await api.taskDiff("s5")).length;
+    expect(count).toBeGreaterThan(0);
+    const changes = await screen.findByRole("tab", { name: `Cambios ${count}` });
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([`Cambios ${count}`, "Archivos", "Terminal", "Vista previa"]);
+    expect(changes).toHaveAttribute("aria-selected", "true");
+    expect(changes.querySelector(".tabbar__dot")).toBeNull();
     expect(screen.getByText("Contenido de la revisión")).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Explorador" }));
+    await user.click(screen.getByRole("tab", { name: "Archivos" }));
     expect(await screen.findByRole("tree", { name: "Archivos" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Qué copia se muestra" })).toHaveTextContent(/Tarea: Arregla el cálculo/);
     await user.click(screen.getByRole("tab", { name: "Vista previa" }));
     expect(screen.getByText("Vista previa del proyecto")).toBeInTheDocument();
   });
 
-  it("opens the explorer on the folder when there is no task, with the tab's shortcut in its tooltip", async () => {
+  it("names the changes tab without a count when there is nothing to review", async () => {
     await setup(null);
-    const tab = screen.getByRole("tab", { name: "Explorador" });
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Cambios", "Archivos", "Terminal", "Vista previa"]);
+  });
+
+  it("opens the files on the folder when there is no task, with the tab's shortcut in its tooltip", async () => {
+    await setup(null);
+    const tab = screen.getByRole("tab", { name: "Archivos" });
     expect(tab).toHaveAttribute("aria-selected", "true");
-    expect(tab).toHaveAttribute("title", "Explorador (Ctrl+Shift+E)");
+    expect(tab).toHaveAttribute("title", "Archivos (Ctrl+Shift+E)");
     expect(await screen.findByText("Tu carpeta")).toBeInTheDocument();
   });
 
@@ -69,11 +79,11 @@ describe("SidePanel", () => {
     await setup("s5", { onRequestOpen });
     act(() => navigator?.open({ copy: { kind: "task", task: "s5" }, path: "facturas/impuestos.py", line: 16 }));
     expect(await screen.findByRole("textbox", { name: "Contenido de impuestos.py" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Explorador" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Archivos" })).toHaveAttribute("aria-selected", "true");
     expect(onRequestOpen).toHaveBeenCalled();
 
     act(() => navigator?.open({ copy: { kind: "task", task: "s5" }, path: "facturas/totales.py", view: "diff" }));
-    await waitFor(() => expect(screen.getByRole("tab", { name: "Revisión" })).toHaveAttribute("aria-selected", "true"));
+    await waitFor(() => expect(screen.getByRole("tab", { name: /^Cambios/ })).toHaveAttribute("aria-selected", "true"));
   });
 
   it("compares a folder file with HEAD when its diff is asked (there is no review there)", async () => {
@@ -83,24 +93,53 @@ describe("SidePanel", () => {
     expect(screen.getByRole("combobox", { name: "Qué copia se muestra" })).toHaveTextContent("Tu carpeta");
   });
 
-  it("focuses the explorer, the search and the review with Ctrl+Shift+E / F / G", async () => {
+  it("searches inside Archivos, behind a switch between the tree and the search", async () => {
+    const { user } = await setup(null);
+    expect(screen.queryByRole("tab", { name: "Buscar" })).not.toBeInTheDocument();
+    const mode = await screen.findByRole("radiogroup", { name: "Archivos" });
+    const tree = within(mode).getByRole("radio", { name: "Árbol" });
+    const search = within(mode).getByRole("radio", { name: "Buscar · Ctrl+Shift+F" });
+    expect(tree).toHaveAttribute("aria-checked", "true");
+    expect(await screen.findByRole("tree", { name: "Archivos" })).toBeVisible();
+
+    await user.click(search);
+    expect(search).toHaveAttribute("aria-checked", "true");
+    await waitFor(() => expect(screen.getByRole("searchbox", { name: "Buscar en los archivos" })).toHaveFocus());
+    // Still the Archivos tab, now showing the search.
+    expect(screen.getByRole("tab", { name: "Archivos" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tree", { name: "Archivos", hidden: true })).not.toBeVisible();
+
+    await user.click(tree);
+    expect(tree).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("tree", { name: "Archivos" })).toBeVisible();
+  });
+
+  it("focuses the files, the search and the review with Ctrl+Shift+E / F / G", async () => {
     const onRequestOpen = vi.fn();
     await setup("s5", { onRequestOpen });
     fireEvent.keyDown(document.body, { key: "E", code: "KeyE", ctrlKey: true, shiftKey: true });
     await waitFor(() => expect(screen.getByRole("tree", { name: "Archivos" })).toHaveFocus());
+    expect(screen.getByRole("radio", { name: "Árbol" })).toHaveAttribute("aria-checked", "true");
     fireEvent.keyDown(document.body, { key: "F", code: "KeyF", ctrlKey: true, shiftKey: true });
     await waitFor(() => expect(screen.getByRole("searchbox", { name: "Buscar en los archivos" })).toHaveFocus());
+    expect(screen.getByRole("tab", { name: "Archivos" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("radio", { name: "Buscar · Ctrl+Shift+F" })).toHaveAttribute("aria-checked", "true");
     fireEvent.keyDown(document.body, { key: "G", code: "KeyG", ctrlKey: true, shiftKey: true });
-    await waitFor(() => expect(screen.getByRole("tab", { name: "Revisión" })).toHaveAttribute("aria-selected", "true"));
+    await waitFor(() => expect(screen.getByRole("tab", { name: /^Cambios/ })).toHaveAttribute("aria-selected", "true"));
     expect(onRequestOpen).toHaveBeenCalledTimes(3);
   });
 
   it("keeps the search query when switching tabs", async () => {
     const { user } = await setup("s5");
-    await user.click(screen.getByRole("tab", { name: "Buscar" }));
+    await user.click(screen.getByRole("tab", { name: "Archivos" }));
+    await user.click(await screen.findByRole("radio", { name: "Buscar · Ctrl+Shift+F" }));
     await user.type(screen.getByRole("searchbox", { name: "Buscar en los archivos" }), "IVA");
-    await user.click(screen.getByRole("tab", { name: "Explorador" }));
-    await user.click(screen.getByRole("tab", { name: "Buscar" }));
+    // Clicking Archivos again while searching stays on the search.
+    await user.click(screen.getByRole("tab", { name: "Archivos" }));
+    expect(screen.getByRole("radio", { name: "Buscar · Ctrl+Shift+F" })).toHaveAttribute("aria-checked", "true");
+    await user.click(screen.getByRole("tab", { name: /^Cambios/ }));
+    await user.click(screen.getByRole("tab", { name: "Archivos" }));
+    await user.click(screen.getByRole("radio", { name: "Buscar · Ctrl+Shift+F" }));
     expect(screen.getByRole("searchbox", { name: "Buscar en los archivos" })).toHaveValue("IVA");
   });
 

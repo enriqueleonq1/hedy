@@ -15,12 +15,14 @@ function decode(base64: string): Uint8Array {
 
 interface TerminalViewProps {
   request: TerminalRequest;
+  /** Typed into the shell once it opens, as if the user had (a dev server's command). */
+  input?: string;
   active: boolean;
   onExit: (code: number | null) => void;
 }
 
 /** One xterm.js instance bound to one backend PTY for its whole lifetime. */
-export function TerminalView({ request, active, onExit }: TerminalViewProps) {
+export function TerminalView({ request, input: typed, active, onExit }: TerminalViewProps) {
   const api = useApi();
   const theme = useThemeTokens();
   const host = useRef<HTMLDivElement>(null);
@@ -72,6 +74,7 @@ export function TerminalView({ request, active, onExit }: TerminalViewProps) {
           return;
         }
         id = opened;
+        if (typed) void api.terminalWrite(opened, `${typed}\r`);
       } catch (error) {
         xterm.write(`\x1b[31m${String(error)}\x1b[0m\r\n`);
         onExitRef.current(null);

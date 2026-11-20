@@ -2398,7 +2398,7 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .board-row:hover { background: var(--panel-2); }
 .board-row--needs { --state: var(--warning); }
-.board-row--blocked { --state: var(--danger); }
+.board-row--blocked { --state: var(--warning); }
 .board-row--proposal { --state: var(--accent); }
 .board-row--working { --state: var(--activity); }
 .board-row--done { --state: var(--success); }
@@ -2480,7 +2480,7 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .status-pill__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--state); }
 .status-pill--needs { --state: var(--warning); }
-.status-pill--blocked { --state: var(--danger); }
+.status-pill--blocked { --state: var(--warning); }
 .status-pill--working { --state: var(--activity); }
 .status-pill--done { --state: var(--success); }
 .status-pill--failed { --state: var(--danger); }

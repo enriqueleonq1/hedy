@@ -139,6 +139,7 @@ const es = {
 
   "workspace.panel": "Código, revisión, terminal y vista previa",
   "workspace.tab.preview": "Vista previa",
+  "workspace.preview.start": "Arrancar «{command}»",
   "workspace.preview.address": "Dirección del servidor local",
   "workspace.preview.reload": "Recargar",
   "workspace.preview.open": "Abrir",
@@ -157,7 +158,7 @@ const es = {
   "workspace.changes.none": "Todavía no hay cambios.",
   "workspace.changes.files": "Archivos cambiados",
   "workspace.changes.waitForAgent": "Espera a que el agente termine",
-  "workspace.changes.accept": "Aceptar cambios",
+  "workspace.changes.acceptMore": "Aceptar cambios…",
   "workspace.changes.discardConfirm": "¿Descartar todo?",
   "workspace.changes.discard": "Descartar",
   "workspace.changes.branch": "Rama",
@@ -308,6 +309,7 @@ const en: Record<keyof typeof es, string> = {
 
   "workspace.panel": "Code, review, terminal and preview",
   "workspace.tab.preview": "Preview",
+  "workspace.preview.start": "Start “{command}”",
   "workspace.preview.address": "Local server address",
   "workspace.preview.reload": "Reload",
   "workspace.preview.open": "Open",
@@ -325,7 +327,7 @@ const en: Record<keyof typeof es, string> = {
   "workspace.changes.none": "No changes yet.",
   "workspace.changes.files": "Changed files",
   "workspace.changes.waitForAgent": "Wait for the agent to finish",
-  "workspace.changes.accept": "Accept changes",
+  "workspace.changes.acceptMore": "Accept changes…",
   "workspace.changes.discardConfirm": "Discard everything?",
   "workspace.changes.discard": "Discard",
   "workspace.changes.branch": "Branch",

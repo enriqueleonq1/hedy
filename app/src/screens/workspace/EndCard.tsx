@@ -2,7 +2,7 @@ import type { AgentEvent, Task } from "../../api/types";
 import { useAction } from "../../api/context";
 import { Button } from "../../components/ui/Button";
 import { useT } from "../../i18n";
-import { listKeyFor, useSetQueue, useTaskDiff } from "../../tasks/hooks";
+import { ACTIVITY_KEY, listKeyFor, useSetQueue, useTaskDiff } from "../../tasks/hooks";
 import { stoppedByLimit } from "../../tasks/state";
 
 /** The last test run of the task, if the agent ran its tests. */
@@ -13,7 +13,7 @@ function lastTests(events: AgentEvent[]): boolean | null {
 
 /** Whether the task's history ends on the end of a turn (nothing came after it). */
 function endsOnFinish(events: AgentEvent[]): boolean {
-  const last = events.findLast((e) => e.kind !== "usage" && e.kind !== "rateLimit");
+  const last = events.findLast((e) => e.kind !== "usage" && e.kind !== "rateLimit" && e.kind !== "limitWarning");
   return last?.kind === "finished";
 }
 
@@ -32,6 +32,7 @@ export function EndCard({ task, events, onReview }: { task: Task; events: AgentE
     invalidate: [listKeyFor(task)],
     onSuccess: (left) => setQueue(task.id, left),
   });
+  const discard = useAction((api) => api.discardTask(task.id), { invalidate: [listKeyFor(task), ACTIVITY_KEY] });
   if (!ready && !failed) return null;
 
   if (failed) {
@@ -50,8 +51,22 @@ export function EndCard({ task, events, onReview }: { task: Task; events: AgentE
 
   const files = diff.data?.length ?? 0;
   const tests = lastTests(events);
+  // Nothing changed: what follows is telling it what to do, or closing the task.
+  if (diff.isSuccess && files === 0) {
+    return (
+      <section className="end-card" aria-label={t("end.noChangesTitle")}>
+        <h3>{t("end.noChangesTitle")}</h3>
+        <p className="muted">{t("end.noChangesHint")}</p>
+        <div className="actions">
+          <Button disabled={discard.isPending} onClick={() => discard.mutate(undefined)}>
+            {t("end.discard")}
+          </Button>
+        </div>
+      </section>
+    );
+  }
   const facts = [
-    diff.isSuccess ? (files === 0 ? t("end.noFiles") : files === 1 ? t("end.filesOne") : t("end.files", { n: files })) : null,
+    diff.isSuccess ? (files === 1 ? t("end.filesOne") : t("end.files", { n: files })) : null,
     tests === null ? null : tests ? t("end.testsPassed") : t("end.testsFailed"),
   ].filter(Boolean);
   return (
@@ -59,7 +74,7 @@ export function EndCard({ task, events, onReview }: { task: Task; events: AgentE
       <h3>{t("end.title")}</h3>
       {facts.length > 0 && <p className="muted">{facts.join(" · ")}</p>}
       <div className="actions">
-        {files > 0 && (
+        {(files > 0 || diff.isError) && (
           <Button variant="primary" onClick={onReview}>
             {t("end.review")}
           </Button>

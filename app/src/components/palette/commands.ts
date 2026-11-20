@@ -6,12 +6,12 @@ import { useQueries } from "@tanstack/react-query";
 
 import { OVERVIEW_KEY, useAction, useApi } from "../../api/context";
 import type { Overview, Project } from "../../api/types";
-import type { Translate } from "../../i18n";
+import { useLanguage, type Translate } from "../../i18n";
 import { useCreate } from "../../screens/create/CreateProvider";
 import { CONVERSATIONS_KEY, tasksKey } from "../../tasks/hooks";
 import { useInbox } from "../../tasks/inbox";
 import { STATUS_LABEL } from "../../tasks/timeline";
-import { STATE_LABEL } from "../../screens/activity/ActivityScreen";
+import { pillLabel } from "../ui/StatusPill";
 import { accountSubtitle } from "../accounts";
 import { useFocusMode } from "../focusMode";
 import { taskView, type View } from "../Layout";
@@ -72,6 +72,7 @@ export function usePaletteCommands({
   const toast = useToast();
   const actions = useProjectActions();
   const inbox = useInbox();
+  const language = useLanguage();
   const create = useCreate();
   const focusMode = useFocusMode();
   const shortcuts = useShortcuts();
@@ -108,7 +109,7 @@ export function usePaletteCommands({
         id: `pending:${entry.key}`,
         group: "pending",
         label: t("palette.pending.task", { title: task.title }),
-        detail: `${entry.item.projectName} · ${t(STATE_LABEL[state])}`,
+        detail: `${entry.item.projectName} · ${pillLabel(state, task, t, language)}`,
         run: () => onNavigate(taskView(overview.projects, task.project, task.id)),
       });
     } else if (entry.kind === "note") {

@@ -32,7 +32,7 @@ export type View =
   /** "Pregunta a tu memoria"; `project`: about that project's memory. */
   | { screen: "ask"; project?: string }
   /**
-   * `task`: open that task instead of the most recent open one; `null`: a new task,
+   * `task`: open that task; `null` or unset: the project's home (a new task),
    * continuing conversation `carry` when given ("Llevar a un proyecto").
    */
   | { screen: "workspace"; project: string; task?: string | null; carry?: string }
@@ -110,7 +110,8 @@ export function Sidebar({
   const projectTasks = useTasks(active ?? "", !!active);
   const shownTask =
     view.screen === "workspace" && view.task ? projectTasks.data?.find((task) => task.id === view.task) : undefined;
-  const here = shownTask?.workspace?.worktree ?? project?.path ?? null;
+  // Accepting or discarding deletes the task's copy: then its project.
+  const here = (shownTask && isOpen(shownTask) ? shownTask.workspace?.worktree : undefined) ?? project?.path ?? null;
 
   // The account of what is on screen (the open task's, else its project's), else the default one.
   const account =
@@ -138,16 +139,20 @@ export function Sidebar({
         e.preventDefault();
         toggleTerminal();
       } else if (key === "n") {
-        // A new task in the project on screen, else in the first one.
-        const target = project?.path ?? overview.projects[0]?.path;
-        if (!target) return;
+        // ⌘ on a Mac (its Ctrl+N moves the caret); never over a message being written.
+        if (e.defaultPrevented || (modKey() === "⌘" ? !e.metaKey : !e.ctrlKey)) return;
+        const typing = document.activeElement;
+        if ((typing instanceof HTMLTextAreaElement || typing instanceof HTMLInputElement) && typing.value.trim()) return;
         e.preventDefault();
-        onNavigate({ screen: "workspace", project: target, task: null });
+        // A new conversation in a conversation; else a new task in the project on screen, or the first one.
+        if (view.screen === "conversation") return onNavigate({ screen: "conversation" });
+        const target = project?.path ?? overview.projects[0]?.path;
+        if (target) onNavigate({ screen: "workspace", project: target, task: null });
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleTerminal, project, overview.projects, onNavigate]);
+  }, [toggleTerminal, project, overview.projects, onNavigate, view.screen]);
 
   return (
     <aside id="sidebar" className={`sidebar${rail ? " sidebar--rail" : ""}`} aria-label={t("shell.sidebar")}>

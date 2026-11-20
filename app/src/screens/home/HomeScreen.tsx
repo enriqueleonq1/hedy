@@ -530,7 +530,7 @@ function InboxRow({
     : entry.count === 1
       ? t("home.team.titleOne", { team: entry.teamName })
       : t("home.team.title", { n: entry.count, team: entry.teamName });
-  const meta = sync ? (entry.error ?? t("home.sync.meta")) : t("home.team.meta");
+  const meta = sync ? (entry.error ? t("home.sync.failedMeta") : t("home.sync.meta")) : t("home.team.meta");
   const open = () =>
     onNavigate({ screen: "settings", section: sync ? "sync" : "teams" });
   return (

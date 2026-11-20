@@ -6,6 +6,8 @@ interface TerminalSession {
   key: number;
   title: string;
   request: TerminalRequest;
+  /** Typed into the shell once it opens. */
+  input?: string;
   running: boolean;
 }
 
@@ -13,7 +15,7 @@ interface TerminalsApi {
   sessions: TerminalSession[];
   activeKey: number | null;
   panelOpen: boolean;
-  open(request: TerminalRequest, title: string): void;
+  open(request: TerminalRequest, title: string, input?: string): void;
   close(key: number): void;
   activate(key: number): void;
   markExited(key: number): void;
@@ -28,9 +30,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [activeKey, setActiveKey] = useState<number | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
 
-  const open = useCallback((request: TerminalRequest, title: string) => {
+  const open = useCallback((request: TerminalRequest, title: string, input?: string) => {
     const key = ++nextKey;
-    setSessions((all) => [...all, { key, title, request, running: true }]);
+    setSessions((all) => [...all, { key, title, request, input, running: true }]);
     setActiveKey(key);
     setPanelOpen(true);
   }, []);

@@ -1,13 +1,67 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient } from "@tanstack/react-query";
 
 import { App } from "../../App";
 import { MockApi } from "../../api/MockApi";
+import { renderCode } from "../../code/testing";
+import { TerminalPanel } from "../../components/Terminal/TerminalPanel";
+import { TerminalProvider } from "../../components/Terminal/TerminalProvider";
 import { chooseMode, chooseOption, optionLabels } from "../../test/select";
+import { ChangesPanel } from "./ChangesPanel";
 
-// xterm needs a real canvas; the Terminal tab is not exercised here.
-vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
+// xterm needs a real canvas: a stand-in that draws nothing, so the terminal's own
+// logic (open the shell, type into it) still runs.
+vi.mock("@xterm/xterm", () => ({
+  Terminal: class {
+    cols = 80;
+    rows = 24;
+    options = {};
+    loadAddon() {}
+    open() {}
+    write() {}
+    focus() {}
+    dispose() {}
+    onData() {
+      return { dispose() {} };
+    }
+    onResize() {
+      return { dispose() {} };
+    }
+  },
+}));
+vi.mock("@xterm/addon-fit", () => ({
+  FitAddon: class {
+    fit() {}
+  },
+}));
+
+/** jsdom has no ResizeObserver; the terminal watches its size with one. */
+function stubResizeObserver() {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+/** The project has a `package.json` with these scripts, beside these other files (lock files). */
+function withPackage(api: MockApi, scripts: Record<string, string>, files: string[] = []) {
+  api.files.set("/code/hedy", [...(api.files.get("/code/hedy") ?? []), "package.json", ...files]);
+  const read = api.readFile.bind(api);
+  vi.spyOn(api, "readFile").mockImplementation(async (copy, path, rev) =>
+    copy.kind === "folder" && path === "package.json"
+      ? { kind: "text", text: JSON.stringify({ name: "hedy", scripts }), size: 64, version: "v1" }
+      : read(copy, path, rev),
+  );
+}
 
 function setup() {
   const api = MockApi.withSampleData();
@@ -72,7 +126,7 @@ describe("Workspace", () => {
       "programar_recordatorio(cita, horas=24)",
     );
 
-    await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
+    await user.click(screen.getByRole("button", { name: "Aceptar cambios…" }));
     const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" });
     await user.click(await within(sheet).findByRole("button", { name: "Aceptar y unir" }));
     expect(await screen.findByText("Cambios integrados en main.")).toBeInTheDocument();
@@ -160,7 +214,7 @@ describe("Workspace", () => {
     expect(screen.queryByRole("combobox", { name: "Modo" })).not.toBeInTheDocument();
 
     // The project's crumb (its home, with the new task's composer) brings the selector back; so does Ctrl+N.
-    await user.click(screen.getByRole("button", { name: "hedy /" }));
+    await user.click(screen.getByRole("button", { name: "Volver a hedy" }));
     expect(await screen.findByRole("combobox", { name: "Modo" })).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: /^¿Qué librerías hay para recordatorios\?/ }));
     await waitFor(() => expect(screen.queryByRole("combobox", { name: "Modo" })).not.toBeInTheDocument());
@@ -423,6 +477,98 @@ describe("Workspace", () => {
     expect(screen.getAllByTitle("Vista previa").find((el) => el.tagName === "IFRAME")).toHaveAttribute("src", "http://localhost:5173");
   });
 
+  it("starts the dev server from the preview: a terminal in the task's copy with the command typed", async () => {
+    stubResizeObserver();
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    withPackage(api, { dev: "vite", build: "vite build" });
+    const open = vi.spyOn(api, "terminalOpen");
+    const write = vi.spyOn(api, "terminalWrite");
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await openTask(user, /^hedy/, /^Arregla el cálculo de impuestos/);
+    // s5 has changes: the panel opens by itself.
+    const panel = await screen.findByRole("complementary", { name: PANEL });
+    await user.click(within(panel).getByRole("tab", { name: "Vista previa" }));
+    expect(within(panel).getByText(/Arranca el servidor/)).toBeInTheDocument();
+    await user.click(await within(panel).findByRole("button", { name: "Arrancar «npm run dev»" }));
+
+    const terminals = await screen.findByRole("tablist", { name: "Terminales" });
+    expect(within(terminals).getByRole("tab", { name: "Terminal · npm run dev" })).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(write).toHaveBeenCalledWith(expect.any(Number), "npm run dev\r"));
+    expect(open).toHaveBeenCalledWith({ kind: "shell", path: "/code/hedy/.hedy/worktrees/s5" }, expect.anything(), expect.any(Function));
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith(await open.mock.results[0]?.value, "npm run dev\r");
+  });
+
+});
+
+describe("Preview's start button", () => {
+  const PROJECT = "/code/hedy";
+
+  async function showPreview(api: MockApi) {
+    api.delayMs = 0;
+    renderCode(
+      <TerminalProvider>
+        <ChangesPanel project={PROJECT} task={null} />
+        <TerminalPanel />
+      </TerminalProvider>,
+      api,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: "Vista previa" }));
+    return user;
+  }
+
+  it.each([
+    ["npm without a lock file", { dev: "vite" }, [], "npm run dev"],
+    ["npm with its lock file", { dev: "vite" }, ["package-lock.json"], "npm run dev"],
+    ["pnpm", { dev: "vite" }, ["pnpm-lock.yaml"], "pnpm dev"],
+    ["yarn", { dev: "vite" }, ["yarn.lock"], "yarn dev"],
+    ["bun (bun.lockb)", { dev: "vite" }, ["bun.lockb"], "bun run dev"],
+    ["bun (bun.lock)", { dev: "vite" }, ["bun.lock"], "bun run dev"],
+    ["start without dev", { start: "node server.js" }, [], "npm run start"],
+    ["dev before start", { start: "node server.js", dev: "vite" }, ["yarn.lock"], "yarn dev"],
+    ["start with pnpm", { start: "next start" }, ["pnpm-lock.yaml"], "pnpm start"],
+  ])("runs the script with the project's package manager: %s", async (_, scripts, files, command) => {
+    const api = MockApi.withSampleData();
+    withPackage(api, scripts, files);
+    await showPreview(api);
+    expect(await screen.findByRole("button", { name: `Arrancar «${command}»` })).toBeInTheDocument();
+  });
+
+  it("opens the terminal in the project's folder without a task", async () => {
+    stubResizeObserver();
+    const api = MockApi.withSampleData();
+    withPackage(api, { dev: "vite" }, ["pnpm-lock.yaml"]);
+    const open = vi.spyOn(api, "terminalOpen");
+    const write = vi.spyOn(api, "terminalWrite");
+    const user = await showPreview(api);
+    await user.click(await screen.findByRole("button", { name: "Arrancar «pnpm dev»" }));
+    expect(await screen.findByRole("tab", { name: "Terminal · pnpm dev" })).toBeInTheDocument();
+    await waitFor(() => expect(write).toHaveBeenCalledWith(expect.any(Number), "pnpm dev\r"));
+    expect(open).toHaveBeenCalledWith({ kind: "shell", path: PROJECT }, expect.anything(), expect.any(Function));
+  });
+
+  it("offers nothing without a dev or start script, or without a package.json", async () => {
+    const api = MockApi.withSampleData();
+    withPackage(api, { build: "tsc", test: "vitest" }, ["pnpm-lock.yaml"]);
+    await showPreview(api);
+    await waitFor(() => expect(api.readFile).toHaveBeenCalledWith({ kind: "folder", project: PROJECT }, "package.json"));
+    await act(async () => {});
+    expect(screen.queryByRole("button", { name: /^Arrancar/ })).not.toBeInTheDocument();
+  });
+
+  it("offers nothing for a project without a package.json", async () => {
+    const api = MockApi.withSampleData();
+    const files = vi.spyOn(api, "projectFiles");
+    const read = vi.spyOn(api, "readFile");
+    await showPreview(api);
+    await waitFor(() => expect(files).toHaveBeenCalledWith(PROJECT));
+    await act(async () => {});
+    expect(read).not.toHaveBeenCalledWith(expect.anything(), "package.json");
+    expect(screen.queryByRole("button", { name: /^Arrancar/ })).not.toBeInTheDocument();
+  });
 });
 
 describe("Composer", () => {

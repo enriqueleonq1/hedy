@@ -36,11 +36,18 @@ describe("Checking the changes against the rules", () => {
     const { check, user } = setup();
     const files = await openTask(user);
     const bar = screen.getByRole("region", { name: "Comprobar con tus reglas" });
-    expect(within(bar).getByText(/Gasta unos pocos tokens/)).toBeInTheDocument();
+    // Before any check: one quiet row, no card and no status line.
+    expect(bar).toHaveClass("rl-bar--compact");
+    expect(within(bar).getByText("Unos pocos tokens de la cuenta del proyecto")).toBeInTheDocument();
+    expect(within(bar).queryByRole("status")).toBeNull();
+    expect(within(bar).getAllByRole("button").map((b) => b.textContent)).toEqual(["Comprobar con tus reglas"]);
     expect(check).not.toHaveBeenCalled();
 
     await user.click(within(bar).getByRole("button", { name: "Comprobar con tus reglas" }));
     expect(await within(bar).findByText("2 líneas no siguen tus reglas")).toBeInTheDocument();
+    // The results go in the card.
+    expect(bar).not.toHaveClass("rl-bar--compact");
+    expect(within(bar).queryByText("Unos pocos tokens de la cuenta del proyecto")).toBeNull();
     expect(check).toHaveBeenCalledWith("s5");
     expect(within(bar).getByText(/^3 archivos contra \d+ reglas · con /)).toBeInTheDocument();
     // Each file with a warning says how many.
@@ -224,6 +231,7 @@ describe("Checking the changes against the rules", () => {
     const { user } = setup("en");
     await openTask(user);
     const bar = screen.getByRole("region", { name: "Check against your rules" });
+    expect(within(bar).getByText("A few tokens of the project's account")).toBeInTheDocument();
     await user.click(within(bar).getByRole("button", { name: "Check against your rules" }));
     expect(await within(bar).findByText("2 lines do not follow your rules")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Ask to fix it" }).length).toBeGreaterThan(0);

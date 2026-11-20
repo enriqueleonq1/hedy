@@ -2,9 +2,11 @@
 // blame, the text search and the panel itself.
 
 const es = {
-  "code.tab.explorer": "Explorador",
+  "code.tab.explorer": "Archivos",
+  "code.files.tree": "Árbol",
   "code.tab.search": "Buscar",
-  "code.tab.review": "Revisión",
+  "code.tab.review": "Cambios",
+  "code.tab.changesN": "Cambios {n}",
   "code.panel.tabs": "Vistas del panel",
   "code.panel.resize": "Ancho del panel lateral",
   "code.panel.resizeHint": "Arrastra para cambiar el ancho · doble clic para maximizar",
@@ -180,7 +182,7 @@ const es = {
   "code.timeline.open": "Abrir {path} en el visor",
 
   "code.shortcuts.title": "Panel lateral",
-  "code.shortcuts.explorer": "Explorador",
+  "code.shortcuts.explorer": "Archivos",
   "code.shortcuts.search": "Buscar en los archivos",
   "code.shortcuts.review": "Revisión",
   "code.shortcuts.find": "Buscar en el archivo",
@@ -190,9 +192,11 @@ const es = {
 };
 
 const en: Record<keyof typeof es, string> = {
-  "code.tab.explorer": "Explorer",
+  "code.tab.explorer": "Files",
+  "code.files.tree": "Tree",
   "code.tab.search": "Search",
-  "code.tab.review": "Review",
+  "code.tab.review": "Changes",
+  "code.tab.changesN": "Changes {n}",
   "code.panel.tabs": "Panel views",
   "code.panel.resize": "Side panel width",
   "code.panel.resizeHint": "Drag to resize · double-click to maximize",
@@ -368,7 +372,7 @@ const en: Record<keyof typeof es, string> = {
   "code.timeline.open": "Open {path} in the viewer",
 
   "code.shortcuts.title": "Side panel",
-  "code.shortcuts.explorer": "Explorer",
+  "code.shortcuts.explorer": "Files",
   "code.shortcuts.search": "Search in files",
   "code.shortcuts.review": "Review",
   "code.shortcuts.find": "Find in file",

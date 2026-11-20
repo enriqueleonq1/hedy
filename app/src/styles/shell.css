@@ -241,7 +241,7 @@
 .board-item:hover { background: var(--panel-2); }
 .board-item > .board-row { background: none; }
 .board-item--needs > .board-row { --state: var(--warning); }
-.board-item--blocked > .board-row { --state: var(--danger); }
+.board-item--blocked > .board-row { --state: var(--warning); }
 .board-item--proposal > .board-row { --state: var(--accent); }
 .board-item__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: 0 var(--space-4) 12px 36px; }
 .board-entry:not(.board-entry--selected):not(:hover):not(:focus-within) .board-item__actions { opacity: 0; }

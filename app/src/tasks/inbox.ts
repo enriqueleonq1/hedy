@@ -7,12 +7,16 @@
 import { useQueries } from "@tanstack/react-query";
 
 import { useApi, useOverview } from "../api/context";
+import { useNowSeconds } from "./countdown";
 import type { ActivityItem, AgentEvent, Proposal, SkillProposal } from "../api/types";
 import { memoryKey } from "../screens/memory/notes";
 import { skillsKey } from "../screens/memory/skills";
 import { useSyncStatus } from "../sync/hooks";
 import { teamSuggestionsKey, useTeams } from "../team/hooks";
 import { needsYou, useActivity } from "./hooks";
+
+/** How long sync may fail before it asks for the user (the last good sync's age). */
+const SYNC_FAILING_SECS = 24 * 60 * 60;
 
 export type InboxItem =
   | { kind: "task"; key: string; item: ActivityItem }
@@ -39,6 +43,7 @@ export function useInbox(): { items: InboxItem[]; count: number; ready: boolean 
     queries: projects.map((project) => ({ queryKey: skillsKey(project), queryFn: () => api.skills(project) })),
   });
   const sync = useSyncStatus().data;
+  const now = useNowSeconds(60_000);
   const teams = (useTeams().data ?? []).filter((team) => !team.waiting);
   const suggestions = useQueries({
     queries: teams.map((team) => ({
@@ -70,8 +75,11 @@ export function useInbox(): { items: InboxItem[]; count: number; ready: boolean 
   proposals.sort((a, b) => b.at - a.at);
 
   const shared: InboxItem[] = [];
-  // Conflicts to resolve, or a sync that keeps failing: either way the user acts.
-  if (sync && (sync.conflicts > 0 || sync.lastError)) {
+  // Conflicts to resolve, or a sync that keeps failing (a day without one that
+  // worked; being offline for a while is not the user's problem).
+  const failing =
+    !!sync?.lastError && (sync.lastSync === null || now - sync.lastSync > SYNC_FAILING_SECS);
+  if (sync && (sync.conflicts > 0 || failing)) {
     shared.push({ kind: "sync", key: "sync", conflicts: sync.conflicts, error: sync.conflicts > 0 ? null : sync.lastError });
   }
   teams.forEach((team, i) => {

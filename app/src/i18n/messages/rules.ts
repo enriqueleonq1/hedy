@@ -2,6 +2,7 @@
 
 const es = {
   "rules.check": "Comprobar con tus reglas",
+  "rules.checkCost": "Unos pocos tokens de la cuenta del proyecto",
   "rules.checkHint": "Compara las líneas nuevas con las reglas escritas del proyecto y del equipo. Gasta unos pocos tokens de la cuenta del proyecto.",
   "rules.again": "Volver a revisar",
   "rules.checking": "Revisando el cambio contra tus reglas…",
@@ -81,6 +82,7 @@ const es = {
 
 const en: Record<keyof typeof es, string> = {
   "rules.check": "Check against your rules",
+  "rules.checkCost": "A few tokens of the project's account",
   "rules.checkHint": "Compares the new lines with the written rules of the project and the team. Spends a few tokens of the project's account.",
   "rules.again": "Check again",
   "rules.checking": "Checking the change against your rules…",

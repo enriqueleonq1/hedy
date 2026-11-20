@@ -6,7 +6,7 @@ import { Dialog } from "../../components/ui/Dialog";
 import { useToast } from "../../components/ui/Toast";
 import { formatTokens, formatUsd } from "../../format";
 import { useLanguage, useT, type MessageKey } from "../../i18n";
-import { modelLabel, MODE_LABEL } from "../../tasks/timeline";
+import { isOpen, modelLabel, MODE_LABEL } from "../../tasks/timeline";
 import { OriginLink } from "./carry/links";
 
 const PHASE: Record<Phase, MessageKey> = {
@@ -49,7 +49,10 @@ export function TaskDetails({
   const language = useLanguage();
   const api = useApi();
   const toast = useToast();
-  const copy = task.workspace;
+  // Accepting or discarding deletes the copy; a branch kept for a PR stays.
+  const open = isOpen(task);
+  const copy = open ? task.workspace : null;
+  const branch = open || task.ship?.kept ? task.workspace?.branch : undefined;
   const used = spent(events);
   const accountName = (id: string) => overview.accounts.find((a) => a.id === id)?.name ?? id;
   const copyBranch = (branch: string) =>
@@ -63,10 +66,10 @@ export function TaskDetails({
       title={t("details.title")}
       onClose={onClose}
       footer={
-        copy ? (
+        branch ? (
           <>
-            <Button onClick={() => copyBranch(copy.branch)}>{t("details.copyBranch")}</Button>
-            <Button onClick={() => void api.openInEditor(copy.worktree)}>{t("details.openEditor")}</Button>
+            <Button onClick={() => copyBranch(branch)}>{t("details.copyBranch")}</Button>
+            {copy && <Button onClick={() => void api.openInEditor(copy.worktree)}>{t("details.openEditor")}</Button>}
           </>
         ) : undefined
       }
@@ -74,14 +77,19 @@ export function TaskDetails({
       <dl className="details-list">
         <dt>{t("details.mode")}</dt>
         <dd>{t(MODE_LABEL[task.mode])}</dd>
-        {copy ? (
+        {branch && task.workspace && (
           <>
             <dt>{t("details.branch")}</dt>
-            <dd className="mono">{t("details.branchFrom", { branch: copy.branch, base: copy.baseBranch })}</dd>
+            <dd className="mono">{t("details.branchFrom", { branch, base: task.workspace.baseBranch })}</dd>
+          </>
+        )}
+        {copy ? (
+          <>
             <dt>{t("details.copy")}</dt>
             <dd className="mono">{copy.worktree}</dd>
           </>
         ) : (
+          open &&
           !task.conversation && (
             <>
               <dt>{t("details.copy")}</dt>

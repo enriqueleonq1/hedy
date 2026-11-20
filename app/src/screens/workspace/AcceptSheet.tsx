@@ -5,10 +5,11 @@ import { errorMessage, useAction, useApi } from "../../api/context";
 import type { AcceptMode, AcceptPreview, Task } from "../../api/types";
 import { modKey } from "../../components/palette/keys";
 import { Button } from "../../components/ui/Button";
+import { Switch } from "../../components/ui/controls";
 import { Dialog } from "../../components/ui/Dialog";
 import { useToast } from "../../components/ui/Toast";
 import { useT } from "../../i18n";
-import { ACTIVITY_KEY, tasksKey } from "../../tasks/hooks";
+import { ACTIVITY_KEY, tasksKey, useSetQueue } from "../../tasks/hooks";
 import { AcceptModeChoice, CommitMessage } from "./ship/CommitMessage";
 import { folderKey, markJustAccepted, shipKey, useFolderStatus } from "./ship/useShip";
 import "../../styles/review.css";
@@ -50,16 +51,53 @@ export function AcceptSheet({
   const folder = useFolderStatus(task.project);
   const remote = !!folder.data?.remote;
   const [mode, setMode] = useState<AcceptMode>("merge");
-  const accept = useAction((a, vars: { message: string; mode: AcceptMode }) => a.acceptTask(task.id, vars.message, vars.mode), {
-    invalidate: changedKeys(task),
-    onSuccess: (_, vars) => {
-      // With a remote, the accepted view opens the publish step next.
-      if (remote) markJustAccepted(task.id);
+  // "Publicar y abrir un PR": on by default when the work stays on its branch.
+  const [pr, setPr] = useState<PullRequestChoice>({ on: true, title: "", body: "", draft: false });
+  const setQueue = useSetQueue();
+  const fixTests = useAction((a) => a.queueMessage(task.id, t("end.fixTestsPrompt")), {
+    invalidate: [tasksKey(task.project)],
+    onSuccess: (left) => {
+      setQueue(task.id, left);
       onClose();
-      if (vars.mode === "branch") toast.info(t("ship.committed", { branch: preview.data?.branch ?? task.workspace?.branch ?? "" }));
-      else onAccepted(preview.data?.targetBranch ?? task.workspace?.baseBranch ?? "");
     },
   });
+  const accept = useAction(
+    async (a, vars: { message: string; mode: AcceptMode; pr: PullRequestChoice | null }) => {
+      await a.acceptTask(task.id, vars.message, vars.mode);
+      if (!vars.pr) return null;
+      // Publish and open the pull request in one go; a failure leaves the branch
+      // committed, and the side panel offers each step again.
+      try {
+        // A rejected push is an answer, not an error: no PR from an unpublished branch.
+        const pushed = await a.pushTask(task.id);
+        if (pushed.failure) throw new Error(pushed.failure.message);
+        return await a.createPullRequest(task.id, { title: vars.pr.title, body: vars.pr.body, base: "", draft: vars.pr.draft });
+      } catch (error) {
+        toast.error(errorMessage(error, t));
+        return null;
+      }
+    },
+    {
+      invalidate: changedKeys(task),
+      onSuccess: (opened, vars) => {
+        // With a remote, the accepted view opens the publish step next (unless it is done).
+        if (remote && !vars.pr) markJustAccepted(task.id);
+        onClose();
+        const branch = preview.data?.branch ?? task.workspace?.branch ?? "";
+        if (opened) {
+          toast.info(t("ship.prOpened", { branch }), { action: { label: t("ship.prOpen"), onClick: () => void api.openLink(opened.url) } });
+        } else if (vars.mode === "branch") {
+          toast.info(t("ship.committed", { branch }));
+        } else {
+          onAccepted(preview.data?.targetBranch ?? task.workspace?.baseBranch ?? "");
+        }
+      },
+    },
+  );
+  const branchMode = remote && mode === "branch";
+  // Only with GitHub CLI logged in: otherwise the side panel says what is missing.
+  const canPr = branchMode && folder.data?.gh === "ready";
+  const withPr = canPr && pr.on;
 
   return (
     <Dialog
@@ -77,7 +115,7 @@ export function AcceptSheet({
             disabled={!preview.data || accept.isPending}
             title={t("ship.confirmHint", { keys: `${modKey()}+Enter` })}
           >
-            {mode === "branch" ? t("ship.confirmBranch") : t("review.confirm")}
+            {accept.isPending && withPr ? t("ship.prOpening") : withPr ? t("ship.confirmPr") : branchMode ? t("ship.confirmBranch") : t("review.confirm")}
           </Button>
         </>
       }
@@ -95,11 +133,22 @@ export function AcceptSheet({
           preview={preview.data}
           mode={remote ? mode : "merge"}
           onMode={remote ? setMode : null}
-          onSubmit={(message) => accept.mutate({ message, mode: remote ? mode : "merge" })}
+          pr={canPr ? pr : null}
+          onPr={setPr}
+          onFixTests={fixTests.isPending ? null : () => fixTests.mutate(undefined)}
+          onSubmit={(message) => accept.mutate({ message, mode: remote ? mode : "merge", pr: withPr ? pr : null })}
         />
       )}
     </Dialog>
   );
+}
+
+/** "Publicar y abrir un PR" in the sheet: empty title and description are written by Hedy. */
+interface PullRequestChoice {
+  on: boolean;
+  title: string;
+  body: string;
+  draft: boolean;
 }
 
 function PreviewForm({
@@ -107,6 +156,9 @@ function PreviewForm({
   preview,
   mode,
   onMode,
+  pr,
+  onPr,
+  onFixTests,
   onSubmit,
 }: {
   task: Task;
@@ -114,6 +166,11 @@ function PreviewForm({
   mode: AcceptMode;
   /** `null` without a remote: only merging makes sense. */
   onMode: ((mode: AcceptMode) => void) | null;
+  /** `null` unless the work stays on its branch with a remote. */
+  pr: PullRequestChoice | null;
+  onPr: (pr: PullRequestChoice) => void;
+  /** Sends the AI back to the failing tests (`null` while it is being sent). */
+  onFixTests: (() => void) | null;
   onSubmit: (message: string) => void;
 }) {
   const t = useT();
@@ -163,8 +220,48 @@ function PreviewForm({
             ? t("review.tests.passed", { command: tests.command })
             : t("review.tests.failed", { command: tests.command })
           : t("review.tests.none")}
+        {tests && !tests.passed && (
+          <Button small variant="ghost" className="accept-sheet__fix" disabled={!onFixTests} onClick={() => onFixTests?.()}>
+            {t("end.fixTests")}
+          </Button>
+        )}
       </p>
       <CommitMessage task={task} value={message} onChange={setMessage} hint={t("review.messageHint")} />
+      {pr && (
+        <fieldset className="accept-pr">
+          <label className="accept-pr__switch">
+            <Switch checked={pr.on} onChange={(on) => onPr({ ...pr, on })} label={t("ship.withPr")} />
+            <span aria-hidden>{t("ship.withPr")}</span>
+          </label>
+          {pr.on && (
+            <>
+              <label className="field">
+                <span className="field__label">{t("ship.pr.fieldTitle")}</span>
+                <input
+                  className="input"
+                  value={pr.title}
+                  placeholder={message.split("\n")[0]}
+                  onChange={(e) => onPr({ ...pr, title: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span className="field__label">{t("ship.pr.body")}</span>
+                <textarea
+                  className="input"
+                  rows={3}
+                  value={pr.body}
+                  placeholder={t("ship.withPrBodyHint")}
+                  onChange={(e) => onPr({ ...pr, body: e.target.value })}
+                />
+              </label>
+              <label className="accept-pr__switch">
+                <Switch checked={pr.draft} onChange={(draft) => onPr({ ...pr, draft })} label={t("ship.pr.draft")} />
+                <span aria-hidden>{t("ship.pr.draft")}</span>
+              </label>
+            </>
+          )}
+        </fieldset>
+      )}
     </form>
   );
 }

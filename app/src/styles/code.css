@@ -108,7 +108,7 @@ html.resizing--rows * { cursor: row-resize !important; }
 .tabbar__end { margin-left: auto; display: flex; gap: 2px; }
 
 /* Narrow: icons only (the tooltip names the tab and its shortcut). */
-@container side-panel (max-width: 560px) {
+@container side-panel (max-width: 400px) {
   .tabbar__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .tabbar__tab { padding: 0 11px; }
   /* The open tab keeps its name. */
@@ -645,3 +645,8 @@ html.resizing--rows * { cursor: row-resize !important; }
   .history-drawer__skeleton span,
   .copy-bar__pulse { animation: none; }
 }
+
+/* Files: the tree or the search, one switch above both. */
+.files-mode { padding: 8px var(--space-3) 0; }
+.files-mode .segmented { width: 100%; }
+.files-mode .segmented__option { flex: 1; }

@@ -66,12 +66,12 @@ describe("Inicio's board", () => {
     expect(within(needs).getByText("Sincronización")).toBeInTheDocument();
     expect(within(needs).getByText("Equipo")).toBeInTheDocument();
     const plan = within(needs).getAllByRole("listitem")[0]!;
-    expect(within(plan).getByText("Plan por aprobar")).toBeInTheDocument();
+    expect(within(plan).getByText("Te espera: plan")).toBeInTheDocument();
     expect(within(plan).getByText("hedy")).toBeInTheDocument();
     expect(within(plan).getByText("Claude Opus")).toBeInTheDocument();
     expect(within(plan).getByText(/^\d+ min en marcha$/)).toBeInTheDocument();
-    expect(within(needs).getByText("Pide permiso")).toBeInTheDocument();
-    expect(within(needs).getByText("En pausa por el límite")).toBeInTheDocument();
+    expect(within(needs).getByText("Te espera: permiso")).toBeInTheDocument();
+    expect(within(needs).getByText(/^En pausa/)).toBeInTheDocument();
     expect(within(needs).getByText(/^sigue en 4\d min$/)).toBeInTheDocument();
     expect(screen.getByText(/Hedy nunca cambia de cuenta solo/)).toBeInTheDocument();
 
@@ -88,7 +88,7 @@ describe("Inicio's board", () => {
     ]);
     // A question outside any project reads as a conversation, not a project.
     expect(within(ready).getByText("Conversación")).toBeInTheDocument();
-    expect(within(ready).getByText("Cambios por revisar")).toBeInTheDocument();
+    expect(within(ready).getAllByText("Lista")[0]).toBeInTheDocument();
     expect(within(ready).getAllByText("Respondida")).toHaveLength(2);
     expect(within(ready).getByText("hace 40 min")).toBeInTheDocument();
     // An answered task offers its answer; changes, their review.
@@ -322,22 +322,35 @@ describe("Inicio's board", () => {
     const api = MockApi.withSampleData().withSampleActivity();
     api.syncConflictList = [];
     api.sync!.lastError = "no pude conectar con github.com";
+    // A day and more without a sync that worked: now it asks for the user.
+    api.sync!.lastSync = Date.now() / 1000 - 26 * 60 * 60;
     const { user } = setup(api);
     const needs = await screen.findByRole("region", { name: NEEDS }, SLOW);
-    const row = within(needs).getByText("La sincronización falló").closest("li")!;
+    const row = within(needs).getByText("La sincronización falla desde hace un día").closest("li")!;
     expect(within(row).getByText("Sincronización")).toBeInTheDocument();
-    // Its error is what it says, not the conflicts' text.
-    expect(within(row).getByText("no pude conectar con github.com")).toBeInTheDocument();
+    // Its own words, not the conflicts' text nor the raw error.
+    expect(within(row).getByText(/Tus otras computadoras no reciben los cambios/)).toBeInTheDocument();
+    expect(within(row).queryByText("no pude conectar con github.com")).not.toBeInTheDocument();
     expect(within(row).queryByRole("button", { name: "Resolver" })).not.toBeInTheDocument();
 
     // The palette lists it among what needs you, with the same words.
     await user.keyboard("{Control>}k{/Control}");
     const palette = screen.getByRole("dialog", { name: "Paleta de comandos" });
-    expect(within(palette).getByRole("option", { name: /La sincronización falló/ })).toBeInTheDocument();
+    expect(within(palette).getByRole("option", { name: /La sincronización falla desde hace un día/ })).toBeInTheDocument();
     await user.keyboard("{Escape}");
 
     await user.click(within(row).getByRole("button", { name: "Ver qué pasó" }));
     await waitFor(() => expect(window.location.hash).toBe("#sync"));
+  });
+
+  it("leaves a single failed sync alone", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.syncConflictList = [];
+    api.sync!.lastError = "no pude conectar con github.com";
+    api.sync!.lastSync = Date.now() / 1000 - 10 * 60;
+    setup(api);
+    const needs = await screen.findByRole("region", { name: /^Te necesitan/ }, SLOW);
+    expect(within(needs).queryByText(/La sincronización falla/)).not.toBeInTheDocument();
   });
 
   it("approves and rejects proposed notes and skills from their rows", async () => {
@@ -401,14 +414,14 @@ describe("Inicio's board", () => {
   it("tells the waiting kinds apart by color", async () => {
     setup();
     const needs = await screen.findByRole("region", { name: NEEDS }, SLOW);
-    expect(within(needs).getByText("Plan por aprobar")).toHaveClass("board-state--needs");
-    expect(within(needs).getByText("Pide permiso")).toHaveClass("board-state--needs");
-    expect(within(needs).getByText("En pausa por el límite")).toHaveClass("board-state--blocked");
+    expect(within(needs).getByText("Te espera: plan")).toHaveClass("board-state--needs");
+    expect(within(needs).getByText("Te espera: permiso")).toHaveClass("board-state--needs");
+    expect(within(needs).getByText(/^En pausa/)).toHaveClass("board-state--blocked");
     expect(within(needs).getByText("Sincronización")).toHaveClass("board-state--needs");
     expect(within(needs).getByText("Equipo")).toHaveClass("board-state--needs");
     expect(within(needs).getByText("Los formularios validan con zod").closest(".board-row")).toHaveClass("board-row--proposal");
     const ready = screen.getByRole("region", { name: "Listas para revisar (3)" });
-    expect(within(ready).getByText("Cambios por revisar")).toHaveClass("board-state--done");
+    expect(within(ready).getAllByText("Lista")[0]).toHaveClass("board-state--done");
   });
 
   it("moves through the rows with j/k and the arrows, opens with Enter and decides with a and r", async () => {
@@ -545,7 +558,7 @@ describe("Inicio's board", () => {
     // The plan arrives: the task moves to "needs you" and the badge counts it.
     const needs = await screen.findByRole("region", { name: "Te necesitan (1)" }, SLOW);
     expect(within(needs).getByText("Agrega un recordatorio")).toBeInTheDocument();
-    expect(within(needs).getByText("Plan por aprobar")).toBeInTheDocument();
+    expect(within(needs).getByText("Te espera: plan")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "Inicio: 1 cosa te espera" })).toBeInTheDocument());
   });
 });

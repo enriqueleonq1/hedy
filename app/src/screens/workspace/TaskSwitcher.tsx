@@ -196,12 +196,24 @@ export function TaskSwitcher({
             />
           )}
           {groups.map(({ group, rows }) =>
-            group === "done" && !showDone && !needle ? (
-              <button key={group} type="button" className="task-switcher__more" onClick={() => setShowDone(true)}>
+            group === "done" && !showDone && !needle && !rows.some((r) => r.task.id === current) ? (
+              <button
+                key={group}
+                type="button"
+                className="task-switcher__more"
+                aria-expanded={false}
+                onClick={() => {
+                  setShowDone(true);
+                  // The button goes away: the focus moves to the first finished task.
+                  requestAnimationFrame(() =>
+                    root.current?.querySelector<HTMLButtonElement>('[data-group="done"] .task-option')?.focus(),
+                  );
+                }}
+              >
                 {t("switcher.done", { n: rows.length })}
               </button>
             ) : (
-              <section key={group} className="task-switcher__group" aria-label={group === "done" ? t("switcher.done", { n: rows.length }) : t(GROUP_LABEL[group])}>
+              <section key={group} data-group={group} className="task-switcher__group" aria-label={group === "done" ? t("switcher.done", { n: rows.length }) : t(GROUP_LABEL[group])}>
                 <h3 className="task-switcher__heading" aria-hidden>
                   {group === "done" ? t("switcher.done", { n: rows.length }) : t(GROUP_LABEL[group])}
                 </h3>

@@ -148,15 +148,17 @@
   gap: 6px;
   min-height: 28px;
   padding: 0 10px 0 8px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
+  background: none;
   color: var(--muted);
-  font-size: var(--text-callout);
-  font-weight: 600;
+  font: 500 var(--text-callout) var(--font-ui);
+  white-space: nowrap;
   cursor: pointer;
 }
 .rv-viewed:hover { background: var(--panel-2); color: var(--ink); }
-.rv-viewed:has(input:checked) { color: var(--action-text); }
-.rv-viewed input { margin: 0; }
+.rv-viewed--next { border: 1px solid var(--line-strong); color: var(--ink); }
+.rv-viewed .kbd { margin-left: 2px; }
 
 .rv-branch { margin: 0; overflow-wrap: anywhere; }
 

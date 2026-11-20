@@ -28,7 +28,7 @@ async function openReviewTask(user: ReturnType<typeof userEvent.setup>, board = 
 }
 
 async function openSheet(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
+  await user.click(screen.getByRole("button", { name: "Aceptar cambios…" }));
   const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" }, SLOW);
   await within(sheet).findByLabelText("Mensaje del commit");
   return sheet;
@@ -46,9 +46,13 @@ describe("Ship: commit, push and pull request", () => {
     await openReviewTask(user);
     const sheet = await openSheet(user);
 
+    expect(within(sheet).getByRole("radio", { name: "Unir a main ahora" })).toBeChecked();
     await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
-    expect(within(sheet).getByText(/tu carpeta no cambia/)).toBeInTheDocument();
+    expect(within(sheet).getByText(`Commit en ${BRANCH}; tu carpeta no cambia.`)).toBeInTheDocument();
     expect(within(sheet).queryByText(/Tu carpeta principal está en la rama/)).toBeNull();
+    // Without "Publicar y abrir un PR", the publish step comes after the commit.
+    await user.click(within(sheet).getByRole("switch", { name: "Publicar y abrir un PR" }));
+    expect(within(sheet).queryByLabelText("Título")).toBeNull();
     await user.click(within(sheet).getByRole("button", { name: "Hacer commit en la rama" }));
     expect(await screen.findByText(`Commit hecho en ${BRANCH}.`, undefined, SLOW)).toBeInTheDocument();
     expect(api.acceptModes.get("s5")).toBe("branch");
@@ -88,6 +92,87 @@ describe("Ship: commit, push and pull request", () => {
     await user.click(screen.getByRole("button", { name: "Reabrir la tarea" }));
     expect(await screen.findByText("Tarea reabierta en su rama.", undefined, SLOW)).toBeInTheDocument();
     expect(await screen.findByRole("list", { name: "Archivos cambiados" })).toBeInTheDocument();
+  });
+
+  it("saves on its branch, publishes and opens the PR in one go from the sheet", async () => {
+    const { api, user } = setup();
+    const accept = vi.spyOn(api, "acceptTask");
+    const push = vi.spyOn(api, "pushTask");
+    const create = vi.spyOn(api, "createPullRequest");
+    const openLink = vi.spyOn(api, "openLink");
+    await openReviewTask(user);
+    const sheet = await openSheet(user);
+    // Merging needs no PR fields.
+    expect(within(sheet).queryByRole("switch", { name: "Publicar y abrir un PR" })).toBeNull();
+
+    await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
+    expect(within(sheet).getByRole("switch", { name: "Publicar y abrir un PR" })).toHaveAttribute("aria-checked", "true");
+    const title = within(sheet).getByLabelText("Título");
+    expect(title).toHaveValue("");
+    expect(title).toHaveAttribute("placeholder", TASK);
+    const body = within(sheet).getByLabelText("Descripción");
+    expect(body).toHaveAttribute("placeholder", expect.stringMatching(/^Vacía: Hedy la escribe/));
+    const draft = within(sheet).getByRole("switch", { name: "Como borrador" });
+    expect(draft).toHaveAttribute("aria-checked", "false");
+
+    await user.type(title, "fix(facturas): IVA por línea");
+    await user.type(body, "Redondeo por línea.");
+    await user.click(draft);
+    await user.click(within(sheet).getByRole("button", { name: "Guardar y abrir PR" }));
+
+    const toast = (await screen.findByText(`PR abierto desde ${BRANCH}.`, undefined, SLOW)).closest(".toast") as HTMLElement;
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(accept).toHaveBeenCalledWith("s5", expect.any(String), "branch");
+    expect(push).toHaveBeenCalledWith("s5");
+    expect(create).toHaveBeenCalledWith("s5", { title: "fix(facturas): IVA por línea", body: "Redondeo por línea.", base: "", draft: true });
+    const order = (spy: { mock: { invocationCallOrder: number[] } }) => spy.mock.invocationCallOrder[0] ?? 0;
+    expect(order(accept)).toBeLessThan(order(push));
+    expect(order(push)).toBeLessThan(order(create));
+    expect(api.acceptModes.get("s5")).toBe("branch");
+
+    await user.click(within(toast).getByRole("button", { name: "Ver el PR" }));
+    expect(openLink).toHaveBeenCalledWith("https://github.com/alex/hedy/pull/42");
+    // Done: no publish step opens by itself.
+    expect(screen.queryByRole("dialog", { name: "Publicar" })).toBeNull();
+    expect(await screen.findByRole("button", { name: /PR #42 · borrador/ }, SLOW)).toBeInTheDocument();
+  });
+
+  it("leaves the branch committed when the push fails, and opens no PR", async () => {
+    const { api, user } = setup();
+    const create = vi.spyOn(api, "createPullRequest");
+    api.pushFailure = {
+      kind: "rejected",
+      message: "el remoto tiene commits que la rama no tiene. Trae los cambios (Pull) y vuelve a publicar; Hedy nunca fuerza un push",
+    };
+    await openReviewTask(user);
+    const sheet = await openSheet(user);
+    await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
+    await user.click(within(sheet).getByRole("button", { name: "Guardar y abrir PR" }));
+
+    expect(await screen.findByText(/Hedy nunca fuerza un push/, undefined, SLOW)).toBeInTheDocument();
+    expect(api.acceptModes.get("s5")).toBe("branch");
+    expect(api.shipLog).toContain("push task s5");
+    expect(create).not.toHaveBeenCalled();
+    expect(api.pullRequests).toHaveLength(0);
+    expect(screen.queryByText(/PR abierto desde/)).toBeNull();
+    // No publish dialog by itself: the side panel offers each step again.
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps the commit when the PR cannot be created", async () => {
+    const { api, user } = setup();
+    api.prFailure = "gh: no se pudo crear el PR";
+    await openReviewTask(user);
+    const sheet = await openSheet(user);
+    await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
+    await user.click(within(sheet).getByRole("button", { name: "Guardar y abrir PR" }));
+
+    expect(await screen.findByText(/no se pudo crear el PR/, undefined, SLOW)).toBeInTheDocument();
+    expect(api.acceptModes.get("s5")).toBe("branch");
+    expect(api.shipLog).toContain("push task s5");
+    expect(api.pullRequests).toHaveLength(0);
+    expect(screen.queryByText(/PR abierto desde/)).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("suggests the subject with the task's AI and shows why it could not", async () => {
@@ -159,6 +244,8 @@ describe("Ship: commit, push and pull request", () => {
     await openReviewTask(user);
     const sheet = await openSheet(user);
     await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
+    // Without gh logged in, the sheet offers no PR: the side panel says what is missing.
+    expect(within(sheet).queryByRole("switch", { name: "Publicar y abrir un PR" })).not.toBeInTheDocument();
     await user.click(within(sheet).getByRole("button", { name: "Hacer commit en la rama" }));
     const publish = await screen.findByRole("dialog", { name: "Publicar" }, SLOW);
     await user.click(within(publish).getByRole("button", { name: "Publicar" }));
@@ -225,9 +312,11 @@ describe("Folder status in the status bar", () => {
     await openReviewTask(user, /^Home/);
     const folder = await screen.findByRole("group", { name: "Your folder" });
     expect(within(folder).getByRole("button", { name: /Commits to pull: 2/ })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Accept changes" }));
+    await user.click(screen.getByRole("button", { name: "Accept changes…" }));
     const sheet = await screen.findByRole("dialog", { name: "Accept changes" }, SLOW);
     await user.click(await within(sheet).findByRole("radio", { name: "Keep on its branch" }));
+    expect(within(sheet).getByRole("button", { name: "Save and open PR" })).toBeInTheDocument();
+    await user.click(within(sheet).getByRole("switch", { name: "Publish and open a PR" }));
     await user.click(within(sheet).getByRole("button", { name: "Commit on the branch" }));
     const publish = await screen.findByRole("dialog", { name: "Publish" }, SLOW);
     expect(within(publish).getByRole("button", { name: "Not now" })).toBeInTheDocument();

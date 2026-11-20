@@ -9,7 +9,8 @@ import type { ActivityItem, AgentEvent, BoardState, Decision, Overview, Phase, T
 import { WorkingWord } from "../../components/Mascot/WorkingWord";
 import { Button } from "../../components/ui/Button";
 import { formatElapsed, timeAgo } from "../../format";
-import { useT, type MessageKey } from "../../i18n";
+import { useLanguage, useT, type MessageKey } from "../../i18n";
+import { pillLabel } from "../../components/ui/StatusPill";
 import { formatCountdown } from "../../tasks/countdown";
 import { ACTIVITY_KEY, listKeyFor, useTaskEvents } from "../../tasks/hooks";
 import { openPermission, type InboxItem } from "../../tasks/inbox";
@@ -20,18 +21,6 @@ import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 
 /** Finished tasks stay on the board this long (the backend's `RECENT_HOURS`). */
 export const RECENT_HOURS = 24;
-
-export const STATE_LABEL: Record<BoardState, MessageKey> = {
-  working: "activity.state.working",
-  plan: "activity.state.plan",
-  permission: "activity.state.permission",
-  limited: "activity.state.limited",
-  review: "activity.state.review",
-  answered: "activity.state.answered",
-  accepted: "activity.state.accepted",
-  failed: "activity.state.failed",
-  cancelled: "activity.state.cancelled",
-};
 
 const PHASE_LABEL: Record<Phase, MessageKey> = {
   plan: "activity.phase.plan",
@@ -257,6 +246,7 @@ export function BoardRow({
   onOpen: (project: string, taskId: string) => void;
 }) {
   const t = useT();
+  const language = useLanguage();
   const { task, state } = item;
   const account = overview.accounts.find((a) => a.id === task.account);
   // While it works, the state reads as what it is doing ("Leyendo…").
@@ -268,6 +258,8 @@ export function BoardRow({
     ? t("activity.runningFor", { time: formatElapsed(now - task.createdAt) })
     : timeAgo(item.updatedAt, t, now);
   const live = state === "permission" && task.live;
+  // The same words as the task's pill everywhere else.
+  const label = pillLabel(state, task, t, language);
   const row = (
     <button
       className={`board-row board-row--${tone}`}
@@ -282,11 +274,11 @@ export function BoardRow({
           </span>
           {activity ? (
             <>
-              <span className="sr-only">{t(STATE_LABEL[state])}</span>
+              <span className="sr-only">{label}</span>
               <WorkingWord activity={activity} />
             </>
           ) : (
-            t(STATE_LABEL[state])
+            label
           )}
         </span>
         <span aria-hidden>·</span>

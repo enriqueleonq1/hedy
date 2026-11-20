@@ -211,15 +211,29 @@ export function Changes({ project, task }: { project: string; task: Task | null 
     review.selectFile(path);
   }
 
-  // j / k move through the files, like in a code review.
+  /** "Visto y siguiente": marks the file on screen and shows the next one not seen yet. */
+  function markAndNext() {
+    if (!current) return;
+    if (!reviewed.isReviewed(current)) reviewed.toggle(current);
+    const from = files.indexOf(current);
+    const next = [...files.slice(from + 1), ...files.slice(0, from)].find((f) => !reviewed.isReviewed(f));
+    if (next) select(next.path);
+    fileHead.current?.scrollIntoView?.({ block: "nearest" });
+  }
+
+  // j / k move through the files, like in a code review; v marks one seen and goes on.
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.key !== "j" && e.key !== "k") return;
+    if (e.key !== "j" && e.key !== "k" && e.key !== "v") return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const target = e.target as HTMLElement;
     // Nor from a dialog opened from here (its events bubble through the portal).
     if (target.closest("input:not([type=checkbox]), textarea, select, [contenteditable='true'], [role='dialog']")) return;
     if (files.length === 0) return;
     e.preventDefault();
+    if (e.key === "v") {
+      markAndNext();
+      return;
+    }
     const index = current ? files.indexOf(current) : -1;
     const next = files[Math.min(files.length - 1, Math.max(0, index + (e.key === "j" ? 1 : -1)))];
     if (!next) return;
@@ -428,10 +442,19 @@ export function Changes({ project, task }: { project: string; task: Task | null 
                     >
                       <PencilIcon />
                     </button>
-                    <label className="rv-viewed">
-                      <input type="checkbox" checked={reviewed.isReviewed(current)} onChange={() => reviewed.toggle(current)} />
-                      {t("review.mark")}
-                    </label>
+                    {reviewed.isReviewed(current) ? (
+                      <button type="button" className="rv-viewed" onClick={() => reviewed.toggle(current)}>
+                        <CheckIcon />
+                        {t("review.unmark")}
+                      </button>
+                    ) : (
+                      <button type="button" className="rv-viewed rv-viewed--next" aria-keyshortcuts="V" onClick={markAndNext}>
+                        {t("review.markNext")}
+                        <kbd className="kbd" aria-hidden>
+                          V
+                        </kbd>
+                      </button>
+                    )}
                   </span>
                 </div>
                 <DiffView
@@ -495,7 +518,7 @@ export function Changes({ project, task }: { project: string; task: Task | null 
                   title={running ? t("reviewer.bar.queued") : t("reviewer.bar.requestChanges")}
                   onClick={() => void review.sendToAi().then((ok) => ok && setPreview(false))}
                 >
-                  {t("reviewer.bar.send")}
+                  {pending.length === 1 ? t("reviewer.bar.sendOne") : t("reviewer.bar.sendMany", { n: pending.length })}
                 </Button>
                 <Button
                   small
@@ -503,7 +526,7 @@ export function Changes({ project, task }: { project: string; task: Task | null 
                   title={running ? t("workspace.changes.waitForAgent") : undefined}
                   onClick={() => setReviewing(true)}
                 >
-                  {t("workspace.changes.accept")}
+                  {t("workspace.changes.acceptMore")}
                 </Button>
               </>
             ) : (
@@ -523,7 +546,7 @@ export function Changes({ project, task }: { project: string; task: Task | null 
                   title={running ? t("workspace.changes.waitForAgent") : undefined}
                   onClick={() => setReviewing(true)}
                 >
-                  {t("workspace.changes.accept")}
+                  {t("workspace.changes.acceptMore")}
                 </Button>
               </>
             )}

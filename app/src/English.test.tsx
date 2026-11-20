@@ -147,8 +147,39 @@ describe("English", () => {
     expect(screen.getByText(/Always allowed in this task/)).toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Steps" })).getAllByText(/\(done\)/)).toHaveLength(3);
     expect(await screen.findByRole("list", { name: "Changed files" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Accept changes" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Accept changes…" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
+
+    // The side panel's tabs, and the files' switch between the tree and the search.
+    const panel = screen.getByRole("complementary", { name: "Code, review, terminal and preview" });
+    expect(within(panel).getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      expect.stringMatching(/^Changes \d+$/),
+      "Files",
+      "Terminal",
+      "Preview",
+    ]);
+    await user.click(within(panel).getByRole("tab", { name: "Files" }));
+    const mode = await within(panel).findByRole("radiogroup", { name: "Files" });
+    expect(within(mode).getByRole("radio", { name: "Tree" })).toHaveAttribute("aria-checked", "true");
+    await user.click(within(mode).getByRole("radio", { name: "Search · Ctrl+Shift+F" }));
+    expect(await within(panel).findByRole("searchbox")).toBeInTheDocument();
+    expect(spanishLeftovers(panel)).toEqual([]);
+  });
+
+  it("offers to start the dev server from the preview in English", async () => {
+    const api = MockApi.withSampleData();
+    api.files.set("/code/hedy", [...(api.files.get("/code/hedy") ?? []), "package.json"]);
+    const read = api.readFile.bind(api);
+    vi.spyOn(api, "readFile").mockImplementation(async (copy, path, rev) =>
+      path === "package.json" ? { kind: "text", text: '{"scripts":{"dev":"vite"}}', size: 26, version: "v1" } : read(copy, path, rev),
+    );
+    const { user } = setup(api);
+    await user.click(await screen.findByRole("button", { name: /^hedy/ }));
+    await user.click(await screen.findByRole("button", { name: /^Side panel/ }));
+    const panel = await screen.findByRole("complementary", { name: "Code, review, terminal and preview" });
+    await user.click(within(panel).getByRole("tab", { name: "Preview" }));
+    expect(await within(panel).findByRole("button", { name: "Start “npm run dev”" })).toBeInTheDocument();
+    expect(spanishLeftovers(panel)).toEqual([]);
   });
 
   it("queues messages and picks templates in English", async () => {
@@ -262,9 +293,9 @@ describe("English", () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity());
     const needs = await screen.findByRole("region", { name: "Need you (10)" }, { timeout: 8000 });
     expect(screen.getByRole("button", { name: "Continue «Revisa los tests del carrito»" })).toBeInTheDocument();
-    expect(within(needs).getByText("Plan to approve")).toBeInTheDocument();
-    expect(within(needs).getByText("Asks for permission")).toBeInTheDocument();
-    expect(within(needs).getByText("Paused by a limit")).toBeInTheDocument();
+    expect(within(needs).getByText("Waiting for you: plan")).toBeInTheDocument();
+    expect(within(needs).getByText("Waiting for you: permission")).toBeInTheDocument();
+    expect(within(needs).getByText(/^Paused/)).toBeInTheDocument();
     expect(within(needs).getByText(/^Hedy never switches accounts on its own: /)).toBeInTheDocument();
     // The inbox also holds the proposals, answered from their rows.
     expect(await within(needs).findByRole("button", { name: "Allow once" })).toBeInTheDocument();
@@ -275,7 +306,7 @@ describe("English", () => {
     expect(within(needs).getAllByRole("button", { name: "Approve change" })).toHaveLength(2);
     expect(within(needs).getAllByText(/^running for \d+ min$/)).toHaveLength(3);
     const ready = screen.getByRole("region", { name: "Ready to review (3)" });
-    expect(within(ready).getByText("Changes to review")).toBeInTheDocument();
+    expect(within(ready).getAllByText("Ready")[0]).toBeInTheDocument();
     expect(within(ready).getByRole("button", { name: "Review changes" })).toBeInTheDocument();
     expect(within(ready).getAllByText("Answered").length).toBeGreaterThan(0);
     expect(within(ready).getByText("40 min ago")).toBeInTheDocument();
