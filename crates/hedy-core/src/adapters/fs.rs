@@ -140,7 +140,17 @@ impl FileSystem for LocalFileSystem {
         if let Some(dir) = path.parent() {
             fs::create_dir_all(dir).map_err(|e| io_error("crear", dir, e))?;
         }
-        fs::write(path, contents).map_err(|e| io_error("escribir", path, e))
+        // Never through a link put where the file goes: it would write
+        // wherever the link points.
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NOFOLLOW);
+        let mut file = options
+            .open(path)
+            .map_err(|e| io_error("escribir", path, e))?;
+        file.write_all(contents.as_bytes())
+            .map_err(|e| io_error("escribir", path, e))
     }
 
     fn create_text(&self, path: &Path, contents: &str) -> PortResult<bool> {
@@ -248,6 +258,24 @@ impl FileSystem for LocalFileSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_is_never_written_through_a_link_in_its_place() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"), tmp.path().join("chats"));
+        let target = tmp.path().join("private.txt");
+        std::fs::write(&target, "mine").unwrap();
+        let link = tmp.path().join("skills/x/SKILL.md");
+        std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(fs_.write_text(&link, "hedy").is_err());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "mine");
+        let plain = tmp.path().join("skills/y/SKILL.md");
+        fs_.write_text(&plain, "one").unwrap();
+        fs_.write_text(&plain, "two").unwrap();
+        assert_eq!(std::fs::read_to_string(&plain).unwrap(), "two");
+    }
 
     #[test]
     fn attachments_are_private_and_never_overwritten() {

@@ -176,11 +176,15 @@ impl Hedy {
         self.fs.git_root(project).is_none() || self.git.is_ignored(project, &file.to_string_lossy())
     }
 
-    /// Writes a project skill where the user's own CLIs read it.
+    /// Writes a project skill where the user's own CLIs read it (never
+    /// making a project folder that is gone).
     pub(super) fn write_outside(&self, skill: &Skill, files: &mut SkillFiles) -> AppResult<()> {
         let Some(project) = &skill.project else {
             return Ok(());
         };
+        if !self.fs.exists(project) {
+            return Ok(());
+        }
         let in_git = self.fs.git_root(project).is_some();
         for folder in SkillFolder::ALL {
             let file = folder.file(&skill.name);
@@ -292,6 +296,19 @@ impl Hedy {
         let _ = self.save_outside_entries(&kept);
     }
 
+    /// A skill row is deleted (by sync): its copies outside Hedy go and the
+    /// switch is forgotten now, before its id can be taken by another skill.
+    pub(super) fn forget_outside_of(&self, id: i64) {
+        let mut entries = self.outside_entries();
+        let Some(entry) = entries.remove(&id) else {
+            return;
+        };
+        if self.fs.exists(&entry.project) {
+            self.remove_outside(&entry.project, &entry.name, &mut SkillFiles::default());
+        }
+        let _ = self.save_outside_entries(&entries);
+    }
+
     /// A project leaves Hedy: its skills' copies outside Hedy go with it.
     pub(super) fn forget_outside_in(&self, project: &Path) {
         let mut entries = self.outside_entries();
@@ -347,6 +364,7 @@ mod tests {
         let f = Fixture::new();
         f.add_claude("Personal");
         f.fs.add_git_root("/code/agenda");
+        f.fs.add_existing("/code/agenda");
         f.hedy
             .use_account(&f.dir("/code/agenda"), "personal", None)
             .unwrap();
@@ -504,6 +522,33 @@ mod tests {
                 .exists(&agenda.join(".claude/skills/pr-checklist/SKILL.md"))
         );
         assert!(!f.fs.exists(&agenda.join(".claude/skills/deploy/SKILL.md")));
+    }
+
+    #[test]
+    fn a_skill_deleted_by_sync_takes_its_copies_back_at_once() {
+        let (f, skill) = setup();
+        let agenda = f.dir("/code/agenda");
+        f.git.ignore(".claude/skills/pr-checklist/SKILL.md");
+        f.git.ignore(".agents/skills/pr-checklist/SKILL.md");
+        f.hedy.set_skill_outside(skill.id, true).unwrap();
+        // What sync does when another PC deleted it: before the id is reused.
+        f.hedy.forget_outside_of(skill.id);
+        f.store.delete_skill(skill.id).unwrap();
+        assert!(!f.fs.exists(&agenda.join(".claude/skills/pr-checklist/SKILL.md")));
+        let other = f
+            .hedy
+            .add_skill(
+                &agenda,
+                &SkillDraft {
+                    name: "deploy".into(),
+                    description: "Before deploying.".into(),
+                    body: "1. Run `make deploy`".into(),
+                    global: false,
+                },
+            )
+            .unwrap()
+            .skill;
+        assert!(!f.hedy.skill_outside(other.id), "even created in the same second");
     }
 
     #[test]

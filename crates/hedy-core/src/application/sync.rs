@@ -1917,7 +1917,11 @@ impl Hedy {
         let row = local_id.parse::<i64>().unwrap_or(-1);
         match kind {
             ItemKind::Note => self.store.delete_note(row)?,
-            ItemKind::Skill => self.store.delete_skill(row)?,
+            ItemKind::Skill => {
+                self.forget_outside_of(row);
+                self.forget_skill_trial(row);
+                self.store.delete_skill(row)?
+            }
             ItemKind::Template => self.store.delete_template(row)?,
             ItemKind::Theme => self.themes.delete(local_id)?,
             ItemKind::Suggestion => {}
