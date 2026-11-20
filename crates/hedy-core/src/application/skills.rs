@@ -457,7 +457,7 @@ impl Hedy {
             self.git
                 .ensure_excluded(repo, &folder.exclude_pattern(&skill.name))?;
         }
-        self.fs.write_text(&path, &skill_file(skill))?;
+        self.fs.write_text_beneath(dir, &file, &skill_file(skill))?;
         files.written.push(path);
         Ok(())
     }
@@ -481,7 +481,7 @@ impl Hedy {
                 {
                     continue;
                 }
-                self.fs.remove_file(&path)?;
+                self.fs.remove_file_beneath(&dir, &file)?;
                 files.removed.push(path);
                 self.remove_empty_skill_dirs(&dir, folder, &skill.name)?;
             }
@@ -539,7 +539,7 @@ impl Hedy {
             let leftover = !self.through_link(project, &file)
                 && self.fs.read_text(&path).ok().flatten().as_deref() == Some(written.as_str())
                 && (!in_git || self.git.is_ignored(project, &file.to_string_lossy()));
-            if leftover && self.fs.remove_file(&path).is_ok() {
+            if leftover && self.fs.remove_file_beneath(project, &file).is_ok() {
                 files.removed.push(path);
                 let _ = self.remove_empty_skill_dirs(project, folder, &skill.name);
             }

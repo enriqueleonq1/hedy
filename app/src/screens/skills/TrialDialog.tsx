@@ -21,7 +21,18 @@ const TASKS_MAX = 3;
  * judged by the same check Hedy runs in each copy. The runs are ordinary
  * tasks: their permission cards reach the user in Activity.
  */
-export function TrialDialog({ item, projects, onClose }: { item: SkillOverview; projects: Project[]; onClose: () => void }) {
+export function TrialDialog({
+  item,
+  projects,
+  onClose,
+  onBackground,
+}: {
+  item: SkillOverview;
+  projects: Project[];
+  onClose: () => void;
+  /** Closes it with the trial still running: someone else reads its outcome. */
+  onBackground: (trial: string) => void;
+}) {
   const t = useT();
   const api = useApi();
   const toast = useToast();
@@ -105,7 +116,7 @@ export function TrialDialog({ item, projects, onClose }: { item: SkillOverview; 
       <ConfirmButton variant="ghost" confirmLabel={t("skillLib.try.cancelConfirm")} onConfirm={cancel}>
         {t("skillLib.try.cancel")}
       </ConfirmButton>
-      <Button title={t("skillLib.try.backgroundHint")} onClick={onClose}>
+      <Button title={t("skillLib.try.backgroundHint")} onClick={() => started && onBackground(started.id)}>
         {t("skillLib.try.background")}
       </Button>
     </>

@@ -232,6 +232,19 @@ impl FileSystem for LocalFileSystem {
         }
     }
 
+    fn write_text_beneath(&self, root: &Path, rel: &Path, contents: &str) -> PortResult<()> {
+        let path = root.join(rel);
+        beneath::write(root, rel, contents.as_bytes()).map_err(|e| io_error("escribir", &path, e))
+    }
+
+    fn remove_file_beneath(&self, root: &Path, rel: &Path) -> PortResult<()> {
+        let path = root.join(rel);
+        match beneath::remove(root, rel) {
+            Err(e) if e.kind() != ErrorKind::NotFound => Err(io_error("borrar", &path, e)),
+            _ => Ok(()),
+        }
+    }
+
     fn remove_empty_dir(&self, path: &Path) -> PortResult<()> {
         if self.is_symlink(path) {
             return Ok(());
@@ -255,9 +268,192 @@ impl FileSystem for LocalFileSystem {
     }
 }
 
+/// Writing and deleting inside a folder without ever following a link on
+/// the way: each folder is opened from the one before with `O_NOFOLLOW`, so a
+/// folder swapped for a link meanwhile makes the call fail, never write
+/// elsewhere.
+mod beneath {
+    use std::io;
+    use std::path::{Component, Path};
+
+    /// The names of `rel`'s parts; `..`, a root or a prefix are refused.
+    fn parts(rel: &Path) -> io::Result<Vec<&std::ffi::OsStr>> {
+        rel.components()
+            .map(|c| match c {
+                Component::Normal(name) => Ok(name),
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "not a plain relative path",
+                )),
+            })
+            .collect()
+    }
+
+    #[cfg(unix)]
+    mod unix {
+        use std::ffi::{CString, OsStr};
+        use std::io;
+        use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+        use std::os::unix::ffi::OsStrExt;
+        use std::path::Path;
+
+        fn c(name: &OsStr) -> io::Result<CString> {
+            CString::new(name.as_bytes())
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "NUL in a name"))
+        }
+
+        fn open_root(root: &Path) -> io::Result<OwnedFd> {
+            let path = c(root.as_os_str())?;
+            // SAFETY: a valid C string; the descriptor is owned right away.
+            let fd = unsafe {
+                libc::open(
+                    path.as_ptr(),
+                    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC,
+                )
+            };
+            if fd < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: `fd` was just opened and is not used elsewhere.
+            Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+        }
+
+        /// The folder `name` inside `dir`, never a link; made when `create`.
+        fn step(dir: &OwnedFd, name: &OsStr, create: bool) -> io::Result<OwnedFd> {
+            let name = c(name)?;
+            let flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+            // SAFETY: a valid descriptor and C string.
+            let mut fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), flags) };
+            if fd < 0 && create && io::Error::last_os_error().kind() == io::ErrorKind::NotFound {
+                // SAFETY: as above; a folder that appears meanwhile is opened next.
+                let made = unsafe { libc::mkdirat(dir.as_raw_fd(), name.as_ptr(), 0o755) };
+                if made < 0 && io::Error::last_os_error().kind() != io::ErrorKind::AlreadyExists {
+                    return Err(io::Error::last_os_error());
+                }
+                // SAFETY: as above.
+                fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), flags) };
+            }
+            if fd < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: `fd` was just opened and is not used elsewhere.
+            Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+        }
+
+        pub fn write(root: &Path, parts: &[&OsStr], bytes: &[u8]) -> io::Result<()> {
+            let (file, folders) = parts.split_last().ok_or(io::ErrorKind::InvalidInput)?;
+            let mut dir = open_root(root)?;
+            for folder in folders {
+                dir = step(&dir, folder, true)?;
+            }
+            let name = c(file)?;
+            let flags =
+                libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+            // SAFETY: a valid descriptor and C string.
+            let fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), flags, 0o644) };
+            if fd < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: `fd` was just opened and is not used elsewhere.
+            let mut out = std::fs::File::from(unsafe { OwnedFd::from_raw_fd(fd) });
+            std::io::Write::write_all(&mut out, bytes)
+        }
+
+        pub fn remove(root: &Path, parts: &[&OsStr]) -> io::Result<()> {
+            let (file, folders) = parts.split_last().ok_or(io::ErrorKind::InvalidInput)?;
+            let mut dir = open_root(root)?;
+            for folder in folders {
+                dir = step(&dir, folder, false)?;
+            }
+            let name = c(file)?;
+            // SAFETY: a valid descriptor and C string; unlinkat never follows
+            // a link at the name itself (it removes the link).
+            if unsafe { libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), 0) } < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        }
+    }
+
+    pub fn write(root: &Path, rel: &Path, bytes: &[u8]) -> io::Result<()> {
+        let parts = parts(rel)?;
+        #[cfg(unix)]
+        return unix::write(root, &parts, bytes);
+        #[cfg(not(unix))]
+        {
+            check(root, &parts)?;
+            let path = root.join(rel);
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::write(path, bytes)
+        }
+    }
+
+    pub fn remove(root: &Path, rel: &Path) -> io::Result<()> {
+        let parts = parts(rel)?;
+        #[cfg(unix)]
+        return unix::remove(root, &parts);
+        #[cfg(not(unix))]
+        {
+            check(root, &parts)?;
+            std::fs::remove_file(root.join(rel))
+        }
+    }
+
+    /// Without `openat`: a check, then the call (best effort).
+    #[cfg(not(unix))]
+    fn check(root: &Path, parts: &[&std::ffi::OsStr]) -> io::Result<()> {
+        let mut path = root.to_path_buf();
+        for part in parts {
+            path.push(part);
+            if std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink()) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "a link is in the way",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn writes_beneath_a_folder_never_go_through_a_linked_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"), tmp.path().join("chats"));
+        let project = tmp.path().join("project");
+        let elsewhere = tmp.path().join("elsewhere");
+        std::fs::create_dir_all(project.join(".claude/skills")).unwrap();
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::fs::write(elsewhere.join("SKILL.md"), "theirs").unwrap();
+        // The skill's folder is a link to another folder.
+        std::os::unix::fs::symlink(&elsewhere, project.join(".claude/skills/pr")).unwrap();
+        let rel = Path::new(".claude/skills/pr/SKILL.md");
+        assert!(fs_.write_text_beneath(&project, rel, "hedy").is_err());
+        assert!(fs_.remove_file_beneath(&project, rel).is_err());
+        assert_eq!(
+            std::fs::read_to_string(elsewhere.join("SKILL.md")).unwrap(),
+            "theirs"
+        );
+        // Folders that are missing are made; a plain file is written and removed.
+        let fine = Path::new(".agents/skills/pr/SKILL.md");
+        fs_.write_text_beneath(&project, fine, "one").unwrap();
+        fs_.write_text_beneath(&project, fine, "two").unwrap();
+        assert_eq!(std::fs::read_to_string(project.join(fine)).unwrap(), "two");
+        fs_.remove_file_beneath(&project, fine).unwrap();
+        assert!(!project.join(fine).exists());
+        fs_.remove_file_beneath(&project, fine).unwrap();
+        assert!(
+            fs_.write_text_beneath(&project, Path::new("../escape"), "x")
+                .is_err()
+        );
+    }
 
     #[cfg(unix)]
     #[test]

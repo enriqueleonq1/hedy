@@ -1167,6 +1167,17 @@ impl FakeFs {
     pub fn files(&self) -> Vec<(PathBuf, String)> {
         self.files.lock().unwrap().clone()
     }
+    /// Like the real `*_beneath`: a link on the way refuses the call.
+    fn no_link_beneath(&self, root: &Path, rel: &Path) -> PortResult<()> {
+        let mut path = root.to_path_buf();
+        for part in rel.components() {
+            path.push(part);
+            if self.symlinked.lock().unwrap().contains(&path) {
+                return Err(PortError::new("a link is in the way"));
+            }
+        }
+        Ok(())
+    }
     pub fn add_existing(&self, path: &str) {
         self.existing.lock().unwrap().insert(path.into());
     }
@@ -1361,6 +1372,14 @@ impl FileSystem for FakeFs {
     fn remove_file(&self, path: &Path) -> PortResult<()> {
         self.files.lock().unwrap().retain(|(p, _)| p != path);
         Ok(())
+    }
+    fn write_text_beneath(&self, root: &Path, rel: &Path, contents: &str) -> PortResult<()> {
+        self.no_link_beneath(root, rel)?;
+        self.write_text(&root.join(rel), contents)
+    }
+    fn remove_file_beneath(&self, root: &Path, rel: &Path) -> PortResult<()> {
+        self.no_link_beneath(root, rel)?;
+        self.remove_file(&root.join(rel))
     }
     fn remove_empty_dir(&self, path: &Path) -> PortResult<()> {
         self.removed_dirs.lock().unwrap().push(path.to_owned());

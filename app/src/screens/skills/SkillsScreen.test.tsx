@@ -119,7 +119,10 @@ describe("Skills section", () => {
     await user.click(within(dialog).getByRole("button", { name: "Seguir en segundo plano" }));
     expect(screen.queryByRole("dialog", { name: "Probar publicar-version" })).not.toBeInTheDocument();
     expect(screen.queryByText("Prueba cancelada: no se guardó ningún resultado.")).not.toBeInTheDocument();
-  });
+    // The section reads its outcome and says it once.
+    expect(await screen.findByText("Terminó la prueba de «publicar-version»: Útil.", {}, { timeout: 12000 })).toBeInTheDocument();
+    await waitFor(() => expect(row(list, "publicar-version")).toHaveTextContent("Útil"));
+  }, 20000);
 
   it("imports a skill with a taken name only when replacing it", async () => {
     const api = MockApi.withSampleData();

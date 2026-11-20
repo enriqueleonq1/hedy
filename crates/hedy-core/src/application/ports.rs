@@ -827,6 +827,12 @@ pub trait FileSystem: Send + Sync {
     fn read_bytes(&self, path: &Path) -> PortResult<Option<Vec<u8>>>;
     /// Deletes a file; nothing happens when it does not exist.
     fn remove_file(&self, path: &Path) -> PortResult<()>;
+    /// Creates or replaces `rel` inside `root` (making its folders), never
+    /// through a link: not at the file, not at any folder of `rel`, even one
+    /// swapped in meanwhile (each step is opened from the one before).
+    fn write_text_beneath(&self, root: &Path, rel: &Path, contents: &str) -> PortResult<()>;
+    /// Deletes `rel` inside `root` the same way (nothing when it is missing).
+    fn remove_file_beneath(&self, root: &Path, rel: &Path) -> PortResult<()>;
     /// Deletes a folder only when it exists and is empty.
     fn remove_empty_dir(&self, path: &Path) -> PortResult<()>;
     /// Canonical form of `dir`.

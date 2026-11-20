@@ -4,7 +4,7 @@ import type { Project, SkillFinding, SkillOverview, SkillReview } from "../../ap
 import { Button, ConfirmButton } from "../../components/ui/Button";
 import { Switch } from "../../components/ui/controls";
 import { useToast } from "../../components/ui/Toast";
-import { timeAgo } from "../../format";
+import { formatTokens, timeAgo } from "../../format";
 import { useT } from "../../i18n";
 import { SkillForm } from "../memory/SkillForm";
 import { Update } from "../memory/SkillCard";
@@ -110,7 +110,7 @@ export function SkillDetail({
       <div className="skill-detail__stats">
         <div className="stat-card">
           <span className="stat-card__label">{t("skillLib.stat.context")}</span>
-          <strong>{t("skillLib.stat.contextValue", { n: item.tokens.toLocaleString() })}</strong>
+          <strong>{t("skillLib.stat.contextValue", { n: formatTokens(item.tokens) })}</strong>
           <span className="stat-card__hint">{t("skillLib.stat.contextHint")}</span>
         </div>
         <div className="stat-card">

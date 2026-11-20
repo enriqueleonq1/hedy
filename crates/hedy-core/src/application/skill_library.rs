@@ -205,7 +205,8 @@ impl Hedy {
                 files.skipped.push(path);
                 continue;
             }
-            self.fs.write_text(&path, &skill_file(skill))?;
+            self.fs
+                .write_text_beneath(project, &file, &skill_file(skill))?;
             files.written.push(path);
         }
         Ok(())
@@ -226,7 +227,7 @@ impl Hedy {
             if !self.through_link(project, &file)
                 && ours
                 && self.ours_to_touch(project, &file)
-                && self.fs.remove_file(&path).is_ok()
+                && self.fs.remove_file_beneath(project, &file).is_ok()
             {
                 files.removed.push(path);
                 let _ = self.remove_empty_skill_dirs(project, folder, name);
@@ -534,7 +535,10 @@ mod tests {
         // What sync does when another PC deleted it: before the id is reused.
         f.hedy.forget_outside_of(skill.id);
         f.store.delete_skill(skill.id).unwrap();
-        assert!(!f.fs.exists(&agenda.join(".claude/skills/pr-checklist/SKILL.md")));
+        assert!(
+            !f.fs
+                .exists(&agenda.join(".claude/skills/pr-checklist/SKILL.md"))
+        );
         let other = f
             .hedy
             .add_skill(
@@ -548,7 +552,10 @@ mod tests {
             )
             .unwrap()
             .skill;
-        assert!(!f.hedy.skill_outside(other.id), "even created in the same second");
+        assert!(
+            !f.hedy.skill_outside(other.id),
+            "even created in the same second"
+        );
     }
 
     #[test]

@@ -1,15 +1,21 @@
-import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 
-import { errorMessage } from "../../api/context";
+import { errorMessage, useApi } from "../../api/context";
 import type { Overview, Project, SkillOverview, SkillVerdict } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { Button } from "../../components/ui/Button";
+import { useToast } from "../../components/ui/Toast";
+import { formatTokens } from "../../format";
 import { useT } from "../../i18n";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { ExportDialog, ImportDialog } from "./SkillDialogs";
 import { SkillDetail } from "./SkillDetail";
 import { TrialDialog } from "./TrialDialog";
-import { useSkillsOverview, verdictKey } from "./library";
+import { SKILLS_OVERVIEW_KEY, useSkillsOverview, verdictKey, voidKey } from "./library";
+
+/** How often a trial left running in the background is looked at. */
+const BACKGROUND_POLL_MS = 5000;
 
 type Filter = "all" | "global" | "project" | "proposed";
 
@@ -37,6 +43,7 @@ export function SkillsScreen({ overview }: { overview: Overview }) {
   const [selected, setSelected] = useState<number | null>(null);
   const [dialog, setDialog] = useState<"import" | "export" | null>(null);
   const [trying, setTrying] = useState<SkillOverview | null>(null);
+  const background = useBackgroundTrials();
 
   const all = useMemo(() => skills.data ?? [], [skills.data]);
   const counts = {
@@ -138,7 +145,17 @@ export function SkillsScreen({ overview }: { overview: Overview }) {
 
       {dialog === "import" && <ImportDialog projects={overview.projects} onClose={() => setDialog(null)} />}
       {dialog === "export" && <ExportDialog skills={all} onClose={() => setDialog(null)} />}
-      {trying && <TrialDialog item={trying} projects={overview.projects} onClose={() => setTrying(null)} />}
+      {trying && (
+        <TrialDialog
+          item={trying}
+          projects={overview.projects}
+          onClose={() => setTrying(null)}
+          onBackground={(trial) => {
+            background.add({ trial, name: trying.skill.name });
+            setTrying(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -149,7 +166,7 @@ function SkillRow({ item, selected, onSelect }: { item: SkillOverview; selected:
   const meta = [
     item.projectName ?? t("skillLib.meta.global"),
     item.skill.status === "proposed" ? t("skillLib.meta.proposed") : item.skill.author === "user" ? t("skillLib.meta.you") : item.skill.author,
-    item.outside ? t("skillLib.meta.outside") : t("skillLib.meta.tokens", { n: item.tokens.toLocaleString() }),
+    item.outside ? t("skillLib.meta.outside") : t("skillLib.meta.tokens", { n: formatTokens(item.tokens) }),
   ];
   return (
     <button type="button" className="skill-row" aria-current={selected ? "true" : undefined} onClick={onSelect}>
@@ -161,4 +178,34 @@ function SkillRow({ item, selected, onSelect }: { item: SkillOverview; selected:
       <span className="skill-row__meta">{meta.join(" · ")}</span>
     </button>
   );
+}
+
+/**
+ * Trials the user left running ("Seguir en segundo plano"): looked at while
+ * the section is open, so their result reaches the list and is said once.
+ */
+function useBackgroundTrials() {
+  const t = useT();
+  const api = useApi();
+  const toast = useToast();
+  const client = useQueryClient();
+  const [trials, setTrials] = useState<{ trial: string; name: string }[]>([]);
+  useEffect(() => {
+    if (trials.length === 0) return;
+    const timer = setInterval(async () => {
+      for (const running of trials) {
+        const ended = await api.takeTrialOutcome(running.trial).catch(() => null);
+        if (!ended) continue;
+        setTrials((all) => all.filter((x) => x.trial !== running.trial));
+        await client.invalidateQueries({ queryKey: SKILLS_OVERVIEW_KEY });
+        if ("judged" in ended) {
+          toast.info(t("skillLib.try.doneIn", { name: running.name, verdict: t(verdictKey[ended.judged.verdict]) }));
+        } else {
+          toast.error(`${running.name}: ${t(voidKey[ended.void])}`);
+        }
+      }
+    }, BACKGROUND_POLL_MS);
+    return () => clearInterval(timer);
+  }, [trials, api, client, toast, t]);
+  return { add: (trial: { trial: string; name: string }) => setTrials((all) => [...all, trial]) };
 }

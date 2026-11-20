@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAction, useApi } from "../../api/context";
 import type { HedyApi } from "../../api/HedyApi";
 import type { SkillFinding, SkillVerdict, TrialResult, TrialVoid } from "../../api/types";
+import { formatTokens } from "../../format";
 import type { MessageKey, Translate } from "../../i18n";
 
 /** Under `["skills"]`: what refreshes a project's skills (an agent's proposal) refreshes this too. */
@@ -56,7 +57,7 @@ export function fromAi(f: SkillFinding): boolean {
 export function findingText(f: SkillFinding, t: Translate): string {
   switch (f.kind) {
     case "long":
-      return t("skillLib.finding.long", { tokens: f.tokens.toLocaleString() });
+      return t("skillLib.finding.long", { tokens: formatTokens(f.tokens) });
     case "broadDescription":
       return t("skillLib.finding.broadDescription", { phrase: f.phrase });
     case "overlaps":
