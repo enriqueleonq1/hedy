@@ -315,8 +315,8 @@ export class MockApi implements HedyApi {
     this.state = {
       userName: "Alex",
       theme: "system",
-      themeDark: "tokyo-night",
-      themeLight: "burbuja",
+      themeDark: "hedy",
+      themeLight: "hedy-light",
       language: "es",
       onboarded: true,
       dataDir: "/home/demo/.local/share/hedy",
@@ -553,7 +553,7 @@ export class MockApi implements HedyApi {
     this.customThemes = this.customThemes.filter((t) => t.id !== id);
     for (const base of ["dark", "light"] as const) {
       const key = base === "dark" ? "themeDark" : "themeLight";
-      if (this.state[key] === `custom:${id}`) this.state[key] = base === "dark" ? "tokyo-night" : "burbuja";
+      if (this.state[key] === `custom:${id}`) this.state[key] = base === "dark" ? "hedy" : "hedy-light";
     }
   }
 
@@ -1482,8 +1482,8 @@ export class MockApi implements HedyApi {
 
   async setSetting(key: string, value: string | null): Promise<void> {
     if (key === "ui.theme") this.state.theme = (value ?? "system") as Overview["theme"];
-    if (key === "ui.theme.dark") this.state.themeDark = value ?? "tokyo-night";
-    if (key === "ui.theme.light") this.state.themeLight = value ?? "burbuja";
+    if (key === "ui.theme.dark") this.state.themeDark = value ?? "hedy";
+    if (key === "ui.theme.light") this.state.themeLight = value ?? "hedy-light";
     if (key === "ui.name") this.state.userName = value ?? "Alex";
     if (key === "ui.language") this.state.language = (value ?? "system") as Overview["language"];
     if (key === "ui.onboarded") this.state.onboarded = value === "true";

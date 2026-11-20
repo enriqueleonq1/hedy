@@ -98,7 +98,7 @@ describe("Starting something new", () => {
     await waitFor(() => expect(composer).toHaveFocus());
     // Only the modes that never change files; the default account, preselected.
     await user.click(screen.getByRole("combobox", { name: "Modo" }));
-    expect(optionLabels()).toEqual(["Pregunta", "Investigar"]);
+    expect(optionLabels()).toEqual(["Solo preguntar", "Investigar"]);
     await user.keyboard("{Escape}");
     await waitFor(() => expect(composer).not.toHaveFocus());
     expect(screen.getByRole("combobox", { name: "Cuenta de la pregunta" })).toHaveTextContent("Claude personal");
@@ -132,7 +132,7 @@ describe("Starting something new", () => {
     await user.click(await screen.findByRole("menuitem", { name: "Borrar esta conversación" }));
     const confirm = screen.getByRole("dialog", { name: "¿Borrar esta conversación?" });
     expect(within(confirm).getByText(/No se puede deshacer/)).toBeInTheDocument();
-    await user.click(within(confirm).getByRole("button", { name: "Borrar" }));
+    await user.click(within(confirm).getByRole("button", { name: "Quitar" }));
     expect(remove).toHaveBeenCalledWith("c1");
     expect(await screen.findByText("Conversación borrada")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Pregunta rápida" })).toBeInTheDocument();

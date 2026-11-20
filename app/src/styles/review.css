@@ -5,7 +5,7 @@
 .accept-sheet p { margin: 0; }
 .accept-sheet__stats { display: flex; flex-wrap: wrap; gap: 8px; font-weight: 600; }
 .accept-sheet__tests { padding: 10px 12px; border-radius: var(--radius-control); border: 1px solid var(--line); }
-.accept-sheet__tests--ok > span[aria-hidden] { color: var(--success); font-weight: 700; }
+.accept-sheet__tests--ok > span[aria-hidden] { color: var(--success); font-weight: 600; }
 .accept-sheet__warn {
   padding: 10px 12px;
   border-radius: var(--radius-control);
@@ -18,5 +18,5 @@
 .undo-merge { display: grid; gap: 6px; justify-items: start; }
 
 .limit-wait { display: grid; gap: 4px; }
-.limit-wait__time { font-variant-numeric: tabular-nums; font-weight: 700; }
+.limit-wait__time { font-variant-numeric: tabular-nums; font-weight: 600; }
 .board-row__wait { font-variant-numeric: tabular-nums; font-weight: 600; }

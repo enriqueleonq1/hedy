@@ -16,8 +16,8 @@ async function open() {
   await user.click(await screen.findByRole("button", { name: /^Actividad: / }, SLOW));
   await user.click(await screen.findByRole("button", { name: /Arregla el cálculo de impuestos/ }, SLOW));
   await screen.findByRole("list", { name: "Archivos cambiados" }, SLOW);
-  const bar = screen.getByRole("region", { name: "Revisar con tus reglas" });
-  await user.click(within(bar).getByRole("button", { name: "Revisar con tus reglas" }));
+  const bar = screen.getByRole("region", { name: "Comprobar con tus reglas" });
+  await user.click(within(bar).getByRole("button", { name: "Comprobar con tus reglas" }));
   await within(bar).findByText("2 líneas no siguen tus reglas");
   return user;
 }

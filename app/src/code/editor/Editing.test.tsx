@@ -201,7 +201,7 @@ describe("Editing in the viewer", () => {
     const { user } = await setup();
     await open();
     expect(document.querySelector(".cm-blameGutter")).toBeNull();
-    const blame = screen.getByRole("button", { name: "Blame: quién cambió cada línea" });
+    const blame = screen.getByRole("button", { name: "Quién cambió cada línea" });
     await user.click(blame);
     await waitFor(() => expect(document.querySelector(".cm-blameGutter")).not.toBeNull());
     await user.click(blame);

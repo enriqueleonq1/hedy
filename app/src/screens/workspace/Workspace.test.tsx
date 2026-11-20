@@ -28,7 +28,7 @@ describe("Workspace", () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
     expect(await screen.findByText(/¿Qué hacemos en hedy\?/)).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Proyecto");
+    expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Cambiar código");
 
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "Agrega un recordatorio 24 horas antes");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
@@ -48,11 +48,11 @@ describe("Workspace", () => {
     expect(group).toHaveAttribute("aria-expanded", "true");
     // The edited file is a link to it in the viewer.
     expect(screen.getByRole("button", { name: "citas/servicio.py" }).parentElement).toHaveTextContent("Claude editó citas/servicio.py");
-    await user.click(within(card).getByRole("button", { name: "Permitir en este chat" }));
+    await user.click(within(card).getByRole("button", { name: "Permitir siempre en esta tarea" }));
 
     expect(await screen.findByText(/Claude: pasan los tests/)).toBeInTheDocument();
     expect(await screen.findByText(/Terminó/, { selector: ".turn-end" })).toBeInTheDocument();
-    expect(screen.getByText(/Permitido en este chat/)).toBeInTheDocument();
+    expect(screen.getByText(/Permitido siempre en esta tarea/)).toBeInTheDocument();
     const steps = screen.getByRole("region", { name: "Pasos" });
     expect(within(steps).getAllByText(/\(hecho\)/)).toHaveLength(3);
 
@@ -63,8 +63,8 @@ describe("Workspace", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
-    const sheet = await screen.findByRole("dialog", { name: "Revisar antes de integrar" });
-    await user.click(await within(sheet).findByRole("button", { name: "Aceptar e integrar" }));
+    const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" });
+    await user.click(await within(sheet).findByRole("button", { name: "Aceptar y unir" }));
     expect(await screen.findByText("Cambios integrados en main.")).toBeInTheDocument();
     expect(await screen.findByText(/ya se aceptó/)).toBeInTheDocument();
     // Many steps: well over the default 5 s on a busy machine.
@@ -110,7 +110,7 @@ describe("Workspace", () => {
   it("asks without a worktree in Pregunta mode", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
-    await chooseMode(user, "Pregunta");
+    await chooseMode(user, "Solo preguntar");
     expect(screen.queryByRole("button", { name: "Planificar primero" })).not.toBeInTheDocument();
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
@@ -128,9 +128,9 @@ describe("Workspace", () => {
 
     await user.click(modes);
     expect(screen.getByRole("listbox", { name: "Modo" })).toBeInTheDocument();
-    expect(optionLabels()).toEqual(["Proyecto", "Pregunta", "Investigar"]);
-    expect(screen.getByRole("option", { name: "Proyecto" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("option", { name: "Pregunta" })).toHaveAccessibleDescription("Responde sin tocar archivos");
+    expect(optionLabels()).toEqual(["Cambiar código", "Solo preguntar", "Investigar"]);
+    expect(screen.getByRole("option", { name: "Cambiar código" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("option", { name: "Solo preguntar" })).toHaveAccessibleDescription("Responde sin tocar archivos");
     await user.click(screen.getByRole("option", { name: "Investigar" }));
     expect(modes).toHaveTextContent("Investigar");
     expect(screen.queryByRole("button", { name: "Planificar primero" })).not.toBeInTheDocument();
@@ -138,7 +138,7 @@ describe("Workspace", () => {
 
     // Another project keeps its own mode; coming back finds the one chosen here.
     await openProject(user, /^tienda/);
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Proyecto"));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Cambiar código"));
     await openProject(user, /^hedy/);
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Investigar"));
 
@@ -356,7 +356,7 @@ describe("Workspace", () => {
   it("refreshes a stopped task even when its status stays the same", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
-    await chooseMode(user, "Pregunta");
+    await chooseMode(user, "Solo preguntar");
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     expect(await screen.findByText(/Terminó/, { selector: ".turn-end" })).toBeInTheDocument();
@@ -422,9 +422,9 @@ describe("Composer", () => {
     expect(screen.getByText("Enter enviar · Shift+Enter salto")).toBeInTheDocument();
 
     const model = screen.getByRole("combobox", { name: "Modelo" });
-    expect(model).toHaveTextContent("Auto por fase");
+    expect(model).toHaveTextContent("Automático");
     await user.click(model);
-    expect(optionLabels()).toEqual(["Auto por fase", "Fable", "Opus", "Sonnet", "Haiku"]);
+    expect(optionLabels()).toEqual(["Automático", "Fable", "Opus", "Sonnet", "Haiku"]);
     expect(screen.getByRole("option", { name: "Haiku" })).toHaveAccessibleDescription("El más rápido");
     await user.click(screen.getByRole("option", { name: "Sonnet" }));
     expect(model).toHaveTextContent("Sonnet");

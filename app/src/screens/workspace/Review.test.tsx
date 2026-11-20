@@ -36,21 +36,21 @@ describe("Review before accepting", () => {
     await openReviewTask(user, /^Actividad: /);
     await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
 
-    const sheet = await screen.findByRole("dialog", { name: "Revisar antes de integrar" });
+    const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" });
     expect(
       await within(sheet).findByText("Se integra en main desde hedy/arregla-el-calculo-de-impuestos-s5."),
     ).toBeInTheDocument();
     expect(within(sheet).getByText("Archivos: 3")).toBeInTheDocument();
     expect(within(sheet).getByText("9 líneas añadidas y 3 eliminadas")).toBeInTheDocument();
     expect(
-      within(sheet).getByText(/Los últimos tests fallaron: pytest tests\/test_facturas\.py\. Puedes integrar igual\./),
+      within(sheet).getByText(/Los últimos tests fallaron: pytest tests\/test_facturas\.py\. Puedes aceptar igual\./),
     ).toBeInTheDocument();
     const message = within(sheet).getByLabelText("Mensaje del commit");
     expect(message).toHaveValue(`${TASK}\n\nEl IVA se redondea por línea y no al total.`);
 
     await user.clear(message);
     await user.type(message, "fix: IVA por línea");
-    await user.click(within(sheet).getByRole("button", { name: "Aceptar e integrar" }));
+    await user.click(within(sheet).getByRole("button", { name: "Aceptar y unir" }));
 
     expect(await screen.findByText("Cambios integrados en main.")).toBeInTheDocument();
     expect(api.commitMessages.get("s5")).toBe("fix: IVA por línea");
@@ -66,7 +66,7 @@ describe("Review before accepting", () => {
     const { api, user } = setup();
     await openReviewTask(user, /^Actividad: /);
     await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
-    const sheet = await screen.findByRole("dialog", { name: "Revisar antes de integrar" });
+    const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" });
     await user.click(within(sheet).getByRole("button", { name: "Cancelar" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(api.commitMessages.has("s5")).toBe(false);
@@ -77,8 +77,8 @@ describe("Review before accepting", () => {
     const { user } = setup();
     await openReviewTask(user, /^Actividad: /);
     await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
-    const sheet = await screen.findByRole("dialog", { name: "Revisar antes de integrar" });
-    await user.click(await within(sheet).findByRole("button", { name: "Aceptar e integrar" }));
+    const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" });
+    await user.click(await within(sheet).findByRole("button", { name: "Aceptar y unir" }));
 
     const toast = (await screen.findByText("Cambios integrados en main.")).closest(".toast") as HTMLElement;
     await user.click(within(toast).getByRole("button", { name: "Deshacer" }));
@@ -91,8 +91,8 @@ describe("Review before accepting", () => {
     const { api, user } = setup();
     await openReviewTask(user, /^Actividad: /);
     await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
-    const sheet = await screen.findByRole("dialog", { name: "Revisar antes de integrar" });
-    await user.click(await within(sheet).findByRole("button", { name: "Aceptar e integrar" }));
+    const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" });
+    await user.click(await within(sheet).findByRole("button", { name: "Aceptar y unir" }));
     await screen.findByText(/ya se aceptó/);
 
     api.undoRefusal = "No se puede deshacer sin riesgo: ya hay commits nuevos después de la integración.";
@@ -122,7 +122,7 @@ describe("Review before accepting", () => {
     expect(second).toHaveAttribute("aria-current", "true");
 
     await user.click(within(files).getByRole("checkbox", { name: "Marcar facturas/impuestos.py como revisado" }));
-    await user.click(screen.getByRole("checkbox", { name: "Revisado" }));
+    await user.click(screen.getByRole("checkbox", { name: "Visto" }));
     expect(screen.getByText("2 de 3 revisados")).toBeInTheDocument();
     expect(within(files).getByRole("button", { name: /^facturas\/impuestos\.py.*, revisado/ })).toBeInTheDocument();
 
@@ -137,7 +137,7 @@ describe("Review before accepting", () => {
     await openReviewTask(user, /^Activity: /);
     expect(screen.getByText("0 of 3 reviewed")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Accept changes" }));
-    const sheet = await screen.findByRole("dialog", { name: "Review before merging" });
+    const sheet = await screen.findByRole("dialog", { name: "Accept changes" });
     expect(await within(sheet).findByText("Files: 3")).toBeInTheDocument();
     expect(within(sheet).getByText(/The last tests failed: .*You can still merge\./)).toBeInTheDocument();
     expect(within(sheet).getByLabelText("Commit message")).toBeInTheDocument();

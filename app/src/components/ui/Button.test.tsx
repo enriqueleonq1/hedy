@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { ConfirmButton } from "./Button";
 
 describe("ConfirmButton", () => {
-  it("is a quiet destructive ghost until armed, then asks to confirm", async () => {
+  it("is a danger button that asks for a second click", async () => {
     const onConfirm = vi.fn();
     render(
       <ConfirmButton className="extra" confirmLabel="¿Seguro?" onConfirm={onConfirm}>
@@ -12,12 +12,12 @@ describe("ConfirmButton", () => {
       </ConfirmButton>,
     );
     const button = screen.getByRole("button", { name: "Quitar" });
-    expect(button).toHaveClass("btn--ghost", "btn--destructive", "extra");
+    expect(button).toHaveClass("btn--danger", "extra");
+    expect(button).not.toHaveClass("btn--armed");
 
     await userEvent.click(button);
     const armed = screen.getByRole("button", { name: "¿Seguro?" });
-    expect(armed).toHaveClass("btn--danger", "extra");
-    expect(armed).not.toHaveClass("btn--destructive");
+    expect(armed).toHaveClass("btn--danger", "btn--armed", "extra");
     expect(onConfirm).not.toHaveBeenCalled();
 
     await userEvent.click(armed);

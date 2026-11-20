@@ -82,7 +82,7 @@ describe("Suggestions in an empty task", () => {
     const composer = screen.getByLabelText("Pídele algo a hedy");
     expect(composer).toHaveValue("Revisa mis cambios sin commit y propón un mensaje de commit.");
     await waitFor(() => expect(composer).toHaveFocus());
-    expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Pregunta");
+    expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Solo preguntar");
     expect(start).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Enviar" }));

@@ -29,7 +29,7 @@ async function openReviewTask(user: ReturnType<typeof userEvent.setup>, board = 
 
 async function openSheet(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
-  const sheet = await screen.findByRole("dialog", { name: "Revisar antes de integrar" }, SLOW);
+  const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" }, SLOW);
   await within(sheet).findByLabelText("Mensaje del commit");
   return sheet;
 }
@@ -46,7 +46,7 @@ describe("Ship: commit, push and pull request", () => {
     await openReviewTask(user);
     const sheet = await openSheet(user);
 
-    await user.click(within(sheet).getByRole("radio", { name: "Dejar en su rama (PR)" }));
+    await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
     expect(within(sheet).getByText(/tu carpeta no cambia/)).toBeInTheDocument();
     expect(within(sheet).queryByText(/Tu carpeta principal está en la rama/)).toBeNull();
     await user.click(within(sheet).getByRole("button", { name: "Hacer commit en la rama" }));
@@ -118,7 +118,7 @@ describe("Ship: commit, push and pull request", () => {
     const { api, user } = setup();
     await openReviewTask(user);
     const sheet = await openSheet(user);
-    await user.click(within(sheet).getByRole("button", { name: "Aceptar e integrar" }));
+    await user.click(within(sheet).getByRole("button", { name: "Aceptar y unir" }));
     const publish = await screen.findByRole("dialog", { name: "Publicar" }, SLOW);
     expect(within(publish).getByText("Se publica main en origin/main.")).toBeInTheDocument();
     expect(within(publish).getByText(/Hedy ya no puede deshacer la integración/)).toBeInTheDocument();
@@ -146,8 +146,8 @@ describe("Ship: commit, push and pull request", () => {
     api.noRemote.add("/code/hedy");
     await openReviewTask(user);
     const sheet = await openSheet(user);
-    expect(within(sheet).queryByRole("radiogroup", { name: "Cómo integrar" })).toBeNull();
-    await user.click(within(sheet).getByRole("button", { name: "Aceptar e integrar" }));
+    expect(within(sheet).queryByRole("radiogroup", { name: "Cómo aceptar" })).toBeNull();
+    await user.click(within(sheet).getByRole("button", { name: "Aceptar y unir" }));
     expect(await screen.findByText("Cambios integrados en main.", undefined, SLOW)).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(await screen.findByText(/no tiene remoto/, undefined, SLOW)).toBeInTheDocument();
@@ -158,7 +158,7 @@ describe("Ship: commit, push and pull request", () => {
     api.gh = "loggedOut";
     await openReviewTask(user);
     const sheet = await openSheet(user);
-    await user.click(within(sheet).getByRole("radio", { name: "Dejar en su rama (PR)" }));
+    await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
     await user.click(within(sheet).getByRole("button", { name: "Hacer commit en la rama" }));
     const publish = await screen.findByRole("dialog", { name: "Publicar" }, SLOW);
     await user.click(within(publish).getByRole("button", { name: "Publicar" }));
@@ -226,8 +226,8 @@ describe("Folder status in the status bar", () => {
     const folder = await screen.findByRole("group", { name: "Your folder" });
     expect(within(folder).getByRole("button", { name: /Commits to pull: 2/ })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Accept changes" }));
-    const sheet = await screen.findByRole("dialog", { name: "Review before merging" }, SLOW);
-    await user.click(await within(sheet).findByRole("radio", { name: "Keep on its branch (PR)" }));
+    const sheet = await screen.findByRole("dialog", { name: "Accept changes" }, SLOW);
+    await user.click(await within(sheet).findByRole("radio", { name: "Keep on its branch" }));
     await user.click(within(sheet).getByRole("button", { name: "Commit on the branch" }));
     const publish = await screen.findByRole("dialog", { name: "Publish" }, SLOW);
     expect(within(publish).getByRole("button", { name: "Not now" })).toBeInTheDocument();

@@ -287,7 +287,7 @@ mod tests {
         f.hedy.delete_theme(&theme.id).unwrap();
         assert_eq!(
             f.hedy.mode_themes().unwrap(),
-            ("tokyo-night".into(), "custom:otro".into())
+            ("hedy".into(), "custom:otro".into())
         );
         assert_eq!(f.hedy.list_themes().unwrap().len(), 1);
         // Already gone: nothing happens.

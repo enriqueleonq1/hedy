@@ -40,7 +40,7 @@ describe("Images in the composer", () => {
   it("pastes an image, sends it with the message and shows it in the chat", async () => {
     const { user } = setup();
     const composer = await newTaskInHedy(user);
-    await chooseMode(user, "Pregunta");
+    await chooseMode(user, "Solo preguntar");
 
     fireEvent.paste(composer, { clipboardData: transfer([png("captura.png")]) });
     const tray = await screen.findByRole("list", { name: "Imágenes adjuntas" });

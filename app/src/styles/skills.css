@@ -20,7 +20,7 @@
   font-size: var(--text-callout);
   cursor: pointer;
 }
-.skill-lib__filter[aria-pressed="true"] { background: var(--selection); border-color: var(--selection); color: var(--action-text); font-weight: 650; }
+.skill-lib__filter[aria-pressed="true"] { background: var(--selection); border-color: var(--selection); color: var(--action-text); font-weight: 600; }
 .skill-lib__filter:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .skill-lib__state,
 .skill-lib__pick { padding: var(--space-4) 0; }
@@ -70,7 +70,7 @@
   padding: 2px 8px;
   border-radius: var(--radius-pill);
   font-size: var(--text-caption);
-  font-weight: 650;
+  font-weight: 600;
   white-space: nowrap;
 }
 .verdict--useful { background: var(--diff-add-bg); color: var(--diff-add-ink); }
@@ -137,7 +137,7 @@
   font-size: var(--text-callout);
   overflow-wrap: anywhere;
 }
-.finding__sign { flex: none; width: 1em; font-weight: 700; text-align: center; }
+.finding__sign { flex: none; width: 1em; font-weight: 600; text-align: center; }
 .finding--good .finding__sign { color: var(--success); }
 .finding--warning .finding__sign { color: var(--warning); }
 .finding--bad .finding__sign { color: var(--danger); }

@@ -119,10 +119,10 @@ describe("Sync", () => {
     expect(screen.queryByRole("combobox", { name: "Memoria de este proyecto" })).toBeNull();
   });
 
-  it("adds this PC with the same address and the 12 words", async () => {
+  it("adds this computadora with the same address and the 12 words", async () => {
     const { api, user } = renderAt("#sync", offline());
-    await user.click(within(await waitFor(section)).getByRole("button", { name: "Ya la uso en otra PC" }));
-    const dialog = screen.getByRole("dialog", { name: "Sumar esta PC" });
+    await user.click(within(await waitFor(section)).getByRole("button", { name: "Ya la uso en otra computadora" }));
+    const dialog = screen.getByRole("dialog", { name: "Sumar esta computadora" });
     await user.type(within(dialog).getByLabelText("Dirección"), "git@github.com:alex/hedy-memory.git");
     await user.click(within(dialog).getByRole("button", { name: "Continuar" }));
     await user.clear(within(dialog).getByLabelText("Nombre"));
@@ -130,13 +130,13 @@ describe("Sync", () => {
     await user.click(within(dialog).getByRole("button", { name: "Continuar" }));
     const words = within(dialog).getByLabelText("Clave de recuperación");
     await user.type(words, "árbol nube lápiz");
-    await user.click(within(dialog).getByRole("button", { name: "Sumar esta PC" }));
+    await user.click(within(dialog).getByRole("button", { name: "Sumar esta computadora" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("12 palabras");
 
     await user.clear(words);
     await user.type(words, MockApi.SYNC_WORDS);
-    await user.click(within(dialog).getByRole("button", { name: "Sumar esta PC" }));
-    expect(await screen.findByText("Esta PC ya sincroniza · 8 recibidos")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Sumar esta computadora" }));
+    expect(await screen.findByText("Esta computadora ya sincroniza · 8 recibidos")).toBeInTheDocument();
     const table = within(section()).getByRole("table");
     expect(within(table).getByText("Oficina")).toBeInTheDocument();
     expect(within(table).getByText("Casa")).toBeInTheDocument();
@@ -151,7 +151,7 @@ describe("Sync", () => {
     expect(within(conflict).getByText(/con dos decimales/)).toBeInTheDocument();
     expect(within(conflict).getByText(/solo si no son cero/)).toBeInTheDocument();
     expect(within(conflict).getByText(/Oficina · hace 1 h · en uso/)).toBeInTheDocument();
-    await user.click(within(conflict).getByRole("button", { name: "Usar la de esta PC" }));
+    await user.click(within(conflict).getByRole("button", { name: "Usar la de esta computadora" }));
     expect(await within(card).findByText("Todo al día")).toBeInTheDocument();
     expect(api.resolved).toEqual([{ id: 1, useOther: true }]);
     expect(within(card).queryByRole("article")).toBeNull();
@@ -194,15 +194,15 @@ describe("Sync", () => {
     const home = await screen.findByRole("combobox", { name: "Memoria de este proyecto" });
     expect(home).toHaveTextContent("Personal");
     await user.click(home);
-    await user.click(screen.getByRole("option", { name: /Solo en esta PC/ }));
+    await user.click(screen.getByRole("option", { name: /Solo en esta computadora/ }));
     await waitFor(async () => expect((await api.memoryHome("/code/hedy")).home).toEqual({ kind: "local" }));
     expect((await api.memoryHome("/code/hedy")).chosen).toBe(true);
   });
 
-  it("removes another PC after asking", async () => {
+  it("removes another computadora after asking", async () => {
     const { api, user } = renderAt("#sync", MockApi.withSampleData());
     const table = await waitFor(() => within(section()).getByRole("table"));
-    // This PC has no "Quitar": it leaves instead.
+    // This computadora has no "Quitar": it leaves instead.
     expect(within(table).queryByRole("button", { name: "Quitar Casa" })).toBeNull();
     await user.click(within(table).getByRole("button", { name: "Quitar Oficina" }));
     const dialog = screen.getByRole("dialog", { name: "¿Quitar Oficina?" });
@@ -211,16 +211,16 @@ describe("Sync", () => {
     expect(api.sync?.devices).toHaveLength(2);
 
     await user.click(within(table).getByRole("button", { name: "Quitar Oficina" }));
-    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Quitar PC" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Quitar computadora" }));
     expect(await screen.findByText("Oficina ya no puede leer lo nuevo.")).toBeInTheDocument();
     expect(api.sync?.devices.map((d) => d.name)).toEqual(["Casa"]);
     await waitFor(() => expect(within(section()).queryByText("Oficina")).toBeNull());
   });
 
-  it("stops syncing on this PC after a second click", async () => {
+  it("stops syncing on this computadora after a second click", async () => {
     const { api, user } = renderAt("#sync", MockApi.withSampleData());
     const card = await waitFor(section);
-    await user.click(await within(card).findByRole("button", { name: "Dejar de sincronizar en esta PC" }));
+    await user.click(await within(card).findByRole("button", { name: "Dejar de sincronizar en esta computadora" }));
     await user.click(within(card).getByRole("button", { name: "Sí, dejar de sincronizar" }));
     expect(await within(section()).findByText("Desactivada")).toBeInTheDocument();
     expect(api.sync).toBeNull();

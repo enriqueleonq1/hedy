@@ -1,7 +1,7 @@
 // Checking a task's changes against the written rules (docs/decisions.md §37).
 
 const es = {
-  "rules.check": "Revisar con tus reglas",
+  "rules.check": "Comprobar con tus reglas",
   "rules.checkHint": "Compara las líneas nuevas con las reglas escritas del proyecto y del equipo. Gasta unos pocos tokens de la cuenta del proyecto.",
   "rules.again": "Volver a revisar",
   "rules.checking": "Revisando el cambio contra tus reglas…",

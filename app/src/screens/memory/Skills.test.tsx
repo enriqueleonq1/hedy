@@ -83,8 +83,8 @@ describe("Skills", () => {
 
     // Delete asks first.
     const publish = screen.getByRole("listitem", { name: "publicar-version" });
-    await user.click(within(publish).getByRole("button", { name: "Borrar" }));
-    await user.click(within(publish).getByRole("button", { name: "¿Borrarla?" }));
+    await user.click(within(publish).getByRole("button", { name: "Quitar" }));
+    await user.click(within(publish).getByRole("button", { name: "¿Quitarla?" }));
     expect(await screen.findByText("Habilidad «publicar-version» borrada.")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole("listitem", { name: "publicar-version" })).not.toBeInTheDocument());
   });

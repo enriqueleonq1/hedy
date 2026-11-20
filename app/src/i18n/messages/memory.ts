@@ -2,7 +2,7 @@
 
 const es = {
   "memory.title": "Memoria de {name}",
-  "memory.subtitle": "Lo que Hedy y tus IAs saben de este proyecto. Todo se guarda en tu PC.",
+  "memory.subtitle": "Lo que Hedy y tus IAs saben de este proyecto. Todo se guarda en tu computadora.",
   "memory.search": "Buscar en la memoria",
   "memory.searchPlaceholder": "Buscar en la memoria…",
   "memory.newNoteButton": "+ Nueva nota",
@@ -75,7 +75,7 @@ const es = {
 
 const en: Record<keyof typeof es, string> = {
   "memory.title": "{name} memory",
-  "memory.subtitle": "What Hedy and your AIs know about this project. Everything stays on your PC.",
+  "memory.subtitle": "What Hedy and your AIs know about this project. Everything stays on your computer.",
   "memory.search": "Search memory",
   "memory.searchPlaceholder": "Search memory…",
   "memory.newNoteButton": "+ New note",

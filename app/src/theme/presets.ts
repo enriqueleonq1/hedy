@@ -1,10 +1,11 @@
-// The themes Hedy ships: its own two (Tokyo Night and Burbuja, exactly the
-// tokens of `tokens.ts`) and well-known editor themes built from a seed.
+// The themes Hedy ships: its own two (Hedy and Hedy claro, exactly the tokens
+// of `tokens.ts`), the classic Tokyo Night and Burbuja it shipped first, and
+// well-known editor themes built from a seed.
 // Each passes every contrast check on its own (`tokens.test.ts`).
 
 import type { MessageKey } from "../i18n";
 import { deriveTokens, type ThemeSeed } from "./derive";
-import { themes, type ThemeBase, type ThemeTokens } from "./tokens";
+import { classicThemes, themes, type ThemeBase, type ThemeTokens } from "./tokens";
 
 export interface ThemeDef {
   /** A preset's id (`tokyo-night`) or `custom:<id>` for the user's own. */
@@ -16,7 +17,7 @@ export interface ThemeDef {
   tokens: ThemeTokens;
 }
 
-export const DEFAULT_THEME: Record<ThemeBase, string> = { dark: "tokyo-night", light: "burbuja" };
+export const DEFAULT_THEME: Record<ThemeBase, string> = { dark: "hedy", light: "hedy-light" };
 
 const SEEDS: { id: string; name: string; note: MessageKey; base: ThemeBase; seed: ThemeSeed }[] = [
   {
@@ -231,15 +232,23 @@ const SEEDS: { id: string; name: string; note: MessageKey; base: ThemeBase; seed
 
 /** Hedy's own themes: the default of each mode, and where a missing or deleted theme falls back. */
 export const HEDY_THEMES: Record<ThemeBase, ThemeDef> = {
-  dark: { id: DEFAULT_THEME.dark, name: "Tokyo Night", note: "theme.note.tokyoNight", base: "dark", tokens: themes.dark },
-  light: { id: DEFAULT_THEME.light, name: "Burbuja", note: "theme.note.burbuja", base: "light", tokens: themes.light },
+  dark: { id: DEFAULT_THEME.dark, name: "Hedy Dark", note: "theme.note.hedyDark", base: "dark", tokens: themes.dark },
+  light: { id: DEFAULT_THEME.light, name: "Hedy Light", note: "theme.note.hedyLight", base: "light", tokens: themes.light },
 };
 
-/** Every preset, Hedy's own first; dark ones, then light ones. */
+/** The themes Hedy shipped first, with their exact tokens. */
+const CLASSIC: Record<ThemeBase, ThemeDef> = {
+  dark: { id: "tokyo-night", name: "Tokyo Night", note: "theme.note.tokyoNight", base: "dark", tokens: classicThemes.dark },
+  light: { id: "burbuja", name: "Burbuja", note: "theme.note.burbuja", base: "light", tokens: classicThemes.light },
+};
+
+/** Every preset, Hedy's own first, then its classic one; dark ones, then light ones. */
 export const PRESETS: ThemeDef[] = [
   HEDY_THEMES.dark,
+  CLASSIC.dark,
   ...SEEDS.filter((s) => s.base === "dark").map(build),
   HEDY_THEMES.light,
+  CLASSIC.light,
   ...SEEDS.filter((s) => s.base === "light").map(build),
 ];
 

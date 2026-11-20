@@ -45,8 +45,8 @@ describe("Theme gallery", () => {
   it("previews a theme across the app, applies it and undoes it", async () => {
     const { api, user } = await setup();
     const setSetting = vi.spyOn(api, "setSetting");
-    expect(card("Tokyo Night")).toHaveAttribute("aria-pressed", "true");
-    expect(within(card("Tokyo Night")).getByText("En uso")).toBeInTheDocument();
+    expect(card("Hedy Dark")).toHaveAttribute("aria-pressed", "true");
+    expect(within(card("Hedy Dark")).getByText("En uso")).toBeInTheDocument();
 
     await user.click(card("Dracula"));
     expect(within(bar()!).getByText("Vista previa: Dracula")).toBeInTheDocument();
@@ -73,8 +73,8 @@ describe("Theme gallery", () => {
     await waitFor(() => expect(within(card("Dracula")).getByText("En uso")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: "Deshacer" }));
-    await waitFor(() => expect(cssVar("--bg")).toBe("#1A1B26"));
-    expect(setSetting).toHaveBeenLastCalledWith("ui.theme.dark", "tokyo-night");
+    await waitFor(() => expect(cssVar("--bg")).toBe("#0A0A0C"));
+    expect(setSetting).toHaveBeenLastCalledWith("ui.theme.dark", "hedy");
   });
 
   it("cancels a preview with Escape or Cancelar, restoring the theme", async () => {
@@ -83,14 +83,14 @@ describe("Theme gallery", () => {
     expect(cssVar("--bg")).toBe("#2E3440");
     await user.keyboard("{Escape}");
     expect(bar()).toBeNull();
-    expect(cssVar("--bg")).toBe("#1A1B26");
+    expect(cssVar("--bg")).toBe("#0A0A0C");
 
     await user.click(card("GitHub Light"));
     expect(document.documentElement.dataset.theme).toBe("light");
     await user.click(within(bar()!).getByRole("button", { name: "Cancelar" }));
     expect(bar()).toBeNull();
     expect(document.documentElement.dataset.theme).toBe("dark");
-    expect(cssVar("--bg")).toBe("#1A1B26");
+    expect(cssVar("--bg")).toBe("#0A0A0C");
   });
 
   it("switches a fixed mode to the applied theme's", async () => {
@@ -216,10 +216,10 @@ describe("Theme gallery", () => {
     await user.click(screen.getByRole("button", { name: "Opciones de Café de la tarde" }));
     await user.click(screen.getByRole("menuitem", { name: "Eliminar" }));
     const confirm = screen.getByRole("dialog", { name: "¿Eliminar «Café de la tarde»?" });
-    expect(within(confirm).getByText("Ahora está en uso: Hedy volverá a Tokyo Night.")).toBeInTheDocument();
+    expect(within(confirm).getByText("Ahora está en uso: se volverá a Hedy Dark.")).toBeInTheDocument();
     await user.click(within(confirm).getByRole("button", { name: "Eliminar" }));
-    await waitFor(() => expect(cssVar("--bg")).toBe("#1A1B26"));
-    expect((await api.overview()).themeDark).toBe("tokyo-night");
+    await waitFor(() => expect(cssVar("--bg")).toBe("#0A0A0C"));
+    expect((await api.overview()).themeDark).toBe("hedy");
   });
 
   it("opens the gallery from the command palette", async () => {

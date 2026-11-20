@@ -396,10 +396,10 @@ function PendingPermission({
             {keys.enter}
           </kbd>
         </Button>
-        <Button className="btn--warn" disabled={!waiting || answer.isPending} onClick={() => answer.mutate("allowForTask")}>
+        <Button disabled={!waiting || answer.isPending} onClick={() => answer.mutate("allowForTask")}>
           {t("workspace.permission.allowForTask")}
         </Button>
-        <Button className="btn--warn" disabled={!waiting || answer.isPending} onClick={() => answer.mutate("deny")}>
+        <Button variant="ghost" disabled={!waiting || answer.isPending} onClick={() => answer.mutate("deny")}>
           {t("workspace.permission.deny")}
         </Button>
       </div>

@@ -77,7 +77,7 @@ describe("Waiting for a limit", () => {
     const api = MockApi.withSampleData();
     const { user } = setup("es", api);
     await user.click(await screen.findByRole("button", { name: /^hedy/ }, SLOW));
-    await chooseMode(user, "Pregunta");
+    await chooseMode(user, "Solo preguntar");
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     expect((await screen.findAllByText(/Terminó/)).length).toBeGreaterThan(0);

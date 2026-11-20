@@ -204,14 +204,14 @@ describe("Line comments in the review", () => {
       "Editar aquí",
       "Abrir en VS Code",
       "Copiar ruta",
-      "Marcar como revisado",
+      "Marcar como visto",
       "Historial",
     ]);
     await user.click(within(menu).getByRole("menuitem", { name: "Abrir en VS Code" }));
     await waitFor(() => expect(api.code.opened.at(-1)?.path).toMatch(/facturas\/totales\.py$/));
 
     fireEvent.contextMenu(item, { clientX: 100, clientY: 100 });
-    await user.click(screen.getByRole("menuitem", { name: "Marcar como revisado" }));
+    await user.click(screen.getByRole("menuitem", { name: "Marcar como visto" }));
     expect(screen.getByText("1 de 3 revisados")).toBeInTheDocument();
 
     // The same actions behind the row's "⋯" button.

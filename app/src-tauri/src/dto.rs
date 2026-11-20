@@ -25,9 +25,9 @@ pub struct OverviewDto {
     pub user_name: String,
     /// The mode: `system`, `light` or `dark`.
     pub theme: String,
-    /// Theme used in dark mode: a preset id or `custom:<id>` (default `tokyo-night`).
+    /// Theme used in dark mode: a preset id or `custom:<id>` (default `hedy`).
     pub theme_dark: String,
-    /// Theme used in light mode: a preset id or `custom:<id>` (default `burbuja`).
+    /// Theme used in light mode: a preset id or `custom:<id>` (default `hedy-light`).
     pub theme_light: String,
     /// `system`, `es` or `en`.
     pub language: String,

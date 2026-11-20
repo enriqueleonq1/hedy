@@ -423,10 +423,10 @@ function SafetyIllustration() {
           <Button variant="primary" small onClick={() => setAnswer("allow")}>
             {t("onboarding.safety.allow")}
           </Button>
-          <Button className="btn--warn" small onClick={() => setAnswer("allow")}>
+          <Button small onClick={() => setAnswer("allow")}>
             {t("onboarding.safety.allowChat")}
           </Button>
-          <Button className="btn--warn" small onClick={() => setAnswer("reject")}>
+          <Button variant="ghost" small onClick={() => setAnswer("reject")}>
             {t("onboarding.safety.reject")}
           </Button>
         </div>

@@ -118,7 +118,7 @@ export function LimitCard({
               </Button>
             )}
             {candidates.map((c) => (
-              <Button key={c.id} className="btn--warn" disabled={busy} onClick={() => handoff.mutate(c.id)}>
+              <Button key={c.id} disabled={busy} onClick={() => handoff.mutate(c.id)}>
                 {t("workspace.limit.handOff", { name: c.name })}
               </Button>
             ))}

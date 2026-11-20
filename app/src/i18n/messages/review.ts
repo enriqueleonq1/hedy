@@ -2,7 +2,7 @@
 // merge, undoing it, and marking files as reviewed in the diff.
 
 const es = {
-  "review.title": "Revisar antes de integrar",
+  "review.title": "Aceptar cambios",
   "review.loading": "Preparando el resumen…",
   "review.into": "Se integra en {target} desde {branch}.",
   "review.files": "Archivos: {n}",
@@ -10,24 +10,24 @@ const es = {
   "review.message": "Mensaje del commit",
   "review.messageHint": "Se propone a partir del título y del resumen de la tarea.",
   "review.tests.passed": "Los últimos tests pasaron: {command}",
-  "review.tests.failed": "Los últimos tests fallaron: {command}. Puedes integrar igual.",
-  "review.tests.none": "La tarea no corrió tests. Puedes integrar igual.",
+  "review.tests.failed": "Los últimos tests fallaron: {command}. Puedes aceptar igual.",
+  "review.tests.none": "La tarea no corrió tests. Puedes aceptar igual.",
   "review.checkout": "Tu carpeta principal está en la rama {current}: cámbiala a {target} o la integración no se podrá hacer.",
-  "review.confirm": "Aceptar e integrar",
+  "review.confirm": "Aceptar y unir",
   "review.merged": "Cambios integrados en {branch}.",
   "review.undo": "Deshacer",
   "review.undone": "Integración deshecha: la tarea vuelve a revisión con su rama.",
   "review.undoMerge": "Deshacer la integración",
   "review.undoHint": "Solo es posible si nada más cambió en {branch} y no se subió a un remoto.",
   "review.progress": "{n} de {total} revisados",
-  "review.mark": "Revisado",
+  "review.mark": "Visto",
   "review.markNamed": "Marcar {path} como revisado",
   "review.reviewed": "revisado",
   "review.keys": "j / k: archivo siguiente o anterior",
 };
 
 const en: Record<keyof typeof es, string> = {
-  "review.title": "Review before merging",
+  "review.title": "Accept changes",
   "review.loading": "Preparing the summary…",
   "review.into": "Merges into {target} from {branch}.",
   "review.files": "Files: {n}",
@@ -45,7 +45,7 @@ const en: Record<keyof typeof es, string> = {
   "review.undoMerge": "Undo the merge",
   "review.undoHint": "Only possible if nothing else changed on {branch} and it was not pushed.",
   "review.progress": "{n} of {total} reviewed",
-  "review.mark": "Reviewed",
+  "review.mark": "Viewed",
   "review.markNamed": "Mark {path} as reviewed",
   "review.reviewed": "reviewed",
   "review.keys": "j / k: next or previous file",

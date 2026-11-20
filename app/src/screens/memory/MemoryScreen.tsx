@@ -212,13 +212,13 @@ function Contradiction({ project, a, b, color }: { project: string; a: Note; b: 
           ))}
         </div>
         <div className="actions">
-          <Button className="btn--warn-solid" disabled={busy} onClick={() => keep.mutate({ keep: a.id, forget: b.id })}>
+          <Button disabled={busy} onClick={() => keep.mutate({ keep: a.id, forget: b.id })}>
             {keepLabel(a, b, "first", t)}
           </Button>
-          <Button className="btn--warn" disabled={busy} onClick={() => keep.mutate({ keep: b.id, forget: a.id })}>
+          <Button disabled={busy} onClick={() => keep.mutate({ keep: b.id, forget: a.id })}>
             {keepLabel(b, a, "second", t)}
           </Button>
-          <Button className="btn--warn" disabled={busy} onClick={() => dismiss.mutate(undefined)}>
+          <Button variant="ghost" disabled={busy} onClick={() => dismiss.mutate(undefined)}>
             {t("memory.keepBoth")}
           </Button>
         </div>

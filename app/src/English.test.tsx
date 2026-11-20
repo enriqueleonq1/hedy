@@ -88,7 +88,7 @@ describe("English", () => {
     const { user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
     expect(await screen.findByText(/^What should we do in hedy\?/)).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Mode" })).toHaveTextContent("Project");
+    expect(screen.getByRole("combobox", { name: "Mode" })).toHaveTextContent("Change code");
     expect(screen.getByText("Enter send · Shift+Enter new line")).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
     // Every menu of the composer speaks English too.
@@ -96,7 +96,7 @@ describe("English", () => {
     expect(screen.getByRole("option", { name: "Research", description: "Searches the web before answering" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
     await user.click(screen.getByRole("combobox", { name: "Model" }));
-    expect(screen.getByRole("option", { name: "Auto per phase", description: "Each phase uses the model you assigned it" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Automatic", description: "Each phase uses the model you assigned it" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Opus", description: "The most capable, spends more" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
     await user.keyboard("{Escape}");
@@ -114,10 +114,10 @@ describe("English", () => {
     const card = await screen.findByRole("region", { name: "Claude wants to run a command" });
     await user.click(screen.getByRole("button", { name: "2 steps · edited 2 files" }));
     expect(screen.getByRole("button", { name: "citas/servicio.py" }).parentElement).toHaveTextContent("Claude edited citas/servicio.py");
-    await user.click(within(card).getByRole("button", { name: "Allow in this chat" }));
+    await user.click(within(card).getByRole("button", { name: "Always allow in this task" }));
     expect(await screen.findByText(/Claude: tests pass/)).toBeInTheDocument();
     expect(await screen.findByText(/^Finished/, { selector: ".turn-end" })).toBeInTheDocument();
-    expect(screen.getByText(/Allowed in this chat/)).toBeInTheDocument();
+    expect(screen.getByText(/Always allowed in this task/)).toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Steps" })).getAllByText(/\(done\)/)).toHaveLength(3);
     expect(await screen.findByRole("list", { name: "Changed files" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Accept changes" })).toBeInTheDocument();

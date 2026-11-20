@@ -13,8 +13,10 @@ const es = {
   "theme.base.dark": "Oscuro",
   "theme.base.light": "Claro",
 
-  "theme.note.tokyoNight": "Hedy oscuro",
-  "theme.note.burbuja": "Hedy claro",
+  "theme.note.hedyDark": "Negro profundo, una sola luz",
+  "theme.note.hedyLight": "Blanco limpio, una sola luz",
+  "theme.note.tokyoNight": "El oscuro clásico de Hedy",
+  "theme.note.burbuja": "El claro clásico de Hedy",
   "theme.note.oneDarkPro": "Atom / VS Code",
   "theme.note.dracula": "Morado y rosa",
   "theme.note.catppuccinMocha": "Pastel oscuro",
@@ -41,7 +43,7 @@ const es = {
   "theme.delete": "Eliminar",
   "theme.deleteTitle": "¿Eliminar «{name}»?",
   "theme.deleteBody": "Se borra de este equipo. Puedes volver a crearlo cuando quieras.",
-  "theme.deleteInUse": "Ahora está en uso: Hedy volverá a {fallback}.",
+  "theme.deleteInUse": "Ahora está en uso: se volverá a {fallback}.",
   "theme.deleted": "Tema eliminado: {name}",
 
   "theme.preview.region": "Vista previa del tema",
@@ -114,8 +116,10 @@ const en: Record<keyof typeof es, string> = {
   "theme.base.dark": "Dark",
   "theme.base.light": "Light",
 
-  "theme.note.tokyoNight": "Hedy dark",
-  "theme.note.burbuja": "Hedy light",
+  "theme.note.hedyDark": "Deep black, one light",
+  "theme.note.hedyLight": "Clean white, one light",
+  "theme.note.tokyoNight": "Hedy's classic dark",
+  "theme.note.burbuja": "Hedy's classic light",
   "theme.note.oneDarkPro": "Atom / VS Code",
   "theme.note.dracula": "Purple and pink",
   "theme.note.catppuccinMocha": "Dark pastel",
@@ -142,7 +146,7 @@ const en: Record<keyof typeof es, string> = {
   "theme.delete": "Delete",
   "theme.deleteTitle": "Delete “{name}”?",
   "theme.deleteBody": "It is removed from this computer. You can create it again whenever you like.",
-  "theme.deleteInUse": "It is in use now: Hedy will go back to {fallback}.",
+  "theme.deleteInUse": "It is in use now: it will go back to {fallback}.",
   "theme.deleted": "Theme deleted: {name}",
 
   "theme.preview.region": "Theme preview",

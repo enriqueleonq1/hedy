@@ -365,7 +365,7 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
         ctx.arc(qx, qy, 9 + pulse * 14, 0, Math.PI * 2);
         ctx.stroke();
         ctx.globalAlpha = glow;
-        ctx.font = '600 11px "JetBrains Mono Variable", ui-monospace, monospace';
+        ctx.font = '600 11px "Geist Mono Variable", ui-monospace, monospace';
         ctx.textAlign = "center";
         ctx.fillStyle = tk.ink ?? FALLBACK.ink;
         ctx.fillText(t("ask.graph.question"), qx, qy - 16);
@@ -414,10 +414,10 @@ export function MemoryGraphView({ graph, cited, answer, onSelect }: GraphProps) 
         if (!n.hub || (!main && c.z < 1.3 && !focus.has(n))) continue;
         ctx.globalAlpha = intro * (focused ? (focus.has(n) ? 1 : 0.12) : 1);
         ctx.fillStyle = main ? (tk.ink ?? FALLBACK.ink) : (tk.muted ?? FALLBACK.muted);
-        ctx.font = `${main ? 600 : 500} 11px "Inter Variable", system-ui, sans-serif`;
+        ctx.font = `${main ? 600 : 500} 11px "Geist Variable", system-ui, sans-serif`;
         ctx.fillText(short(n.node.label), n.sx, n.sy + n.r * (0.55 + 0.45 * c.z) + 13);
       }
-      ctx.font = '500 12px "Inter Variable", system-ui, sans-serif';
+      ctx.font = '500 12px "Geist Variable", system-ui, sans-serif';
       ctx.textAlign = "left";
       if (hover) {
         const text = hover.hub ? t("ask.graph.links", { name: short(hover.node.label), n: hover.nb.length }) : short(hover.node.label);

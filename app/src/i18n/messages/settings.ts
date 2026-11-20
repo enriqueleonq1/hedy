@@ -54,7 +54,7 @@ const es = {
     ". Los logins de suscripción viven en la carpeta oficial de cada cuenta; las API keys, en el llavero del sistema.",
   "settings.codeMap.hintBefore":
     "Un índice local del código (funciones, llamadas, rutas) que todas tus IAs pueden consultar para gastar menos tokens leyendo archivos. Usa",
-  "settings.codeMap.hintAfter": " (MIT, sin telemetría); el índice se guarda en tu PC.",
+  "settings.codeMap.hintAfter": " (MIT, sin telemetría); el índice se guarda en tu computadora.",
   "settings.codeMap.installedAt": "Instalado en",
   "settings.codeMap.register": "Registrar el mapa del código en las tareas",
   "settings.codeMap.missing": "Configurado como {path}, pero no lo encuentro.",
@@ -119,7 +119,7 @@ const en: Record<keyof typeof es, string> = {
     ". Subscription logins live in each account's official folder; API keys, in the system keychain.",
   "settings.codeMap.hintBefore":
     "A local index of your code (functions, calls, routes) that all your AIs can query to spend fewer tokens reading files. It uses",
-  "settings.codeMap.hintAfter": " (MIT, no telemetry); the index stays on your PC.",
+  "settings.codeMap.hintAfter": " (MIT, no telemetry); the index stays on your computer.",
   "settings.codeMap.installedAt": "Installed at",
   "settings.codeMap.register": "Register the code map in tasks",
   "settings.codeMap.missing": "Set to {path}, but I can't find it.",

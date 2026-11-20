@@ -38,7 +38,7 @@ export function TerminalView({ request, active, onExit }: TerminalViewProps) {
     const element = host.current;
     if (!element) return;
     const xterm = new Terminal({
-      fontFamily: "'JetBrains Mono Variable', monospace",
+      fontFamily: "'Geist Mono Variable', monospace",
       fontSize: 13,
       cursorBlink: true,
       theme: terminalTheme(theme),
