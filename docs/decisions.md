@@ -150,7 +150,11 @@ claude -p --input-format stream-json --output-format stream-json --verbose \
 
 **Proposed decision:** use route 1 and keep route 2 as a fallback behind the same port.
 If an update breaks route 1, it is swapped without touching the UI. "Allow for this chat"
-is remembered by Hedy per session.
+is remembered by Hedy per session (the CLIs are only ever told "yes, this once"). It never
+covers the agents' own settings (`.claude/`, `.agents/`, `.mcp.json`, `.gemini/`,
+`.codex/`, `.kimi/`: hooks, allowed commands and MCP servers start commands), whose every
+change shows its card; nothing writes into `.git`; and a write whose path leaves the task
+folder through a link (the shared `node_modules`, `.venv`…) is denied (Nov 20, 2026).
 
 ### Usage and limits
 

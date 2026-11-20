@@ -653,7 +653,23 @@ impl Hedy {
                 let Some(running) = live.get_mut(id) else {
                     return Ok(());
                 };
-                let verdict = permissions::evaluate(tool, input, &task.work_dir(), &running.rules);
+                let dir = task.work_dir();
+                let verdict = match permissions::evaluate(tool, input, &dir, &running.rules) {
+                    Verdict::Deny(reason) => Verdict::Deny(reason),
+                    // Written as inside, but a link (a shared `node_modules`)
+                    // takes it out.
+                    _ if permissions::written_paths(tool, input, &dir)
+                        .iter()
+                        .any(|p| !self.really_inside(p, &dir)) =>
+                    {
+                        let folder = dir.display();
+                        Verdict::Deny(tr!(
+                            "Hedy no permite cambios fuera de la carpeta de la tarea ({folder}): esa ruta pasa por un enlace que sale de ella.",
+                            "Hedy does not allow changes outside the task folder ({folder}): that path goes through a link out of it."
+                        ))
+                    }
+                    verdict => verdict,
+                };
                 let resolved = |decision, reason| AgentEvent::PermissionResolved {
                     request_id: request_id.clone(),
                     decision,
@@ -832,6 +848,21 @@ impl Hedy {
             .get_mut(id)
             .ok_or_else(|| AppError::TaskNotRunning(id.clone()))?;
         f(running)
+    }
+
+    /// Where `path` goes after following links (from the deepest part that
+    /// exists) is inside `dir`. A dangling link is not.
+    pub(super) fn really_inside(&self, path: &Path, dir: &Path) -> bool {
+        let Ok(root) = self.fs.canonicalize(dir) else {
+            return false;
+        };
+        path.ancestors()
+            .find(|p| self.fs.exists(p) || self.fs.is_symlink(p))
+            .is_some_and(|p| {
+                self.fs
+                    .canonicalize(p)
+                    .is_ok_and(|real| real.starts_with(&root))
+            })
     }
 
     /// The tool and input of a request still waiting for an answer.
@@ -1354,6 +1385,46 @@ mod tests {
                 AgentCall::Answer("r1".into(), true),
                 AgentCall::Answer("r2".into(), true),
             ]
+        );
+        assert_eq!(
+            f.hedy.task(&task.id).unwrap().status,
+            TaskStatus::WaitingApproval
+        );
+    }
+
+    #[test]
+    fn a_remembered_write_never_covers_agent_settings_nor_a_way_out() {
+        let f = Fixture::new();
+        let task = new_task(&f, "Hola", false);
+        let wt = task.workspace.clone().unwrap().worktree;
+        f.fs.add_existing(wt.to_str().unwrap());
+        // A dependency folder shared with the project, as a link.
+        crate::application::ports::FileSystem::symlink_dir(
+            &*f.fs,
+            Path::new("/code/agenda/node_modules"),
+            &wt.join("node_modules"),
+        )
+        .unwrap();
+        f.fs.add_existing(wt.join("node_modules").to_str().unwrap());
+        let write = |id: &str, path: &str| {
+            f.agents
+                .emit(permission(id, "Write", json!({"file_path": wt.join(path)})));
+        };
+        write("r1", "src/a.py");
+        f.hedy
+            .answer_permission(&task.id, "r1", Decision::AllowForTask)
+            .unwrap();
+        write("r2", "src/b.py");
+        write("r3", "node_modules/pkg/index.js");
+        write("r4", ".claude/settings.json");
+        assert_eq!(
+            f.agents.calls(),
+            vec![
+                AgentCall::Answer("r1".into(), true),
+                AgentCall::Answer("r2".into(), true),
+                AgentCall::Answer("r3".into(), false),
+            ],
+            "the link is denied, the settings wait for the user"
         );
         assert_eq!(
             f.hedy.task(&task.id).unwrap().status,

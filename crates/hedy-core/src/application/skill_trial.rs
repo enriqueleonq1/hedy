@@ -329,21 +329,6 @@ impl Hedy {
         self.answer_permission(id, request_id, decision)
     }
 
-    /// Where `path` goes after following links (from the deepest part that
-    /// exists) is inside `dir`. A dangling link is not.
-    fn really_inside(&self, path: &Path, dir: &Path) -> bool {
-        let Ok(root) = self.fs.canonicalize(dir) else {
-            return false;
-        };
-        path.ancestors()
-            .find(|p| self.fs.exists(p) || self.fs.is_symlink(p))
-            .is_some_and(|p| {
-                self.fs
-                    .canonicalize(p)
-                    .is_ok_and(|real| real.starts_with(&root))
-            })
-    }
-
     pub(super) fn trial_of(&self, task: &TaskId) -> Option<TrialRef> {
         let saved = self
             .store

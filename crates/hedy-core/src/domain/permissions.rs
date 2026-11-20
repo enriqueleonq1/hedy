@@ -225,11 +225,11 @@ fn command_program(command: &str) -> Option<&str> {
     command.split_whitespace().find(|word| !word.contains('='))
 }
 
-/// What in a task copy no change goes to when nobody is asked: git's
-/// pointer (git would obey a folder it names), the agents' settings (hooks,
-/// allowed commands, MCP servers to start) and the skills the run reads.
-const UNATTENDED_OFF_LIMITS: &[&str] = &[
-    ".git",
+/// The agents' own settings in a project: hooks, allowed commands, MCP
+/// servers to start, the skills they read. A change there always shows its
+/// card ("Permitir en este chat" never covers it), and with nobody to ask it
+/// is denied.
+const AGENT_SETTINGS: &[&str] = &[
     ".claude",
     ".agents",
     ".mcp.json",
@@ -238,36 +238,54 @@ const UNATTENDED_OFF_LIMITS: &[&str] = &[
     ".kimi",
 ];
 
-/// The files a change request writes, when it may be allowed with nobody to
-/// ask: a file tool naming at least one path, every one inside `work_dir`
-/// as written and outside [`UNATTENDED_OFF_LIMITS`]. Links are not followed
-/// here: the caller checks where each path really goes.
-/// Some part of `path` is `name`, as a case-insensitive disk (macOS) reads
-/// it (`.GIT` is `.git` there).
-fn names(path: &Path, name: &str) -> bool {
-    path.components().any(|part| {
-        part.as_os_str()
-            .to_string_lossy()
-            .eq_ignore_ascii_case(name)
-    })
+/// Some part of `path` inside `work_dir` is `name`, as a case-insensitive
+/// disk (macOS) reads it (`.GIT` is `.git` there).
+fn names(path: &Path, work_dir: &Path, name: &str) -> bool {
+    path.strip_prefix(work_dir)
+        .unwrap_or(path)
+        .components()
+        .any(|part| {
+            part.as_os_str()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(name)
+        })
 }
 
+/// The files a change request writes, as `work_dir` sees them (none for a
+/// tool that does not write).
+pub fn written_paths(tool: &str, input: &Value, work_dir: &Path) -> Vec<PathBuf> {
+    if !WRITE_TOOLS.contains(&tool) {
+        return Vec::new();
+    }
+    file_paths(input)
+        .into_iter()
+        .map(|path| normalize(work_dir, Path::new(path)))
+        .collect()
+}
+
+fn touches_agent_settings(paths: &[PathBuf], work_dir: &Path) -> bool {
+    paths
+        .iter()
+        .any(|p| AGENT_SETTINGS.iter().any(|name| names(p, work_dir, name)))
+}
+
+/// The files a change request writes, when it may be allowed with nobody to
+/// ask: a file tool naming at least one path, every one inside `work_dir`
+/// as written, none in `.git` nor in [`AGENT_SETTINGS`]. Links are not
+/// followed here: the caller checks where each path really goes.
 pub fn unattended_writes(tool: &str, input: &Value, work_dir: &Path) -> Option<Vec<PathBuf>> {
     // An ACP move or delete may name only part of what it touches.
     if !WRITE_TOOLS.contains(&tool) || matches!(input["kind"].as_str(), Some("move" | "delete")) {
         return None;
     }
-    let paths: Vec<PathBuf> = file_paths(input)
-        .into_iter()
-        .map(|path| normalize(work_dir, Path::new(path)))
-        .collect();
+    let paths = written_paths(tool, input, work_dir);
     let fine = |path: &PathBuf| {
-        path.strip_prefix(work_dir).is_ok_and(|rel| {
-            rel.components().next().is_some()
-                && !UNATTENDED_OFF_LIMITS.iter().any(|name| names(rel, name))
-        })
+        path.strip_prefix(work_dir)
+            .is_ok_and(|rel| rel.components().next().is_some())
+            && !names(path, work_dir, ".git")
     };
-    (!paths.is_empty() && paths.iter().all(fine)).then_some(paths)
+    (!paths.is_empty() && paths.iter().all(fine) && !touches_agent_settings(&paths, work_dir))
+        .then_some(paths)
 }
 
 /// What "Permitir en este chat" remembers for this request, if anything.
@@ -287,11 +305,8 @@ pub fn evaluate(tool: &str, input: &Value, work_dir: &Path, remembered: &[AllowR
     }
     // Git's data: a `.git` the agent writes can make git (Hedy's, the
     // CLIs') run a command of its own.
-    if WRITE_TOOLS.contains(&tool)
-        && file_paths(input)
-            .iter()
-            .any(|path| names(&normalize(work_dir, Path::new(path)), ".git"))
-    {
+    let written = written_paths(tool, input, work_dir);
+    if written.iter().any(|path| names(path, work_dir, ".git")) {
         return Verdict::Deny(tr!(
             "Hedy no permite cambiar los datos de git (.git).",
             "Hedy does not allow changing git's data (.git)."
@@ -308,8 +323,10 @@ pub fn evaluate(tool: &str, input: &Value, work_dir: &Path, remembered: &[AllowR
             "Hedy does not allow changes outside the task folder ({folder})."
         ));
     }
+    // The agents' settings can start commands: each change shows its card.
+    let settings = touches_agent_settings(&written, work_dir);
     match rule_for(tool, input) {
-        Some(rule) if remembered.contains(&rule) => Verdict::Allow,
+        Some(rule) if remembered.contains(&rule) && !settings => Verdict::Allow,
         _ => Verdict::Ask,
     }
 }
@@ -522,6 +539,19 @@ mod tests {
         assert!(writes("Edit", acp("edit")).is_some());
         assert!(writes("Edit", acp("move")).is_none());
         assert!(writes("Edit", acp("delete")).is_none());
+        // The agents' settings always ask, even after "Permitir en este chat".
+        let rule = [AllowRule::Tool("Write".into())];
+        let write =
+            |path: &str| verdict("Write", json!({"file_path": format!("{WT}/{path}")}), &rule);
+        assert_eq!(write("src/a.rs"), Verdict::Allow);
+        for path in [
+            ".claude/settings.json",
+            ".mcp.json",
+            ".Gemini/settings.json",
+            ".agents/skills/x/SKILL.md",
+        ] {
+            assert_eq!(write(path), Verdict::Ask, "{path}");
+        }
         // Never git's data, even when someone is asked.
         for path in [".git", "lib/.git/config", ".GIT"] {
             let input = json!({"file_path": format!("{WT}/{path}")});

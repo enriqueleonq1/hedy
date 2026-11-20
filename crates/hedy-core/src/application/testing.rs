@@ -1405,8 +1405,13 @@ impl FileSystem for FakeFs {
         self.removed_dirs.lock().unwrap().push(path.to_owned());
         Ok(())
     }
+    /// Follows the links [`FileSystem::symlink_dir`] made.
     fn canonicalize(&self, dir: &Path) -> PortResult<PathBuf> {
-        Ok(dir.to_owned())
+        let links = self.links.lock().unwrap();
+        Ok(links
+            .iter()
+            .find_map(|(target, link)| Some(target.join(dir.strip_prefix(link).ok()?)))
+            .unwrap_or_else(|| dir.to_owned()))
     }
     fn git_root(&self, dir: &Path) -> Option<PathBuf> {
         self.git_roots

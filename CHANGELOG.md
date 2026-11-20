@@ -21,6 +21,10 @@ All notable changes to Hedy are listed here. The format follows
 - An AI can no longer propose a skill that runs commands as soon as Claude Code loads it
   (`!`…`` or a ```` ```! ```` block), and skills from your other PCs pass the same checks as
   local ones.
+- "Permitir en este chat" no longer covers the agents' own settings (`.claude/`, `.mcp.json`,
+  `.gemini/`…, where hooks and MCP servers start commands): each change there asks. No agent
+  writes into `.git`, and a write that leaves the task folder through a link (the shared
+  `node_modules`) is denied.
 - Hedy's own git in a task's copy uses the copy's real git data, whatever its `.git` file says:
   a run (or a skill trial's check) could point it at a folder whose settings run a command.
 - An AI cannot add or publish team notes, invite, change roles, remove people or skills, or
