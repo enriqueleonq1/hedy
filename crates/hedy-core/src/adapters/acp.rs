@@ -741,7 +741,8 @@ fn client_request(shared: &Shared, method: &str, id: Value, params: &Value) -> P
                 } else {
                     shown.join(", ")
                 },
-                json!({"file_path": tool.paths.first(), "paths": tool.paths}),
+                // `kind`: a move or a delete is never allowed unattended.
+                json!({"file_path": tool.paths.first(), "paths": tool.paths, "kind": tool.kind}),
             )
         }
         "Bash" => {

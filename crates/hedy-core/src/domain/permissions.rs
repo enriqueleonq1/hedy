@@ -242,8 +242,19 @@ const UNATTENDED_OFF_LIMITS: &[&str] = &[
 /// ask: a file tool naming at least one path, every one inside `work_dir`
 /// as written and outside [`UNATTENDED_OFF_LIMITS`]. Links are not followed
 /// here: the caller checks where each path really goes.
+/// Some part of `path` is `name`, as a case-insensitive disk (macOS) reads
+/// it (`.GIT` is `.git` there).
+fn names(path: &Path, name: &str) -> bool {
+    path.components().any(|part| {
+        part.as_os_str()
+            .to_string_lossy()
+            .eq_ignore_ascii_case(name)
+    })
+}
+
 pub fn unattended_writes(tool: &str, input: &Value, work_dir: &Path) -> Option<Vec<PathBuf>> {
-    if !WRITE_TOOLS.contains(&tool) {
+    // An ACP move or delete may name only part of what it touches.
+    if !WRITE_TOOLS.contains(&tool) || matches!(input["kind"].as_str(), Some("move" | "delete")) {
         return None;
     }
     let paths: Vec<PathBuf> = file_paths(input)
@@ -253,11 +264,7 @@ pub fn unattended_writes(tool: &str, input: &Value, work_dir: &Path) -> Option<V
     let fine = |path: &PathBuf| {
         path.strip_prefix(work_dir).is_ok_and(|rel| {
             rel.components().next().is_some()
-                && !rel.components().any(|part| {
-                    UNATTENDED_OFF_LIMITS
-                        .iter()
-                        .any(|name| part.as_os_str() == *name)
-                })
+                && !UNATTENDED_OFF_LIMITS.iter().any(|name| names(rel, name))
         })
     };
     (!paths.is_empty() && paths.iter().all(fine)).then_some(paths)
@@ -277,6 +284,18 @@ pub fn rule_for(tool: &str, input: &Value) -> Option<AllowRule> {
 pub fn evaluate(tool: &str, input: &Value, work_dir: &Path, remembered: &[AllowRule]) -> Verdict {
     if let Some(reason) = protected_file_reason(tool, input, work_dir) {
         return Verdict::Deny(reason);
+    }
+    // Git's data: a `.git` the agent writes can make git (Hedy's, the
+    // CLIs') run a command of its own.
+    if WRITE_TOOLS.contains(&tool)
+        && file_paths(input)
+            .iter()
+            .any(|path| names(&normalize(work_dir, Path::new(path)), ".git"))
+    {
+        return Verdict::Deny(tr!(
+            "Hedy no permite cambiar los datos de git (.git).",
+            "Hedy does not allow changing git's data (.git)."
+        ));
     }
     if WRITE_TOOLS.contains(&tool)
         && file_paths(input)
@@ -492,6 +511,28 @@ mod tests {
             );
         }
         assert!(writes("Write", json!({"content": "no path"})).is_none());
+        for path in [".GIT", ".Claude/settings.json", "x/.Git/config"] {
+            let full = format!("{WT}/{path}");
+            assert!(
+                writes("Write", json!({"file_path": full})).is_none(),
+                "{path}"
+            );
+        }
+        let acp = |kind: &str| json!({"file_path": format!("{WT}/a.rs"), "paths": [format!("{WT}/a.rs")], "kind": kind});
+        assert!(writes("Edit", acp("edit")).is_some());
+        assert!(writes("Edit", acp("move")).is_none());
+        assert!(writes("Edit", acp("delete")).is_none());
+        // Never git's data, even when someone is asked.
+        for path in [".git", "lib/.git/config", ".GIT"] {
+            let input = json!({"file_path": format!("{WT}/{path}")});
+            assert!(
+                matches!(
+                    verdict("Write", input, &[AllowRule::Tool("Write".into())]),
+                    Verdict::Deny(_)
+                ),
+                "{path}"
+            );
+        }
         assert!(writes("Bash", json!({"command": "ls"})).is_none());
         assert!(writes("Read", json!({"file_path": format!("{WT}/a")})).is_none());
     }

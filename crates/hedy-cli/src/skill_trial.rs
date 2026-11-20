@@ -82,6 +82,17 @@ pub fn try_skill(
             )
         );
     }
+    // Without bubblewrap the check runs the AI's code as the user: only
+    // after someone read that, never from a script.
+    if yes && !hedy.trial_checks_isolated() && check.is_some_and(|c| !matches!(c, "none" | "")) {
+        anyhow::bail!(
+            "{}",
+            tr!(
+                "aquí la comprobación no se puede aislar (instala bubblewrap): correría el código de la IA con tus archivos y tu red, así que `--yes` solo va con `--check none`",
+                "the check cannot be isolated here (install bubblewrap): it would run the AI's code with your files and network, so `--yes` only goes with `--check none`"
+            )
+        );
+    }
     if !yes && !interactive() {
         anyhow::bail!(
             "{}",

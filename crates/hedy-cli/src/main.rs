@@ -186,13 +186,19 @@ fn run(cli: Cli) -> Result<ExitCode> {
             MemoryCommand::List => commands::memory_list(&hedy, &dir),
             MemoryCommand::Ask(args) => memory_ask::memory_ask(&hedy, &dir, args),
             MemoryCommand::Approve { id } => commands::memory_approve(&hedy, id),
-            MemoryCommand::Reject { id } => commands::memory_reject(&hedy, id),
+            MemoryCommand::Reject { id } => {
+                commands::refuse_in_agent_session()?;
+                commands::memory_reject(&hedy, id)
+            }
         },
         Command::Skills { command } => match command.unwrap_or(SkillsCommand::List) {
             SkillsCommand::List => commands::skills_list(&hedy, &dir),
             SkillsCommand::Show { name } => commands::skills_show(&hedy, &dir, &name),
             SkillsCommand::Approve { id } => commands::skills_approve(&hedy, id),
-            SkillsCommand::Reject { id } => commands::skills_reject(&hedy, id),
+            SkillsCommand::Reject { id } => {
+                commands::refuse_in_agent_session()?;
+                commands::skills_reject(&hedy, id)
+            }
             SkillsCommand::Remove { name } => {
                 commands::refuse_in_agent_session()?;
                 commands::skills_remove(&hedy, &dir, &name)
@@ -255,45 +261,55 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 commands::template_remove(&hedy, &dir, &name, project)
             }
         },
-        Command::Sync { command } => match command.unwrap_or(SyncCommand::Status) {
-            SyncCommand::Status => sync::status(&hedy),
-            SyncCommand::Setup { url, name } => sync::setup(&hedy, &url, name.as_deref()),
-            SyncCommand::Join { url, name } => sync::join(&hedy, &url, name.as_deref()),
-            SyncCommand::Now => sync::now_sync(&hedy),
-            SyncCommand::Conflicts => sync::conflicts(&hedy),
-            SyncCommand::Resolve { id, other, .. } => sync::resolve(&hedy, id, other),
-            SyncCommand::Owner {
-                owner,
-                mine,
-                shared,
-                forget,
-            } => {
-                let choice = match (mine, shared, forget) {
-                    (true, _, _) => Some(sync::OwnerChoice::Mine),
-                    (_, true, _) => Some(sync::OwnerChoice::Shared),
-                    (_, _, true) => Some(sync::OwnerChoice::Forget),
-                    _ => None,
-                };
-                sync::owner(&hedy, owner.as_deref(), choice)
+        Command::Sync { command } => {
+            let command = command.unwrap_or(SyncCommand::Status);
+            // Only looking: what joins, leaves or decides is the user's.
+            if !matches!(
+                command,
+                SyncCommand::Status | SyncCommand::Now | SyncCommand::Conflicts
+            ) {
+                commands::refuse_in_agent_session()?;
             }
-            SyncCommand::Project {
-                personal,
-                local,
-                shared,
-                follow,
-            } => {
-                let choice = match (personal, local, shared, follow) {
-                    (true, ..) => Some(sync::HomeChoice::Personal),
-                    (_, true, ..) => Some(sync::HomeChoice::Local),
-                    (_, _, Some(owner), _) => Some(sync::HomeChoice::Shared(owner)),
-                    (.., true) => Some(sync::HomeChoice::Follow),
-                    _ => None,
-                };
-                sync::project(&hedy, &dir, choice)
+            match command {
+                SyncCommand::Status => sync::status(&hedy),
+                SyncCommand::Setup { url, name } => sync::setup(&hedy, &url, name.as_deref()),
+                SyncCommand::Join { url, name } => sync::join(&hedy, &url, name.as_deref()),
+                SyncCommand::Now => sync::now_sync(&hedy),
+                SyncCommand::Conflicts => sync::conflicts(&hedy),
+                SyncCommand::Resolve { id, other, .. } => sync::resolve(&hedy, id, other),
+                SyncCommand::Owner {
+                    owner,
+                    mine,
+                    shared,
+                    forget,
+                } => {
+                    let choice = match (mine, shared, forget) {
+                        (true, _, _) => Some(sync::OwnerChoice::Mine),
+                        (_, true, _) => Some(sync::OwnerChoice::Shared),
+                        (_, _, true) => Some(sync::OwnerChoice::Forget),
+                        _ => None,
+                    };
+                    sync::owner(&hedy, owner.as_deref(), choice)
+                }
+                SyncCommand::Project {
+                    personal,
+                    local,
+                    shared,
+                    follow,
+                } => {
+                    let choice = match (personal, local, shared, follow) {
+                        (true, ..) => Some(sync::HomeChoice::Personal),
+                        (_, true, ..) => Some(sync::HomeChoice::Local),
+                        (_, _, Some(owner), _) => Some(sync::HomeChoice::Shared(owner)),
+                        (.., true) => Some(sync::HomeChoice::Follow),
+                        _ => None,
+                    };
+                    sync::project(&hedy, &dir, choice)
+                }
+                SyncCommand::Remove { pc, yes } => sync::remove(&hedy, &pc, yes),
+                SyncCommand::Leave { yes } => sync::leave(&hedy, yes),
             }
-            SyncCommand::Remove { pc, yes } => sync::remove(&hedy, &pc, yes),
-            SyncCommand::Leave { yes } => sync::leave(&hedy, yes),
-        },
+        }
         Command::Team { team, command } => {
             let command = command.unwrap_or(TeamCommand::Status);
             let pick = || team::pick(&hedy, &dir, team.as_deref());
@@ -349,6 +365,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     team::remove(&hedy, &pick()?, &who, pc, yes)
                 }
                 TeamCommand::Rename { name, person } => {
+                    commands::refuse_in_agent_session()?;
                     team::rename(&hedy, &pick()?, &name, person.as_deref())
                 }
                 TeamCommand::Leave { yes, here } => {
@@ -359,8 +376,15 @@ fn run(cli: Cli) -> Result<ExitCode> {
         }
         Command::Config(sub) => match sub {
             ConfigCommand::Get { key } => commands::config_get(&hedy, &key),
-            ConfigCommand::Set { key, value } => commands::config_set(&hedy, &key, Some(&value)),
-            ConfigCommand::Unset { key } => commands::config_set(&hedy, &key, None),
+            // A setting can name the program Hedy starts (`binary.claude`).
+            ConfigCommand::Set { key, value } => {
+                commands::refuse_in_agent_session()?;
+                commands::config_set(&hedy, &key, Some(&value))
+            }
+            ConfigCommand::Unset { key } => {
+                commands::refuse_in_agent_session()?;
+                commands::config_set(&hedy, &key, None)
+            }
         },
         Command::Completions { .. } | Command::Doctor | Command::Ask(_) => {
             unreachable!("handled above")

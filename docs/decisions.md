@@ -796,11 +796,14 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
     `.git/info/exclude`: they may want to commit it.
   - **Only the user:** every process Hedy starts for an AI carries `HEDY_AGENT_SESSION=1`
     (agents, `hedy run`, the app's AI terminal; not the user's own shell terminal), and
-    `hedy skills import`, `approve` and `remove`, `hedy memory approve`, `hedy team
-    publish`, `add` (published at once for a project note or an admin), `invite`, `role`,
-    `remove`, `leave` and `review --accept/--reject` refuse to run there, so an agent
+    `hedy skills import`, `approve`, `reject` and `remove`, `hedy memory approve` and
+    `reject`, `hedy team publish`, `add` (published at once for a project note or an
+    admin), `invite`, `role`, `remove`, `rename`, `leave` and `review --accept/--reject`,
+    every `hedy sync` command but `status`, `now` and `conflicts`, and `hedy config
+    set/unset` (a setting names the program Hedy starts) refuse to run there, so an agent
     cannot approve, publish, grant access or remove through a shell command it was
-    allowed to run. A trial's check carries it too: the code it runs is the AI's. A second guard: an agent
+    allowed to run. A trial's check carries it too: the code it runs is the AI's (without
+    bubblewrap it could drop the variable, so `--yes` then only goes with `--check none`). A second guard: an agent
     could run `env -u HEDY_AGENT_SESSION hedy …`; the permission card is the first.
   - **Sync:** a skill from another of the user's PCs is saved as this version saves its
     own (description and body normalized), with its exact name.
@@ -861,13 +864,18 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
     a time when every path it names really stays in the copy (links followed: the shared
     `node_modules`, `.venv`… are links to the project) and none is under `.git`,
     `.claude`, `.agents`, `.gemini`, `.codex`, `.kimi` or is `.mcp.json` (settings that
-    start commands); everything else, commands included, is denied, as it warns
+    start commands; compared ignoring case, as macOS disks do), nor an ACP move or delete
+    (it may name only part of what it touches; a Codex move names its destination too); everything else, commands included, is denied, as it warns
     before starting. Denying everything left every headless trial void.
     - **Git in a copy never trusts the copy's `.git`:** whatever writes in it (the run,
       its check) could point it at a git folder of its own whose config runs a command
       (`core.fsmonitor` on every `git diff`). Hedy's git in a copy gets `GIT_DIR` and
       `GIT_WORK_TREE` from the project's own git data (the worktree whose `gitdir`
-      names the copy), or fails; a copy git no longer recognizes is still removed.
+      names the copy), or a path that cannot exist, so it fails; a repository nested in
+      the copy is never entered (`diff.ignoreSubmodules=all`, no submodule recursion, no
+      fsmonitor: git would obey a nested `.git`'s config too); `GIT_INDEX_FILE` and the
+      like from Hedy's own environment are dropped. A copy git no longer recognizes is
+      still removed. No agent writes a `.git` anywhere, even with someone to ask.
     - **The run without it gets it from nowhere:** not in its plugin, not in its
       worktree's `.agents/skills`, and `skill_list` / `skill_get` do not serve it. The
       run is marked (by skill id, so a rename does not bring it back) before its

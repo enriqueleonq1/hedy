@@ -37,22 +37,44 @@ fn copy_git_dir(copy: &Path, project: &Path) -> Option<PathBuf> {
         .flatten()
         .find_map(|entry| {
             let recorded = fs::read_to_string(entry.path().join("gitdir")).ok()?;
-            let recorded = Path::new(recorded.trim()).parent()?.canonicalize().ok()?;
+            // Relative to the entry with `worktree.useRelativePaths` (git 2.48+).
+            let recorded = entry.path().join(recorded.trim());
+            let recorded = recorded.parent()?.canonicalize().ok()?;
             (recorded == copy).then(|| entry.path())
         })
 }
+
+/// Where git looks when a copy has no real git data: a path that cannot
+/// exist (`/dev/null` is no folder), so git fails.
+const NO_GIT_DIR: &str = "/dev/null/hedy-no-git";
 
 /// Git in a task copy uses the copy's real git data whatever its `.git`
 /// says: anything that writes in the copy (the agent, the trial's check) can
 /// point it at a folder of its own, whose config git would obey (a
 /// `core.fsmonitor` command runs on every `git diff`). With no real data,
-/// git finds none and fails.
+/// git finds none and fails. A repository nested in the copy is never
+/// entered (git would obey its config too), no fsmonitor runs, and what the
+/// environment says about other git data (a hook's `GIT_INDEX_FILE`…) is
+/// dropped.
 pub(super) fn pin_task_copy(command: &mut Command, dir: &Path) {
     let Some((copy, project)) = task_copy(dir) else {
         return;
     };
-    let git_dir = copy_git_dir(copy, project).unwrap_or_else(|| copy.join(".hedy-no-git"));
-    command.env("GIT_DIR", git_dir).env("GIT_WORK_TREE", copy);
+    let git_dir = copy_git_dir(copy, project).unwrap_or_else(|| PathBuf::from(NO_GIT_DIR));
+    super::sync_git::clear_repo_redirects(command);
+    command
+        .env("GIT_DIR", git_dir)
+        .env("GIT_WORK_TREE", copy)
+        .args([
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "diff.ignoreSubmodules=all",
+            "-c",
+            "status.submoduleSummary=false",
+            "-c",
+            "submodule.recurse=false",
+        ]);
 }
 
 /// `git -C dir`, held to a task copy's real git data (see [`pin_task_copy`]).
@@ -697,6 +719,91 @@ mod tests {
         g.remove_worktree(&repo, &copy, "hedy/t1").unwrap();
         assert!(!copy.exists());
         assert!(!ran.exists());
+    }
+
+    /// A git folder that runs `touch <ran>` from `core.fsmonitor`, sharing
+    /// `repo`'s objects, at `dir` (for the work tree `work`).
+    fn plant_git_dir(dir: &Path, work: &Path, repo: &Path, ran: &Path) {
+        let base = git(repo, &["rev-parse", "HEAD"]).unwrap();
+        fs::create_dir_all(dir.join("objects/info")).unwrap();
+        fs::create_dir_all(dir.join("refs/heads")).unwrap();
+        fs::write(dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        fs::write(dir.join("refs/heads/main"), base).unwrap();
+        let objects = repo.join(".git/objects");
+        fs::write(
+            dir.join("objects/info/alternates"),
+            format!("{}\n", objects.display()),
+        )
+        .unwrap();
+        let config = format!(
+            "[core]\n\trepositoryformatversion = 0\n\tworktree = {}\n\tfsmonitor = \"touch {}\"\n",
+            work.display(),
+            ran.display()
+        );
+        fs::write(dir.join("config"), config).unwrap();
+    }
+
+    #[test]
+    fn a_task_copy_recorded_with_relative_paths_keeps_its_git() {
+        use crate::application::ports::CodeReader;
+        let (_tmp, repo) = repo();
+        if git(&repo, &["config", "worktree.useRelativePaths", "true"]).is_err() {
+            return;
+        }
+        let g = GitCli;
+        let base = g.head_commit(&repo).unwrap();
+        let copy = repo.join(".hedy/worktrees/t1");
+        g.add_worktree(&repo, &copy, "hedy/t1", &base).unwrap();
+        fs::write(copy.join("app.py"), "def crear():\n    return 1\n").unwrap();
+        let changes = g.changes(&copy, &base, None).unwrap();
+        assert!(changes.iter().any(|c| c.path == "app.py"), "{changes:?}");
+        assert!(
+            g.diff(&copy, &base)
+                .unwrap()
+                .iter()
+                .any(|f| f.path == "app.py")
+        );
+    }
+
+    #[test]
+    fn a_repository_nested_in_a_task_copy_is_never_entered() {
+        use crate::application::ports::CodeReader;
+        let (tmp, repo) = repo();
+        let g = GitCli;
+        let base = g.head_commit(&repo).unwrap();
+        let copy = repo.join(".hedy/worktrees/t1");
+        g.add_worktree(&repo, &copy, "hedy/t1", &base).unwrap();
+        let ran = tmp.path().join("ran");
+        let nested = copy.join("lib");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("a.py"), "x = 1\n").unwrap();
+        plant_git_dir(&nested.join(".git"), &nested, &repo, &ran);
+        fs::write(copy.join("app.py"), "def crear():\n    return 1\n").unwrap();
+
+        g.diff(&copy, &base).unwrap();
+        g.changes(&copy, &base, None).unwrap();
+        g.uncommitted_changes(&copy).unwrap();
+        assert!(!ran.exists(), "a nested repository's config ran a command");
+    }
+
+    #[test]
+    fn a_task_copy_git_no_longer_knows_runs_no_git_folder_of_its_own() {
+        use crate::application::ports::CodeReader;
+        let (tmp, repo) = repo();
+        let g = GitCli;
+        let base = g.head_commit(&repo).unwrap();
+        let copy = repo.join(".hedy/worktrees/t1");
+        g.add_worktree(&repo, &copy, "hedy/t1", &base).unwrap();
+        // Its `.git` gone, a prune forgets it; whatever it planted is not used.
+        fs::remove_file(copy.join(".git")).unwrap();
+        git(&repo, &["worktree", "prune"]).unwrap();
+        let ran = tmp.path().join("ran");
+        for planted in [".hedy-no-git", ".git"] {
+            plant_git_dir(&copy.join(planted), &copy, &repo, &ran);
+        }
+        assert!(g.changes(&copy, &base, None).is_err() || !ran.exists());
+        let _ = g.diff(&copy, &base);
+        assert!(!ran.exists(), "a git folder the copy made ran a command");
     }
 
     #[test]

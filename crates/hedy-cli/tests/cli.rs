@@ -995,6 +995,12 @@ fn an_ai_cannot_publish_grant_or_remove_from_its_session() {
         &["team", "remove", "ana", "--yes"],
         &["team", "leave", "--yes"],
         &["skills", "remove", "pdf-forms"],
+        &["skills", "reject", "1"],
+        &["memory", "reject", "1"],
+        &["team", "rename", "Otro"],
+        &["sync", "leave", "--yes"],
+        &["sync", "join", "https://example.invalid/r.git"],
+        &["config", "set", "binary.claude", "/tmp/x"],
     ] {
         env.hedy_in(&repo, args)
             .env("HEDY_AGENT_SESSION", "1")

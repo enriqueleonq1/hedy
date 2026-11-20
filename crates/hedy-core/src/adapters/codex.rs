@@ -397,12 +397,7 @@ fn notification(shared: &Shared, method: &str, p: &Value) -> PortResult<()> {
                 tool: "fileChange".into(),
                 detail: String::new(),
             });
-            let paths = p["item"]["changes"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|c| c["path"].as_str().map(str::to_owned))
-                .collect();
+            let paths = change_paths(&p["item"]);
             let id = p["item"]["id"].as_str().unwrap_or("").to_owned();
             shared.state.lock().unwrap().changes.insert(id, paths);
         }
@@ -593,6 +588,19 @@ impl Drop for CodexSession {
     }
 }
 
+/// Every file a `fileChange` item touches; a move names where the file goes
+/// too, and both are checked.
+fn change_paths(item: &Value) -> Vec<String> {
+    item["changes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|c| [c["path"].as_str(), c["kind"]["move_path"].as_str()])
+        .flatten()
+        .map(str::to_owned)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc;
@@ -601,6 +609,18 @@ mod tests {
     use super::*;
     use crate::application::ports::AgentBackend;
     use crate::domain::{LaunchSpec, Phase, TaskMode};
+
+    #[test]
+    fn a_moved_file_names_where_it_goes() {
+        let item = json!({"changes": [
+            {"path": "/w/a.rs", "kind": {"type": "update", "move_path": "/elsewhere/a.rs"}},
+            {"path": "/w/b.rs", "kind": "add"},
+        ]});
+        assert_eq!(
+            change_paths(&item),
+            ["/w/a.rs", "/elsewhere/a.rs", "/w/b.rs"]
+        );
+    }
 
     /// Plays `codex app-server`: a read-only turn proposes a plan; a writable
     /// turn asks to add hola.txt and writes it only when accepted.
