@@ -259,7 +259,19 @@ export function Sidebar({
             </MenuButton>
           )}
         </div>
-        {overview.projects.length === 0 && !rail && <p className="hint sidebar__empty">{t("shell.noProjects")}</p>}
+        {/* No projects yet: the next step right there (with no account, the foot offers that first). */}
+        {overview.projects.length === 0 &&
+          (overview.accounts.length === 0 ? (
+            !rail && <p className="hint sidebar__empty">{t("shell.noProjects")}</p>
+          ) : (
+            <>
+              {!rail && <p className="hint sidebar__empty">{t("shell.noProjects")}</p>}
+              <button type="button" className="sidebar__item" {...named(t("create.newProject"))} onClick={() => create.newProject()}>
+                <PlusIcon />
+                <span className="sidebar__name">{t("create.newProject")}</span>
+              </button>
+            </>
+          ))}
         <ul className="sidebar__list">
           {overview.projects.map((p) => {
             const color = projectColor(p, overview.accounts);
@@ -383,7 +395,8 @@ export function Sidebar({
       <div className="sidebar__foot">
         {overview.accounts.length === 0 ? (
           !rail && (
-            <Button small variant="primary" onClick={() => onNavigate({ screen: "accounts" })}>
+            // Quiet: Inicio has the one primary "Agregar mi primera cuenta".
+            <Button small variant="ghost" onClick={() => onNavigate({ screen: "accounts" })}>
               {t("common.addAccount")}
             </Button>
           )
@@ -499,13 +512,25 @@ export function Shell(parts: ShellParts) {
 }
 
 function ShellFrame({ sidebar, children, terminal, statusbar }: ShellParts) {
+  const t = useT();
   const { rail } = useSidebarRail();
   const { focus } = useFocusMode();
   return (
     <div className={`app${rail ? " app--rail" : ""}${focus ? " app--focus" : ""}`}>
+      {/* The first stop of Tab. Not a plain "#main" link: the hash is the app's route. */}
+      <a
+        className="skip-link"
+        href="#main"
+        onClick={(e) => {
+          e.preventDefault();
+          document.getElementById("main")?.focus();
+        }}
+      >
+        {t("shell.skipToContent")}
+      </a>
       {sidebar}
       <FocusExit />
-      <main className="main" id="main">
+      <main className="main" id="main" tabIndex={-1}>
         {children}
       </main>
       {terminal}

@@ -295,7 +295,7 @@ describe("English", () => {
   it("shows Home's inbox and filters in English", async () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity());
     const needs = await screen.findByRole("region", { name: "Need you (10)" }, { timeout: 8000 });
-    expect(screen.getByRole("button", { name: "Continue «Revisa los tests del carrito»" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue “Revisa los tests del carrito”" })).toBeInTheDocument();
     expect(within(needs).getByText("Waiting for you: plan")).toBeInTheDocument();
     expect(within(needs).getByText("Waiting for you: permission")).toBeInTheDocument();
     expect(within(needs).getByText(/^Paused/)).toBeInTheDocument();
@@ -517,7 +517,7 @@ describe("English", () => {
     expect(spanishLeftovers()).toEqual([]);
 
     await user.click(screen.getByRole("button", { name: "Save and approve" }));
-    expect(await screen.findByText("Skill «agregar-endpoint» ready: your AIs use it inside Hedy.")).toBeInTheDocument();
+    expect(await screen.findByText("Skill “agregar-endpoint” ready: your AIs use it inside Hedy.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "+ New skill" }));
     expect(screen.getByRole("dialog", { name: "New skill" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);

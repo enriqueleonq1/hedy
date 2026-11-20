@@ -6,7 +6,7 @@ const es = {
   "skills.tabSkills": "Habilidades",
   "skills.newButton": "+ Nueva habilidad",
   "skills.loading": "Cargando las habilidades…",
-  "skills.loadError": "No se pudieron leer las habilidades: {error}",
+  "skills.loadError": "No se pudieron leer las habilidades.",
   "skills.protected": "Proyecto protegido: sus habilidades se quedan aquí y no usa tus habilidades de todos los proyectos.",
 
   "skills.group.proposed": "Propuestas por tus IAs · para aprobar",
@@ -64,7 +64,7 @@ const en: Record<keyof typeof es, string> = {
   "skills.tabSkills": "Skills",
   "skills.newButton": "+ New skill",
   "skills.loading": "Loading the skills…",
-  "skills.loadError": "Could not read the skills: {error}",
+  "skills.loadError": "Couldn't read the skills.",
   "skills.protected": "Protected project: its skills stay here and it does not use your skills for all projects.",
 
   "skills.group.proposed": "Proposed by your AIs · awaiting approval",
@@ -105,15 +105,15 @@ const en: Record<keyof typeof es, string> = {
 
   "skills.where.title": "Where your AIs read them",
   "skills.where.native":
-    "They stay inside Hedy. Claude Code gets them only in the sessions Hedy starts, as the «hedy» plugin (/hedy:<name>). Codex, Gemini CLI, Kimi Code and Antigravity read them from .agents/skills in each task's folder, kept out of git. Your project and your usual CLIs never see them.",
+    "They stay inside Hedy. Claude Code gets them only in the sessions Hedy starts, as the “hedy” plugin (/hedy:<name>). Codex, Gemini CLI, Kimi Code and Antigravity read them from .agents/skills in each task's folder, kept out of git. Your project and your usual CLIs never see them.",
   "skills.where.tools":
     "All of them, including those for every project, are in Hedy's tools (skill_list and skill_get), for any AI that reads the memory.",
   "skills.where.own": "If you already have a skill of your own with the same name, Hedy leaves it alone.",
 
-  "skills.files.written": "Skill «{name}» ready: your AIs use it inside Hedy ({n} open tasks, from their next session).",
-  "skills.files.writtenNone": "Skill «{name}» ready: your AIs use it inside Hedy.",
-  "skills.files.removed": "Skill «{name}» deleted: {n} files removed.",
-  "skills.files.removedNone": "Skill «{name}» deleted.",
+  "skills.files.written": "Skill “{name}” ready: your AIs use it inside Hedy ({n} open tasks, from their next session).",
+  "skills.files.writtenNone": "Skill “{name}” ready: your AIs use it inside Hedy.",
+  "skills.files.removed": "Skill “{name}” deleted: {n} files removed.",
+  "skills.files.removedNone": "Skill “{name}” deleted.",
   "skills.files.skipped": "{path} was left alone: it exists and is not Hedy's. Rename the skill to keep both.",
 };
 

@@ -121,6 +121,31 @@ ul { list-style: none; margin: 0; padding: 0; }
   outline-offset: 2px;
 }
 
+/* A title that takes the focus on arrival (Ajustes, a team, a dialog) only
+   tells screen readers where they are: no ring around the whole line. */
+h1[tabindex="-1"]:focus,
+h2[tabindex="-1"]:focus,
+h3[tabindex="-1"]:focus { outline: none; }
+
+/* "Saltar al contenido": hidden until the keyboard reaches it. */
+.skip-link {
+  position: fixed;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 1000;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--text-callout);
+  font-weight: 500;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+.skip-link:focus { transform: none; }
+main[tabindex="-1"]:focus { outline: none; }
+
 [hidden] {
   display: none !important;
 }
@@ -252,7 +277,9 @@ ul { list-style: none; margin: 0; padding: 0; }
 .sidebar__row:hover .sidebar__row-add,
 .sidebar__row-add:focus-visible { opacity: 1; }
 .sidebar__row-add:hover { color: var(--ink); }
-.sidebar__count { font-family: var(--font-mono); font-size: var(--text-eyebrow); color: var(--warning); }
+.sidebar__count { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: var(--text-eyebrow); color: var(--muted); }
+/* The color is in the dot; the figure stays gray. */
+.sidebar__count::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--warning); }
 .sidebar__lock { display: inline-grid; color: var(--muted); }
 .sidebar__lock .icon { width: 12px; height: 12px; }
 .sidebar__row:hover .sidebar__count { visibility: hidden; }
@@ -395,12 +422,16 @@ ul { list-style: none; margin: 0; padding: 0; }
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: transform 0.1s ease, background-color 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.1s ease;
 }
 
 /* Hover lifts the edge; pressing sinks the button a little. */
 .btn:hover:not(:disabled) { border-color: var(--muted); }
 .btn:active:not(:disabled) { transform: scale(0.98); }
+@media (prefers-reduced-motion: reduce) {
+  .btn { transition: none; }
+  .btn:active:not(:disabled) { transform: none; }
+}
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn--small { min-height: var(--control-sm); padding: 0 10px; border-radius: var(--radius-sm); font-size: var(--text-caption); }
 .btn--primary { background: var(--action); border-color: var(--action); color: var(--action-ink); }
@@ -415,7 +446,8 @@ ul { list-style: none; margin: 0; padding: 0; }
 .btn--armed,
 .btn--armed:hover:not(:disabled) { background: var(--diff-del-bg); border-color: var(--danger); color: var(--diff-del-ink); }
 
-/* A keyboard hint: a key cap in the button's own color. */
+/* A keyboard hint: a key cap in the muted color (the button's own inside a
+   button), at full opacity so it keeps its contrast. */
 .kbd {
   display: inline-flex;
   align-items: center;
@@ -425,10 +457,11 @@ ul { list-style: none; margin: 0; padding: 0; }
   padding: 0 var(--space-1);
   border-radius: var(--radius-xs);
   border: 1px solid currentColor;
-  font: 600 11px/1 var(--font-ui);
+  color: var(--muted);
+  font: 600 var(--text-eyebrow)/1 var(--font-ui);
   letter-spacing: 0.02em;
-  opacity: 0.75;
 }
+button .kbd { color: inherit; }
 
 textarea {
   font: inherit;
@@ -441,8 +474,7 @@ textarea {
   resize: vertical;
 }
 
-input:not([type="radio"], [type="checkbox"]),
-select {
+:where(input:not([type="radio"], [type="checkbox"]), select) {
   min-height: var(--target);
   width: 100%;
   padding: 0 12px;
@@ -452,9 +484,7 @@ select {
 }
 
 input::placeholder { color: var(--muted); opacity: 0.85; }
-input:not([type="radio"], [type="checkbox"]):hover:not(:disabled, :focus),
-select:hover:not(:disabled, :focus),
-textarea:hover:not(:disabled, :focus) { border-color: var(--line-strong); }
+:where(input:not([type="radio"], [type="checkbox"]), select, textarea):hover:not(:disabled, :focus) { border-color: var(--line-strong); }
 select:disabled { opacity: 0.65; }
 
 /* Our own select (components/ui/Select.tsx): a button that opens a list. */
@@ -694,15 +724,18 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
 .segmented__option {
   min-height: 36px;
   padding: 0 16px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
   font-weight: 600;
   cursor: pointer;
 }
+.segmented__option:hover { color: var(--ink); }
 
-.segmented__option[aria-checked="true"] { background: var(--mode-bg); color: var(--mode-ink); }
+/* The one quiet "chosen" look, shared with Inicio's filter pills: a raised
+   surface, the text in ink and a fine edge. */
+.segmented__option[aria-checked="true"] { background: var(--panel-2); border-color: var(--line-strong); color: var(--ink); }
 
 .color-picker { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
@@ -754,9 +787,9 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .pill--current {
   border: 0;
-  background: var(--selection);
-  color: var(--action-text);
-  font-weight: 600;
+  background: var(--panel-2);
+  color: var(--ink);
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -779,9 +812,10 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
 .usage__value { font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
 /* A line under a figure (when it renews, per model): quieter than the figure. */
 .usage__note { font-size: var(--text-caption); color: var(--muted); }
-/* Near (≥ 70 %) or at (≥ 90 %) a plan limit, as the meters (`meterLevel`). */
-.usage__value--warning, .level--warning { color: var(--warning); }
-.usage__value--danger, .level--danger { color: var(--danger); }
+/* Near (≥ 70 %) or at (≥ 90 %) a plan limit, as the meters (`meterLevel`):
+   the meter carries the color, the figure only steps up to ink. */
+.usage__value--warning, .level--warning,
+.usage__value--danger, .level--danger { color: var(--ink); }
 
 /* ---------------------------------------------------------------- cards */
 
@@ -878,7 +912,7 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
 .plan-usage__retry { position: absolute; right: var(--space-4); bottom: var(--space-4); }
 .plan-usage__text { display: grid; gap: 4px; min-width: 0; justify-items: start; }
 .plan-usage__text .chip { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.plan-usage__value { display: inline-flex; align-items: center; gap: 6px; font: 600 22px var(--font-title); letter-spacing: var(--tracking-title); font-variant-numeric: tabular-nums; }
+.plan-usage__value { display: inline-flex; align-items: center; gap: 6px; font: 600 var(--text-title) var(--font-title); letter-spacing: var(--tracking-title); font-variant-numeric: tabular-nums; }
 .plan-usage__value--muted { color: var(--muted); }
 .plan-usage__value--warning { color: var(--warning); }
 .plan-usage__value--danger { color: var(--danger); }
@@ -1129,23 +1163,26 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
   border-bottom: 1px solid var(--line);
   overflow-x: auto;
 }
+.terminal-panel__tabs { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.terminal-panel__actions { flex: 1; display: flex; align-items: center; gap: 4px; }
 
-.terminal-tab { display: flex; align-items: center; border-radius: var(--radius-control); }
-.terminal-tab--active { background: var(--selection); }
-
-.terminal-tab__title {
+.terminal-tab {
   display: flex;
   align-items: center;
   gap: 6px;
   min-height: 36px;
   padding: 0 10px;
   border: 0;
+  border-radius: var(--radius-control);
   background: transparent;
+  color: var(--muted);
   font-size: var(--text-callout);
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
 }
+.terminal-tab:hover { color: var(--ink); }
+.terminal-tab--active { background: var(--selection); color: var(--ink); }
 
 .terminal-tab__close {
   width: 32px;
@@ -1156,6 +1193,7 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
   color: var(--muted);
   cursor: pointer;
 }
+.terminal-tab__close:hover { background: var(--panel-2); color: var(--ink); }
 
 .terminal-panel__edge { top: -5px; }
 .terminal-panel__body { position: relative; min-height: 0; padding: 6px 8px; }
@@ -1398,7 +1436,7 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .steps { display: grid; gap: 8px; }
 .step { display: flex; align-items: center; gap: 10px; }
-.step__mark { width: 16px; text-align: center; font-weight: 800; }
+.step__mark { width: 16px; text-align: center; font-weight: 600; }
 .step--done .step__mark { color: var(--success); }
 .step--inProgress { font-weight: 600; }
 .step--inProgress .step__mark { color: var(--activity); }
@@ -1417,7 +1455,7 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
 .activity code { font-family: var(--font-mono); font-size: var(--text-mono); color: var(--ink); }
-.activity__mark { font-weight: 800; flex: none; }
+.activity__mark { font-weight: 600; flex: none; }
 .activity--done .activity__mark { color: var(--success); }
 .activity--running .activity__mark { color: var(--activity); }
 .activity--failed { color: var(--danger); }
@@ -2150,7 +2188,7 @@ a.link-button { display: inline-flex; align-items: center; text-decoration: none
 /* Values in ink; a small dot carries the meaning (ok, failed, needs a look). */
 .stat { gap: 4px; padding: var(--space-4) var(--space-5); }
 .status .stat__label { display: flex; align-items: center; gap: var(--space-2); font: 500 var(--text-callout) var(--font-ui); color: var(--muted); }
-.stat__value { font: 600 22px/1.25 var(--font-title); letter-spacing: var(--tracking-title); color: var(--ink); overflow-wrap: anywhere; }
+.stat__value { font: 600 var(--text-title)/1.25 var(--font-title); letter-spacing: var(--tracking-title); color: var(--ink); overflow-wrap: anywhere; }
 .stat__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
 .stat__dot--ok { background: var(--success); }
 .stat__dot--danger { background: var(--danger); }
@@ -2172,36 +2210,15 @@ a.link-button { display: inline-flex; align-items: center; text-decoration: none
 }
 .status__task-text { display: grid; gap: 2px; min-width: 0; }
 .status__task-text strong { overflow-wrap: anywhere; }
-.status__badge { padding: 1px 9px; border-radius: var(--radius-pill); background: var(--panel); font-size: var(--text-caption); font-weight: 600; white-space: nowrap; }
-.status__badge--warn { color: var(--warning); }
-.status__badge--info { color: var(--activity); }
-.status__badge--ok { color: var(--success); }
-.status__badge--danger { color: var(--danger); }
-.status__badge--muted { color: var(--muted); }
 .status__commits li { display: flex; gap: 12px; }
-.status__hash { color: var(--accent); }
 
 .week-chart { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; height: 170px; align-items: end; }
 .week-chart__day { display: grid; grid-template-rows: minmax(0, 1fr) auto; height: 100%; gap: 8px; justify-items: center; }
 .week-chart__track { position: relative; width: 100%; height: 100%; display: flex; align-items: flex-end; border-bottom: 1px solid var(--line); }
 .week-chart__bar { width: 100%; margin: 0 3px; background: var(--action); border-radius: 4px 4px 0 0; }
-.week-chart__tip {
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 2px 8px;
-  border-radius: var(--radius-control);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  color: var(--ink);
-  font-size: var(--text-caption);
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-}
-.week-chart__day:hover .week-chart__tip { opacity: 1; }
-.week-chart__day:hover .week-chart__bar { opacity: 0.85; }
+.week-chart__day:hover .week-chart__bar,
+.week-chart__day:focus-within .week-chart__bar,
+.week-chart__day:focus .week-chart__bar { opacity: 0.85; }
 .week-chart__letter { font-size: var(--text-callout); color: var(--muted); }
 
 .table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -2257,9 +2274,11 @@ a.link-button { display: inline-flex; align-items: center; text-decoration: none
 .onboarding__eyebrow { font-size: var(--text-callout); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--activity); }
 .onboarding__lead { font-size: var(--text-headline); line-height: 1.6; color: var(--muted); }
 
-.onboarding__dots { display: flex; gap: 8px; }
-.onboarding__dot { width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--line); transition: width 0.25s ease, background 0.25s ease; }
-.onboarding__dot--current { width: 24px; background: var(--action); }
+.onboarding__dots { display: flex; gap: 16px; }
+/* A fixed size: the current step only stretches (transform), never resizes. */
+.onboarding__dot { width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--line); transition: transform 0.25s ease; }
+.onboarding__dot--current { background: var(--action); transform: scaleX(2.5); }
+@media (prefers-reduced-motion: reduce) { .onboarding__dot { transition: none; } }
 
 .onboarding__stack { width: 100%; max-width: 440px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
 .onboarding__stack--notes { align-items: stretch; gap: 12px; }
@@ -2623,3 +2642,18 @@ a.link-button { display: inline-flex; align-items: center; text-decoration: none
 }
 .memory-hub__map > .ask-node { position: absolute; left: var(--space-4); bottom: var(--space-4); max-width: 420px; background: var(--panel); box-shadow: var(--shadow-pop); }
 .nav-badge--quiet { border-color: var(--line); background: var(--panel-2); color: var(--muted); }
+
+/* The one empty or error state (components/ui/EmptyState.tsx). */
+.empty-state { display: grid; justify-items: center; gap: var(--space-2); padding: var(--space-6) var(--space-4); text-align: center; }
+.empty-state__art { margin-bottom: var(--space-2); }
+.empty-state__title { font: 600 var(--text-headline) var(--font-ui); color: var(--ink); }
+.empty-state__text { max-width: 46ch; font-size: var(--text-callout); color: var(--muted); }
+.empty-state--error .empty-state__title { color: var(--danger); }
+.empty-state__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); margin-top: var(--space-2); }
+
+/* A state in words with its color in a dot ("Se sincroniza", "No sale de
+   aquí"): the text stays ink or gray. */
+.state-label { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 500; }
+.state-label::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+.state-label--off { color: var(--muted); }
+.state-label--off::before { background: var(--line-strong); }

@@ -90,7 +90,7 @@ const en: Record<keyof typeof es, string> = {
   "home.side": "Your plans and what is running",
   "home.accounts": "Accounts",
   "home.newTask": "New task",
-  "home.continue": "Continue «{title}»",
+  "home.continue": "Continue “{title}”",
   "home.summary.none": "Nothing is waiting for you.",
   "home.summary.one": "One thing is waiting; you can answer it right here.",
   "home.summary.many": "{n} things are waiting; you can answer them right here.",

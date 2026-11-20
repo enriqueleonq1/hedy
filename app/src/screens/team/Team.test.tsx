@@ -172,6 +172,20 @@ describe("Teams", () => {
     expect(sync).toHaveBeenCalledWith("team-1");
   });
 
+  it("says when a team cannot be read, with Reintentar and the way back", async () => {
+    const api = MockApi.withSampleData();
+    const read = vi.spyOn(api, "teamStatus").mockRejectedValue("disk on fire");
+    const { user } = renderAt("#teams", api);
+    const card = await waitFor(section);
+    await user.click(await within(card).findByRole("button", { name: /Plataforma/ }));
+    const alert = await within(card).findByRole("alert");
+    expect(alert).toHaveTextContent("No se pudo leer el equipo");
+    expect(alert).toHaveTextContent("disk on fire");
+    read.mockRestore();
+    await user.click(within(alert).getByRole("button", { name: "Reintentar" }));
+    expect(await within(card).findByRole("heading", { name: "Plataforma" })).toBeInTheDocument();
+  });
+
   it("reads the address and the code out of a pasted invite", async () => {
     const api = MockApi.withSampleData();
     api.teamList = [];

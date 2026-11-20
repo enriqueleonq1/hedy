@@ -82,3 +82,45 @@ describe("terminal panel size", () => {
     expect(panel).toHaveStyle({ height: "260px" });
   });
 });
+
+describe("terminal tabs", () => {
+  function OpenTwo() {
+    const { open } = useTerminals();
+    useEffect(() => {
+      open({ kind: "shell", path: "/code/a" }, "Uno");
+      open({ kind: "shell", path: "/code/b" }, "Dos");
+    }, [open]);
+    return null;
+  }
+
+  it("keeps only tabs in the tablist; arrow keys move between them, the rest is beside it", async () => {
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <I18nProvider setting="es">
+          <TerminalProvider>
+            <OpenTwo />
+            <TerminalPanel />
+          </TerminalProvider>
+        </I18nProvider>
+      </QueryClientProvider>,
+    );
+    const list = screen.getByRole("tablist", { name: "Terminales" });
+    expect(list.querySelectorAll("button:not([role=tab])")).toHaveLength(0);
+    const one = screen.getByRole("tab", { name: "Uno" });
+    const two = screen.getByRole("tab", { name: "Dos" });
+    expect(two).toHaveAttribute("aria-selected", "true");
+    expect(one).toHaveAttribute("tabindex", "-1");
+
+    two.focus();
+    await user.keyboard("{ArrowLeft}");
+    expect(one).toHaveFocus();
+    expect(one).toHaveAttribute("aria-selected", "true");
+    expect(one).toHaveAttribute("tabindex", "0");
+
+    // Closing is for the terminal on screen, outside the tablist.
+    await user.click(screen.getByRole("button", { name: "Cerrar Uno" }));
+    expect(screen.queryByRole("tab", { name: "Uno" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "Dos" })).toHaveAttribute("aria-selected", "true");
+  });
+});

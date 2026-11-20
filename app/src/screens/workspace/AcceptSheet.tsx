@@ -5,6 +5,7 @@ import { errorMessage, useAction, useApi } from "../../api/context";
 import type { AcceptMode, AcceptPreview, Task } from "../../api/types";
 import { modKey } from "../../components/palette/keys";
 import { Button } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { Switch } from "../../components/ui/controls";
 import { Dialog } from "../../components/ui/Dialog";
 import { useToast } from "../../components/ui/Toast";
@@ -161,9 +162,12 @@ export function AcceptSheet({
     >
       {preview.isPending && <p className="muted">{t("review.loading")}</p>}
       {preview.isError && (
-        <p className="error-text" role="alert">
-          {errorMessage(preview.error, t)}
-        </p>
+        <EmptyState
+          error
+          title={t("review.loadError")}
+          text={errorMessage(preview.error, t)}
+          onRetry={() => void preview.refetch()}
+        />
       )}
       {preview.data && (
         <PreviewForm

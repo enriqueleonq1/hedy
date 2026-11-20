@@ -3,12 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 
 import { errorMessage, useApi } from "../../api/context";
 import type { Account, MemoryView, Note, NoteCategory, Overview } from "../../api/types";
-import { Mascot } from "../../components/Mascot/Mascot";
 import { Button, ConfirmButton } from "../../components/ui/Button";
 import { Switch } from "../../components/ui/controls";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { timeAgo } from "../../format";
 import { useT, type MessageKey } from "../../i18n";
-import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { NewNoteDialog } from "./NewNoteDialog";
 import { NoteCard } from "./NoteCard";
 import { authorLabel, keepLabel, memoryKey, useMemoryAction } from "./notes";
@@ -48,8 +47,6 @@ export function NotesPanel({ overview, project, query }: { overview: Overview; p
     mine,
     all: teamNotes.length + mine,
   };
-  const info = overview.projects.find((p) => p.path === project);
-  const color = overview.accounts.find((a) => a.id === info?.account)?.color ?? DEFAULT_ACCOUNT_COLOR;
 
   return (
     <>
@@ -59,12 +56,19 @@ export function NotesPanel({ overview, project, query }: { overview: Overview; p
         </Button>
       </div>
       {memory.isPending && <p className="muted">{t("memory.loading")}</p>}
-      {memory.isError && <p role="alert">{t("memory.loadError", { error: errorMessage(memory.error, t) })}</p>}
+      {memory.isError && (
+        <EmptyState
+          error
+          title={t("memory.loadError")}
+          text={errorMessage(memory.error, t)}
+          onRetry={() => void memory.refetch()}
+        />
+      )}
       {memory.data && (
         <>
           {memory.data.protected && <p className="hint">{t("memory.protected")}</p>}
           {memory.data.contradictions.map(([a, b]) => (
-            <Contradiction key={`${a.id}-${b.id}`} project={project} a={a} b={b} color={color} />
+            <Contradiction key={`${a.id}-${b.id}`} project={project} a={a} b={b} />
           ))}
           <div className="memory__layout">
             <div className="memory__main">
@@ -97,7 +101,7 @@ export function NotesPanel({ overview, project, query }: { overview: Overview; p
   );
 }
 
-function Contradiction({ project, a, b, color }: { project: string; a: Note; b: Note; color: string }) {
+function Contradiction({ project, a, b }: { project: string; a: Note; b: Note }) {
   const keep = useMemoryAction(project, (api, vars: { keep: number; forget: number }) =>
     api.keepNote(vars.keep, vars.forget),
   );
@@ -106,7 +110,6 @@ function Contradiction({ project, a, b, color }: { project: string; a: Note; b: 
   const t = useT();
   return (
     <section className="contradiction" aria-label={t("memory.contradiction")}>
-      <Mascot color={color} state="thinking" size={64} label="" />
       <div className="contradiction__body">
         <h2>{t("memory.contradiction")}</h2>
         <div className="contradiction__notes">

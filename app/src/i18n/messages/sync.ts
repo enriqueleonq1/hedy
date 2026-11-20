@@ -6,6 +6,8 @@ const es = {
   "sync.title": "Sincronización",
   "sync.tagline": "Tu Hedy, igual en todas tus computadoras.",
   "sync.off": "Desactivada",
+  "sync.loadError": "No se pudo leer el estado de la sincronización",
+  "sync.loadErrorText": "Puede ser algo pasajero: vuelve a intentarlo.",
   "sync.offText":
     "Memoria, habilidades, plantillas y temas en un repo git privado tuyo, cifrados antes de salir de tu computadora.",
   "sync.setUp": "Configurar",
@@ -170,6 +172,8 @@ const en: Record<keyof typeof es, string> = {
   "sync.title": "Sync",
   "sync.tagline": "Your Hedy, the same on every computer.",
   "sync.off": "Off",
+  "sync.loadError": "Couldn't read the sync status",
+  "sync.loadErrorText": "It may pass: try again.",
   "sync.offText":
     "Memory, skills, templates and themes in a private git repo of yours, encrypted before they leave your computer.",
   "sync.setUp": "Set up",

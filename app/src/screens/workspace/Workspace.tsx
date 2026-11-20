@@ -24,6 +24,7 @@ import { StatusPill } from "../../components/ui/StatusPill";
 import { pressPanelShortcut } from "../../components/palette/codeCommands";
 import { taskState } from "../../tasks/state";
 import { Dialog } from "../../components/ui/Dialog";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { AskIcon, CodeIcon, InfoIcon, PlanIcon, ResearchIcon, SendIcon, TemplateIcon } from "../../components/ui/icons";
 import { MenuButton, type MenuItem } from "../../components/ui/Menu";
 import { Select } from "../../components/ui/Select";
@@ -395,12 +396,22 @@ export function Workspace({
           />
         )}
 
-        {tasks.isError && (
+        {/* Tasks that did not load are not "no tasks": the error, and a way to try again. */}
+        {tasks.isError && task && (
           <p className="error-text" role="alert">
             {errorMessage(tasks.error, t)}
           </p>
         )}
-        {task ? (
+        {tasks.isError && !task ? (
+          <div className="chat__empty">
+            <EmptyState
+              error
+              title={t(solo ? "workspace.conversationsError" : "workspace.tasksError")}
+              text={errorMessage(tasks.error, t)}
+              onRetry={() => void tasks.refetch()}
+            />
+          </div>
+        ) : task ? (
           <Timeline
             task={task}
             items={items}

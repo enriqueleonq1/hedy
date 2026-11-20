@@ -100,10 +100,60 @@ describe("Status", () => {
     expect(await screen.findByText(/fue el día más intenso/)).toBeInTheDocument();
     expect(screen.getByText("a3f9c1e")).toBeInTheDocument();
 
-    const hero = screen.getByRole("region", { name: "Estado del proyecto" });
-    await user.click(within(hero).getByRole("button", { name: "Memoria" }));
+    // The project's tabs stay: Memoria, Ajustes and back to its tasks.
+    const sections = screen.getByRole("navigation", { name: "Secciones del proyecto" });
+    expect(within(sections).getByRole("button", { name: "Resumen" })).toHaveAttribute("aria-current", "page");
+    await user.click(within(sections).getByRole("button", { name: "Memoria" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Para" })).toHaveDisplayValue("hedy");
+  });
+
+  it("takes the project's settings from Resumen's tabs", async () => {
+    const { user } = setup();
+    await user.click(await screen.findByRole("button", { name: /^hedy/ }));
+    await openSummary(user);
+    await screen.findByRole("region", { name: "Tests" });
+    await user.click(within(screen.getByRole("navigation", { name: "Secciones del proyecto" })).getByRole("button", { name: "Ajustes" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Ajustes de hedy" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#ps=${encodeURIComponent("/code/hedy")}`);
+  });
+
+  it("says what did not load and tries again, instead of a bare red line", async () => {
+    const api = MockApi.withSampleData();
+    api.delayMs = 0;
+    // Each read fails until the user asks again.
+    let failing = true;
+    const fail = <A extends unknown[], R>(real: (...args: A) => Promise<R>, error: string) =>
+      (...args: A) => (failing ? Promise.reject(error) : real(...args));
+    const status = fail(api.projectStatus.bind(api), "sin acceso al repositorio");
+    const tasks = fail(api.tasks.bind(api), "la base de datos está ocupada");
+    const commits = fail(api.recentCommits.bind(api), "git no responde");
+    vi.spyOn(api, "projectStatus").mockImplementation(status);
+    vi.spyOn(api, "tasks").mockImplementation(tasks);
+    vi.spyOn(api, "recentCommits").mockImplementation(commits);
+    history.replaceState(null, "", `#s=${encodeURIComponent("/code/hedy")}`);
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+
+    const failures: [string, string][] = [
+      ["No se pudo cargar el estado del proyecto.", "sin acceso al repositorio"],
+      ["No se pudieron cargar las tareas.", "la base de datos está ocupada"],
+      ["No se pudieron cargar los commits.", "git no responde"],
+    ];
+    const alerts: HTMLElement[] = [];
+    for (const [title, detail] of failures) {
+      const alert = (await screen.findByText(title)).closest("[role=alert]");
+      if (!(alert instanceof HTMLElement)) throw new Error(`no alert for ${title}`);
+      expect(alert).toHaveTextContent(detail);
+      alerts.push(alert);
+    }
+    // No "no tasks yet" while the tasks did not load.
+    expect(screen.queryByText("Todavía no hay tareas en este proyecto.")).toBeNull();
+    failing = false;
+    for (const alert of alerts) await user.click(within(alert).getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByRole("region", { name: "Tests" })).toBeInTheDocument();
+    expect(await screen.findByText("a3f9c1e")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("opens the project's memory and summary from its home's tabs", async () => {

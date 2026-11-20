@@ -443,7 +443,7 @@ function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineIte
       onKeyDown={shortcut}
     >
       <h3>
-        Plan · {agent}
+        {t("workspace.plan.title", { agent })}
         {item.resolution && (
           <span className={`plan-card__state plan-card__state--${item.resolution.decision}`}>
             {item.resolution.decision === "deny" ? t("workspace.plan.changesRequested") : t("workspace.plan.approved")}

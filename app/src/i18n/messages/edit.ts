@@ -144,7 +144,7 @@ const en: Record<keyof typeof es, string> = {
   "edit.name.rename": "New name for {name}",
   "edit.name.empty": "Type a name",
   "edit.name.invalid": "Not a valid name: no / \\ : * ? \" < > | and no dot or space at the end",
-  "edit.name.exists": "Something called «{name}» is already here",
+  "edit.name.exists": "Something called “{name}” is already here",
   "edit.name.protected": "Hedy does not create protected files (.env, keys…)",
   "edit.name.hint": "Enter to confirm · Esc to cancel",
   "edit.delete.title": "Delete {name}?",

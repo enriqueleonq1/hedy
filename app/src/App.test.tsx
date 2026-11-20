@@ -166,7 +166,11 @@ describe("Inicio", () => {
   it("invites to add an account when there are none", async () => {
     const { user } = renderApp(new MockApi());
     const add = await screen.findByRole("button", { name: "Agregar mi primera cuenta" });
-    expect(screen.getByText("Primero agrega una cuenta; luego asígnala a tus proyectos.")).toBeInTheDocument();
+    // Why, with the mascot, and one primary: the sidebar's way there is quiet.
+    expect(screen.getByText("Conecta una cuenta para empezar")).toBeInTheDocument();
+    expect(screen.getByText(/Hedy nunca ve tus credenciales\.$/)).toBeInTheDocument();
+    expect(add).toHaveClass("btn--primary");
+    expect(screen.getByRole("button", { name: "Agregar cuenta" })).toHaveClass("btn--ghost");
     expect(screen.queryByRole("region", { name: "Tus planes" })).not.toBeInTheDocument();
     expect(screen.queryByRole("radiogroup", { name: "Mostrar" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Nueva tarea" })).not.toBeInTheDocument();
@@ -182,7 +186,11 @@ describe("Inicio", () => {
     expect(screen.getByRole("button", { name: /^Nuevo proyecto.*Una carpeta nueva, lista para trabajar$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Abrir carpeta….*Un proyecto que ya tienes en tu equipo$/ })).toBeInTheDocument();
     // The header's primary action creates a project instead of a task.
-    expect(screen.getByRole("button", { name: "Nuevo proyecto" })).toHaveClass("btn--primary");
+    expect(within(screen.getByRole("main")).getByRole("button", { name: "Nuevo proyecto" })).toHaveClass("btn--primary");
+    // The sidebar's empty list says what to do next too.
+    const sidebar = screen.getByRole("complementary", { name: "Navegación" });
+    expect(within(sidebar).getByText("Sin proyectos todavía.")).toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "Nuevo proyecto" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Nueva tarea" })).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Tus planes" })).toBeInTheDocument();
   });

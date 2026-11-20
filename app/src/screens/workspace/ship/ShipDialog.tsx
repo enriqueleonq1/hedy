@@ -6,6 +6,7 @@ import type { PullRequest, PullRequestDraft, ShipFailure, ShipState, Task } from
 import { useProjectActions } from "../../../components/projects";
 import { modKey } from "../../../components/palette/keys";
 import { Button } from "../../../components/ui/Button";
+import { EmptyState } from "../../../components/ui/EmptyState";
 import { Switch } from "../../../components/ui/controls";
 import { Dialog } from "../../../components/ui/Dialog";
 import { useT } from "../../../i18n";
@@ -110,9 +111,12 @@ export function ShipDialog({ task, initial, onClose }: { task: Task; initial?: S
       }
     >
       {state.isError && (
-        <p className="error-text" role="alert">
-          {errorMessage(state.error, t)}
-        </p>
+        <EmptyState
+          error
+          title={t("ship.stateError")}
+          text={errorMessage(state.error, t)}
+          onRetry={() => void state.refetch()}
+        />
       )}
       {state.data && step === "publish" && (
         <PublishStep
@@ -242,9 +246,12 @@ function PullRequestStep({
   const draft = useQuery({ queryKey: ["prDraft", task.id], queryFn: () => api.pullRequestDraft(task.id), gcTime: 0 });
   if (draft.isError) {
     return (
-      <p className="error-text" role="alert">
-        {errorMessage(draft.error, t)}
-      </p>
+      <EmptyState
+        error
+        title={t("ship.draftError")}
+        text={errorMessage(draft.error, t)}
+        onRetry={() => void draft.refetch()}
+      />
     );
   }
   if (!draft.data) return <p className="muted">{t("review.loading")}</p>;

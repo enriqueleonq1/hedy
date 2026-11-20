@@ -116,6 +116,7 @@ const es = {
   "accounts.key.title": "API key de {name}",
   "accounts.key.save": "Guardar en el llavero",
   "accounts.key.hint": "Se guarda en el llavero del sistema, nunca en archivos.",
+  "accounts.key.label": "API key",
 
   "accounts.phaseSummary.plan": "{agent} planifica",
   "accounts.phaseSummary.implement": "{agent} implementa",
@@ -130,6 +131,8 @@ const es = {
   "accounts.project.protectLabel": "Proteger proyecto",
 
   "accounts.table.empty": "Todavía no hay proyectos.",
+  "accounts.table.needsAccount": "Agrega una cuenta primero: cada proyecto trabaja con una.",
+  "accounts.add.namePlaceholder": "Claude del trabajo",
   "accounts.table.project": "Proyecto",
   "accounts.table.steps": "Quién hace cada paso",
   "accounts.table.protectedYes": "Sí",
@@ -137,6 +140,7 @@ const es = {
 
   "accounts.spend.title": "Uso de la semana por cliente",
   "accounts.spend.cost": "Costo estimado (API key)",
+  "accounts.spend.tokens": "Tokens",
   "accounts.spend.note": "Tokens que Hedy registró en sus tareas.",
   "accounts.spend.costNote":
     "El costo es una estimación y solo cuenta las cuentas con API key, según el precio que pongas en Ajustes.",
@@ -257,6 +261,7 @@ const en: Record<keyof typeof es, string> = {
   "accounts.key.title": "API key for {name}",
   "accounts.key.save": "Save to keychain",
   "accounts.key.hint": "Stored in the system keychain, never in files.",
+  "accounts.key.label": "API key",
 
   "accounts.phaseSummary.plan": "{agent} plans",
   "accounts.phaseSummary.implement": "{agent} implements",
@@ -271,6 +276,8 @@ const en: Record<keyof typeof es, string> = {
   "accounts.project.protectLabel": "Protect project",
 
   "accounts.table.empty": "No projects yet.",
+  "accounts.table.needsAccount": "Add an account first: every project works with one.",
+  "accounts.add.namePlaceholder": "Work Claude",
   "accounts.table.project": "Project",
   "accounts.table.steps": "Who does each step",
   "accounts.table.protectedYes": "Yes",
@@ -278,6 +285,7 @@ const en: Record<keyof typeof es, string> = {
 
   "accounts.spend.title": "This week's usage by client",
   "accounts.spend.cost": "Estimated cost (API key)",
+  "accounts.spend.tokens": "Tokens",
   "accounts.spend.note": "Tokens Hedy recorded in its tasks.",
   "accounts.spend.costNote": "The cost is an estimate and only counts API-key accounts, from the price you set in Settings.",
 };

@@ -25,7 +25,9 @@ import {
   windowLabel,
 } from "../../components/planUsage";
 import { Button } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { Meter, meterLevel } from "../../components/ui/Meter";
+import { rovingKeyDown } from "../../components/ui/roving";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { taskState } from "../../tasks/state";
 import { formatTokens, formatUsd, timeAgo } from "../../format";
@@ -196,56 +198,59 @@ export function HomeScreen({
       <header className="home__head">
         <div>
           <h1>{greeting}</h1>
-          <p className="muted">
-            {hasAccounts
-              ? summary(inbox.count, overview.accounts, t)
-              : t("welcome.empty.noAccounts")}
-          </p>
-        </div>
-        <div className="home__actions">
-          {!hasAccounts ? (
-            <Button
-              variant="primary"
-              onClick={() => onNavigate({ screen: "accounts" })}
-            >
-              {t("welcome.addFirstAccount")}
-            </Button>
-          ) : (
-            <>
-              {latest && (
-                <Button
-                  onClick={() =>
-                    onOpenTask(latest.task.project, latest.task.id)
-                  }
-                  title={latest.task.title}
-                >
-                  {t("home.continue", {
-                    title: shorten(latest.task.title, 28),
-                  })}
-                </Button>
-              )}
-              {current ? (
-                <Button
-                  variant="primary"
-                  onClick={() =>
-                    onNavigate({
-                      screen: "workspace",
-                      project: current.path,
-                      task: null,
-                    })
-                  }
-                >
-                  {t("home.newTask")}
-                </Button>
-              ) : (
-                <Button variant="primary" onClick={() => create.newProject()}>
-                  {t("create.newProject")}
-                </Button>
-              )}
-            </>
+          {hasAccounts && (
+            <p className="muted">{summary(inbox.count, overview.accounts, t)}</p>
           )}
         </div>
+        {hasAccounts && (
+          <div className="home__actions">
+            {latest && (
+              <Button
+                onClick={() =>
+                  onOpenTask(latest.task.project, latest.task.id)
+                }
+                title={latest.task.title}
+              >
+                {t("home.continue", {
+                  title: shorten(latest.task.title, 28),
+                })}
+              </Button>
+            )}
+            {current ? (
+              <Button
+                variant="primary"
+                onClick={() =>
+                  onNavigate({
+                    screen: "workspace",
+                    project: current.path,
+                    task: null,
+                  })
+                }
+              >
+                {t("home.newTask")}
+              </Button>
+            ) : (
+              <Button variant="primary" onClick={() => create.newProject()}>
+                {t("create.newProject")}
+              </Button>
+            )}
+          </div>
+        )}
       </header>
+
+      {/* No account yet: why, and the one next step (the sidebar's is quiet). */}
+      {!hasAccounts && (
+        <EmptyState
+          art={<Mascot color={color} state="idle" size={120} />}
+          title={t("welcome.empty.title")}
+          text={t("welcome.empty.why")}
+          actions={
+            <Button variant="primary" onClick={() => onNavigate({ screen: "accounts" })}>
+              {t("welcome.addFirstAccount")}
+            </Button>
+          }
+        />
+      )}
 
       {hasAccounts && overview.projects.length === 0 && (
         <div className="start-choices">
@@ -281,6 +286,7 @@ export function HomeScreen({
                 className="pills"
                 role="radiogroup"
                 aria-label={t("home.show")}
+                onKeyDown={rovingKeyDown}
               >
                 {pills.map((pill) => (
                   <button
@@ -288,6 +294,7 @@ export function HomeScreen({
                     type="button"
                     role="radio"
                     aria-checked={filter === pill.value}
+                    tabIndex={filter === pill.value ? 0 : -1}
                     className={`pill${filter === pill.value ? " pill--on" : ""}`}
                     onClick={() => setFilter(pill.value)}
                   >
@@ -404,6 +411,7 @@ export function HomeScreen({
                 words={words}
                 now={now}
                 onOpenTask={onOpenTask}
+                onNavigate={onNavigate}
               />
             )}
             {filter !== "history" && keys.length > 0 && <KeysHint />}
@@ -589,15 +597,18 @@ function History({
   words,
   now,
   onOpenTask,
+  onNavigate,
 }: {
   overview: Overview;
   project: string;
   words: string;
   now: number;
   onOpenTask: (project: string, taskId: string) => void;
+  onNavigate: (view: View) => void;
 }) {
   const t = useT();
   const api = useApi();
+  const create = useCreate();
   const [shown, setShown] = useState(HISTORY_PAGE);
   const lists = useQueries({
     queries: overview.projects.map((p) => ({
@@ -621,8 +632,25 @@ function History({
         (!words || task.title.toLowerCase().includes(words)),
     )
     .sort((a, b) => b.createdAt - a.createdAt);
-  if (all.length === 0)
-    return <p className="empty">{t("home.history.empty")}</p>;
+  if (all.length === 0) {
+    // Filtered to nothing: no next step to offer but clearing the filters.
+    if (project || words) return <p className="empty">{t("home.history.empty")}</p>;
+    const first = overview.projects[0];
+    return (
+      <EmptyState
+        title={t("home.history.empty")}
+        actions={
+          first ? (
+            <Button onClick={() => onNavigate({ screen: "workspace", project: first.path, task: null })}>
+              {t("home.newTask")}
+            </Button>
+          ) : (
+            <Button onClick={() => create.newProject()}>{t("create.newProject")}</Button>
+          )
+        }
+      />
+    );
+  }
   return (
     <section className="board__group" aria-label={t("home.filter.history")}>
       <ul className="board__list">

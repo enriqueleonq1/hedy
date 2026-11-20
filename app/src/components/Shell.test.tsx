@@ -59,6 +59,17 @@ describe("Shell", () => {
     expect(window.location.hash).toBe("#settings");
   });
 
+  it("skips to the content from the first Tab stop, without changing the route", async () => {
+    const { user } = setup();
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
+    await user.tab();
+    const skip = screen.getByRole("link", { name: "Saltar al contenido" });
+    expect(skip).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("main")).toHaveFocus();
+    expect(window.location.hash).not.toBe("#main");
+  });
+
   it("shows the account in use at the foot, with its figure and a meter, and opens it", async () => {
     const { user } = setup();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });

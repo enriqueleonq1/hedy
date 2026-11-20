@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { errorMessage, useApi } from "../../api/context";
 import type { TeamInvite, TeamPerson, TeamStatus, TeamSummary } from "../../api/types";
 import { Button, ConfirmButton } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { Meter } from "../../components/ui/Meter";
 import { useToast } from "../../components/ui/Toast";
 import { timeAgo } from "../../format";
@@ -46,6 +47,14 @@ export function TeamsSection() {
             </span>
             <p className="sync__titles muted">{t("team.tagline")}</p>
           </div>
+          {teams.isError && (
+            <EmptyState
+              error
+              title={t("team.listError")}
+              text={errorMessage(teams.error, t)}
+              onRetry={() => void teams.refetch()}
+            />
+          )}
           {list.length > 0 && (
             <ul className="team-list">
               {list.map((team) => (
@@ -152,7 +161,17 @@ function TeamPanel({ id, onBack }: { id: string; onBack: () => void }) {
   const leave = useTeamAction((api, here: boolean) => api.teamLeave(id, here));
 
   if (!status.data) {
-    return status.isError ? <p role="alert">{errorMessage(status.error, t)}</p> : <p className="muted">{t("team.loading")}</p>;
+    return status.isError ? (
+      <EmptyState
+        error
+        title={t("team.loadError")}
+        text={errorMessage(status.error, t)}
+        actions={<Button onClick={onBack}>{t("team.title")}</Button>}
+        onRetry={() => void status.refetch()}
+      />
+    ) : (
+      <p className="muted">{t("team.loading")}</p>
+    );
   }
   const team = status.data;
   const admin = team.summary.role === "admin";

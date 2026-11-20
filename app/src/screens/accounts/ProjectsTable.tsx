@@ -14,15 +14,27 @@ import { AddProjectDialog, useAddProject } from "./AddProjectDialog";
 export function ProjectsTable({ overview }: { overview: Overview }) {
   const t = useT();
   const adding = useAddProject();
+  const noAccounts = overview.accounts.length === 0;
 
   return (
     <section className="card table-card" aria-labelledby="projects-table-title">
       <div className="section-head">
         <h2 id="projects-table-title">{t("common.projectsAndAccounts")}</h2>
-        <Button small onClick={adding.start} disabled={overview.accounts.length === 0}>
+        <Button
+          small
+          onClick={adding.start}
+          disabled={noAccounts}
+          aria-describedby={noAccounts ? "projects-table-needs-account" : undefined}
+        >
           {t("common.addProjectButton")}
         </Button>
       </div>
+      {/* A disabled button says why. */}
+      {noAccounts && (
+        <p id="projects-table-needs-account" className="hint">
+          {t("accounts.table.needsAccount")}
+        </p>
+      )}
       {overview.projects.length === 0 ? (
         <p className="empty">{t("accounts.table.empty")}</p>
       ) : (

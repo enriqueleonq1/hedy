@@ -73,6 +73,21 @@ describe("Review before accepting", () => {
     expect(screen.getByRole("list", { name: "Archivos cambiados" })).toBeInTheDocument();
   });
 
+  it("says when the summary did not load, and tries again", async () => {
+    const { api, user } = setup();
+    const preview = api.acceptPreview.bind(api);
+    vi.spyOn(api, "acceptPreview").mockRejectedValueOnce("git está ocupado").mockImplementation(preview);
+    await openReviewTask(user, /^Inicio/);
+    await user.click(screen.getByRole("button", { name: "Aceptar cambios…" }));
+    const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" });
+    expect(await within(sheet).findByText("No se pudo preparar el resumen.")).toBeInTheDocument();
+    const alert = within(sheet).getByRole("alert");
+    expect(alert).toHaveTextContent("git está ocupado");
+    await user.click(within(alert).getByRole("button", { name: "Reintentar" }));
+    expect(await within(sheet).findByText("Archivos: 3")).toBeInTheDocument();
+    expect(within(sheet).queryByRole("alert")).toBeNull();
+  });
+
   it("undoes the merge from the toast and the task comes back to review", async () => {
     const { user } = setup();
     await openReviewTask(user, /^Inicio/);

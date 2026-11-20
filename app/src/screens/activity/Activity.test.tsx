@@ -499,6 +499,34 @@ describe("Inicio's board", () => {
     expect(screen.getByRole("region", { name: NEEDS })).toBeInTheDocument();
   });
 
+  it("moves between the filters with the arrow keys, one Tab stop for all of them", async () => {
+    const { user } = setup();
+    await screen.findByRole("region", { name: NEEDS }, SLOW);
+    const needs = screen.getByRole("radio", { name: /^Te necesitan/ });
+    expect(needs).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("radio", { name: /^Historial/ })).toHaveAttribute("tabindex", "-1");
+    needs.focus();
+    await user.keyboard("{ArrowRight}");
+    const running = screen.getByRole("radio", { name: /^En marcha/ });
+    expect(running).toHaveFocus();
+    expect(running).toBeChecked();
+    expect(screen.getByRole("region", { name: "En marcha (1)" })).toBeInTheDocument();
+    // The board's own arrows stay out of it.
+    expect(document.querySelector(".board-entry--selected")).toBeNull();
+    await user.keyboard("{End}");
+    expect(screen.getByRole("radio", { name: /^Historial/ })).toBeChecked();
+  });
+
+  it("offers the next step when there is no history yet", async () => {
+    const api = MockApi.withSampleData();
+    const { user } = setup(api);
+    await screen.findByRole("radiogroup", { name: "Mostrar" }, SLOW);
+    await user.click(screen.getByRole("radio", { name: /^Historial/ }));
+    const empty = (await screen.findByText("Todavía no hay tareas.")).closest<HTMLElement>(".empty-state")!;
+    await user.click(within(empty).getByRole("button", { name: "Nueva tarea" }));
+    expect(window.location.hash).toMatch(/^#p=/);
+  });
+
   it("opens a proposal in its project's memory", async () => {
     const { user } = setup();
     const needs = await screen.findByRole("region", { name: NEEDS }, SLOW);

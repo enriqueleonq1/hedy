@@ -42,6 +42,8 @@ const es = {
   "workspace.panelHasChanges": "hay cambios por revisar",
   "workspace.empty": "¿Qué hacemos en {name}? Trabajaré con {account} en una rama aparte; nada toca tu carpeta hasta que aceptes.",
   "workspace.noAccount": "Este proyecto no tiene cuenta. Asígnale una en Cuentas y modelos.",
+  "workspace.tasksError": "No se pudieron cargar las tareas.",
+  "workspace.conversationsError": "No se pudieron cargar las conversaciones.",
 
   "workspace.composer.followUp": "Responde o pide algo más",
   "workspace.composer.ask": "Pídele algo a {name}",
@@ -118,6 +120,7 @@ const es = {
   "workspace.permission.stopped": "El agente se detuvo; envía un mensaje para retomar.",
 
   "workspace.plan.of": "Plan de {agent}",
+  "workspace.plan.title": "Plan \u00b7 {agent}",
   "workspace.plan.changesRequested": " · con cambios pedidos",
   "workspace.plan.approved": " · aprobado",
   "workspace.plan.approve": "Aprobar plan",
@@ -213,6 +216,8 @@ const en: Record<keyof typeof es, string> = {
   "workspace.empty":
     "What should we do in {name}? I'll work with {account} on a separate branch; nothing touches your folder until you accept.",
   "workspace.noAccount": "This project has no account. Assign one in Accounts and models.",
+  "workspace.tasksError": "Couldn't load the tasks.",
+  "workspace.conversationsError": "Couldn't load the conversations.",
 
   "workspace.composer.followUp": "Reply or ask for something else",
   "workspace.composer.ask": "Ask {name} for something",
@@ -288,6 +293,7 @@ const en: Record<keyof typeof es, string> = {
   "workspace.permission.stopped": "The agent stopped; send a message to pick it up again.",
 
   "workspace.plan.of": "{agent}'s plan",
+  "workspace.plan.title": "Plan \u00b7 {agent}",
   "workspace.plan.changesRequested": " · changes requested",
   "workspace.plan.approved": " · approved",
   "workspace.plan.approve": "Approve plan",

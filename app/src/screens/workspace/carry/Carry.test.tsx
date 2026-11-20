@@ -244,7 +244,7 @@ describe("Carrying a conversation into a project", () => {
     await user.click(header().getByRole("button", { name: "Carry into a project" }));
     const dialog = screen.getByRole("dialog", { name: "Carry into a project" });
     await user.click(within(dialog).getByRole("button", { name: "Open task" }));
-    const card = await screen.findByRole("region", { name: `Context: conversation «${QUESTION}»` });
+    const card = await screen.findByRole("region", { name: `Context: conversation “${QUESTION}”` });
     expect(await within(card).findByText("Questions 1/1 · 173 characters")).toBeInTheDocument();
     expect(screen.getByLabelText("Ask hedy for something")).toHaveAttribute("placeholder", "What should we do with this in hedy?");
   });

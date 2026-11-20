@@ -2,6 +2,7 @@ import { useId } from "react";
 
 import { useT } from "../../i18n";
 import { accountPalette } from "../../theme/tokens";
+import { rovingKeyDown } from "./roving";
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
@@ -18,9 +19,11 @@ export function ColorPicker({
   const t = useT();
   const isPalette = accountPalette.some((c) => c.hex.toLowerCase() === value.toLowerCase());
 
+  // Arrow keys move between the swatches; Tab enters on the chosen one (the
+  // first when the color is not in the palette) and then goes to the hex field.
   return (
-    <div className="color-picker" role="radiogroup" aria-label={label}>
-      {accountPalette.map((c) => {
+    <div className="color-picker" role="radiogroup" aria-label={label} onKeyDown={rovingKeyDown}>
+      {accountPalette.map((c, i) => {
         const selected = c.hex.toLowerCase() === value.toLowerCase();
         return (
           <button
@@ -28,6 +31,7 @@ export function ColorPicker({
             type="button"
             role="radio"
             aria-checked={selected}
+            tabIndex={selected || (!isPalette && i === 0) ? 0 : -1}
             aria-label={t(c.label)}
             title={t(c.label)}
             className="swatch"
@@ -90,14 +94,16 @@ export function Segmented<T extends string>({
   onChange: (value: T) => void;
   label: string;
 }) {
+  const known = options.some((o) => o.value === value);
   return (
-    <div className="segmented" role="radiogroup" aria-label={label}>
-      {options.map((o) => (
+    <div className="segmented" role="radiogroup" aria-label={label} onKeyDown={rovingKeyDown}>
+      {options.map((o, i) => (
         <button
           key={o.value}
           type="button"
           role="radio"
           aria-checked={o.value === value}
+          tabIndex={o.value === value || (!known && i === 0) ? 0 : -1}
           className="segmented__option"
           onClick={() => onChange(o.value)}
         >

@@ -4,6 +4,7 @@ import { errorMessage } from "../../api/context";
 import type { SkillsView } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { Dialog } from "../../components/ui/Dialog";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { useT } from "../../i18n";
 import { SkillCard } from "./SkillCard";
 import { SkillForm } from "./SkillForm";
@@ -21,7 +22,16 @@ export function SkillsPanel({
 }) {
   const t = useT();
   if (skills.isPending) return <p className="muted">{t("skills.loading")}</p>;
-  if (skills.isError) return <p role="alert">{t("skills.loadError", { error: errorMessage(skills.error, t) })}</p>;
+  if (skills.isError) {
+    return (
+      <EmptyState
+        error
+        title={t("skills.loadError")}
+        text={errorMessage(skills.error, t)}
+        onRetry={() => void skills.refetch()}
+      />
+    );
+  }
   const view = skills.data;
   const own = view.approved.filter((s) => s.project !== null);
   const global = view.approved.filter((s) => s.project === null);

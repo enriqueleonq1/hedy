@@ -8,7 +8,10 @@ import { useQuery } from "@tanstack/react-query";
 import { errorMessage, useApi } from "../../api/context";
 import type { AskScope, GraphNode, Overview, SourceRef } from "../../api/types";
 import type { MemoryTab, View } from "../../components/Layout";
+import { projectColor } from "../../components/projects";
 import { Button } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { rovingKeyDown } from "../../components/ui/roving";
 import { useT, type MessageKey } from "../../i18n";
 import { useInbox, type InboxItem } from "../../tasks/inbox";
 import { useTeams } from "../../team/hooks";
@@ -16,7 +19,9 @@ import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { AskPanel, MEMORY_GRAPH_KEY, type AskRequest } from "../ask/AskPanel";
 import { revealHidden } from "../ask/citations";
 import { MemoryGraphView } from "../ask/MemoryGraphView";
+import { useCreate } from "../create/CreateProvider";
 import { SkillsScreen } from "../skills/SkillsScreen";
+import { ProjectHead, type ProjectTab } from "../workspace/ProjectHome";
 import { NewNoteDialog } from "./NewNoteDialog";
 import { NoteCard } from "./NoteCard";
 import { NotesPanel } from "./NotesPanel";
@@ -24,6 +29,7 @@ import { SkillCard } from "./SkillCard";
 import { memoryKey } from "./notes";
 import { skillsKey } from "./skills";
 import { NewSkillDialog, SkillsPanel } from "./SkillsPanel";
+import "./memory.css";
 
 const TABS: { id: MemoryTab; label: MessageKey }[] = [
   { id: "notes", label: "skills.tabNotes" },
@@ -120,30 +126,53 @@ export function MemoryHub({
   // Typing searches the project's notes as it goes; Enter asks.
   const searching = tab === "notes" && !!projectPath ? query : "";
 
+  // "Para": everything, a project or a team.
+  const pickFor = (
+    <label className="memory-hub__for">
+      <span>{t("memory.hub.for")}</span>
+      <select value={forValue(shown)} onChange={(e) => choose(e.target.value)}>
+        <option value="all">{t("memory.hub.forAll")}</option>
+        {overview.projects.map((p) => (
+          <option key={p.path} value={`project:${p.path}`}>
+            {p.name}
+          </option>
+        ))}
+        {teams.map((tm) => (
+          <option key={tm.id} value={`team:${tm.id}`}>
+            {t("ask.scope.team", { name: tm.name })}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+  // A project's memory is one of its tabs: the others are their own screens.
+  const onTab = (next: ProjectTab) => {
+    if (!projectPath) return;
+    if (next === "tasks") onNavigate({ screen: "workspace", project: projectPath });
+    else if (next === "summary") onNavigate({ screen: "status", project: projectPath });
+    else if (next === "settings") onNavigate({ screen: "projectSettings", project: projectPath });
+  };
+
   return (
     <div className="screen memory-hub">
-      <header className="page-head">
-        <div>
-          <h1>{t("memory.hub.title")}</h1>
-          <p className="muted">{t("memory.hub.subtitle")}</p>
-        </div>
-        <label className="memory-hub__for">
-          <span>{t("memory.hub.for")}</span>
-          <select value={forValue(shown)} onChange={(e) => choose(e.target.value)}>
-            <option value="all">{t("memory.hub.forAll")}</option>
-            {overview.projects.map((p) => (
-              <option key={p.path} value={`project:${p.path}`}>
-                {p.name}
-              </option>
-            ))}
-            {teams.map((tm) => (
-              <option key={tm.id} value={`team:${tm.id}`}>
-                {t("ask.scope.team", { name: tm.name })}
-              </option>
-            ))}
-          </select>
-        </label>
-      </header>
+      {projectPath ? (
+        <ProjectHead
+          name={info?.name ?? projectPath}
+          title={t("memory.hub.title")}
+          path={projectPath}
+          current="memory"
+          tools={pickFor}
+          onTab={onTab}
+        />
+      ) : (
+        <header className="page-head">
+          <div>
+            <h1>{t("memory.hub.title")}</h1>
+            <p className="muted">{t("memory.hub.subtitle")}</p>
+          </div>
+          {pickFor}
+        </header>
+      )}
 
       <form className="memory-hub__bar" role="search" onSubmit={ask}>
         <input
@@ -178,14 +207,17 @@ export function MemoryHub({
         />
       )}
 
-      <div className="memory__tabs" role="tablist" aria-label={t("memory.hub.tabs")}>
+      <div className="memory__tabs" role="tablist" aria-label={t("memory.hub.tabs")} onKeyDown={rovingKeyDown}>
         {TABS.map(({ id, label }) => (
           <button
             key={id}
+            type="button"
             role="tab"
             id={`memory-tab-${id}`}
             aria-selected={tab === id}
-            aria-controls={`memory-panel-${id}`}
+            // Only the shown panel exists: the others' tabs point nowhere.
+            aria-controls={tab === id ? `memory-panel-${id}` : undefined}
+            tabIndex={tab === id ? 0 : -1}
             className="side-tab"
             onClick={() => go({ tab: id })}
           >
@@ -265,9 +297,16 @@ export function MemoryHub({
             </div>
           ) : (
             <div className="ask-graph ask-graph--empty">
-              <p role={graph.isError ? "alert" : undefined}>
-                {graph.isLoading ? t("ask.thinking") : graph.isError ? errorMessage(graph.error, t) : t("ask.graph.empty")}
-              </p>
+              {graph.isError ? (
+                <EmptyState
+                  error
+                  title={t("memory.hub.mapError")}
+                  text={errorMessage(graph.error, t)}
+                  onRetry={() => void graph.refetch()}
+                />
+              ) : (
+                <p>{graph.isLoading ? t("ask.thinking") : t("ask.graph.empty")}</p>
+              )}
             </div>
           ))}
       </div>
@@ -293,16 +332,34 @@ export function MemoryHub({
   );
 }
 
-/** Notes live in a project: with "Para" on everything, which one. */
+/** Notes live in a project: with "Para" on everything, which one (or, with none yet, how to start one). */
 function PickProject({ overview, hint, onPick }: { overview: Overview; hint: MessageKey; onPick: (path: string) => void }) {
   const t = useT();
+  const create = useCreate();
+  if (overview.projects.length === 0) {
+    return (
+      <EmptyState
+        title={t("memory.hub.noProjects")}
+        text={t("memory.hub.noProjectsText")}
+        actions={
+          <>
+            <Button variant="primary" onClick={() => create.newProject()}>
+              {t("create.newProject")}
+            </Button>
+            <Button onClick={create.openFolder}>{t("create.openFolder")}</Button>
+          </>
+        }
+      />
+    );
+  }
   return (
     <div className="memory-hub__pick">
       <p className="muted">{t(hint)}</p>
       <ul className="project-tasks__list">
         {overview.projects.map((p) => (
           <li key={p.path}>
-            <button type="button" className="project-task" onClick={() => onPick(p.path)}>
+            <button type="button" className="project-task memory-hub__project" onClick={() => onPick(p.path)}>
+              <span className="dot" style={{ background: projectColor(p, overview.accounts) }} aria-hidden />
               <span className="project-task__title">{p.name}</span>
             </button>
           </li>

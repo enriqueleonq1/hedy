@@ -3,6 +3,7 @@
 
 const es = {
   "shell.home": "Inicio",
+  "shell.skipToContent": "Saltar al contenido",
   "shell.homeOne": "Inicio: 1 cosa te espera",
   "shell.homeMany": "Inicio: {n} cosas te esperan",
   "shell.nav": "Secciones",
@@ -84,6 +85,7 @@ const es = {
 
 const en: Record<keyof typeof es, string> = {
   "shell.home": "Home",
+  "shell.skipToContent": "Skip to content",
   "shell.homeOne": "Home: 1 thing is waiting for you",
   "shell.homeMany": "Home: {n} things are waiting for you",
   "shell.nav": "Sections",

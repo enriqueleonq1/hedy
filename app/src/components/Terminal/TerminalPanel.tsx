@@ -5,6 +5,7 @@ import { OVERVIEW_KEY } from "../../api/context";
 import { useT } from "../../i18n";
 import "../../styles/code.css";
 import { Button } from "../ui/Button";
+import { rovingKeyDown } from "../ui/roving";
 import { clampSize, ResizeHandle } from "../ui/ResizeHandle";
 import { useTerminals } from "./TerminalProvider";
 import { TerminalView } from "./TerminalView";
@@ -71,6 +72,7 @@ export function TerminalPanel() {
   const panel = usePanelHeight();
 
   if (sessions.length === 0) return null;
+  const active = sessions.find((s) => s.key === activeKey);
 
   return (
     <section className="terminal-panel" hidden={!panelOpen} aria-label={t("common.terminal")} style={{ height: panel.height }}>
@@ -85,33 +87,53 @@ export function TerminalPanel() {
         onChange={panel.set}
         onToggleMax={panel.toggleMax}
       />
-      <div className="terminal-panel__bar" role="tablist" aria-label={t("shell.terminals")}>
-        {sessions.map((s) => (
-          <div key={s.key} className={`terminal-tab${s.key === activeKey ? " terminal-tab--active" : ""}`}>
+      {/* Only the tabs are in the tablist (arrow keys move between them); closing,
+          a new terminal and the panel's size are a toolbar beside it. */}
+      <div className="terminal-panel__bar">
+        <div className="terminal-panel__tabs" role="tablist" aria-label={t("shell.terminals")} onKeyDown={rovingKeyDown}>
+          {sessions.map((s) => {
+            const selected = s.key === activeKey;
+            return (
+              <button
+                key={s.key}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                tabIndex={selected ? 0 : -1}
+                className={`terminal-tab${selected ? " terminal-tab--active" : ""}`}
+                // A middle click closes it, as in a browser.
+                onAuxClick={(e) => e.button === 1 && close(s.key)}
+                onClick={() => activate(s.key)}
+              >
+                <span className={`dot ${s.running ? "dot--running" : "dot--idle"}`} aria-hidden />
+                {s.title}
+              </button>
+            );
+          })}
+        </div>
+        <div className="terminal-panel__actions">
+          {active && (
             <button
-              role="tab"
-              aria-selected={s.key === activeKey}
-              className="terminal-tab__title"
-              onClick={() => activate(s.key)}
+              type="button"
+              className="terminal-tab__close"
+              aria-label={t("common.closeNamed", { name: active.title })}
+              title={t("common.closeNamed", { name: active.title })}
+              onClick={() => close(active.key)}
             >
-              <span className={`dot ${s.running ? "dot--running" : "dot--idle"}`} aria-hidden />
-              {s.title}
-            </button>
-            <button className="terminal-tab__close" aria-label={t("common.closeNamed", { name: s.title })} onClick={() => close(s.key)}>
               ×
             </button>
-          </div>
-        ))}
-        <Button small variant="ghost" onClick={() => open({ kind: "shell", path: null }, t("common.terminal"))}>
-          + {t("common.terminal")}
-        </Button>
-        <span className="spacer" />
-        <Button small variant="ghost" onClick={panel.toggleMax}>
-          {panel.maximized ? t("shell.restoreTerminal") : t("shell.maximizeTerminal")}
-        </Button>
-        <Button small variant="ghost" onClick={() => setPanelOpen(false)} aria-label={t("shell.hideTerminal")}>
-          {t("shell.hide")}
-        </Button>
+          )}
+          <Button small variant="ghost" onClick={() => open({ kind: "shell", path: null }, t("common.terminal"))}>
+            + {t("common.terminal")}
+          </Button>
+          <span className="spacer" />
+          <Button small variant="ghost" onClick={panel.toggleMax}>
+            {panel.maximized ? t("shell.restoreTerminal") : t("shell.maximizeTerminal")}
+          </Button>
+          <Button small variant="ghost" onClick={() => setPanelOpen(false)} aria-label={t("shell.hideTerminal")}>
+            {t("shell.hide")}
+          </Button>
+        </div>
       </div>
       <div className="terminal-panel__body">
         {sessions.map((s) => (

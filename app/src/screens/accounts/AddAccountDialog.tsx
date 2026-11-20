@@ -304,7 +304,7 @@ export function AddAccountDialog({
             <input
               id={id}
               value={name}
-              placeholder="Claude personal"
+              placeholder={t("accounts.add.namePlaceholder")}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && name.trim() && e.currentTarget.blur()}
             />

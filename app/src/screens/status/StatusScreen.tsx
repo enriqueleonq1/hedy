@@ -1,28 +1,25 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { errorMessage, useApi } from "../../api/context";
-import type { Account, Overview, Phase, Task, UsagePoint } from "../../api/types";
+import type { Account, ActivityItem, Overview, Phase, Task, UsagePoint } from "../../api/types";
+import type { View } from "../../components/Layout";
 import { usageLabel } from "../../components/planUsage";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { WorkingWord } from "../../components/Mascot/WorkingWord";
 import { projectColor, shortPath } from "../../components/projects";
 import { Button } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { StatusPill } from "../../components/ui/StatusPill";
 import { formatTokens, timeAgo } from "../../format";
 import { useLanguage, useT, type Language, type MessageKey, type Translate } from "../../i18n";
-import { useTaskEvents, useTasks } from "../../tasks/hooks";
+import { useActivity, useTaskEvents, useTasks } from "../../tasks/hooks";
+import { taskState } from "../../tasks/state";
 import { agentName, isOpen, PHASE_VERB } from "../../tasks/timeline";
 import { useMascot } from "../../tasks/useMascot";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { OwnerBanner } from "../sync/ProjectSync";
-
-const TASK_BADGE: Record<Task["status"], { label: MessageKey; tone: string }> = {
-  running: { label: "status.badge.running", tone: "info" },
-  waitingApproval: { label: "status.badge.waitingApproval", tone: "warn" },
-  review: { label: "status.badge.review", tone: "ok" },
-  accepted: { label: "status.badge.accepted", tone: "muted" },
-  discarded: { label: "status.badge.discarded", tone: "muted" },
-  failed: { label: "status.badge.failed", tone: "danger" },
-};
+import { ProjectHead, type ProjectTab } from "../workspace/ProjectHome";
+import "./status.css";
 
 const NEXT_PHASE: Record<Phase, MessageKey> = {
   plan: "status.next.plan",
@@ -91,6 +88,7 @@ export function StatusScreen({
   onOpenChat,
   onOpenMemory,
   onOpenSettings,
+  onNavigate,
 }: {
   overview: Overview;
   project: string;
@@ -98,6 +96,8 @@ export function StatusScreen({
   onOpenMemory: () => void;
   /** Where the code map is turned on; offered while it is off. */
   onOpenSettings?: () => void;
+  /** Goes to another screen: the project's settings sheet, from its tabs. */
+  onNavigate?: (view: View) => void;
 }) {
   const api = useApi();
   const t = useT();
@@ -106,6 +106,7 @@ export function StatusScreen({
   const usage = useQuery({ queryKey: ["projectUsage", project], queryFn: () => api.projectUsage(project, 7) });
   const commits = useQuery({ queryKey: ["commits", project], queryFn: () => api.recentCommits(project) });
   const tasks = useTasks(project);
+  const board = useActivity().data;
   const info = overview.projects.find((p) => p.path === project);
   const name = info?.name ?? shortPath(project);
   const list = tasks.data ?? [];
@@ -118,22 +119,29 @@ export function StatusScreen({
   const agents = (status.data?.agents ?? [])
     .map((id) => overview.accounts.find((a) => a.id === id))
     .filter((a): a is Account => !!a);
+  // The project's tabs: Tareas is its home, the others their own screens.
+  const onTab = (tab: ProjectTab) => {
+    if (tab === "tasks") onOpenChat();
+    else if (tab === "memory") onOpenMemory();
+    else if (tab === "settings") {
+      if (onNavigate) onNavigate({ screen: "projectSettings", project });
+      // App's route for the sheet (`#ps=`), when no navigation is handed in.
+      else window.location.hash = `#ps=${encodeURIComponent(project)}`;
+    }
+  };
 
   return (
     <div className="screen status">
+      <ProjectHead name={name} path={project} current="summary" onTab={onTab} />
       <section className="card status__hero" aria-label={t("status.title")}>
         <Mascot color={color} state={mascot.state} activity={mascot.activity} size={120} label="" />
         <div className="status__hero-text">
           <p className="status__eyebrow">{t("status.title")}</p>
-          <h1>{name}</h1>
-          <p className="muted">{headline(current, agentName(history), overview.accounts, t)}</p>
+          <p className="status__headline">{headline(current, agentName(history), overview.accounts, t)}</p>
           {mascot.activity && <WorkingWord activity={mascot.activity} className="working-word--status" />}
           <div className="actions">
             <Button small variant="primary" onClick={onOpenChat}>
               {t("status.openChat")}
-            </Button>
-            <Button small onClick={onOpenMemory}>
-              {t("common.memory")}
             </Button>
           </div>
         </div>
@@ -156,13 +164,18 @@ export function StatusScreen({
       <OwnerBanner project={project} />
 
       {status.isError && (
-        <p className="error-text" role="alert">
-          {errorMessage(status.error, t)}
-        </p>
+        <EmptyState
+          error
+          title={t("status.loadError")}
+          text={errorMessage(status.error, t)}
+          onRetry={() => void status.refetch()}
+        />
       )}
       {status.data && (
         <div className="status__stats">
-          <Stat label="Tests" tone={status.data.lastTests ? (status.data.lastTests.passed ? "ok" : "danger") : "muted"}
+          <Stat
+            label={t("status.tests.label")}
+            tone={status.data.lastTests ? (status.data.lastTests.passed ? "ok" : "danger") : "muted"}
             value={
               status.data.lastTests
                 ? status.data.lastTests.passed
@@ -208,25 +221,53 @@ export function StatusScreen({
         <section className="card status__tasks" aria-labelledby="status-tasks">
           <h2 id="status-tasks">{t("status.tasks")}</h2>
           {tasks.isError ? (
-            <p className="error-text">{errorMessage(tasks.error, t)}</p>
+            <EmptyState
+              error
+              title={t("status.tasks.error")}
+              text={errorMessage(tasks.error, t)}
+              onRetry={() => void tasks.refetch()}
+            />
           ) : (
-            list.length === 0 && <p className="muted">{t("status.tasks.empty")}</p>
+            tasks.isSuccess &&
+            list.length === 0 && (
+              <EmptyState
+                title={t("status.tasks.empty")}
+                actions={
+                  <Button variant="primary" onClick={onOpenChat}>
+                    {t("status.tasks.new")}
+                  </Button>
+                }
+              />
+            )
           )}
           <ul className="status__task-list">
             {list.slice(0, 6).map((task) => (
-              <TaskRow key={task.id} task={task} accounts={overview.accounts} />
+              <TaskRow key={task.id} task={task} board={board} />
             ))}
           </ul>
         </section>
         <div className="status__side">
-          <WeekChart name={name} points={usage.data ?? []} error={usage.isError ? errorMessage(usage.error, t) : null} />
+          <WeekChart
+            name={name}
+            points={usage.data ?? []}
+            error={usage.isError ? errorMessage(usage.error, t) : null}
+            onRetry={() => void usage.refetch()}
+          />
           <section className="card" aria-labelledby="status-commits">
             <h2 id="status-commits">{t("common.recentCommits")}</h2>
+            {commits.isError && (
+              <EmptyState
+                error
+                title={t("status.commits.error")}
+                text={errorMessage(commits.error, t)}
+                onRetry={() => void commits.refetch()}
+              />
+            )}
             {commits.data?.length === 0 && <p className="muted small">{t("status.commits.empty")}</p>}
             <ul className="status__commits">
               {commits.data?.map((c) => (
                 <li key={c.hash}>
-                  <span className="mono status__hash">{c.hash}</span>
+                  <span className="mono muted">{c.hash}</span>
                   <span>{c.subject}</span>
                 </li>
               ))}
@@ -282,13 +323,13 @@ function ChangesStat({ branch, uncommitted }: { branch: string | null; uncommitt
   );
 }
 
-function TaskRow({ task, accounts }: { task: Task; accounts: Account[] }) {
+/** One task: its title, what it is doing and the one state pill used everywhere. */
+function TaskRow({ task, board }: { task: Task; board: ActivityItem[] | undefined }) {
   const t = useT();
   const events = useTaskEvents(task.id);
   const history = events.data ?? [];
   const mascot = useMascot(task, history);
-  const account = accounts.find((a) => a.id === task.account);
-  const badge = TASK_BADGE[task.status];
+  const state = taskState(task, board?.find((item) => item.task.id === task.id), history);
   const steps = [...history].reverse().find((e) => e.kind === "steps");
   const done = steps?.kind === "steps" ? steps.steps.filter((s) => s.status === "done").length : 0;
   const agent = agentName(history);
@@ -300,13 +341,6 @@ function TaskRow({ task, accounts }: { task: Task; accounts: Account[] }) {
         : `${agent} · ${timeAgo(task.createdAt, t)}`;
   return (
     <li className="status__task">
-      <Mascot
-        color={account?.color ?? DEFAULT_ACCOUNT_COLOR}
-        state={mascot.state}
-        activity={mascot.activity}
-        size={48}
-        label=""
-      />
       <div className="status__task-text">
         <strong>{task.title}</strong>
         <span className="small muted">
@@ -319,12 +353,22 @@ function TaskRow({ task, accounts }: { task: Task; accounts: Account[] }) {
           )}
         </span>
       </div>
-      <span className={`status__badge status__badge--${badge.tone}`}>{t(badge.label)}</span>
+      <StatusPill state={state} task={task} />
     </li>
   );
 }
 
-function WeekChart({ name, points, error }: { name: string; points: UsagePoint[]; error: string | null }) {
+function WeekChart({
+  name,
+  points,
+  error,
+  onRetry,
+}: {
+  name: string;
+  points: UsagePoint[];
+  error: string | null;
+  onRetry: () => void;
+}) {
   const t = useT();
   const language = useLanguage();
   const letters = t("status.week.letters");
@@ -335,30 +379,37 @@ function WeekChart({ name, points, error }: { name: string; points: UsagePoint[]
   return (
     <section className="card" aria-labelledby="status-week">
       <h2 id="status-week">{t("status.week.title", { name })}</h2>
-      <div className="week-chart" role="img" aria-label={t("status.week.chart", { total: formatTokens(total) })}>
-        {days.map((d) => {
-          const label = `${dayName(d.date, language)} ${d.date.getDate()}: ${formatTokens(d.tokens)} tokens`;
-          return (
-            <div key={d.date.toISOString()} className="week-chart__day" title={label}>
-              <div className="week-chart__track">
-                <div
-                  className={`week-chart__bar${d.tokens === 0 ? " week-chart__bar--empty" : ""}`}
-                  style={{ height: `${d.tokens === 0 ? 0 : Math.max(4, (d.tokens / max) * 100)}%` }}
-                />
-                <span className="week-chart__tip" role="tooltip">
-                  {formatTokens(d.tokens)}
+      {error ? (
+        <EmptyState error title={t("status.week.error")} text={error} onRetry={onRetry} />
+      ) : (
+        <div className="week-chart" role="img" aria-label={t("status.week.chart", { total: formatTokens(total) })}>
+          {days.map((d) => {
+            const label = `${dayName(d.date, language)} ${d.date.getDate()}: ${formatTokens(d.tokens)} tokens`;
+            const height = d.tokens === 0 ? 0 : Math.max(4, (d.tokens / max) * 100);
+            const top = d.tokens > 0 && d === busiest;
+            return (
+              <div key={d.date.toISOString()} className="week-chart__day" title={label}>
+                <div className="week-chart__track">
+                  <div
+                    className={`week-chart__bar${d.tokens === 0 ? " week-chart__bar--empty" : ""}${top ? " week-chart__bar--top" : ""}`}
+                    style={{ height: `${height}%` }}
+                  />
+                  {/* The value over its bar, in the bars' quiet ink. */}
+                  {d.tokens > 0 && (
+                    <span className="week-chart__value" aria-hidden style={{ bottom: `${height}%` }}>
+                      {formatTokens(d.tokens)}
+                    </span>
+                  )}
+                </div>
+                <span className="week-chart__letter" aria-hidden>
+                  {letters[d.date.getDay()]}
                 </span>
               </div>
-              <span className="week-chart__letter" aria-hidden>
-                {letters[d.date.getDay()]}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      {error ? (
-        <p className="error-text">{error}</p>
-      ) : (
+            );
+          })}
+        </div>
+      )}
+      {!error && (
         <p className="small muted">
           {total === 0
             ? t("common.noUsageThisWeek")

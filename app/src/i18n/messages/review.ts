@@ -4,6 +4,7 @@
 const es = {
   "review.title": "Aceptar cambios",
   "review.loading": "Preparando el resumen…",
+  "review.loadError": "No se pudo preparar el resumen.",
   "review.into": "Se integra en {target} desde {branch}.",
   "review.files": "Archivos: {n}",
   "review.lines": "{added} líneas añadidas y {removed} eliminadas",
@@ -30,6 +31,7 @@ const es = {
 const en: Record<keyof typeof es, string> = {
   "review.title": "Accept changes",
   "review.loading": "Preparing the summary…",
+  "review.loadError": "Couldn't prepare the summary.",
   "review.into": "Merges into {target} from {branch}.",
   "review.files": "Files: {n}",
   "review.lines": "{added} lines added and {removed} removed",

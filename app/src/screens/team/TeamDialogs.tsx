@@ -322,7 +322,7 @@ export function JoinTeamDialog({ onClose }: { onClose: () => void }) {
             label={t("team.join.code")}
             value={code}
             mono
-            placeholder="7-tigre-lima-nube-faro"
+            placeholder={t("team.join.codePlaceholder")}
             onChange={setCode}
             onPaste={takeInvite}
           />

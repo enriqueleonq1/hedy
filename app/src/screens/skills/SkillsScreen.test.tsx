@@ -160,4 +160,30 @@ describe("Skills section", () => {
     await user.click(within(dialog).getByRole("button", { name: /^Elegir carpeta y exportar/ }));
     expect(await screen.findByText(/exportadas? a \/code\/nuevo-proyecto\./)).toBeInTheDocument();
   });
+
+  it("says why Importar and Exportar are off with no projects and no skills", async () => {
+    const api = new MockApi();
+    api.delayMs = 0;
+    history.replaceState(null, "", "#skills");
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const exporting = await screen.findByRole("button", { name: "Exportar" });
+    await waitFor(() => expect(exporting).toBeDisabled());
+    expect(exporting).toHaveAccessibleDescription(/Aún no hay habilidades que exportar\./);
+    const importing = screen.getByRole("button", { name: "Importar" });
+    expect(importing).toBeDisabled();
+    expect(importing).toHaveAccessibleDescription(/Para importar, primero crea o abre un proyecto\./);
+  });
+
+  it("says when the skills did not load and tries again", async () => {
+    const api = MockApi.withSampleData();
+    api.delayMs = 0;
+    const real = api.skillsOverview.bind(api);
+    vi.spyOn(api, "skillsOverview").mockRejectedValueOnce("sin permiso").mockImplementation(real);
+    history.replaceState(null, "", "#skills");
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const alert = (await screen.findByText("No se pudieron leer las habilidades.")).closest("[role=alert]") as HTMLElement;
+    expect(alert).toHaveTextContent("sin permiso");
+    await userEvent.setup().click(within(alert).getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByRole("list", { name: "Habilidades" })).toBeInTheDocument();
+  });
 });

@@ -13,6 +13,9 @@ const es = {
   "welcome.usage.busiest": "; {name} fue el proyecto más activo",
   "welcome.addFirstAccount": "Agregar mi primera cuenta",
   "welcome.empty.noAccounts": "Primero agrega una cuenta; luego asígnala a tus proyectos.",
+  "welcome.empty.title": "Conecta una cuenta para empezar",
+  "welcome.empty.why":
+    "Las IAs trabajan con tus propias cuentas de Claude, ChatGPT, Kimi o Gemini. Inicias sesión con su login oficial; Hedy nunca ve tus credenciales.",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -28,6 +31,9 @@ const en: Record<keyof typeof es, string> = {
   "welcome.usage.busiest": "; {name} was the busiest project",
   "welcome.addFirstAccount": "Add my first account",
   "welcome.empty.noAccounts": "Add an account first, then assign it to your projects.",
+  "welcome.empty.title": "Connect an account to start",
+  "welcome.empty.why":
+    "The AIs work with your own Claude, ChatGPT, Kimi or Gemini accounts. You sign in with their official login; Hedy never sees your credentials.",
 };
 
 export default { es, en };

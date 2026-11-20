@@ -44,16 +44,18 @@
   bottom: 0;
   left: 4px;
   width: 1px;
-  background: transparent;
-  transition: background-color 0.12s ease, transform 0.12s var(--ease-out);
+  /* Always painted, shown by opacity: only transform and opacity move. */
+  background: var(--action);
+  opacity: 0;
+  transition: opacity 0.12s ease, transform 0.12s var(--ease-out);
 }
 .resize-handle:hover::after,
-.resize-handle:focus-visible::after { background: var(--action); transform: scaleX(2); }
+.resize-handle:focus-visible::after { opacity: 1; transform: scaleX(2); }
 .resize-handle:focus-visible::after { background: var(--focus); }
 .side-panel__edge { left: -5px; }
 html.resizing,
 html.resizing * { cursor: col-resize !important; user-select: none !important; }
-html.resizing .resize-handle::after { background: var(--action); transform: scaleX(2); }
+html.resizing .resize-handle::after { opacity: 1; transform: scaleX(2); }
 html.resizing iframe { pointer-events: none; }
 /* An edge between stacked areas (the terminal panel's top). */
 .resize-handle--rows { top: auto; bottom: auto; left: 0; right: 0; width: auto; height: 9px; cursor: row-resize; }
@@ -155,7 +157,7 @@ html.resizing--rows * { cursor: row-resize !important; }
   border-radius: var(--radius-pill);
   background: var(--panel-2);
   color: var(--muted);
-  font: 600 11px/18px var(--font-ui);
+  font: 600 var(--text-eyebrow)/18px var(--font-ui);
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -322,7 +324,7 @@ html.resizing--rows * { cursor: row-resize !important; }
   margin-left: auto;
   width: 14px;
   text-align: center;
-  font: 600 11px/1 var(--font-mono);
+  font: 600 var(--text-eyebrow)/1 var(--font-mono);
 }
 .tree-status--modified { color: var(--warning); }
 .tree-status--added,
@@ -454,12 +456,12 @@ html.resizing--rows * { cursor: row-resize !important; }
 /* Inline comparison. */
 .inline-diff { display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); min-height: 0; }
 .inline-diff__stats { margin: 0; padding: 6px var(--space-3); font: 600 var(--text-caption) var(--font-mono); border-bottom: 1px solid var(--line); }
-.inline-diff__lines { font: 12.5px/20px var(--font-mono); }
+.inline-diff__lines { font: var(--text-mono)/20px var(--font-mono); }
 .inline-diff__hunk { display: flex; align-items: center; padding: 0 12px; color: var(--muted); background: var(--panel-2); font-size: var(--text-caption); }
 .inline-diff__line { display: grid; grid-template-columns: 4.5ch 4.5ch 2ch minmax(0, 1fr); white-space: pre; }
 .inline-diff__line--added { background: var(--diff-add-bg); }
 .inline-diff__line--removed { background: var(--diff-del-bg); }
-.inline-diff__no { padding-right: 6px; text-align: right; color: var(--muted); opacity: 0.6; font-variant-numeric: tabular-nums; user-select: none; }
+.inline-diff__no { padding-right: 6px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; user-select: none; }
 .inline-diff__sign { text-align: center; color: var(--muted); user-select: none; }
 .inline-diff__line--added .inline-diff__sign { color: var(--diff-add-ink); }
 .inline-diff__line--removed .inline-diff__sign { color: var(--diff-del-ink); }
@@ -578,7 +580,7 @@ html.resizing--rows * { cursor: row-resize !important; }
   border-radius: var(--radius-xs);
   background: transparent;
   color: var(--muted);
-  font: 600 12px/1 var(--font-mono);
+  font: 600 var(--text-caption)/1 var(--font-mono);
   cursor: pointer;
 }
 .search-toggle:hover { color: var(--ink); background: var(--line); }
@@ -600,8 +602,8 @@ html.resizing--rows * { cursor: row-resize !important; }
 .search-results .vtree__row { font-size: var(--text-mono); }
 .search-results__dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: var(--text-caption); }
 .search-results .count-badge { margin-left: auto; }
-.search-results__line { flex: none; min-width: 3ch; color: var(--muted); font: 11px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
-.search-results__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 12px var(--font-mono); color: var(--ink); }
+.search-results__line { flex: none; min-width: 3ch; color: var(--muted); font: var(--text-eyebrow) var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.search-results__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: var(--text-caption) var(--font-mono); color: var(--ink); }
 .search-results__text mark {
   border-radius: 2px;
   background: color-mix(in srgb, var(--warning) 28%, transparent);

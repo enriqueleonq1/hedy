@@ -358,4 +358,76 @@ describe("Memoria's hub", () => {
     expect(window.location.hash).toBe("#memory");
     expect(await screen.findByRole("combobox", { name: "Para" })).toHaveDisplayValue("Todo");
   });
+
+  it("moves between its tabs with the arrows; Tab enters on the chosen one", async () => {
+    const { user } = renderAt(HEDY);
+    await screen.findByRole("region", { name: "Decisiones" });
+    const tabs = screen.getByRole("tablist", { name: "Secciones de la memoria" });
+    const notes = tab(/^Notas/);
+    expect(notes).toHaveAttribute("tabIndex", "0");
+    expect(notes).toHaveAttribute("aria-controls", "memory-panel-notes");
+    for (const other of within(tabs).getAllByRole("tab").filter((t) => t !== notes)) {
+      expect(other).toHaveAttribute("tabIndex", "-1");
+      expect(other).not.toHaveAttribute("aria-controls");
+    }
+    notes.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(window.location.hash).toBe(`${HEDY}&skills`);
+    await waitFor(() => expect(tab(/^Habilidades/)).toHaveFocus());
+    expect(tab(/^Habilidades/)).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{End}");
+    expect(window.location.hash).toBe(`${HEDY}&map`);
+    await user.keyboard("{ArrowRight}");
+    expect(window.location.hash).toBe(HEDY);
+    await user.keyboard("{ArrowLeft}");
+    expect(window.location.hash).toBe(`${HEDY}&map`);
+  });
+
+  it("shows the project's tabs for a project, with the way to its other sections", async () => {
+    const { user } = renderAt(HEDY);
+    const sections = await screen.findByRole("navigation", { name: "Secciones del proyecto" });
+    expect(within(sections).getByRole("button", { name: "Memoria" })).toHaveAttribute("aria-current", "page");
+    await user.click(within(sections).getByRole("button", { name: "Resumen" }));
+    expect(await screen.findByRole("region", { name: "Tests" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#s=${encodeURIComponent("/code/hedy")}`);
+  });
+
+  it("keeps its own title for everything, without the project's tabs", async () => {
+    renderAt("#memory");
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Secciones del proyecto" })).toBeNull();
+    // Each project to pick has its color.
+    const pick = screen.getByText("Las notas viven en cada proyecto. Elige uno:").parentElement as HTMLElement;
+    expect(within(pick).getByRole("button", { name: "hedy" }).querySelector(".dot")).not.toBeNull();
+  });
+
+  it("says when the notes or the map did not load and tries again", async () => {
+    const api = MockApi.withSampleData();
+    let failing = true;
+    const memory = api.memory.bind(api);
+    const graph = api.memoryGraph.bind(api);
+    vi.spyOn(api, "memory").mockImplementation((path) => (failing ? Promise.reject("disco lleno") : memory(path)));
+    vi.spyOn(api, "memoryGraph").mockImplementation(() => (failing ? Promise.reject("disco lleno") : graph()));
+    const { user } = renderAt(HEDY, api);
+    const notes = (await screen.findByText("No se pudo leer la memoria.")).closest("[role=alert]") as HTMLElement;
+    expect(notes).toHaveTextContent("disco lleno");
+    failing = false;
+    await user.click(within(notes).getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByRole("region", { name: "Decisiones" })).toBeInTheDocument();
+
+    failing = true;
+    await user.click(tab(/^Mapa/));
+    const map = (await screen.findByText("No se pudo cargar el mapa.")).closest("[role=alert]") as HTMLElement;
+    failing = false;
+    await user.click(within(map).getByRole("button", { name: "Reintentar" }));
+    await waitFor(() => expect(screen.queryByText("No se pudo cargar el mapa.")).toBeNull());
+  });
+
+  it("with no projects yet, offers to start one instead of an empty list", async () => {
+    const { user } = renderAt("#memory", new MockApi());
+    expect(await screen.findByText("Aún no hay proyectos")).toBeInTheDocument();
+    expect(screen.queryByText("Las notas viven en cada proyecto. Elige uno:")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Nuevo proyecto" }));
+    expect(await screen.findByRole("dialog", { name: "Nuevo proyecto" })).toBeInTheDocument();
+  });
 });

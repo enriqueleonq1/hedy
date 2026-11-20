@@ -40,7 +40,7 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
   `role`, `remove`, `rename`, `leave [--here]`; `--team` picks one). End to end against an empty
   repo: `scripts/team-e2e.sh <url>` (real binary and keyring; three people)
 - App (from `app/`): `npm install`, then `npm run tauri dev`; UI only with sample data:
-  `npm run dev` (`?theme=light|dark`, `?lang=es|en`, `?onboarding=1`, `#accounts`, `#settings`,
+  `npm run dev` (`?theme=light|dark`, `?lang=es|en`, `?onboarding=1`, `?data=empty|noprojects|fail`, `#accounts`, `#settings`,
   `#memory` (Memoria; `#m=<path>[&skills|pending|map]` for a project), `#ps=<path>` (a project's settings),
   `#settings/<section>`, `#sync`, `#teams`; Inicio is `#`)
 - App checks (from `app/`): `npm run typecheck`, `npm run lint`, `npm test`

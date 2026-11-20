@@ -6,6 +6,7 @@ import type { CodeCopy } from "../api/codeTypes";
 import type { FileDiff, Task } from "../api/types";
 import { ContextMenu, pointFor, type MenuPoint } from "../components/ui/ContextMenu";
 import { Button, ConfirmButton } from "../components/ui/Button";
+import { EmptyState } from "../components/ui/EmptyState";
 import { MenuButton, type MenuItem } from "../components/ui/Menu";
 import { useProjectActions } from "../components/projects";
 import { useToast } from "../components/ui/Toast";
@@ -288,9 +289,19 @@ export function Changes({ project, task }: { project: string; task: Task | null 
   return (
     <div className="review-host" ref={root}>
       <div className="changes review" onKeyDown={onKeyDown}>
-        {diff.isError && <p className="error-text">{errorMessage(diff.error, t)}</p>}
+        {diff.isError && (
+          <EmptyState
+            error
+            title={t("reviewer.diffError")}
+            text={errorMessage(diff.error, t)}
+            onRetry={() => void diff.refetch()}
+          />
+        )}
         {files.length === 0 ? (
-          <p className="empty">{diff.isPending ? t("workspace.changes.loading") : t("workspace.changes.none")}</p>
+          // Changes that did not load are not "no changes".
+          !diff.isError && (
+            <p className="empty">{diff.isPending ? t("workspace.changes.loading") : t("workspace.changes.none")}</p>
+          )
         ) : (
           <>
             <header className="rv-summary">

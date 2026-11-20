@@ -5,7 +5,9 @@
 .skill-lib__head { display: flex; align-items: flex-start; gap: var(--space-4); }
 .skill-lib__titles { display: grid; gap: var(--space-1); min-width: 0; }
 .skill-lib__titles p { max-width: 72ch; }
-.skill-lib__actions { margin-left: auto; display: flex; gap: var(--space-2); flex: none; }
+.skill-lib__actions { margin-left: auto; display: flex; gap: var(--space-2); flex: none; flex-wrap: wrap; justify-content: flex-end; max-width: 50%; }
+/* Why Importar or Exportar is off: under the buttons, never a silent gray. */
+.skill-lib__blocked { flex-basis: 100%; margin: 0; text-align: right; }
 .skill-lib__toolbar { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .skill-lib__search { flex: 1; min-width: 220px; }
 .skill-lib__filters { display: flex; flex-wrap: wrap; gap: 6px; }

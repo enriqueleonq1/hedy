@@ -88,21 +88,58 @@ describe("A project's home", () => {
   it("opens its other sections from the tabs", async () => {
     const hash = `#p=${encodeURIComponent(HEDY)}`;
     const { user } = await setup(hash);
-    const tab = async (name: string) =>
-      user.click(within(await screen.findByRole("navigation", { name: "Secciones del proyecto" }, { timeout: 5000 })).getByRole("button", { name }));
+    const sections = () => screen.findByRole("navigation", { name: "Secciones del proyecto" }, { timeout: 5000 });
+    const tab = async (name: string) => user.click(within(await sections()).getByRole("button", { name }));
+    // Back on the project's home (the other sections show the same tabs).
+    const home = async () => {
+      history.back();
+      await waitFor(() => expect(window.location.hash).toBe(hash));
+      await waitFor(async () => expect(within(await sections()).getByRole("button", { name: "Tareas" })).toHaveAttribute("aria-current", "page"));
+    };
 
     await tab("Memoria");
     expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
     expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}`);
     expect(screen.getByRole("combobox", { name: "Para" })).toHaveValue("project:/code/hedy");
-    history.back();
+    expect(within(await sections()).getByRole("button", { name: "Memoria" })).toHaveAttribute("aria-current", "page");
+    await home();
     await tab("Resumen");
+    expect(await screen.findByRole("region", { name: "Tests" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#s=${encodeURIComponent(HEDY)}`);
+    // Resumen keeps the project's tabs, with the way back to its tasks.
+    expect(within(await sections()).getByRole("button", { name: "Resumen" })).toHaveAttribute("aria-current", "page");
+    // Each task says its state with the one pill, and no mascot of its own.
+    const rows = await within(screen.getByRole("region", { name: "Tareas" })).findAllByRole("listitem");
+    for (const row of rows) {
+      expect(row.querySelectorAll(".status-pill")).toHaveLength(1);
+      expect(row.querySelector("svg")).toBeNull();
+    }
+    await tab("Tareas");
     expect(await screen.findByRole("heading", { level: 1, name: "hedy" })).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByRole("navigation", { name: "Secciones del proyecto" })).toBeNull());
-    expect(window.location.hash).not.toBe(hash);
-    history.back();
+    expect(window.location.hash).toBe(hash);
     await tab("Ajustes");
     expect(await screen.findByRole("heading", { level: 1, name: "Ajustes de hedy" })).toBeInTheDocument();
+  });
+});
+
+describe("Tasks that did not load", () => {
+  it.each([
+    ["the project's home", `#p=${encodeURIComponent(HEDY)}`],
+    ["a task's address", taskHash("s5")],
+  ])("on %s: say so with Reintentar, never as no tasks", async (_, hash) => {
+    let failing = true;
+    const { user } = await setup(hash, async (api) => {
+      const tasks = api.tasks.bind(api);
+      vi.spyOn(api, "tasks").mockImplementation((project) => (failing ? Promise.reject("la base de datos está ocupada") : tasks(project)));
+    });
+    const alert = (await screen.findByText("No se pudieron cargar las tareas.", undefined, { timeout: 5000 })).closest("[role=alert]") as HTMLElement;
+    expect(alert).toHaveTextContent("la base de datos está ocupada");
+    expect(screen.queryByText(/^¿Qué hacemos en hedy\?/)).toBeNull();
+    failing = false;
+    await user.click(within(alert).getByRole("button", { name: "Reintentar" }));
+    await waitFor(() => expect(screen.queryByText("No se pudieron cargar las tareas.")).toBeNull());
+    if (hash === taskHash("s5")) expect(await headerOf(TAXES)).toBeInTheDocument();
+    else expect(await screen.findByText(/^¿Qué hacemos en hedy\?/)).toBeInTheDocument();
   });
 });
 

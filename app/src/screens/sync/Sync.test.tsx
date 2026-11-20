@@ -36,7 +36,8 @@ describe("Sync", () => {
   it("sets up with a private repo and asks for a word of the key back", async () => {
     const { api, user } = renderAt("#sync", offline());
     const card = await waitFor(section);
-    expect(within(card).getByText("Desactivada")).toBeInTheDocument();
+    // "Off" only once the state is read.
+    expect(await within(card).findByText("Desactivada")).toBeInTheDocument();
     await user.click(within(card).getByRole("button", { name: "Configurar" }));
 
     const dialog = screen.getByRole("dialog", { name: "Configurar la sincronización" });
@@ -166,6 +167,19 @@ describe("Sync", () => {
     const conflict = await within(await waitFor(section)).findByRole("article", { name: "Nota" });
     await user.click(within(conflict).getByRole("button", { name: "Usar la de Oficina" }));
     await waitFor(() => expect(api.resolved).toEqual([{ id: 1, useOther: false }]));
+  });
+
+  it("says when its state cannot be read, with Reintentar, instead of looking off", async () => {
+    const api = offline();
+    const read = vi.spyOn(api, "syncStatus").mockRejectedValue("disk on fire");
+    const { user } = renderAt("#sync", api);
+    const card = await waitFor(section);
+    expect(await within(card).findByRole("alert")).toHaveTextContent("No se pudo leer el estado de la sincronización");
+    expect(within(card).queryByText("Desactivada")).toBeNull();
+    expect(within(card).queryByRole("button", { name: "Configurar" })).toBeNull();
+    read.mockRestore();
+    await user.click(within(card).getByRole("button", { name: "Reintentar" }));
+    expect(await within(card).findByText("Desactivada")).toBeInTheDocument();
   });
 
   it("lists what syncs and what stays, read-only", async () => {

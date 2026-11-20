@@ -100,8 +100,6 @@ p.sync__titles { margin: 0; }
 .sync-what__row { display: flex; align-items: center; gap: var(--space-3); padding: 10px var(--space-4); font-size: var(--text-callout); }
 .sync-what__row + .sync-what__row { border-top: 1px solid var(--line); }
 .sync-what__name { display: grid; gap: 2px; flex: 1; min-width: 0; color: var(--ink); }
-.sync-what__state { flex: none; color: var(--success); font-weight: 500; }
-.sync-what__state--off { color: var(--muted); }
 
 .sync-pcs { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid var(--line); border-radius: var(--radius-control); overflow: hidden; font-size: var(--text-callout); }
 .sync-pcs th { padding: var(--space-2) var(--space-4); text-align: left; font-size: var(--text-caption); font-weight: 500; color: var(--muted); background: var(--panel-2); border-bottom: 1px solid var(--line); }

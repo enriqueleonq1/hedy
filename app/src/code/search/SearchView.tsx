@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { errorMessage, useApi } from "../../api/context";
 import type { CodeCopy, CopyInfo, MatchRange, SearchOptions } from "../../api/codeTypes";
+import { Button } from "../../components/ui/Button";
 import { useContextMenu } from "../../components/ui/ContextMenu";
 import { flattenTree, type TreeRow } from "../../components/ui/treeModel";
 import { VirtualTree, type VirtualTreeHandle } from "../../components/ui/VirtualTree";
@@ -163,7 +164,19 @@ export function SearchView({ copy, info, onOpen, openKey, focusSeq = 0, prefill 
   } else if (results.isPending) {
     body = <TreeSkeleton label={t("code.search.loading")} rows={6} />;
   } else if (results.isError) {
-    body = <CodeState tone="error" role="alert" title={t("code.search.error")} text={errorMessage(results.error, t)} />;
+    body = (
+      <CodeState
+        tone="error"
+        role="alert"
+        title={t("code.search.error")}
+        text={errorMessage(results.error, t)}
+        actions={
+          <Button small onClick={() => void results.refetch()}>
+            {t("common.retry")}
+          </Button>
+        }
+      />
+    );
   } else if (files.length === 0) {
     body = <CodeState role="status" title={t("code.search.none")} text={t("code.search.noneText")} />;
   } else {

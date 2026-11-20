@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAction, useApi } from "../../api/context";
 import type { MemoryHome, SyncConflict, SyncDevice, SyncStatus } from "../../api/types";
 import { Button, ConfirmButton } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { useToast } from "../../components/ui/Toast";
 import { timeAgo } from "../../format";
 import { useT, type MessageKey } from "../../i18n";
@@ -38,6 +39,14 @@ export function SyncSection() {
     <section className="card settings__section sync" aria-label={t("sync.title")}>
       {status.data ? (
         <SyncOn status={status.data} />
+      ) : status.isError ? (
+        // Not knowing the state is not "off": say so, and offer to read it again.
+        <EmptyState
+          error
+          title={t("sync.loadError")}
+          text={t("sync.loadErrorText")}
+          onRetry={() => void status.refetch()}
+        />
       ) : (
         <SyncOff loading={status.isPending} onSetup={() => setDialog("setup")} onJoin={() => setDialog("join")} />
       )}
@@ -67,7 +76,8 @@ function SyncOff({ loading, onSetup, onJoin }: { loading: boolean; onSetup: () =
           <SyncIcon />
         </span>
         <p className="sync__titles muted">{t("sync.tagline")}</p>
-        <span className="sync__pill">{t("sync.off")}</span>
+        {/* Only once known: while loading it is not "off" yet. */}
+        {!loading && <span className="sync__pill">{t("sync.off")}</span>}
       </div>
       <p className="muted small">{t("sync.offText")}</p>
       <div className="row">
@@ -218,12 +228,12 @@ function WhatSyncs() {
               {t("sync.what.global")}
             </span>
           </span>
-          <span className="sync-what__state small">{t("sync.what.on")}</span>
+          <span className="state-label small">{t("sync.what.on")}</span>
         </li>
         {always.map((key) => (
           <li key={key} className="sync-what__row">
             <span className="sync-what__name">{t(key)}</span>
-            <span className="sync-what__state small">{t("sync.what.on")}</span>
+            <span className="state-label small">{t("sync.what.on")}</span>
           </li>
         ))}
         {homes && (
@@ -237,7 +247,7 @@ function WhatSyncs() {
                 {waiting > 0 && ` · ${t(waiting === 1 ? "sync.waiting.one" : "sync.waiting.other", { n: waiting })}`}
               </span>
             </span>
-            <span className="sync-what__state sync-what__state--off small">{t("sync.what.off")}</span>
+            <span className="state-label state-label--off small">{t("sync.what.off")}</span>
           </li>
         )}
         <li className="sync-what__row">
@@ -245,7 +255,7 @@ function WhatSyncs() {
             {t("sync.what.never")}
             <span className="small muted">{t("sync.what.neverDetail")}</span>
           </span>
-          <span className="sync-what__state sync-what__state--off small">{t("sync.what.neverState")}</span>
+          <span className="state-label state-label--off small">{t("sync.what.neverState")}</span>
         </li>
       </ul>
       <p className="small muted">{t("sync.what.perProject")}</p>

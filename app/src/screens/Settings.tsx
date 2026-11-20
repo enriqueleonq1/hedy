@@ -337,7 +337,7 @@ function AdvancedSection({ overview, onAccounts }: { overview: Overview; onAccou
       <Diagnosis />
 
       <section className="card settings__section">
-        <h2>APIs</h2>
+        <h2>{t("settings.apis")}</h2>
         <p className="hint">
           {t("settings.apiPointer")}{" "}
           <button type="button" className="link-button" onClick={onAccounts}>

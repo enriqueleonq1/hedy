@@ -128,10 +128,11 @@
   top: -4px;
   z-index: 2;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   min-height: 40px;
-  padding: 0 4px 0 12px;
+  padding: 4px 4px 4px 12px;
   border: 1px solid var(--line);
   border-bottom: 0;
   border-radius: var(--radius-control) var(--radius-control) 0 0;
@@ -139,9 +140,11 @@
   font-family: var(--font-mono);
   font-size: var(--text-mono);
 }
-.rv-filehead .rv-path { flex: 1; }
+/* Narrow (the panel at 1024 px): the path gives way, then the tools wrap below it. */
+.rv-filehead .rv-path { flex: 1 1 12ch; min-width: 0; }
+.rv-filehead .rv-path__name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .rv-filehead__stats { flex: none; font-variant-numeric: tabular-nums; }
-.rv-filehead__tools { display: flex; align-items: center; gap: 2px; font-family: var(--font-ui); }
+.rv-filehead__tools { display: flex; align-items: center; gap: 2px; margin-left: auto; font-family: var(--font-ui); }
 .rv-viewed {
   display: inline-flex;
   align-items: center;
