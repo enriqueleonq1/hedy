@@ -460,6 +460,16 @@ pub trait ProcessRunner: Send + Sync {
     ) -> PortResult<CapturedOutput>;
     /// Kills the checks of `group` still running (its trial was cancelled).
     fn stop_checks(&self, group: &str);
+    /// This process, told apart from a later one that reuses its pid.
+    /// `None` where it cannot be told.
+    fn this_process(&self) -> Option<String> {
+        None
+    }
+    /// Whether the process [`ProcessRunner::this_process`] named is still
+    /// running.
+    fn process_alive(&self, _process: &str) -> bool {
+        true
+    }
     /// Whether checks run isolated here (see [`ProcessRunner::run_check`]).
     fn isolates_checks(&self) -> bool;
     /// Names (never values) of the variables in Hedy's own environment that

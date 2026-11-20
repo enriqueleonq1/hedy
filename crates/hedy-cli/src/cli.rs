@@ -886,8 +886,8 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             "skills try",
             "yes",
             tr!(
-                "Sin preguntar (solo con --task)",
-                "Without asking (only with --task)"
+                "Sin preguntar (solo con --task y --check)",
+                "Without asking (only with --task and --check)"
             ),
         ),
         (

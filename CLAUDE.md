@@ -16,7 +16,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Learned skills from the terminal: `hedy skills` (`list`, `show <name>`, `approve <id>`,
   `reject <id>`, `remove <name>`, `import <path> [--global] [--replace] [--yes]`,
   `export [names] --to <folder>`, `check <name>`: helps or gets in the way, `try <name>
-  [--task …]`: runs real tasks with and without it, spends tokens); in the UI,
+  [--task …] [--check …]`: runs real tasks with and without it, spends tokens; `--yes`
+  needs both and, with no terminal, allows only file changes inside each copy); in the UI,
   `#k=<path>` opens a project's skills tab
 - Prompt templates from the CLI: `hedy template list|add <name> [--project] --text …|remove <name>`
 - Ask the memory (docs/decisions.md §36): `hedy memory ask "<question>"` (`--team`, `--all`,

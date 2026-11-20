@@ -401,9 +401,9 @@ pub fn export(hedy: &Hedy, dir: &Path, names: &[String], to: &Path) -> Result<()
     }
     let n = report.written.len();
     let folder = short_path(&dest);
+    let mark = if n > 0 { s.ok("✔") } else { s.warn("!") };
     println!(
-        "{} {}",
-        s.ok("✔"),
+        "{mark} {}",
         tr!("{n} exportadas a {folder}.", "{n} exported to {folder}.")
     );
     if n > 0 {

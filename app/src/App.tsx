@@ -22,6 +22,7 @@ import { CreateProvider } from "./screens/create/CreateProvider";
 import { ActivityScreen } from "./screens/activity/ActivityScreen";
 import { MemoryScreen } from "./screens/memory/MemoryScreen";
 import { SkillsScreen } from "./screens/skills/SkillsScreen";
+import { BackgroundTrialsProvider } from "./screens/skills/backgroundTrials";
 import { AskScreen } from "./screens/ask/AskScreen";
 import { Onboarding } from "./screens/onboarding/Onboarding";
 import { Settings } from "./screens/Settings";
@@ -47,13 +48,15 @@ export function App({ api, queryClient }: { api: HedyApi; queryClient?: QueryCli
         <Localized>
           <ToastProvider>
             <TaskEventsBridge />
-            <FileNavigatorProvider>
-              <ReviewCommentsProvider>
-                <UnsavedChangesProvider>
-                  <Root />
-                </UnsavedChangesProvider>
-              </ReviewCommentsProvider>
-            </FileNavigatorProvider>
+            <BackgroundTrialsProvider>
+              <FileNavigatorProvider>
+                <ReviewCommentsProvider>
+                  <UnsavedChangesProvider>
+                    <Root />
+                  </UnsavedChangesProvider>
+                </ReviewCommentsProvider>
+              </FileNavigatorProvider>
+            </BackgroundTrialsProvider>
           </ToastProvider>
         </Localized>
       </ApiProvider>

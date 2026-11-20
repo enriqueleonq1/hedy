@@ -1105,6 +1105,8 @@ impl Hedy {
         account: &str,
         model: Option<String>,
     ) -> AppResult<Task> {
+        // A trial run at a limit is void anyway: no tokens elsewhere for it.
+        self.refuse_trial_run(id)?;
         let mut task = self.task(id)?;
         if task.status.is_closed() {
             return Err(AppError::TaskClosed(id.clone()));

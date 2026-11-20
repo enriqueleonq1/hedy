@@ -20,6 +20,7 @@ impl Hedy {
     /// "Esperar": remembers that the user waits for the task's account to
     /// renew its limit. Returns the task with its wait.
     pub fn wait_for_limit(&self, id: &TaskId) -> AppResult<Task> {
+        self.refuse_trial_run(id)?;
         let mut task = self.task(id)?;
         if task.status.is_closed() {
             return Err(AppError::TaskClosed(id.clone()));
@@ -47,6 +48,7 @@ impl Hedy {
 
     /// "Continuar": the user resumes the task now, on its account.
     pub fn resume_after_limit(&self, id: &TaskId) -> AppResult<Task> {
+        self.refuse_trial_run(id)?;
         let mut task = self.task(id)?;
         if task.status.is_closed() {
             return Err(AppError::TaskClosed(id.clone()));

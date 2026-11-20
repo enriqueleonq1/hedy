@@ -21,6 +21,10 @@ All notable changes to Hedy are listed here. The format follows
 - An AI can no longer propose a skill that runs commands as soon as Claude Code loads it
   (`!`…`` or a ```` ```! ```` block), and skills from your other PCs pass the same checks as
   local ones.
+- Hedy's own git in a task's copy uses the copy's real git data, whatever its `.git` file says:
+  a run (or a skill trial's check) could point it at a folder whose settings run a command.
+- An AI cannot add or publish team notes, invite, change roles, remove people or skills, or
+  leave a team through `hedy` from its session, and a trial's check counts as its session.
 
 ### Added
 
@@ -44,7 +48,9 @@ All notable changes to Hedy are listed here. The format follows
   useful, doubtful or harmful. Before the check, the tests a run changed are put back, and on
   Linux the check runs isolated with bubblewrap (no network, writing only in its copy). A
   limit, a run you stop or a copy of the skill outside Hedy keeps no verdict. Nothing reaches the project; `hedy skills show` keeps the result until
-  the skill changes.
+  the skill changes. From a script (`--yes`, no terminal), each copy may change its own files
+  but runs no command. A trial whose terminal was killed is cleaned up by the next Hedy (the
+  app, `hedy tasks` or another trial).
 - Personal sync: the same Hedy on every PC you use. Notes, proposals, skills, templates and
   themes travel through a private git repo of yours (GitHub, GitLab, Bitbucket, Gitea or your
   own server), encrypted and signed on each PC; the server never sees a note. Set it up in

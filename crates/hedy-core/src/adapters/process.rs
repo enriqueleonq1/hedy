@@ -129,6 +129,25 @@ fn isolated(spec: &LaunchSpec, copy: &std::path::Path, reads: &[std::path::PathB
 /// caches, nothing that identifies or bills anyone.
 const CHECK_ENV: &[&str] = &["PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "USER"];
 
+/// When `pid` started (field 22 of `/proc/<pid>/stat`), which tells it apart
+/// from a later process with the same pid. Linux only.
+fn started(pid: u32) -> Option<String> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    // The name (field 2) may hold spaces and parentheses: fields after it.
+    let rest = &stat[stat.rfind(')')? + 2..];
+    rest.split(' ').nth(19).map(str::to_owned)
+}
+
+fn pid_exists(pid: u32) -> bool {
+    #[cfg(unix)]
+    if let Ok(pid) = i32::try_from(pid) {
+        // SAFETY: signal 0 only checks; it takes no pointers.
+        let sent = unsafe { libc::kill(pid, 0) };
+        return sent == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM);
+    }
+    true
+}
+
 /// Kills a check's whole process group (its `cargo`, `npm`…).
 fn kill_check_group(pid: u32) {
     #[cfg(unix)]
@@ -349,6 +368,29 @@ impl ProcessRunner for SystemProcessRunner {
     fn isolates_checks(&self) -> bool {
         bubblewrap()
     }
+
+    fn this_process(&self) -> Option<String> {
+        let pid = std::process::id();
+        Some(match started(pid) {
+            Some(at) => format!("{pid}:{at}"),
+            None => pid.to_string(),
+        })
+    }
+
+    fn process_alive(&self, process: &str) -> bool {
+        let (pid, at) = match process.split_once(':') {
+            Some((pid, at)) => (pid, Some(at)),
+            None => (process, None),
+        };
+        let Ok(pid) = pid.parse::<u32>() else {
+            return true;
+        };
+        match at {
+            // Its pid now belongs to another process, or to none.
+            Some(at) if cfg!(target_os = "linux") => started(pid).is_some_and(|now| now == at),
+            _ => pid_exists(pid),
+        }
+    }
     fn blocked_env_vars(&self) -> Vec<String> {
         let mut names: Vec<String> = std::env::vars_os()
             .filter_map(|(name, _)| name.into_string().ok())
@@ -541,6 +583,27 @@ mod tests {
         assert_ne!(check_reading(&copy, &script, "t2", &[]), Some(0), "no .env");
         assert_eq!(check_reading(&copy, "touch made", "t2", &[]), Some(0));
         assert!(copy.join("made").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_process_is_known_alive_until_it_ends() {
+        let runner = SystemProcessRunner;
+        let me = runner.this_process().unwrap();
+        assert!(runner.process_alive(&me));
+        let mut child = Command::new("true").spawn().unwrap();
+        let pid = child.id();
+        let it = match started(pid) {
+            Some(at) => format!("{pid}:{at}"),
+            None => pid.to_string(),
+        };
+        child.wait().unwrap();
+        assert!(!runner.process_alive(&it));
+        // A later process with this pid is another one.
+        if cfg!(target_os = "linux") {
+            let (pid, _) = me.split_once(':').unwrap();
+            assert!(!runner.process_alive(&format!("{pid}:0")));
+        }
     }
 
     #[test]

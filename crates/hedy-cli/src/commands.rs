@@ -539,6 +539,9 @@ const TASK_TITLE_WIDTH: usize = 46;
 /// `hedy tasks`: what every project's AIs are doing, what needs the user first.
 pub fn tasks(hedy: &Hedy) -> Result<()> {
     let s = Style::for_stdout();
+    // Runs of a trial whose `hedy skills try` was killed are not shown as
+    // waiting forever.
+    hedy.tidy_orphan_trials();
     let board = hedy.activity()?;
     if board.is_empty() {
         let mut text = vec![tr!(

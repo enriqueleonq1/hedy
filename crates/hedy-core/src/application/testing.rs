@@ -1011,6 +1011,9 @@ fn sync_keys(space: &str) -> String {
     format!("sync keys{space}")
 }
 
+/// What [`FakeRunner`] calls the process it runs in.
+pub const FAKE_PROCESS: &str = "4242:1";
+
 /// Records launches and answers captured runs with a canned reply, or with
 /// the reply set for that exact command line.
 #[derive(Default)]
@@ -1025,6 +1028,8 @@ pub struct FakeRunner {
     /// Checks run through `run_check`, with their group.
     checks: Mutex<Vec<(String, LaunchSpec)>>,
     stopped_checks: Mutex<Vec<String>>,
+    /// Processes [`FakeRunner::kill_process`] ended.
+    dead: Mutex<HashSet<String>>,
 }
 
 fn command_line(spec: &LaunchSpec) -> String {
@@ -1035,6 +1040,11 @@ fn command_line(spec: &LaunchSpec) -> String {
 }
 
 impl FakeRunner {
+    /// The process `process` ends (killed, crashed).
+    pub fn kill_process(&self, process: &str) {
+        self.dead.lock().unwrap().insert(process.to_owned());
+    }
+
     pub fn install(&self, program: &str) {
         self.installed.lock().unwrap().insert(program.to_owned());
     }
@@ -1125,6 +1135,12 @@ impl ProcessRunner for FakeRunner {
     }
     fn isolates_checks(&self) -> bool {
         true
+    }
+    fn this_process(&self) -> Option<String> {
+        Some(FAKE_PROCESS.into())
+    }
+    fn process_alive(&self, process: &str) -> bool {
+        !self.dead.lock().unwrap().contains(process)
     }
     fn blocked_env_vars(&self) -> Vec<String> {
         self.env.lock().unwrap().clone()

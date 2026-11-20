@@ -149,6 +149,9 @@ impl Hedy {
         if skill.status != SkillStatus::Approved {
             return Err(AppError::SkillOutsideProjectOnly);
         }
+        if on && self.skill_in_trial(&project, id) {
+            return Err(AppError::SkillOutsideDuringTrial);
+        }
         let mut files = SkillFiles::default();
         let mut entries = self.outside_entries();
         if on {

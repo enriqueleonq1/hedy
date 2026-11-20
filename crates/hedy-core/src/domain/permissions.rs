@@ -225,10 +225,18 @@ fn command_program(command: &str) -> Option<&str> {
     command.split_whitespace().find(|word| !word.contains('='))
 }
 
-/// Folders of a task copy no change goes to when nobody is asked: git's
+/// What in a task copy no change goes to when nobody is asked: git's
 /// pointer (git would obey a folder it names), the agents' settings (hooks,
-/// allowed commands) and the skills the run reads.
-const UNATTENDED_OFF_LIMITS: &[&str] = &[".git", ".claude", ".agents"];
+/// allowed commands, MCP servers to start) and the skills the run reads.
+const UNATTENDED_OFF_LIMITS: &[&str] = &[
+    ".git",
+    ".claude",
+    ".agents",
+    ".mcp.json",
+    ".gemini",
+    ".codex",
+    ".kimi",
+];
 
 /// The files a change request writes, when it may be allowed with nobody to
 /// ask: a file tool naming at least one path, every one inside `work_dir`
@@ -458,6 +466,34 @@ mod tests {
 
     fn verdict(tool: &str, input: Value, remembered: &[AllowRule]) -> Verdict {
         evaluate(tool, &input, Path::new(WT), remembered)
+    }
+
+    #[test]
+    fn unattended_writes_stay_out_of_git_and_agent_settings() {
+        let wt = Path::new(WT);
+        let writes = |tool: &str, input: Value| unattended_writes(tool, &input, wt);
+        assert!(writes("Edit", json!({"file_path": format!("{WT}/src/a.rs")})).is_some());
+        assert!(writes("Write", json!({"file_path": "src/new.rs"})).is_some());
+        for path in [
+            ".git",
+            ".claude/settings.json",
+            ".agents/skills/x/SKILL.md",
+            ".mcp.json",
+            ".gemini/settings.json",
+            ".codex/config.toml",
+            "src/../.git",
+            "../other/a.rs",
+            "",
+        ] {
+            let full = format!("{WT}/{path}");
+            assert!(
+                writes("Write", json!({"file_path": full})).is_none(),
+                "{path}"
+            );
+        }
+        assert!(writes("Write", json!({"content": "no path"})).is_none());
+        assert!(writes("Bash", json!({"command": "ls"})).is_none());
+        assert!(writes("Read", json!({"file_path": format!("{WT}/a")})).is_none());
     }
 
     #[test]

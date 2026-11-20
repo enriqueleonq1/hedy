@@ -44,9 +44,13 @@ pub fn run() {
             let hedy = hedy.with_task_events(events);
             waits::start(&hedy);
             sync::start(app.handle().clone(), &hedy);
-            // Session plugins of tasks closed while the app was away.
+            // Trials whose driver died, and session plugins of tasks closed
+            // while the app was away.
             let tidy = hedy.clone();
-            std::thread::spawn(move || tidy.refresh_skills_plugins());
+            std::thread::spawn(move || {
+                tidy.tidy_orphan_trials();
+                tidy.refresh_skills_plugins();
+            });
             app.manage(AppState {
                 hedy,
                 paths,

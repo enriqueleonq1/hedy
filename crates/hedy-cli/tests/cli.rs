@@ -939,6 +939,52 @@ fn skills_try_without_a_terminal_lets_each_copy_change_files_but_not_run_command
 }
 
 #[test]
+fn a_trial_whose_cli_was_killed_is_cleaned_up_by_the_next_hedy() {
+    let env = Env::new();
+    let repo = commit_repo(&env);
+    env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy_in(&repo, &["use", "claude"]).assert().success();
+    seed_skills(&env, &repo);
+    let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("hedy"))
+        .env("HEDY_DATA_DIR", env.path("data"))
+        .env("NO_COLOR", "1")
+        .env("HEDY_LANGUAGE", "es")
+        .env("FAKE_CLAUDE_MODE", "slow")
+        .env_remove("CLAUDE_CONFIG_DIR")
+        .env_remove("HEDY_AGENT_SESSION")
+        .args([
+            "-C",
+            repo.to_str().unwrap(),
+            "skills",
+            "try",
+            "run-e2e-tests",
+        ])
+        .args(["--task", "Arregla el saludo", "--check", "true", "--yes"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let started = std::time::Instant::now();
+    while git(&repo, &["worktree", "list"]).lines().count() < 3 {
+        assert!(started.elapsed().as_secs() < 30, "the runs never started");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    child.kill().unwrap(); // SIGKILL: no handler runs
+    child.wait().unwrap();
+
+    env.hedy_in(&repo, &["tasks"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("descartada"))
+        .stdout(predicate::str::contains("en marcha").not());
+    assert_eq!(git(&repo, &["worktree", "list"]).lines().count(), 1);
+}
+
+#[test]
 fn an_ai_cannot_publish_grant_or_remove_from_its_session() {
     let env = Env::new();
     let repo = git_repo(&env, "code/agenda");

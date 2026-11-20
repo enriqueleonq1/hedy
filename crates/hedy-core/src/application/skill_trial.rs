@@ -165,6 +165,9 @@ impl Hedy {
             .map(str::trim)
             .filter(|c| !c.is_empty())
             .map(str::to_owned);
+        // Runs a killed driver left behind (nobody answers them) go first.
+        self.tidy_orphan_trials();
+        let driver = self.runner.this_process();
         let trial = format!("k{:x}", self.clock.now_ms());
         let version = fingerprint(&skill.name, &skill.description, &skill.body);
         let mut started = Vec::new();
@@ -182,6 +185,7 @@ impl Hedy {
                     restored: 0,
                     stopped: false,
                     version: version.clone(),
+                    driver: driver.clone(),
                 };
                 let request = NewTask {
                     images: Vec::new(),
@@ -224,6 +228,28 @@ impl Hedy {
                 let _ = self.discard_task(&task.id);
             }
         }
+    }
+
+    /// Cancels the trials whose driver is gone (a CLI killed with `kill -9`,
+    /// a crash, the app closed mid-trial): their runs would wait for
+    /// answers forever. How many it cancelled.
+    pub fn tidy_orphan_trials(&self) -> usize {
+        let mut orphans = std::collections::BTreeSet::new();
+        for project in self.store.list_projects().unwrap_or_default() {
+            for task in self.store.tasks(&project.path).unwrap_or_default() {
+                let Some(run) = self.trial_of(&task.id) else {
+                    continue;
+                };
+                let live = self.live.lock().unwrap().contains_key(&task.id);
+                if !live && run.driver.is_some_and(|d| !self.runner.process_alive(&d)) {
+                    orphans.insert((project.path.clone(), run.trial));
+                }
+            }
+        }
+        for (project, trial) in &orphans {
+            self.cancel_skill_trial(project, trial);
+        }
+        orphans.len()
     }
 
     /// The trial was judged or voided and its runs are gone: its outcome,
@@ -362,6 +388,19 @@ impl Hedy {
             run.stopped = true;
             let _ = self.mark_trial_run(task, &run);
         }
+    }
+
+    /// A run of a trial of this skill is still open in the project.
+    pub(super) fn skill_in_trial(&self, project: &Path, skill_id: i64) -> bool {
+        self.store
+            .tasks(project)
+            .unwrap_or_default()
+            .iter()
+            .filter(|t| !t.status.is_closed())
+            .any(|t| {
+                self.trial_of(&t.id)
+                    .is_some_and(|of| of.skill_id == skill_id)
+            })
     }
 
     fn trial_runs(&self, project: &Path, trial: &str) -> Vec<(Task, TrialRef)> {
@@ -668,6 +707,25 @@ mod tests {
     }
 
     #[test]
+    fn a_trial_whose_driver_died_is_cancelled_by_the_next_hedy() {
+        let (f, skill) = setup();
+        let trial = start(&f, &skill);
+        // The app, or a later `hedy skills try`, on the same data.
+        let other = f.hedy_on(f.store.clone(), f.sync.clone());
+        assert_eq!(other.tidy_orphan_trials(), 0, "its driver still runs");
+        assert!(trial.tasks.iter().all(|t| other.trial_of(&t.id).is_some()));
+
+        f.runner
+            .kill_process(crate::application::testing::FAKE_PROCESS);
+        assert_eq!(other.tidy_orphan_trials(), 1);
+        for task in &trial.tasks {
+            assert!(other.trial_of(&task.id).is_none());
+            assert!(other.task(&task.id).unwrap().status.is_closed());
+        }
+        assert_eq!(other.tidy_orphan_trials(), 0);
+    }
+
+    #[test]
     fn a_trial_runs_each_task_with_and_without_the_skill_then_keeps_only_the_result() {
         let (f, skill) = setup();
         let agenda = f.dir("/code/agenda");
@@ -702,6 +760,25 @@ mod tests {
         assert!(matches!(
             f.hedy.send_message(&tasks[0].id, "y añade un test"),
             Err(AppError::TrialRun)
+        ));
+        // Nor waited on, resumed or moved at a limit: it is void anyway.
+        assert!(matches!(
+            f.hedy.wait_for_limit(&tasks[0].id),
+            Err(AppError::TrialRun)
+        ));
+        assert!(matches!(
+            f.hedy.resume_after_limit(&tasks[0].id),
+            Err(AppError::TrialRun)
+        ));
+        assert!(matches!(
+            f.hedy.handoff_task(&tasks[0].id, "otra", None),
+            Err(AppError::TrialRun)
+        ));
+        // And the skill does not go outside Hedy meanwhile: the run without
+        // it would read it.
+        assert!(matches!(
+            f.hedy.set_skill_outside(skill.id, true),
+            Err(AppError::SkillOutsideDuringTrial)
         ));
 
         // One run stops: its check runs in its copy, through the guarded

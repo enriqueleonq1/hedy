@@ -1,21 +1,18 @@
-import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
-import { errorMessage, useApi } from "../../api/context";
+import { errorMessage } from "../../api/context";
 import type { Overview, Project, SkillOverview, SkillVerdict } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { Button } from "../../components/ui/Button";
-import { useToast } from "../../components/ui/Toast";
 import { formatTokens } from "../../format";
 import { useT } from "../../i18n";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { ExportDialog, ImportDialog } from "./SkillDialogs";
 import { SkillDetail } from "./SkillDetail";
 import { TrialDialog } from "./TrialDialog";
-import { SKILLS_OVERVIEW_KEY, useSkillsOverview, verdictKey, voidKey } from "./library";
+import { useBackgroundTrials } from "./backgroundTrials";
+import { useSkillsOverview, verdictKey } from "./library";
 
-/** How often a trial left running in the background is looked at. */
-const BACKGROUND_POLL_MS = 5000;
 
 type Filter = "all" | "global" | "project" | "proposed";
 
@@ -184,28 +181,3 @@ function SkillRow({ item, selected, onSelect }: { item: SkillOverview; selected:
  * Trials the user left running ("Seguir en segundo plano"): looked at while
  * the section is open, so their result reaches the list and is said once.
  */
-function useBackgroundTrials() {
-  const t = useT();
-  const api = useApi();
-  const toast = useToast();
-  const client = useQueryClient();
-  const [trials, setTrials] = useState<{ trial: string; name: string }[]>([]);
-  useEffect(() => {
-    if (trials.length === 0) return;
-    const timer = setInterval(async () => {
-      for (const running of trials) {
-        const ended = await api.takeTrialOutcome(running.trial).catch(() => null);
-        if (!ended) continue;
-        setTrials((all) => all.filter((x) => x.trial !== running.trial));
-        await client.invalidateQueries({ queryKey: SKILLS_OVERVIEW_KEY });
-        if ("judged" in ended) {
-          toast.info(t("skillLib.try.doneIn", { name: running.name, verdict: t(verdictKey[ended.judged.verdict]) }));
-        } else {
-          toast.error(`${running.name}: ${t(voidKey[ended.void])}`);
-        }
-      }
-    }, BACKGROUND_POLL_MS);
-    return () => clearInterval(timer);
-  }, [trials, api, client, toast, t]);
-  return { add: (trial: { trial: string; name: string }) => setTrials((all) => [...all, trial]) };
-}

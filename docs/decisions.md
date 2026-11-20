@@ -746,7 +746,8 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
   projects neither see nor create global skills.
 - **UI and CLI.** A "Habilidades" / "Skills" tab in the memory screen (`#k=<path>`) and
   `hedy skills` with `list`, `show <name>`, `approve <id>`,
-  `reject <id>`, `remove <name>`, `import <path>` and `export [names] --to <folder>`.
+  `reject <id>`, `remove <name>`, `import <path>`, `export [names] --to <folder>`,
+  `check <name>` and `try <name>` (see the analysis phase below).
 - **Import and export** (Nov 19, 2026; `application/skill_transfer.rs`,
   `domain/skill_import.rs`). Skills travel as `SKILL.md` files, the Agent Skills format
   every CLI reads.
@@ -859,7 +860,8 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
     (`--yes` from a script) nobody can answer, so a file change is allowed one request at
     a time when every path it names really stays in the copy (links followed: the shared
     `node_modules`, `.venv`… are links to the project) and none is under `.git`,
-    `.claude` or `.agents`; everything else, commands included, is denied, as it warns
+    `.claude`, `.agents`, `.gemini`, `.codex`, `.kimi` or is `.mcp.json` (settings that
+    start commands); everything else, commands included, is denied, as it warns
     before starting. Denying everything left every headless trial void.
     - **Git in a copy never trusts the copy's `.git`:** whatever writes in it (the run,
       its check) could point it at a git folder of its own whose config runs a command
@@ -913,10 +915,15 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
       limit (Hedy never moves it to another account), one the user stopped or discarded,
       one that never reached the model, or the skill loaded without it. Ctrl+C, a closed
       terminal or `kill` cancels: every run carrying the trial's id is discarded, also
-      one that failed to start.
+      one that failed to start. A driver that dies without a word (`kill -9`, a crash, the
+      app closed mid-trial) is noticed by the next Hedy (the app at start, `hedy tasks`,
+      the next trial): each run names its driver (pid and start time, so a reused pid is
+      not taken for it), and a trial whose driver is gone is cancelled the same way.
     - **Runs are measurements:** they show on the board and ask for permissions like any
       task (in the terminal, one at a time, only those no rule answered, with line
-      breaks shown as ⏎; elsewhere declined), but cannot be accepted or continued. Once
+      breaks shown as ⏎; with no terminal, only file changes that stay in the copy, see
+      above), but cannot be accepted, continued, waited on or moved at a limit (void
+      anyway), and the skill cannot go outside Hedy while a trial of it runs. Once
       all are done they are discarded with the skills they proposed; nothing reaches the
       project's folder. What the user allows runs in the copies, which share the repo's
       git settings, and the CLI says so.
@@ -927,8 +934,7 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
       line to CHANGELOG.md and run `cargo test`"): both runs fixed it, only the one with
       the skill wrote the changelog, and it spent 106 % more tokens → dudosa.
     - **Not covered yet:** Codex and the ACP CLIs do not report loading a skill through
-      `skill_get` (use stays unknown); a run left running by a crashed process is not
-      tidied up at startup.
+      `skill_get` (use stays unknown).
 - **The skills section** (Nov 19, 2026; `application/skill_library.rs`, `app/src/screens/skills`,
   `#skills`). Every skill in one place: the global ones first, then each project's (proposals
   included), each measured (level 1) beside the approved skills its agents see, with its last

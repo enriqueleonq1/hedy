@@ -76,6 +76,8 @@ pub enum AppError {
     #[error("{}", self.message())]
     TrialRun,
     #[error("{}", self.message())]
+    SkillOutsideDuringTrial,
+    #[error("{}", self.message())]
     SkillOutsideProjectOnly,
     #[error("{}", self.message())]
     EmptyPrompt,
@@ -541,8 +543,12 @@ impl AppError {
                 "only an approved project skill can be used outside Hedy too"
             ),
             Self::TrialRun => tr!(
-                "es una ejecución de prueba de una habilidad: no se acepta ni se continúa, se descarta sola al terminar",
-                "it is a trial run of a skill: it cannot be accepted or continued, it is discarded on its own when it ends"
+                "es una ejecución de prueba de una habilidad: no se acepta, ni se continúa, ni pasa a otra cuenta; se descarta sola al terminar",
+                "it is a trial run of a skill: it cannot be accepted, continued or moved to another account; it is discarded on its own when it ends"
+            ),
+            Self::SkillOutsideDuringTrial => tr!(
+                "se está probando esta habilidad: la ejecución sin ella la vería; espera a que termine la prueba",
+                "this skill is being tried: the run without it would see it; wait until the trial ends"
             ),
             Self::SkillReviewTimedOut => tr!(
                 "la IA tardó demasiado en revisar la habilidad; vuelve a intentarlo",

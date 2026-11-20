@@ -50,6 +50,11 @@ pub struct TrialRef {
     /// [`fingerprint`] of the version tried.
     #[serde(default)]
     pub version: String,
+    /// The process that drives the trial (see
+    /// `ProcessRunner::this_process`): once it is gone (killed, crashed),
+    /// nobody will answer its runs, and they are cancelled.
+    #[serde(default)]
+    pub driver: Option<String>,
 }
 
 impl TrialRef {
@@ -640,6 +645,7 @@ mod tests {
             restored: 0,
             stopped: false,
             version: "v1".into(),
+            driver: None,
         }
     }
 
