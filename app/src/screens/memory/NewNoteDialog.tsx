@@ -10,14 +10,17 @@ import { categoryOptions, useMemoryAction } from "./notes";
 export function NewNoteDialog({
   project,
   canBeGlobal,
+  initialText = "",
   onClose,
 }: {
   project: string;
   canBeGlobal: boolean;
+  /** "Anotarlo" after a question the memory could not answer: the question, to answer. */
+  initialText?: string;
   onClose: () => void;
 }) {
   const t = useT();
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const [category, setCategory] = useState<NoteCategory>("decision");
   const [scope, setScope] = useState<"project" | "global">("project");
   const add = useMemoryAction(project, (api) =>

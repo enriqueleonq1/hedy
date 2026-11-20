@@ -326,7 +326,7 @@ describe("Inicio's board", () => {
     api.sync!.lastSync = Date.now() / 1000 - 26 * 60 * 60;
     const { user } = setup(api);
     const needs = await screen.findByRole("region", { name: NEEDS }, SLOW);
-    const row = within(needs).getByText("La sincronización falla desde hace un día").closest("li")!;
+    const row = within(needs).getByText("La sincronización no funciona").closest("li")!;
     expect(within(row).getByText("Sincronización")).toBeInTheDocument();
     // Its own words, not the conflicts' text nor the raw error.
     expect(within(row).getByText(/Tus otras computadoras no reciben los cambios/)).toBeInTheDocument();
@@ -336,7 +336,7 @@ describe("Inicio's board", () => {
     // The palette lists it among what needs you, with the same words.
     await user.keyboard("{Control>}k{/Control}");
     const palette = screen.getByRole("dialog", { name: "Paleta de comandos" });
-    expect(within(palette).getByRole("option", { name: /La sincronización falla desde hace un día/ })).toBeInTheDocument();
+    expect(within(palette).getByRole("option", { name: /La sincronización no funciona/ })).toBeInTheDocument();
     await user.keyboard("{Escape}");
 
     await user.click(within(row).getByRole("button", { name: "Ver qué pasó" }));
@@ -350,7 +350,7 @@ describe("Inicio's board", () => {
     api.sync!.lastSync = Date.now() / 1000 - 10 * 60;
     setup(api);
     const needs = await screen.findByRole("region", { name: /^Te necesitan/ }, SLOW);
-    expect(within(needs).queryByText(/La sincronización falla/)).not.toBeInTheDocument();
+    expect(within(needs).queryByText(/La sincronización no funciona/)).not.toBeInTheDocument();
   });
 
   it("approves and rejects proposed notes and skills from their rows", async () => {
@@ -380,8 +380,10 @@ describe("Inicio's board", () => {
     expect(within(like).queryByRole("button", { name: "Aprobar" })).not.toBeInTheDocument();
     expect(within(like).queryByRole("button", { name: "Rechazar" })).not.toBeInTheDocument();
     await user.click(within(like).getByRole("button", { name: "Ver y decidir" }));
-    expect(await screen.findByRole("heading", { name: "Memoria de hedy" })).toBeInTheDocument();
-    expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}`);
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}&pending`);
+    expect(screen.getByRole("tab", { name: /^Por aprobar/ })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("Los precios se guardan en USD")).toBeInTheDocument();
     expect(approve).not.toHaveBeenCalled();
   });
 
@@ -501,8 +503,9 @@ describe("Inicio's board", () => {
     const { user } = setup();
     const needs = await screen.findByRole("region", { name: NEEDS }, SLOW);
     await user.click(within(needs).getByRole("button", { name: /^agregar-endpoint/ }));
-    expect(await screen.findByRole("heading", { name: "Memoria de hedy" })).toBeInTheDocument();
-    expect(window.location.hash).toBe(`#k=${encodeURIComponent("/code/hedy")}`);
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}&pending`);
+    expect(screen.getByRole("tab", { name: /^Por aprobar/ })).toHaveAttribute("aria-selected", "true");
   });
 
   it("asks again for a plan it could not read, for that account only", async () => {

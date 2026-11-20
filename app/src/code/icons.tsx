@@ -30,13 +30,6 @@ export const FilesIcon = () => (
   </Icon>
 );
 
-export const SearchIcon = () => (
-  <Icon>
-    <circle cx="7" cy="7" r="4.25" />
-    <path d="m10.2 10.2 3.3 3.3" />
-  </Icon>
-);
-
 /** Two files compared: the review. */
 export const ReviewIcon = () => (
   <Icon>

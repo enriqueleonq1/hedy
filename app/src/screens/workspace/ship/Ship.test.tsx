@@ -137,6 +137,55 @@ describe("Ship: commit, push and pull request", () => {
     expect(await screen.findByRole("button", { name: /PR #42 · borrador/ }, SLOW)).toBeInTheDocument();
   });
 
+  it("never publishes on Enter in the PR title, and accepts once on a double Ctrl+Enter", async () => {
+    const { api, user } = setup();
+    // Accepting waits until the test lets it go.
+    let finish = () => {};
+    const gate = new Promise<void>((resolve) => (finish = resolve));
+    const original = api.acceptTask.bind(api);
+    const accept = vi.spyOn(api, "acceptTask").mockImplementation(async (...args) => {
+      await gate;
+      return original(...args);
+    });
+    await openReviewTask(user);
+    const sheet = await openSheet(user);
+    await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
+    const title = within(sheet).getByLabelText("Título");
+    await user.type(title, "fix(facturas): IVA{Enter}");
+    expect(title).toHaveValue("fix(facturas): IVA");
+    expect(accept).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Aceptar cambios" })).toBeInTheDocument();
+
+    // Ctrl+Enter accepts; a second one while it runs is ignored.
+    const message = within(sheet).getByLabelText("Mensaje del commit");
+    message.focus();
+    await user.keyboard("{Control>}{Enter}{Enter}{/Control}");
+    await waitFor(() => expect(accept).toHaveBeenCalledTimes(1));
+    expect(accept).toHaveBeenCalledWith("s5", expect.any(String), "branch");
+    fireEvent.keyDown(message, { key: "Enter", ctrlKey: true });
+    expect(accept).toHaveBeenCalledTimes(1);
+    finish();
+    expect(await screen.findByText(`PR abierto desde ${BRANCH}.`, undefined, SLOW)).toBeInTheDocument();
+    expect(accept).toHaveBeenCalledTimes(1);
+  });
+
+  it("remembers how the user accepts in each project", async () => {
+    const { user } = setup();
+    await openReviewTask(user);
+    let sheet = await openSheet(user);
+    expect(within(sheet).getByRole("radio", { name: "Unir a main ahora" })).toBeChecked();
+    await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
+    expect(localStorage.getItem("hedy.acceptMode./code/hedy")).toBe("branch");
+    await user.click(within(sheet).getByRole("button", { name: "Cancelar" }));
+    expect(screen.queryByRole("dialog", { name: "Aceptar cambios" })).toBeNull();
+
+    sheet = await openSheet(user);
+    expect(within(sheet).getByRole("radio", { name: "Guardar en su rama" })).toBeChecked();
+    expect(within(sheet).getByRole("button", { name: "Guardar y abrir PR" })).toBeInTheDocument();
+    await user.click(within(sheet).getByRole("radio", { name: "Unir a main ahora" }));
+    expect(localStorage.getItem("hedy.acceptMode./code/hedy")).toBe("merge");
+  });
+
   it("leaves the branch committed when the push fails, and opens no PR", async () => {
     const { api, user } = setup();
     const create = vi.spyOn(api, "createPullRequest");

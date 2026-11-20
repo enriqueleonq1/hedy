@@ -21,8 +21,9 @@ function readable(task: Task): boolean {
 }
 
 export function resolveCopy(view: View, tasks: Task[] | undefined): ActiveCopy | null {
-  if (view.screen === "memory" || view.screen === "status") {
-    return { copy: { kind: "folder", project: view.project }, project: view.project, onScreen: false };
+  if ((view.screen === "memory" || view.screen === "status") && view.project) {
+    const { project } = view;
+    return { copy: { kind: "folder", project }, project, onScreen: false };
   }
   if (view.screen !== "workspace") return null;
   const { project } = view;

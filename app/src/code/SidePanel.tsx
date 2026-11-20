@@ -184,7 +184,8 @@ export function SidePanel({ project, task, hidden = false, onRequestOpen, review
   if ((isCode && !opened.code) || (tab === "terminal" && !opened.terminal)) {
     setOpened({ code: opened.code || isCode, terminal: opened.terminal || tab === "terminal" });
   }
-  const dir = task?.workspace?.worktree ?? project;
+  // A closed task's copy is gone: its terminal opens in the project.
+  const dir = (editable ? task?.workspace?.worktree : undefined) ?? project;
 
   const [focus, setFocus] = useState<{ view: PanelShortcut | null; seq: number; prefill?: string }>({ view: null, seq: 0 });
   const [reveal, setReveal] = useState<{ path: string; folder: boolean; seq: number } | null>(null);

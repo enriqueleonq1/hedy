@@ -7,7 +7,7 @@ import { Button } from "../components/ui/Button";
 import { Dialog } from "../components/ui/Dialog";
 import { useToast } from "../components/ui/Toast";
 import { useT } from "../i18n";
-import { MEMORY_GRAPH_KEY } from "../screens/ask/AskScreen";
+import { MEMORY_GRAPH_KEY } from "../screens/ask/AskPanel";
 import { refreshTeams } from "../team/hooks";
 
 type Choice = "change" | "remove" | "exception";

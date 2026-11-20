@@ -16,10 +16,12 @@ async function setup(api = MockApi.withSampleData()) {
   await user.click(await screen.findByRole("button", { name: /^hedy/ }));
   const sections = await screen.findByRole("navigation", { name: "Secciones del proyecto" });
   await user.click(within(sections).getByRole("button", { name: "Memoria" }));
-  await screen.findByRole("heading", { name: "Memoria de hedy" });
+  await screen.findByRole("heading", { level: 1, name: "Memoria" });
   await user.click(screen.getByRole("tab", { name: /^Habilidades/ }));
   return { api, user };
 }
+
+const pendingBadge = () => screen.getByRole("tab", { name: /^Por aprobar/ }).querySelector(".memory__badge");
 
 describe("Skills", () => {
   afterEach(() => history.replaceState(null, "", "#"));
@@ -39,8 +41,8 @@ describe("Skills", () => {
 
   it("shows proposals, an update as a diff, and approved skills by scope", async () => {
     await setup();
-    expect(screen.getByRole("tab", { name: /Habilidades.*2 por aprobar/ })).toHaveAttribute("aria-selected", "true");
-    expect(window.location.hash).toBe(`#k=${encodeURIComponent("/code/hedy")}`);
+    expect(screen.getByRole("tab", { name: /^Habilidades/ })).toHaveAttribute("aria-selected", "true");
+    expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}&skills`);
     const proposed = await screen.findByRole("region", { name: "Propuestas por tus IAs · para aprobar" });
     const endpoint = within(proposed).getByRole("listitem", { name: "agregar-endpoint" });
     expect(within(endpoint).getByText("Cómo agregar un endpoint nuevo a la API de citas.")).toBeInTheDocument();
@@ -65,7 +67,8 @@ describe("Skills", () => {
     // An update replaces the approved skill.
     await user.click(within(proposed).getByRole("button", { name: "Aprobar cambio" }));
     expect(await screen.findByText("Habilidad «correr-tests» lista: tus IAs la usan dentro de Hedy.")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("tab", { name: /1 por aprobar/ })).toBeInTheDocument());
+    // Three notes and one skill still wait.
+    await waitFor(() => expect(pendingBadge()).toHaveTextContent("4"));
     const own = screen.getByRole("region", { name: "De este proyecto" });
     expect(within(own).getAllByRole("listitem", { name: "correr-tests" })).toHaveLength(1);
 
@@ -107,6 +110,22 @@ describe("Skills", () => {
     expect(await screen.findByText("Habilidad «lint» lista: tus IAs la usan dentro de Hedy.")).toBeInTheDocument();
     const view = await api.skills("/code/hedy");
     expect(view.approved.find((s) => s.name === "lint")?.project).toBeNull();
+  });
+
+  it("approves a proposed skill from Por aprobar, beside the notes", async () => {
+    const api = MockApi.withSampleData();
+    api.delayMs = 0;
+    history.replaceState(null, "", `#m=${encodeURIComponent("/code/hedy")}&pending`);
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    const endpoint = await screen.findByRole("listitem", { name: "agregar-endpoint" });
+    expect(screen.getByText("Los formularios validan con zod")).toBeInTheDocument();
+    expect(pendingBadge()).toHaveTextContent("5");
+    await user.click(within(endpoint).getByRole("button", { name: "Aprobar" }));
+    expect(await screen.findByText("Habilidad «agregar-endpoint» lista: tus IAs la usan dentro de Hedy.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("listitem", { name: "agregar-endpoint" })).not.toBeInTheDocument());
+    expect(pendingBadge()).toHaveTextContent("4");
+    expect((await api.skills("/code/hedy")).approved.some((s) => s.name === "agregar-endpoint")).toBe(true);
   });
 
   it("shows the mascot when there are no skills, and protected projects stay apart", async () => {

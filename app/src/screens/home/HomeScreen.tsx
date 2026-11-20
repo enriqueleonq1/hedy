@@ -166,8 +166,8 @@ export function HomeScreen({
           ? ready.map((i) => i.task.id)
           : [];
   const selected = useBoardKeys(root, keys);
-  const openMemory = (path: string, tab: "notes" | "skills") =>
-    onNavigate({ screen: "memory", project: path, tab });
+  // A proposal is decided in Memoria's "Por aprobar", with all its context.
+  const openMemory = (path: string) => onNavigate({ screen: "memory", project: path, tab: "pending" });
   const row = (item: ActivityItem) => (
     <BoardRow
       key={item.task.id}
@@ -492,7 +492,7 @@ function InboxRow({
   overview: Overview;
   now: number;
   onOpenTask: (project: string, taskId: string) => void;
-  onOpenMemory: (project: string, tab: "notes" | "skills") => void;
+  onOpenMemory: (project: string) => void;
   onNavigate: (view: View) => void;
 }) {
   const t = useT();

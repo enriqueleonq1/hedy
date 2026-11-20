@@ -38,7 +38,7 @@ const es = {
   "workspace.status": "Estado",
   "workspace.stop": "Detener",
   "workspace.more": "Más acciones",
-  "workspace.panelToggle": "Panel lateral: código, revisión, terminal y vista previa",
+  "workspace.panelToggle": "Panel lateral: cambios, archivos, terminal y vista previa",
   "workspace.panelHasChanges": "hay cambios por revisar",
   "workspace.empty": "¿Qué hacemos en {name}? Trabajaré con {account} en una rama aparte; nada toca tu carpeta hasta que aceptes.",
   "workspace.noAccount": "Este proyecto no tiene cuenta. Asígnale una en Cuentas y modelos.",
@@ -137,7 +137,7 @@ const es = {
   "workspace.limit.noOther":
     "No hay otro proveedor disponible aquí (o el proyecto está protegido). Puedes agregar Codex o una API key en Cuentas y modelos.",
 
-  "workspace.panel": "Código, revisión, terminal y vista previa",
+  "workspace.panel": "Cambios, archivos, terminal y vista previa",
   "workspace.tab.preview": "Vista previa",
   "workspace.preview.start": "Arrancar «{command}»",
   "workspace.preview.address": "Dirección del servidor local",
@@ -208,7 +208,7 @@ const en: Record<keyof typeof es, string> = {
   "workspace.status": "Status",
   "workspace.stop": "Stop",
   "workspace.more": "More actions",
-  "workspace.panelToggle": "Side panel: code, review, terminal and preview",
+  "workspace.panelToggle": "Side panel: changes, files, terminal and preview",
   "workspace.panelHasChanges": "there are changes to review",
   "workspace.empty":
     "What should we do in {name}? I'll work with {account} on a separate branch; nothing touches your folder until you accept.",
@@ -307,7 +307,7 @@ const en: Record<keyof typeof es, string> = {
   "workspace.limit.noOther":
     "No other provider is available here (or the project is protected). You can add Codex or an API key in Accounts and models.",
 
-  "workspace.panel": "Code, review, terminal and preview",
+  "workspace.panel": "Changes, files, terminal and preview",
   "workspace.tab.preview": "Preview",
   "workspace.preview.start": "Start “{command}”",
   "workspace.preview.address": "Local server address",

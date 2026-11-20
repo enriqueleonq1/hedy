@@ -8,6 +8,7 @@ import { useTerminals } from "../../components/Terminal/TerminalProvider";
 import { Button } from "../../components/ui/Button";
 import { useT } from "../../i18n";
 import { Changes } from "../../review/Review";
+import { isOpen } from "../../tasks/timeline";
 
 /**
  * The side panel of a project's workspace: the code views, the review of the
@@ -32,7 +33,8 @@ export function ChangesPanel({
       hidden={hidden}
       onRequestOpen={onRequestOpen}
       review={<Changes project={project} task={task} />}
-      preview={<Preview project={project} dir={task?.workspace?.worktree ?? project} />}
+      // A closed task's copy is gone: its project's folder then.
+      preview={<Preview project={project} dir={(isOpen(task) ? task?.workspace?.worktree : undefined) ?? project} />}
     />
   );
 }
@@ -41,12 +43,14 @@ const LOCAL_URL = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/.*)?$/;
 
 /** Its `dev` (else `start`) script, run with the package manager its lock file names (npm without one). */
 function devCommand(files: string[], manifest: string): string | null {
-  let scripts: Record<string, unknown>;
+  let scripts: unknown;
   try {
-    scripts = (JSON.parse(manifest) as { scripts?: Record<string, unknown> }).scripts ?? {};
+    scripts = (JSON.parse(manifest) as { scripts?: unknown } | null)?.scripts;
   } catch {
     return null;
   }
+  // Any JSON parses: only an object of scripts counts.
+  if (!scripts || typeof scripts !== "object" || Array.isArray(scripts)) return null;
   const script = "dev" in scripts ? "dev" : "start" in scripts ? "start" : null;
   if (!script) return null;
   const has = (name: string) => files.includes(name);

@@ -16,18 +16,38 @@ function renderAt(hash: string, api = MockApi.withSampleData()) {
   return { api, user: userEvent.setup() };
 }
 
+const HEDY = `#m=${encodeURIComponent("/code/hedy")}`;
+
+/** Memoria's bar: types the question and asks it with Enter or "Preguntar". */
+async function ask(user: ReturnType<typeof userEvent.setup>, question: string, how: "enter" | "button" = "button") {
+  const bar = await screen.findByRole("searchbox", { name: "Pregunta o busca en tu memoria" });
+  await user.clear(bar);
+  await user.type(bar, question);
+  if (how === "enter") await user.keyboard("{Enter}");
+  else await user.click(screen.getByRole("button", { name: "Preguntar" }));
+  return screen.findByRole("region", { name: "Pregunta a tu memoria" });
+}
+
+/** A source's number in the list (the answer's chips share its name). */
+const sourceButton = (panel: HTMLElement, n: number) =>
+  within(panel)
+    .getAllByRole("button", { name: `Nota ${n}` })
+    .find((b) => b.hasAttribute("aria-expanded")) as HTMLElement;
+
 describe("Asking the memory", () => {
   afterEach(() => history.replaceState(null, "", "#"));
 
   it("answers with cited sources, from the sidebar, and says when nothing is written", async () => {
-    const { user } = renderAt("#activity");
-    await user.click(await screen.findByRole("button", { name: "Tu memoria" }));
-    expect(window.location.hash).toBe("#ask");
-    const panel = screen.getByRole("region", { name: "Pregunta a tu memoria" });
-    expect(within(panel).getByText(/Pregunta lo que saben tus notas/)).toBeInTheDocument();
+    const api = MockApi.withSampleData();
+    const asked = vi.spyOn(api, "askMemory");
+    const { user } = renderAt("#activity", api);
+    await user.click(await screen.findByRole("button", { name: "Memoria" }));
+    expect(window.location.hash).toBe("#memory");
+    expect(screen.getByRole("combobox", { name: "Para" })).toHaveDisplayValue("Todo");
+    expect(screen.queryByRole("region", { name: "Pregunta a tu memoria" })).toBeNull();
 
-    await user.type(within(panel).getByLabelText("Pregunta"), "¿En qué moneda se guardan los precios?");
-    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+    const panel = await ask(user, "¿En qué moneda se guardan los precios?", "enter");
+    expect(asked).toHaveBeenLastCalledWith("¿En qué moneda se guardan los precios?", { kind: "mine" });
     const cite = await within(panel).findAllByRole("button", { name: "Nota 1" });
     expect(cite.length).toBeGreaterThan(0);
     expect(within(panel).getByRole("heading", { name: "Fuentes" })).toBeInTheDocument();
@@ -36,33 +56,69 @@ describe("Asking the memory", () => {
     expect(within(source).getByText(/Tuya · proyecto hedy/)).toBeInTheDocument();
     expect(within(panel).getByText(/leyó \d+ notas de tu memoria/)).toBeInTheDocument();
 
-    await user.clear(within(panel).getByLabelText("Pregunta"));
-    await user.type(within(panel).getByLabelText("Pregunta"), "¿Qué tipografía usan los correos?");
-    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+    await ask(user, "¿Qué tipografía usan los correos?");
     expect(await within(panel).findByText("Nada escrito en tu memoria responde eso.")).toBeInTheDocument();
+    // Asked about everything: no project to look in or to write it down in.
+    expect(within(panel).queryByRole("button", { name: "Anotarlo" })).toBeNull();
+    expect(within(panel).queryByRole("button", { name: "Buscar en el código" })).toBeNull();
+
+    await user.click(within(panel).getByRole("button", { name: "Cerrar" }));
+    expect(screen.queryByRole("region", { name: "Pregunta a tu memoria" })).toBeNull();
   });
 
-  it("asks a team's notes, with their author, and opens a project's memory to write one down", async () => {
-    const { user } = renderAt("#ask");
-    const panel = await screen.findByRole("region", { name: "Pregunta a tu memoria" });
-    const scope = within(panel).getByLabelText("Ámbito");
-    await waitFor(() => expect(within(scope).getByRole("option", { name: "Equipo · Plataforma" })).toBeInTheDocument());
-    await user.selectOptions(scope, "Equipo · Plataforma");
-    await user.type(within(panel).getByLabelText("Pregunta"), "¿Cómo son los commits?");
-    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+  it("opens a source in place, with the way to its project and to remove it", async () => {
+    const api = MockApi.withSampleData();
+    const forget = vi.spyOn(api, "forgetNote");
+    const { user } = renderAt("#memory", api);
+    const panel = await ask(user, "¿En qué moneda se guardan los precios?");
+    await within(panel).findByRole("heading", { name: "Fuentes" });
+    const first = sourceButton(panel, 1);
+    expect(first).toHaveAttribute("aria-expanded", "false");
+    expect(within(panel).queryByRole("button", { name: "Abrir en su proyecto" })).toBeNull();
+    await user.click(first);
+    expect(first).toHaveAttribute("aria-expanded", "true");
+    expect(within(panel).getByRole("button", { name: "Abrir en su proyecto" })).toBeInTheDocument();
+
+    // "Quitar" asks first, then forgets that note.
+    await user.click(within(panel).getByRole("button", { name: "Quitar" }));
+    await user.click(within(panel).getByRole("button", { name: "¿Quitarla?" }));
+    await waitFor(() => expect(forget).toHaveBeenCalledTimes(1));
+
+    // A second click folds it again; a chip in the answer opens it too.
+    await user.click(first);
+    expect(first).toHaveAttribute("aria-expanded", "false");
+    const chip = within(panel.querySelector(".ask-answer__text") as HTMLElement).getAllByRole("button", { name: "Nota 1" })[0]!;
+    await user.click(chip);
+    expect(first).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(within(panel).getByRole("button", { name: "Abrir en su proyecto" }));
+    expect(window.location.hash).toBe(HEDY);
+    expect(await screen.findByRole("combobox", { name: "Para" })).toHaveDisplayValue("hedy");
+    expect(screen.getByRole("tab", { name: /^Notas/ })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("region", { name: "Decisiones" })).toBeInTheDocument();
+  });
+
+  it("asks a team's notes, with their author", async () => {
+    const api = MockApi.withSampleData();
+    const asked = vi.spyOn(api, "askMemory");
+    const { user } = renderAt("#memory", api);
+    const para = await screen.findByRole("combobox", { name: "Para" });
+    await waitFor(() => expect(within(para).getByRole("option", { name: "Equipo · Plataforma" })).toBeInTheDocument());
+    await user.selectOptions(para, "Equipo · Plataforma");
+    const panel = await ask(user, "¿Cómo son los commits?");
+    expect(asked).toHaveBeenLastCalledWith("¿Cómo son los commits?", { kind: "team", team: "team-1" });
     const sources = await within(panel).findByRole("list");
     expect(within(sources).getByText(/Conventional Commits/)).toBeInTheDocument();
     expect(within(sources).getByText(/Equipo Plataforma · capa del equipo · \w+/)).toBeInTheDocument();
   });
 
-  it("starts from a project's memory, looks in the code for what is not written, or opens the memory", async () => {
-    const { api, user } = renderAt("#m=%2Fcode%2Fhedy");
-    await user.click(await screen.findByRole("button", { name: "Preguntar" }));
-    expect(window.location.hash).toBe("#ask=%2Fcode%2Fhedy");
-    const panel = screen.getByRole("region", { name: "Pregunta a tu memoria" });
-    expect(within(panel).getByLabelText("Ámbito")).toHaveDisplayValue(/^Proyecto · hedy$/);
-    await user.type(within(panel).getByLabelText("Pregunta"), "¿Qué tipografía usan los correos?");
-    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+  it("asks a project's memory, looks in the code for what is not written, or writes it down", async () => {
+    const api = MockApi.withSampleData();
+    const asked = vi.spyOn(api, "askMemory");
+    const { user } = renderAt(HEDY, api);
+    await screen.findByRole("region", { name: "Decisiones" });
+    const panel = await ask(user, "¿Qué tipografía usan los correos?");
+    expect(asked).toHaveBeenLastCalledWith("¿Qué tipografía usan los correos?", { kind: "project", project: "/code/hedy" });
     // Not written: the project's code answers, and its note waits for approval.
     await user.click(await within(panel).findByRole("button", { name: "Buscar en el código" }));
     expect(await within(panel).findByText(/Inter a 15 px, definida en/)).toBeInTheDocument();
@@ -72,11 +128,15 @@ describe("Asking the memory", () => {
     expect(await within(panel).findByRole("status")).toHaveTextContent("Guardada");
     expect((await api.memory("/code/hedy")).notes.some((n) => n.text.includes("Inter"))).toBe(true);
 
-    await user.clear(within(panel).getByLabelText("Pregunta"));
-    await user.type(within(panel).getByLabelText("Pregunta"), "¿Qué tipografía usan los boletines?");
-    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+    await ask(user, "¿Qué tipografía usan los boletines?");
     await user.click(await within(panel).findByRole("button", { name: "Anotarlo" }));
-    expect(window.location.hash).toBe("#m=%2Fcode%2Fhedy");
+    const dialog = screen.getByRole("dialog", { name: "Nueva nota" });
+    expect(within(dialog).getByLabelText("Nota")).toHaveValue("¿Qué tipografía usan los boletines?");
+    await user.clear(within(dialog).getByLabelText("Nota"));
+    await user.type(within(dialog).getByLabelText("Nota"), "Los boletines usan Georgia.");
+    await user.click(within(dialog).getByRole("button", { name: "Guardar nota" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Nueva nota" })).toBeNull());
+    expect((await api.memory("/code/hedy")).notes.some((n) => n.text === "Los boletines usan Georgia." && n.project === "/code/hedy")).toBe(true);
   });
 
   it("makes chips only of the core's citations", async () => {
@@ -87,36 +147,37 @@ describe("Asking the memory", () => {
       text: "Desde [2024] usamos `items[2]` y args[0] [1].",
       cited: [1],
     });
-    const { user } = renderAt("#ask", api);
-    const panel = await screen.findByRole("region", { name: "Pregunta a tu memoria" });
-    await user.type(within(panel).getByLabelText("Pregunta"), "¿precios?");
-    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+    const { user } = renderAt("#memory", api);
+    const panel = await ask(user, "¿precios?");
     await within(panel).findByRole("heading", { name: "Fuentes" });
     const text = panel.querySelector(".ask-answer__text") as HTMLElement;
     expect(within(text).getAllByRole("button").map((b) => b.textContent)).toEqual(["1"]);
     expect(text).toHaveTextContent("Desde [2024] usamos `items[2]` y args[0]");
   });
 
-  it("keeps the asked project for writing it down, whatever the select says now", async () => {
-    const { user } = renderAt("#ask=%2Fcode%2Fhedy");
-    const panel = await screen.findByRole("region", { name: "Pregunta a tu memoria" });
-    await user.type(within(panel).getByLabelText("Pregunta"), "¿Qué tipografía usan los boletines?");
-    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+  it("keeps the asked project for writing it down, whatever Para says now", async () => {
+    const api = MockApi.withSampleData();
+    const { user } = renderAt(HEDY, api);
+    const panel = await ask(user, "¿Qué tipografía usan los boletines?");
     await within(panel).findByText("Nada escrito en tu memoria responde eso.");
-    await user.selectOptions(within(panel).getByLabelText("Ámbito"), "Todo lo mío");
+    const para = screen.getByRole("combobox", { name: "Para" });
+    await waitFor(() => expect(within(para).getByRole("option", { name: "Equipo · Plataforma" })).toBeInTheDocument());
+    await user.selectOptions(para, "Equipo · Plataforma");
     await user.click(within(panel).getByRole("button", { name: "Anotarlo" }));
-    expect(window.location.hash).toBe("#m=%2Fcode%2Fhedy");
+    const dialog = screen.getByRole("dialog", { name: "Nueva nota" });
+    await user.click(within(dialog).getByRole("button", { name: "Guardar nota" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Nueva nota" })).toBeNull());
+    expect((await api.memory("/code/hedy")).notes.some((n) => n.text === "¿Qué tipografía usan los boletines?" && n.project === "/code/hedy")).toBe(true);
   });
 
-  it("asks all of mine for a project that is not on the list, as the select shows", async () => {
+  it("never asks about a project that is not on the list: its old address lands in Inicio", async () => {
     const api = MockApi.withSampleData();
     const asked = vi.spyOn(api, "askMemory");
-    const { user } = renderAt("#ask=%2Fno%2Fexiste", api);
-    const panel = await screen.findByRole("region", { name: "Pregunta a tu memoria" });
-    expect(within(panel).getByLabelText("Ámbito")).toHaveDisplayValue("Todo lo mío");
-    await user.type(within(panel).getByLabelText("Pregunta"), "¿Precios?");
-    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
-    await waitFor(() => expect(asked).toHaveBeenCalledWith("¿Precios?", { kind: "mine" }));
+    renderAt("#ask=%2Fno%2Fexiste", api);
+    await screen.findByRole("button", { name: /^hedy/ });
+    expect(screen.queryByRole("heading", { level: 1, name: "Memoria" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Para" })).toBeNull();
+    expect(asked).not.toHaveBeenCalled();
   });
 
   it("drops a code lookup that comes back after a newer question was asked", async () => {
@@ -127,14 +188,10 @@ describe("Asking the memory", () => {
       await new Promise<void>((resolve) => (release = resolve));
       return real(q, p);
     };
-    const { user } = renderAt("#ask=%2Fcode%2Fhedy", api);
-    const panel = await screen.findByRole("region", { name: "Pregunta a tu memoria" });
-    await user.type(within(panel).getByLabelText("Pregunta"), "¿Qué tipografía usan los correos?");
-    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+    const { user } = renderAt(HEDY, api);
+    const panel = await ask(user, "¿Qué tipografía usan los correos?");
     await user.click(await within(panel).findByRole("button", { name: "Buscar en el código" }));
-    await user.clear(within(panel).getByLabelText("Pregunta"));
-    await user.type(within(panel).getByLabelText("Pregunta"), "¿En qué moneda se guardan los precios?");
-    await user.click(within(panel).getByRole("button", { name: "Preguntar" }));
+    await ask(user, "¿En qué moneda se guardan los precios?");
     await within(panel).findByRole("heading", { name: "Fuentes" });
     release?.();
     await new Promise((r) => setTimeout(r, 50));
@@ -142,9 +199,32 @@ describe("Asking the memory", () => {
   });
 
   it("refuses an empty question", async () => {
-    renderAt("#ask");
-    const panel = await screen.findByRole("region", { name: "Pregunta a tu memoria" });
-    expect(within(panel).getByRole("button", { name: "Preguntar" })).toBeDisabled();
+    const { user } = renderAt("#memory");
+    const button = await screen.findByRole("button", { name: "Preguntar" });
+    expect(button).toBeDisabled();
+    await user.type(screen.getByRole("searchbox", { name: "Pregunta o busca en tu memoria" }), "   ");
+    expect(button).toBeDisabled();
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("region", { name: "Pregunta a tu memoria" })).toBeNull();
+  });
+
+  it("keeps the map under the answer, in the Mapa tab", async () => {
+    const { user } = renderAt("#memory=map");
+    expect(await screen.findByRole("tab", { name: /^Mapa/ })).toHaveAttribute("aria-selected", "true");
+    const map = await within(screen.getByRole("tabpanel")).findByRole("img", { name: /notas/ });
+    const panel = await ask(user, "¿En qué moneda se guardan los precios?");
+    await within(panel).findByRole("heading", { name: "Fuentes" });
+    // Asking does not leave the map (its cited notes light up on the canvas).
+    expect(map.isConnected).toBe(true);
+    expect(screen.getByRole("tab", { name: /^Mapa/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("does not offer a global note when writing down a protected project's answer", async () => {
+    const { user } = renderAt(`#m=${encodeURIComponent("/code/tienda")}`);
+    const panel = await ask(user, "¿Qué tipografía usan los boletines?");
+    await user.click(await within(panel).findByRole("button", { name: "Anotarlo" }));
+    const dialog = screen.getByRole("dialog", { name: "Nueva nota" });
+    expect(within(dialog).queryByRole("radio", { name: "Todos los proyectos" })).toBeNull();
   });
 });
 

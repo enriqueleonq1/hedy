@@ -1,6 +1,6 @@
 import type { AgentEvent, Task } from "../../api/types";
 import { useAction } from "../../api/context";
-import { Button } from "../../components/ui/Button";
+import { Button, ConfirmButton } from "../../components/ui/Button";
 import { useT } from "../../i18n";
 import { ACTIVITY_KEY, listKeyFor, useSetQueue, useTaskDiff } from "../../tasks/hooks";
 import { stoppedByLimit } from "../../tasks/state";
@@ -58,9 +58,9 @@ export function EndCard({ task, events, onReview }: { task: Task; events: AgentE
         <h3>{t("end.noChangesTitle")}</h3>
         <p className="muted">{t("end.noChangesHint")}</p>
         <div className="actions">
-          <Button disabled={discard.isPending} onClick={() => discard.mutate(undefined)}>
+          <ConfirmButton small confirmLabel={t("workspace.changes.discardConfirm")} onConfirm={() => discard.mutate(undefined)}>
             {t("end.discard")}
-          </Button>
+          </ConfirmButton>
         </div>
       </section>
     );

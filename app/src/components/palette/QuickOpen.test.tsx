@@ -248,7 +248,7 @@ describe("Palette modes", () => {
       "Ir a una línea…",
       "Ir a un símbolo del archivo…",
       "Abrir la búsqueda en archivos",
-      "Abrir la revisión",
+      "Abrir los cambios",
       "Ver el archivo antes de la IA",
       "Abrir el archivo en VS Code",
       "Copiar la ruta del archivo",

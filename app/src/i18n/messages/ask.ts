@@ -1,7 +1,8 @@
 // Asking the memory and its graph (docs/decisions.md §36).
 
 const es = {
-  "ask.nav": "Tu memoria",
+  "ask.nav": "Memoria",
+  "ask.openProject": "Abrir en su proyecto",
   "ask.eyebrow": "Memoria",
   "ask.title": "Pregunta a tu memoria",
   "ask.subtitle": "Responde solo con lo que está escrito en tus notas y en las de tus equipos, y cita cada una.",
@@ -60,7 +61,8 @@ const es = {
 };
 
 const en: Record<keyof typeof es, string> = {
-  "ask.nav": "Your memory",
+  "ask.nav": "Memory",
+  "ask.openProject": "Open in its project",
   "ask.eyebrow": "Memory",
   "ask.title": "Ask your memory",
   "ask.subtitle": "It answers only from what is written in your notes and your teams', and cites each one.",

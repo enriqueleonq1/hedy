@@ -166,6 +166,26 @@ describe("Review before accepting", () => {
     expect(second).not.toHaveAttribute("aria-current", "true");
   });
 
+  it("leaves v alone on a file's checkbox, and takes V too elsewhere", async () => {
+    const { user } = setup();
+    const files = await openReviewTask(user, /^Inicio/);
+    const first = within(files).getByRole("button", { name: /^facturas\/impuestos\.py/ });
+    expect(first).toHaveAttribute("aria-current", "true");
+    // On another file's checkbox, v does not mark the file on screen.
+    within(files).getByRole("checkbox", { name: "Marcar facturas/totales.py como visto" }).focus();
+    await user.keyboard("v");
+    expect(screen.getByText("0 de 3 vistos")).toBeInTheDocument();
+    expect(first).toHaveAttribute("aria-current", "true");
+    expect(within(files).getByRole("checkbox", { name: "Marcar facturas/impuestos.py como visto" })).not.toBeChecked();
+
+    // Elsewhere, with Shift (or Caps Lock), it does.
+    first.focus();
+    await user.keyboard("V");
+    expect(screen.getByText("1 de 3 vistos")).toBeInTheDocument();
+    expect(within(files).getByRole("checkbox", { name: "Marcar facturas/impuestos.py como visto" })).toBeChecked();
+    expect(within(files).getByRole("button", { name: /^facturas\/totales\.py/ })).toHaveAttribute("aria-current", "true");
+  });
+
   it("asks the AI to fix the failing tests from the accept sheet", async () => {
     const { api, user } = setup();
     const queue = vi.spyOn(api, "queueMessage");

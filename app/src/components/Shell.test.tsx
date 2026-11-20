@@ -38,12 +38,14 @@ describe("Shell", () => {
     expect(home).toHaveAttribute("aria-current", "page");
     expect(within(home).getByText("7")).toHaveClass("nav-badge");
 
-    await user.click(within(nav).getByRole("button", { name: "Tu memoria" }));
-    expect(window.location.hash).toBe("#ask");
-    expect(within(nav).getByRole("button", { name: "Tu memoria" })).toHaveAttribute("aria-current", "page");
+    // One entry for the memory: outside a project, everything.
+    expect(within(nav).queryByRole("button", { name: "Habilidades" })).not.toBeInTheDocument();
+    expect(within(nav).queryByRole("button", { name: "Tu memoria" })).not.toBeInTheDocument();
+    await user.click(within(nav).getByRole("button", { name: "Memoria" }));
+    expect(window.location.hash).toBe("#memory");
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: "Memoria" })).toHaveAttribute("aria-current", "page");
     expect(home).not.toHaveAttribute("aria-current");
-    await user.click(within(nav).getByRole("button", { name: "Habilidades" }));
-    expect(window.location.hash).toBe("#skills");
     // The brand goes home too.
     await user.click(within(sidebar()).getByRole("button", { name: "Hedy" }));
     expect(await screen.findByRole("heading", { name: /¡Hola, Alex!/ })).toBeInTheDocument();

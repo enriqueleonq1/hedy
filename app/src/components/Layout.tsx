@@ -10,7 +10,7 @@ import { useInbox } from "../tasks/inbox";
 import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 import { useFocusMode } from "./focusMode";
 import { SidebarRailProvider, useSidebarRail } from "./sidebarRail";
-import { CollapseIcon, HomeIcon, LockIcon, MemoryIcon, PlusIcon, QuestionIcon, SearchIcon, SettingsIcon, SkillIcon, TerminalIcon } from "./ui/icons";
+import { CollapseIcon, HomeIcon, LockIcon, MemoryIcon, PlusIcon, QuestionIcon, SearchIcon, SettingsIcon, TerminalIcon } from "./ui/icons";
 import { MenuButton } from "./ui/Menu";
 import { Mascot } from "./Mascot/Mascot";
 import { modKey, paletteKeys } from "./palette/keys";
@@ -20,6 +20,9 @@ import { projectColor } from "./projects";
 import { useTerminals } from "./Terminal/TerminalProvider";
 import { Button } from "./ui/Button";
 
+/** Memoria's sections. */
+export type MemoryTab = "notes" | "skills" | "pending" | "map";
+
 export type View =
   | { screen: "welcome" }
   /** `account`: scroll to that account's card and highlight it. */
@@ -27,17 +30,13 @@ export type View =
   /** `section`: scroll to the theme gallery ("Cambiar tema…"), the sync card or the teams card. */
   | { screen: "settings"; section?: "themes" | "sync" | "teams" }
   | { screen: "activity" }
-  /** Every skill in one place (`#skills`). */
-  | { screen: "skills" }
-  /** "Pregunta a tu memoria"; `project`: about that project's memory. */
-  | { screen: "ask"; project?: string }
   /**
    * `task`: open that task; `null` or unset: the project's home (a new task),
    * continuing conversation `carry` when given ("Llevar a un proyecto").
    */
   | { screen: "workspace"; project: string; task?: string | null; carry?: string }
-  /** `tab`: the skills tab instead of the notes. */
-  | { screen: "memory"; project: string; tab?: "notes" | "skills" }
+  /** Memoria; `project`: "Para" that project (unset: everything); `tab`: which section. */
+  | { screen: "memory"; project?: string; tab?: MemoryTab }
   | { screen: "status"; project: string }
   /**
    * A question outside any project: `task` opens that conversation, none a
@@ -57,7 +56,7 @@ const SIDEBAR_CONVERSATIONS = 5;
 
 /** The project a view belongs to (its workspace, memory or status). */
 export function viewProject(view: View): string | null {
-  return view.screen === "workspace" || view.screen === "memory" || view.screen === "status" ? view.project : null;
+  return view.screen === "workspace" || view.screen === "memory" || view.screen === "status" ? (view.project ?? null) : null;
 }
 
 export function defaultAccount(overview: Overview): Account | undefined {
@@ -223,22 +222,13 @@ export function Sidebar({
 
         <button
           className="sidebar__item sidebar__nav"
-          aria-current={view.screen === "ask" ? "page" : undefined}
+          aria-current={view.screen === "memory" ? "page" : undefined}
           {...named(t("ask.nav"))}
-          onClick={() => onNavigate({ screen: "ask" })}
+          // The memory of what is on screen: its project's, else everything.
+          onClick={() => onNavigate({ screen: "memory", project: active ?? undefined })}
         >
           <MemoryIcon />
           <span className="sidebar__name">{t("ask.nav")}</span>
-        </button>
-
-        <button
-          className="sidebar__item sidebar__nav"
-          aria-current={view.screen === "skills" ? "page" : undefined}
-          {...named(t("skillLib.nav"))}
-          onClick={() => onNavigate({ screen: "skills" })}
-        >
-          <SkillIcon />
-          <span className="sidebar__name">{t("skillLib.nav")}</span>
         </button>
       </nav>
 

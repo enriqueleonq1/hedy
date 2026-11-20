@@ -7,7 +7,7 @@ import { FocusModeProvider } from "./components/focusMode";
 import { UnsavedChangesProvider, useUnsavedChanges } from "./code/editor/unsaved";
 import { FileNavigatorProvider } from "./files/navigator";
 import { ReviewCommentsProvider } from "./review/comments";
-import { Shell, Sidebar, taskView, viewProject, type View } from "./components/Layout";
+import { Shell, Sidebar, taskView, viewProject, type MemoryTab, type View } from "./components/Layout";
 import { Mascot } from "./components/Mascot/Mascot";
 import { CommandPalette } from "./components/palette/CommandPalette";
 import { PlanUsageProvider } from "./components/planUsage";
@@ -19,10 +19,8 @@ import { Button } from "./components/ui/Button";
 import { ToastProvider } from "./components/ui/Toast";
 import { AccountsScreen } from "./screens/accounts/AccountsScreen";
 import { CreateProvider } from "./screens/create/CreateProvider";
-import { MemoryScreen } from "./screens/memory/MemoryScreen";
-import { SkillsScreen } from "./screens/skills/SkillsScreen";
+import { MemoryHub } from "./screens/memory/MemoryHub";
 import { BackgroundTrialsProvider } from "./screens/skills/backgroundTrials";
-import { AskScreen } from "./screens/ask/AskScreen";
 import { Onboarding } from "./screens/onboarding/Onboarding";
 import { Settings } from "./screens/Settings";
 import { ThemeStudio } from "./screens/themes/ThemeStudio";
@@ -74,9 +72,13 @@ function Localized({ children }: { children: ReactNode }) {
 
 /**
  * `#accounts`, `#a=<id>` (accounts, that card), `#settings`, `#sync` (its sync card), `#activity`, `#p=<path>` (workspace; `&t=<id>`
- * that task, `&new` a new one, `&new&from=<id>` a new one continuing that conversation), `#m=<path>` (memory), `#k=<path>` (memory, skills tab), `#s=<path>` (status),
- * `#skills` (every skill), `#c` (a new quick question), `#c=<id>` (that conversation), `#ask` (asking the memory; `#ask=<path>` about that project).
+ * that task, `&new` a new one, `&new&from=<id>` a new one continuing that conversation), `#memory` (Memoria, for everything;
+ * `#memory=<tab>` that section), `#m=<path>` (Memoria for that project; `&<tab>` that section), `#s=<path>` (status),
+ * `#c` (a new quick question), `#c=<id>` (that conversation). The old `#k=<path>`, `#skills`, `#ask` and `#ask=<path>` land in Memoria.
  */
+const MEMORY_TABS: MemoryTab[] = ["notes", "skills", "pending", "map"];
+const isMemoryTab = (tab: string | undefined): tab is MemoryTab => !!tab && (MEMORY_TABS as string[]).includes(tab);
+
 function viewFromHash(): View {
   const raw = window.location.hash.slice(1);
   if (raw.startsWith("p=")) {
@@ -90,18 +92,27 @@ function viewFromHash(): View {
     if (extra?.startsWith("t=")) return { screen: "workspace", project, task: decodeURIComponent(extra.slice(2)) };
     return { screen: "workspace", project };
   }
+  if (raw.startsWith("m=")) {
+    const [path = "", tab] = raw.slice(2).split("&");
+    return { screen: "memory", project: decodeURIComponent(path), ...(isMemoryTab(tab) ? { tab } : {}) };
+  }
   const hash = decodeURIComponent(raw);
   // Actividad lives in Inicio now: its old address still lands there.
   if (hash === "activity") return { screen: "welcome" };
-  if (hash === "accounts" || hash === "settings" || hash === "skills") return { screen: hash };
-  if (hash === "ask") return { screen: "ask" };
-  if (hash.startsWith("ask=")) return { screen: "ask", project: hash.slice(4) };
+  if (hash === "accounts" || hash === "settings") return { screen: hash };
+  // Memoria, and the addresses its parts had before.
+  if (hash === "memory" || hash === "ask") return { screen: "memory" };
+  if (hash.startsWith("memory=")) {
+    const tab = hash.slice(7);
+    return { screen: "memory", ...(isMemoryTab(tab) ? { tab } : {}) };
+  }
+  if (hash === "skills") return { screen: "memory", tab: "skills" };
+  if (hash.startsWith("ask=")) return { screen: "memory", project: hash.slice(4) };
   if (hash === "sync") return { screen: "settings", section: "sync" };
   if (hash === "teams") return { screen: "settings", section: "teams" };
   if (hash === "c") return { screen: "conversation" };
   if (hash.startsWith("c=")) return { screen: "conversation", task: hash.slice(2) };
   if (hash.startsWith("a=")) return { screen: "accounts", account: hash.slice(2) };
-  if (hash.startsWith("m=")) return { screen: "memory", project: hash.slice(2) };
   if (hash.startsWith("k=")) return { screen: "memory", project: hash.slice(2), tab: "skills" };
   if (hash.startsWith("s=")) return { screen: "status", project: hash.slice(2) };
   return { screen: "welcome" };
@@ -113,9 +124,12 @@ function hashFor(view: View): string {
     const task = view.task === null ? `&new${from}` : view.task ? `&t=${encodeURIComponent(view.task)}` : "";
     return `#p=${encodeURIComponent(view.project)}${task}`;
   }
-  if (view.screen === "memory") return `#${view.tab === "skills" ? "k" : "m"}=${encodeURIComponent(view.project)}`;
+  if (view.screen === "memory") {
+    const tab = view.tab && view.tab !== "notes" ? view.tab : null;
+    if (!view.project) return tab ? `#memory=${tab}` : "#memory";
+    return `#m=${encodeURIComponent(view.project)}${tab ? `&${tab}` : ""}`;
+  }
   if (view.screen === "status") return `#s=${encodeURIComponent(view.project)}`;
-  if (view.screen === "ask" && view.project) return `#ask=${encodeURIComponent(view.project)}`;
   if (view.screen === "accounts" && view.account) return `#a=${encodeURIComponent(view.account)}`;
   if (view.screen === "conversation") return view.task ? `#c=${encodeURIComponent(view.task)}` : "#c";
   if (view.screen === "settings" && view.section === "sync") return "#sync";
@@ -256,7 +270,6 @@ function Root() {
           )}
           {current.screen === "accounts" && <AccountsScreen overview={data} focus={current.account} />}
           {current.screen === "settings" && <Settings overview={data} focus={current} />}
-          {current.screen === "skills" && <SkillsScreen overview={data} />}
           {current.screen === "workspace" && (
             <Workspace
               key={current.project}
@@ -294,23 +307,7 @@ function Root() {
             />
           )}
           {current.screen === "memory" && (
-            <MemoryScreen
-              key={current.project}
-              overview={data}
-              project={current.project}
-              initialTab={current.tab}
-              onTab={(tab) => navigate({ screen: "memory", project: current.project, tab })}
-              onBack={() => navigate({ screen: "workspace", project: current.project })}
-              onAsk={() => navigate({ screen: "ask", project: current.project })}
-            />
-          )}
-          {current.screen === "ask" && (
-            <AskScreen
-              key={current.project ?? ""}
-              overview={data}
-              project={current.project}
-              onOpenMemory={(project) => navigate({ screen: "memory", project })}
-            />
+            <MemoryHub overview={data} project={current.project} tab={current.tab} onNavigate={navigate} />
           )}
         </Shell>
         <CommandPalette open={palette} onOpenChange={setPalette} overview={data} view={current} onNavigate={navigate} />

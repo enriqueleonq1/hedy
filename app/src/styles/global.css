@@ -2032,7 +2032,7 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
   gap: 10px;
   min-width: 0;
 }
-.skill--proposed { border-style: dashed; border-color: var(--accent); }
+.skill--proposed { border-color: var(--line-strong); }
 .skill__head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .skill__name { font: 600 var(--text-body) var(--font-mono); color: var(--ink); overflow-wrap: anywhere; }
 .skill__scope {
@@ -2088,7 +2088,7 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
   display: grid;
   gap: 10px;
 }
-.note--proposed { border-style: dashed; border-color: var(--accent); }
+.note--proposed { border-color: var(--line-strong); }
 .note__head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
 .note__text { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .note__foot { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -2437,7 +2437,7 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
   color: var(--ink);
   white-space: nowrap;
 }
-.board-state__mark { display: none; }
+.board-state > [aria-hidden]:not(.working-word) { display: none; }
 
 /* The keyboard's selection: a tinted row with the focus color on its edge. */
 .board-entry--selected > .board-row,
@@ -2571,3 +2571,34 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
 .project-task__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-tasks__more { justify-self: start; padding: 6px 10px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--muted); font: 500 var(--text-callout) var(--font-ui); cursor: pointer; }
 .project-tasks__more:hover { color: var(--ink); background: var(--panel-2); }
+
+/* "Aprobar · solo para mí ▾": the main choice, and the others behind the arrow. */
+.split-button { display: inline-flex; align-items: stretch; }
+.split-button > .btn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split-button .split-button__more {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 8px;
+  border: 0;
+  border-left: 1px solid var(--action-ink);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: var(--action);
+  color: var(--action-ink);
+  cursor: pointer;
+}
+.split-button .split-button__more:hover { filter: brightness(1.08); }
+
+/* Memoria */
+.memory-hub__for { display: inline-flex; align-items: center; gap: var(--space-2); font: 500 var(--text-callout) var(--font-ui); color: var(--muted); }
+.memory-hub__bar { display: flex; gap: var(--space-2); margin: var(--space-4) 0; }
+.memory-hub__bar input { flex: 1; min-width: 0; }
+.memory-hub__map { position: relative; min-height: 420px; }
+.memory-hub__pick { display: grid; gap: var(--space-3); max-width: 560px; }
+.memory-hub__how { margin-top: var(--space-6); }
+.memory-hub__how summary { cursor: pointer; color: var(--muted); font: 500 var(--text-callout) var(--font-ui); }
+.memory__panel-tools { display: flex; gap: var(--space-2); margin-bottom: var(--space-3); }
+.memory__group-hint { margin: -4px 0 8px; color: var(--muted); font-size: var(--text-caption); }
+.ask-panel { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); }
+.ask-panel__head { display: flex; align-items: center; justify-content: space-between; }
+.ask-source__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: 6px; }

@@ -71,7 +71,7 @@ function setup() {
   return { api, user: userEvent.setup() };
 }
 
-const PANEL = "Código, revisión, terminal y vista previa";
+const PANEL = "Cambios, archivos, terminal y vista previa";
 
 async function openProject(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
   await user.click(await screen.findByRole("button", { name }));
@@ -288,7 +288,7 @@ describe("Workspace", () => {
     await user.click(toggle);
     expect(screen.queryByRole("complementary", { name: PANEL })).not.toBeInTheDocument();
     expect(toggle).toHaveAttribute("aria-pressed", "false");
-    expect(toggle).toHaveAccessibleName("Panel lateral: código, revisión, terminal y vista previa, hay cambios por revisar");
+    expect(toggle).toHaveAccessibleName("Panel lateral: cambios, archivos, terminal y vista previa, hay cambios por revisar");
     expect(sessionStorage.getItem("hedy.sidePanel")).toBe("hidden");
     await user.keyboard("{Control>}1{/Control}");
     await user.keyboard("{Control>}3{/Control}");
@@ -559,6 +559,31 @@ describe("Preview's start button", () => {
     expect(screen.queryByRole("button", { name: /^Arrancar/ })).not.toBeInTheDocument();
   });
 
+  it.each([
+    ["scripts as a string", JSON.stringify({ name: "hedy", scripts: "dev" })],
+    ["scripts as a list", JSON.stringify({ name: "hedy", scripts: ["dev", "start"] })],
+    ["scripts null", JSON.stringify({ name: "hedy", scripts: null })],
+    ["a manifest that is not an object", JSON.stringify("dev")],
+    ["a manifest that is null", "null"],
+    ["broken JSON", '{ "scripts": { "dev": '],
+  ])("offers nothing, and keeps working, for a bad package.json: %s", async (_, text) => {
+    const api = MockApi.withSampleData();
+    api.files.set(PROJECT, [...(api.files.get(PROJECT) ?? []), "package.json"]);
+    const read = api.readFile.bind(api);
+    const manifest = vi
+      .spyOn(api, "readFile")
+      .mockImplementation(async (copy, path, rev) =>
+        copy.kind === "folder" && path === "package.json" ? { kind: "text", text, size: text.length, version: "v1" } : read(copy, path, rev),
+      );
+    await showPreview(api);
+    await waitFor(() => expect(manifest).toHaveBeenCalledWith({ kind: "folder", project: PROJECT }, "package.json"));
+    await act(async () => {});
+    expect(screen.queryByRole("button", { name: /^Arrancar/ })).not.toBeInTheDocument();
+    // The preview is still there to type an address.
+    expect(screen.getByRole("tabpanel", { name: "Vista previa" })).toBeInTheDocument();
+    expect(screen.getByText(/Arranca el servidor/)).toBeInTheDocument();
+  });
+
   it("offers nothing for a project without a package.json", async () => {
     const api = MockApi.withSampleData();
     const files = vi.spyOn(api, "projectFiles");
@@ -689,7 +714,9 @@ describe("Composer", () => {
     const menu = screen.getByRole("menu", { name: "Más acciones" });
     expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Estado", "Memoria"]);
     await user.click(within(menu).getByRole("menuitem", { name: "Memoria" }));
-    expect(await screen.findByRole("heading", { name: "Memoria de hedy" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}`);
+    expect(screen.getByRole("combobox", { name: "Para" })).toHaveValue("project:/code/hedy");
   });
 
   it("keeps templates one quiet button away: use one, or save the message as one", async () => {

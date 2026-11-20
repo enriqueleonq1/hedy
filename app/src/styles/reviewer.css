@@ -326,7 +326,7 @@
 .rv-comment__body > :last-child { margin-bottom: 0; }
 
 /* Sent: history, folded and quiet. */
-.rv-comment--sent { border-style: dashed; background: transparent; color: var(--muted); }
+.rv-comment--sent { background: transparent; color: var(--muted); }
 .rv-comment--sent:not(.rv-comment--open) { padding: 0; }
 .rv-comment__fold {
   min-width: 0;

@@ -112,6 +112,28 @@ describe("Command palette", () => {
     await waitFor(() => expect(window.location.hash).toBe("#teams"));
   });
 
+  it("goes to the memory's parts, and opens a proposal in its project's memory to approve", async () => {
+    const { user } = setup();
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
+    await user.keyboard("{Control>}k{/Control}");
+    const list = screen.getByRole("listbox", { name: "Comandos" });
+    const go = within(list).getByRole("group", { name: "Ir a" });
+    for (const label of ["Memoria", "Habilidades", "Pregunta a tu memoria"]) {
+      expect(within(go).getByText(label)).toBeInTheDocument();
+    }
+    await user.type(field(), "habilidades");
+    await waitFor(() => expect(options()[0]).toBe("Habilidades"));
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(window.location.hash).toBe("#memory=skills"));
+
+    await user.keyboard("{Control>}k{/Control}");
+    await user.type(field(), "revisar la nota propuesta precios usd");
+    await waitFor(() => expect(options()[0]).toBe("Revisar la nota propuesta: Los precios se guardan en USD"));
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}&pending`));
+    expect(await screen.findByRole("tab", { name: /^Por aprobar/ })).toHaveAttribute("aria-selected", "true");
+  });
+
   it("starts a new task in a project", async () => {
     const { user } = setup();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });

@@ -45,8 +45,8 @@ describe("Sidebar rail", () => {
     // Names are not on screen, but every control keeps one.
     expect(within(sidebar).getByRole("button", { name: "hedy" })).toHaveAttribute("title", "hedy");
     expect(within(sidebar).getByRole("button", { name: "Ajustes" })).toHaveAttribute("title", "Ajustes");
-    expect(within(sidebar).getByRole("button", { name: "Tu memoria" })).toHaveAttribute("title", "Tu memoria");
-    expect(within(sidebar).getByRole("button", { name: "Habilidades" })).toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "Memoria" })).toHaveAttribute("title", "Memoria");
+    expect(within(sidebar).queryByRole("button", { name: "Habilidades" })).not.toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: "Terminal" })).toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: "Pregunta rápida" })).toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: /^Inicio/ })).toHaveAttribute("title", "Inicio");

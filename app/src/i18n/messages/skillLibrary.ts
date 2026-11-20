@@ -2,7 +2,6 @@
 // AI thinks, trying a skill with and without it, importing and exporting.
 
 const es = {
-  "skillLib.nav": "Habilidades",
   "skillLib.title": "Habilidades",
   "skillLib.subtitle": "Procedimientos que tus IAs cargan cuando los necesitan. Solo dentro de Hedy, salvo que tú los saques.",
   "skillLib.import": "Importar",
@@ -192,7 +191,6 @@ const es = {
 };
 
 const en: Record<keyof typeof es, string> = {
-  "skillLib.nav": "Skills",
   "skillLib.title": "Skills",
   "skillLib.subtitle": "Procedures your AIs load when they need them. Only inside Hedy, unless you take them out.",
   "skillLib.import": "Import",

@@ -100,8 +100,10 @@ describe("Status", () => {
     expect(await screen.findByText(/fue el día más intenso/)).toBeInTheDocument();
     expect(screen.getByText("a3f9c1e")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Memoria" }));
-    expect(await screen.findByRole("heading", { name: "Memoria de hedy" })).toBeInTheDocument();
+    const hero = screen.getByRole("region", { name: "Estado del proyecto" });
+    await user.click(within(hero).getByRole("button", { name: "Memoria" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Para" })).toHaveDisplayValue("hedy");
   });
 
   it("opens the project's memory and summary from its home's tabs", async () => {
@@ -119,7 +121,8 @@ describe("Status", () => {
     await user.click(screen.getByRole("button", { name: /^hedy/ }));
     const again = await screen.findByRole("navigation", { name: "Secciones del proyecto" });
     await user.click(within(again).getByRole("button", { name: "Memoria" }));
-    expect(await screen.findByRole("heading", { name: "Memoria de hedy" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Para" })).toHaveDisplayValue("hedy");
     expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}`);
   });
 

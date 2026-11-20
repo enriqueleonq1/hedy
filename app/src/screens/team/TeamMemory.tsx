@@ -151,12 +151,15 @@ export function WhoForDialog({
   project,
   projectName,
   team,
+  initial = "mine",
   onClose,
 }: {
   note: Note;
   project: string;
   projectName: string;
   team: string;
+  /** The option chosen when it opens: only for the user unless they asked to share. */
+  initial?: "mine" | "project" | "team";
   onClose: () => void;
 }) {
   const api = useApi();
@@ -165,7 +168,7 @@ export function WhoForDialog({
   const client = useQueryClient();
   const status = useTeamStatus(team).data;
   const proposed = note.status === "proposed";
-  const [choice, setChoice] = useState<"mine" | "project" | "team">("project");
+  const [choice, setChoice] = useState<"mine" | "project" | "team">(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const free = status ? Math.max(0, status.layerMax - status.layerTokens) : 0;

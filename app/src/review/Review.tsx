@@ -223,14 +223,17 @@ export function Changes({ project, task }: { project: string; task: Task | null 
 
   // j / k move through the files, like in a code review; v marks one seen and goes on.
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.key !== "j" && e.key !== "k" && e.key !== "v") return;
+    const key = e.key === "V" ? "v" : e.key;
+    if (key !== "j" && key !== "k" && key !== "v") return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const target = e.target as HTMLElement;
     // Nor from a dialog opened from here (its events bubble through the portal).
     if (target.closest("input:not([type=checkbox]), textarea, select, [contenteditable='true'], [role='dialog']")) return;
     if (files.length === 0) return;
     e.preventDefault();
-    if (e.key === "v") {
+    if (key === "v") {
+      // On a file's own checkbox or menu, "v" would mark another file: not there.
+      if (target.closest("input, [role='menu']")) return;
       markAndNext();
       return;
     }

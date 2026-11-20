@@ -118,7 +118,7 @@ export function usePaletteCommands({
         group: "pending",
         label: t("palette.pending.note", { text: entry.proposal.note.text }),
         detail: projectName(entry.project),
-        run: () => onNavigate({ screen: "memory", project: entry.project, tab: "notes" }),
+        run: () => onNavigate({ screen: "memory", project: entry.project, tab: "pending" }),
       });
     } else if (entry.kind === "sync") {
       commands.push({
@@ -142,15 +142,16 @@ export function usePaletteCommands({
         group: "pending",
         label: t("palette.pending.skill", { name: entry.proposal.skill.name }),
         detail: projectName(entry.project),
-        run: () => onNavigate({ screen: "memory", project: entry.project, tab: "skills" }),
+        run: () => onNavigate({ screen: "memory", project: entry.project, tab: "pending" }),
       });
     }
   }
 
   commands.push(
     { id: "nav:welcome", group: "nav", label: t("shell.home"), run: () => onNavigate({ screen: "welcome" }) },
-    { id: "nav:skills", group: "nav", label: t("skillLib.title"), run: () => onNavigate({ screen: "skills" }) },
-    { id: "nav:ask", group: "nav", label: t("ask.title"), run: () => onNavigate({ screen: "ask" }) },
+    { id: "nav:memory", group: "nav", label: t("memory.hub.title"), run: () => onNavigate({ screen: "memory" }) },
+    { id: "nav:skills", group: "nav", label: t("skillLib.title"), run: () => onNavigate({ screen: "memory", tab: "skills" }) },
+    { id: "nav:ask", group: "nav", label: t("ask.title"), run: () => onNavigate({ screen: "memory" }) },
     {
       id: "nav:accounts",
       group: "nav",

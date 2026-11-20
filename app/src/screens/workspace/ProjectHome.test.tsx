@@ -13,7 +13,7 @@ import { TaskSwitcher } from "./TaskSwitcher";
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
 
 const HEDY = "/code/hedy";
-const PANEL = "Código, revisión, terminal y vista previa";
+const PANEL = "Cambios, archivos, terminal y vista previa";
 const TAXES = "Arregla el cálculo de impuestos en las facturas";
 const BRANCH = "hedy/arregla-el-calculo-de-impuestos-s5";
 
@@ -92,7 +92,9 @@ describe("A project's home", () => {
       user.click(within(await screen.findByRole("navigation", { name: "Secciones del proyecto" }, { timeout: 5000 })).getByRole("button", { name }));
 
     await tab("Memoria");
-    expect(await screen.findByRole("heading", { name: "Memoria de hedy" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}`);
+    expect(screen.getByRole("combobox", { name: "Para" })).toHaveValue("project:/code/hedy");
     history.back();
     await tab("Resumen");
     expect(await screen.findByRole("heading", { level: 1, name: "hedy" })).toBeInTheDocument();
@@ -207,6 +209,21 @@ describe("The end of a turn", () => {
 
     await user.click(within(card).getByRole("button", { name: "Pedir que arregle los tests" }));
     expect(queue).toHaveBeenCalledWith("s5", "Los tests fallan. Arréglalos sin cambiar lo que comprueban.");
+  });
+
+  it("asks before discarding a task that changed nothing", async () => {
+    const { api, user } = await setup(taskHash("s5"), async (api) => {
+      vi.spyOn(api, "taskDiff").mockResolvedValue([]);
+    });
+    const discard = vi.spyOn(api, "discardTask");
+    const card = await screen.findByRole("region", { name: "Terminó sin cambiar archivos" }, { timeout: 5000 });
+    await user.click(within(card).getByRole("button", { name: "Descartar la tarea" }));
+    expect(discard).not.toHaveBeenCalled();
+    const confirm = within(card).getByRole("button", { name: "¿Descartar todo?" });
+    expect(confirm).toHaveClass("btn--armed");
+    await user.click(confirm);
+    expect(discard).toHaveBeenCalledTimes(1);
+    expect(discard).toHaveBeenCalledWith("s5");
   });
 
   it("offers to retry a task that failed", async () => {

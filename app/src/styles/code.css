@@ -104,16 +104,14 @@ html.resizing--rows * { cursor: row-resize !important; }
 }
 .tabbar__tab[aria-selected="true"] .tabbar__icon { color: var(--action-text); }
 .tabbar__icon { display: inline-flex; }
-.tabbar__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--action); }
 .tabbar__end { margin-left: auto; display: flex; gap: 2px; }
 
 /* Narrow: icons only (the tooltip names the tab and its shortcut). */
-@container side-panel (max-width: 400px) {
+@container side-panel (max-width: 460px) {
   .tabbar__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .tabbar__tab { padding: 0 11px; }
   /* The open tab keeps its name. */
   .tabbar__tab[aria-selected="true"] .tabbar__label { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
-  .tabbar__dot { position: absolute; top: 7px; right: 6px; }
 }
 
 /* ---------------------------------------------------------------- shared bits */

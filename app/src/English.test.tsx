@@ -55,7 +55,7 @@ describe("English", () => {
     const api = MockApi.withSampleData();
     render(<App api={api} queryClient={new QueryClient()} />);
     expect(await screen.findByRole("heading", { name: /¡Hola, Alex!/ })).toBeInTheDocument();
-    expect(spanishLeftovers()).toEqual(expect.arrayContaining(["Tus planes", "Nueva tarea", "Tu memoria"]));
+    expect(spanishLeftovers()).toEqual(expect.arrayContaining(["Tus planes", "Nueva tarea", "Memoria"]));
   });
 
   it("greets on the home screen and frames it in English", async () => {
@@ -72,8 +72,7 @@ describe("English", () => {
     // The sidebar.
     const sidebar = screen.getByRole("complementary", { name: "Navigation" });
     expect(await within(sidebar).findByRole("button", { name: "Home: 7 things are waiting for you" })).toBeInTheDocument();
-    expect(within(sidebar).getByRole("button", { name: "Your memory" })).toBeInTheDocument();
-    expect(within(sidebar).getByRole("button", { name: "Skills" })).toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "Memory" })).toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: "Search and run commands (Ctrl K)" })).toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: "Add a project" })).toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: /^hedy/ })).toBeInTheDocument();
@@ -151,7 +150,7 @@ describe("English", () => {
     expect(spanishLeftovers()).toEqual([]);
 
     // The side panel's tabs, and the files' switch between the tree and the search.
-    const panel = screen.getByRole("complementary", { name: "Code, review, terminal and preview" });
+    const panel = screen.getByRole("complementary", { name: "Changes, files, terminal and preview" });
     expect(within(panel).getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
       expect.stringMatching(/^Changes \d+$/),
       "Files",
@@ -176,7 +175,7 @@ describe("English", () => {
     const { user } = setup(api);
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
     await user.click(await screen.findByRole("button", { name: /^Side panel/ }));
-    const panel = await screen.findByRole("complementary", { name: "Code, review, terminal and preview" });
+    const panel = await screen.findByRole("complementary", { name: "Changes, files, terminal and preview" });
     await user.click(within(panel).getByRole("tab", { name: "Preview" }));
     expect(await within(panel).findByRole("button", { name: "Start “npm run dev”" })).toBeInTheDocument();
     expect(spanishLeftovers(panel)).toEqual([]);
@@ -418,15 +417,23 @@ describe("English", () => {
     expect(await screen.findByText(/was the busiest day/)).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
 
-    await user.click(screen.getByRole("button", { name: "Memory" }));
-    expect(await screen.findByRole("heading", { name: "hedy memory" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Decisions" })).toBeInTheDocument();
-    expect(screen.getByRole("searchbox", { name: "Search memory" })).toBeInTheDocument();
-    // A proposed change under a topic, and a proposal similar to an approved note.
-    const proposed = screen.getByRole("region", { name: "Proposed by your AIs · awaiting approval" });
-    expect(within(proposed).getByText("Change to a note with the same topic")).toBeInTheDocument();
+    // The status screen's own way there, not the sidebar's.
+    await user.click(within(screen.getByRole("main")).getByRole("button", { name: "Memory" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Memory" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "For" })).toHaveDisplayValue("hedy");
+    expect(await screen.findByRole("region", { name: "Decisions" })).toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "Ask or search your memory" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Notes" })).toHaveAttribute("aria-selected", "true");
+    expect(spanishLeftovers()).toEqual([]);
+
+    // A proposed change under a topic, and a proposal similar to an approved note, wait in their own tab.
+    await user.click(screen.getByRole("tab", { name: /^To approve/ }));
+    const proposed = screen.getByRole("tabpanel", { name: /^To approve/ });
+    expect(await within(proposed).findByText("Change to a note with the same topic")).toBeInTheDocument();
     expect(within(proposed).getByText("Now says")).toBeInTheDocument();
-    expect(within(proposed).getByRole("button", { name: "Approve change" })).toBeInTheDocument();
+    // A note's change and a skill's update both say so.
+    expect(within(proposed).getAllByRole("button", { name: "Approve change" })).toHaveLength(2);
+    expect(within(proposed).getByText("Update of an approved skill")).toBeInTheDocument();
     const similar = within(proposed).getByRole("region", { name: "Similar to" });
     expect(within(similar).getByRole("button", { name: "Replace that one" })).toBeInTheDocument();
     expect(within(proposed).getByRole("button", { name: "Keep both" })).toBeInTheDocument();
@@ -440,7 +447,7 @@ describe("English", () => {
     await user.click(within(await screen.findByRole("navigation", { name: "Project sections" })).getByRole("button", { name: "Memory" }));
     await user.click(await screen.findByRole("tab", { name: /^Skills/ }));
     const proposed = await screen.findByRole("region", { name: "Proposed by your AIs · awaiting approval" });
-    expect(screen.getByRole("tab", { name: /Skills.*2 to approve/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Skills" })).toHaveAttribute("aria-selected", "true");
     expect(within(proposed).getByText("Update of an approved skill")).toBeInTheDocument();
     expect(within(proposed).getByRole("button", { name: "Approve change" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "In this project" })).toBeInTheDocument();

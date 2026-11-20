@@ -32,7 +32,14 @@ export function homeProject(item: SkillOverview, projects: Project[]): string | 
  * filters and the selected one in detail (what it costs, what Hedy measures,
  * its trial, "Usar también fuera de Hedy" and its steps).
  */
-export function SkillsScreen({ overview }: { overview: Overview }) {
+export function SkillsScreen({
+  overview,
+  embedded = false,
+}: {
+  overview: Overview;
+  /** Inside Memoria's Habilidades tab: its title is the tab's. */
+  embedded?: boolean;
+}) {
   const t = useT();
   const skills = useSkillsOverview();
   const [query, setQuery] = useState("");
@@ -67,10 +74,10 @@ export function SkillsScreen({ overview }: { overview: Overview }) {
   const color = overview.accounts.find((a) => a.id === overview.defaultAccount)?.color ?? DEFAULT_ACCOUNT_COLOR;
 
   return (
-    <div className="screen skill-lib">
+    <div className={embedded ? "skill-lib skill-lib--embedded" : "screen skill-lib"}>
       <header className="skill-lib__head">
         <div className="skill-lib__titles">
-          <h1>{t("skillLib.title")}</h1>
+          {!embedded && <h1>{t("skillLib.title")}</h1>}
           <p className="muted">{t("skillLib.subtitle")}</p>
         </div>
         <div className="skill-lib__actions">

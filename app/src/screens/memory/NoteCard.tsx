@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { Note, NoteCategory } from "../../api/types";
 import { Button, ConfirmButton } from "../../components/ui/Button";
 import { Segmented } from "../../components/ui/controls";
+import { MenuButton } from "../../components/ui/Menu";
 import { timeAgo } from "../../format";
 import { useT } from "../../i18n";
 import { authorLabel, CATEGORY_LABEL, categoryOptions, useMemoryAction } from "./notes";
@@ -29,7 +30,7 @@ export function NoteCard({
   const [editing, setEditing] = useState(false);
   // A team's project: approving or sharing asks who it is for (6a).
   const team = useProjectTeam(project);
-  const [whoFor, setWhoFor] = useState(false);
+  const [whoFor, setWhoFor] = useState<"project" | "team" | null>(null);
   const [text, setText] = useState(note.text);
   const [category, setCategory] = useState(note.category);
   const save = useMemoryAction(project, (api) => api.editNote(note.id, text, category));
@@ -135,14 +136,28 @@ export function NoteCard({
         <span className="spacer" />
         {proposed ? (
           <>
-            <Button
-              small
-              variant="primary"
-              disabled={busy}
-              onClick={() => (team && !replaces ? setWhoFor(true) : approve.mutate(undefined))}
-            >
-              {t(replaces ? "memory.change.approve" : looksLike.length > 0 ? "memory.similar.keepBoth" : "memory.note.approve")}
-            </Button>
+            {team && !replaces ? (
+              // In a team's project, approving keeps the note for the user; sharing is a choice.
+              <span className="split-button">
+                <Button small variant="primary" disabled={busy} onClick={() => approve.mutate(undefined)}>
+                  {t("memory.note.approveMine")}
+                </Button>
+                <MenuButton
+                  label={t("memory.note.approveMore")}
+                  className="split-button__more"
+                  items={[
+                    { label: t("team.who.project", { project: shortPath(project) }), onSelect: () => setWhoFor("project") },
+                    { label: t("team.who.teamMenu"), onSelect: () => setWhoFor("team") },
+                  ]}
+                >
+                  <span aria-hidden>▾</span>
+                </MenuButton>
+              </span>
+            ) : (
+              <Button small variant="primary" disabled={busy} onClick={() => approve.mutate(undefined)}>
+                {t(replaces ? "memory.change.approve" : looksLike.length > 0 ? "memory.similar.keepBoth" : "memory.note.approve")}
+              </Button>
+            )}
             <Button small onClick={edit}>
               {t("common.edit")}
             </Button>
@@ -153,7 +168,7 @@ export function NoteCard({
         ) : (
           <>
             {team && note.project !== null && (
-              <Button small onClick={() => setWhoFor(true)}>
+              <Button small onClick={() => setWhoFor("project")}>
                 {t("team.who.share")}
               </Button>
             )}
@@ -172,7 +187,8 @@ export function NoteCard({
           project={project}
           projectName={shortPath(project)}
           team={team}
-          onClose={() => setWhoFor(false)}
+          initial={whoFor}
+          onClose={() => setWhoFor(null)}
         />
       )}
     </li>

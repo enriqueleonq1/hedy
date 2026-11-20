@@ -13,7 +13,9 @@ async function setup(api = MockApi.withSampleData()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<App api={api} queryClient={queryClient} />);
   const user = userEvent.setup();
-  await screen.findByRole("heading", { name: "Habilidades", level: 1 });
+  // The old address lands in Memoria's Habilidades tab, for everything.
+  await screen.findByRole("heading", { name: "Memoria", level: 1 });
+  expect(screen.getByRole("tab", { name: /^Habilidades/ })).toHaveAttribute("aria-selected", "true");
   const list = await screen.findByRole("list", { name: "Habilidades" });
   return { api, user, list };
 }
@@ -28,6 +30,8 @@ describe("Skills section", () => {
 
   it("lists every skill with filters and a search, and shows the chosen one in detail", async () => {
     const { user, list } = await setup();
+    // Embedded in Memoria: the tab is its title.
+    expect(screen.queryByRole("heading", { name: "Habilidades", level: 1 })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Todas · 5" })).toHaveAttribute("aria-pressed", "true");
     expect(within(list).getAllByRole("button")).toHaveLength(5);
 
@@ -121,7 +125,7 @@ describe("Skills section", () => {
     expect(screen.queryByText("Prueba cancelada: no se guardó ningún resultado.")).not.toBeInTheDocument();
     // Its outcome is read and said once, even after leaving the section.
     window.location.hash = "#activity";
-    await waitFor(() => expect(screen.queryByRole("heading", { name: "Habilidades", level: 1 })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("list", { name: "Habilidades" })).not.toBeInTheDocument());
     expect(await screen.findByText("Terminó la prueba de «publicar-version»: Útil.", {}, { timeout: 12000 })).toBeInTheDocument();
     window.location.hash = "#skills";
     const again = await screen.findByRole("list", { name: "Habilidades" });

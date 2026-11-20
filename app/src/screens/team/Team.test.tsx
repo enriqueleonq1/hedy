@@ -1,9 +1,12 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { App } from "../../App";
+import { ApiProvider } from "../../api/context";
 import { MockApi } from "../../api/MockApi";
+import { ToastProvider } from "../../components/ui/Toast";
+import { WhoForDialog } from "./TeamMemory";
 
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
 
@@ -144,16 +147,38 @@ describe("Teams", () => {
     expect(within(mine).getByRole("button", { name: "Editar" })).toBeInTheDocument();
   });
 
-  it("asks who an agent's proposal is for, and shares it with the project", async () => {
+  it("approves an agent's proposal in a team's project only for the user, without asking", async () => {
     const api = MockApi.withSampleData();
     await api.teamLinkProject("team-1", "/code/tienda");
     const proposal = api.addProposal("/code/tienda", "Los webhooks del banco son idempotentes.");
-    const { user } = renderAt("#m=%2Fcode%2Ftienda", api);
+    const publish = vi.spyOn(api, "teamPublishNote");
+    const { user } = renderAt(`#m=${encodeURIComponent("/code/tienda")}&pending`, api);
     const row = (await screen.findByText("Los webhooks del banco son idempotentes.")).closest("li")!;
-    await user.click(within(row).getByRole("button", { name: "Aprobar" }));
+    // A split button: the plain approve, and a menu to share.
+    const approve = await within(row).findByRole("button", { name: "Aprobar · solo para mí" });
+    expect(within(row).getByRole("button", { name: "Aprobar y compartir" })).toHaveAttribute("aria-haspopup", "menu");
+    // Solid, like any other card.
+    expect(row).toHaveClass("note--proposed");
+    await user.click(approve);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(async () => expect((await api.memory("/code/tienda")).notes.some((n) => n.id === proposal.id)).toBe(true));
+    expect(publish).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByText("Los webhooks del banco son idempotentes.")).toBeNull());
+  });
+
+  it("shares a proposal with the project from the approve menu, that option chosen", async () => {
+    const api = MockApi.withSampleData();
+    await api.teamLinkProject("team-1", "/code/tienda");
+    const proposal = api.addProposal("/code/tienda", "Los webhooks del banco son idempotentes.");
+    const { user } = renderAt(`#m=${encodeURIComponent("/code/tienda")}&pending`, api);
+    const row = (await screen.findByText("Los webhooks del banco son idempotentes.")).closest("li")!;
+    await user.click(await within(row).findByRole("button", { name: "Aprobar y compartir" }));
+    const menu = screen.getByRole("menu", { name: "Aprobar y compartir" });
+    expect(within(menu).getByRole("menuitem", { name: "A todo el equipo…" })).toBeInTheDocument();
+    await user.click(within(menu).getByRole("menuitem", { name: /^A quien trabaje en .*tienda$/ }));
     const dialog = screen.getByRole("dialog", { name: "¿A quién le sirve?" });
-    expect(within(dialog).getByText(/Solo a mí/)).toBeInTheDocument();
-    expect(within(dialog).getByText(/A todo el equipo Plataforma/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("radio", { name: /^A quien trabaje en .*tienda/ })).toBeChecked();
+    expect(within(dialog).getByRole("radio", { name: /^Solo a mí/ })).not.toBeChecked();
     // The button says where it goes.
     await user.click(within(dialog).getByRole("button", { name: /^Compartir con quien trabaje en .*tienda/ }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -161,11 +186,49 @@ describe("Teams", () => {
     expect(api.teamList[0]!.notes.some((n) => n.text === "Los webhooks del banco son idempotentes." && !n.teamLayer)).toBe(true);
   });
 
+  it("opens the dialog on the whole team from the approve menu", async () => {
+    const api = MockApi.withSampleData();
+    await api.teamLinkProject("team-1", "/code/tienda");
+    api.addProposal("/code/tienda", "Los webhooks del banco son idempotentes.");
+    const { user } = renderAt(`#m=${encodeURIComponent("/code/tienda")}&pending`, api);
+    const row = (await screen.findByText("Los webhooks del banco son idempotentes.")).closest("li")!;
+    await user.click(await within(row).findByRole("button", { name: "Aprobar y compartir" }));
+    await user.click(screen.getByRole("menuitem", { name: "A todo el equipo…" }));
+    const dialog = screen.getByRole("dialog", { name: "¿A quién le sirve?" });
+    expect(await within(dialog).findByRole("radio", { name: /^A todo el equipo Plataforma/ })).toBeChecked();
+    expect(within(dialog).getByRole("button", { name: "Enviar a todo el equipo" })).toBeInTheDocument();
+  });
+
+  it("asks who it is for with only the user chosen, unless they asked to share", async () => {
+    const api = MockApi.withSampleData();
+    const proposal = api.addProposal("/code/tienda", "Los webhooks del banco son idempotentes.");
+    const approve = vi.spyOn(api, "approveNote");
+    const publish = vi.spyOn(api, "teamPublishNote");
+    const closed = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApiProvider api={api}>
+          <ToastProvider>
+            <WhoForDialog note={proposal} project="/code/tienda" projectName="tienda" team="team-1" onClose={closed} />
+          </ToastProvider>
+        </ApiProvider>
+      </QueryClientProvider>,
+    );
+    const dialog = screen.getByRole("dialog", { name: "¿A quién le sirve?" });
+    expect(within(dialog).getByRole("radio", { name: /^Solo a mí/ })).toBeChecked();
+    expect(within(dialog).getByRole("radio", { name: /^A quien trabaje en tienda/ })).not.toBeChecked();
+    await userEvent.setup().click(within(dialog).getByRole("button", { name: "Aprobar solo para mí" }));
+    await waitFor(() => expect(closed).toHaveBeenCalled());
+    expect(approve).toHaveBeenCalledWith(proposal.id);
+    expect(publish).not.toHaveBeenCalled();
+  });
+
   it("connects a project to a team from its memory card", async () => {
     const { api, user } = renderAt("#m=%2Fcode%2Ftienda");
     const home = await screen.findByRole("combobox", { name: "Memoria de este proyecto" });
     await user.click(home);
-    await user.click(screen.getByRole("option", { name: /Equipo · Plataforma/ }));
+    // Not "Para"'s option of the same name: the card's own list.
+    await user.click(within(screen.getByRole("listbox")).getByRole("option", { name: /Equipo · Plataforma/ }));
     expect(await screen.findByRole("radiogroup", { name: "Capa" })).toBeInTheDocument();
     expect((await api.memoryHome("/code/tienda")).home).toEqual({ kind: "team", team: "team-1" });
   });

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { errorMessage, useAction, useApi } from "../../api/context";
@@ -50,7 +50,23 @@ export function AcceptSheet({
   const preview = useQuery({ queryKey: ["acceptPreview", task.id], queryFn: () => api.acceptPreview(task.id), gcTime: 0 });
   const folder = useFolderStatus(task.project);
   const remote = !!folder.data?.remote;
-  const [mode, setMode] = useState<AcceptMode>("merge");
+  // How the user accepts in this project, as last time ("Guardar en su rama" + PR: two clicks).
+  const modeKey = `hedy.acceptMode.${task.project}`;
+  const [mode, setModeState] = useState<AcceptMode>(() => {
+    try {
+      return localStorage.getItem(modeKey) === "branch" ? "branch" : "merge";
+    } catch {
+      return "merge";
+    }
+  });
+  const setMode = (next: AcceptMode) => {
+    setModeState(next);
+    try {
+      localStorage.setItem(modeKey, next);
+    } catch {
+      // Remembering the choice is only a convenience.
+    }
+  };
   // "Publicar y abrir un PR": on by default when the work stays on its branch.
   const [pr, setPr] = useState<PullRequestChoice>({ on: true, title: "", body: "", draft: false });
   const setQueue = useSetQueue();
@@ -79,6 +95,9 @@ export function AcceptSheet({
     },
     {
       invalidate: changedKeys(task),
+      onError: () => {
+        accepting.current = false;
+      },
       onSuccess: (opened, vars) => {
         // With a remote, the accepted view opens the publish step next (unless it is done).
         if (remote && !vars.pr) markJustAccepted(task.id);
@@ -94,6 +113,8 @@ export function AcceptSheet({
       },
     },
   );
+  // Set on the first submit; a failure lets the user try again.
+  const accepting = useRef(false);
   const branchMode = remote && mode === "branch";
   // Only with GitHub CLI logged in: otherwise the side panel says what is missing.
   const canPr = branchMode && folder.data?.gh === "ready";
@@ -136,7 +157,12 @@ export function AcceptSheet({
           pr={canPr ? pr : null}
           onPr={setPr}
           onFixTests={fixTests.isPending ? null : () => fixTests.mutate(undefined)}
-          onSubmit={(message) => accept.mutate({ message, mode: remote ? mode : "merge", pr: withPr ? pr : null })}
+          onSubmit={(message) => {
+            // Ctrl/⌘ Enter works with the button disabled: never twice, even in one tick.
+            if (accepting.current) return;
+            accepting.current = true;
+            accept.mutate({ message, mode: remote ? mode : "merge", pr: withPr ? pr : null });
+          }}
         />
       )}
     </Dialog>
@@ -241,6 +267,10 @@ function PreviewForm({
                   className="input"
                   value={pr.title}
                   placeholder={message.split("\n")[0]}
+                  // Enter alone never publishes: that takes the button, or Ctrl/⌘ Enter.
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !(e.ctrlKey || e.metaKey)) e.preventDefault();
+                  }}
                   onChange={(e) => onPr({ ...pr, title: e.target.value })}
                 />
               </label>
