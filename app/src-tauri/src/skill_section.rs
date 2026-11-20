@@ -375,3 +375,183 @@ pub async fn take_trial_outcome(
 ) -> CommandResult<Option<TrialOutcome>> {
     blocking(&state, move |h| h.take_trial_outcome(&trial)).await
 }
+
+#[cfg(test)]
+mod tests {
+    use std::process::Command;
+
+    use hedy_core::adapters::{self, HedyPaths};
+    use hedy_core::application::NewAccount;
+    use hedy_core::domain::Provider;
+    use serde_json::{Value, json};
+    use tauri::Manager;
+    use tauri::ipc::{CallbackFn, InvokeBody};
+    use tauri::test::{INVOKE_KEY, get_ipc_response, mock_builder, noop_assets};
+    use tauri::webview::InvokeRequest;
+
+    use crate::AppState;
+
+    fn git(dir: &std::path::Path, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    #[test]
+    fn the_skills_section_over_ipc_with_the_real_backend() {
+        hedy_core::i18n::set_language(hedy_core::i18n::Language::Spanish);
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = HedyPaths::at(std::path::absolute(tmp.path().join("data")).unwrap());
+        let program = std::env::current_exe().unwrap();
+        let hedy = adapters::system_for_app(&paths, &program).unwrap();
+        let project = std::path::absolute(tmp.path().join("tienda")).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        git(&project, &["init", "-q"]);
+        hedy.add_account(NewAccount {
+            name: "Claude".into(),
+            provider: Provider::Claude,
+            api_key: false,
+            default_folder: false,
+            color: None,
+        })
+        .unwrap();
+        hedy.use_account(&project, "claude", None).unwrap();
+        let source = tmp.path().join("descargas/pr-checklist");
+        std::fs::create_dir_all(&source).unwrap();
+        let skill_md = source.join("SKILL.md");
+        std::fs::write(
+            &skill_md,
+            "---\nname: pr-checklist\ndescription: Before opening a pull request.\n---\n\n1. Update `CHANGELOG.md`\n2. Run `npm test`\n",
+        )
+        .unwrap();
+
+        let app = mock_builder()
+            .invoke_handler(tauri::generate_handler![
+                super::skills_overview,
+                super::set_skill_outside,
+                super::preview_skill_import,
+                super::import_skills,
+                super::export_skills,
+                super::trial_check,
+                super::take_trial_outcome,
+            ])
+            .build(tauri::generate_context!(
+                test = true,
+                assets = noop_assets()
+            ))
+            .unwrap();
+        app.manage(AppState {
+            hedy: hedy.clone(),
+            paths,
+            terminals: std::sync::Arc::default(),
+        });
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let call = |cmd: &str, args: Value| -> Result<Value, Value> {
+            get_ipc_response(
+                &webview,
+                InvokeRequest {
+                    cmd: cmd.into(),
+                    callback: CallbackFn(0),
+                    error: CallbackFn(1),
+                    url: "tauri://localhost".parse().unwrap(),
+                    body: InvokeBody::Json(args),
+                    headers: Default::default(),
+                    invoke_key: INVOKE_KEY.to_string(),
+                },
+            )
+            .map(|body| body.deserialize::<Value>().unwrap())
+        };
+
+        // Preview: what the page shows, in the shape types.ts expects.
+        let preview = call(
+            "preview_skill_import",
+            json!({ "path": project, "source": source, "global": false }),
+        )
+        .unwrap();
+        assert_eq!(preview["total"], 1);
+        let candidate = &preview["candidates"][0];
+        assert_eq!(candidate["name"], "pr-checklist");
+        assert_eq!(candidate["problem"], Value::Null);
+        assert_eq!(candidate["verdict"], "useful");
+        assert!(
+            candidate["findings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|f| f["kind"] == "concreteSteps")
+        );
+        let file = candidate["source"].as_str().unwrap().to_owned();
+        let print = candidate["fingerprint"].as_str().unwrap().to_owned();
+
+        // A file changed since the preview stays out.
+        let stale = call(
+            "import_skills",
+            json!({ "path": project, "source": source, "global": false,
+                    "picks": [{ "file": file, "fingerprint": "something else" }], "replace": [] }),
+        )
+        .unwrap();
+        assert_eq!(stale["imported"], json!([]));
+        let report = call(
+            "import_skills",
+            json!({ "path": project, "source": source, "global": false,
+                    "picks": [{ "file": file, "fingerprint": print }], "replace": [] }),
+        )
+        .unwrap();
+        assert_eq!(report["imported"][0]["name"], "pr-checklist");
+        assert_eq!(report["imported"][0]["status"], "approved");
+
+        // The section's list.
+        let all = call("skills_overview", json!({})).unwrap();
+        let ours = &all[0];
+        assert_eq!(ours["projectName"], "tienda");
+        assert_eq!(ours["outside"], false);
+        assert_eq!(ours["trial"], Value::Null);
+        assert!(ours["tokens"].as_u64().unwrap() > 0);
+        let id = ours["skill"]["id"].as_i64().unwrap();
+
+        // Outside Hedy too: written where the user's CLIs read it, out of git.
+        let on = call("set_skill_outside", json!({ "id": id, "on": true })).unwrap();
+        assert_eq!(on["written"].as_array().unwrap().len(), 2, "{on}");
+        let claude = project.join(".claude/skills/pr-checklist/SKILL.md");
+        assert!(
+            std::fs::read_to_string(&claude)
+                .unwrap()
+                .contains("npm test")
+        );
+        assert_eq!(
+            git(&project, &["status", "--porcelain"]),
+            "",
+            "excluded from git"
+        );
+        assert_eq!(
+            call("skills_overview", json!({})).unwrap()[0]["outside"],
+            true
+        );
+
+        // Export, then off.
+        let to = tmp.path().join("export");
+        std::fs::create_dir_all(&to).unwrap();
+        let exported = call("export_skills", json!({ "ids": [id], "to": to })).unwrap();
+        assert_eq!(exported["written"].as_array().unwrap().len(), 1);
+        assert!(to.join("pr-checklist/SKILL.md").exists());
+        let off = call("set_skill_outside", json!({ "id": id, "on": false })).unwrap();
+        assert_eq!(off["removed"].as_array().unwrap().len(), 2);
+        assert!(!claude.exists());
+
+        // Trial helpers: what the dialog reads before and while it runs.
+        let check = call("trial_check", json!({ "path": project })).unwrap();
+        assert!(check["isolated"].is_boolean());
+        assert_eq!(
+            call("take_trial_outcome", json!({ "trial": "k-unknown" })).unwrap(),
+            Value::Null
+        );
+    }
+}
