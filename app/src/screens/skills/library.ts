@@ -8,7 +8,8 @@ import type { HedyApi } from "../../api/HedyApi";
 import type { SkillFinding, SkillVerdict, TrialResult, TrialVoid } from "../../api/types";
 import type { MessageKey, Translate } from "../../i18n";
 
-export const SKILLS_OVERVIEW_KEY = ["skills-overview"] as const;
+/** Under `["skills"]`: what refreshes a project's skills (an agent's proposal) refreshes this too. */
+export const SKILLS_OVERVIEW_KEY = ["skills", "*overview"] as const;
 
 export function useSkillsOverview() {
   const api = useApi();
@@ -17,7 +18,12 @@ export function useSkillsOverview() {
 
 /** An action on skills: refreshes the section and every project's skills tab. */
 export function useLibraryAction<TVars, TResult>(action: (api: HedyApi, vars: TVars) => Promise<TResult>) {
-  return useAction(action, { invalidate: [SKILLS_OVERVIEW_KEY, ["skills"]] });
+  return useAction(action, { invalidate: [["skills"]] });
+}
+
+/** An action that changes no skill (a review, a preview): nothing to refresh. */
+export function useReadAction<TVars, TResult>(action: (api: HedyApi, vars: TVars) => Promise<TResult>) {
+  return useAction(action, { invalidate: [] });
 }
 
 export const verdictKey: Record<SkillVerdict, MessageKey> = {

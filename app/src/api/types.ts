@@ -306,6 +306,14 @@ export interface ImportCandidate {
   problem: ImportProblem | null;
   findings: SkillFinding[];
   verdict: SkillVerdict;
+  /** Of the text shown: what is imported must still say this. */
+  fingerprint: string;
+}
+
+/** A skill picked to import: its file, and its text's fingerprint when shown. */
+export interface ImportPick {
+  file: string;
+  fingerprint: string;
 }
 
 export interface ImportPreview {

@@ -7,7 +7,7 @@ import { Dialog } from "../../components/ui/Dialog";
 import { useToast } from "../../components/ui/Toast";
 import { useT } from "../../i18n";
 import { FindingList } from "./SkillDetail";
-import { fromAi, useLibraryAction, verdictKey } from "./library";
+import { fromAi, useLibraryAction, useReadAction, verdictKey } from "./library";
 
 /**
  * Importing skills: where from (a SKILL.md, a folder or a project) and where
@@ -27,13 +27,19 @@ export function ImportDialog({ projects, onClose }: { projects: Project[]; onClo
   const [reviews, setReviews] = useState<Record<string, SkillReview>>({});
   const [reviewing, setReviewing] = useState<string | null>(null);
   const canBeGlobal = !projects.find((p) => p.path === project)?.protected;
+  // What the preview, the reviews and the import all use, the same each time.
+  const scope = global && canBeGlobal;
+  const src = source.trim();
 
-  const read = useLibraryAction((a, vars: { source: string; project: string; global: boolean }) =>
+  const read = useReadAction((a, vars: { source: string; project: string; global: boolean }) =>
     a.previewSkillImport(vars.project, vars.source, vars.global),
   );
-  const run = useLibraryAction((a) =>
-    a.importSkills(project, source, global, [...picked], [...replace]),
-  );
+  const run = useLibraryAction((a) => {
+    const picks = (preview?.candidates ?? [])
+      .filter((c) => picked.has(c.source))
+      .map((c) => ({ file: c.source, fingerprint: c.fingerprint }));
+    return a.importSkills(project, src, scope, picks, [...replace]);
+  });
 
   const choose = async (pick: () => Promise<string | null>) => {
     const path = await pick();
@@ -42,7 +48,7 @@ export function ImportDialog({ projects, onClose }: { projects: Project[]; onClo
 
   const look = () =>
     read.mutate(
-      { source: source.trim(), project, global: global && canBeGlobal },
+      { source: src, project, global: scope },
       {
         onSuccess: (found) => {
           setPreview(found);
@@ -54,10 +60,10 @@ export function ImportDialog({ projects, onClose }: { projects: Project[]; onClo
       },
     );
 
-  const askAi = async (file: string) => {
+  const askAi = async (file: string, fingerprint: string) => {
     setReviewing(file);
     try {
-      const review = await api.reviewSkillImport(project, source.trim(), global, file);
+      const review = await api.reviewSkillImport(project, src, scope, { file, fingerprint });
       setReviews((r) => ({ ...r, [file]: review }));
     } catch (error) {
       toast.error(errorMessage(error, t));
@@ -109,7 +115,7 @@ export function ImportDialog({ projects, onClose }: { projects: Project[]; onClo
   );
 
   return (
-    <Dialog title={t("skillLib.import.title")} onClose={onClose} footer={footer}>
+    <Dialog title={t("skillLib.import.title")} onClose={onClose} footer={footer} wide>
       {!preview ? (
         <div className="skill-import">
           <label className="field">
@@ -156,7 +162,7 @@ export function ImportDialog({ projects, onClose }: { projects: Project[]; onClo
       ) : (
         <div className="skill-import">
           <p className="small muted">
-            {t("skillLib.import.found", { n: preview.total })}{" "}
+            {preview.total === 1 ? t("skillLib.import.foundOne") : t("skillLib.import.found", { n: preview.total })}{" "}
             {preview.total > preview.candidates.length &&
               t("skillLib.import.foundMore", { shown: preview.candidates.length, total: preview.total })}
           </p>
@@ -172,7 +178,7 @@ export function ImportDialog({ projects, onClose }: { projects: Project[]; onClo
                       <input
                         type="checkbox"
                         checked={picked.has(c.source)}
-                        disabled={blocked && !taken}
+                        disabled={blocked}
                         onChange={(e) => setPicked((p) => toggle(p, c.source, e.target.checked))}
                       />
                       <code className="skill__name">{c.name || c.source}</code>
@@ -194,7 +200,7 @@ export function ImportDialog({ projects, onClose }: { projects: Project[]; onClo
                         checked={replace.has(c.name)}
                         onChange={(e) => {
                           setReplace((r) => toggle(r, c.name, e.target.checked));
-                          if (e.target.checked) setPicked((p) => toggle(p, c.source, true));
+                          setPicked((p) => toggle(p, c.source, e.target.checked));
                         }}
                       />
                       {t("skillLib.import.replace")}
@@ -217,7 +223,7 @@ export function ImportDialog({ projects, onClose }: { projects: Project[]; onClo
                     )
                   ) : (
                     c.problem === null && (
-                      <Button small variant="ghost" disabled={reviewing !== null} onClick={() => askAi(c.source)}>
+                      <Button small variant="ghost" disabled={reviewing !== null} onClick={() => askAi(c.source, c.fingerprint)}>
                         {reviewing === c.source ? t("skillLib.findings.reviewing") : t("skillLib.findings.review")}
                       </Button>
                     )

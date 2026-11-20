@@ -8,7 +8,7 @@ import { timeAgo } from "../../format";
 import { useT } from "../../i18n";
 import { SkillForm } from "../memory/SkillForm";
 import { Update } from "../memory/SkillCard";
-import { findingText, findingWeight, fromAi, trialSummary, useLibraryAction, verdictKey } from "./library";
+import { findingText, findingWeight, fromAi, trialSummary, useLibraryAction, useReadAction, verdictKey } from "./library";
 import { homeProject, shownVerdict } from "./SkillsScreen";
 
 const SIGN = { good: "✓", warning: "!", bad: "✕", info: "·" } as const;
@@ -38,7 +38,7 @@ export function SkillDetail({
   const remove = useLibraryAction((api) => api.removeSkill(skill.id));
   const outside = useLibraryAction((api, on: boolean) => api.setSkillOutside(skill.id, on));
   const save = useLibraryAction((api, draft: Parameters<typeof api.editSkill>[2]) => api.editSkill(skill.id, home ?? "", draft));
-  const ask = useLibraryAction((api, project: string) => api.reviewSkill(skill.id, project));
+  const ask = useReadAction((api, project: string) => api.reviewSkill(skill.id, project));
   const busy = approve.isPending || reject.isPending || remove.isPending;
 
   if (editing && home) {
@@ -46,7 +46,8 @@ export function SkillDetail({
       <section className="skill-detail" aria-label={skill.name}>
         <SkillForm
           initial={{ name: skill.name, description: skill.description, body: skill.body, global: skill.project === null }}
-          canBeGlobal={!projects.find((p) => p.path === home)?.protected}
+          // A global skill stays global here: "this project" would be one the user never chose.
+          canBeGlobal={skill.project !== null && !projects.find((p) => p.path === home)?.protected}
           busy={save.isPending}
           submitLabel={t("common.save")}
           onCancel={() => setEditing(false)}
@@ -148,12 +149,13 @@ export function SkillDetail({
             disabled={skill.project === null || outside.isPending}
             onChange={(on) =>
               outside.mutate(on, {
-                onSuccess: (files) =>
-                  toast.info(
-                    on
-                      ? t("skillLib.outside.on", { name: skill.name, n: files.written.length })
-                      : t("skillLib.outside.off", { name: skill.name }),
-                  ),
+                onSuccess: (files) => {
+                  const n = files.written.length;
+                  if (!on) toast.info(t("skillLib.outside.off", { name: skill.name }));
+                  else if (n === 0) toast.error(t("skillLib.outside.none", { name: skill.name }));
+                  else toast.info(n === 1 ? t("skillLib.outside.onOne", { name: skill.name }) : t("skillLib.outside.on", { name: skill.name, n }));
+                  if (on && n > 0) for (const path of files.skipped) toast.error(t("skillLib.outside.skipped", { path }));
+                },
               })
             }
           />
@@ -195,6 +197,9 @@ export function SkillDetail({
                 })}{" "}
                 {t("skillLib.findings.opinion")}
               </p>
+              <Button small variant="ghost" onClick={() => setReview(null)}>
+                {t("skillLib.findings.again")}
+              </Button>
             </>
           ) : (
             <div className="skill-detail__review">

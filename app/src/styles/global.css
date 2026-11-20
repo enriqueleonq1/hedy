@@ -516,7 +516,8 @@ input[type="radio"] {
   flex: none;
   display: inline-grid;
   place-content: center;
-  border: 1.5px solid var(--line-strong);
+  /* --muted: the control's edge must stand out from its surface (3:1). */
+  border: 1.5px solid var(--muted);
   background: var(--panel-2);
   cursor: pointer;
 }
@@ -539,14 +540,14 @@ input[type="radio"]::after {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--action);
   transform: scale(0);
   transition: transform 0.12s var(--ease-out);
 }
-input[type="radio"]:checked { border-color: var(--focus); }
+input[type="radio"]:checked { border-color: var(--action); }
 input[type="radio"]:checked::after { transform: scale(1); }
 input[type="checkbox"]:hover:not(:disabled),
-input[type="radio"]:hover:not(:disabled) { border-color: var(--muted); }
+input[type="radio"]:hover:not(:disabled) { border-color: var(--ink); }
 input[type="checkbox"]:checked:hover:not(:disabled) { border-color: var(--action); }
 input[type="checkbox"]:focus-visible,
 input[type="radio"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
@@ -913,6 +914,7 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
   box-shadow: var(--shadow-dialog);
   animation: sheet-in 0.2s var(--ease-out);
 }
+.dialog--wide { width: min(720px, 100%); }
 
 .dialog__header,
 .dialog__footer { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-4) var(--space-5); }
@@ -1287,6 +1289,8 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
 .md__link--plain { text-decoration: none; }
 .md__image { color: var(--muted); font-style: italic; }
 .md input[type="checkbox"] { display: inline-grid; margin: 0 6px 0 0; vertical-align: -3px; }
+/* A task list in Markdown is read-only, not unavailable: drawn in full. */
+.md input[type="checkbox"]:disabled { opacity: 1; cursor: default; }
 .md li:has(> input[type="checkbox"]) { list-style: none; margin-left: -20px; }
 
 .plan-card { padding: 16px 18px; gap: 10px; }

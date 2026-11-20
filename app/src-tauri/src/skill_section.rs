@@ -9,8 +9,8 @@ use hedy_core::application::{
 };
 use hedy_core::domain::Skill;
 use hedy_core::domain::skill_check::{Finding, SkillText, Verdict};
-use hedy_core::domain::skill_trial::TrialOutcome;
-use serde::Serialize;
+use hedy_core::domain::skill_trial::{TrialOutcome, fingerprint};
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::AppState;
@@ -49,11 +49,14 @@ pub struct ImportCandidateDto {
     pub problem: Option<ProblemDto>,
     pub findings: Vec<Finding>,
     pub verdict: Verdict,
+    /// Of the text shown: what is imported must still say this.
+    pub fingerprint: String,
 }
 
 impl From<ImportCandidate> for ImportCandidateDto {
     fn from(c: ImportCandidate) -> Self {
         Self {
+            fingerprint: candidate_print(&c),
             source: c.source.display().to_string(),
             name: c.draft.name,
             description: c.draft.description,
@@ -66,6 +69,18 @@ impl From<ImportCandidate> for ImportCandidateDto {
             verdict: c.verdict,
         }
     }
+}
+
+fn candidate_print(c: &ImportCandidate) -> String {
+    fingerprint(&c.draft.name, &c.draft.description, &c.draft.body)
+}
+
+/// A skill the user picked to import: its file, and what its text was then.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PickInput {
+    pub file: String,
+    pub fingerprint: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -191,12 +206,18 @@ fn picked(
     path: &Path,
     source: &Path,
     global: bool,
-    files: &[String],
+    picks: &[PickInput],
 ) -> hedy_core::application::AppResult<Vec<ImportCandidate>> {
+    // A file whose text changed since the user saw it is left out.
     Ok(h.preview_import(path, source, global)?
         .candidates
         .into_iter()
-        .filter(|c| files.contains(&c.source.display().to_string()))
+        .filter(|c| {
+            let file = c.source.display().to_string();
+            picks
+                .iter()
+                .any(|p| p.file == file && p.fingerprint == candidate_print(c))
+        })
         .collect())
 }
 
@@ -207,10 +228,11 @@ pub async fn review_skill_import(
     path: PathBuf,
     source: PathBuf,
     global: bool,
-    file: String,
+    pick: PickInput,
 ) -> CommandResult<ReviewDto> {
     blocking(&state, move |h| {
-        let candidate = picked(h, &path, &source, global, std::slice::from_ref(&file))?
+        let file = pick.file.clone();
+        let candidate = picked(h, &path, &source, global, std::slice::from_ref(&pick))?
             .into_iter()
             .next()
             .ok_or_else(|| {
@@ -228,11 +250,11 @@ pub async fn import_skills(
     path: PathBuf,
     source: PathBuf,
     global: bool,
-    files: Vec<String>,
+    picks: Vec<PickInput>,
     replace: Vec<String>,
 ) -> CommandResult<ImportReportDto> {
     blocking(&state, move |h| {
-        let candidates = picked(h, &path, &source, global, &files)?;
+        let candidates = picked(h, &path, &source, global, &picks)?;
         Ok(h.import_skills(&path, &candidates, &replace)?.into())
     })
     .await
@@ -246,11 +268,13 @@ pub async fn review_skill(
     path: PathBuf,
 ) -> CommandResult<ReviewDto> {
     blocking(&state, move |h| {
-        let skill = h
-            .skills_overview()?
+        // Only a skill `path`'s agents see goes to `path`'s account.
+        let view = h.skills(&path)?;
+        let skill = view
+            .approved
             .into_iter()
-            .find(|o| o.skill.id == id)
-            .map(|o| o.skill)
+            .chain(view.proposed.into_iter().map(|p| p.skill))
+            .find(|s| s.id == id)
             .ok_or_else(|| hedy_core::application::AppError::SkillNotFound(id.to_string()))?;
         let (measured, _) = h.measure_approved_skill(&path, &skill)?;
         let text = SkillText {

@@ -86,13 +86,12 @@ export function SkillsScreen({ overview }: { overview: Overview }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <div className="skill-lib__filters" role="radiogroup" aria-label={t("skillLib.filters")}>
+        <div className="skill-lib__filters" role="group" aria-label={t("skillLib.filters")}>
           {(["all", "global", "project", "proposed"] as const).map((f) => (
             <button
               key={f}
               type="button"
-              role="radio"
-              aria-checked={filter === f}
+              aria-pressed={filter === f}
               className="skill-lib__filter"
               onClick={() => setFilter(f)}
             >

@@ -644,6 +644,11 @@ impl Hedy {
         let space = PERSONAL;
         let _guard = self.sync_guard(space)?;
         let result = self.sync_locked(space);
+        // Skills that came in or changed reach the sessions and the copies
+        // outside Hedy now, not at the next start.
+        if result.is_ok() {
+            self.refresh_skills_plugins();
+        }
         if self.space_is_set_up(space)? {
             match &result {
                 Ok(_) => self.clear_sync_setting(space, LAST_ERROR)?,

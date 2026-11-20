@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 import { errorMessage, useApi } from "../../api/context";
 import type { Project, SkillOverview, StartedTrial, TrialOutcome } from "../../api/types";
-import { Button } from "../../components/ui/Button";
+import { Button, ConfirmButton } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { useToast } from "../../components/ui/Toast";
 import { useT } from "../../i18n";
@@ -45,8 +45,10 @@ export function TrialDialog({ item, projects, onClose }: { item: SkillOverview; 
   const check = edited ?? checkInfo.data?.check ?? "";
 
   // While it runs, look for its end; the runs' statuses come from the tasks.
+  // A failed look is said once, not every round.
   useEffect(() => {
     if (!started || outcome) return;
+    let warned = false;
     const timer = setInterval(async () => {
       try {
         const ended = await api.takeTrialOutcome(started.id);
@@ -55,7 +57,8 @@ export function TrialDialog({ item, projects, onClose }: { item: SkillOverview; 
           await client.invalidateQueries({ queryKey: SKILLS_OVERVIEW_KEY });
         }
       } catch (error) {
-        toast.error(errorMessage(error, t));
+        if (!warned) toast.error(errorMessage(error, t));
+        warned = true;
       }
     }, POLL_MS);
     return () => clearInterval(timer);
@@ -98,9 +101,14 @@ export function TrialDialog({ item, projects, onClose }: { item: SkillOverview; 
 
   const running = started !== null && outcome === null;
   const footer = running ? (
-    <Button variant="ghost" onClick={cancel}>
-      {t("skillLib.try.cancel")}
-    </Button>
+    <>
+      <ConfirmButton variant="ghost" confirmLabel={t("skillLib.try.cancelConfirm")} onConfirm={cancel}>
+        {t("skillLib.try.cancel")}
+      </ConfirmButton>
+      <Button title={t("skillLib.try.backgroundHint")} onClick={onClose}>
+        {t("skillLib.try.background")}
+      </Button>
+    </>
   ) : outcome ? (
     <>
       <Button
@@ -131,7 +139,8 @@ export function TrialDialog({ item, projects, onClose }: { item: SkillOverview; 
   );
 
   return (
-    <Dialog title={t("skillLib.try.title", { name: skill.name })} onClose={running ? cancel : onClose} footer={footer}>
+    // While it runs, Escape or a click outside never throws the runs away.
+    <Dialog title={t("skillLib.try.title", { name: skill.name })} onClose={onClose} footer={footer} dismissible={!running} wide>
       <div className="trial">
         <p className="small muted">{t("skillLib.try.intro")}</p>
         {item.outside && <p className="hint trial__warn">{t("skillLib.try.outsideFirst")}</p>}
@@ -200,6 +209,9 @@ export function TrialDialog({ item, projects, onClose }: { item: SkillOverview; 
                 {t("skillLib.try.checkNone")}
               </label>
               <p className="small muted">{t("skillLib.try.checkHint")}</p>
+              {!noCheck && check.trim() === "" && checkInfo.isSuccess && (
+                <p className="small trial__warn">{t("skillLib.try.noCheckFound")}</p>
+              )}
               {checkInfo.data && (
                 <p className={`small ${checkInfo.data.isolated ? "muted" : "trial__warn"}`}>
                   {checkInfo.data.isolated ? t("skillLib.try.isolated") : t("skillLib.try.notIsolated")}
@@ -211,6 +223,7 @@ export function TrialDialog({ item, projects, onClose }: { item: SkillOverview; 
         )}
 
         {started && <Runs project={project} trial={started} done={outcome !== null} />}
+        {running && <p className="small muted">{t("skillLib.try.backgroundHint")}</p>}
 
         {outcome && (
           <section aria-labelledby="trial-result" className="trial__result">
@@ -260,7 +273,7 @@ function Runs({ project, trial, done }: { project: string; trial: StartedTrial; 
                   side: i % 2 === 0 ? t("skillLib.try.with") : t("skillLib.try.without"),
                 })}
               </span>
-              <span className="small muted">{t(`skillLib.try.runState.${done ? "done" : state}`)}</span>
+              <span className="small muted">{t(`skillLib.try.runState.${done && state !== "failed" ? "done" : state}`)}</span>
             </li>
           );
         })}

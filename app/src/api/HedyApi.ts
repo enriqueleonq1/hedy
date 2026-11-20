@@ -57,6 +57,7 @@ import type {
   FileDiff,
   MemoryView,
   ExportReport,
+  ImportPick,
   ImportPreview,
   ImportReport,
   SkillChange,
@@ -317,9 +318,9 @@ export interface HedyApi {
   /** The skills in `source` (a SKILL.md, a folder or a project), ready to import: nothing is saved. */
   previewSkillImport(project: string, source: string, global: boolean): Promise<ImportPreview>;
   /** What the AI thinks of one skill to import (by its file), against the project's notes. */
-  reviewSkillImport(project: string, source: string, global: boolean, file: string): Promise<SkillReview>;
-  /** Imports the picked files of `source`, read again; `replace` names approved skills to update. */
-  importSkills(project: string, source: string, global: boolean, files: string[], replace: string[]): Promise<ImportReport>;
+  reviewSkillImport(project: string, source: string, global: boolean, pick: ImportPick): Promise<SkillReview>;
+  /** Imports the picked files of `source`, read again (one whose text changed stays out); `replace` names approved skills to update. */
+  importSkills(project: string, source: string, global: boolean, picks: ImportPick[], replace: string[]): Promise<ImportReport>;
   /** What the AI thinks of a skill Hedy has, against `project`'s notes. */
   reviewSkill(id: number, project: string): Promise<SkillReview>;
   /** Writes approved skills as `<to>/<name>/SKILL.md`; nothing is replaced. */

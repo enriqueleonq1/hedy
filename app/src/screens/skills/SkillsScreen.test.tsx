@@ -28,14 +28,14 @@ describe("Skills section", () => {
 
   it("lists every skill with filters and a search, and shows the chosen one in detail", async () => {
     const { user, list } = await setup();
-    expect(screen.getByRole("radio", { name: "Todas · 5" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("button", { name: "Todas · 5" })).toHaveAttribute("aria-pressed", "true");
     expect(within(list).getAllByRole("button")).toHaveLength(5);
 
-    await user.click(screen.getByRole("radio", { name: "Propuestas · 2" }));
+    await user.click(screen.getByRole("button", { name: "Propuestas · 2" }));
     expect(within(list).getAllByRole("button")).toHaveLength(2);
-    await user.click(screen.getByRole("radio", { name: "Globales · 1" }));
+    await user.click(screen.getByRole("button", { name: "Globales · 1" }));
     expect(within(list).getAllByRole("button")).toHaveLength(1);
-    await user.click(screen.getByRole("radio", { name: "Todas · 5" }));
+    await user.click(screen.getByRole("button", { name: "Todas · 5" }));
 
     await user.type(screen.getByRole("searchbox", { name: "Buscar habilidades" }), "publicar");
     expect(within(list).getAllByRole("button")).toHaveLength(1);
@@ -105,6 +105,39 @@ describe("Skills section", () => {
     await user.click(within(dialog).getAllByRole("button", { name: "Cerrar" }).at(-1) as HTMLElement);
     await waitFor(() => expect(row(list, "publicar-version")).toHaveTextContent("Útil"));
   }, 15000);
+
+  it("never throws a running trial away on Escape, and can leave it running", async () => {
+    const { user, list } = await setup();
+    await user.click(row(list, "publicar-version"));
+    await user.click(screen.getByRole("button", { name: "Probarla" }));
+    const dialog = await screen.findByRole("dialog", { name: "Probar publicar-version" });
+    await user.type(within(dialog).getByRole("textbox", { name: "Tarea de prueba 1" }), "Sube la versión");
+    await user.click(within(dialog).getByRole("button", { name: "Empezar" }));
+    await within(dialog).findByText("Tarea 1 · con ella");
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog", { name: "Probar publicar-version" })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Seguir en segundo plano" }));
+    expect(screen.queryByRole("dialog", { name: "Probar publicar-version" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Prueba cancelada: no se guardó ningún resultado.")).not.toBeInTheDocument();
+  });
+
+  it("imports a skill with a taken name only when replacing it", async () => {
+    const api = MockApi.withSampleData();
+    const { user } = await setup(api);
+    const first = await api.previewSkillImport("/code/hedy", "/home/tu/Descargas/skills/revisar-pr/SKILL.md", false);
+    const good = first.candidates.find((c) => c.name === "revisar-pr")!;
+    await api.importSkills("/code/hedy", "/home/tu/Descargas/skills/revisar-pr/SKILL.md", false, [
+      { file: good.source, fingerprint: good.fingerprint },
+    ], []);
+    await user.click(screen.getByRole("button", { name: "Importar" }));
+    const dialog = await screen.findByRole("dialog", { name: "Importar habilidades" });
+    await user.click(within(dialog).getByRole("button", { name: "Elegir SKILL.md" }));
+    await user.click(within(dialog).getByRole("button", { name: "Ver qué entra" }));
+    const taken = await within(dialog).findByRole("checkbox", { name: "revisar-pr" });
+    expect(taken).toBeDisabled();
+    await user.click(within(dialog).getByRole("checkbox", { name: "Reemplazar la que ya tienes con ese nombre" }));
+    expect(taken).toBeChecked();
+  });
 
   it("exports the chosen approved skills to a folder", async () => {
     const { user } = await setup();

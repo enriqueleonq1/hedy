@@ -21,6 +21,7 @@ import { resolveLanguage } from "../i18n";
 import { placeholders } from "../templates/placeholders";
 import { buildTheme } from "../theme/derive";
 import type {
+  ImportPick,
   TrialResult,
   TrialOutcome,
   TrialCheck,
@@ -1180,6 +1181,7 @@ export class MockApi implements HedyApi {
         replaces: structuredClone(taken ?? null),
         problem: taken ? { kind: "nameTaken", message: "ya tienes una habilidad aprobada con ese nombre" } : null,
         ...this.measureSkill(draft.description, draft.body),
+        fingerprint: this.printOf(draft),
       };
     });
     return { candidates, total: candidates.length };
@@ -1205,9 +1207,16 @@ export class MockApi implements HedyApi {
     };
   }
 
-  async reviewSkillImport(project: string, source: string, _global: boolean, file: string): Promise<SkillReview> {
+  /** Like the backend's fingerprint, in small: enough to tell a changed text. */
+  private printOf(draft: SkillDraft): string {
+    return `${draft.name}:${draft.description.length}:${draft.body.length}`;
+  }
+
+  async reviewSkillImport(project: string, source: string, _global: boolean, pick: ImportPick): Promise<SkillReview> {
     this.project(project);
-    if (!this.importSamples(source).some((s) => s.file === file)) throw "no hay habilidades que importar ahí";
+    if (!this.importSamples(source).some((s) => s.file === pick.file && this.printOf(s.draft) === pick.fingerprint)) {
+      throw "no hay habilidades que importar ahí";
+    }
     return this.sampleReview();
   }
 
@@ -1215,11 +1224,13 @@ export class MockApi implements HedyApi {
     project: string,
     source: string,
     global: boolean,
-    files: string[],
+    picks: ImportPick[],
     replace: string[],
   ): Promise<ImportReport> {
     const report: ImportReport = { imported: [], updated: [], skipped: [], files: this.skillFiles() };
-    for (const { draft } of this.importSamples(source).filter((s) => files.includes(s.file))) {
+    const wanted = (s: { file: string; draft: SkillDraft }) =>
+      picks.some((p) => p.file === s.file && p.fingerprint === this.printOf(s.draft));
+    for (const { draft } of this.importSamples(source).filter(wanted)) {
       const scope = global ? null : project;
       const taken = this.skillList.find((s) => s.status === "approved" && s.name === draft.name && s.project === scope);
       if (taken && !replace.includes(draft.name)) {

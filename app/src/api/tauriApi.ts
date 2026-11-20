@@ -130,9 +130,9 @@ export const tauriApi: HedyApi = {
   skillsOverview: () => invoke("skills_overview"),
   setSkillOutside: (id, on) => invoke("set_skill_outside", { id, on }),
   previewSkillImport: (path, source, global) => invoke("preview_skill_import", { path, source, global }),
-  reviewSkillImport: (path, source, global, file) => invoke("review_skill_import", { path, source, global, file }),
-  importSkills: (path, source, global, files, replace) =>
-    invoke("import_skills", { path, source, global, files, replace }),
+  reviewSkillImport: (path, source, global, pick) => invoke("review_skill_import", { path, source, global, pick }),
+  importSkills: (path, source, global, picks, replace) =>
+    invoke("import_skills", { path, source, global, picks, replace }),
   reviewSkill: (id, path) => invoke("review_skill", { id, path }),
   exportSkills: (ids, to) => invoke("export_skills", { ids, to }),
   proposeTrialTasks: (path, id) => invoke("propose_trial_tasks", { path, id }),

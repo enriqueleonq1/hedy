@@ -4,9 +4,10 @@
 //! user's own CLIs read it (`.claude/skills` and `.agents/skills` of the
 //! project, excluded from git). Off by default: skills live inside Hedy.
 
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::skills::{SkillFiles, update_target};
 use super::{AppError, AppResult, Hedy};
@@ -16,8 +17,8 @@ use crate::domain::skill_check::{Finding, SkillText, Verdict, measure, predicted
 use crate::domain::skill_trial::TrialResult;
 use crate::domain::{Skill, SkillStatus};
 
-/// Settings key of a skill used outside Hedy too (by skill id, this PC).
-const OUTSIDE_KEY: &str = "skill.outside.";
+/// Settings key of the skills used outside Hedy too, on this PC.
+const OUTSIDE_KEY: &str = "skill.outside";
 
 /// One skill of the section.
 #[derive(Debug, Clone, Serialize)]
@@ -108,18 +109,38 @@ impl Hedy {
         }
     }
 
+    /// The skills used outside Hedy too, on this PC: by id, each with what
+    /// it was when turned on (an id may be reused, a skill renamed on
+    /// another PC: only the same skill, by its creation, keeps it).
+    fn outside_entries(&self) -> BTreeMap<i64, OutsideEntry> {
+        self.store
+            .get_setting(OUTSIDE_KEY)
+            .ok()
+            .flatten()
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default()
+    }
+
+    fn save_outside_entries(&self, entries: &BTreeMap<i64, OutsideEntry>) -> AppResult<()> {
+        let json = match entries.is_empty() {
+            true => None,
+            false => serde_json::to_string(entries).ok(),
+        };
+        Ok(self.store.set_setting(OUTSIDE_KEY, json.as_deref())?)
+    }
+
     /// Whether a skill is used outside Hedy too, on this PC.
     pub fn skill_outside(&self, id: i64) -> bool {
-        matches!(
-            self.store.get_setting(&format!("{OUTSIDE_KEY}{id}")),
-            Ok(Some(_))
-        )
+        let Some(entry) = self.outside_entries().remove(&id) else {
+            return false;
+        };
+        matches!(self.store.skill(id), Ok(Some(skill)) if entry.is(&skill))
     }
 
     /// Turns "Usar también fuera de Hedy" on or off for an approved project
     /// skill: on, it is written in the project's `.claude/skills` and
-    /// `.agents/skills` (excluded from git; a file of the user's own is never
-    /// replaced); off, Hedy's copies there go.
+    /// `.agents/skills` (only where git ignores it; a file of the user's own
+    /// or one git tracks is never replaced); off, Hedy's copies there go.
     pub fn set_skill_outside(&self, id: i64, on: bool) -> AppResult<SkillFiles> {
         let skill = self.skill_or_error(id)?;
         let Some(project) = skill.project.clone() else {
@@ -129,15 +150,30 @@ impl Hedy {
             return Err(AppError::SkillOutsideProjectOnly);
         }
         let mut files = SkillFiles::default();
-        let key = format!("{OUTSIDE_KEY}{id}");
+        let mut entries = self.outside_entries();
         if on {
-            self.store.set_setting(&key, Some("1"))?;
+            entries.insert(id, OutsideEntry::of(&skill));
+            self.save_outside_entries(&entries)?;
             self.write_outside(&skill, &mut files)?;
+            // Nothing could be written (files of the user's own there): it
+            // stays inside Hedy rather than look on.
+            if files.written.is_empty() {
+                entries.remove(&id);
+                self.save_outside_entries(&entries)?;
+            }
         } else {
-            self.store.set_setting(&key, None)?;
+            entries.remove(&id);
+            self.save_outside_entries(&entries)?;
             self.remove_outside(&project, &skill.name, &mut files);
         }
         Ok(files)
+    }
+
+    /// Whether Hedy may own `file` in the project's checkout: outside git, or
+    /// ignored and untracked there (a copy someone committed, or a project
+    /// inside a bigger checkout whose exclude does not reach it, stays).
+    fn ours_to_touch(&self, project: &Path, file: &Path) -> bool {
+        self.fs.git_root(project).is_none() || self.git.is_ignored(project, &file.to_string_lossy())
     }
 
     /// Writes a project skill where the user's own CLIs read it.
@@ -161,6 +197,10 @@ impl Hedy {
                 self.git
                     .ensure_excluded(project, &folder.exclude_pattern(&skill.name))?;
             }
+            if !self.ours_to_touch(project, &file) {
+                files.skipped.push(path);
+                continue;
+            }
             self.fs.write_text(&path, &skill_file(skill))?;
             files.written.push(path);
         }
@@ -168,7 +208,7 @@ impl Hedy {
     }
 
     /// Removes Hedy's copies of a skill from the project's own checkout (a
-    /// file of the user's own, or one behind a link, stays).
+    /// file of the user's own, one git tracks, or one behind a link, stays).
     pub(super) fn remove_outside(&self, project: &Path, name: &str, files: &mut SkillFiles) {
         for folder in SkillFolder::ALL {
             let file = folder.file(name);
@@ -179,17 +219,25 @@ impl Hedy {
                 .ok()
                 .flatten()
                 .is_some_and(|text| is_managed(&text));
-            if !self.through_link(project, &file) && ours && self.fs.remove_file(&path).is_ok() {
+            if !self.through_link(project, &file)
+                && ours
+                && self.ours_to_touch(project, &file)
+                && self.fs.remove_file(&path).is_ok()
+            {
                 files.removed.push(path);
                 let _ = self.remove_empty_skill_dirs(project, folder, name);
             }
         }
     }
 
-    /// After a skill changed (edited, updated, moved or removed): its copies
-    /// outside Hedy follow it. `old` is the skill before the change.
+    /// After a skill changed here (edited, updated, moved or removed): its
+    /// copies outside Hedy follow it. `old` is the skill before the change.
     pub(super) fn follow_outside(&self, old: &Skill, new: Option<&Skill>, files: &mut SkillFiles) {
-        if !self.skill_outside(old.id) {
+        let mut entries = self.outside_entries();
+        let Some(entry) = entries.get(&old.id).cloned() else {
+            return;
+        };
+        if !entry.is(old) {
             return;
         }
         let moved = new.is_none_or(|n| n.name != old.name || n.project != old.project);
@@ -198,32 +246,93 @@ impl Hedy {
         }
         match new.filter(|n| n.project.is_some() && n.status == SkillStatus::Approved) {
             Some(new) => {
+                entries.insert(old.id, OutsideEntry::of(new));
                 let _ = self.write_outside(new, files);
             }
             None => {
-                let _ = self
-                    .store
-                    .set_setting(&format!("{OUTSIDE_KEY}{}", old.id), None);
+                entries.remove(&old.id);
             }
+        }
+        let _ = self.save_outside_entries(&entries);
+    }
+
+    /// Copies outside Hedy brought up to date, after a sync and at start: a
+    /// skill changed on another PC is rewritten, renamed or moved ones leave
+    /// their old copies, deleted ones (or an id taken by another skill) take
+    /// theirs back. A project folder that is gone is never made again.
+    /// Best effort.
+    pub(super) fn refresh_outside(&self) {
+        let entries = self.outside_entries();
+        if entries.is_empty() {
+            return;
+        }
+        let mut kept = BTreeMap::new();
+        for (id, entry) in entries {
+            let now = self.store.skill(id).ok().flatten();
+            let same = now
+                .as_ref()
+                .is_some_and(|s| s.created_at == entry.created_at);
+            let changed = now.as_ref().is_none_or(|s| {
+                !same || s.name != entry.name || s.project.as_ref() != Some(&entry.project)
+            });
+            if changed && self.fs.exists(&entry.project) {
+                self.remove_outside(&entry.project, &entry.name, &mut SkillFiles::default());
+            }
+            let Some(skill) = now.filter(|s| same && s.status == SkillStatus::Approved) else {
+                continue;
+            };
+            let Some(project) = skill.project.clone() else {
+                continue;
+            };
+            if self.fs.exists(&project) {
+                let _ = self.write_outside(&skill, &mut SkillFiles::default());
+            }
+            kept.insert(id, OutsideEntry::of(&skill));
+        }
+        let _ = self.save_outside_entries(&kept);
+    }
+
+    /// A project leaves Hedy: its skills' copies outside Hedy go with it.
+    pub(super) fn forget_outside_in(&self, project: &Path) {
+        let mut entries = self.outside_entries();
+        let before = entries.len();
+        entries.retain(|_, entry| {
+            let here = entry.project == project;
+            if here && self.fs.exists(project) {
+                self.remove_outside(project, &entry.name, &mut SkillFiles::default());
+            }
+            !here
+        });
+        if entries.len() != before {
+            let _ = self.save_outside_entries(&entries);
+        }
+    }
+}
+
+/// What a skill used outside Hedy was when turned on (or last followed).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OutsideEntry {
+    name: String,
+    project: PathBuf,
+    created_at: i64,
+}
+
+impl OutsideEntry {
+    fn of(skill: &Skill) -> Self {
+        Self {
+            name: skill.name.clone(),
+            project: skill.project.clone().unwrap_or_default(),
+            created_at: skill.created_at,
         }
     }
 
-    /// Copies outside Hedy brought up to date (a skill changed on another
-    /// PC). Best effort.
-    pub(super) fn refresh_outside(&self) {
-        let Ok(projects) = self.store.list_projects() else {
-            return;
-        };
-        for project in projects {
-            let Ok(skills) = self.store.skills(Some(&project.path), false) else {
-                continue;
-            };
-            for skill in skills {
-                if skill.status == SkillStatus::Approved && self.skill_outside(skill.id) {
-                    let _ = self.write_outside(&skill, &mut SkillFiles::default());
-                }
-            }
-        }
+    /// The same skill, as it is now (an id reused by another skill is not).
+    fn is(&self, skill: &Skill) -> bool {
+        skill.created_at == self.created_at
+            && skill.name == self.name
+            && skill.project.as_ref() == Some(&self.project)
+            && skill.status == SkillStatus::Approved
     }
 }
 
@@ -231,7 +340,7 @@ impl Hedy {
 mod tests {
     use super::*;
     use crate::application::SkillDraft;
-    use crate::application::ports::FileSystem;
+    use crate::application::ports::{FileSystem, SkillRepository};
     use crate::application::testing::Fixture;
 
     fn setup() -> (Fixture, Skill) {
@@ -289,6 +398,12 @@ mod tests {
         let claude = agenda.join(".claude/skills/pr-checklist/SKILL.md");
         let agents = agenda.join(".agents/skills/pr-checklist/SKILL.md");
         assert!(!f.fs.exists(&claude), "inside Hedy only by default");
+        // Excluded by Hedy, so git ignores them (as `git check-ignore` says).
+        for name in ["pr-checklist", "pr-list"] {
+            for folder in [".claude", ".agents"] {
+                f.git.ignore(&format!("{folder}/skills/{name}/SKILL.md"));
+            }
+        }
 
         let files = f.hedy.set_skill_outside(skill.id, true).unwrap();
         assert_eq!(files.written, [claude.clone(), agents.clone()]);
@@ -329,6 +444,83 @@ mod tests {
     }
 
     #[test]
+    fn a_copy_git_tracks_is_never_written_or_removed() {
+        let (f, skill) = setup();
+        let agenda = f.dir("/code/agenda");
+        // Someone committed an older Hedy's copy: git does not ignore it.
+        let tracked = agenda.join(".claude/skills/pr-checklist/SKILL.md");
+        let committed = skill_file(&skill).replace("CHANGELOG", "the changelog");
+        f.fs.write_text(&tracked, &committed).unwrap();
+        f.git.ignore(".agents/skills/pr-checklist/SKILL.md");
+        let files = f.hedy.set_skill_outside(skill.id, true).unwrap();
+        assert_eq!(files.skipped, std::slice::from_ref(&tracked));
+        assert_eq!(f.fs.read_text(&tracked).unwrap().unwrap(), committed);
+        f.hedy.set_skill_outside(skill.id, false).unwrap();
+        assert!(f.fs.exists(&tracked), "a committed copy stays");
+    }
+
+    #[test]
+    fn the_switch_stays_off_when_nothing_could_be_written() {
+        let (f, skill) = setup();
+        let agenda = f.dir("/code/agenda");
+        for folder in [".claude", ".agents"] {
+            let mine = agenda.join(format!("{folder}/skills/pr-checklist/SKILL.md"));
+            f.fs.write_text(&mine, "---\nname: pr-checklist\n---\nMine")
+                .unwrap();
+        }
+        let files = f.hedy.set_skill_outside(skill.id, true).unwrap();
+        assert!(files.written.is_empty() && files.skipped.len() == 2);
+        assert!(!f.hedy.skill_outside(skill.id));
+    }
+
+    #[test]
+    fn an_id_taken_by_another_skill_never_inherits_the_switch() {
+        let (f, skill) = setup();
+        let agenda = f.dir("/code/agenda");
+        f.git.ignore(".claude/skills/pr-checklist/SKILL.md");
+        f.git.ignore(".agents/skills/pr-checklist/SKILL.md");
+        f.hedy.set_skill_outside(skill.id, true).unwrap();
+        // Deleted on another PC (sync drops the row), then the id is reused.
+        f.store.delete_skill(skill.id).unwrap();
+        f.clock.advance(60);
+        let other = f
+            .hedy
+            .add_skill(
+                &agenda,
+                &SkillDraft {
+                    name: "deploy".into(),
+                    description: "Before deploying.".into(),
+                    body: "1. Run `make deploy`".into(),
+                    global: false,
+                },
+            )
+            .unwrap()
+            .skill;
+        assert!(!f.hedy.skill_outside(other.id));
+        // The next refresh takes the old copies back and forgets the switch.
+        f.hedy.refresh_skills_plugins();
+        assert!(
+            !f.fs
+                .exists(&agenda.join(".claude/skills/pr-checklist/SKILL.md"))
+        );
+        assert!(!f.fs.exists(&agenda.join(".claude/skills/deploy/SKILL.md")));
+    }
+
+    #[test]
+    fn removing_a_project_takes_its_copies_back() {
+        let (f, skill) = setup();
+        let agenda = f.dir("/code/agenda");
+        f.git.ignore(".claude/skills/pr-checklist/SKILL.md");
+        f.git.ignore(".agents/skills/pr-checklist/SKILL.md");
+        f.hedy.set_skill_outside(skill.id, true).unwrap();
+        f.hedy.remove_project(&agenda).unwrap();
+        assert!(
+            !f.fs
+                .exists(&agenda.join(".claude/skills/pr-checklist/SKILL.md"))
+        );
+    }
+
+    #[test]
     fn only_approved_project_skills_go_outside_and_removing_takes_them_back() {
         let (f, skill) = setup();
         let agenda = f.dir("/code/agenda");
@@ -349,6 +541,8 @@ mod tests {
             f.hedy.set_skill_outside(global.id, true),
             Err(AppError::SkillOutsideProjectOnly)
         ));
+        f.git.ignore(".claude/skills/pr-checklist/SKILL.md");
+        f.git.ignore(".agents/skills/pr-checklist/SKILL.md");
         f.hedy.set_skill_outside(skill.id, true).unwrap();
         f.hedy.remove_skill(skill.id).unwrap();
         assert!(

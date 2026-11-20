@@ -85,6 +85,7 @@ impl Hedy {
     /// Unregisters the project. Nothing in its folder is touched.
     pub fn remove_project(&self, path: &Path) -> AppResult<Project> {
         let project = self.project_at(path)?;
+        self.forget_outside_in(&project.path);
         self.store.delete_project(&project.path)?;
         Ok(project)
     }
