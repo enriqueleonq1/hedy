@@ -873,7 +873,9 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
       `GIT_WORK_TREE` from the project's own git data (the worktree whose `gitdir`
       names the copy), or a path that cannot exist, so it fails; a repository nested in
       the copy is never entered (`diff.ignoreSubmodules=all`, no submodule recursion, no
-      fsmonitor: git would obey a nested `.git`'s config too); `GIT_INDEX_FILE` and the
+      fsmonitor: git would obey a nested `.git`'s config too; staging lists the changes
+      with `ls-files` and adds them with `update-index --ignore-submodules` instead of
+      `add --all`, which runs a nested repository's own status); `GIT_INDEX_FILE` and the
       like from Hedy's own environment are dropped. A copy git no longer recognizes is
       still removed. No agent writes a `.git` anywhere, even with someone to ask.
     - **The run without it gets it from nowhere:** not in its plugin, not in its

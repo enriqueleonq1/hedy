@@ -252,6 +252,61 @@ fn plain(dir: &Path, args: &[&str]) -> PortResult<Output> {
         .map_err(|e| PortError::new(format!("no se pudo ejecutar git: {e}")))
 }
 
+/// Stages every change in a task's copy as `git add --all` would, but never
+/// goes into a repository nested in it: `add` runs a nested repository's own
+/// status, and with it whatever its config says (a clean filter). Its
+/// folder is staged as git sees it from outside, or not at all.
+fn stage_all(worktree: &Path) -> PortResult<()> {
+    use std::process::Stdio;
+    let listed = git(
+        worktree,
+        &[
+            "ls-files",
+            "-z",
+            "--others",
+            "--modified",
+            "--deleted",
+            "--exclude-standard",
+        ],
+    )?;
+    if listed.is_empty() {
+        return Ok(());
+    }
+    let mut child = git_in(worktree)
+        .args([
+            "update-index",
+            "--add",
+            "--remove",
+            "--ignore-submodules",
+            "-z",
+            "--stdin",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| PortError::new(format!("no se pudo ejecutar git: {e}")))?;
+    // Written from another thread: a long list fills the pipes both ways.
+    let stdin = child.stdin.take();
+    let writer = std::thread::spawn(move || {
+        if let Some(mut stdin) = stdin {
+            let _ = stdin.write_all(listed.as_bytes());
+        }
+    });
+    let out = child
+        .wait_with_output()
+        .map_err(|e| PortError::new(format!("git update-index: {e}")))?;
+    let _ = writer.join();
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(PortError::new(format!(
+            "git update-index: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )))
+    }
+}
+
 /// Runs git and returns stdout, or an error with git's own message.
 pub(super) fn git(dir: &Path, args: &[&str]) -> PortResult<String> {
     let out = run(dir, args)?;
@@ -330,13 +385,13 @@ impl Git for GitCli {
 
     fn diff(&self, worktree: &Path, base: &str) -> PortResult<Vec<FileDiff>> {
         // Staging inside the task's own worktree makes new files part of the diff.
-        git(worktree, &["add", "--all"])?;
+        stage_all(worktree)?;
         let patch = git(worktree, &diff_args(&["--cached"], &[base]))?;
         Ok(parse_unified(&patch))
     }
 
     fn commit_all(&self, worktree: &Path, message: &str) -> PortResult<bool> {
-        git(worktree, &["add", "--all"])?;
+        stage_all(worktree)?;
         let staged = run(worktree, &["diff", "--cached", "--quiet"])?;
         if staged.status.success() {
             return Ok(false);
@@ -779,10 +834,46 @@ mod tests {
         fs::write(nested.join("a.py"), "x = 1\n").unwrap();
         plant_git_dir(&nested.join(".git"), &nested, &repo, &ran);
         fs::write(copy.join("app.py"), "def crear():\n    return 1\n").unwrap();
+        // A real repository of its own, with a committed file it changes
+        // after being staged and a clean filter in its config.
+        fs::remove_dir_all(nested.join(".git")).unwrap();
+        let nested_git = |args: &[&str]| {
+            let out = Command::new("git")
+                .arg("-C")
+                .arg(&nested)
+                .args([
+                    "-c",
+                    "user.name=T",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{args:?}");
+        };
+        nested_git(&["init", "-q"]);
+        nested_git(&["add", "a.py"]);
+        nested_git(&["commit", "-qm", "nested"]);
+        let mut config = fs::read_to_string(nested.join(".git/config")).unwrap();
+        config.push_str(&format!(
+            "[filter \"evil\"]\n\tclean = \"touch {}\"\n",
+            ran.display()
+        ));
+        fs::write(nested.join(".git/config"), config).unwrap();
+        fs::write(nested.join(".gitattributes"), "* filter=evil\n").unwrap();
 
+        let diff = g.diff(&copy, &base).unwrap();
+        assert!(diff.iter().any(|f| f.path == "app.py"));
+        fs::write(nested.join("a.py"), "x = 2\n").unwrap();
         g.diff(&copy, &base).unwrap();
         g.changes(&copy, &base, None).unwrap();
         g.uncommitted_changes(&copy).unwrap();
+        fs::write(nested.join("a.py"), "x = 3\n").unwrap();
+        g.commit_all(&copy, "Cambios").unwrap();
+        g.diff(&copy, &base).unwrap();
         assert!(!ran.exists(), "a nested repository's config ran a command");
     }
 

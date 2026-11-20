@@ -589,13 +589,21 @@ impl Drop for CodexSession {
 }
 
 /// Every file a `fileChange` item touches; a move names where the file goes
-/// too, and both are checked.
+/// too, and both are checked (under either spelling: the v2 protocol is
+/// camelCase elsewhere).
 fn change_paths(item: &Value) -> Vec<String> {
     item["changes"]
         .as_array()
         .into_iter()
         .flatten()
-        .flat_map(|c| [c["path"].as_str(), c["kind"]["move_path"].as_str()])
+        .flat_map(|c| {
+            let kind = &c["kind"];
+            [
+                c["path"].as_str(),
+                kind["move_path"].as_str(),
+                kind["movePath"].as_str(),
+            ]
+        })
         .flatten()
         .map(str::to_owned)
         .collect()
@@ -615,10 +623,17 @@ mod tests {
         let item = json!({"changes": [
             {"path": "/w/a.rs", "kind": {"type": "update", "move_path": "/elsewhere/a.rs"}},
             {"path": "/w/b.rs", "kind": "add"},
+            {"path": "/w/c.rs", "kind": {"type": "update", "movePath": "/out/c.rs"}},
         ]});
         assert_eq!(
             change_paths(&item),
-            ["/w/a.rs", "/elsewhere/a.rs", "/w/b.rs"]
+            [
+                "/w/a.rs",
+                "/elsewhere/a.rs",
+                "/w/b.rs",
+                "/w/c.rs",
+                "/out/c.rs"
+            ]
         );
     }
 
