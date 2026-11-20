@@ -5,7 +5,7 @@
 .accept-sheet p { margin: 0; }
 .accept-sheet__stats { display: flex; flex-wrap: wrap; gap: 8px; font-weight: 600; }
 .accept-sheet__tests { padding: 10px 12px; border-radius: var(--radius-control); border: 1px solid var(--line); }
-.accept-sheet__tests--ok > span[aria-hidden] { color: var(--success); font-weight: 700; }
+.accept-sheet__tests--ok > span[aria-hidden] { color: var(--success); font-weight: 600; }
 .accept-sheet__warn {
   padding: 10px 12px;
   border-radius: var(--radius-control);
@@ -18,5 +18,11 @@
 .undo-merge { display: grid; gap: 6px; justify-items: start; }
 
 .limit-wait { display: grid; gap: 4px; }
-.limit-wait__time { font-variant-numeric: tabular-nums; font-weight: 700; }
+.limit-wait__time { font-variant-numeric: tabular-nums; font-weight: 600; }
 .board-row__wait { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* "Publicar y abrir un PR", inside the accept sheet. */
+.accept-pr { display: grid; gap: var(--space-3); margin: 0; padding: var(--space-3) 0 0; border: 0; border-top: 1px solid var(--line); }
+.accept-pr__switch { display: inline-flex; align-items: center; gap: var(--space-2); font: 500 var(--text-callout) var(--font-ui); color: var(--ink); cursor: pointer; }
+.accept-pr textarea { resize: vertical; }
+.accept-sheet__fix { margin-left: var(--space-2); }

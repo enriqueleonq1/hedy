@@ -73,7 +73,7 @@
    (Doubled classes: this sheet may load before global.css.) */
 .template-option.file-option { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; padding: 6px 12px; }
 .file-option__name { flex: none; font-weight: 600; }
-.file-option__dir { min-width: 0; color: var(--muted); font-family: var(--font-mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-option__dir { min-width: 0; color: var(--muted); font-family: var(--font-mono); font-size: var(--text-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .template-option--active.file-option .file-option__name { color: var(--action-text); }
 
 /* Suggestions under the mascot of an empty task: quiet, ghost chips. */

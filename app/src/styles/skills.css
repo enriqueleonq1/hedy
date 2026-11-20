@@ -5,7 +5,9 @@
 .skill-lib__head { display: flex; align-items: flex-start; gap: var(--space-4); }
 .skill-lib__titles { display: grid; gap: var(--space-1); min-width: 0; }
 .skill-lib__titles p { max-width: 72ch; }
-.skill-lib__actions { margin-left: auto; display: flex; gap: var(--space-2); flex: none; }
+.skill-lib__actions { margin-left: auto; display: flex; gap: var(--space-2); flex: none; flex-wrap: wrap; justify-content: flex-end; max-width: 50%; }
+/* Why Importar or Exportar is off: under the buttons, never a silent gray. */
+.skill-lib__blocked { flex-basis: 100%; margin: 0; text-align: right; }
 .skill-lib__toolbar { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .skill-lib__search { flex: 1; min-width: 220px; }
 .skill-lib__filters { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -20,7 +22,7 @@
   font-size: var(--text-callout);
   cursor: pointer;
 }
-.skill-lib__filter[aria-pressed="true"] { background: var(--selection); border-color: var(--selection); color: var(--action-text); font-weight: 650; }
+.skill-lib__filter[aria-pressed="true"] { background: var(--selection); border-color: var(--selection); color: var(--action-text); font-weight: 600; }
 .skill-lib__filter:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .skill-lib__state,
 .skill-lib__pick { padding: var(--space-4) 0; }
@@ -70,7 +72,7 @@
   padding: 2px 8px;
   border-radius: var(--radius-pill);
   font-size: var(--text-caption);
-  font-weight: 650;
+  font-weight: 600;
   white-space: nowrap;
 }
 .verdict--useful { background: var(--diff-add-bg); color: var(--diff-add-ink); }
@@ -107,7 +109,7 @@
 .skill-detail__findings .eyebrow,
 .trial .eyebrow {
   margin-bottom: 6px;
-  font: 700 var(--text-eyebrow) var(--font-ui);
+  font: 600 var(--text-eyebrow) var(--font-ui);
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
   color: var(--muted);
@@ -137,7 +139,7 @@
   font-size: var(--text-callout);
   overflow-wrap: anywhere;
 }
-.finding__sign { flex: none; width: 1em; font-weight: 700; text-align: center; }
+.finding__sign { flex: none; width: 1em; font-weight: 600; text-align: center; }
 .finding--good .finding__sign { color: var(--success); }
 .finding--warning .finding__sign { color: var(--warning); }
 .finding--bad .finding__sign { color: var(--danger); }

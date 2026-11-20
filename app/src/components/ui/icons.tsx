@@ -167,3 +167,62 @@ export function SkillIcon() {
     </svg>
   );
 }
+
+export function HomeIcon() {
+  return (
+    <svg {...common} className="icon">
+      <path d="M3.5 11 12 4l8.5 7v9h-17z" />
+    </svg>
+  );
+}
+
+export function MemoryIcon() {
+  return (
+    <svg {...common} className="icon">
+      <path d="M5 4.5h10a4 4 0 0 1 4 4V20H9a4 4 0 0 1-4-4z" />
+    </svg>
+  );
+}
+
+export function TerminalIcon() {
+  return (
+    <svg {...common} className="icon">
+      <path d="m5 7 5 5-5 5M12 18h7" />
+    </svg>
+  );
+}
+
+export function PlusIcon() {
+  return (
+    <svg {...common} className="icon">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+export function LockIcon() {
+  return (
+    <svg {...common} className="icon">
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
+}
+
+export function SearchIcon() {
+  return (
+    <svg {...common} className="icon">
+      <circle cx="11" cy="11" r="6" />
+      <path d="m20 20-4.5-4.5" />
+    </svg>
+  );
+}
+
+export function InfoIcon() {
+  return (
+    <svg {...common} className="icon">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 11v5.5M12 7.6v.4" />
+    </svg>
+  );
+}

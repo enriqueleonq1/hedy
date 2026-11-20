@@ -35,6 +35,11 @@ export function ThemeGallery({ overview }: { overview: Overview }) {
   const { theme: shown, inUse, mode, system, customs, previewing, preview, cancelPreview } = useTheme();
   const base = mode === "system" ? system : mode;
 
+  // In use: the theme of the mode chosen (Claro or Oscuro); with Sistema, the
+  // theme of each mode, since either shows when the system switches.
+  const usedIn = (def: ThemeDef) =>
+    mode === "system" ? inUse[def.base].id === def.id : def.base === mode && inUse[mode].id === def.id;
+
   const select = (def: ThemeDef) => {
     // The theme the app shows without a preview: back to it.
     if (def.id === inUse[base].id) return cancelPreview();
@@ -62,7 +67,7 @@ export function ThemeGallery({ overview }: { overview: Overview }) {
       note={note}
       tokens={def.tokens}
       pressed={shown.id === def.id}
-      inUse={inUse[def.base].id === def.id}
+      inUse={usedIn(def)}
       viewing={previewing?.theme.id === def.id}
       onSelect={() => select(def)}
       onContextMenu={
@@ -82,23 +87,23 @@ export function ThemeGallery({ overview }: { overview: Overview }) {
   return (
     <div className="theme-gallery" id="theme-gallery">
       <div className="theme-gallery__head">
-        <h3 tabIndex={-1}>{t("theme.gallery")}</h3>
+        <h2 tabIndex={-1}>{t("theme.gallery")}</h2>
         <p className="hint">{t("theme.galleryHint")}</p>
       </div>
       {(["dark", "light"] as const).map((group) => (
         <section key={group} className="theme-group" aria-labelledby={`theme-group-${group}`}>
-          <h4 id={`theme-group-${group}`} className="theme-group__title">
+          <h3 id={`theme-group-${group}`} className="theme-group__title">
             {t(group === "dark" ? "theme.group.dark" : "theme.group.light")}
-          </h4>
+          </h3>
           <ul className="theme-grid">
             {PRESETS.filter((p) => p.base === group).map((p) => card(p, p.note ? t(p.note) : ""))}
           </ul>
         </section>
       ))}
       <section className="theme-group" aria-labelledby="theme-group-custom">
-        <h4 id="theme-group-custom" className="theme-group__title">
+        <h3 id="theme-group-custom" className="theme-group__title">
           {t("theme.group.custom")}
-        </h4>
+        </h3>
         <ul className="theme-grid">
           {customs.map((c) =>
             card(

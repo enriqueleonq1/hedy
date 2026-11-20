@@ -12,8 +12,8 @@ export interface TabItem<T extends string> {
   shortcut?: string;
   /** The same for assistive technology (`aria-keyshortcuts`: "Control+Shift+E"). */
   keyshortcuts?: string;
-  /** A small dot: something new there (changes to review). */
-  dot?: boolean;
+  /** The panel it shows now, when not `${idPrefix}-panel-${id}` (a tab with two views). */
+  controls?: string;
 }
 
 export function TabBar<T extends string>({
@@ -64,7 +64,7 @@ export function TabBar<T extends string>({
               type="button"
               role="tab"
               id={`${idPrefix}-tab-${tab.id}`}
-              aria-controls={`${idPrefix}-panel-${tab.id}`}
+              aria-controls={tab.controls ?? `${idPrefix}-panel-${tab.id}`}
               aria-selected={selected}
               aria-keyshortcuts={tab.keyshortcuts}
               tabIndex={selected ? 0 : -1}
@@ -76,7 +76,6 @@ export function TabBar<T extends string>({
                 {tab.icon}
               </span>
               <span className="tabbar__label">{tab.label}</span>
-              {tab.dot && <span className="tabbar__dot" aria-hidden />}
             </button>
           );
         })}

@@ -1,0 +1,23 @@
+/* Resumen's own touches over the shared status styles (global.css): rows
+   without a mascot, the sentence of the hero in ink, and quiet week bars that
+   say their value. Scoped to `.status` so they win over the shared rules. */
+
+.status .project-head { margin-bottom: var(--space-2); }
+.status .status__headline { color: var(--ink); font-size: var(--text-headline); }
+
+.status .status__task { grid-template-columns: minmax(0, 1fr) auto; }
+
+.status .week-chart { padding-top: 18px; }
+.status .week-chart__bar { background: var(--muted); }
+.status .week-chart__bar--top { background: var(--ink); }
+.status .week-chart__value {
+  position: absolute;
+  left: 50%;
+  padding-bottom: 2px;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}

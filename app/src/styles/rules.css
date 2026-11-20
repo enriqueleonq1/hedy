@@ -7,9 +7,11 @@
   margin: 0 0 12px;
   padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--panel);
 }
+/* Before any check: a row, not a card. */
+.rl-bar--compact { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 0; border: 0; background: none; }
 /* Only its edge and its headline: text and links keep the panel under them. */
 .rl-bar--warn { border-color: var(--warn-line); }
 .rl-bar--ok .rl-bar__text::before {
@@ -46,7 +48,7 @@
   gap: 4px;
   padding: 10px 12px;
   border: 1px solid var(--warn-line);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--panel);
 }
 .rl-warning p { margin: 0; overflow-wrap: anywhere; }
@@ -96,7 +98,7 @@
   font-weight: 600;
   color: var(--muted);
 }
-.rl-change__now { display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); }
+.rl-change__now { display: grid; gap: 4px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--panel-2); }
 .rl-change__choices { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
 .rl-change__choice { display: flex; gap: 8px; align-items: center; cursor: pointer; }
 .rl-change__field { display: grid; gap: 4px; }

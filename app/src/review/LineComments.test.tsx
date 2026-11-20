@@ -20,7 +20,7 @@ function setup() {
 
 /** Opens the sample task with changes (hedy, "s5") and waits for its full diff. */
 async function openReview(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(await screen.findByRole("button", { name: /^Actividad: / }, SLOW));
+  await user.click(await screen.findByRole("button", { name: /^Inicio/ }, SLOW));
   await user.click(await screen.findByRole("button", { name: new RegExp(TASK) }, SLOW));
   const table = await screen.findByRole("table", { name: DIFF }, SLOW);
   // The whole file as context has arrived: the gap above the change can be expanded.
@@ -98,7 +98,7 @@ describe("Line comments in the review", () => {
     await user.type(edit, "Usa Decimal.quantize");
     await user.click(screen.getByRole("button", { name: "Guardar" }));
     expect(within(table).getByText("Usa Decimal.quantize")).toBeInTheDocument();
-    await user.click(within(table).getByRole("button", { name: "Eliminar comentario" }));
+    await user.click(within(table).getByRole("button", { name: "Quitar comentario" }));
     expect(within(table).queryByText("Usa Decimal.quantize")).toBeNull();
   });
 
@@ -139,7 +139,7 @@ describe("Line comments in the review", () => {
     expect(preview).toHaveTextContent(/Revisé tus cambios y te dejé 2 comentarios/);
     expect(preview).toHaveTextContent("1. `facturas/impuestos.py:16`");
 
-    await user.click(screen.getByRole("button", { name: "Enviar a la IA" }));
+    await user.click(screen.getByRole("button", { name: "Enviar 2 comentarios" }));
     await waitFor(() => expect(queue).toHaveBeenCalledTimes(1));
     const [taskId, text] = queue.mock.calls[0] ?? [];
     expect(taskId).toBe("s5");
@@ -149,7 +149,7 @@ describe("Line comments in the review", () => {
     // Sent: folded history, and the bar is back to the decision.
     expect(await screen.findByText("2 comentarios enviados")).toBeInTheDocument();
     expect(within(table).getAllByRole("button", { name: /Enviado/ })).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: "Enviar a la IA" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Enviar \d+ comentarios?$/ })).toBeNull();
     // The follow-up is in the chat.
     const chat = screen.getByRole("region", { name: "Chat" });
     expect((await within(chat).findAllByText(/Revisé tus cambios y te dejé 2 comentarios/)).length).toBeGreaterThan(0);
@@ -163,6 +163,9 @@ describe("Line comments in the review", () => {
     fireEvent.mouseUp(window);
     await user.type(await screen.findByRole("textbox", { name: /Comentario sobre/ }), "Solo este");
     await user.keyboard("{Control>}{Enter}{/Control}");
+    // The bar counts what it would send.
+    await user.click(screen.getByRole("button", { name: "1 comentario" }));
+    expect(screen.getByRole("button", { name: "Enviar 1 comentario" })).toBeInTheDocument();
     await user.click(within(table).getByRole("button", { name: "Enviar este comentario a la IA" }));
     await waitFor(() => expect(queue).toHaveBeenCalledWith("s5", expect.stringContaining("Solo este")));
     expect(queue.mock.calls[0]?.[1]).toMatch(/^Revisé tus cambios y te dejé un comentario\./);
@@ -204,15 +207,15 @@ describe("Line comments in the review", () => {
       "Editar aquí",
       "Abrir en VS Code",
       "Copiar ruta",
-      "Marcar como revisado",
+      "Marcar como visto",
       "Historial",
     ]);
     await user.click(within(menu).getByRole("menuitem", { name: "Abrir en VS Code" }));
     await waitFor(() => expect(api.code.opened.at(-1)?.path).toMatch(/facturas\/totales\.py$/));
 
     fireEvent.contextMenu(item, { clientX: 100, clientY: 100 });
-    await user.click(screen.getByRole("menuitem", { name: "Marcar como revisado" }));
-    expect(screen.getByText("1 de 3 revisados")).toBeInTheDocument();
+    await user.click(screen.getByRole("menuitem", { name: "Marcar como visto" }));
+    expect(screen.getByText("1 de 3 vistos")).toBeInTheDocument();
 
     // The same actions behind the row's "⋯" button.
     await user.click(within(files).getByRole("button", { name: "Acciones de facturas/totales.py" }));
@@ -225,7 +228,7 @@ describe("Line comments in the review", () => {
     await openReview(user);
     const files = screen.getByRole("list", { name: "Archivos cambiados" });
     for (const box of within(files).getAllByRole("checkbox")) await user.click(box);
-    expect(screen.getByText("Todo revisado")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Aceptar cambios" })).toHaveClass("btn--primary");
+    expect(screen.getByText("Todo visto")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Aceptar cambios…" })).toHaveClass("btn--primary");
   });
 });

@@ -1,0 +1,24 @@
+/* Memoria's own touches over the shared memory styles (global.css). Scoped
+   one class deeper so they win over the shared rules wherever these load. */
+
+/* The tabs' chosen one: the one "chosen" look, in global.css. */
+
+/* "Para" on everything: each project with its color, a hover row like other lists. */
+.memory-hub .memory-hub__project { justify-content: flex-start; }
+
+/* Notes that disagree: one flat band, the two notes as quotes, no card inside. */
+.memory-hub .contradiction { padding: var(--space-4) var(--space-5); }
+.memory-hub .contradiction__note {
+  padding: 2px 0 2px var(--space-3);
+  border-left: 2px solid var(--warn-line);
+  border-radius: 0;
+  background: none;
+}
+
+/* Kind and author are labels, not states: neutral chips, no status color. */
+.note .category,
+.note .note__author {
+  background: var(--panel-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--muted);
+}

@@ -1,13 +1,15 @@
 // Ajustes → Sincronización (docs/decisions.md §34): an invitation while it is
-// off; once on, its state first, the PCs, what syncs and what stays, the
-// changes to review, and the technical detail behind "Cómo funciona".
+// off; once on, its state first (a failure in plain words), the changes to
+// resolve, the PCs, what syncs and what stays, and the technical detail
+// behind "Cómo funciona". Ajustes draws the section's title.
 
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAction, useApi } from "../../api/context";
 import type { MemoryHome, SyncConflict, SyncDevice, SyncStatus } from "../../api/types";
 import { Button, ConfirmButton } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { useToast } from "../../components/ui/Toast";
 import { timeAgo } from "../../format";
 import { useT, type MessageKey } from "../../i18n";
@@ -24,23 +26,27 @@ import {
   useSyncStatus,
 } from "../../sync/hooks";
 import { AddPcDialog, JoinDialog, RemovePcDialog, SetupDialog } from "./SyncDialogs";
+import { syncErrorTitle } from "../../sync/errors";
+import { SyncErrorBox } from "./SyncError";
 import "../../styles/sync.css";
 
-export function SyncSection({ focus }: { focus?: boolean }) {
+export function SyncSection() {
+  const t = useT();
   const status = useSyncStatus();
   const [dialog, setDialog] = useState<"setup" | "join" | null>(null);
 
-  useEffect(() => {
-    if (!focus) return;
-    const section = document.getElementById("sync-section");
-    section?.scrollIntoView?.({ block: "start" });
-    section?.querySelector<HTMLElement>("h2")?.focus({ preventScroll: true });
-  }, [focus]);
-
   return (
-    <section id="sync-section" className="card settings__section sync">
+    <section className="card settings__section sync" aria-label={t("sync.title")}>
       {status.data ? (
         <SyncOn status={status.data} />
+      ) : status.isError ? (
+        // Not knowing the state is not "off": say so, and offer to read it again.
+        <EmptyState
+          error
+          title={t("sync.loadError")}
+          text={t("sync.loadErrorText")}
+          onRetry={() => void status.refetch()}
+        />
       ) : (
         <SyncOff loading={status.isPending} onSetup={() => setDialog("setup")} onJoin={() => setDialog("join")} />
       )}
@@ -69,11 +75,9 @@ function SyncOff({ loading, onSetup, onJoin }: { loading: boolean; onSetup: () =
         <span className="sync__icon">
           <SyncIcon />
         </span>
-        <div className="sync__titles">
-          <h2 tabIndex={-1}>{t("sync.title")}</h2>
-          <span className="small muted">{t("sync.tagline")}</span>
-        </div>
-        <span className="sync__pill">{t("sync.off")}</span>
+        <p className="sync__titles muted">{t("sync.tagline")}</p>
+        {/* Only once known: while loading it is not "off" yet. */}
+        {!loading && <span className="sync__pill">{t("sync.off")}</span>}
       </div>
       <p className="muted small">{t("sync.offText")}</p>
       <div className="row">
@@ -98,26 +102,16 @@ function SyncOn({ status }: { status: SyncStatus }) {
   const pcs = t(status.devices.length === 1 ? "sync.pcs.one" : "sync.pcs.other", { n: status.devices.length });
   const headline = now.isPending
     ? t("sync.syncing")
-    : state === "error"
-      ? t("sync.failed")
+    : status.lastError
+      ? t(syncErrorTitle(status.lastError))
       : state === "review"
-        ? t(status.conflicts === 1 ? "sync.toReview.one" : "sync.toReview.other", { n: status.conflicts })
+        ? t(status.conflicts === 1 ? "sync.toResolve.one" : "sync.toResolve.other", { n: status.conflicts })
         : state === "pending"
           ? t("sync.pending")
           : t("sync.upToDate");
 
   return (
     <>
-      <div className="sync__head">
-        <span className="sync__icon">
-          <SyncIcon />
-        </span>
-        <div className="sync__titles">
-          <h2 tabIndex={-1}>{t("sync.title")}</h2>
-          <span className="small muted">{t("sync.tagline")}</span>
-        </div>
-      </div>
-
       <div className={`sync-hero sync-hero--${state}`} role="status">
         <span className="sync-hero__mark" aria-hidden>
           {state === "ok" ? "✓" : state === "pending" ? "…" : "!"}
@@ -127,16 +121,23 @@ function SyncOn({ status }: { status: SyncStatus }) {
           <span className="small muted">
             {last} · {pcs} · <span className="mono">{repoLabel(status.url)}</span>
           </span>
-          {status.lastError && <span className="small sync-hero__error">{status.lastError}</span>}
         </div>
-        <Button variant="primary" disabled={now.isPending} onClick={() => now.mutate()}>
-          {t("sync.now")}
-        </Button>
+        {/* A failure has its own "Reintentar" below. */}
+        {!status.lastError && (
+          <Button variant="primary" disabled={now.isPending} onClick={() => now.mutate()}>
+            {t("sync.now")}
+          </Button>
+        )}
       </div>
+      {status.lastError && (
+        <SyncErrorBox message={status.lastError} titled={false} retrying={now.isPending} onRetry={() => now.mutate()} />
+      )}
+
+      <Conflicts status={status} />
 
       <div className="sync__block">
         <div className="row row--between">
-          <h3>{t("sync.pcsTitle")}</h3>
+          <h2>{t("sync.pcsTitle")}</h2>
           <button type="button" className="sync-link" onClick={() => setAdding(true)}>
             {t("sync.addPc")}
           </button>
@@ -177,8 +178,7 @@ function SyncOn({ status }: { status: SyncStatus }) {
         </table>
       </div>
 
-      <ProjectsSummary />
-      <Conflicts status={status} />
+      <WhatSyncs />
 
       <div className="sync__foot">
         <p className="small muted">{t("sync.encrypted")}</p>
@@ -202,27 +202,63 @@ export function summarize(homes: MemoryHome[]) {
   return { personal, stay, groups, waiting };
 }
 
-function ProjectsSummary() {
+/**
+ * "Qué se sincroniza": what travels, item by item. Skills, templates and
+ * themes always do (the API has no switch for them); a project's memory is
+ * chosen in that project's Memoria, so here it is only counted.
+ */
+function WhatSyncs() {
   const api = useApi();
   const t = useT();
   const homes = useQuery({ queryKey: MEMORY_HOMES_KEY, queryFn: () => api.memoryHomes() }).data;
-  if (!homes) return null;
-  const { personal, stay, groups, waiting } = summarize(homes);
+  const { personal, stay, groups, waiting } = summarize(homes ?? []);
+  const always: MessageKey[] = ["sync.what.skills", "sync.what.templates", "sync.what.themes"];
   return (
-    <div className="sync-split">
-      <div className="sync-split__cell">
-        <span className="small muted">{t("sync.synced")}</span>
-        <strong>{t(personal === 1 ? "sync.syncedCount.one" : "sync.syncedCount.other", { n: personal })}</strong>
-        <span className="small muted">{t("sync.syncedDetail")}</span>
-      </div>
-      <div className="sync-split__cell">
-        <span className="small muted">{t("sync.stay")}</span>
-        <strong>{t(stay === 1 ? "sync.stayCount.one" : "sync.stayCount.other", { n: stay })}</strong>
-        <span className="small muted">
-          {groups.length > 0 ? t("sync.stayGroups", { groups: groups.join(", ") }) : t("sync.stayNone")}
-          {waiting > 0 && ` · ${t(waiting === 1 ? "sync.waiting.one" : "sync.waiting.other", { n: waiting })}`}
-        </span>
-      </div>
+    <div className="sync__block">
+      <h2>{t("sync.what")}</h2>
+      <ul className="sync-what">
+        <li className="sync-what__row">
+          <span className="sync-what__name">
+            {t("sync.what.memory")}
+            <span className="small muted">
+              {homes && (
+                <span>{t(personal === 1 ? "sync.syncedCount.one" : "sync.syncedCount.other", { n: personal })}</span>
+              )}
+              {homes && " · "}
+              {t("sync.what.global")}
+            </span>
+          </span>
+          <span className="state-label small">{t("sync.what.on")}</span>
+        </li>
+        {always.map((key) => (
+          <li key={key} className="sync-what__row">
+            <span className="sync-what__name">{t(key)}</span>
+            <span className="state-label small">{t("sync.what.on")}</span>
+          </li>
+        ))}
+        {homes && (
+          <li className="sync-what__row">
+            <span className="sync-what__name">
+              {t("sync.stay")}
+              <span className="small muted">
+                <span>{t(stay === 1 ? "sync.stayCount.one" : "sync.stayCount.other", { n: stay })}</span>
+                {" · "}
+                {groups.length > 0 ? t("sync.stayGroups", { groups: groups.join(", ") }) : t("sync.stayNone")}
+                {waiting > 0 && ` · ${t(waiting === 1 ? "sync.waiting.one" : "sync.waiting.other", { n: waiting })}`}
+              </span>
+            </span>
+            <span className="state-label state-label--off small">{t("sync.what.off")}</span>
+          </li>
+        )}
+        <li className="sync-what__row">
+          <span className="sync-what__name">
+            {t("sync.what.never")}
+            <span className="small muted">{t("sync.what.neverDetail")}</span>
+          </span>
+          <span className="state-label state-label--off small">{t("sync.what.neverState")}</span>
+        </li>
+      </ul>
+      <p className="small muted">{t("sync.what.perProject")}</p>
     </div>
   );
 }
@@ -238,7 +274,7 @@ function Conflicts({ status }: { status: SyncStatus }) {
   if (!conflicts?.length) return null;
   return (
     <div className="sync__block">
-      <h3>{t("sync.conflicts")}</h3>
+      <h2>{t("sync.conflicts")}</h2>
       {conflicts.map((c) => (
         <ConflictCard key={c.id} conflict={c} status={status} />
       ))}
@@ -254,14 +290,43 @@ const KIND_LABEL: Record<SyncConflict["kind"], MessageKey> = {
   suggestion: "sync.conflict.kind.suggestion",
 };
 
+type Side = SyncConflict["kept"];
+/** One way out of a conflict: the version it keeps, and whether that is this PC's. */
+type Choice = { side: Side; useOther: boolean; mine: boolean };
+
+/**
+ * The two choices of a conflict. The other computer's version is the primary
+ * one ("Usar la de Oficina") and this computer's the secondary ("Mantener la
+ * mía"); when neither or both sides are this computer's, the version not in
+ * use is the primary one and the one in use is kept.
+ */
+export function conflictChoices(
+  conflict: SyncConflict,
+  isThisPc: (device: string) => boolean,
+): { primary: Choice; secondary: Choice } {
+  const keptMine = isThisPc(conflict.kept.device);
+  const otherMine = isThisPc(conflict.other.device);
+  if (keptMine !== otherMine) {
+    const theirsIsOther = keptMine;
+    return {
+      primary: { side: theirsIsOther ? conflict.other : conflict.kept, useOther: theirsIsOther, mine: false },
+      secondary: { side: theirsIsOther ? conflict.kept : conflict.other, useOther: !theirsIsOther, mine: true },
+    };
+  }
+  return {
+    primary: { side: conflict.other, useOther: true, mine: false },
+    secondary: { side: conflict.kept, useOther: false, mine: false },
+  };
+}
+
 /** Both versions side by side; the one in use is marked, either can win. */
 export function ConflictCard({ conflict, status }: { conflict: SyncConflict; status: SyncStatus }) {
   const t = useT();
   const toast = useToast();
   // As in a diff: the other version first, the one in use (the newer) last.
-  const sides: { side: SyncConflict["kept"]; useOther: boolean; inUse: boolean }[] = [
-    { side: conflict.other, useOther: true, inUse: false },
-    { side: conflict.kept, useOther: false, inUse: true },
+  const sides: { side: Side; inUse: boolean }[] = [
+    { side: conflict.other, inUse: false },
+    { side: conflict.kept, inUse: true },
   ];
   const client = useQueryClient();
   // The chosen version is written here at once: what shows it is read again.
@@ -272,12 +337,15 @@ export function ConflictCard({ conflict, status }: { conflict: SyncConflict; sta
       return refreshAfterSync(client);
     },
   });
+  const isThisPc = (device: string) => status.devices.some((d) => d.id === device && d.thisPc);
+  const { primary, secondary } = conflictChoices(conflict, isThisPc);
   // Two sides from the same PC are told apart by when they were written.
   const samePc = pcName(status, conflict.kept.device, t) === pcName(status, conflict.other.device, t);
-  const label = (side: SyncConflict["kept"]) =>
+  const useLabel = (side: Side) =>
     samePc
       ? t("sync.conflict.useAt", { when: timeAgo(side.at, t) })
       : t("sync.conflict.use", { pc: pcName(status, side.device, t) });
+  const keepLabel = secondary.mine ? t("sync.conflict.keepMine") : t("sync.conflict.keepInUse");
   return (
     <article className="sync-conflict" aria-label={t(KIND_LABEL[conflict.kind])}>
       <header className="row">
@@ -296,17 +364,12 @@ export function ConflictCard({ conflict, status }: { conflict: SyncConflict; sta
         ))}
       </div>
       <div className="actions sync-conflict__actions">
-        {sides.map(({ side, useOther }) => (
-          <Button
-            key={String(useOther)}
-            small
-            variant={useOther ? "secondary" : "primary"}
-            disabled={resolve.isPending}
-            onClick={() => resolve.mutate(useOther)}
-          >
-            {label(side)}
-          </Button>
-        ))}
+        <Button small variant="secondary" disabled={resolve.isPending} onClick={() => resolve.mutate(secondary.useOther)}>
+          {keepLabel}
+        </Button>
+        <Button small variant="primary" disabled={resolve.isPending} onClick={() => resolve.mutate(primary.useOther)}>
+          {useLabel(primary.side)}
+        </Button>
       </div>
     </article>
   );

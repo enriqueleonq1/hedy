@@ -2,8 +2,6 @@
 // quick question that belongs to no project (a "conversation").
 
 const es = {
-  "create.menu": "Nuevo",
-  "create.menuLabel": "Empezar algo nuevo",
   "create.newProject": "Nuevo proyecto",
   "create.newProjectHint": "Una carpeta nueva, lista para trabajar",
   "create.openFolder": "Abrir carpeta…",
@@ -27,7 +25,7 @@ const es = {
   "newProject.created": "Listo: {name}. Escribe la primera tarea.",
 
   "conversation.place": "Conversación",
-  "conversation.list": "Conversaciones",
+  "conversation.list": "Chats",
   "conversation.count": "Conversaciones ({n})",
   "conversation.title": "Pregunta rápida",
   "conversation.subtitle": "Sin proyecto · no toca ningún archivo tuyo",
@@ -36,9 +34,9 @@ const es = {
   "conversation.ask": "¿Qué quieres saber?",
   "conversation.placeholder": "Escribe tu pregunta y pulsa Enter",
   "conversation.newLabel": "Nueva pregunta",
-  "conversation.delete": "Borrar",
-  "conversation.deleteLabel": "Borrar esta conversación",
-  "conversation.deleteTitle": "¿Borrar esta conversación?",
+  "conversation.delete": "Quitar",
+  "conversation.deleteLabel": "Quitar esta conversación",
+  "conversation.deleteTitle": "¿Quitar esta conversación?",
   "conversation.deleteBody": "Se borran su historial y su carpeta. No se puede deshacer.",
   "conversation.deleted": "Conversación borrada",
   "conversation.sidebarEmpty": "Pregunta algo sin abrir un proyecto.",
@@ -50,8 +48,6 @@ const es = {
 };
 
 const en: Record<keyof typeof es, string> = {
-  "create.menu": "New",
-  "create.menuLabel": "Start something new",
   "create.newProject": "New project",
   "create.newProjectHint": "A new folder, ready to work in",
   "create.openFolder": "Open folder…",
@@ -75,7 +71,7 @@ const en: Record<keyof typeof es, string> = {
   "newProject.created": "{name} is ready. Write its first task.",
 
   "conversation.place": "Conversation",
-  "conversation.list": "Conversations",
+  "conversation.list": "Chats",
   "conversation.count": "Conversations ({n})",
   "conversation.title": "Quick question",
   "conversation.subtitle": "No project · never touches your files",
@@ -84,9 +80,9 @@ const en: Record<keyof typeof es, string> = {
   "conversation.ask": "What do you want to know?",
   "conversation.placeholder": "Type your question and press Enter",
   "conversation.newLabel": "New question",
-  "conversation.delete": "Delete",
-  "conversation.deleteLabel": "Delete this conversation",
-  "conversation.deleteTitle": "Delete this conversation?",
+  "conversation.delete": "Remove",
+  "conversation.deleteLabel": "Remove this conversation",
+  "conversation.deleteTitle": "Remove this conversation?",
   "conversation.deleteBody": "Its history and its folder are deleted. This cannot be undone.",
   "conversation.deleted": "Conversation deleted",
   "conversation.sidebarEmpty": "Ask something without opening a project.",

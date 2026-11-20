@@ -35,7 +35,7 @@ describe("Sidebar rail", () => {
     const user = userEvent.setup();
     const { unmount } = renderApp();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
-    const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
+    const sidebar = screen.getByRole("complementary", { name: "Navegación" });
     const toggle = within(sidebar).getByRole("button", { name: "Contraer la barra lateral" });
     expect(toggle).toHaveAttribute("aria-expanded", "true");
 
@@ -44,15 +44,22 @@ describe("Sidebar rail", () => {
     expect(within(sidebar).getByRole("button", { name: "Expandir la barra lateral" })).toHaveAttribute("aria-expanded", "false");
     // Names are not on screen, but every control keeps one.
     expect(within(sidebar).getByRole("button", { name: "hedy" })).toHaveAttribute("title", "hedy");
-    expect(within(sidebar).getByRole("button", { name: "Ajustes" })).toBeInTheDocument();
-    expect(within(sidebar).getByRole("button", { name: "Cuentas y modelos" })).toBeInTheDocument();
-    expect(within(sidebar).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" })).toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "Ajustes" })).toHaveAttribute("title", "Ajustes");
+    expect(within(sidebar).getByRole("button", { name: "Memoria" })).toHaveAttribute("title", "Memoria");
+    expect(within(sidebar).queryByRole("button", { name: "Habilidades" })).not.toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "Terminal" })).toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "Pregunta rápida" })).toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: /^Inicio/ })).toHaveAttribute("title", "Inicio");
+    // The account in use keeps its figure; the meter and the "+" of each project wait for the full sidebar.
+    const account = within(sidebar).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" });
+    expect(within(account).queryByRole("meter")).not.toBeInTheDocument();
+    expect(within(sidebar).queryByRole("button", { name: "Nueva tarea en hedy" })).not.toBeInTheDocument();
     expect(localStorage.getItem("hedy.sidebar")).toBe("rail");
 
     unmount();
     renderApp();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
-    expect(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).toHaveClass("sidebar--rail");
+    expect(screen.getByRole("complementary", { name: "Navegación" })).toHaveClass("sidebar--rail");
   });
 
   it("starts as a rail on a narrow window unless the user chose otherwise", async () => {
@@ -60,7 +67,7 @@ describe("Sidebar rail", () => {
     const user = userEvent.setup();
     const { unmount } = renderApp();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
-    const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
+    const sidebar = screen.getByRole("complementary", { name: "Navegación" });
     expect(sidebar).toHaveClass("sidebar--rail");
     await user.click(within(sidebar).getByRole("button", { name: "Expandir la barra lateral" }));
     expect(sidebar).not.toHaveClass("sidebar--rail");
@@ -69,7 +76,7 @@ describe("Sidebar rail", () => {
     unmount();
     renderApp();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
-    expect(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).not.toHaveClass("sidebar--rail");
+    expect(screen.getByRole("complementary", { name: "Navegación" })).not.toHaveClass("sidebar--rail");
   });
 
   it("keeps working when storage is blocked", async () => {
@@ -79,7 +86,7 @@ describe("Sidebar rail", () => {
     });
     renderApp();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
-    const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
+    const sidebar = screen.getByRole("complementary", { name: "Navegación" });
     await user.click(within(sidebar).getByRole("button", { name: "Contraer la barra lateral" }));
     expect(sidebar).toHaveClass("sidebar--rail");
     setItem.mockRestore();

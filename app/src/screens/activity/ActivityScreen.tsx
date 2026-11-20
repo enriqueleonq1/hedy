@@ -1,34 +1,26 @@
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+// The pieces of Inicio's board (`HomeScreen`): a row per task or proposal,
+// what can be answered right there, and the board's keyboard.
 
-import { errorMessage, useAction } from "../../api/context";
-import type { ActivityItem, BoardState, Decision, Overview, Phase, Task } from "../../api/types";
-import { defaultAccount } from "../../components/Layout";
-import { Mascot } from "../../components/Mascot/Mascot";
+import { useEffect, useId, useState, type ReactNode, type RefObject } from "react";
+import { useQuery } from "@tanstack/react-query";
+
+import { useAction, useApi } from "../../api/context";
+import type { ActivityItem, AgentEvent, BoardState, Decision, Overview, Phase, Task } from "../../api/types";
 import { WorkingWord } from "../../components/Mascot/WorkingWord";
 import { Button } from "../../components/ui/Button";
 import { formatElapsed, timeAgo } from "../../format";
-import { useT, type MessageKey } from "../../i18n";
+import { useLanguage, useT, type MessageKey } from "../../i18n";
+import { pillLabel } from "../../components/ui/StatusPill";
 import { formatCountdown } from "../../tasks/countdown";
-import { ACTIVITY_KEY, listKeyFor, needsYou, useActivity, useTaskEvents } from "../../tasks/hooks";
-import { openPermission, useInbox, type InboxItem } from "../../tasks/inbox";
+import { ACTIVITY_KEY, listKeyFor, useTaskEvents } from "../../tasks/hooks";
+import { openPermission, type InboxItem } from "../../tasks/inbox";
+import { useProjectTeam } from "../team/TeamMemory";
 import { useFilesNotice } from "../memory/skills";
 import { useMascot } from "../../tasks/useMascot";
-import { DEFAULT_ACCOUNT_COLOR, ERROR_MASCOT_COLOR } from "../../theme/tokens";
+import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 
 /** Finished tasks stay on the board this long (the backend's `RECENT_HOURS`). */
 export const RECENT_HOURS = 24;
-
-export const STATE_LABEL: Record<BoardState, MessageKey> = {
-  working: "activity.state.working",
-  plan: "activity.state.plan",
-  permission: "activity.state.permission",
-  limited: "activity.state.limited",
-  review: "activity.state.review",
-  answered: "activity.state.answered",
-  accepted: "activity.state.accepted",
-  failed: "activity.state.failed",
-  cancelled: "activity.state.cancelled",
-};
 
 const PHASE_LABEL: Record<Phase, MessageKey> = {
   plan: "activity.phase.plan",
@@ -68,132 +60,13 @@ export const MARK: Record<BoardState, string> = {
 };
 
 /** The current time in seconds, refreshed every `everyMs`. */
-function useNow(everyMs: number): number {
+export function useNow(everyMs: number): number {
   const [now, setNow] = useState(() => Date.now() / 1000);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now() / 1000), everyMs);
     return () => clearInterval(timer);
   }, [everyMs]);
   return now;
-}
-
-/**
- * The task board ("Actividad"): every project's running and recent tasks,
- * what needs the user first. A row opens the task in its project's workspace.
- */
-export function ActivityScreen({
-  overview,
-  onOpenTask,
-  onOpenMemory,
-}: {
-  overview: Overview;
-  onOpenTask: (project: string, taskId: string) => void;
-  /** Opens a project's memory, on its notes or its skills. */
-  onOpenMemory?: (project: string, tab: "notes" | "skills") => void;
-}) {
-  const t = useT();
-  const board = useActivity();
-  const inbox = useInbox();
-  const now = useNow(30_000);
-  const color = defaultAccount(overview)?.color ?? DEFAULT_ACCOUNT_COLOR;
-
-  const items = board.data ?? [];
-  const limited = inbox.items.some((i) => i.kind === "task" && i.item.state === "limited");
-  const groups: { title: string; items: ActivityItem[] }[] = [
-    { title: t("activity.group.running"), items: items.filter((i) => i.state === "working") },
-    {
-      title: t("activity.group.recent", { hours: RECENT_HOURS }),
-      items: items.filter((i) => !needsYou(i.state) && i.state !== "working"),
-    },
-  ];
-  const openMemory = onOpenMemory ?? (() => {});
-  const root = useRef<HTMLDivElement>(null);
-  // Every row's key, in the order they are on screen.
-  const keys = [
-    ...(inbox.count > 0 ? inbox.items.map((entry) => entry.key) : []),
-    ...groups.flatMap((group) => group.items.map((item) => item.task.id)),
-  ];
-  const selected = useBoardKeys(root, keys);
-
-  return (
-    <div className="screen board" ref={root}>
-      <div className="page-head">
-        <div>
-          <h1>{t("activity.title")}</h1>
-          <p className="muted">{t("activity.subtitle")}</p>
-        </div>
-      </div>
-
-      {(inbox.count > 0 || items.length > 0) && <KeysHint />}
-
-      {board.isError && (
-        <div className="board__empty">
-          <Mascot color={ERROR_MASCOT_COLOR} state="sleeping" size={120} />
-          <p role="alert">{errorMessage(board.error, t)}</p>
-          <Button onClick={() => board.refetch()}>{t("common.retry")}</Button>
-        </div>
-      )}
-
-      {inbox.count > 0 && (
-        <BoardGroup
-          title={t("activity.group.needsYou")}
-          items={inbox.items}
-          // Hedy never switches accounts by itself: the user decides.
-          note={limited ? t("activity.limitHint") : undefined}
-        >
-          {(entry) =>
-            entry.kind === "task" ? (
-              <BoardRow
-                key={entry.key}
-                entryKey={entry.key}
-                selected={selected === entry.key}
-                item={entry.item}
-                overview={overview}
-                now={now}
-                onOpen={onOpenTask}
-              />
-            ) : (
-              <ProposalRow
-                key={entry.key}
-                entryKey={entry.key}
-                selected={selected === entry.key}
-                entry={entry}
-                overview={overview}
-                now={now}
-                onOpen={openMemory}
-              />
-            )
-          }
-        </BoardGroup>
-      )}
-
-      {board.isSuccess && items.length === 0 && (
-        <div className="board__empty">
-          <Mascot color={color} state="sleeping" size={160} />
-          <p className="board__empty-title">{t("activity.empty", { hours: RECENT_HOURS })}</p>
-          <p className="hint">{t("activity.emptyHint")}</p>
-        </div>
-      )}
-
-      {groups
-        .filter((group) => group.items.length > 0)
-        .map((group) => (
-          <BoardGroup key={group.title} title={group.title} items={group.items}>
-            {(item) => (
-              <BoardRow
-                key={item.task.id}
-                entryKey={item.task.id}
-                selected={selected === item.task.id}
-                item={item}
-                overview={overview}
-                now={now}
-                onOpen={onOpenTask}
-              />
-            )}
-          </BoardGroup>
-        ))}
-    </div>
-  );
 }
 
 /** Where typing happens: the board's letter keys stay out of it. */
@@ -216,7 +89,7 @@ const ENTRY = "[data-entry]";
  * selected row leaves (answered, approved), the one now in its place takes
  * over. `keys`: every row's key, in order. Returns the selected row's key.
  */
-function useBoardKeys(root: RefObject<HTMLDivElement | null>, keys: string[]): string | null {
+export function useBoardKeys(root: RefObject<HTMLDivElement | null>, keys: string[]): string | null {
   const [chosen, setChosen] = useState<{ key: string; index: number } | null>(null);
   const selected =
     chosen === null
@@ -261,7 +134,12 @@ function useBoardKeys(root: RefObject<HTMLDivElement | null>, keys: string[]): s
       if (list.length === 0) return;
       const at = list.findIndex((el) => el.dataset.entry === selected);
       const focus = document.activeElement;
-      const onBoard = !focus || focus === document.body || !!root.current?.contains(focus);
+      // Elsewhere (the sidebar, the filters…) keys keep their own meaning.
+      const onBoard =
+        !focus ||
+        focus === document.body ||
+        (!!root.current?.contains(focus) && !(focus instanceof Element && focus.closest("[data-own-keys]")));
+      if (!onBoard) return;
       const press = (action: string) => {
         const button = list[at]?.querySelector<HTMLButtonElement>(`[data-key-action="${action}"]:not(:disabled)`);
         if (!button) return;
@@ -271,8 +149,6 @@ function useBoardKeys(root: RefObject<HTMLDivElement | null>, keys: string[]): s
       switch (e.key) {
         case "ArrowDown":
         case "ArrowUp":
-          // Elsewhere (the sidebar…) the arrows keep their own meaning.
-          if (!onBoard) return;
           e.preventDefault();
           select(list, at < 0 ? 0 : Math.max(0, Math.min(at + (e.key === "ArrowDown" ? 1 : -1), list.length - 1)));
           break;
@@ -310,7 +186,7 @@ function focusRow(entry: HTMLElement | undefined) {
 }
 
 /** "j/k para moverte · Enter abrir · a aprobar · r rechazar": the board's keys, said once and quietly. */
-function KeysHint() {
+export function KeysHint() {
   const t = useT();
   return (
     <p className="board__keys" aria-hidden>
@@ -331,7 +207,7 @@ function KeysHint() {
   );
 }
 
-function BoardGroup<T>({
+export function BoardGroup<T>({
   title,
   items,
   note,
@@ -354,7 +230,7 @@ function BoardGroup<T>({
   );
 }
 
-function BoardRow({
+export function BoardRow({
   entryKey,
   selected,
   item,
@@ -370,6 +246,7 @@ function BoardRow({
   onOpen: (project: string, taskId: string) => void;
 }) {
   const t = useT();
+  const language = useLanguage();
   const { task, state } = item;
   const account = overview.accounts.find((a) => a.id === task.account);
   // While it works, the state reads as what it is doing ("Leyendo…").
@@ -381,6 +258,8 @@ function BoardRow({
     ? t("activity.runningFor", { time: formatElapsed(now - task.createdAt) })
     : timeAgo(item.updatedAt, t, now);
   const live = state === "permission" && task.live;
+  // The same words as the task's pill everywhere else.
+  const label = pillLabel(state, task, t, language);
   const row = (
     <button
       className={`board-row board-row--${tone}`}
@@ -390,14 +269,16 @@ function BoardRow({
       <span className="board-row__title">{task.title}</span>
       <span className="board-row__meta">
         <span className={`board-state board-state--${tone}`}>
-          <span aria-hidden>{MARK[state]}</span>
+          <span className="board-state__mark" aria-hidden>
+            {MARK[state]}
+          </span>
           {activity ? (
             <>
-              <span className="sr-only">{t(STATE_LABEL[state])}</span>
+              <span className="sr-only">{label}</span>
               <WorkingWord activity={activity} />
             </>
           ) : (
-            t(STATE_LABEL[state])
+            label
           )}
         </span>
         <span aria-hidden>·</span>
@@ -428,8 +309,22 @@ function BoardRow({
     </button>
   );
   const entryClass = `board-entry${selected ? " board-entry--selected" : ""}`;
-  // A permission is answered right here (once, or no); everything else opens the task.
-  if (!live) {
+  // What is answered right here: a permission, a plan, a limit; a finished
+  // task offers its next step. Anything else opens the task.
+  const actions =
+    live ? (
+      <PermissionActions task={task} />
+    ) : state === "plan" && task.live ? (
+      <PlanActions task={task} onOpen={() => onOpen(task.project, task.id)} selected={selected} />
+    ) : state === "limited" ? (
+      <LimitActions task={task} overview={overview} />
+    ) : state === "review" || state === "answered" || state === "failed" ? (
+      <NextStep
+        label={t(state === "review" ? "home.reviewChanges" : state === "answered" ? "home.seeAnswer" : "home.seeError")}
+        onClick={() => onOpen(task.project, task.id)}
+      />
+    ) : null;
+  if (!actions) {
     return (
       <li className={entryClass} data-entry={entryKey}>
         {row}
@@ -440,9 +335,98 @@ function BoardRow({
     <li className={entryClass} data-entry={entryKey}>
       <div className={`board-item board-item--${tone}`}>
         {row}
-        <PermissionActions task={task} />
+        {actions}
       </div>
     </li>
+  );
+}
+
+/** The plan still waiting for an answer, if any (its request and text). */
+function openPlan(events: AgentEvent[]): { requestId: string; text: string } | null {
+  let open: { requestId: string; text: string } | null = null;
+  for (const e of events) {
+    if (e.kind === "plan" && e.requestId) open = { requestId: e.requestId, text: e.text };
+    if (e.kind === "permissionResolved" && open?.requestId === e.requestId) open = null;
+  }
+  return open;
+}
+
+/** Approve the plan right here, or open the task to ask for changes; the selected row shows the plan. */
+function PlanActions({ task, onOpen, selected }: { task: Task; onOpen: () => void; selected: boolean }) {
+  const t = useT();
+  const events = useTaskEvents(task.id);
+  const plan = openPlan(events.data ?? []);
+  const answer = useAction((api) => api.answerPlan(task.id, plan?.requestId ?? "", true, null), {
+    invalidate: [ACTIVITY_KEY, listKeyFor(task)],
+  });
+  if (!plan) return null;
+  return (
+    <>
+      <div className="board-item__actions" role="group" aria-label={t("home.planOf", { title: task.title })}>
+        <Button small variant="ghost" onClick={onOpen}>
+          {t("home.askChanges")}
+        </Button>
+        <Button small variant="primary" data-key-action="approve" disabled={answer.isPending} onClick={() => answer.mutate(undefined)}>
+          {t("home.approvePlan")}
+        </Button>
+      </div>
+      {selected && <pre className="board-item__plan">{plan.text}</pre>}
+    </>
+  );
+}
+
+/**
+ * A task paused by its account's limit: wait for the reset, or hand it to
+ * another provider or an API key. Hedy never switches by itself (rule 3).
+ */
+function LimitActions({ task, overview }: { task: Task; overview: Overview }) {
+  const t = useT();
+  const api = useApi();
+  const options = useQuery({ queryKey: ["handoff", task.id, "board"], queryFn: () => api.handoffOptions(task.id) });
+  const changed = [ACTIVITY_KEY, listKeyFor(task)];
+  const wait = useAction((a) => a.waitForLimit(task.id), { invalidate: changed });
+  const cancel = useAction((a) => a.cancelWait(task.id), { invalidate: changed });
+  const resume = useAction((a) => a.resumeAfterLimit(task.id), { invalidate: changed });
+  const handoff = useAction((a, account: string) => a.handoffTask(task.id, account, null), { invalidate: changed });
+  const other = options.data?.[0];
+  const otherName = overview.accounts.find((a) => a.id === other)?.name ?? other;
+  const busy = wait.isPending || cancel.isPending || resume.isPending || handoff.isPending;
+  // The reset passed while Hedy was closed, or its time is unknown: the user resumes.
+  const canContinue = !!task.wait && (task.wait.ready || task.wait.until === null);
+  return (
+    <div className="board-item__actions" role="group" aria-label={t("home.limitOf", { title: task.title })}>
+      {other && (
+        <Button small variant="ghost" disabled={busy} onClick={() => handoff.mutate(other)}>
+          {t("home.handoff", { name: otherName ?? "" })}
+        </Button>
+      )}
+      {task.wait && (
+        <Button small variant="ghost" disabled={busy} onClick={() => cancel.mutate(undefined)}>
+          {t("wait.cancel")}
+        </Button>
+      )}
+      {!task.wait && (
+        <Button small data-key-action="approve" disabled={busy} onClick={() => wait.mutate(undefined)}>
+          {t("home.wait")}
+        </Button>
+      )}
+      {canContinue && (
+        <Button small variant="primary" data-key-action="approve" disabled={busy} onClick={() => resume.mutate(undefined)}>
+          {t("wait.continue")}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** A finished task's next step: review its changes, or read its answer. */
+function NextStep({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <div className="board-item__actions">
+      <Button small data-key-action="approve" onClick={onClick}>
+        {label}
+      </Button>
+    </div>
   );
 }
 
@@ -487,7 +471,7 @@ function PermissionActions({ task }: { task: Task }) {
  * A note or skill an AI proposed, approved or rejected right here by the user
  * (rule 6); the row opens the project's memory to read it in full first.
  */
-function ProposalRow({
+export function ProposalRow({
   entryKey,
   selected,
   entry,
@@ -534,6 +518,11 @@ function ProposalRow({
   );
   const busy = approve.isPending || reject.isPending;
   const short = title.length > 60 ? `${title.slice(0, 57)}…` : title;
+  // Decided where its context is: a note like an approved one, or a team's
+  // project (who it is for is asked there, never assumed here).
+  const team = useProjectTeam(entry.project);
+  const needsContext =
+    entry.kind === "note" && ((!entry.proposal.replaces && entry.proposal.similar.length > 0) || team !== null);
 
   return (
     <li className={`board-entry${selected ? " board-entry--selected" : ""}`} data-entry={entryKey}>
@@ -555,27 +544,29 @@ function ProposalRow({
             <span>{t("activity.inbox.proposedBy", { author: author === "user" ? t("memory.note.you") : author })}</span>
             <span aria-hidden>·</span>
             <span>{timeAgo(createdAt, t, now)}</span>
+            {needsContext && entry.kind === "note" && entry.proposal.similar.length > 0 && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="board-row__warn">{t("home.looksLike")}</span>
+              </>
+            )}
           </span>
         </button>
         <div className="board-item__actions" role="group" aria-label={t("activity.inbox.decide", { title: short })}>
-          <Button
-            small
-            variant="primary"
-            data-key-action="approve"
-            disabled={busy}
-            onClick={() => approve.mutate(undefined)}
-          >
-            {t(change ? "activity.inbox.approveChange" : "activity.inbox.approve")}
-          </Button>
-          <Button
-            small
-            variant="ghost"
-            data-key-action="reject"
-            disabled={busy}
-            onClick={() => reject.mutate(undefined)}
-          >
-            {t("activity.inbox.reject")}
-          </Button>
+          {needsContext ? (
+            <Button small data-key-action="approve" onClick={() => onOpen(entry.project, "notes")}>
+              {t("home.seeAndDecide")}
+            </Button>
+          ) : (
+            <>
+              <Button small variant="ghost" data-key-action="reject" disabled={busy} onClick={() => reject.mutate(undefined)}>
+                {t("activity.inbox.reject")}
+              </Button>
+              <Button small variant="primary" data-key-action="approve" disabled={busy} onClick={() => approve.mutate(undefined)}>
+                {t(change ? "activity.inbox.approveChange" : "activity.inbox.approve")}
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </li>

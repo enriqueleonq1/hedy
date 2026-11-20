@@ -6,12 +6,12 @@ import { useQueries } from "@tanstack/react-query";
 
 import { OVERVIEW_KEY, useAction, useApi } from "../../api/context";
 import type { Overview, Project } from "../../api/types";
-import type { Translate } from "../../i18n";
+import { useLanguage, type Translate } from "../../i18n";
 import { useCreate } from "../../screens/create/CreateProvider";
 import { CONVERSATIONS_KEY, tasksKey } from "../../tasks/hooks";
 import { useInbox } from "../../tasks/inbox";
 import { STATUS_LABEL } from "../../tasks/timeline";
-import { STATE_LABEL } from "../../screens/activity/ActivityScreen";
+import { pillLabel } from "../ui/StatusPill";
 import { accountSubtitle } from "../accounts";
 import { useFocusMode } from "../focusMode";
 import { taskView, type View } from "../Layout";
@@ -72,6 +72,7 @@ export function usePaletteCommands({
   const toast = useToast();
   const actions = useProjectActions();
   const inbox = useInbox();
+  const language = useLanguage();
   const create = useCreate();
   const focusMode = useFocusMode();
   const shortcuts = useShortcuts();
@@ -108,7 +109,7 @@ export function usePaletteCommands({
         id: `pending:${entry.key}`,
         group: "pending",
         label: t("palette.pending.task", { title: task.title }),
-        detail: `${entry.item.projectName} · ${t(STATE_LABEL[state])}`,
+        detail: `${entry.item.projectName} · ${pillLabel(state, task, t, language)}`,
         run: () => onNavigate(taskView(overview.projects, task.project, task.id)),
       });
     } else if (entry.kind === "note") {
@@ -117,7 +118,23 @@ export function usePaletteCommands({
         group: "pending",
         label: t("palette.pending.note", { text: entry.proposal.note.text }),
         detail: projectName(entry.project),
-        run: () => onNavigate({ screen: "memory", project: entry.project, tab: "notes" }),
+        run: () => onNavigate({ screen: "memory", project: entry.project, tab: "pending" }),
+      });
+    } else if (entry.kind === "sync") {
+      commands.push({
+        id: `pending:${entry.key}`,
+        group: "pending",
+        label: entry.error
+          ? t("home.sync.failed")
+          : t(entry.conflicts === 1 ? "palette.pending.syncOne" : "palette.pending.sync", { n: entry.conflicts }),
+        run: () => onNavigate({ screen: "settings", section: "sync" }),
+      });
+    } else if (entry.kind === "team") {
+      commands.push({
+        id: `pending:${entry.key}`,
+        group: "pending",
+        label: t(entry.count === 1 ? "palette.pending.teamOne" : "palette.pending.team", { n: entry.count, team: entry.teamName }),
+        run: () => onNavigate({ screen: "settings", section: "teams" }),
       });
     } else {
       commands.push({
@@ -125,16 +142,16 @@ export function usePaletteCommands({
         group: "pending",
         label: t("palette.pending.skill", { name: entry.proposal.skill.name }),
         detail: projectName(entry.project),
-        run: () => onNavigate({ screen: "memory", project: entry.project, tab: "skills" }),
+        run: () => onNavigate({ screen: "memory", project: entry.project, tab: "pending" }),
       });
     }
   }
 
   commands.push(
     { id: "nav:welcome", group: "nav", label: t("shell.home"), run: () => onNavigate({ screen: "welcome" }) },
-    { id: "nav:activity", group: "nav", label: t("activity.title"), run: () => onNavigate({ screen: "activity" }) },
-    { id: "nav:skills", group: "nav", label: t("skillLib.title"), run: () => onNavigate({ screen: "skills" }) },
-    { id: "nav:ask", group: "nav", label: t("ask.title"), run: () => onNavigate({ screen: "ask" }) },
+    { id: "nav:memory", group: "nav", label: t("memory.hub.title"), run: () => onNavigate({ screen: "memory" }) },
+    { id: "nav:skills", group: "nav", label: t("skillLib.title"), run: () => onNavigate({ screen: "memory", tab: "skills" }) },
+    { id: "nav:ask", group: "nav", label: t("ask.title"), run: () => onNavigate({ screen: "memory" }) },
     {
       id: "nav:accounts",
       group: "nav",

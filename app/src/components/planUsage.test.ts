@@ -1,7 +1,6 @@
 import type { Account, UsageWindow } from "../api/types";
 import { translator } from "../i18n";
 import {
-  barColor,
   formatBalance,
   headlineText,
   headlineWindow,
@@ -24,11 +23,14 @@ const window = (extra: Partial<UsageWindow>): UsageWindow => ({
 });
 
 describe("plan usage", () => {
-  it("colors by threshold, never with the account color as text", () => {
-    expect([usageLevel(79.9), usageLevel(80), usageLevel(95)]).toEqual(["ok", "warning", "danger"]);
-    expect(barColor(50, "#7AA2F7")).toBe("#7AA2F7");
-    expect(barColor(85, "#7AA2F7")).toBe("var(--warning)");
-    expect(barColor(100, "#7AA2F7")).toBe("var(--danger)");
+  it("colors by the meters' thresholds: amber from 70 %, red from 90 %", () => {
+    expect([usageLevel(69.9), usageLevel(70), usageLevel(89.9), usageLevel(90), usageLevel(100)]).toEqual([
+      "ok",
+      "warning",
+      "warning",
+      "danger",
+      "danger",
+    ]);
   });
 
   it("uses the shared window closest to its limit for compact labels", () => {

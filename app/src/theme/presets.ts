@@ -1,10 +1,11 @@
-// The themes Hedy ships: its own two (Tokyo Night and Burbuja, exactly the
-// tokens of `tokens.ts`) and well-known editor themes built from a seed.
+// The themes Hedy ships: its own two (Hedy and Hedy claro, exactly the tokens
+// of `tokens.ts`), the classic Tokyo Night and Burbuja it shipped first, and
+// well-known editor themes built from a seed.
 // Each passes every contrast check on its own (`tokens.test.ts`).
 
 import type { MessageKey } from "../i18n";
 import { deriveTokens, type ThemeSeed } from "./derive";
-import { themes, type ThemeBase, type ThemeTokens } from "./tokens";
+import { classicThemes, themes, type ThemeBase, type ThemeTokens } from "./tokens";
 
 export interface ThemeDef {
   /** A preset's id (`tokyo-night`) or `custom:<id>` for the user's own. */
@@ -16,7 +17,7 @@ export interface ThemeDef {
   tokens: ThemeTokens;
 }
 
-export const DEFAULT_THEME: Record<ThemeBase, string> = { dark: "tokyo-night", light: "burbuja" };
+export const DEFAULT_THEME: Record<ThemeBase, string> = { dark: "hedy", light: "hedy-light" };
 
 const SEEDS: { id: string; name: string; note: MessageKey; base: ThemeBase; seed: ThemeSeed }[] = [
   {
@@ -65,7 +66,7 @@ const SEEDS: { id: string; name: string; note: MessageKey; base: ThemeBase; seed
       function: "#50FA7B",
       type: "#8BE9FD",
       comment: "#8C98C4",
-      danger: "#FF6464",
+      danger: "#FF7272",
       success: "#50FA7B",
       warning: "#FFB86C",
       info: "#8BE9FD",
@@ -117,7 +118,7 @@ const SEEDS: { id: string; name: string; note: MessageKey; base: ThemeBase; seed
       function: "#88C0D0",
       type: "#8FBCBB",
       comment: "#97A3B9",
-      danger: "#D7939A",
+      danger: "#DC9DA4",
       success: "#A3BE8C",
       warning: "#EBCB8B",
       info: "#88C0D0",
@@ -171,7 +172,7 @@ const SEEDS: { id: string; name: string; note: MessageKey; base: ThemeBase; seed
       comment: "#59636E",
       danger: "#CF222E",
       success: "#197A34",
-      warning: "#946300",
+      warning: "#8A5C00",
       info: "#0866D6",
     },
   },
@@ -195,7 +196,7 @@ const SEEDS: { id: string; name: string; note: MessageKey; base: ThemeBase; seed
       function: "#1A62F0",
       type: "#955B07",
       comment: "#6C6F85",
-      danger: "#D20F39",
+      danger: "#C20E35",
       success: "#2F7A1F",
       warning: "#955B07",
       info: "#1A62F0",
@@ -221,7 +222,7 @@ const SEEDS: { id: string; name: string; note: MessageKey; base: ThemeBase; seed
       function: "#1D6BA3",
       type: "#806300",
       comment: "#64767C",
-      danger: "#C9302C",
+      danger: "#B92B27",
       success: "#5F7000",
       warning: "#806300",
       info: "#1D6BA3",
@@ -231,15 +232,23 @@ const SEEDS: { id: string; name: string; note: MessageKey; base: ThemeBase; seed
 
 /** Hedy's own themes: the default of each mode, and where a missing or deleted theme falls back. */
 export const HEDY_THEMES: Record<ThemeBase, ThemeDef> = {
-  dark: { id: DEFAULT_THEME.dark, name: "Tokyo Night", note: "theme.note.tokyoNight", base: "dark", tokens: themes.dark },
-  light: { id: DEFAULT_THEME.light, name: "Burbuja", note: "theme.note.burbuja", base: "light", tokens: themes.light },
+  dark: { id: DEFAULT_THEME.dark, name: "Hedy Dark", note: "theme.note.hedyDark", base: "dark", tokens: themes.dark },
+  light: { id: DEFAULT_THEME.light, name: "Hedy Light", note: "theme.note.hedyLight", base: "light", tokens: themes.light },
 };
 
-/** Every preset, Hedy's own first; dark ones, then light ones. */
+/** The themes Hedy shipped first, with their exact tokens. */
+const CLASSIC: Record<ThemeBase, ThemeDef> = {
+  dark: { id: "tokyo-night", name: "Tokyo Night", note: "theme.note.tokyoNight", base: "dark", tokens: classicThemes.dark },
+  light: { id: "burbuja", name: "Burbuja", note: "theme.note.burbuja", base: "light", tokens: classicThemes.light },
+};
+
+/** Every preset, Hedy's own first, then its classic one; dark ones, then light ones. */
 export const PRESETS: ThemeDef[] = [
   HEDY_THEMES.dark,
+  CLASSIC.dark,
   ...SEEDS.filter((s) => s.base === "dark").map(build),
   HEDY_THEMES.light,
+  CLASSIC.light,
   ...SEEDS.filter((s) => s.base === "light").map(build),
 ];
 

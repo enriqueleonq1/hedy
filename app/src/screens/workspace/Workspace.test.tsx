@@ -1,13 +1,67 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient } from "@tanstack/react-query";
 
 import { App } from "../../App";
 import { MockApi } from "../../api/MockApi";
+import { renderCode } from "../../code/testing";
+import { TerminalPanel } from "../../components/Terminal/TerminalPanel";
+import { TerminalProvider } from "../../components/Terminal/TerminalProvider";
 import { chooseMode, chooseOption, optionLabels } from "../../test/select";
+import { ChangesPanel } from "./ChangesPanel";
 
-// xterm needs a real canvas; the Terminal tab is not exercised here.
-vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
+// xterm needs a real canvas: a stand-in that draws nothing, so the terminal's own
+// logic (open the shell, type into it) still runs.
+vi.mock("@xterm/xterm", () => ({
+  Terminal: class {
+    cols = 80;
+    rows = 24;
+    options = {};
+    loadAddon() {}
+    open() {}
+    write() {}
+    focus() {}
+    dispose() {}
+    onData() {
+      return { dispose() {} };
+    }
+    onResize() {
+      return { dispose() {} };
+    }
+  },
+}));
+vi.mock("@xterm/addon-fit", () => ({
+  FitAddon: class {
+    fit() {}
+  },
+}));
+
+/** jsdom has no ResizeObserver; the terminal watches its size with one. */
+function stubResizeObserver() {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+/** The project has a `package.json` with these scripts, beside these other files (lock files). */
+function withPackage(api: MockApi, scripts: Record<string, string>, files: string[] = []) {
+  api.files.set("/code/hedy", [...(api.files.get("/code/hedy") ?? []), "package.json", ...files]);
+  const read = api.readFile.bind(api);
+  vi.spyOn(api, "readFile").mockImplementation(async (copy, path, rev) =>
+    copy.kind === "folder" && path === "package.json"
+      ? { kind: "text", text: JSON.stringify({ name: "hedy", scripts }), size: 64, version: "v1" }
+      : read(copy, path, rev),
+  );
+}
 
 function setup() {
   const api = MockApi.withSampleData();
@@ -17,18 +71,28 @@ function setup() {
   return { api, user: userEvent.setup() };
 }
 
-const PANEL = "Código, revisión, terminal y vista previa";
+const PANEL = "Cambios, archivos, terminal y vista previa";
 
 async function openProject(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
   await user.click(await screen.findByRole("button", { name }));
 }
+
+/** A project opens on its home: its tasks are listed there, a click away. */
+async function openTask(user: ReturnType<typeof userEvent.setup>, project: RegExp, title: RegExp) {
+  await openProject(user, project);
+  const tasks = await screen.findByRole("navigation", { name: "Secciones del proyecto" });
+  await user.click(await within(tasks.closest(".chat") as HTMLElement).findByRole("button", { name: title }));
+}
+
+const RUNNING = /^Revisa los tests del carrito/;
+const PLAN = /^Agrega recordatorios por WhatsApp/;
 
 describe("Workspace", () => {
   it("runs a task end to end: plan, permission, tests, diff and accept", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
     expect(await screen.findByText(/¿Qué hacemos en hedy\?/)).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Proyecto");
+    expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Cambiar código");
 
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "Agrega un recordatorio 24 horas antes");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
@@ -48,11 +112,11 @@ describe("Workspace", () => {
     expect(group).toHaveAttribute("aria-expanded", "true");
     // The edited file is a link to it in the viewer.
     expect(screen.getByRole("button", { name: "citas/servicio.py" }).parentElement).toHaveTextContent("Claude editó citas/servicio.py");
-    await user.click(within(card).getByRole("button", { name: "Permitir en este chat" }));
+    await user.click(within(card).getByRole("button", { name: "Permitir siempre en esta tarea" }));
 
     expect(await screen.findByText(/Claude: pasan los tests/)).toBeInTheDocument();
     expect(await screen.findByText(/Terminó/, { selector: ".turn-end" })).toBeInTheDocument();
-    expect(screen.getByText(/Permitido en este chat/)).toBeInTheDocument();
+    expect(screen.getByText(/Permitido siempre en esta tarea/)).toBeInTheDocument();
     const steps = screen.getByRole("region", { name: "Pasos" });
     expect(within(steps).getAllByText(/\(hecho\)/)).toHaveLength(3);
 
@@ -62,9 +126,9 @@ describe("Workspace", () => {
       "programar_recordatorio(cita, horas=24)",
     );
 
-    await user.click(screen.getByRole("button", { name: "Aceptar cambios" }));
-    const sheet = await screen.findByRole("dialog", { name: "Revisar antes de integrar" });
-    await user.click(await within(sheet).findByRole("button", { name: "Aceptar e integrar" }));
+    await user.click(screen.getByRole("button", { name: "Aceptar cambios…" }));
+    const sheet = await screen.findByRole("dialog", { name: "Aceptar cambios" });
+    await user.click(await within(sheet).findByRole("button", { name: "Aceptar y unir" }));
     expect(await screen.findByText("Cambios integrados en main.")).toBeInTheDocument();
     expect(await screen.findByText(/ya se aceptó/)).toBeInTheDocument();
     // Many steps: well over the default 5 s on a busy machine.
@@ -76,7 +140,7 @@ describe("Workspace", () => {
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
     // The running sample task in tienda last searched the code (Grep).
-    await openProject(user, /^tienda/);
+    await openTask(user, /^tienda/, RUNNING);
     const word = await screen.findByText("Rastreando");
     const live = word.closest(".agent-row--live");
     expect(live).toHaveAttribute("aria-hidden");
@@ -110,8 +174,10 @@ describe("Workspace", () => {
   it("asks without a worktree in Pregunta mode", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
-    await chooseMode(user, "Pregunta");
-    expect(screen.queryByRole("button", { name: "Planificar primero" })).not.toBeInTheDocument();
+    await chooseMode(user, "Solo preguntar");
+    await user.click(screen.getByRole("combobox", { name: "Modo" }));
+    expect(screen.queryByRole("option", { name: "Enséñame el plan primero" })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     expect(await screen.findByText(/no cambian archivos/)).toBeInTheDocument();
@@ -124,21 +190,26 @@ describe("Workspace", () => {
     const modes = await screen.findByRole("combobox", { name: "Modo" });
     expect(modes.closest(".composer")).not.toBeNull();
     expect(document.querySelector(".topbar [role=combobox]")).toBeNull();
-    expect(screen.getByRole("button", { name: "Planificar primero" })).toHaveAttribute("aria-pressed", "true");
 
     await user.click(modes);
     expect(screen.getByRole("listbox", { name: "Modo" })).toBeInTheDocument();
-    expect(optionLabels()).toEqual(["Proyecto", "Pregunta", "Investigar"]);
-    expect(screen.getByRole("option", { name: "Proyecto" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("option", { name: "Pregunta" })).toHaveAccessibleDescription("Responde sin tocar archivos");
+    // "Show me the plan first" is a checkbox in the same menu, on by default.
+    expect(optionLabels()).toEqual(["Cambiar código", "Solo preguntar", "Investigar", "Enséñame el plan primero"]);
+    expect(screen.getByRole("option", { name: "Enséñame el plan primero" })).toHaveAccessibleDescription(
+      "Sí: lo apruebas antes de que toque el código",
+    );
+    expect(screen.getByRole("option", { name: "Cambiar código" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("option", { name: "Solo preguntar" })).toHaveAccessibleDescription("Responde sin tocar archivos");
     await user.click(screen.getByRole("option", { name: "Investigar" }));
     expect(modes).toHaveTextContent("Investigar");
-    expect(screen.queryByRole("button", { name: "Planificar primero" })).not.toBeInTheDocument();
+    await user.click(modes);
+    expect(optionLabels()).toEqual(["Cambiar código", "Solo preguntar", "Investigar"]);
+    await user.keyboard("{Escape}");
     expect(localStorage.getItem("hedy.mode./code/hedy")).toBe("research");
 
     // Another project keeps its own mode; coming back finds the one chosen here.
     await openProject(user, /^tienda/);
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Proyecto"));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Cambiar código"));
     await openProject(user, /^hedy/);
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Investigar"));
 
@@ -149,9 +220,14 @@ describe("Workspace", () => {
     expect(screen.getByText("Responde o pide algo más")).toHaveClass("sr-only");
     expect(screen.queryByRole("combobox", { name: "Modo" })).not.toBeInTheDocument();
 
-    // "Nueva tarea" in the header brings the selector back.
-    await user.click(screen.getByRole("button", { name: "Nueva tarea" }));
+    // The project's crumb (its home, with the new task's composer) brings the selector back; so does Ctrl+N.
+    await user.click(screen.getByRole("button", { name: "Volver a hedy" }));
     expect(await screen.findByRole("combobox", { name: "Modo" })).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /^¿Qué librerías hay para recordatorios\?/ }));
+    await waitFor(() => expect(screen.queryByRole("combobox", { name: "Modo" })).not.toBeInTheDocument());
+    await user.keyboard("{Control>}n{/Control}");
+    expect(await screen.findByRole("combobox", { name: "Modo" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/hedy")}&new`);
   });
 
   it("answers the plan and permission cards with the keyboard", async () => {
@@ -200,7 +276,7 @@ describe("Workspace", () => {
     api.delayMs = 0;
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await openProject(user, /^hedy/);
+    await openTask(user, /^hedy/, PLAN);
     // s1's plan waits: nothing to show, so no panel and the chat takes the width.
     await screen.findByRole("heading", { name: "Agrega recordatorios por WhatsApp antes de cada cita" });
     const toggle = screen.getByRole("button", { name: /^Panel lateral/ });
@@ -219,7 +295,7 @@ describe("Workspace", () => {
     await user.click(toggle);
     expect(screen.queryByRole("complementary", { name: PANEL })).not.toBeInTheDocument();
     expect(toggle).toHaveAttribute("aria-pressed", "false");
-    expect(toggle).toHaveAccessibleName("Panel lateral: código, revisión, terminal y vista previa, hay cambios por revisar");
+    expect(toggle).toHaveAccessibleName("Panel lateral: cambios, archivos, terminal y vista previa, hay cambios por revisar");
     expect(sessionStorage.getItem("hedy.sidePanel")).toBe("hidden");
     await user.keyboard("{Control>}1{/Control}");
     await user.keyboard("{Control>}3{/Control}");
@@ -251,7 +327,7 @@ describe("Workspace", () => {
     api.delayMs = 0;
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await openProject(user, /^hedy/);
+    await openTask(user, /^hedy/, PLAN);
     await user.click(await screen.findByRole("button", { name: /^Panel lateral/ }));
     const panel = await screen.findByRole("complementary", { name: PANEL });
     // A project task whose plan waits (s1), one that works (s3), one with changes (s5), a question (s6).
@@ -271,7 +347,7 @@ describe("Workspace", () => {
     api.delayMs = 0;
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await openProject(user, /^tienda/);
+    await openTask(user, /^tienda/, RUNNING);
     const composer = await screen.findByLabelText(/^Escribe mientras Claude Opus trabaja/);
     await user.type(composer, "Una cosa más");
 
@@ -289,7 +365,7 @@ describe("Workspace", () => {
     api.delayMs = 0;
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await openProject(user, /^hedy/);
+    await openTask(user, /^hedy/, PLAN);
     expect(await screen.findByRole("heading", { name: "Agrega recordatorios por WhatsApp antes de cada cita" })).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Tarea" })).not.toBeInTheDocument();
 
@@ -300,11 +376,11 @@ describe("Workspace", () => {
     const current = within(list).getByRole("button", { name: /Agrega recordatorios por WhatsApp/ });
     expect(current).toHaveAttribute("aria-current", "true");
     expect(current).toHaveFocus();
-    expect(within(current).getByText("Plan por aprobar")).toHaveClass("board-state--needs");
+    expect(within(current).getByText("Te espera: plan")).toHaveClass("status-pill--needs");
     expect(within(current).getByText("Claude personal")).toBeInTheDocument();
     expect(within(current).getByText("Ctrl+1")).toBeInTheDocument();
     const taxes = within(list).getByRole("button", { name: /Arregla el cálculo de impuestos/ });
-    expect(within(taxes).getByText("Cambios por revisar")).toHaveClass("board-state--done");
+    expect(within(taxes).getByText("Lista")).toHaveClass("status-pill--done");
     expect(within(taxes).getByText("hace 40 min")).toBeInTheDocument();
 
     // Escape closes it and gives the focus back.
@@ -335,7 +411,7 @@ describe("Workspace", () => {
     api.delayMs = 0;
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: /^Actividad/ }, { timeout: 8000 }));
+    await user.click(await screen.findByRole("button", { name: /^Inicio/ }, { timeout: 8000 }));
     const needs = await screen.findByRole("region", { name: /^Te necesitan/ });
     await user.click(within(needs).getByRole("button", { name: /Migra el reporte de comisiones/ }));
     const title = "Migra el reporte de comisiones a la API nueva";
@@ -343,7 +419,7 @@ describe("Workspace", () => {
 
     history.back();
     expect(await screen.findByRole("region", { name: /^Te necesitan/ })).toBeInTheDocument();
-    expect(window.location.hash).toBe("#activity");
+    expect(window.location.hash).toBe("#welcome");
     history.back();
     expect(await screen.findByRole("heading", { name: /¡Hola, Alex!/ })).toBeInTheDocument();
     history.forward();
@@ -356,7 +432,7 @@ describe("Workspace", () => {
   it("refreshes a stopped task even when its status stays the same", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
-    await chooseMode(user, "Pregunta");
+    await chooseMode(user, "Solo preguntar");
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     expect(await screen.findByText(/Terminó/, { selector: ".turn-end" })).toBeInTheDocument();
@@ -372,7 +448,7 @@ describe("Workspace", () => {
     const { api, user } = setup();
     await openProject(user, /^hedy/);
     await user.type(await screen.findByLabelText("Pídele algo a hedy"), "Recordatorios");
-    await user.click(screen.getByRole("button", { name: "Planificar primero" }));
+    await chooseMode(user, "Enséñame el plan primero");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     await screen.findByRole("region", { name: "Claude quiere correr un comando" });
 
@@ -390,8 +466,11 @@ describe("Workspace", () => {
   });
 
   it("previews only local addresses", async () => {
-    const { user } = setup();
-    await openProject(user, /^hedy/);
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await openTask(user, /^hedy/, PLAN);
     await user.click(await screen.findByRole("button", { name: /^Panel lateral/ }));
     await user.click(await screen.findByRole("tab", { name: "Vista previa" }));
     const address = screen.getByLabelText("Dirección del servidor local");
@@ -405,6 +484,123 @@ describe("Workspace", () => {
     expect(screen.getAllByTitle("Vista previa").find((el) => el.tagName === "IFRAME")).toHaveAttribute("src", "http://localhost:5173");
   });
 
+  it("starts the dev server from the preview: a terminal in the task's copy with the command typed", async () => {
+    stubResizeObserver();
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    withPackage(api, { dev: "vite", build: "vite build" });
+    const open = vi.spyOn(api, "terminalOpen");
+    const write = vi.spyOn(api, "terminalWrite");
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await openTask(user, /^hedy/, /^Arregla el cálculo de impuestos/);
+    // s5 has changes: the panel opens by itself.
+    const panel = await screen.findByRole("complementary", { name: PANEL });
+    await user.click(within(panel).getByRole("tab", { name: "Vista previa" }));
+    expect(within(panel).getByText(/Arranca el servidor/)).toBeInTheDocument();
+    await user.click(await within(panel).findByRole("button", { name: "Arrancar «npm run dev»" }));
+
+    const terminals = await screen.findByRole("tablist", { name: "Terminales" });
+    expect(within(terminals).getByRole("tab", { name: "Terminal · npm run dev" })).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(write).toHaveBeenCalledWith(expect.any(Number), "npm run dev\r"));
+    expect(open).toHaveBeenCalledWith({ kind: "shell", path: "/code/hedy/.hedy/worktrees/s5" }, expect.anything(), expect.any(Function));
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith(await open.mock.results[0]?.value, "npm run dev\r");
+  });
+
+});
+
+describe("Preview's start button", () => {
+  const PROJECT = "/code/hedy";
+
+  async function showPreview(api: MockApi) {
+    api.delayMs = 0;
+    renderCode(
+      <TerminalProvider>
+        <ChangesPanel project={PROJECT} task={null} />
+        <TerminalPanel />
+      </TerminalProvider>,
+      api,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: "Vista previa" }));
+    return user;
+  }
+
+  it.each([
+    ["npm without a lock file", { dev: "vite" }, [], "npm run dev"],
+    ["npm with its lock file", { dev: "vite" }, ["package-lock.json"], "npm run dev"],
+    ["pnpm", { dev: "vite" }, ["pnpm-lock.yaml"], "pnpm dev"],
+    ["yarn", { dev: "vite" }, ["yarn.lock"], "yarn dev"],
+    ["bun (bun.lockb)", { dev: "vite" }, ["bun.lockb"], "bun run dev"],
+    ["bun (bun.lock)", { dev: "vite" }, ["bun.lock"], "bun run dev"],
+    ["start without dev", { start: "node server.js" }, [], "npm run start"],
+    ["dev before start", { start: "node server.js", dev: "vite" }, ["yarn.lock"], "yarn dev"],
+    ["start with pnpm", { start: "next start" }, ["pnpm-lock.yaml"], "pnpm start"],
+  ])("runs the script with the project's package manager: %s", async (_, scripts, files, command) => {
+    const api = MockApi.withSampleData();
+    withPackage(api, scripts, files);
+    await showPreview(api);
+    expect(await screen.findByRole("button", { name: `Arrancar «${command}»` })).toBeInTheDocument();
+  });
+
+  it("opens the terminal in the project's folder without a task", async () => {
+    stubResizeObserver();
+    const api = MockApi.withSampleData();
+    withPackage(api, { dev: "vite" }, ["pnpm-lock.yaml"]);
+    const open = vi.spyOn(api, "terminalOpen");
+    const write = vi.spyOn(api, "terminalWrite");
+    const user = await showPreview(api);
+    await user.click(await screen.findByRole("button", { name: "Arrancar «pnpm dev»" }));
+    expect(await screen.findByRole("tab", { name: "Terminal · pnpm dev" })).toBeInTheDocument();
+    await waitFor(() => expect(write).toHaveBeenCalledWith(expect.any(Number), "pnpm dev\r"));
+    expect(open).toHaveBeenCalledWith({ kind: "shell", path: PROJECT }, expect.anything(), expect.any(Function));
+  });
+
+  it("offers nothing without a dev or start script, or without a package.json", async () => {
+    const api = MockApi.withSampleData();
+    withPackage(api, { build: "tsc", test: "vitest" }, ["pnpm-lock.yaml"]);
+    await showPreview(api);
+    await waitFor(() => expect(api.readFile).toHaveBeenCalledWith({ kind: "folder", project: PROJECT }, "package.json"));
+    await act(async () => {});
+    expect(screen.queryByRole("button", { name: /^Arrancar/ })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["scripts as a string", JSON.stringify({ name: "hedy", scripts: "dev" })],
+    ["scripts as a list", JSON.stringify({ name: "hedy", scripts: ["dev", "start"] })],
+    ["scripts null", JSON.stringify({ name: "hedy", scripts: null })],
+    ["a manifest that is not an object", JSON.stringify("dev")],
+    ["a manifest that is null", "null"],
+    ["broken JSON", '{ "scripts": { "dev": '],
+  ])("offers nothing, and keeps working, for a bad package.json: %s", async (_, text) => {
+    const api = MockApi.withSampleData();
+    api.files.set(PROJECT, [...(api.files.get(PROJECT) ?? []), "package.json"]);
+    const read = api.readFile.bind(api);
+    const manifest = vi
+      .spyOn(api, "readFile")
+      .mockImplementation(async (copy, path, rev) =>
+        copy.kind === "folder" && path === "package.json" ? { kind: "text", text, size: text.length, version: "v1" } : read(copy, path, rev),
+      );
+    await showPreview(api);
+    await waitFor(() => expect(manifest).toHaveBeenCalledWith({ kind: "folder", project: PROJECT }, "package.json"));
+    await act(async () => {});
+    expect(screen.queryByRole("button", { name: /^Arrancar/ })).not.toBeInTheDocument();
+    // The preview is still there to type an address.
+    expect(screen.getByRole("tabpanel", { name: "Vista previa" })).toBeInTheDocument();
+    expect(screen.getByText(/Arranca el servidor/)).toBeInTheDocument();
+  });
+
+  it("offers nothing for a project without a package.json", async () => {
+    const api = MockApi.withSampleData();
+    const files = vi.spyOn(api, "projectFiles");
+    const read = vi.spyOn(api, "readFile");
+    await showPreview(api);
+    await waitFor(() => expect(files).toHaveBeenCalledWith(PROJECT));
+    await act(async () => {});
+    expect(read).not.toHaveBeenCalledWith(expect.anything(), "package.json");
+    expect(screen.queryByRole("button", { name: /^Arrancar/ })).not.toBeInTheDocument();
+  });
 });
 
 describe("Composer", () => {
@@ -422,17 +618,27 @@ describe("Composer", () => {
     expect(screen.getByText("Enter enviar · Shift+Enter salto")).toBeInTheDocument();
 
     const model = screen.getByRole("combobox", { name: "Modelo" });
-    expect(model).toHaveTextContent("Auto por fase");
+    expect(model).toHaveTextContent("Automático");
     await user.click(model);
-    expect(optionLabels()).toEqual(["Auto por fase", "Fable", "Opus", "Sonnet", "Haiku"]);
+    expect(optionLabels()).toEqual(["Automático", "Fable", "Opus", "Sonnet", "Haiku"]);
     expect(screen.getByRole("option", { name: "Haiku" })).toHaveAccessibleDescription("El más rápido");
     await user.click(screen.getByRole("option", { name: "Sonnet" }));
     expect(model).toHaveTextContent("Sonnet");
 
-    const plan = screen.getByRole("button", { name: "Planificar primero" });
-    expect(plan).toHaveAttribute("aria-pressed", "true");
-    await user.click(plan);
-    expect(plan).toHaveAttribute("aria-pressed", "false");
+    // The plan-first checkbox in the mode menu, by keyboard: it stays on the mode.
+    const modes = screen.getByRole("combobox", { name: "Modo" });
+    modes.focus();
+    await user.keyboard("{ArrowDown}{End}");
+    const plan = screen.getByRole("option", { name: "Enséñame el plan primero" });
+    expect(modes).toHaveAttribute("aria-activedescendant", plan.id);
+    await user.keyboard("{Enter}");
+    expect(modes).toHaveTextContent("Cambiar código");
+    await user.click(modes);
+    expect(screen.getByRole("option", { name: "Enséñame el plan primero" })).toHaveAccessibleDescription(
+      "No: empieza a cambiar el código enseguida",
+    );
+    await user.keyboard("{Escape}");
+    await user.click(composer);
 
     // Shift+Enter is a new line; Enter sends, as everywhere.
     await user.type(composer, "Primera línea{Shift>}{Enter}{/Shift}segunda");
@@ -468,7 +674,9 @@ describe("Composer", () => {
 
     await chooseOption(user, screen.getByRole("combobox", { name: "Modelo" }), "kimi-k3");
     await chooseMode(user, "Investigar");
-    expect(screen.queryByRole("button", { name: "Planificar primero" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "Modo" }));
+    expect(screen.queryByRole("option", { name: "Enséñame el plan primero" })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
 
     // Shift+Enter is a new line; Enter sends.
     await user.type(composer, "Uno{Shift>}{Enter}{/Shift}dos");
@@ -483,7 +691,7 @@ describe("Composer", () => {
     const stop = vi.spyOn(api, "stopTask");
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await openProject(user, /^tienda/);
+    await openTask(user, /^tienda/, RUNNING);
     const composer = await screen.findByLabelText(/^Escribe mientras Claude Opus trabaja/);
     expect(composer).toHaveAttribute("placeholder", "Escribe; se lo paso cuando termine su turno…");
 
@@ -507,15 +715,27 @@ describe("Composer", () => {
     expect(stop).toHaveBeenCalledWith("s4");
   });
 
-  it("keeps the header to one quiet row: Status and Memory in the ⋯ menu", async () => {
-    const { user } = setup();
-    await openProject(user, /^hedy/);
-    await screen.findByText(/¿Qué hacemos en hedy\?/);
-    await user.click(screen.getByRole("button", { name: "Más acciones" }));
+  it("keeps the task's header to one quiet row: Status and Memory in the ⋯ menu", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await openTask(user, /^hedy/, PLAN);
+    const head = (await screen.findByRole("heading", { level: 1, name: PLAN })).closest("header") as HTMLElement;
+    expect(within(head).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "hedy /",
+      "Detalles",
+      expect.stringMatching(/^Tareas \(5\)/),
+      expect.stringMatching(/^Panel lateral/),
+      expect.anything(),
+    ]);
+    await user.click(within(head).getByRole("button", { name: "Más acciones" }));
     const menu = screen.getByRole("menu", { name: "Más acciones" });
     expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Estado", "Memoria"]);
     await user.click(within(menu).getByRole("menuitem", { name: "Memoria" }));
-    expect(await screen.findByRole("heading", { name: "Memoria de hedy" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria de hedy" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}`);
+    expect(screen.getByRole("combobox", { name: "Para" })).toHaveValue("project:/code/hedy");
   });
 
   it("keeps templates one quiet button away: use one, or save the message as one", async () => {

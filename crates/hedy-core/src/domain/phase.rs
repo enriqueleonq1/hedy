@@ -53,6 +53,32 @@ impl Stage {
     }
 }
 
+/// The project's account changed from `old` to `new`: the steps that run on
+/// "the project's account" with a model of their own (stored with the old
+/// account, since an assignment names one) follow it, keeping the model when
+/// both accounts are of the same provider and going back to the default
+/// otherwise. Optional steps name their account on purpose: they stay.
+pub fn follow_project_account(
+    phases: &mut PhasePlan,
+    old: &AccountId,
+    new: &AccountId,
+    same_provider: bool,
+) {
+    for phase in [Phase::Plan, Phase::Implement] {
+        let Some(assignment) = phases.get_mut(&phase) else {
+            continue;
+        };
+        if &assignment.account != old {
+            continue;
+        }
+        if same_provider && assignment.model.is_some() {
+            assignment.account = new.clone();
+        } else {
+            phases.remove(&phase);
+        }
+    }
+}
+
 /// The stages a new task runs through.
 ///
 /// - `model_override` (a model picked in the composer) runs everything with the

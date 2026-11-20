@@ -1,13 +1,14 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
-import type { Account, ActivityItem, BoardState, Task } from "../../api/types";
+import type { Account, BoardState, Task } from "../../api/types";
 import { timeAgo } from "../../format";
 import { ChevronIcon } from "../../components/ui/icons";
-import { useT } from "../../i18n";
+import { useT, type MessageKey } from "../../i18n";
 import { keyLabels } from "../../platform";
 import { useActivity } from "../../tasks/hooks";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
-import { MARK, STATE_LABEL, TONE } from "../activity/ActivityScreen";
+import { StatusPill } from "../../components/ui/StatusPill";
+import { taskState } from "../../tasks/state";
 import { PlusIcon } from "./icons";
 
 /** How many tasks have a Ctrl/⌘ + digit shortcut. */
@@ -20,24 +21,29 @@ export function jumpDigit(e: KeyboardEvent): number | null {
   return digit ? Number(digit) : null;
 }
 
-/** The board's state for a task; derived from its status when the board does not list it. */
-function stateOf(task: Task, item: ActivityItem | undefined): BoardState {
-  if (item) return item.state;
-  switch (task.status) {
-    case "running":
-      return "working";
-    case "waitingApproval":
-      return "plan";
-    case "review":
-      return task.mode === "project" ? "review" : "answered";
-    case "accepted":
-      return "accepted";
-    case "discarded":
-      return "cancelled";
-    case "failed":
-      return "failed";
-  }
-}
+/** The switcher's groups, in order: what needs the user first, finished ones folded. */
+type Group = "needs" | "working" | "ready" | "done";
+
+const GROUP: Record<BoardState, Group> = {
+  plan: "needs",
+  permission: "needs",
+  limited: "needs",
+  failed: "needs",
+  working: "working",
+  review: "ready",
+  answered: "ready",
+  accepted: "done",
+  cancelled: "done",
+};
+
+const GROUP_LABEL: Record<Exclude<Group, "done">, MessageKey> = {
+  needs: "switcher.needs",
+  working: "switcher.working",
+  ready: "switcher.ready",
+};
+
+/** From this many tasks on, a filter field heads the list. */
+const FILTER_FROM = 9;
 
 /**
  * The project's tasks, a click away: each one's full title, state, account
@@ -66,6 +72,8 @@ export function TaskSwitcher({
   const board = useActivity();
   const byId = new Map((board.data ?? []).map((item) => [item.task.id, item]));
   const keys = keyLabels();
+  const [query, setQuery] = useState("");
+  const [showDone, setShowDone] = useState(false);
 
   // Clicking anywhere else closes it.
   useEffect(() => {
@@ -110,6 +118,47 @@ export function TaskSwitcher({
     }
   }
 
+  const needle = query.trim().toLowerCase();
+  const rows = tasks
+    .map((task, index) => ({ task, index, state: taskState(task, byId.get(task.id)) }))
+    .filter(({ task }) => !needle || task.title.toLowerCase().includes(needle));
+  const groups = (["needs", "working", "ready", "done"] as Group[])
+    .map((group) => ({ group, rows: rows.filter((r) => GROUP[r.state] === group) }))
+    .filter((g) => g.rows.length > 0);
+
+  const option = ({ task, index, state }: { task: Task; index: number; state: BoardState }) => {
+    const item = byId.get(task.id);
+    const account = accounts.find((a) => a.id === task.account);
+    const jump = index < JUMP_KEYS ? keys.jump(index + 1) : null;
+    return (
+      <li key={task.id}>
+        <button
+          type="button"
+          className="task-option"
+          aria-current={task.id === current ? "true" : undefined}
+          aria-keyshortcuts={jump ? `Control+${index + 1} Meta+${index + 1}` : undefined}
+          onClick={() => choose(task.id)}
+        >
+          <span className="task-option__title">{task.title}</span>
+          {jump && (
+            <kbd className="kbd task-option__key" aria-hidden>
+              {jump}
+            </kbd>
+          )}
+          <span className="task-option__meta">
+            <StatusPill state={state} task={task} />
+            <span className="task-option__who">
+              <span className="dot" style={{ background: account?.color ?? DEFAULT_ACCOUNT_COLOR }} aria-hidden />
+              {account?.name ?? task.account}
+            </span>
+            <span aria-hidden>·</span>
+            <span>{timeAgo(item?.updatedAt ?? task.createdAt, t)}</span>
+          </span>
+        </button>
+      </li>
+    );
+  };
+
   return (
     <div className="task-switcher" ref={root} onKeyDown={open ? move : undefined}>
       <button
@@ -136,45 +185,43 @@ export function TaskSwitcher({
             <PlusIcon />
             {conversations ? t("conversation.newLabel") : t("workspace.newTask")}
           </button>
-          <ul className="task-switcher__list">
-            {tasks.map((task, index) => {
-              const item = byId.get(task.id);
-              const state = stateOf(task, item);
-              const account = accounts.find((a) => a.id === task.account);
-              const jump = index < JUMP_KEYS ? keys.jump(index + 1) : null;
-              return (
-                <li key={task.id}>
-                  <button
-                    type="button"
-                    className="task-option"
-                    aria-current={task.id === current ? "true" : undefined}
-                    aria-keyshortcuts={jump ? `Control+${index + 1} Meta+${index + 1}` : undefined}
-                    onClick={() => choose(task.id)}
-                  >
-                    <span className="task-option__title">{task.title}</span>
-                    {jump && (
-                      <kbd className="kbd task-option__key" aria-hidden>
-                        {jump}
-                      </kbd>
-                    )}
-                    <span className="task-option__meta">
-                      <span className={`board-state board-state--${TONE[state]}`}>
-                        <span aria-hidden>{MARK[state]}</span>
-                        {t(STATE_LABEL[state])}
-                      </span>
-                      <span aria-hidden>·</span>
-                      <span className="task-option__who">
-                        <span className="dot" style={{ background: account?.color ?? DEFAULT_ACCOUNT_COLOR }} aria-hidden />
-                        {account?.name ?? task.account}
-                      </span>
-                      <span aria-hidden>·</span>
-                      <span>{timeAgo(item?.updatedAt ?? task.createdAt, t)}</span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+          {tasks.length >= FILTER_FROM && (
+            <input
+              className="input task-switcher__filter"
+              type="search"
+              aria-label={t("switcher.filter")}
+              placeholder={t("switcher.filter")}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          )}
+          {groups.map(({ group, rows }) =>
+            group === "done" && !showDone && !needle && !rows.some((r) => r.task.id === current) ? (
+              <button
+                key={group}
+                type="button"
+                className="task-switcher__more"
+                aria-expanded={false}
+                onClick={() => {
+                  setShowDone(true);
+                  // The button goes away: the focus moves to the first finished task.
+                  requestAnimationFrame(() =>
+                    root.current?.querySelector<HTMLButtonElement>('[data-group="done"] .task-option')?.focus(),
+                  );
+                }}
+              >
+                {t("switcher.done", { n: rows.length })}
+              </button>
+            ) : (
+              <section key={group} data-group={group} className="task-switcher__group" aria-label={group === "done" ? t("switcher.done", { n: rows.length }) : t(GROUP_LABEL[group])}>
+                <h3 className="task-switcher__heading" aria-hidden>
+                  {group === "done" ? t("switcher.done", { n: rows.length }) : t(GROUP_LABEL[group])}
+                </h3>
+                <ul className="task-switcher__list">{rows.map(option)}</ul>
+              </section>
+            ),
+          )}
+          {needle && groups.length === 0 && <p className="muted small task-switcher__empty">{t("switcher.noMatch")}</p>}
         </div>
       )}
     </div>

@@ -8,6 +8,7 @@ import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { Field } from "../../components/ui/controls";
 import { useToast } from "../../components/ui/Toast";
+import { HEDY_THEMES } from "../../theme/presets";
 import { THEMES_KEY, useTheme, type DraftSource } from "../../theme/ThemeProvider";
 import { DescribeThemeDialog } from "./DescribeThemeDialog";
 import { ImportThemeDialog } from "./ImportThemeDialog";
@@ -134,7 +135,7 @@ function DeleteThemeDialog({ theme, onClose }: { theme: CustomTheme; onClose: ()
   const [busy, setBusy] = useState(false);
   const id = `custom:${theme.id}`;
   const used = inUse[theme.base].id === id;
-  const fallbackName = theme.base === "dark" ? "Tokyo Night" : "Burbuja";
+  const fallbackName = HEDY_THEMES[theme.base].name;
 
   const remove = async () => {
     setBusy(true);

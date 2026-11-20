@@ -85,13 +85,13 @@ const en: Record<keyof typeof es, string> = {
   "carry.saveNoteMenu": "Save as a project note…",
   "carry.saveNoteHint": "The answer, in a project's memory",
 
-  "carry.from": "From: conversation «{title}»",
-  "carry.fromLabel": "Open the conversation «{title}»",
-  "carry.fromDeleted": "From a deleted conversation: «{title}»",
+  "carry.from": "From: conversation “{title}”",
+  "carry.fromLabel": "Open the conversation “{title}”",
+  "carry.fromDeleted": "From a deleted conversation: “{title}”",
   "carry.continued": "Continued in",
-  "carry.continuedLabel": "Open the task «{task}» of {project}",
+  "carry.continuedLabel": "Open the task “{task}” of {project}",
 
-  "carry.contextTitle": "Context: conversation «{title}»",
+  "carry.contextTitle": "Context: conversation “{title}”",
   "carry.contextCount": "Questions {kept}/{total} · {chars} characters",
   "carry.contextSummarized": "Summary made with AI · {chars} characters",
   "carry.expand": "Show the context",

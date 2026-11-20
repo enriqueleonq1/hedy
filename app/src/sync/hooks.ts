@@ -10,6 +10,7 @@ import { useToast } from "../components/ui/Toast";
 import { useT, type Translate } from "../i18n";
 import { TEMPLATES_KEY } from "../tasks/hooks";
 import { THEMES_KEY } from "../theme/ThemeProvider";
+import { syncErrorTitle } from "./errors";
 
 export const SYNC_KEY = ["sync"] as const;
 export const SYNC_STATUS_KEY = [...SYNC_KEY, "status"] as const;
@@ -48,7 +49,8 @@ export function useSyncNow() {
   return useMutation({
     mutationFn: () => api.syncNow(),
     onSuccess: (report) => toast.info(t("sync.done", { sent: report.sent, received: report.received })),
-    onError: (error) => toast.error(errorMessage(error, t)),
+    // Plain words ("Sin conexión"…); git's own message is in the section's "Detalles".
+    onError: (error) => toast.error(t(syncErrorTitle(errorMessage(error, t)))),
     onSettled: () => refreshAfterSync(client),
   });
 }

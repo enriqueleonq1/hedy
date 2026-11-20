@@ -19,14 +19,14 @@ function setup(hash: string) {
 }
 
 describe("side panel in the app", () => {
-  it("focuses the explorer from the palette's Explorador command", async () => {
+  it("focuses the files from the palette's explorer command", async () => {
     const { user } = setup("#p=%2Fcode%2Fhedy&t=s5");
     await screen.findByRole("heading", { name: /Arregla el cálculo de impuestos/ }, SLOW);
-    expect(await screen.findByRole("tab", { name: "Revisión" }, SLOW)).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("tab", { name: /^Cambios \d+$/ }, SLOW)).toHaveAttribute("aria-selected", "true");
     await user.keyboard("{Control>}k{/Control}");
-    await user.type(screen.getByRole("combobox", { name: "Paleta de comandos" }), "explorador");
+    await user.type(screen.getByRole("combobox", { name: "Paleta de comandos" }), "archivos");
     await user.keyboard("{Enter}");
-    await waitFor(() => expect(screen.getByRole("tab", { name: "Explorador" })).toHaveAttribute("aria-selected", "true"), SLOW);
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Archivos" })).toHaveAttribute("aria-selected", "true"), SLOW);
     await waitFor(() => expect(screen.getByRole("tree", { name: "Archivos" })).toHaveFocus(), SLOW);
   });
 
@@ -37,14 +37,14 @@ describe("side panel in the app", () => {
     await user.click(within(review).getByRole("button", { name: "Editar aquí" }));
     const editor = await screen.findByRole("textbox", { name: "Contenido de impuestos.py" }, SLOW);
     await waitFor(() => expect(editor).toHaveAttribute("aria-readonly", "false"), SLOW);
-    expect(screen.getByRole("tab", { name: "Explorador" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Archivos" })).toHaveAttribute("aria-selected", "true");
 
     const view = EditorView.findFromDOM(document.querySelector(".cm-editor") as HTMLElement);
     act(() => view?.dispatch({ changes: { from: 0, insert: "# corregido por mí\n" } }));
     await user.click(await screen.findByRole("button", { name: "Guardar" }));
     await screen.findByText("Guardado", undefined, SLOW);
 
-    await user.click(screen.getByRole("tab", { name: "Revisión" }));
+    await user.click(screen.getByRole("tab", { name: /^Cambios \d+$/ }));
     const updated = await screen.findByRole("region", { name: "facturas/impuestos.py" }, SLOW);
     expect(await within(updated).findByText("# corregido por mí", undefined, SLOW)).toBeInTheDocument();
     expect((await api.taskDiff("s5")).find((f) => f.path === "facturas/impuestos.py")?.additions).toBeGreaterThan(1);

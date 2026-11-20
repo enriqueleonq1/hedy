@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { errorMessage, useApi } from "../api/context";
 import type { CodeCopy } from "../api/codeTypes";
 import { Dialog } from "../components/ui/Dialog";
+import { EmptyState } from "../components/ui/EmptyState";
 import { codeKeys, useFileNavigator } from "../files/navigator";
 import { timeAgo } from "../format";
 import { useT } from "../i18n";
@@ -25,7 +26,14 @@ export function HistoryDialog({ copy, path, onClose }: { copy: CodeCopy; path: s
   return (
     <Dialog title={t("reviewer.history.title", { path })} onClose={onClose}>
       {history.isPending && <p className="muted">{t("reviewer.history.loading")}</p>}
-      {history.isError && <p className="error-text">{errorMessage(history.error, t)}</p>}
+      {history.isError && (
+        <EmptyState
+          error
+          title={t("reviewer.history.error")}
+          text={errorMessage(history.error, t)}
+          onRetry={() => void history.refetch()}
+        />
+      )}
       {data && entries.length === 0 && <p className="muted">{t("reviewer.history.empty")}</p>}
       {entries.length > 0 && (
         <ul className="rv-history">

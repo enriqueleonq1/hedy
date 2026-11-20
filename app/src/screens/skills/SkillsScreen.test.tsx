@@ -13,7 +13,9 @@ async function setup(api = MockApi.withSampleData()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<App api={api} queryClient={queryClient} />);
   const user = userEvent.setup();
-  await screen.findByRole("heading", { name: "Habilidades", level: 1 });
+  // The old address lands in Memoria's Habilidades tab, for everything.
+  await screen.findByRole("heading", { name: "Memoria", level: 1 });
+  expect(screen.getByRole("tab", { name: /^Habilidades/ })).toHaveAttribute("aria-selected", "true");
   const list = await screen.findByRole("list", { name: "Habilidades" });
   return { api, user, list };
 }
@@ -28,6 +30,8 @@ describe("Skills section", () => {
 
   it("lists every skill with filters and a search, and shows the chosen one in detail", async () => {
     const { user, list } = await setup();
+    // Embedded in Memoria: the tab is its title.
+    expect(screen.queryByRole("heading", { name: "Habilidades", level: 1 })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Todas · 5" })).toHaveAttribute("aria-pressed", "true");
     expect(within(list).getAllByRole("button")).toHaveLength(5);
 
@@ -121,7 +125,7 @@ describe("Skills section", () => {
     expect(screen.queryByText("Prueba cancelada: no se guardó ningún resultado.")).not.toBeInTheDocument();
     // Its outcome is read and said once, even after leaving the section.
     window.location.hash = "#activity";
-    await waitFor(() => expect(screen.queryByRole("heading", { name: "Habilidades", level: 1 })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("list", { name: "Habilidades" })).not.toBeInTheDocument());
     expect(await screen.findByText("Terminó la prueba de «publicar-version»: Útil.", {}, { timeout: 12000 })).toBeInTheDocument();
     window.location.hash = "#skills";
     const again = await screen.findByRole("list", { name: "Habilidades" });
@@ -155,5 +159,31 @@ describe("Skills section", () => {
     expect(boxes.length).toBe(3);
     await user.click(within(dialog).getByRole("button", { name: /^Elegir carpeta y exportar/ }));
     expect(await screen.findByText(/exportadas? a \/code\/nuevo-proyecto\./)).toBeInTheDocument();
+  });
+
+  it("says why Importar and Exportar are off with no projects and no skills", async () => {
+    const api = new MockApi();
+    api.delayMs = 0;
+    history.replaceState(null, "", "#skills");
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const exporting = await screen.findByRole("button", { name: "Exportar" });
+    await waitFor(() => expect(exporting).toBeDisabled());
+    expect(exporting).toHaveAccessibleDescription(/Aún no hay habilidades que exportar\./);
+    const importing = screen.getByRole("button", { name: "Importar" });
+    expect(importing).toBeDisabled();
+    expect(importing).toHaveAccessibleDescription(/Para importar, primero crea o abre un proyecto\./);
+  });
+
+  it("says when the skills did not load and tries again", async () => {
+    const api = MockApi.withSampleData();
+    api.delayMs = 0;
+    const real = api.skillsOverview.bind(api);
+    vi.spyOn(api, "skillsOverview").mockRejectedValueOnce("sin permiso").mockImplementation(real);
+    history.replaceState(null, "", "#skills");
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const alert = (await screen.findByText("No se pudieron leer las habilidades.")).closest("[role=alert]") as HTMLElement;
+    expect(alert).toHaveTextContent("sin permiso");
+    await userEvent.setup().click(within(alert).getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByRole("list", { name: "Habilidades" })).toBeInTheDocument();
   });
 });

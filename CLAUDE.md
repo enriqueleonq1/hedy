@@ -18,7 +18,7 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
   `export [names] --to <folder>`, `check <name>`: helps or gets in the way, `try <name>
   [--task …] [--check …]`: runs real tasks with and without it, spends tokens; `--yes`
   needs both and, with no terminal, allows only file changes inside each copy); in the UI,
-  `#k=<path>` opens a project's skills tab
+  `#m=<path>&skills` opens a project's skills in Memoria
 - Prompt templates from the CLI: `hedy template list|add <name> [--project] --text …|remove <name>`
 - Ask the memory (docs/decisions.md §36): `hedy memory ask "<question>"` (`--team`, `--all`,
   `--code` to look in the project's files and propose a note, `--json`); answers only from the
@@ -40,8 +40,9 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
   `role`, `remove`, `rename`, `leave [--here]`; `--team` picks one). End to end against an empty
   repo: `scripts/team-e2e.sh <url>` (real binary and keyring; three people)
 - App (from `app/`): `npm install`, then `npm run tauri dev`; UI only with sample data:
-  `npm run dev` (`?theme=light|dark`, `?lang=es|en`, `?onboarding=1`, `#accounts`, `#settings`,
-  `#activity` for the task board, `#skills` for the skills section, `#sync` for the sync card, `#teams` for the teams card)
+  `npm run dev` (`?theme=light|dark`, `?lang=es|en`, `?onboarding=1`, `?data=empty|noprojects|fail`, `#accounts`, `#settings`,
+  `#memory` (Memoria; `#m=<path>[&skills|pending|map]` for a project), `#ps=<path>` (a project's settings),
+  `#settings/<section>`, `#sync`, `#teams`; Inicio is `#`)
 - App checks (from `app/`): `npm run typecheck`, `npm run lint`, `npm test`
 - Icons: edit `app/src-tauri/icons/logo.svg`, render it to `logo.png` (1024 px), then
   `npx tauri icon src-tauri/icons/logo.png`. Dev window icon on Wayland:

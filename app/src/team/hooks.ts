@@ -9,6 +9,7 @@ import type { TeamPerson, TeamStatus } from "../api/types";
 import { useToast } from "../components/ui/Toast";
 import { useT, type Translate } from "../i18n";
 import { SYNC_KEY } from "../sync/hooks";
+import { syncErrorTitle } from "../sync/errors";
 
 export const TEAMS_KEY = ["teams"] as const;
 export const teamStatusKey = (team: string) => [...TEAMS_KEY, "status", team] as const;
@@ -68,7 +69,8 @@ export function useTeamSync(team: string) {
   return useMutation({
     mutationFn: () => api.teamSync(team),
     onSuccess: (report) => toast.info(t("sync.done", { sent: report.sent, received: report.received })),
-    onError: (error) => toast.error(errorMessage(error, t)),
+    // Plain words ("Sin conexión"…); git's own message is in the section's "Detalles".
+    onError: (error) => toast.error(t(syncErrorTitle(errorMessage(error, t)))),
     onSettled: () => refreshTeams(client),
   });
 }

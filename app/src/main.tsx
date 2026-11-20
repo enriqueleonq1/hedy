@@ -1,12 +1,14 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "@fontsource-variable/inter";
-import "@fontsource-variable/jetbrains-mono";
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
 import "@fontsource-variable/sora";
 
 import { App } from "./App";
+import type { HedyApi } from "./api/HedyApi";
 import { MockApi } from "./api/MockApi";
 import { isTauri, tauriApi } from "./api/tauriApi";
+import { dataMode, failingApi } from "./devData";
 import "./styles/global.css";
 import "./styles/shell.css";
 import "./styles/skills.css";
@@ -18,10 +20,19 @@ applyTheme("dark");
 // In a plain browser (`npm run dev`) the UI runs against sample data, with a
 // few running and recent tasks on the board (`#activity`; `?activity=none`
 // leaves it empty); `?theme=light|dark` forces a theme there.
-function browserApi(): MockApi {
-  const api = MockApi.withSampleData().withSampleTemplates();
+// `?data=empty` starts with no accounts and no projects, `?data=noprojects`
+// with the sample accounts and no projects, and `?data=fail` with every read
+// but the overview failing, for the empty and error states (src/devData.ts).
+async function browserApi(): Promise<HedyApi> {
+  const data = dataMode(window.location.search);
+  const api = data === "empty" ? new MockApi() : MockApi.withSampleData().withSampleTemplates();
+  if (data === "noprojects") {
+    for (const project of (await api.overview()).projects) await api.removeProject(project.path);
+  }
   // The running sample task (tienda) changes tools over time, so its mascot cycles.
-  if (new URLSearchParams(window.location.search).get("activity") !== "none") api.withSampleActivity().withLiveTools();
+  if (new URLSearchParams(window.location.search).get("activity") !== "none" && data === null) {
+    api.withSampleActivity().withLiveTools();
+  }
   const theme = new URLSearchParams(window.location.search).get("theme");
   if (theme === "light" || theme === "dark") void api.setSetting("ui.theme", theme);
   // `?onboarding=1` shows the first-run guide; `?lang=es|en` picks the language.
@@ -42,16 +53,20 @@ function browserApi(): MockApi {
       setTimeout(() => api.simulateLimit("t1"), 2500);
     }
   }
-  return api;
+  return data === "fail" ? failingApi(api) : api;
 }
 
-const api = isTauri() ? tauriApi : browserApi();
+const container = document.getElementById("root");
+if (!container) throw new Error("missing #root element");
+const root = createRoot(container);
 
-const root = document.getElementById("root");
-if (!root) throw new Error("missing #root element");
+function render(api: HedyApi) {
+  root.render(
+    <StrictMode>
+      <App api={api} />
+    </StrictMode>,
+  );
+}
 
-createRoot(root).render(
-  <StrictMode>
-    <App api={api} />
-  </StrictMode>,
-);
+if (isTauri()) render(tauriApi);
+else void browserApi().then(render);

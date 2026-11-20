@@ -121,6 +121,7 @@ import type {
   PlanState,
   UsageWindow,
 } from "./types";
+import { taskState } from "../tasks/state";
 
 const NO_PLAN: PlanState = { usage: null, attemptedAt: null, problem: null, supported: false };
 const NO_USAGE: Usage = { weekTokens: 0, weekCostUsd: null, limit: null, plan: NO_PLAN };
@@ -217,37 +218,6 @@ export function folderName(name: string): string {
     .replace(/[-.]+$/, "");
 }
 
-/** Like the backend's `task_state`: what a task shows on the board. */
-function boardState(task: Task, events: AgentEvent[]): BoardState {
-  switch (task.status) {
-    case "waitingApproval": {
-      const open = new Set<string>();
-      for (const e of events) {
-        if (e.kind === "plan" && e.requestId) open.add(e.requestId);
-        if (e.kind === "permissionResolved") open.delete(e.requestId);
-      }
-      return open.size > 0 ? "plan" : "permission";
-    }
-    case "accepted":
-      return "accepted";
-    case "discarded":
-      return "cancelled";
-    case "review":
-      return task.mode === "project" ? "review" : "answered";
-    case "running":
-    case "failed": {
-      let limited = false;
-      for (const e of events) {
-        if (e.kind === "limitWarning" && e.level === "reached") limited = true;
-        if (e.kind === "userMessage" || e.kind === "phaseStarted") limited = false;
-        if (e.kind === "rateLimit" && e.status !== "rejected") limited = false;
-      }
-      if (limited) return "limited";
-      return task.status === "running" ? "working" : "failed";
-    }
-  }
-}
-
 /** Board order, like the backend: what needs the user first, closed tasks last. */
 const BOARD_RANK: Record<BoardState, number> = {
   plan: 0,
@@ -315,8 +285,8 @@ export class MockApi implements HedyApi {
     this.state = {
       userName: "Alex",
       theme: "system",
-      themeDark: "tokyo-night",
-      themeLight: "burbuja",
+      themeDark: "hedy",
+      themeLight: "hedy-light",
       language: "es",
       onboarded: true,
       dataDir: "/home/demo/.local/share/hedy",
@@ -553,7 +523,7 @@ export class MockApi implements HedyApi {
     this.customThemes = this.customThemes.filter((t) => t.id !== id);
     for (const base of ["dark", "light"] as const) {
       const key = base === "dark" ? "themeDark" : "themeLight";
-      if (this.state[key] === `custom:${id}`) this.state[key] = base === "dark" ? "tokyo-night" : "burbuja";
+      if (this.state[key] === `custom:${id}`) this.state[key] = base === "dark" ? "hedy" : "hedy-light";
     }
   }
 
@@ -1397,6 +1367,21 @@ export class MockApi implements HedyApi {
       project = { ...emptyProject(path) };
       this.state.projects.push(project);
     }
+    // Like the core's `follow_project_account`: required steps on the old
+    // project account move with it (keeping the model on the same provider).
+    const old = project.account;
+    if (old && old !== account) {
+      const provider = (id: string) => this.state.accounts.find((a) => a.id === id)?.provider;
+      const same = provider(old) !== undefined && provider(old) === provider(account);
+      const phases = { ...project.phases };
+      for (const phase of ["plan", "implement"] as const) {
+        const step = phases[phase];
+        if (!step || step.account !== old) continue;
+        if (same && step.model) phases[phase] = { account, model: step.model };
+        else phases[phase] = undefined;
+      }
+      project.phases = Object.fromEntries(Object.entries(phases).filter(([, step]) => step)) as typeof project.phases;
+    }
     project.account = account;
     if (protect !== undefined) project.protected = protect;
     for (const a of this.state.accounts) {
@@ -1482,8 +1467,8 @@ export class MockApi implements HedyApi {
 
   async setSetting(key: string, value: string | null): Promise<void> {
     if (key === "ui.theme") this.state.theme = (value ?? "system") as Overview["theme"];
-    if (key === "ui.theme.dark") this.state.themeDark = value ?? "tokyo-night";
-    if (key === "ui.theme.light") this.state.themeLight = value ?? "burbuja";
+    if (key === "ui.theme.dark") this.state.themeDark = value ?? "hedy";
+    if (key === "ui.theme.light") this.state.themeLight = value ?? "hedy-light";
     if (key === "ui.name") this.state.userName = value ?? "Alex";
     if (key === "ui.language") this.state.language = (value ?? "system") as Overview["language"];
     if (key === "ui.onboarded") this.state.onboarded = value === "true";
@@ -2272,7 +2257,7 @@ export class MockApi implements HedyApi {
       const account = this.state.accounts.find((a) => a.id === task.account);
       return {
         task: { ...task },
-        state: boardState(task, events),
+        state: taskState(task, undefined, events),
         phase: task.stages[task.stage]?.phase ?? "implement",
         agent:
           started?.kind === "phaseStarted" ? started.agent : (account?.providerName.split(" ")[0] ?? task.account),

@@ -19,7 +19,7 @@ const es = {
   "edit.redo": "Rehacer ({keys})",
 
   "edit.lock.loading": "Cargando…",
-  "edit.lock.snapshot": "Instantánea de solo lectura: la tarea ya se integró. Edita en tu carpeta.",
+  "edit.lock.snapshot": "Copia de la tarea, de solo lectura: ya se aceptó. Edita en tu carpeta.",
   "edit.lock.working": "La IA está trabajando en esta copia; podrás editar cuando termine",
   "edit.lock.workingDirty": "Tus cambios siguen aquí.",
   "edit.lock.revision": "Es otra versión del archivo: vuelve a la actual para editar",
@@ -53,7 +53,7 @@ const es = {
   "edit.newFile": "Nuevo archivo",
   "edit.newFolder": "Nueva carpeta",
   "edit.rename": "Renombrar",
-  "edit.delete": "Eliminar",
+  "edit.delete": "Quitar",
   "edit.deleteKey": "Supr",
   "edit.duplicate": "Duplicar",
   "edit.name.file": "Nombre del nuevo archivo",
@@ -64,7 +64,7 @@ const es = {
   "edit.name.exists": "Ya hay algo llamado «{name}» aquí",
   "edit.name.protected": "Hedy no crea archivos protegidos (.env, claves…)",
   "edit.name.hint": "Enter para confirmar · Esc para cancelar",
-  "edit.delete.title": "¿Eliminar {name}?",
+  "edit.delete.title": "¿Quitar {name}?",
   "edit.delete.text": "Se mueve a la papelera del sistema: puedes recuperarlo desde allí.",
   "edit.delete.folderText": "La carpeta y todo lo que contiene se mueven a la papelera del sistema: puedes recuperarlos desde allí.",
   "edit.delete.confirm": "Mover a la papelera",
@@ -81,7 +81,7 @@ const es = {
   "edit.shortcuts.cursor": "Añadir un cursor",
   "edit.shortcuts.next": "Seleccionar la siguiente coincidencia",
   "edit.shortcuts.rename": "Renombrar (explorador)",
-  "edit.shortcuts.delete": "Eliminar (explorador)",
+  "edit.shortcuts.delete": "Quitar (explorador)",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -102,7 +102,7 @@ const en: Record<keyof typeof es, string> = {
   "edit.redo": "Redo ({keys})",
 
   "edit.lock.loading": "Loading…",
-  "edit.lock.snapshot": "Read-only snapshot: the task was already accepted. Edit in your folder.",
+  "edit.lock.snapshot": "Read-only copy of the task: it was already accepted. Edit in your folder.",
   "edit.lock.working": "The AI is working on this copy; you can edit when it finishes",
   "edit.lock.workingDirty": "Your changes are still here.",
   "edit.lock.revision": "This is another version of the file: go back to the current one to edit",
@@ -136,7 +136,7 @@ const en: Record<keyof typeof es, string> = {
   "edit.newFile": "New file",
   "edit.newFolder": "New folder",
   "edit.rename": "Rename",
-  "edit.delete": "Delete",
+  "edit.delete": "Remove",
   "edit.deleteKey": "Delete",
   "edit.duplicate": "Duplicate",
   "edit.name.file": "Name of the new file",
@@ -144,10 +144,10 @@ const en: Record<keyof typeof es, string> = {
   "edit.name.rename": "New name for {name}",
   "edit.name.empty": "Type a name",
   "edit.name.invalid": "Not a valid name: no / \\ : * ? \" < > | and no dot or space at the end",
-  "edit.name.exists": "Something called «{name}» is already here",
+  "edit.name.exists": "Something called “{name}” is already here",
   "edit.name.protected": "Hedy does not create protected files (.env, keys…)",
   "edit.name.hint": "Enter to confirm · Esc to cancel",
-  "edit.delete.title": "Delete {name}?",
+  "edit.delete.title": "Remove {name}?",
   "edit.delete.text": "It goes to the system's trash: you can restore it from there.",
   "edit.delete.folderText": "The folder and everything in it go to the system's trash: you can restore them from there.",
   "edit.delete.confirm": "Move to trash",
@@ -164,7 +164,7 @@ const en: Record<keyof typeof es, string> = {
   "edit.shortcuts.cursor": "Add a cursor",
   "edit.shortcuts.next": "Select the next occurrence",
   "edit.shortcuts.rename": "Rename (explorer)",
-  "edit.shortcuts.delete": "Delete (explorer)",
+  "edit.shortcuts.delete": "Remove (explorer)",
 };
 
 export default { es, en };

@@ -4,6 +4,7 @@ import { QueryClient } from "@tanstack/react-query";
 
 import { App } from "../../App";
 import { MockApi } from "../../api/MockApi";
+import { chooseMode } from "../../test/select";
 
 // xterm needs a real canvas; the Terminal tab is not exercised here.
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
@@ -19,7 +20,7 @@ function setup(api = MockApi.withSampleData()) {
 async function taskAtPermission(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole("button", { name: /^hedy/ }));
   await user.type(await screen.findByLabelText("Pídele algo a hedy"), "Recordatorios");
-  await user.click(screen.getByRole("button", { name: "Planificar primero" }));
+  await chooseMode(user, "Enséñame el plan primero");
   await user.click(screen.getByRole("button", { name: "Enviar" }));
   return screen.findByRole("region", { name: "Claude quiere correr un comando" });
 }
@@ -28,6 +29,8 @@ describe("Message queue", () => {
   it("shows, edits and removes queued messages while the agent works", async () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity());
     await user.click(await screen.findByRole("button", { name: /^tienda/ }));
+    // tienda opens on its home: the running task (s4) is one click away.
+    await user.click(await screen.findByRole("button", { name: /^Revisa los tests del carrito/ }));
 
     const queue = await screen.findByRole("region", { name: "Mensajes en cola" });
     expect(within(queue).getAllByText("En cola")).toHaveLength(2);
@@ -82,10 +85,12 @@ describe("Message queue", () => {
     expect(await screen.findByText("Hecho: Sigue con los correos")).toBeInTheDocument();
   });
 
-  it("counts queued messages on the task board", async () => {
+  it("counts queued messages on Inicio's board", async () => {
+    // Actividad's old address lands on Inicio.
     window.history.replaceState(null, "", "#activity");
-    setup(MockApi.withSampleData().withSampleActivity());
-    const running = await screen.findByRole("region", { name: "En curso (1)" }, { timeout: 8000 });
+    const { user } = setup(MockApi.withSampleData().withSampleActivity());
+    await user.click(await screen.findByRole("radio", { name: /^En marcha/ }, { timeout: 8000 }));
+    const running = await screen.findByRole("region", { name: "En marcha (1)" }, { timeout: 8000 });
     expect(within(running).getByText("2 en cola")).toBeInTheDocument();
     window.history.replaceState(null, "", "#");
   });

@@ -4,10 +4,11 @@ import { QueryClient } from "@tanstack/react-query";
 
 import { App } from "../../App";
 import { MockApi } from "../../api/MockApi";
-import type { MemoryHome } from "../../api/types";
+import type { MemoryHome, SyncConflict } from "../../api/types";
 import { repoLabel } from "../../sync/hooks";
 import { foldWord } from "./SyncDialogs";
-import { summarize } from "./SyncSection";
+import { syncErrorKind } from "../../sync/errors";
+import { conflictChoices, summarize } from "./SyncSection";
 
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
 
@@ -26,8 +27,8 @@ function offline(): MockApi {
   return api;
 }
 
-const section = () => screen.getByRole("heading", { name: "Sincronización" }).closest("section")!;
-const bar = () => screen.getByRole("contentinfo", { name: "Barra de estado" });
+// Ajustes draws the title; the section is named after it.
+const section = () => screen.getByRole("region", { name: "Sincronización" });
 
 describe("Sync", () => {
   afterEach(() => history.replaceState(null, "", "#"));
@@ -35,8 +36,8 @@ describe("Sync", () => {
   it("sets up with a private repo and asks for a word of the key back", async () => {
     const { api, user } = renderAt("#sync", offline());
     const card = await waitFor(section);
-    expect(within(card).getByText("Desactivada")).toBeInTheDocument();
-    expect(within(bar()).queryByRole("button", { name: /Sincronización:/ })).toBeNull();
+    // "Off" only once the state is read.
+    expect(await within(card).findByText("Desactivada")).toBeInTheDocument();
     await user.click(within(card).getByRole("button", { name: "Configurar" }));
 
     const dialog = screen.getByRole("dialog", { name: "Configurar la sincronización" });
@@ -79,7 +80,6 @@ describe("Sync", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(await within(section()).findByText("Todo al día")).toBeInTheDocument();
     expect(api.sync?.devices.map((d) => d.name)).toEqual(["Casa"]);
-    expect(within(bar()).getByRole("button", { name: "Sincronización: Sincronizado. Ver detalles" })).toBeInTheDocument();
   });
 
   it("keeps the words while the repo answers, and while a notification asks for another screen", async () => {
@@ -119,10 +119,10 @@ describe("Sync", () => {
     expect(screen.queryByRole("combobox", { name: "Memoria de este proyecto" })).toBeNull();
   });
 
-  it("adds this PC with the same address and the 12 words", async () => {
+  it("adds this computadora with the same address and the 12 words", async () => {
     const { api, user } = renderAt("#sync", offline());
-    await user.click(within(await waitFor(section)).getByRole("button", { name: "Ya la uso en otra PC" }));
-    const dialog = screen.getByRole("dialog", { name: "Sumar esta PC" });
+    await user.click(within(await waitFor(section)).getByRole("button", { name: "Ya la uso en otra computadora" }));
+    const dialog = screen.getByRole("dialog", { name: "Agregar esta computadora" });
     await user.type(within(dialog).getByLabelText("Dirección"), "git@github.com:alex/hedy-memory.git");
     await user.click(within(dialog).getByRole("button", { name: "Continuar" }));
     await user.clear(within(dialog).getByLabelText("Nombre"));
@@ -130,55 +130,144 @@ describe("Sync", () => {
     await user.click(within(dialog).getByRole("button", { name: "Continuar" }));
     const words = within(dialog).getByLabelText("Clave de recuperación");
     await user.type(words, "árbol nube lápiz");
-    await user.click(within(dialog).getByRole("button", { name: "Sumar esta PC" }));
+    await user.click(within(dialog).getByRole("button", { name: "Agregar esta computadora" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("12 palabras");
 
     await user.clear(words);
     await user.type(words, MockApi.SYNC_WORDS);
-    await user.click(within(dialog).getByRole("button", { name: "Sumar esta PC" }));
-    expect(await screen.findByText("Esta PC ya sincroniza · 8 recibidos")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Agregar esta computadora" }));
+    expect(await screen.findByText("Esta computadora ya sincroniza · 8 recibidos")).toBeInTheDocument();
     const table = within(section()).getByRole("table");
     expect(within(table).getByText("Oficina")).toBeInTheDocument();
     expect(within(table).getByText("Casa")).toBeInTheDocument();
     expect(api.sync?.devices.find((d) => d.thisPc)?.name).toBe("Oficina");
   });
 
-  it("shows both versions of a conflict and keeps the one chosen", async () => {
+  it("shows both versions of a conflict, the other computer's as the primary choice", async () => {
     const { api, user } = renderAt("#sync", MockApi.withSampleData());
     const card = await waitFor(section);
-    expect(await within(card).findByText("1 cambio para revisar")).toBeInTheDocument();
+    expect(await within(card).findByText("1 cambio para resolver")).toBeInTheDocument();
+    expect(within(card).getByRole("heading", { name: "Para resolver" })).toBeInTheDocument();
     const conflict = within(card).getByRole("article", { name: "Nota" });
     expect(within(conflict).getByText(/con dos decimales/)).toBeInTheDocument();
     expect(within(conflict).getByText(/solo si no son cero/)).toBeInTheDocument();
     expect(within(conflict).getByText(/Oficina · hace 1 h · en uso/)).toBeInTheDocument();
-    await user.click(within(conflict).getByRole("button", { name: "Usar la de esta PC" }));
+    expect(within(conflict).getByRole("button", { name: "Usar la de Oficina" })).toHaveClass("btn--primary");
+    const mine = within(conflict).getByRole("button", { name: "Mantener la mía" });
+    expect(mine).toHaveClass("btn--secondary");
+    // This computer's version is the one not in use here: keeping it takes the other side.
+    await user.click(mine);
     expect(await within(card).findByText("Todo al día")).toBeInTheDocument();
     expect(api.resolved).toEqual([{ id: 1, useOther: true }]);
     expect(within(card).queryByRole("article")).toBeNull();
-    // What syncs and what stays.
-    expect(within(card).getByText("1 proyecto personal")).toBeInTheDocument();
-    expect(within(card).getByText(/1 espera tu respuesta/)).toBeInTheDocument();
   });
 
-  it("opens the sync panel from the status bar and says when a sync fails", async () => {
-    const { api, user } = renderAt("#settings", MockApi.withSampleData());
-    await waitFor(section);
-    const item = await within(bar()).findByRole("button", { name: /Sincronización: 1 para revisar/ });
-    await user.click(item);
-    const panel = screen.getByRole("dialog", { name: "Sincronización" });
-    expect(within(panel).getByText("Oficina")).toBeInTheDocument();
-    expect(within(panel).getByText(/esta/)).toBeInTheDocument();
+  it("keeps the other computer's version from its primary button", async () => {
+    const { api, user } = renderAt("#sync", MockApi.withSampleData());
+    const conflict = await within(await waitFor(section)).findByRole("article", { name: "Nota" });
+    await user.click(within(conflict).getByRole("button", { name: "Usar la de Oficina" }));
+    await waitFor(() => expect(api.resolved).toEqual([{ id: 1, useOther: false }]));
+  });
 
-    api.syncFailure = "git push falló: sin conexión";
-    await user.click(within(panel).getByRole("button", { name: "Sincronizar ahora" }));
-    expect(await within(bar()).findByRole("button", { name: /Sincronización: Sin sincronizar/ })).toBeInTheDocument();
-    expect(within(section()).getAllByText("git push falló: sin conexión").length).toBeGreaterThan(0);
+  it("says when its state cannot be read, with Reintentar, instead of looking off", async () => {
+    const api = offline();
+    const read = vi.spyOn(api, "syncStatus").mockRejectedValue("disk on fire");
+    const { user } = renderAt("#sync", api);
+    const card = await waitFor(section);
+    expect(await within(card).findByRole("alert")).toHaveTextContent("No se pudo leer el estado de la sincronización");
+    expect(within(card).queryByText("Desactivada")).toBeNull();
+    expect(within(card).queryByRole("button", { name: "Configurar" })).toBeNull();
+    read.mockRestore();
+    await user.click(within(card).getByRole("button", { name: "Reintentar" }));
+    expect(await within(card).findByText("Desactivada")).toBeInTheDocument();
+  });
+
+  it("lists what syncs and what stays, read-only", async () => {
+    renderAt("#sync", MockApi.withSampleData());
+    const card = await waitFor(section);
+    expect(await within(card).findByText("1 proyecto personal")).toBeInTheDocument();
+    expect(within(card).getByRole("heading", { name: "Qué se sincroniza" })).toBeInTheDocument();
+    for (const item of ["Memoria", "Habilidades", "Plantillas", "Temas"]) {
+      expect(within(card).getByText(item)).toBeInTheDocument();
+    }
+    expect(within(card).getAllByText("Se sincroniza")).toHaveLength(4);
+    expect(within(card).getByText(/1 espera tu respuesta/)).toBeInTheDocument();
+    expect(within(card).getByText("Sesiones y claves")).toBeInTheDocument();
+    // Nothing to switch here: a project's memory is chosen in its Memoria.
+    expect(within(card).queryByRole("switch")).toBeNull();
+    expect(within(card).getByText(/se elige en su Memoria/)).toBeInTheDocument();
+  });
+
+  it("opens from Inicio's row when a change waits, and says when a sync fails", async () => {
+    const { api, user } = renderAt("#", MockApi.withSampleData());
+    const row = (await screen.findByText("Un cambio en tus computadoras para resolver")).closest("li")!;
+    await user.click(within(row).getByRole("button", { name: /^Un cambio en tus computadoras para resolver/ }));
+    expect(window.location.hash).toBe("#sync");
+    const card = await waitFor(section);
+    expect(await within(card).findByText("1 cambio para resolver")).toBeInTheDocument();
+    expect(within(within(card).getByRole("table")).getByText("Oficina")).toBeInTheDocument();
+
+    api.syncFailure = "git push falló: fatal: unable to access 'https://github.com/alex/m/': Could not resolve host: github.com";
+    await user.click(within(section()).getByRole("button", { name: "Sincronizar ahora" }));
+    // In plain words, with git's message behind "Detalles" and a way to try again.
+    const alert = await within(section()).findByRole("alert");
+    // Its title once, in the status line; the box below holds the sentence.
+    expect(within(section()).getByRole("status")).toHaveTextContent("Sin conexión");
+    expect(within(alert).queryByText("Sin conexión")).toBeNull();
+    expect(within(section()).getAllByText("Sin conexión")).toHaveLength(1);
+    expect(within(section()).queryByRole("button", { name: "Sincronizar ahora" })).toBeNull();
+    const detail = within(alert).getByText(/Could not resolve host/);
+    expect(detail).not.toBeVisible();
+    await user.click(within(alert).getByRole("button", { name: "Detalles" }));
+    expect(detail).toBeVisible();
 
     api.syncFailure = null;
-    await user.click(within(section()).getByRole("button", { name: "Sincronizar ahora" }));
+    await user.click(within(alert).getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByText("Sincronizado · 0 enviados, 0 recibidos")).toBeInTheDocument();
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog", { name: "Sincronización" })).toBeNull();
+    await waitFor(() => expect(within(section()).queryByRole("alert")).toBeNull());
+    expect(within(section()).getByRole("button", { name: "Sincronizar ahora" })).toBeInTheDocument();
+  });
+
+  it("says when git cannot get into the repo, and anything else generically", async () => {
+    const api = MockApi.withSampleData();
+    api.sync!.lastError = "git fetch falló: git@github.com: Permission denied (publickey).";
+    renderAt("#sync", api);
+    const alert = await within(await waitFor(section)).findByRole("alert");
+    expect(within(section()).getByRole("status")).toHaveTextContent("Sin acceso al repositorio");
+    expect(within(alert).getByText(/git ls-remote/)).toBeInTheDocument();
+  });
+
+  it("tells failures apart as the core does", () => {
+    expect(syncErrorKind("git push falló: sin conexión")).toBe("offline");
+    expect(syncErrorKind("ssh: connect to host github.com port 22: Network is unreachable")).toBe("offline");
+    // The network first: ssh says it could not read the repo too.
+    expect(syncErrorKind("ssh: Could not resolve hostname x\nfatal: Could not read from remote repository.")).toBe("offline");
+    expect(syncErrorKind("remote: Repository not found.")).toBe("access");
+    expect(syncErrorKind("The requested URL returned error: 403")).toBe("access");
+    expect(syncErrorKind("otra computadora acaba de cambiar las claves")).toBe("other");
+  });
+
+  it("makes the other computer's version the primary choice, whichever side is in use", () => {
+    const side = (device: string, at: number) => ({ text: device, device, at });
+    const conflict = (kept: string, other: string): SyncConflict => ({
+      id: 1,
+      kind: "note",
+      kept: side(kept, 2),
+      other: side(other, 1),
+    });
+    const here = (device: string) => device === "casa";
+    // Mine in use: using theirs takes the other side.
+    let choice = conflictChoices(conflict("casa", "oficina"), here);
+    expect(choice.primary).toMatchObject({ useOther: true, mine: false, side: { device: "oficina" } });
+    expect(choice.secondary).toMatchObject({ useOther: false, mine: true });
+    // Theirs in use: keeping mine takes the other side.
+    choice = conflictChoices(conflict("oficina", "casa"), here);
+    expect(choice.primary).toMatchObject({ useOther: false, side: { device: "oficina" } });
+    expect(choice.secondary).toMatchObject({ useOther: true, mine: true });
+    // Neither is mine: the one not in use is offered, the one in use kept.
+    choice = conflictChoices(conflict("oficina", "portatil"), here);
+    expect(choice.primary).toMatchObject({ useOther: true, side: { device: "portatil" } });
+    expect(choice.secondary).toMatchObject({ useOther: false, mine: false });
   });
 
   it("asks once about a project's owner", async () => {
@@ -194,15 +283,15 @@ describe("Sync", () => {
     const home = await screen.findByRole("combobox", { name: "Memoria de este proyecto" });
     expect(home).toHaveTextContent("Personal");
     await user.click(home);
-    await user.click(screen.getByRole("option", { name: /Solo en esta PC/ }));
+    await user.click(screen.getByRole("option", { name: /Solo en esta computadora/ }));
     await waitFor(async () => expect((await api.memoryHome("/code/hedy")).home).toEqual({ kind: "local" }));
     expect((await api.memoryHome("/code/hedy")).chosen).toBe(true);
   });
 
-  it("removes another PC after asking", async () => {
+  it("removes another computadora after asking", async () => {
     const { api, user } = renderAt("#sync", MockApi.withSampleData());
     const table = await waitFor(() => within(section()).getByRole("table"));
-    // This PC has no "Quitar": it leaves instead.
+    // This computadora has no "Quitar": it leaves instead.
     expect(within(table).queryByRole("button", { name: "Quitar Casa" })).toBeNull();
     await user.click(within(table).getByRole("button", { name: "Quitar Oficina" }));
     const dialog = screen.getByRole("dialog", { name: "¿Quitar Oficina?" });
@@ -211,16 +300,16 @@ describe("Sync", () => {
     expect(api.sync?.devices).toHaveLength(2);
 
     await user.click(within(table).getByRole("button", { name: "Quitar Oficina" }));
-    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Quitar PC" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Quitar computadora" }));
     expect(await screen.findByText("Oficina ya no puede leer lo nuevo.")).toBeInTheDocument();
     expect(api.sync?.devices.map((d) => d.name)).toEqual(["Casa"]);
     await waitFor(() => expect(within(section()).queryByText("Oficina")).toBeNull());
   });
 
-  it("stops syncing on this PC after a second click", async () => {
+  it("stops syncing on this computadora after a second click", async () => {
     const { api, user } = renderAt("#sync", MockApi.withSampleData());
     const card = await waitFor(section);
-    await user.click(await within(card).findByRole("button", { name: "Dejar de sincronizar en esta PC" }));
+    await user.click(await within(card).findByRole("button", { name: "Dejar de sincronizar en esta computadora" }));
     await user.click(within(card).getByRole("button", { name: "Sí, dejar de sincronizar" }));
     expect(await within(section()).findByText("Desactivada")).toBeInTheDocument();
     expect(api.sync).toBeNull();

@@ -5,7 +5,6 @@
 import type { CodeCopy } from "../../api/codeTypes";
 import type { Task } from "../../api/types";
 import { useTasks } from "../../tasks/hooks";
-import { isOpen } from "../../tasks/timeline";
 import type { View } from "../Layout";
 
 export interface ActiveCopy {
@@ -22,16 +21,16 @@ function readable(task: Task): boolean {
 }
 
 export function resolveCopy(view: View, tasks: Task[] | undefined): ActiveCopy | null {
-  if (view.screen === "memory" || view.screen === "status") {
-    return { copy: { kind: "folder", project: view.project }, project: view.project, onScreen: false };
+  if ((view.screen === "memory" || view.screen === "status") && view.project) {
+    const { project } = view;
+    return { copy: { kind: "folder", project }, project, onScreen: false };
   }
   if (view.screen !== "workspace") return null;
   const { project } = view;
   const folder: ActiveCopy = { copy: { kind: "folder", project }, project, onScreen: true };
-  if (view.task === null) return folder;
-  // As the workspace does: the task asked for, else the most recent open one.
-  const task =
-    view.task === undefined ? tasks?.find(isOpen) : (tasks?.find((t) => t.id === view.task) ?? undefined);
+  // As the workspace does: a project opens on its home, the folder's copy.
+  if (view.task === null || view.task === undefined) return folder;
+  const task = tasks?.find((t) => t.id === view.task);
   if (task) return readable(task) ? { copy: { kind: "task", task: task.id }, project, onScreen: true } : folder;
   // Not loaded yet: a task asked for by id is still that task's copy.
   if (typeof view.task === "string") return { copy: { kind: "task", task: view.task }, project, onScreen: true };

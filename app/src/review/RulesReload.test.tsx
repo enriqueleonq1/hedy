@@ -13,11 +13,11 @@ async function open() {
   api.delayMs = 0;
   render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: /^Actividad: / }, SLOW));
+  await user.click(await screen.findByRole("button", { name: /^Inicio/ }, SLOW));
   await user.click(await screen.findByRole("button", { name: /Arregla el cálculo de impuestos/ }, SLOW));
   await screen.findByRole("list", { name: "Archivos cambiados" }, SLOW);
-  const bar = screen.getByRole("region", { name: "Revisar con tus reglas" });
-  await user.click(within(bar).getByRole("button", { name: "Revisar con tus reglas" }));
+  const bar = screen.getByRole("region", { name: "Comprobar con tus reglas" });
+  await user.click(within(bar).getByRole("button", { name: "Comprobar con tus reglas" }));
   await within(bar).findByText("2 líneas no siguen tus reglas");
   return user;
 }

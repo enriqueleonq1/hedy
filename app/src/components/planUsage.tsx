@@ -9,12 +9,9 @@ import type { Account, Overview, PlanState, PlanUsage, UsageWindow } from "../ap
 import { useLanguage, useT, type Language, type MessageKey, type Translate } from "../i18n";
 import { formatTokens, formatUsd, timeAgo } from "../format";
 import { formatCountdown } from "../tasks/countdown";
+import { meterLevel } from "./ui/Meter";
 import { useToast } from "./ui/Toast";
 
-/** At or above: the warning color. */
-export const WARNING_PERCENT = 80;
-/** At or above: the danger color. */
-export const DANGER_PERCENT = 95;
 /**
  * The backend asks each provider at most this often and answers from its cache
  * otherwise (`PLAN_USAGE_MIN_INTERVAL_SECS` in hedy-core).
@@ -36,16 +33,10 @@ export const STALE_AFTER_MS = 2 * REFRESH_EVERY_MS;
 
 export type UsageLevel = "ok" | "warning" | "danger";
 
+/** The meters' thresholds (`meterLevel`: 70 and 90 %), named for the text's colors. */
 export function usageLevel(percent: number): UsageLevel {
-  if (percent >= DANGER_PERCENT) return "danger";
-  if (percent >= WARNING_PERCENT) return "warning";
-  return "ok";
-}
-
-/** Fill color of a bar: the account's color until it gets close to the limit. */
-export function barColor(percent: number, accountColor: string): string {
-  const level = usageLevel(percent);
-  return level === "ok" ? accountColor : `var(--${level})`;
+  const level = meterLevel(percent);
+  return level === "warn" ? "warning" : level;
 }
 
 const KIND_ORDER: Record<UsageWindow["kind"], number> = { session: 0, day: 1, week: 2, other: 3 };

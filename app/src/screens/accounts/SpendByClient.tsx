@@ -30,7 +30,7 @@ export function SpendByClient() {
               <tr>
                 <th>{t("common.client")}</th>
                 <th>{t("common.projects")}</th>
-                <th className="num">Tokens</th>
+                <th className="num">{t("accounts.spend.tokens")}</th>
                 {paid && <th className="num">{t("accounts.spend.cost")}</th>}
               </tr>
             </thead>

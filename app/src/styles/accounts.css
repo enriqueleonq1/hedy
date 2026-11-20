@@ -1,0 +1,111 @@
+/* Ajustes → Cuentas: a calm list, one row per account, and the two-step "Agregar cuenta". */
+
+.account-list {
+  display: grid;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.account-card {
+  position: relative;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+}
+.account-card + .account-card { border-top: 1px solid var(--line); }
+.account-card:first-child { border-radius: var(--radius-card) var(--radius-card) 0 0; }
+.account-card:last-child { border-radius: 0 0 var(--radius-card) var(--radius-card); }
+.account-card:only-child { border-radius: var(--radius-card); }
+.account-card:focus { outline: none; }
+.account-card--focus { box-shadow: inset 0 0 0 2px var(--focus); }
+
+.account-card .account-card__head { display: flex; align-items: flex-start; gap: var(--space-3); }
+.account-card__dot { width: 10px; height: 10px; margin-top: 6px; }
+.account-card .account-card__head .menu { position: static; flex: none; }
+.account-card .account-card__name { padding-right: 0; }
+.account-card__body { display: grid; gap: var(--space-3); padding-left: calc(10px + var(--space-3)); }
+
+/* The plan: session and week side by side, each with its figure, meter and renewal. */
+.account-plan { display: grid; gap: var(--space-2); }
+.account-plan[aria-busy="true"] .account-plan__meters { opacity: 0.55; }
+.account-plan__meters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3) var(--space-6);
+  transition: opacity 0.15s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-plan__meters { transition: none; }
+}
+.account-plan__window { display: grid; gap: 6px; align-content: start; }
+.account-plan__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-callout);
+}
+.account-plan__source {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px var(--space-2);
+  margin: 0;
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+.account-plan__refresh { flex: none; }
+.account-plan__week { display: grid; gap: 4px; }
+
+/* A reached limit with its way out: the paused task, a click away. */
+.account-plan__paused {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 4px;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--panel-2);
+  font-size: var(--text-callout);
+}
+.account-plan__paused-link { color: var(--action-text); font-weight: 600; text-decoration: none; }
+.account-plan__paused-link:hover { text-decoration: underline; }
+.account-plan__paused-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-xs); }
+
+.account-advanced { display: grid; gap: var(--space-2); }
+.account-advanced__body { display: grid; gap: var(--space-3); }
+.account-advanced__body[hidden] { display: none; }
+
+/* Adding an account: how it is paid, then the provider. */
+.pay-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); }
+.pay-choice {
+  display: grid;
+  gap: 4px;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pay-choice:hover { border-color: var(--line-strong); background: var(--panel-2); }
+.pay-choice:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.pay-choice__title { font-weight: 600; font-size: var(--text-headline); }
+.pay-choice__detail { font-size: var(--text-caption); color: var(--muted); }
+.pay-choice--found { padding: var(--space-3) var(--space-4); }
+/* One step of "Agregar cuenta": a hook for focus, not a box. */
+.add-account__step { display: contents; }
+.add-account__section { display: grid; gap: var(--space-2); }
+.add-account__groups { border: 0; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.add-account__groups > legend { margin-bottom: 6px; }
+.add-account__group { display: grid; gap: 6px; }
+.add-account__group-name { font-size: var(--text-caption); font-weight: 600; color: var(--muted); }
+
+/* Projects and accounts: a read-only summary whose rows open each project's sheet. */
+.table__row--link { cursor: pointer; }
+.table__row--link:hover > * { background: var(--panel-2); }

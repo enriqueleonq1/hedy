@@ -28,11 +28,11 @@ export function ConfirmButton({
     return () => clearTimeout(timer);
   }, [armed]);
 
-  // Quiet until armed; hovering it already hints that it destroys something.
-  const classes = [!armed && "btn--destructive", className].filter(Boolean).join(" ") || undefined;
+  // Red text from the start; armed, it fills to ask for the second click.
+  const classes = [armed && "btn--armed", className].filter(Boolean).join(" ") || undefined;
   return (
     <Button
-      variant={armed ? "danger" : "ghost"}
+      variant="danger"
       className={classes}
       onClick={() => (armed ? (setArmed(false), onConfirm()) : setArmed(true))}
       {...rest}

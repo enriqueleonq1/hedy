@@ -73,34 +73,40 @@ describe("An account card", () => {
     const card = screen.getByRole("article", { name: "Claude trabajo" });
     // Signed in: no button on the card itself, everything is in the menu.
     expect(within(card).queryByRole("button", { name: "Reconectar" })).not.toBeInTheDocument();
-    expect(within(card).queryByRole("button", { name: "Eliminar" })).not.toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Quitar de Hedy" })).not.toBeInTheDocument();
 
     await user.click(within(card).getByRole("button", { name: "Acciones de Claude trabajo" }));
     const menu = screen.getByRole("menu", { name: "Acciones de Claude trabajo" });
     expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
       "Renombrar",
-      "Por defecto",
+      "Usar por defecto (para proyectos y chats nuevos)Reservada para tienda, que está protegido",
       "Reconectar",
-      "Eliminar",
+      "Quitar de Hedy",
     ]);
     expect(within(menu).getByRole("separator")).toBeInTheDocument();
-    expect(within(menu).getByRole("menuitem", { name: "Eliminar" })).toHaveClass("menu__item--danger");
-    await user.click(within(menu).getByRole("menuitem", { name: "Por defecto" }));
-    expect(makeDefault).toHaveBeenCalledWith("claude-trabajo");
+    expect(within(menu).getByRole("menuitem", { name: "Quitar de Hedy" })).toHaveClass("menu__item--danger");
+    // Protected tienda keeps this account, so it cannot be the default (offered everywhere).
+    expect(within(menu).getByRole("menuitem", { name: /^Usar por defecto/ })).toBeDisabled();
+    await user.keyboard("{Escape}");
+
+    const kimi = screen.getByRole("article", { name: "Kimi" });
+    await user.click(within(kimi).getByRole("button", { name: "Acciones de Kimi" }));
+    await user.click(screen.getByRole("menuitem", { name: "Usar por defecto (para proyectos y chats nuevos)" }));
+    expect(makeDefault).toHaveBeenCalledWith("kimi");
 
     // Deleting asks first; cancelling keeps the account.
     const codex = screen.getByRole("article", { name: "ChatGPT" });
     await user.click(within(codex).getByRole("button", { name: "Acciones de ChatGPT" }));
-    await user.click(screen.getByRole("menuitem", { name: "Eliminar" }));
-    let dialog = screen.getByRole("dialog", { name: "¿Eliminar ChatGPT?" });
+    await user.click(screen.getByRole("menuitem", { name: "Quitar de Hedy" }));
+    let dialog = screen.getByRole("dialog", { name: "¿Quitar ChatGPT de Hedy?" });
     expect(within(dialog).getByText(/su carpeta con el login no se borra/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Cancelar" }));
     expect(remove).not.toHaveBeenCalled();
 
     await user.click(within(codex).getByRole("button", { name: "Acciones de ChatGPT" }));
-    await user.click(screen.getByRole("menuitem", { name: "Eliminar" }));
-    dialog = screen.getByRole("dialog", { name: "¿Eliminar ChatGPT?" });
-    await user.click(within(dialog).getByRole("button", { name: "Eliminar" }));
+    await user.click(screen.getByRole("menuitem", { name: "Quitar de Hedy" }));
+    dialog = screen.getByRole("dialog", { name: "¿Quitar ChatGPT de Hedy?" });
+    await user.click(within(dialog).getByRole("button", { name: "Quitar de Hedy" }));
     expect(remove).toHaveBeenCalledWith("chatgpt");
     await waitFor(() => expect(screen.queryByRole("article", { name: "ChatGPT" })).not.toBeInTheDocument());
   });
@@ -116,6 +122,6 @@ describe("An account card", () => {
     // The default account is not offered to become the default again.
     await user.keyboard("{Escape}");
     await user.click(within(screen.getByRole("article", { name: "Claude personal" })).getByRole("button", { name: "Acciones de Claude personal" }));
-    expect(within(screen.getByRole("menu")).queryByRole("menuitem", { name: "Por defecto" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("menu")).queryByRole("menuitem", { name: /^Usar por defecto/ })).not.toBeInTheDocument();
   });
 });

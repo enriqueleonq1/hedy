@@ -10,8 +10,9 @@ vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => n
 async function addAccount(user: ReturnType<typeof userEvent.setup>, name: string, kind: string) {
   await user.click(screen.getByRole("button", { name: "+ Agregar cuenta" }));
   const dialog = screen.getByRole("dialog", { name: "Agregar cuenta" });
-  await user.type(within(dialog).getByLabelText("Nombre"), name);
+  await user.click(within(dialog).getByRole("button", { name: /^Con tu suscripción/ }));
   await user.click(within(dialog).getByRole("radio", { name: new RegExp(`^${kind}`) }));
+  await user.type(within(dialog).getByLabelText("Nombre"), name);
   return dialog;
 }
 

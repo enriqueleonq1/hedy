@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { errorMessage, useApi } from "../../api/context";
 import type { CodeCopy, FileHistory, HistoryCommit, TaskTouch } from "../../api/codeTypes";
+import { Button } from "../../components/ui/Button";
 import { codeKeys } from "../../files/navigator";
 import { timeAgo } from "../../format";
 import { useT } from "../../i18n";
@@ -93,7 +94,17 @@ export function HistoryDrawer({
           ))}
         </div>
       ) : history.isError ? (
-        <CodeState tone="error" role="alert" title={t("code.history.error")} text={errorMessage(history.error, t)} />
+        <CodeState
+          tone="error"
+          role="alert"
+          title={t("code.history.error")}
+          text={errorMessage(history.error, t)}
+          actions={
+            <Button small onClick={() => void history.refetch()}>
+              {t("common.retry")}
+            </Button>
+          }
+        />
       ) : entries.length === 0 ? (
         <CodeState title={t("code.history.empty")} text={t("code.history.emptyText")} />
       ) : (

@@ -32,9 +32,16 @@ async function setup(mode: ThemeSetting = "dark") {
   await api.setSetting("ui.theme", mode);
   render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Ajustes" }));
-  await screen.findByRole("heading", { name: "Temas" });
+  await openAppearance(user);
   return { api, user };
+}
+
+/** Ajustes, then Apariencia in its index: where the gallery lives. */
+async function openAppearance(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: "Ajustes" }));
+  const index = await screen.findByRole("navigation", { name: "Secciones de Ajustes" });
+  await user.click(within(index).getByRole("button", { name: "Apariencia" }));
+  await screen.findByRole("heading", { name: "Temas" });
 }
 
 const cssVar = (name: string) => document.documentElement.style.getPropertyValue(name);
@@ -45,8 +52,8 @@ describe("Theme gallery", () => {
   it("previews a theme across the app, applies it and undoes it", async () => {
     const { api, user } = await setup();
     const setSetting = vi.spyOn(api, "setSetting");
-    expect(card("Tokyo Night")).toHaveAttribute("aria-pressed", "true");
-    expect(within(card("Tokyo Night")).getByText("En uso")).toBeInTheDocument();
+    expect(card("Hedy Dark")).toHaveAttribute("aria-pressed", "true");
+    expect(within(card("Hedy Dark")).getByText("En uso")).toBeInTheDocument();
 
     await user.click(card("Dracula"));
     expect(within(bar()!).getByText("Vista previa: Dracula")).toBeInTheDocument();
@@ -59,10 +66,10 @@ describe("Theme gallery", () => {
     expect(setSetting).not.toHaveBeenCalled();
 
     // The bar stays while the user looks around the app.
-    await user.click(screen.getByRole("button", { name: /^Actividad/ }));
+    await user.click(screen.getByRole("button", { name: /^Inicio/ }));
     expect(bar()).toBeInTheDocument();
     expect(cssVar("--bg")).toBe("#282A36");
-    await user.click(screen.getByRole("button", { name: "Ajustes" }));
+    await openAppearance(user);
 
     await user.click(within(bar()!).getByRole("button", { name: "Aplicar tema" }));
     await waitFor(() => expect(bar()).toBeNull());
@@ -73,8 +80,8 @@ describe("Theme gallery", () => {
     await waitFor(() => expect(within(card("Dracula")).getByText("En uso")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: "Deshacer" }));
-    await waitFor(() => expect(cssVar("--bg")).toBe("#1A1B26"));
-    expect(setSetting).toHaveBeenLastCalledWith("ui.theme.dark", "tokyo-night");
+    await waitFor(() => expect(cssVar("--bg")).toBe("#0A0A0C"));
+    expect(setSetting).toHaveBeenLastCalledWith("ui.theme.dark", "hedy");
   });
 
   it("cancels a preview with Escape or Cancelar, restoring the theme", async () => {
@@ -83,14 +90,14 @@ describe("Theme gallery", () => {
     expect(cssVar("--bg")).toBe("#2E3440");
     await user.keyboard("{Escape}");
     expect(bar()).toBeNull();
-    expect(cssVar("--bg")).toBe("#1A1B26");
+    expect(cssVar("--bg")).toBe("#0A0A0C");
 
     await user.click(card("GitHub Light"));
     expect(document.documentElement.dataset.theme).toBe("light");
     await user.click(within(bar()!).getByRole("button", { name: "Cancelar" }));
     expect(bar()).toBeNull();
     expect(document.documentElement.dataset.theme).toBe("dark");
-    expect(cssVar("--bg")).toBe("#1A1B26");
+    expect(cssVar("--bg")).toBe("#0A0A0C");
   });
 
   it("switches a fixed mode to the applied theme's", async () => {
@@ -102,6 +109,18 @@ describe("Theme gallery", () => {
     expect(setSetting).toHaveBeenCalledWith("ui.theme.light", "solarized-light");
     await waitFor(() => expect(cssVar("--bg")).toBe("#FDF6E3"));
     expect(screen.getByRole("radio", { name: "Claro" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("marks as in use only the theme of the mode chosen", async () => {
+    await setup("light");
+    expect(within(card("Hedy Light")).getByText("En uso")).toBeInTheDocument();
+    expect(within(card("Hedy Dark")).queryByText("En uso")).toBeNull();
+  });
+
+  it("in system mode, marks the theme of each mode as in use", async () => {
+    await setup("system");
+    expect(within(card("Hedy Dark")).getByText("En uso")).toBeInTheDocument();
+    expect(within(card("Hedy Light")).getByText("En uso")).toBeInTheDocument();
   });
 
   it("in system mode, keeps a theme for the other mode and offers to always use it", async () => {
@@ -200,11 +219,11 @@ describe("Theme gallery", () => {
     expect(await screen.findByRole("button", { name: /^Café de noche/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Opciones de Café de noche" }));
-    await user.click(screen.getByRole("menuitem", { name: "Eliminar" }));
-    const confirm = screen.getByRole("dialog", { name: "¿Eliminar «Café de noche»?" });
-    await user.click(within(confirm).getByRole("button", { name: "Eliminar" }));
+    await user.click(screen.getByRole("menuitem", { name: "Quitar" }));
+    const confirm = screen.getByRole("dialog", { name: "¿Quitar «Café de noche»?" });
+    await user.click(within(confirm).getByRole("button", { name: "Quitar" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: /^Café de noche/ })).toBeNull());
-    expect(await screen.findByText("Tema eliminado: Café de noche")).toBeInTheDocument();
+    expect(await screen.findByText("Tema quitado: Café de noche")).toBeInTheDocument();
   });
 
   it("falls back to Hedy's theme when the theme in use is deleted", async () => {
@@ -214,12 +233,12 @@ describe("Theme gallery", () => {
     await user.click(within(bar()!).getByRole("button", { name: "Aplicar tema" }));
     await waitFor(() => expect(cssVar("--bg")).toBe(cafe?.colors.bg));
     await user.click(screen.getByRole("button", { name: "Opciones de Café de la tarde" }));
-    await user.click(screen.getByRole("menuitem", { name: "Eliminar" }));
-    const confirm = screen.getByRole("dialog", { name: "¿Eliminar «Café de la tarde»?" });
-    expect(within(confirm).getByText("Ahora está en uso: Hedy volverá a Tokyo Night.")).toBeInTheDocument();
-    await user.click(within(confirm).getByRole("button", { name: "Eliminar" }));
-    await waitFor(() => expect(cssVar("--bg")).toBe("#1A1B26"));
-    expect((await api.overview()).themeDark).toBe("tokyo-night");
+    await user.click(screen.getByRole("menuitem", { name: "Quitar" }));
+    const confirm = screen.getByRole("dialog", { name: "¿Quitar «Café de la tarde»?" });
+    expect(within(confirm).getByText("Ahora está en uso: se volverá a Hedy Dark.")).toBeInTheDocument();
+    await user.click(within(confirm).getByRole("button", { name: "Quitar" }));
+    await waitFor(() => expect(cssVar("--bg")).toBe("#0A0A0C"));
+    expect((await api.overview()).themeDark).toBe("hedy");
   });
 
   it("opens the gallery from the command palette", async () => {

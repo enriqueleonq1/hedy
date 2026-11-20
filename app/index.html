@@ -5,9 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Hedy</title>
+    <!-- The dark theme's background (themes.dark.bg in src/theme/tokens.ts) until
+         the styles load, so there is no white flash; then the theme's own --bg. -->
+    <style>
+      html { background: var(--bg, #0a0a0c); }
+    </style>
   </head>
-  <!-- Dark background inline so there is no white flash before styles load. -->
-  <body style="background: #1a1b26">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

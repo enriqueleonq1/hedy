@@ -391,6 +391,26 @@ export function RulesBar({
     text = check.rules.length === 1 ? t("rules.cleanOne") : t("rules.clean", { n: check.rules.length });
   }
 
+  // Never checked: one quiet row with the button; the card is for results.
+  if (!check && !rules.running && rules.error === null) {
+    return (
+      <section ref={bar} tabIndex={-1} className="rl-bar rl-bar--compact" aria-label={t("rules.check")}>
+        <Button
+          small
+          disabled={agentRunning}
+          onClick={() => {
+            rules.start();
+            // The row becomes the card: the focus goes with it, not to the page.
+            requestAnimationFrame(() => bar.current?.focus({ preventScroll: true }));
+          }}
+        >
+          {t("rules.check")}
+        </Button>
+        <span className="muted small">{agentRunning ? t("rules.waitAgent") : t("rules.checkCost")}</span>
+      </section>
+    );
+  }
+
   return (
     <section
       ref={bar}

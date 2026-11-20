@@ -29,13 +29,6 @@ export const MODEL_HINTS: Record<string, MessageKey> = {
   "gemini-3.8-flash": "workspace.model.fastest",
 };
 
-export const PHASES: { phase: Phase; label: MessageKey; optional: boolean }[] = [
-  { phase: "plan", label: "accounts.phase.plan", optional: false },
-  { phase: "implement", label: "accounts.phase.implement", optional: false },
-  { phase: "tests", label: "accounts.phase.tests", optional: true },
-  { phase: "review", label: "accounts.phase.review", optional: true },
-];
-
 /** Who works on `phase` in `project` (plan and implement default to its account). */
 function phaseAccount(project: Project, phase: Phase, accounts: Account[]): Account | undefined {
   const assigned = project.phases[phase];

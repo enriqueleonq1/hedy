@@ -4,13 +4,9 @@
 const es = {
   "skills.tabNotes": "Notas",
   "skills.tabSkills": "Habilidades",
-  "skills.tabs": "Memoria y habilidades",
-  "skills.pendingBadge": "{n} por aprobar",
-  "skills.subtitle":
-    "Procedimientos que tus IAs descubrieron y tú aprobaste: cómo correr los tests, cómo publicar una versión… Las IAs los consultan antes de averiguarlo otra vez.",
   "skills.newButton": "+ Nueva habilidad",
   "skills.loading": "Cargando las habilidades…",
-  "skills.loadError": "No se pudieron leer las habilidades: {error}",
+  "skills.loadError": "No se pudieron leer las habilidades.",
   "skills.protected": "Proyecto protegido: sus habilidades se quedan aquí y no usa tus habilidades de todos los proyectos.",
 
   "skills.group.proposed": "Propuestas por tus IAs · para aprobar",
@@ -27,8 +23,8 @@ const es = {
   "skills.card.fromTask": "de una tarea",
   "skills.card.global": "todos los proyectos",
   "skills.card.approve": "Aprobar",
-  "skills.card.remove": "Borrar",
-  "skills.card.removeConfirm": "¿Borrarla?",
+  "skills.card.remove": "Quitar",
+  "skills.card.removeConfirm": "¿Quitarla?",
   "skills.update.title": "Actualización de una habilidad aprobada",
   "skills.update.before": "Ahora",
   "skills.update.after": "Propuesta",
@@ -43,7 +39,7 @@ const es = {
   "skills.form.body": "Pasos (Markdown)",
   "skills.form.where": "Dónde",
   "skills.form.project": "Este proyecto",
-  "skills.form.global": "Todos los proyectos",
+  "skills.form.global": "Todos tus proyectos",
   "skills.form.saveApprove": "Guardar y aprobar",
   "skills.new.title": "Nueva habilidad",
   "skills.new.save": "Guardar habilidad",
@@ -66,13 +62,9 @@ const es = {
 const en: Record<keyof typeof es, string> = {
   "skills.tabNotes": "Notes",
   "skills.tabSkills": "Skills",
-  "skills.tabs": "Memory and skills",
-  "skills.pendingBadge": "{n} to approve",
-  "skills.subtitle":
-    "Procedures your AIs worked out and you approved: how to run the tests, how to cut a release… The AIs check them before working it out again.",
   "skills.newButton": "+ New skill",
   "skills.loading": "Loading the skills…",
-  "skills.loadError": "Could not read the skills: {error}",
+  "skills.loadError": "Couldn't read the skills.",
   "skills.protected": "Protected project: its skills stay here and it does not use your skills for all projects.",
 
   "skills.group.proposed": "Proposed by your AIs · awaiting approval",
@@ -89,8 +81,8 @@ const en: Record<keyof typeof es, string> = {
   "skills.card.fromTask": "from a task",
   "skills.card.global": "every project",
   "skills.card.approve": "Approve",
-  "skills.card.remove": "Delete",
-  "skills.card.removeConfirm": "Delete it?",
+  "skills.card.remove": "Remove",
+  "skills.card.removeConfirm": "Remove it?",
   "skills.update.title": "Update of an approved skill",
   "skills.update.before": "Now",
   "skills.update.after": "Proposed",
@@ -105,7 +97,7 @@ const en: Record<keyof typeof es, string> = {
   "skills.form.body": "Steps (Markdown)",
   "skills.form.where": "Where",
   "skills.form.project": "This project",
-  "skills.form.global": "Every project",
+  "skills.form.global": "All your projects",
   "skills.form.saveApprove": "Save and approve",
   "skills.new.title": "New skill",
   "skills.new.save": "Save skill",
@@ -113,15 +105,15 @@ const en: Record<keyof typeof es, string> = {
 
   "skills.where.title": "Where your AIs read them",
   "skills.where.native":
-    "They stay inside Hedy. Claude Code gets them only in the sessions Hedy starts, as the «hedy» plugin (/hedy:<name>). Codex, Gemini CLI, Kimi Code and Antigravity read them from .agents/skills in each task's folder, kept out of git. Your project and your usual CLIs never see them.",
+    "They stay inside Hedy. Claude Code gets them only in the sessions Hedy starts, as the “hedy” plugin (/hedy:<name>). Codex, Gemini CLI, Kimi Code and Antigravity read them from .agents/skills in each task's folder, kept out of git. Your project and your usual CLIs never see them.",
   "skills.where.tools":
     "All of them, including those for every project, are in Hedy's tools (skill_list and skill_get), for any AI that reads the memory.",
   "skills.where.own": "If you already have a skill of your own with the same name, Hedy leaves it alone.",
 
-  "skills.files.written": "Skill «{name}» ready: your AIs use it inside Hedy ({n} open tasks, from their next session).",
-  "skills.files.writtenNone": "Skill «{name}» ready: your AIs use it inside Hedy.",
-  "skills.files.removed": "Skill «{name}» deleted: {n} files removed.",
-  "skills.files.removedNone": "Skill «{name}» deleted.",
+  "skills.files.written": "Skill “{name}” ready: your AIs use it inside Hedy ({n} open tasks, from their next session).",
+  "skills.files.writtenNone": "Skill “{name}” ready: your AIs use it inside Hedy.",
+  "skills.files.removed": "Skill “{name}” deleted: {n} files removed.",
+  "skills.files.removedNone": "Skill “{name}” deleted.",
   "skills.files.skipped": "{path} was left alone: it exists and is not Hedy's. Rename the skill to keep both.",
 };
 

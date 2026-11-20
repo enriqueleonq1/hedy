@@ -20,6 +20,8 @@ const es = {
   "status.next.review": "lo revisará",
 
   "status.tests.passed": "Pasaron",
+  "status.tests.label": "Tests",
+  "status.loadError": "No se pudo cargar el estado del proyecto.",
   "status.tests.failed": "Fallaron",
   "status.tests.noData": "Sin datos",
   "status.tests.none": "Aún ninguna tarea corrió tests aquí.",
@@ -42,20 +44,19 @@ const es = {
 
   "status.tasks": "Tareas",
   "status.tasks.empty": "Todavía no hay tareas en este proyecto.",
+  "status.tasks.new": "Nueva tarea",
+  "status.tasks.error": "No se pudieron cargar las tareas.",
   "status.task.steps": "{agent} · {done} de {total} pasos",
   "status.task.needsYou": "{agent} necesita tu respuesta",
-  "status.badge.running": "Trabajando",
-  "status.badge.waitingApproval": "Te espera",
-  "status.badge.review": "Listo",
-  "status.badge.accepted": "Aceptada",
-  "status.badge.discarded": "Descartada",
-  "status.badge.failed": "Con error",
   "status.commits.empty": "Sin commits todavía.",
+  "status.commits.error": "No se pudieron cargar los commits.",
 
   "status.week.title": "Uso de {name} esta semana",
   "status.week.chart": "Tokens por día; total {total}",
   "status.week.caption": "Tokens por día",
   "status.week.busiest": "El {day} fue el día más intenso · {total} tokens en total.",
+  "status.week.error": "No se pudo cargar el uso de la semana.",
+  "status.week.loading": "Cargando el uso de la semana…",
   "status.week.letters": "DLMMJVS",
 };
 
@@ -79,6 +80,8 @@ const en: Record<keyof typeof es, string> = {
   "status.next.review": "will review it",
 
   "status.tests.passed": "Passed",
+  "status.tests.label": "Tests",
+  "status.loadError": "Couldn't load the project's status.",
   "status.tests.failed": "Failed",
   "status.tests.noData": "No data",
   "status.tests.none": "No task has run tests here yet.",
@@ -101,20 +104,19 @@ const en: Record<keyof typeof es, string> = {
 
   "status.tasks": "Tasks",
   "status.tasks.empty": "No tasks in this project yet.",
+  "status.tasks.new": "New task",
+  "status.tasks.error": "Couldn't load the tasks.",
   "status.task.steps": "{agent} · {done} of {total} steps",
   "status.task.needsYou": "{agent} needs your reply",
-  "status.badge.running": "Working",
-  "status.badge.waitingApproval": "Waiting for you",
-  "status.badge.review": "Ready",
-  "status.badge.accepted": "Accepted",
-  "status.badge.discarded": "Discarded",
-  "status.badge.failed": "Failed",
   "status.commits.empty": "No commits yet.",
+  "status.commits.error": "Couldn't load the commits.",
 
   "status.week.title": "{name} usage this week",
   "status.week.chart": "Tokens per day; total {total}",
   "status.week.caption": "Tokens per day",
   "status.week.busiest": "{day} was the busiest day · {total} tokens in total.",
+  "status.week.error": "Couldn't load this week's usage.",
+  "status.week.loading": "Loading this week's usage…",
   "status.week.letters": "SMTWTFS",
 };
 

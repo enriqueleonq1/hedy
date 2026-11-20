@@ -90,7 +90,7 @@ describe("FileViewer", () => {
     const editor = await screen.findByRole("textbox", { name: "Contenido de impuestos.py" });
     fireEvent.contextMenu(editor);
     const menu = await screen.findByRole("menu", { name: /Acciones de la línea \d+/ });
-    expect(within(menu).getByRole("menuitem", { name: "Comentar en la revisión" })).toBeEnabled();
+    expect(within(menu).getByRole("menuitem", { name: "Comentar en los cambios" })).toBeEnabled();
     await user.click(within(menu).getByRole("menuitem", { name: "Preguntar a la IA sobre esto" }));
     expect(inserted).toHaveBeenCalledWith(expect.stringMatching(/^facturas\/impuestos\.py:\d+ $/));
   });

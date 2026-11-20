@@ -1,10 +1,14 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import type { Task } from "../../api/types";
 import { SidePanel } from "../../code/SidePanel";
+import { useApi } from "../../api/context";
+import { useTerminals } from "../../components/Terminal/TerminalProvider";
 import { Button } from "../../components/ui/Button";
 import { useT } from "../../i18n";
 import { Changes } from "../../review/Review";
+import { isOpen } from "../../tasks/timeline";
 
 /**
  * The side panel of a project's workspace: the code views, the review of the
@@ -29,16 +33,52 @@ export function ChangesPanel({
       hidden={hidden}
       onRequestOpen={onRequestOpen}
       review={<Changes project={project} task={task} />}
-      preview={<Preview project={project} />}
+      // A closed task's copy is gone: its project's folder then.
+      preview={<Preview project={project} dir={(isOpen(task) ? task?.workspace?.worktree : undefined) ?? project} />}
     />
   );
 }
 
 const LOCAL_URL = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/.*)?$/;
 
+/** Its `dev` (else `start`) script, run with the package manager its lock file names (npm without one). */
+function devCommand(files: string[], manifest: string): string | null {
+  let scripts: unknown;
+  try {
+    scripts = (JSON.parse(manifest) as { scripts?: unknown } | null)?.scripts;
+  } catch {
+    return null;
+  }
+  // Any JSON parses: only an object of scripts counts.
+  if (!scripts || typeof scripts !== "object" || Array.isArray(scripts)) return null;
+  const script = "dev" in scripts ? "dev" : "start" in scripts ? "start" : null;
+  if (!script) return null;
+  const has = (name: string) => files.includes(name);
+  if (has("pnpm-lock.yaml")) return `pnpm ${script}`;
+  if (has("yarn.lock")) return `yarn ${script}`;
+  if (has("bun.lockb") || has("bun.lock")) return `bun run ${script}`;
+  return `npm run ${script}`;
+}
+
+/** The project's dev command, from its `package.json` (none for other kinds of project). */
+function useDevCommand(project: string): string | null {
+  const api = useApi();
+  const files = useQuery({ queryKey: ["projectFiles", project], queryFn: () => api.projectFiles(project), staleTime: 30_000 });
+  const hasManifest = !!files.data?.includes("package.json");
+  const manifest = useQuery({
+    queryKey: ["devManifest", project],
+    queryFn: () => api.readFile({ kind: "folder", project }, "package.json"),
+    enabled: hasManifest,
+  });
+  const content = manifest.data;
+  return files.data && content?.kind === "text" ? devCommand(files.data, content.text) : null;
+}
+
 /** The project's dev server inside Hedy. Local addresses only. */
-function Preview({ project }: { project: string }) {
+function Preview({ project, dir }: { project: string; dir: string }) {
   const t = useT();
+  const terminals = useTerminals();
+  const dev = useDevCommand(project);
   const storageKey = `hedy.preview.${project}`;
   const [url, setUrl] = useState(() => {
     try {
@@ -82,7 +122,17 @@ function Preview({ project }: { project: string }) {
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
         />
       ) : (
-        <p className="empty">{t("workspace.preview.empty")}</p>
+        <div className="empty">
+          <p>{t("workspace.preview.empty")}</p>
+          {dev && (
+            <Button
+              small
+              onClick={() => terminals.open({ kind: "shell", path: dir }, `${t("common.terminal")} · ${dev}`, dev)}
+            >
+              {t("workspace.preview.start", { command: dev })}
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );

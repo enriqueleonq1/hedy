@@ -4,6 +4,7 @@ import { errorMessage } from "../../api/context";
 import type { Overview, Project, SkillOverview, SkillVerdict } from "../../api/types";
 import { Mascot } from "../../components/Mascot/Mascot";
 import { Button } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { formatTokens } from "../../format";
 import { useT } from "../../i18n";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
@@ -32,7 +33,14 @@ export function homeProject(item: SkillOverview, projects: Project[]): string | 
  * filters and the selected one in detail (what it costs, what Hedy measures,
  * its trial, "Usar también fuera de Hedy" and its steps).
  */
-export function SkillsScreen({ overview }: { overview: Overview }) {
+export function SkillsScreen({
+  overview,
+  embedded = false,
+}: {
+  overview: Overview;
+  /** Inside Memoria's Habilidades tab: its title is the tab's. */
+  embedded?: boolean;
+}) {
   const t = useT();
   const skills = useSkillsOverview();
   const [query, setQuery] = useState("");
@@ -65,19 +73,41 @@ export function SkillsScreen({ overview }: { overview: Overview }) {
   });
   const current = shown.find((s) => s.skill.id === selected) ?? shown[0] ?? null;
   const color = overview.accounts.find((a) => a.id === overview.defaultAccount)?.color ?? DEFAULT_ACCOUNT_COLOR;
+  // Why Importar or Exportar can't be used yet, said under them.
+  const noProjects = overview.projects.length === 0;
+  const noSkills = skills.isSuccess && all.length === 0;
+  const blocked = [noProjects && t("skillLib.importNeedsProject"), noSkills && t("skillLib.exportNeedsSkills")].filter(Boolean).join(" ");
 
   return (
-    <div className="screen skill-lib">
+    <div className={embedded ? "skill-lib skill-lib--embedded" : "screen skill-lib"}>
       <header className="skill-lib__head">
         <div className="skill-lib__titles">
-          <h1>{t("skillLib.title")}</h1>
+          {!embedded && <h1>{t("skillLib.title")}</h1>}
           <p className="muted">{t("skillLib.subtitle")}</p>
         </div>
         <div className="skill-lib__actions">
-          <Button onClick={() => setDialog("export")}>{t("skillLib.export")}</Button>
-          <Button variant="primary" disabled={overview.projects.length === 0} onClick={() => setDialog("import")}>
+          <Button
+            disabled={noSkills}
+            title={noSkills ? t("skillLib.exportNeedsSkills") : undefined}
+            aria-describedby={noSkills ? "skill-lib-blocked" : undefined}
+            onClick={() => setDialog("export")}
+          >
+            {t("skillLib.export")}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={noProjects}
+            title={noProjects ? t("skillLib.importNeedsProject") : undefined}
+            aria-describedby={noProjects ? "skill-lib-blocked" : undefined}
+            onClick={() => setDialog("import")}
+          >
             {t("skillLib.import")}
           </Button>
+          {blocked && (
+            <p id="skill-lib-blocked" className="small muted skill-lib__blocked">
+              {blocked}
+            </p>
+          )}
         </div>
       </header>
 
@@ -108,9 +138,12 @@ export function SkillsScreen({ overview }: { overview: Overview }) {
       {skills.isPending ? (
         <p className="muted skill-lib__state">{t("skillLib.loading")}</p>
       ) : skills.isError ? (
-        <p role="alert" className="skill-lib__state">
-          {t("skillLib.loadError", { error: errorMessage(skills.error, t) })}
-        </p>
+        <EmptyState
+          error
+          title={t("skillLib.loadError")}
+          text={errorMessage(skills.error, t)}
+          onRetry={() => void skills.refetch()}
+        />
       ) : all.length === 0 ? (
         <div className="skill-lib__empty">
           <Mascot color={color} state="sleeping" size={140} />

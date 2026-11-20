@@ -1,7 +1,7 @@
 import { contrast } from "./contrast";
 import { PRESETS, presetById } from "./presets";
 import { contrastFailures, FOCUS_RATIO, repairContrast, TEXT_PAIRS } from "./repair";
-import { accountPalette, applyTheme, applyTokens, cssVar, terminalTheme, themes, type ThemeName, type ThemeTokens } from "./tokens";
+import { accountPalette, applyTheme, applyTokens, classicThemes, cssVar, terminalTheme, themes, type ThemeName, type ThemeTokens } from "./tokens";
 
 describe.each(Object.keys(themes) as ThemeName[])("%s theme", (name) => {
   const t: ThemeTokens = themes[name];
@@ -43,12 +43,31 @@ it("both themes define the same tokens", () => {
   expect(Object.keys(themes.light).sort()).toEqual(Object.keys(themes.dark).sort());
 });
 
-// Hedy's own themes look exactly as before the theme gallery: same tokens, and
-// syntax and terminal colors that are the semantic ones they used to be.
-it("keeps Hedy's own themes as they were", () => {
-  expect(presetById("tokyo-night")?.tokens).toBe(themes.dark);
-  expect(presetById("burbuja")?.tokens).toBe(themes.light);
-  const d = themes.dark;
+// Hedy's own themes: near-black or white neutrals and one light; syntax colors
+// are the semantic ones.
+it("uses Hedy's own themes by default", () => {
+  expect(presetById("hedy")?.tokens).toBe(themes.dark);
+  expect(presetById("hedy-light")?.tokens).toBe(themes.light);
+  expect([themes.dark.bg, themes.dark.ink, themes.dark.action]).toEqual(["#0A0A0C", "#EDEDF0", "#6847F5"]);
+  expect([themes.light.bg, themes.light.ink, themes.light.action]).toEqual(["#FFFFFF", "#18181B", "#6847F5"]);
+  for (const t of [themes.dark, themes.light]) {
+    expect([t.synKeyword, t.synString, t.synNumber, t.synFunction, t.synType, t.synComment, t.synTag]).toEqual([
+      t.accent,
+      t.success,
+      t.warning,
+      t.activity,
+      t.activity,
+      t.muted,
+      t.danger,
+    ]);
+  }
+});
+
+// The themes Hedy shipped first stay as presets, exactly as they were.
+it("keeps Tokyo Night and Burbuja as they were", () => {
+  expect(presetById("tokyo-night")?.tokens).toBe(classicThemes.dark);
+  expect(presetById("burbuja")?.tokens).toBe(classicThemes.light);
+  const d = classicThemes.dark;
   expect([d.bg, d.panel, d.panel2, d.ink, d.muted, d.accent, d.action, d.selection]).toEqual([
     "#1A1B26",
     "#16161E",
@@ -59,7 +78,7 @@ it("keeps Hedy's own themes as they were", () => {
     "#6847F5",
     "#2E2A4F",
   ]);
-  const l = themes.light;
+  const l = classicThemes.light;
   expect([l.bg, l.panel, l.panel2, l.ink, l.muted, l.accent, l.action, l.tipBg]).toEqual([
     "#FFF8F1",
     "#FFFFFF",
@@ -98,20 +117,22 @@ describe.each(PRESETS.map((p) => [p.id, p] as const))("preset %s", (_id, preset)
   });
 });
 
-it("lists two Hedy themes and eight more, dark and light", () => {
+it("lists Hedy's themes, its classic ones and eight more, dark and light", () => {
   expect(PRESETS.map((p) => p.id)).toEqual([
+    "hedy",
     "tokyo-night",
     "one-dark-pro",
     "dracula",
     "catppuccin-mocha",
     "nord",
     "github-dark",
+    "hedy-light",
     "burbuja",
     "github-light",
     "catppuccin-latte",
     "solarized-light",
   ]);
-  expect(PRESETS.filter((p) => p.base === "light")).toHaveLength(4);
+  expect(PRESETS.filter((p) => p.base === "light")).toHaveLength(5);
 });
 
 it("sets the color scheme of the theme's base", () => {

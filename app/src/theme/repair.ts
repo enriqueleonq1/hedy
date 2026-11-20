@@ -32,7 +32,11 @@ export const TEXT_PAIRS: readonly (readonly [fg: string, bg: string])[] = [
   // Usage near a limit, on the page and inside a card's nested surface.
   ["warning", "bg"],
   ["warning", "panel2"],
+  // A board row's state on the selected row.
+  ["warning", "selection"],
   ["danger", "panel"],
+  ["danger", "bg"],
+  ["danger", "panel2"],
   ["warnInk", "warnBg"],
   // Where a rule lives, on a warning of the rules check (docs/decisions.md §37).
   ["actionText", "accentSoft"],

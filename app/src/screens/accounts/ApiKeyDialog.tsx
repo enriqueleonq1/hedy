@@ -26,7 +26,7 @@ export function ApiKeyDialog({ account, onClose }: { account: Account; onClose: 
         </>
       }
     >
-      <Field label="API key" hint={t("accounts.key.hint")}>
+      <Field label={t("accounts.key.label")} hint={t("accounts.key.hint")}>
         {(id) => (
           <input
             id={id}

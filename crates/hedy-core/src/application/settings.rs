@@ -46,9 +46,9 @@ pub const THEMES: [&str; 3] = ["system", "light", "dark"];
 pub const LANGUAGES: [&str; 3] = ["system", "es", "en"];
 pub const SWITCH: [&str; 2] = ["on", "off"];
 /// The dark-mode theme when none is chosen (a preset of the UI).
-pub const DEFAULT_DARK_THEME: &str = "tokyo-night";
+pub const DEFAULT_DARK_THEME: &str = "hedy";
 /// The light-mode theme when none is chosen (a preset of the UI).
-pub const DEFAULT_LIGHT_THEME: &str = "burbuja";
+pub const DEFAULT_LIGHT_THEME: &str = "hedy-light";
 /// How a theme setting points at a saved theme: `custom:<id>`.
 pub const CUSTOM_THEME_PREFIX: &str = "custom:";
 /// Longest preset or custom theme id in a theme setting.
@@ -286,7 +286,7 @@ mod tests {
         let f = Fixture::new();
         assert_eq!(
             f.hedy.mode_themes().unwrap(),
-            ("tokyo-night".into(), "burbuja".into())
+            ("hedy".into(), "hedy-light".into())
         );
         f.hedy
             .set_setting(Setting::ThemeDark, Some("custom:one-dark-pro"))
@@ -322,7 +322,7 @@ mod tests {
                 .is_ok()
         );
         f.hedy.set_setting(Setting::ThemeLight, None).unwrap();
-        assert_eq!(f.hedy.mode_themes().unwrap().1, "burbuja");
+        assert_eq!(f.hedy.mode_themes().unwrap().1, "hedy-light");
     }
 
     #[test]
