@@ -13,7 +13,7 @@ async function open() {
   api.delayMs = 0;
   render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: /^Actividad: / }, SLOW));
+  await user.click(await screen.findByRole("button", { name: /^Inicio/ }, SLOW));
   await user.click(await screen.findByRole("button", { name: /Arregla el cálculo de impuestos/ }, SLOW));
   await screen.findByRole("list", { name: "Archivos cambiados" }, SLOW);
   const bar = screen.getByRole("region", { name: "Comprobar con tus reglas" });

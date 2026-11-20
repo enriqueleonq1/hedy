@@ -119,6 +119,20 @@ export function usePaletteCommands({
         detail: projectName(entry.project),
         run: () => onNavigate({ screen: "memory", project: entry.project, tab: "notes" }),
       });
+    } else if (entry.kind === "sync") {
+      commands.push({
+        id: `pending:${entry.key}`,
+        group: "pending",
+        label: t(entry.conflicts === 1 ? "palette.pending.syncOne" : "palette.pending.sync", { n: entry.conflicts }),
+        run: () => onNavigate({ screen: "settings", section: "sync" }),
+      });
+    } else if (entry.kind === "team") {
+      commands.push({
+        id: `pending:${entry.key}`,
+        group: "pending",
+        label: t(entry.count === 1 ? "palette.pending.teamOne" : "palette.pending.team", { n: entry.count, team: entry.teamName }),
+        run: () => onNavigate({ screen: "settings", section: "teams" }),
+      });
     } else {
       commands.push({
         id: `pending:${entry.key}`,
@@ -132,7 +146,6 @@ export function usePaletteCommands({
 
   commands.push(
     { id: "nav:welcome", group: "nav", label: t("shell.home"), run: () => onNavigate({ screen: "welcome" }) },
-    { id: "nav:activity", group: "nav", label: t("activity.title"), run: () => onNavigate({ screen: "activity" }) },
     { id: "nav:skills", group: "nav", label: t("skillLib.title"), run: () => onNavigate({ screen: "skills" }) },
     { id: "nav:ask", group: "nav", label: t("ask.title"), run: () => onNavigate({ screen: "ask" }) },
     {

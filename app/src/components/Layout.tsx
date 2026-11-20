@@ -1,21 +1,21 @@
-import { useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import type { Account, Overview } from "../api/types";
-import { useLanguage, useT } from "../i18n";
+import { useLanguage, useT, type Language } from "../i18n";
 import { useCreate } from "../screens/create/CreateProvider";
 import { useNowSeconds } from "../tasks/countdown";
 import { isOpen } from "../tasks/timeline";
 import { useConversations } from "../tasks/hooks";
 import { useInbox } from "../tasks/inbox";
 import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
-import { shortAccountLabel } from "./accounts";
 import { useFocusMode } from "./focusMode";
 import { SidebarRailProvider, useSidebarRail } from "./sidebarRail";
-import { AccountsIcon, ActivityIcon, CollapseIcon, GraphIcon, QuestionIcon, SettingsIcon, SkillIcon } from "./ui/icons";
+import { CollapseIcon, HomeIcon, LockIcon, MemoryIcon, PlusIcon, QuestionIcon, SearchIcon, SettingsIcon, SkillIcon, TerminalIcon } from "./ui/icons";
 import { MenuButton } from "./ui/Menu";
 import { Mascot } from "./Mascot/Mascot";
 import { modKey, paletteKeys } from "./palette/keys";
 import { headlineText, levelClass, planPercent, usageLabel, usageTitle, usePlanRefresh } from "./planUsage";
+import { Meter } from "./ui/Meter";
 import { projectColor } from "./projects";
 import { useTerminals } from "./Terminal/TerminalProvider";
 import { Button } from "./ui/Button";
@@ -65,84 +65,26 @@ export function defaultAccount(overview: Overview): Account | undefined {
 }
 
 
-interface TopbarProps {
+export function Sidebar({
+  overview,
+  view,
+  onNavigate,
+  onOpenPalette,
+}: {
   overview: Overview;
   view: View;
-  onNavigate: (view: View) => void;
+  onNavigate: (v: View) => void;
   /** Opens the command palette (also Ctrl/⌘ K). */
   onOpenPalette?: () => void;
-}
-
-export function Topbar({ overview, view, onNavigate, onOpenPalette }: TopbarProps) {
-  const terminals = useTerminals();
-  const focusMode = useFocusMode();
-  const t = useT();
-  const keys = paletteKeys();
-  const color = defaultAccount(overview)?.color ?? DEFAULT_ACCOUNT_COLOR;
-
-  return (
-    <header className="topbar">
-      <button
-        className="brand"
-        aria-label={t("shell.home")}
-        aria-current={view.screen === "welcome" ? "page" : undefined}
-        onClick={() => onNavigate({ screen: "welcome" })}
-      >
-        <Mascot color={color} state={terminals.sessions.some((s) => s.running) ? "working" : "idle"} size={30} label="" />
-        <span className="brand__name">Hedy</span>
-      </button>
-
-      <span className="spacer" />
-      {focusMode.focus && (
-        <button
-          type="button"
-          className="topbar__quiet"
-          aria-label={t("shell.focus.exit")}
-          aria-keyshortcuts="Control+Backslash"
-          title={`${t("shell.focus.exit")} (${modKey()} \\)`}
-          onClick={focusMode.toggle}
-        >
-          {t("shell.focus.on")}
-          <kbd>{`${modKey()} \\`}</kbd>
-        </button>
-      )}
-      {onOpenPalette && (
-        <button
-          type="button"
-          className="palette-hint"
-          aria-label={t("palette.open", { keys })}
-          aria-keyshortcuts={keys === "⌘K" ? "Meta+K" : "Control+K"}
-          title={t("palette.open", { keys })}
-          onClick={onOpenPalette}
-        >
-          <span className="palette-hint__text">{t("palette.hint")}</span>
-          <kbd>{keys}</kbd>
-        </button>
-      )}
-      <button
-        type="button"
-        className="topbar__quiet"
-        onClick={() =>
-          terminals.sessions.length === 0
-            ? terminals.open({ kind: "shell", path: null }, t("common.terminal"))
-            : terminals.setPanelOpen(!terminals.panelOpen)
-        }
-        aria-pressed={terminals.panelOpen}
-      >
-        {t("common.terminal")}
-        {terminals.sessions.length > 0 ? ` · ${terminals.sessions.length}` : ""}
-      </button>
-    </header>
-  );
-}
-
-export function Sidebar({ overview, view, onNavigate }: { overview: Overview; view: View; onNavigate: (v: View) => void }) {
+}) {
   const t = useT();
   const language = useLanguage();
   const { rail, toggle } = useSidebarRail();
-  const accountById = new Map(overview.accounts.map((a) => [a.id, a]));
+  const terminals = useTerminals();
+  const keys = paletteKeys();
   const active = viewProject(view);
-  const needsYou = useInbox().count;
+  const inbox = useInbox();
+  const needsYou = inbox.count;
   const create = useCreate();
   const conversations = useConversations().data ?? [];
   const [allConversations, setAllConversations] = useState(false);
@@ -153,79 +95,143 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
   const now = useNowSeconds(60_000);
   // In the rail, names are not on screen: they go in the accessible name and the tooltip.
   const named = (name: string) => (rail ? { "aria-label": name, title: name } : {});
+  const home = view.screen === "welcome" || view.screen === "activity";
+
+  // What waits for the user in each project, for its row.
+  const pending = new Map<string, number>();
+  for (const entry of inbox.items) {
+    const path = entry.kind === "task" ? entry.item.task.project : entry.kind === "note" || entry.kind === "skill" ? entry.project : null;
+    if (path) pending.set(path, (pending.get(path) ?? 0) + 1);
+  }
+
+  // The account of what is on screen (its project's), else the default one.
+  const project = overview.projects.find((p) => p.path === active);
+  const account = overview.accounts.find((a) => a.id === project?.account) ?? defaultAccount(overview);
+
+  // One terminal for what is on screen: Ctrl/⌘ J, or the button at the bottom.
+  const toggleTerminal = useCallback(() => {
+    if (terminals.sessions.length === 0) {
+      const name = project?.name;
+      terminals.open({ kind: "shell", path: project?.path ?? null }, name ? `${t("common.terminal")} · ${name}` : t("common.terminal"));
+    } else {
+      terminals.setPanelOpen(!terminals.panelOpen);
+    }
+  }, [terminals, project, t]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "j") return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      e.preventDefault();
+      toggleTerminal();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleTerminal]);
 
   return (
     <aside id="sidebar" className={`sidebar${rail ? " sidebar--rail" : ""}`} aria-label={t("common.projectsAndAccounts")}>
-      <button
-        type="button"
-        className="sidebar__toggle"
-        aria-expanded={!rail}
-        aria-controls="sidebar"
-        aria-label={rail ? t("shell.sidebar.expand") : t("shell.sidebar.collapse")}
-        title={rail ? t("shell.sidebar.expand") : t("shell.sidebar.collapse")}
-        onClick={toggle}
-      >
-        <CollapseIcon collapsed={rail} />
-      </button>
+      <div className="sidebar__top">
+        <button className="brand" aria-label="Hedy" title={t("shell.home")} onClick={() => onNavigate({ screen: "welcome" })}>
+          <Mascot
+            color={account?.color ?? DEFAULT_ACCOUNT_COLOR}
+            state={terminals.sessions.some((s) => s.running) ? "working" : "idle"}
+            size={24}
+            label=""
+          />
+          {!rail && <span className="brand__name">Hedy</span>}
+        </button>
+        <button
+          type="button"
+          className="sidebar__toggle"
+          aria-expanded={!rail}
+          aria-controls="sidebar"
+          aria-label={rail ? t("shell.sidebar.expand") : t("shell.sidebar.collapse")}
+          title={rail ? t("shell.sidebar.expand") : t("shell.sidebar.collapse")}
+          onClick={toggle}
+        >
+          <CollapseIcon collapsed={rail} />
+        </button>
+      </div>
 
-      <button
-        className="sidebar__item sidebar__nav"
-        aria-current={view.screen === "activity" ? "page" : undefined}
-        title={rail ? t("activity.title") : undefined}
-        aria-label={
-          needsYou === 0
-            ? t("activity.title")
-            : needsYou === 1
-              ? t("activity.navOne")
-              : t("activity.navMany", { n: needsYou })
-        }
-        onClick={() => onNavigate({ screen: "activity" })}
-      >
-        <ActivityIcon />
-        <span className="sidebar__name">{t("activity.title")}</span>
-        {needsYou > 0 && (
-          <span className="nav-badge" aria-hidden>
-            {needsYou}
-          </span>
-        )}
-      </button>
+      {onOpenPalette && (
+        <button
+          type="button"
+          className="sidebar__search"
+          aria-label={t("palette.open", { keys })}
+          aria-keyshortcuts={keys === "⌘K" ? "Meta+K" : "Control+K"}
+          title={t("palette.open", { keys })}
+          onClick={onOpenPalette}
+        >
+          <SearchIcon />
+          {!rail && (
+            <>
+              <span className="sidebar__search-text">{t("palette.hint")}</span>
+              <kbd className="kbd">{keys}</kbd>
+            </>
+          )}
+        </button>
+      )}
 
-      <button
-        className="sidebar__item sidebar__nav"
-        aria-current={view.screen === "ask" ? "page" : undefined}
-        {...named(t("ask.nav"))}
-        onClick={() => onNavigate({ screen: "ask" })}
-      >
-        <GraphIcon />
-        <span className="sidebar__name">{t("ask.nav")}</span>
-      </button>
+      <nav className="sidebar__group" aria-label={t("shell.nav")}>
+        <button
+          className="sidebar__item sidebar__nav"
+          aria-current={home ? "page" : undefined}
+          title={rail ? t("shell.home") : undefined}
+          aria-label={
+            needsYou === 0
+              ? t("shell.home")
+              : needsYou === 1
+                ? t("shell.homeOne")
+                : t("shell.homeMany", { n: needsYou })
+          }
+          onClick={() => onNavigate({ screen: "welcome" })}
+        >
+          <HomeIcon />
+          <span className="sidebar__name">{t("shell.home")}</span>
+          {needsYou > 0 && (
+            <span className="nav-badge" aria-hidden>
+              {needsYou}
+            </span>
+          )}
+        </button>
 
-      <button
-        className="sidebar__item sidebar__nav"
-        aria-current={view.screen === "skills" ? "page" : undefined}
-        {...named(t("skillLib.nav"))}
-        onClick={() => onNavigate({ screen: "skills" })}
-      >
-        <SkillIcon />
-        <span className="sidebar__name">{t("skillLib.nav")}</span>
-      </button>
+        <button
+          className="sidebar__item sidebar__nav"
+          aria-current={view.screen === "ask" ? "page" : undefined}
+          {...named(t("ask.nav"))}
+          onClick={() => onNavigate({ screen: "ask" })}
+        >
+          <MemoryIcon />
+          <span className="sidebar__name">{t("ask.nav")}</span>
+        </button>
 
-      <section>
+        <button
+          className="sidebar__item sidebar__nav"
+          aria-current={view.screen === "skills" ? "page" : undefined}
+          {...named(t("skillLib.nav"))}
+          onClick={() => onNavigate({ screen: "skills" })}
+        >
+          <SkillIcon />
+          <span className="sidebar__name">{t("skillLib.nav")}</span>
+        </button>
+      </nav>
+
+      <section className="sidebar__group">
         <div className={rail ? "sr-only" : "sidebar__head"}>
           <h2 className="sidebar__title">{t("common.projects")}</h2>
           {!rail && overview.accounts.length > 0 && (
             <MenuButton label={t("create.addProject")} items={create.menu.slice(0, 2)} className="menu-button sidebar__add">
-              <span aria-hidden>+</span>
+              <PlusIcon />
             </MenuButton>
           )}
         </div>
         {overview.projects.length === 0 && !rail && <p className="hint sidebar__empty">{t("shell.noProjects")}</p>}
         <ul className="sidebar__list">
           {overview.projects.map((p) => {
-            const account = p.account ? accountById.get(p.account) : undefined;
             const color = projectColor(p, overview.accounts);
+            const waiting = pending.get(p.path) ?? 0;
             return (
-              <li key={p.path}>
+              <li key={p.path} className="sidebar__row">
                 <button
                   className="sidebar__item"
                   aria-current={active === p.path ? "page" : undefined}
@@ -240,14 +246,31 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
                     <>
                       <span className="dot" style={{ background: color }} aria-hidden />
                       <span className="sidebar__name">{p.name}</span>
-                      {account && (
-                        <span className={`sidebar__meta${p.protected ? " sidebar__meta--protected" : ""}`}>
-                          {shortAccountLabel(account)}
+                      {p.protected && (
+                        <span className="sidebar__lock" title={t("shell.protected")}>
+                          <LockIcon />
+                          <span className="sr-only">{t("shell.protected")}</span>
+                        </span>
+                      )}
+                      {waiting > 0 && (
+                        <span className="sidebar__count" title={t("shell.projectWaiting", { n: waiting })}>
+                          {waiting}
                         </span>
                       )}
                     </>
                   )}
                 </button>
+                {!rail && (
+                  <button
+                    type="button"
+                    className="sidebar__row-add"
+                    aria-label={t("shell.newTaskIn", { name: p.name })}
+                    title={t("shell.newTaskIn", { name: p.name })}
+                    onClick={() => onNavigate({ screen: "workspace", project: p.path, task: null })}
+                  >
+                    <PlusIcon />
+                  </button>
+                )}
               </li>
             );
           })}
@@ -255,7 +278,7 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
       </section>
 
       {overview.accounts.length > 0 && (
-        <section>
+        <section className="sidebar__group">
           {rail ? (
             <button
               className="sidebar__item"
@@ -277,7 +300,7 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
                   aria-current={openConversation === null ? "page" : undefined}
                   onClick={() => create.quickQuestion()}
                 >
-                  <span aria-hidden>+</span>
+                  <PlusIcon />
                 </button>
               </div>
               {conversations.length === 0 ? (
@@ -317,71 +340,109 @@ export function Sidebar({ overview, view, onNavigate }: { overview: Overview; vi
         </section>
       )}
 
-      <section>
-        <button
-          className={rail ? "sidebar__item sidebar__accounts" : "sidebar__title sidebar__title--link"}
-          aria-current={view.screen === "accounts" ? "page" : undefined}
-          {...named(t("common.accountsAndModels"))}
-          onClick={() => onNavigate({ screen: "accounts" })}
-        >
-          {rail ? <AccountsIcon /> : t("common.accountsAndModels")}
-        </button>
-        {overview.accounts.length === 0 && !rail && (
-          <Button small variant="primary" onClick={() => onNavigate({ screen: "accounts" })}>
-            {t("common.addAccount")}
-          </Button>
-        )}
-        <ul className="sidebar__list">
-          {overview.accounts.map((a) => {
-            // The same headline window as the top bar; quiet unless it gets close to the limit.
-            const percent = planPercent(a);
-            const usage = headlineText(a, t) ?? usageLabel(a, language);
-            const busy = planBusy.has(a.id);
-            return (
-              <li key={a.id}>
-                <button
-                  type="button"
-                  className="sidebar__item sidebar__account"
-                  title={[usageTitle(a, t, language, now), busy && t("shell.usage.refreshing")].filter(Boolean).join(" · ")}
-                  aria-label={t("shell.openAccount", { name: a.name, usage })}
-                  aria-busy={busy || undefined}
-                  aria-current={view.screen === "accounts" && view.account === a.id ? "true" : undefined}
-                  onClick={() => onNavigate({ screen: "accounts", account: a.id })}
-                >
-                  <span className="dot" style={{ background: a.color }} aria-hidden />
-                  <span className="sidebar__name">{a.name}</span>
-                  {percent !== null && (
-                    <span
-                      className={["sidebar__meta sidebar__percent", levelClass(percent), busy && "plan-figure--busy"]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                      {Math.round(percent)}%
-                    </span>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-
       <span className="spacer" />
-      <button
-        className="sidebar__item sidebar__settings"
-        aria-current={view.screen === "settings" ? "page" : undefined}
-        {...named(t("common.settings"))}
-        onClick={() => onNavigate({ screen: "settings" })}
-      >
-        <SettingsIcon />
-        <span className="sidebar__name">{t("common.settings")}</span>
-      </button>
+      <div className="sidebar__foot">
+        {overview.accounts.length === 0 ? (
+          !rail && (
+            <Button small variant="primary" onClick={() => onNavigate({ screen: "accounts" })}>
+              {t("common.addAccount")}
+            </Button>
+          )
+        ) : (
+          account && <AccountUsage account={account} rail={rail} busy={planBusy.has(account.id)} now={now} language={language} onOpen={() => onNavigate({ screen: "accounts", account: account.id })} />
+        )}
+        <button
+          type="button"
+          className="sidebar__item"
+          aria-pressed={terminals.panelOpen}
+          aria-keyshortcuts="Control+J"
+          {...named(t("common.terminal"))}
+          onClick={toggleTerminal}
+        >
+          <TerminalIcon />
+          <span className="sidebar__name">
+            {t("common.terminal")}
+            {terminals.sessions.length > 0 ? ` · ${terminals.sessions.length}` : ""}
+          </span>
+          {!rail && <kbd className="kbd">{`${modKey()} J`}</kbd>}
+        </button>
+        <button
+          className="sidebar__item"
+          aria-current={view.screen === "settings" || view.screen === "accounts" ? "page" : undefined}
+          {...named(t("common.settings"))}
+          onClick={() => onNavigate({ screen: "settings" })}
+        >
+          <SettingsIcon />
+          <span className="sidebar__name">{t("common.settings")}</span>
+        </button>
+      </div>
     </aside>
   );
 }
 
+/** The plan of the account in use, in one line: its name, its figure and a meter. */
+function AccountUsage({
+  account,
+  rail,
+  busy,
+  now,
+  language,
+  onOpen,
+}: {
+  account: Account;
+  rail: boolean;
+  busy: boolean;
+  now: number;
+  language: Language;
+  onOpen: () => void;
+}) {
+  const t = useT();
+  const percent = planPercent(account);
+  const usage = headlineText(account, t) ?? usageLabel(account, language);
+  return (
+    <button
+      type="button"
+      className="sidebar__usage"
+      title={[usageTitle(account, t, language, now), busy && t("shell.usage.refreshing")].filter(Boolean).join(" · ")}
+      aria-label={t("shell.openAccount", { name: account.name, usage })}
+      aria-busy={busy || undefined}
+      onClick={onOpen}
+    >
+      <span className="sidebar__usage-top">
+        <span className="dot" style={{ background: account.color }} aria-hidden />
+        {!rail && <span className="sidebar__usage-name">{account.name}</span>}
+        {percent !== null && (
+          <span className={["sidebar__usage-pct", levelClass(percent), busy && "plan-figure--busy"].filter(Boolean).join(" ")}>
+            {Math.round(percent)}%
+          </span>
+        )}
+      </span>
+      {!rail && percent !== null && <Meter percent={percent} label={usage} />}
+    </button>
+  );
+}
+
+/** In focus mode the sidebar steps aside: this is the way back (also Ctrl/⌘ \). */
+function FocusExit() {
+  const t = useT();
+  const focusMode = useFocusMode();
+  if (!focusMode.focus) return null;
+  return (
+    <button
+      type="button"
+      className="focus-exit"
+      aria-label={t("shell.focus.exit")}
+      aria-keyshortcuts="Control+Backslash"
+      title={`${t("shell.focus.exit")} (${modKey()} \\)`}
+      onClick={focusMode.toggle}
+    >
+      {t("shell.focus.on")}
+      <kbd className="kbd">{`${modKey()} \\`}</kbd>
+    </button>
+  );
+}
+
 interface ShellParts {
-  topbar: ReactNode;
   sidebar: ReactNode;
   children: ReactNode;
   terminal: ReactNode;
@@ -397,13 +458,13 @@ export function Shell(parts: ShellParts) {
   );
 }
 
-function ShellFrame({ topbar, sidebar, children, terminal, statusbar }: ShellParts) {
+function ShellFrame({ sidebar, children, terminal, statusbar }: ShellParts) {
   const { rail } = useSidebarRail();
   const { focus } = useFocusMode();
   return (
     <div className={`app${rail ? " app--rail" : ""}${focus ? " app--focus" : ""}`}>
-      {topbar}
       {sidebar}
+      <FocusExit />
       <main className="main" id="main">
         {children}
       </main>

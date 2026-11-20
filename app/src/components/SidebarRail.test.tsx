@@ -44,9 +44,16 @@ describe("Sidebar rail", () => {
     expect(within(sidebar).getByRole("button", { name: "Expandir la barra lateral" })).toHaveAttribute("aria-expanded", "false");
     // Names are not on screen, but every control keeps one.
     expect(within(sidebar).getByRole("button", { name: "hedy" })).toHaveAttribute("title", "hedy");
-    expect(within(sidebar).getByRole("button", { name: "Ajustes" })).toBeInTheDocument();
-    expect(within(sidebar).getByRole("button", { name: "Cuentas y modelos" })).toBeInTheDocument();
-    expect(within(sidebar).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" })).toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "Ajustes" })).toHaveAttribute("title", "Ajustes");
+    expect(within(sidebar).getByRole("button", { name: "Tu memoria" })).toHaveAttribute("title", "Tu memoria");
+    expect(within(sidebar).getByRole("button", { name: "Habilidades" })).toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "Terminal" })).toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "Pregunta rápida" })).toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: /^Inicio/ })).toHaveAttribute("title", "Inicio");
+    // The account in use keeps its figure; the meter and the "+" of each project wait for the full sidebar.
+    const account = within(sidebar).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" });
+    expect(within(account).queryByRole("meter")).not.toBeInTheDocument();
+    expect(within(sidebar).queryByRole("button", { name: "Nueva tarea en hedy" })).not.toBeInTheDocument();
     expect(localStorage.getItem("hedy.sidebar")).toBe("rail");
 
     unmount();

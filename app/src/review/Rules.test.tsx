@@ -21,7 +21,7 @@ function setup(language: "es" | "en" = "es") {
 
 /** Opens the sample task with changes (hedy, "s5"): its comments are in Spanish. */
 async function openTask(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(await screen.findByRole("button", { name: /^(Actividad|Activity): / }, SLOW));
+  await user.click(await screen.findByRole("button", { name: /^(Inicio|Home)/ }, SLOW));
   await user.click(await screen.findByRole("button", { name: new RegExp(TASK) }, SLOW));
   return screen.findByRole("list", { name: /Archivos cambiados|Changed files/ }, SLOW);
 }

@@ -1,6 +1,8 @@
 // "Te necesitan": everything waiting for the user across projects — plans,
-// permissions and limits of the tasks, and the memory notes and skills the
-// AIs proposed (rule 6: only the user approves them).
+// permissions and limits of the tasks, the memory notes and skills the AIs
+// proposed (rule 6: only the user approves them), sync conflicts and the
+// suggestions a team admin may take. One inbox: Inicio, its badge and the
+// palette all read it.
 
 import { useQueries } from "@tanstack/react-query";
 
@@ -8,13 +10,19 @@ import { useApi, useOverview } from "../api/context";
 import type { ActivityItem, AgentEvent, Proposal, SkillProposal } from "../api/types";
 import { memoryKey } from "../screens/memory/notes";
 import { skillsKey } from "../screens/memory/skills";
+import { useSyncStatus } from "../sync/hooks";
+import { teamSuggestionsKey, useTeams } from "../team/hooks";
 import { needsYou, useActivity } from "./hooks";
 
 export type InboxItem =
   | { kind: "task"; key: string; item: ActivityItem }
   /** `project`: where to open it (for a global proposal, the first project that shows it). */
   | { kind: "note"; key: string; project: string; proposal: Proposal }
-  | { kind: "skill"; key: string; project: string; proposal: SkillProposal };
+  | { kind: "skill"; key: string; project: string; proposal: SkillProposal }
+  /** Items changed on two computers: which version stays is the user's call. */
+  | { kind: "sync"; key: string; conflicts: number }
+  /** Suggestions to a team's memory this person may take (an admin). */
+  | { kind: "team"; key: string; team: string; teamName: string; count: number };
 
 /**
  * Every pending item: the tasks in board order, then the proposals, newest
@@ -29,6 +37,14 @@ export function useInbox(): { items: InboxItem[]; count: number; ready: boolean 
   });
   const skills = useQueries({
     queries: projects.map((project) => ({ queryKey: skillsKey(project), queryFn: () => api.skills(project) })),
+  });
+  const sync = useSyncStatus().data;
+  const teams = (useTeams().data ?? []).filter((team) => !team.waiting);
+  const suggestions = useQueries({
+    queries: teams.map((team) => ({
+      queryKey: teamSuggestionsKey(team.id),
+      queryFn: () => api.teamSuggestions(team.id),
+    })),
   });
 
   const tasks: InboxItem[] = (board.data ?? [])
@@ -53,7 +69,14 @@ export function useInbox(): { items: InboxItem[]; count: number; ready: boolean 
   });
   proposals.sort((a, b) => b.at - a.at);
 
-  const items = [...tasks, ...proposals.map((p) => p.entry)];
+  const shared: InboxItem[] = [];
+  if (sync && sync.conflicts > 0) shared.push({ kind: "sync", key: "sync", conflicts: sync.conflicts });
+  teams.forEach((team, i) => {
+    const count = (suggestions[i]?.data ?? []).filter((s) => s.canReview).length;
+    if (count > 0) shared.push({ kind: "team", key: `team:${team.id}`, team: team.id, teamName: team.name, count });
+  });
+
+  const items = [...tasks, ...shared, ...proposals.map((p) => p.entry)];
   return { items, count: items.length, ready: board.isSuccess };
 }
 

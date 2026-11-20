@@ -3,7 +3,6 @@
 
 const es = {
   "create.menu": "Nuevo",
-  "create.menuLabel": "Empezar algo nuevo",
   "create.newProject": "Nuevo proyecto",
   "create.newProjectHint": "Una carpeta nueva, lista para trabajar",
   "create.openFolder": "Abrir carpeta…",
@@ -27,7 +26,7 @@ const es = {
   "newProject.created": "Listo: {name}. Escribe la primera tarea.",
 
   "conversation.place": "Conversación",
-  "conversation.list": "Conversaciones",
+  "conversation.list": "Chats",
   "conversation.count": "Conversaciones ({n})",
   "conversation.title": "Pregunta rápida",
   "conversation.subtitle": "Sin proyecto · no toca ningún archivo tuyo",
@@ -51,7 +50,6 @@ const es = {
 
 const en: Record<keyof typeof es, string> = {
   "create.menu": "New",
-  "create.menuLabel": "Start something new",
   "create.newProject": "New project",
   "create.newProjectHint": "A new folder, ready to work in",
   "create.openFolder": "Open folder…",
@@ -75,7 +73,7 @@ const en: Record<keyof typeof es, string> = {
   "newProject.created": "{name} is ready. Write its first task.",
 
   "conversation.place": "Conversation",
-  "conversation.list": "Conversations",
+  "conversation.list": "Chats",
   "conversation.count": "Conversations ({n})",
   "conversation.title": "Quick question",
   "conversation.subtitle": "No project · never touches your files",

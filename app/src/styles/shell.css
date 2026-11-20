@@ -57,7 +57,7 @@
 /* The "?" list of shortcuts. */
 .shortcuts { display: grid; gap: var(--space-5); }
 .shortcuts__group { display: grid; gap: var(--space-1); }
-.shortcuts__title { font: 700 var(--text-eyebrow) var(--font-ui); letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--muted); }
+.shortcuts__title { font: 600 var(--text-eyebrow) var(--font-ui); letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--muted); }
 .shortcuts__list { display: grid; margin: 0; }
 .shortcuts__row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); min-height: 34px; }
 .shortcuts__row + .shortcuts__row { border-top: 1px solid var(--line); }
@@ -159,11 +159,8 @@
 .sidebar__nav { position: relative; }
 
 .sidebar__toggle {
-  position: absolute;
-  top: 10px;
-  right: 8px;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
   border: 0;
@@ -174,10 +171,14 @@
 }
 
 .sidebar__toggle:hover { background: var(--selection); color: var(--ink); }
-.sidebar:not(.sidebar--rail) > .sidebar__nav { margin-right: 34px; width: auto; }
 
 .sidebar--rail { padding: 10px 8px 14px; gap: 14px; align-items: center; overflow-x: hidden; }
-.sidebar--rail .sidebar__toggle { position: static; width: 44px; height: 36px; }
+.sidebar--rail .sidebar__top { flex-direction: column; }
+.sidebar--rail .sidebar__toggle { width: 44px; height: 32px; }
+.sidebar--rail .sidebar__search { width: 44px; justify-content: center; padding: 0; }
+.sidebar--rail .sidebar__group,
+.sidebar--rail .sidebar__foot { width: 100%; justify-items: center; }
+.sidebar--rail .sidebar__usage { justify-items: center; }
 .sidebar--rail section { width: 100%; }
 .sidebar--rail .sidebar__list { justify-items: center; }
 .sidebar--rail .sidebar__item { width: 44px; min-height: 44px; padding: 0; justify-content: center; }
@@ -202,13 +203,14 @@
   border: 3px solid var(--muted);
   border-radius: 50%;
   color: var(--ink);
-  font: 700 13px var(--font-title);
+  font: 600 var(--text-callout) var(--font-title);
 }
 
 /* Focus mode (Ctrl/⌘ \): the sidebar steps aside for a while. */
 .app.app--focus { grid-template-columns: minmax(0, 1fr); }
 .app--focus > .sidebar { display: none; }
-.app--focus > .terminal-panel { grid-column: 1; }
+.app--focus > .terminal-panel,
+.app--focus > .statusbar { grid-column: 1; }
 
 /* ---------------------------------------------------------------- narrow windows */
 
@@ -216,10 +218,6 @@
 .table-wrap { position: relative; }
 
 @media (max-width: 1100px) {
-  .topbar { gap: 10px; padding: 0 10px 0 12px; }
-  .brand__name,
-  .palette-hint__text { display: none; }
-  .palette-hint { padding: 0 8px; }
   .screen { padding: 24px 20px 40px; }
 }
 
@@ -233,34 +231,31 @@
 
 /* ---------------------------------------------------------------- inbox rows ("Te necesitan") */
 
-/* A row with its own actions: the bar spans the whole item, not only the row. */
+/* A row with its own actions. They show on the row the keyboard or the
+   pointer is on, so the list reads as a list, not a wall of buttons. */
 .board-item {
-  --state: var(--line-strong);
   position: relative;
   display: grid;
+}
+
+.board-item:hover { background: var(--panel-2); }
+.board-item > .board-row { background: none; }
+.board-item--needs > .board-row { --state: var(--warning); }
+.board-item--blocked > .board-row { --state: var(--danger); }
+.board-item--proposal > .board-row { --state: var(--accent); }
+.board-item__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: 0 var(--space-4) 12px 36px; }
+.board-entry:not(.board-entry--selected):not(:hover):not(:focus-within) .board-item__actions { opacity: 0; }
+.board-item__plan {
+  grid-column: 1 / -1;
+  margin: 0 var(--space-4) 12px 36px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--panel);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  font: var(--text-callout) / 1.5 var(--font-ui);
+  color: var(--ink);
+  white-space: pre-wrap;
 }
-
-.board-item::before {
-  content: "";
-  position: absolute;
-  left: 8px;
-  top: var(--space-3);
-  bottom: var(--space-3);
-  width: 2px;
-  border-radius: var(--radius-pill);
-  background: var(--state);
-}
-
-.board-item:hover { border-color: var(--line-strong); }
-.board-item--needs { --state: var(--warning); }
-.board-item--blocked { --state: var(--danger); }
-.board-item--proposal { --state: var(--accent); }
-.board-item > .board-row { border: 0; border-radius: var(--radius-card); background: none; }
-.board-item > .board-row::before { content: none; }
-.board-item__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: 0 var(--space-5) 11px 20px; }
 /* On wide enough rows the buttons sit at the row's end, next to its two lines. */
 @media (min-width: 700px) {
   .board-item { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
@@ -276,10 +271,8 @@
 /* A slim, quiet line along the bottom: hairline on top, muted text, items as
    small buttons that fill on hover. It never wraps; narrow windows drop the
    least needed items first. */
-.app { grid-template-rows: 62px minmax(0, 1fr) auto auto; }
-
 .statusbar {
-  grid-column: 1 / -1;
+  grid-column: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -291,7 +284,7 @@
   border-top: 1px solid var(--line);
   background: var(--panel);
   color: var(--muted);
-  font: 500 12px/1 var(--font-ui);
+  font: 500 var(--text-caption)/1 var(--font-ui);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   transition: opacity 0.16s var(--ease-out);

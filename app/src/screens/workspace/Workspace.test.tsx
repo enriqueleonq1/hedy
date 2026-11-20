@@ -335,7 +335,7 @@ describe("Workspace", () => {
     api.delayMs = 0;
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: /^Actividad/ }, { timeout: 8000 }));
+    await user.click(await screen.findByRole("button", { name: /^Inicio/ }, { timeout: 8000 }));
     const needs = await screen.findByRole("region", { name: /^Te necesitan/ });
     await user.click(within(needs).getByRole("button", { name: /Migra el reporte de comisiones/ }));
     const title = "Migra el reporte de comisiones a la API nueva";
@@ -343,7 +343,7 @@ describe("Workspace", () => {
 
     history.back();
     expect(await screen.findByRole("region", { name: /^Te necesitan/ })).toBeInTheDocument();
-    expect(window.location.hash).toBe("#activity");
+    expect(window.location.hash).toBe("#welcome");
     history.back();
     expect(await screen.findByRole("heading", { name: /¡Hola, Alex!/ })).toBeInTheDocument();
     history.forward();

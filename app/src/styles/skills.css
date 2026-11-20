@@ -107,7 +107,7 @@
 .skill-detail__findings .eyebrow,
 .trial .eyebrow {
   margin-bottom: 6px;
-  font: 700 var(--text-eyebrow) var(--font-ui);
+  font: 600 var(--text-eyebrow) var(--font-ui);
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
   color: var(--muted);

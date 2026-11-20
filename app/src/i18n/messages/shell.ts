@@ -3,6 +3,12 @@
 
 const es = {
   "shell.home": "Inicio",
+  "shell.homeOne": "Inicio: 1 cosa te espera",
+  "shell.homeMany": "Inicio: {n} cosas te esperan",
+  "shell.nav": "Secciones",
+  "shell.protected": "Proyecto protegido: solo usa su cuenta",
+  "shell.projectWaiting": "{n} cosas te esperan aquí",
+  "shell.newTaskIn": "Nueva tarea en {name}",
   "shell.weekUsageByProvider": "Consumo de la semana por proveedor",
   "shell.openAccount": "{name}: {usage}. Abrir la cuenta",
   "shell.noProjects": "Sin proyectos todavía.",
@@ -19,7 +25,6 @@ const es = {
   "shell.customColor": "{label}: color personalizado",
   "shell.sidebar.collapse": "Contraer la barra lateral",
   "shell.sidebar.expand": "Expandir la barra lateral",
-  "shell.usage.note": "El % de cada plan lo leo de su CLI, también lo que usas fuera de Hedy. Los tokens son solo lo que corrí yo.",
   "shell.usage.updated": "actualizado {when}",
   "shell.usage.refreshing": "actualizando…",
   "shell.usage.refreshed": "Uso de {name} actualizado: {usage}",
@@ -52,6 +57,12 @@ const es = {
 
 const en: Record<keyof typeof es, string> = {
   "shell.home": "Home",
+  "shell.homeOne": "Home: 1 thing is waiting for you",
+  "shell.homeMany": "Home: {n} things are waiting for you",
+  "shell.nav": "Sections",
+  "shell.protected": "Protected project: it only uses its account",
+  "shell.projectWaiting": "{n} things are waiting for you here",
+  "shell.newTaskIn": "New task in {name}",
   "shell.weekUsageByProvider": "This week's usage by provider",
   "shell.openAccount": "{name}: {usage}. Open the account",
   "shell.noProjects": "No projects yet.",
@@ -68,7 +79,6 @@ const en: Record<keyof typeof es, string> = {
   "shell.customColor": "{label}: custom color",
   "shell.sidebar.collapse": "Collapse the sidebar",
   "shell.sidebar.expand": "Expand the sidebar",
-  "shell.usage.note": "I read each plan's % from its CLI, including what you use outside Hedy. Token counts are only what I ran.",
   "shell.usage.updated": "updated {when}",
   "shell.usage.refreshing": "refreshing…",
   "shell.usage.refreshed": "{name} usage updated: {usage}",

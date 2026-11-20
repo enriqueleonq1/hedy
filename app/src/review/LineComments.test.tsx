@@ -20,7 +20,7 @@ function setup() {
 
 /** Opens the sample task with changes (hedy, "s5") and waits for its full diff. */
 async function openReview(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(await screen.findByRole("button", { name: /^Actividad: / }, SLOW));
+  await user.click(await screen.findByRole("button", { name: /^Inicio/ }, SLOW));
   await user.click(await screen.findByRole("button", { name: new RegExp(TASK) }, SLOW));
   const table = await screen.findByRole("table", { name: DIFF }, SLOW);
   // The whole file as context has arrived: the gap above the change can be expanded.

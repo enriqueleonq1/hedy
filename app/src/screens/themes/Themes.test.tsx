@@ -59,7 +59,7 @@ describe("Theme gallery", () => {
     expect(setSetting).not.toHaveBeenCalled();
 
     // The bar stays while the user looks around the app.
-    await user.click(screen.getByRole("button", { name: /^Actividad/ }));
+    await user.click(screen.getByRole("button", { name: /^Inicio/ }));
     expect(bar()).toBeInTheDocument();
     expect(cssVar("--bg")).toBe("#282A36");
     await user.click(screen.getByRole("button", { name: "Ajustes" }));

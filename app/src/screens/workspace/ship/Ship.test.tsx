@@ -21,7 +21,7 @@ function setup(language: "es" | "en" = "es") {
   return { api, user: userEvent.setup() };
 }
 
-async function openReviewTask(user: ReturnType<typeof userEvent.setup>, board = /^Actividad: /) {
+async function openReviewTask(user: ReturnType<typeof userEvent.setup>, board = /^Inicio/) {
   await user.click(await screen.findByRole("button", { name: board }, SLOW));
   await user.click(await screen.findByRole("button", { name: new RegExp(TASK) }, SLOW));
   await screen.findByRole("list", { name: /Archivos cambiados|Changed files/ }, SLOW);
@@ -222,7 +222,7 @@ describe("Folder status in the status bar", () => {
 
   it("works in English", async () => {
     const { user } = setup("en");
-    await openReviewTask(user, /^Activity: /);
+    await openReviewTask(user, /^Home/);
     const folder = await screen.findByRole("group", { name: "Your folder" });
     expect(within(folder).getByRole("button", { name: /Commits to pull: 2/ })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Accept changes" }));

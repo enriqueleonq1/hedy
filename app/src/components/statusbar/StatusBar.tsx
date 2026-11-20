@@ -1,44 +1,30 @@
 // The status bar: a slim, quiet line at the bottom of the window, as in VS
 // Code. Each item says one thing about the screen and is a small button that
 // does the obvious next step (switch copy, pull, review, open the status, go
-// to the composer, copy the path, open the account, list the shortcuts).
+// to the composer, copy the path, list the shortcuts).
 // Items show only where they apply; low-priority ones go first when narrow.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { CodeCopy, CodeTree } from "../../api/codeTypes";
 import { useApi } from "../../api/context";
-import type { Account, Overview, Task } from "../../api/types";
+import type { Task } from "../../api/types";
 import { codeKeys, useFileNavigator } from "../../files/navigator";
 import { timeAgo } from "../../format";
-import { useLanguage, useT, type Language, type Translate } from "../../i18n";
+import { useT } from "../../i18n";
 import { FolderStatus } from "../../screens/workspace/ship/FolderStatus";
 import { useFolderStatus } from "../../screens/workspace/ship/useShip";
-import { useNowSeconds } from "../../tasks/countdown";
 import { isOpen, modelLabel } from "../../tasks/timeline";
-import { needsYou, useActivity, useConversations, useTaskDiff, useTasks } from "../../tasks/hooks";
+import { needsYou, useActivity, useTaskDiff, useTasks } from "../../tasks/hooks";
 import { viewProject, type View } from "../Layout";
 import { pressPanelShortcut } from "../palette/codeCommands";
 import { resolveCopy } from "../palette/copy";
 import { modKey, shiftKey } from "../palette/keys";
-import {
-  headlineText,
-  levelClass,
-  planPercent,
-  usageLabel,
-  usageTitle,
-  usePlanRefresh,
-  usePlanRefreshActions,
-} from "../planUsage";
 import { useShortcuts } from "../shortcuts";
-import { SyncItem } from "./SyncItem";
-import { TeamItem } from "./TeamItem";
-import { isMenuKey, pointFor, useContextMenu, type ContextMenuItem } from "../ui/ContextMenu";
 import { MenuButton, type MenuItem } from "../ui/Menu";
 import { useToast } from "../ui/Toast";
 
 interface Props {
-  overview: Overview;
   view: View;
   onNavigate: (view: View) => void;
 }
@@ -50,31 +36,13 @@ export function shownTask(view: View, tasks: Task[] | undefined): Task | null {
   return tasks?.find((t) => t.id === view.task) ?? null;
 }
 
-/**
- * The account the bar names: the open task's (or conversation's), else the
- * project's, else the one closest to its plan's limit (as the sidebar warns).
- */
-export function barAccount(overview: Overview, project: string | null, task: Task | null | undefined): Account | undefined {
-  const byId = (id: string | null | undefined) => overview.accounts.find((a) => a.id === id);
-  const fromProject = project ? overview.projects.find((p) => p.path === project)?.account : null;
-  return (
-    byId(task?.account) ??
-    byId(fromProject) ??
-    [...overview.accounts].sort((a, b) => (planPercent(b) ?? -1) - (planPercent(a) ?? -1))[0]
-  );
-}
-
-export function StatusBar({ overview, view, onNavigate }: Props) {
+export function StatusBar({ view, onNavigate }: Props) {
   const t = useT();
   const project = viewProject(view);
   const workspace = view.screen === "workspace" ? view : null;
   const tasks = useTasks(project ?? "", !!workspace);
-  const conversations = useConversations(view.screen === "conversation" && !!view.task);
   const task = shownTask(view, tasks.data);
   const active = workspace ? resolveCopy(view, tasks.data) : null;
-  const conversation =
-    view.screen === "conversation" ? conversations.data?.find((c) => c.id === view.task) : undefined;
-  const account = barAccount(overview, project, task ?? conversation);
 
   return (
     <footer className="statusbar" aria-label={t("statusbar.label")}>
@@ -94,9 +62,6 @@ export function StatusBar({ overview, view, onNavigate }: Props) {
       </div>
       <div className="statusbar__group statusbar__group--end">
         {workspace && <FileItem />}
-        <SyncItem onOpenSettings={() => onNavigate({ screen: "settings", section: "sync" })} />
-        <TeamItem onOpen={() => onNavigate({ screen: "settings", section: "teams" })} />
-        {account && <AccountItem account={account} onOpen={() => onNavigate({ screen: "accounts", account: account.id })} />}
         <HelpItem />
       </div>
     </footer>
@@ -309,72 +274,6 @@ function FileItem() {
       <span className="statusbar__text">{name}</span>
       {line !== undefined && <span className="statusbar__muted">{t("statusbar.file.line", { n: line })}</span>}
     </button>
-  );
-}
-
-function accountUsage(account: Account, t: Translate, language: Language): string {
-  return headlineText(account, t) ?? usageLabel(account, language);
-}
-
-/**
- * The account at work here and its plan's figure; a click opens its card. Its
- * tooltip says how old the reading is; right-click (or Shift+F10) offers to
- * read it again now. While a new reading comes, the last figure stays, muted.
- */
-function AccountItem({ account, onOpen }: { account: Account; onOpen: () => void }) {
-  const t = useT();
-  const language = useLanguage();
-  const now = useNowSeconds(30_000);
-  const busy = usePlanRefresh().busy.has(account.id);
-  const { refreshAccount } = usePlanRefreshActions();
-  const menu = useContextMenu();
-  const percent = planPercent(account);
-  const label = t("shell.openAccount", { name: account.name, usage: accountUsage(account, t, language) });
-  const title = [usageTitle(account, t, language, now), busy && t("shell.usage.refreshing")].filter(Boolean).join(" · ");
-  const items: ContextMenuItem[] = [
-    {
-      label: t("statusbar.account.refresh"),
-      disabled: !account.usage.plan.supported,
-      onSelect: () => refreshAccount(account),
-    },
-    { label: t("statusbar.account.open"), onSelect: onOpen },
-  ];
-  const menuLabel = t("statusbar.account.menu", { name: account.name });
-
-  return (
-    <>
-      <button
-        type="button"
-        className="statusbar__item statusbar__account"
-        // The tooltip also says where the figure comes from, once.
-        title={`${title}\n${t("shell.usage.note")}\n${t("statusbar.account.hint")}`}
-        aria-label={label}
-        aria-busy={busy || undefined}
-        aria-keyshortcuts="Shift+F10"
-        onClick={onOpen}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          menu.open(e, items, menuLabel);
-        }}
-        onKeyDown={(e) => {
-          if (!isMenuKey(e)) return;
-          e.preventDefault();
-          menu.open(pointFor(e.currentTarget), items, menuLabel);
-        }}
-      >
-        <span className="statusbar__dot" style={{ background: account.color }} aria-hidden />
-        <span className="statusbar__text statusbar__account-name" aria-hidden>
-          {account.name}
-        </span>
-        <span
-          className={["statusbar__figure", levelClass(percent), busy && "plan-figure--busy"].filter(Boolean).join(" ")}
-          aria-hidden
-        >
-          {percent === null ? usageLabel(account, language) : `${Math.round(percent)}%`}
-        </span>
-      </button>
-      {menu.element}
-    </>
   );
 }
 

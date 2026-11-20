@@ -7,7 +7,7 @@ import { FocusModeProvider } from "./components/focusMode";
 import { UnsavedChangesProvider, useUnsavedChanges } from "./code/editor/unsaved";
 import { FileNavigatorProvider } from "./files/navigator";
 import { ReviewCommentsProvider } from "./review/comments";
-import { Shell, Sidebar, taskView, Topbar, viewProject, type View } from "./components/Layout";
+import { Shell, Sidebar, taskView, viewProject, type View } from "./components/Layout";
 import { Mascot } from "./components/Mascot/Mascot";
 import { CommandPalette } from "./components/palette/CommandPalette";
 import { PlanUsageProvider } from "./components/planUsage";
@@ -19,7 +19,6 @@ import { Button } from "./components/ui/Button";
 import { ToastProvider } from "./components/ui/Toast";
 import { AccountsScreen } from "./screens/accounts/AccountsScreen";
 import { CreateProvider } from "./screens/create/CreateProvider";
-import { ActivityScreen } from "./screens/activity/ActivityScreen";
 import { MemoryScreen } from "./screens/memory/MemoryScreen";
 import { SkillsScreen } from "./screens/skills/SkillsScreen";
 import { BackgroundTrialsProvider } from "./screens/skills/backgroundTrials";
@@ -28,7 +27,7 @@ import { Onboarding } from "./screens/onboarding/Onboarding";
 import { Settings } from "./screens/Settings";
 import { ThemeStudio } from "./screens/themes/ThemeStudio";
 import { StatusScreen } from "./screens/status/StatusScreen";
-import { Welcome } from "./screens/Welcome";
+import { HomeScreen } from "./screens/home/HomeScreen";
 import { Workspace } from "./screens/workspace/Workspace";
 import { useSyncEvents } from "./sync/hooks";
 import { TaskEventsBridge } from "./tasks/hooks";
@@ -92,7 +91,9 @@ function viewFromHash(): View {
     return { screen: "workspace", project };
   }
   const hash = decodeURIComponent(raw);
-  if (hash === "accounts" || hash === "settings" || hash === "activity" || hash === "skills") return { screen: hash };
+  // Actividad lives in Inicio now: its old address still lands there.
+  if (hash === "activity") return { screen: "welcome" };
+  if (hash === "accounts" || hash === "settings" || hash === "skills") return { screen: hash };
   if (hash === "ask") return { screen: "ask" };
   if (hash.startsWith("ask=")) return { screen: "ask", project: hash.slice(4) };
   if (hash === "sync") return { screen: "settings", section: "sync" };
@@ -242,28 +243,19 @@ function Root() {
         {/* Theme previews and the dialogs that make themes, over every screen. */}
         <ThemeStudio overview={data}>
         <Shell
-          topbar={
-            <Topbar
-              overview={data}
-              view={current}
-              onNavigate={navigate}
-              onOpenPalette={() => setPalette(true)}
-            />
-          }
-          sidebar={<Sidebar overview={data} view={current} onNavigate={navigate} />}
+          sidebar={<Sidebar overview={data} view={current} onNavigate={navigate} onOpenPalette={() => setPalette(true)} />}
           terminal={<TerminalPanel />}
-          statusbar={<StatusBar overview={data} view={current} onNavigate={navigate} />}
+          statusbar={
+            current.screen === "workspace" || current.screen === "conversation" ? (
+              <StatusBar view={current} onNavigate={navigate} />
+            ) : undefined
+          }
         >
-          {current.screen === "welcome" && <Welcome overview={data} onNavigate={navigate} />}
+          {(current.screen === "welcome" || current.screen === "activity") && (
+            <HomeScreen overview={data} onNavigate={navigate} onOpenTask={openTask} />
+          )}
           {current.screen === "accounts" && <AccountsScreen overview={data} focus={current.account} />}
           {current.screen === "settings" && <Settings overview={data} focus={current} />}
-          {current.screen === "activity" && (
-            <ActivityScreen
-              overview={data}
-              onOpenTask={openTask}
-              onOpenMemory={(project, tab) => navigate({ screen: "memory", project, tab })}
-            />
-          )}
           {current.screen === "skills" && <SkillsScreen overview={data} />}
           {current.screen === "workspace" && (
             <Workspace

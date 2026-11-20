@@ -82,10 +82,12 @@ describe("Message queue", () => {
     expect(await screen.findByText("Hecho: Sigue con los correos")).toBeInTheDocument();
   });
 
-  it("counts queued messages on the task board", async () => {
+  it("counts queued messages on Inicio's board", async () => {
+    // Actividad's old address lands on Inicio.
     window.history.replaceState(null, "", "#activity");
-    setup(MockApi.withSampleData().withSampleActivity());
-    const running = await screen.findByRole("region", { name: "En curso (1)" }, { timeout: 8000 });
+    const { user } = setup(MockApi.withSampleData().withSampleActivity());
+    await user.click(await screen.findByRole("radio", { name: /^En marcha/ }, { timeout: 8000 }));
+    const running = await screen.findByRole("region", { name: "En marcha (1)" }, { timeout: 8000 });
     expect(within(running).getByText("2 en cola")).toBeInTheDocument();
     window.history.replaceState(null, "", "#");
   });

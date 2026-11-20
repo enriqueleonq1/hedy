@@ -36,9 +36,14 @@ function field() {
   return screen.getByRole("combobox", { name: "Paleta de comandos" });
 }
 
-/** The labels of the options on screen, in order. */
+/** The palette's options (not those of a select on screen, like Inicio's project filter), in order. */
+function optionRows(): HTMLElement[] {
+  return within(screen.getByRole("listbox")).getAllByRole("option");
+}
+
+/** The labels of the palette's options, in order. */
 function options(): string[] {
-  return screen.getAllByRole("option").map((o) => o.querySelector(".palette__label")?.textContent ?? "");
+  return optionRows().map((o) => o.querySelector(".palette__label")?.textContent ?? "");
 }
 
 async function workspace() {
@@ -91,7 +96,7 @@ describe("Quick open (Ctrl P)", () => {
     await quickOpen(user);
     await user.type(field(), "fimp");
     await waitFor(() => expect(options()[0]).toBe("impuestos.py"));
-    const first = screen.getAllByRole("option")[0]!;
+    const first = optionRows()[0]!;
     expect([...first.querySelectorAll("mark")].map((m) => m.textContent)).toEqual(["imp", "f"]);
     expect(first).toHaveTextContent("facturas");
     await user.keyboard("{Enter}");
@@ -118,7 +123,7 @@ describe("Quick open (Ctrl P)", () => {
     await quickOpen(user);
     await user.type(field(), "test_fact");
     await waitFor(() => expect(options()[0]).toBe("test_facturas.py"));
-    fireEvent.click(screen.getAllByRole("option")[0]!, { ctrlKey: true });
+    fireEvent.click(optionRows()[0]!, { ctrlKey: true });
     expect(opened.at(-1)).toMatchObject({ path: "tests/test_facturas.py", view: "diff" });
   });
 
@@ -143,7 +148,7 @@ describe("Quick open (Ctrl P)", () => {
     await quickOpen(user);
     expect(screen.getByText("Abre un proyecto para buscar en sus archivos.")).toBeInTheDocument();
     expect(options()).toEqual(["hedy", "tienda"]);
-    await user.click(screen.getAllByRole("option")[0]!);
+    await user.click(optionRows()[0]!);
     expect(screen.getByRole("dialog", { name: "Paleta de comandos" })).toBeInTheDocument();
     expect(await screen.findByRole("group", { name: "Todos los archivos" }, SLOW)).toBeInTheDocument();
     // The workspace opens on its most recent open task: that is the copy searched.
@@ -189,11 +194,11 @@ describe("Quick open (Ctrl P)", () => {
     await workspace();
     await quickOpen(user);
     await screen.findByRole("group", { name: "Todos los archivos" }, SLOW);
-    expect(screen.getAllByRole("option").length).toBeLessThan(80);
+    expect(optionRows().length).toBeLessThan(80);
     expect(within(screen.getByRole("dialog")).getByRole("status")).toHaveTextContent("5000 resultados");
     // The last one is rendered once it is the active one.
     await user.keyboard("{ArrowUp}");
-    const last = screen.getAllByRole("option").at(-1)!;
+    const last = optionRows().at(-1)!;
     expect(last).toHaveAttribute("aria-selected", "true");
     expect(last).toHaveTextContent("archivo4999.ts");
     expect(field()).toHaveAttribute("aria-activedescendant", last.id);
@@ -221,7 +226,7 @@ describe("Palette modes", () => {
     expect(field()).toHaveValue(">");
     await user.type(field(), "abrir un archivo");
     await waitFor(() => expect(options()[0]).toBe("Abrir un archivo…"));
-    expect(screen.getAllByRole("option")[0]!.querySelector(".palette__keys")).toHaveAccessibleName("Ctrl P");
+    expect(optionRows()[0]!.querySelector(".palette__keys")).toHaveAccessibleName("Ctrl P");
     // A mode command switches the palette instead of closing it.
     await user.keyboard("{Enter}");
     expect(field()).toHaveValue("");
@@ -356,7 +361,7 @@ describe("Palette modes", () => {
     await user.clear(field());
     await user.click(screen.getByRole("button", { name: "? ayuda" }));
     expect(field()).toHaveValue("?");
-    const rows = screen.getAllByRole("option");
+    const rows = optionRows();
     await user.hover(rows[2]!);
     expect(rows[2]).toHaveAttribute("aria-selected", "true");
     await user.click(rows[2]!);

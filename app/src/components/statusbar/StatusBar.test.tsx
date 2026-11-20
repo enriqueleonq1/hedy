@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { App } from "../../App";
 import { ApiProvider } from "../../api/context";
 import { MockApi } from "../../api/MockApi";
-import type { Overview, PlanState } from "../../api/types";
+import type { Overview } from "../../api/types";
 import { FileNavigatorProvider, useFileNavigator, type NavigatorTarget } from "../../files/navigator";
 import { I18nProvider } from "../../i18n";
 import type { View } from "../Layout";
@@ -46,7 +46,7 @@ async function renderBar(view: View, extra?: ReactNode) {
               <TerminalProvider>
                 <ShortcutsProvider>
                   <PlanUsageProvider accounts={overview.accounts} screen={view.screen}>
-                    <StatusBar overview={overview} view={view} onNavigate={onNavigate} />
+                    <StatusBar view={view} onNavigate={onNavigate} />
                     {extra}
                   </PlanUsageProvider>
                 </ShortcutsProvider>
@@ -61,22 +61,7 @@ async function renderBar(view: View, extra?: ReactNode) {
   return { api, overview, onNavigate, bar, user: userEvent.setup() };
 }
 
-const PERSONAL = "Claude personal: Semana · 83%. Abrir la cuenta";
-const nowSecs = () => Math.floor(Date.now() / 1000);
-
 describe("Status bar", () => {
-  it("at home shows only the account and the shortcuts", async () => {
-    const { bar, onNavigate, user } = await renderBar({ screen: "welcome" });
-    const account = within(bar).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" });
-    expect(within(bar).getAllByRole("button")).toHaveLength(2);
-    expect(within(bar).queryByRole("group", { name: "Tu carpeta" })).toBeNull();
-    await user.click(account);
-    expect(onNavigate).toHaveBeenCalledWith({ screen: "accounts", account: "claude-personal" });
-
-    await user.click(within(bar).getByRole("button", { name: "Atajos de teclado (?)" }));
-    expect(screen.getByRole("dialog", { name: "Atajos de teclado" })).toBeInTheDocument();
-  });
-
   it("in a task says which copy the code views show and switches it from its menu", async () => {
     const { bar, onNavigate, user } = await renderBar({ screen: "workspace", project: HEDY, task: "s5" });
     const copy = await within(bar).findByRole("button", { name: `Las vistas de código muestran Tarea: ${TAX_TASK}. Cambiar de copia` });
@@ -174,85 +159,25 @@ describe("Status bar", () => {
     await user.click(agent);
     expect(screen.getByRole("region", { name: "card" })).toHaveFocus();
   });
-
-  it("names the open task's account, else the project's", async () => {
-    const { bar } = await renderBar({ screen: "memory", project: "/code/tienda" });
-    expect(within(bar).getByRole("button", { name: /^Claude trabajo: .*Abrir la cuenta$/ })).toBeInTheDocument();
-    // No agent, copy or file outside the workspace.
-    await waitFor(() => expect(within(bar).getByRole("group", { name: "Tu carpeta" })).toBeInTheDocument());
-    expect(within(bar).queryByRole("button", { name: /trabajando|Te espera|copiar la ruta/ })).toBeNull();
-  });
-});
-
-describe("Status bar account", () => {
-  /** Waits for the reading asked on mount, then answers the next ones with `answer`. */
-  async function withReading(api: MockApi, overview: Overview, answer: (plan: PlanState) => PlanState | Promise<PlanState>) {
-    const plan = overview.accounts.find((a) => a.id === "claude-personal")!.usage.plan;
-    const refresh = vi.spyOn(api, "refreshPlanUsage");
-    await waitFor(() => expect(within(screen.getByRole("contentinfo")).getByRole("button", { name: PERSONAL })).not.toHaveAttribute("aria-busy"));
-    refresh.mockClear();
-    refresh.mockImplementation(async () => answer(plan));
-    return refresh;
-  }
-
-  it("says how old the reading is in its tooltip", async () => {
-    const { bar } = await renderBar({ screen: "welcome" });
-    const title = within(bar).getByRole("button", { name: PERSONAL }).getAttribute("title")!;
-    expect(title.split("\n")[0]).toBe("Claude personal · Semana · 83% · actualizado hace 2 min");
-    expect(title).toContain("Clic derecho: actualizar ahora");
-  });
-
-  it("reads the plan again from its context menu and says the new figure", async () => {
-    const { api, overview, bar, user } = await renderBar({ screen: "welcome" });
-    const refresh = await withReading(api, overview, (plan) => ({ ...plan, attemptedAt: nowSecs() + 5 }));
-    const account = within(bar).getByRole("button", { name: PERSONAL });
-    await user.pointer({ keys: "[MouseRight]", target: account });
-    const menu = screen.getByRole("menu", { name: "Uso de Claude personal" });
-    expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Actualizar ahora", "Abrir la cuenta"]);
-    await user.click(within(menu).getByRole("menuitem", { name: "Actualizar ahora" }));
-    expect(refresh).toHaveBeenCalledWith("claude-personal");
-    expect(await screen.findByText("Uso de Claude personal actualizado: Semana · 83%")).toBeInTheDocument();
-  });
-
-  it("does not pretend when the backend answers from its cache", async () => {
-    const { api, overview, bar, user } = await renderBar({ screen: "welcome" });
-    // Asked 30 s ago: the backend keeps the reading for three minutes.
-    await withReading(api, overview, (plan) => ({ ...plan, attemptedAt: nowSecs() - 30 }));
-    await user.pointer({ keys: "[MouseRight]", target: within(bar).getByRole("button", { name: PERSONAL }) });
-    await user.click(screen.getByRole("menuitem", { name: "Actualizar ahora" }));
-    expect(
-      await screen.findByText("Actualizado hace 2 min; se puede volver a consultar en 2 min 30 s"),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/actualizado: Semana/)).toBeNull();
-  });
-
-  it("opens its menu from the keyboard and keeps the last figure, muted, while it reads", async () => {
-    const { api, overview, bar, onNavigate, user } = await renderBar({ screen: "welcome" });
-    let answer!: (plan: PlanState) => void;
-    const reading = new Promise<PlanState>((resolve) => (answer = resolve));
-    const plan = overview.accounts.find((a) => a.id === "claude-personal")!.usage.plan;
-    await withReading(api, overview, () => reading);
-    const account = within(bar).getByRole("button", { name: PERSONAL });
-
-    account.focus();
-    await user.keyboard("{Shift>}{F10}{/Shift}");
-    await user.click(screen.getByRole("menuitem", { name: "Actualizar ahora" }));
-    expect(account).toHaveAttribute("aria-busy", "true");
-    expect(within(account).getByText("83%")).toHaveClass("plan-figure--busy");
-    expect(account.getAttribute("title")).toMatch(/actualizando…/);
-    answer({ ...plan, attemptedAt: nowSecs() + 5 });
-    await waitFor(() => expect(account).not.toHaveAttribute("aria-busy"));
-    expect(within(account).getByText("83%")).not.toHaveClass("plan-figure--busy");
-
-    account.focus();
-    await user.keyboard("{ContextMenu}");
-    await user.click(screen.getByRole("menuitem", { name: "Abrir la cuenta" }));
-    expect(onNavigate).toHaveBeenCalledWith({ screen: "accounts", account: "claude-personal" });
-  });
 });
 
 describe("Status bar in the app", () => {
   afterEach(() => history.replaceState(null, "", "#"));
+
+  it("stays out of home and settings, and shows in a project's workspace", async () => {
+    const api = MockApi.withSampleData();
+    api.delayMs = 0;
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
+    expect(screen.queryByRole("contentinfo", { name: "Barra de estado" })).toBeNull();
+    const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
+    await user.click(within(sidebar).getByRole("button", { name: "Ajustes" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Ajustes" })).toBeInTheDocument();
+    expect(screen.queryByRole("contentinfo", { name: "Barra de estado" })).toBeNull();
+    await user.click(within(sidebar).getByRole("button", { name: /^hedy/ }));
+    expect(await screen.findByRole("contentinfo", { name: "Barra de estado" })).toBeInTheDocument();
+  });
 
   it("takes the folder out of the task header and stays (dimmed) in focus mode", async () => {
     history.replaceState(null, "", `#p=${encodeURIComponent(HEDY)}&t=s5`);
@@ -264,8 +189,9 @@ describe("Status bar in the app", () => {
     await within(bar).findByRole("group", { name: "Tu carpeta" });
     const header = screen.getByRole("heading", { level: 1, name: TAX_TASK }).closest("header") as HTMLElement;
     expect(within(header).queryByRole("group", { name: "Tu carpeta" })).toBeNull();
-    // The top bar has no plan usage of its own any more.
-    expect(within(document.querySelector(".topbar") as HTMLElement).queryByRole("button", { name: /Abrir la cuenta/ })).toBeNull();
+    // The account in use lives in the sidebar, not in the bar; nor do sync or teams.
+    expect(within(bar).queryByRole("button", { name: /Abrir la cuenta|computadoras|equipo/ })).toBeNull();
+    expect(within(bar).getByRole("button", { name: "Atajos de teclado (?)" })).toBeInTheDocument();
 
     await user.keyboard("{Control>}\\{/Control}");
     expect(bar.closest(".app")).toHaveClass("app--focus");

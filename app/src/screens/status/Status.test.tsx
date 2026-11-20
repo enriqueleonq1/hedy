@@ -110,7 +110,7 @@ describe("Status", () => {
 
   it("adds up the week per client and edits a project's client", async () => {
     const { api, user } = setup();
-    await user.click(await screen.findByRole("button", { name: "Cuentas y modelos" }));
+    await user.click(await screen.findByRole("button", { name: /Abrir la cuenta$/ }));
     const spend = await screen.findByRole("region", { name: "Uso de la semana por cliente" });
     expect(await within(spend).findByText("Estudio Norte")).toBeInTheDocument();
     expect(within(spend).getByText("Café Aurora")).toBeInTheDocument();
@@ -133,7 +133,7 @@ describe("Status", () => {
     await api.setProjectClient("/code/tienda", null);
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Cuentas y modelos" }));
+    await user.click(await screen.findByRole("button", { name: /Abrir la cuenta$/ }));
     const input = await screen.findByLabelText("Cliente de hedy");
     expect(screen.queryByRole("region", { name: "Uso de la semana por cliente" })).not.toBeInTheDocument();
 
@@ -149,7 +149,7 @@ describe("Status", () => {
     api.recordUsage({ project: "/code/hedy", account: "kimi", at: Math.floor(Date.now() / 1000), tokens: 1000, costUsd: 0.5 });
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Cuentas y modelos" }));
+    await user.click(await screen.findByRole("button", { name: /Abrir la cuenta$/ }));
     const spend = await screen.findByRole("region", { name: "Uso de la semana por cliente" });
     expect(await within(spend).findByRole("columnheader", { name: "Costo estimado (API key)" })).toBeInTheDocument();
     const norte = within(spend).getByRole("row", { name: /^Estudio Norte/ });

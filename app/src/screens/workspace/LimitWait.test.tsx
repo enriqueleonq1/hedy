@@ -30,7 +30,7 @@ describe("Waiting for a limit", () => {
 
   it("counts down to the reset, survives navigation and can be cancelled", async () => {
     const { user } = setup();
-    let card = await openWaitingTask(user, /^Actividad: /, /Claude personal llegó a su límite/);
+    let card = await openWaitingTask(user, /^Inicio/, /Claude personal llegó a su límite/);
     expect(
       within(card).getByText(/^Se renueva en 4\d min\. Entonces Hedy retoma la tarea con Claude personal\.$/),
     ).toBeInTheDocument();
@@ -40,7 +40,7 @@ describe("Waiting for a limit", () => {
     expect(within(card).queryByRole("button", { name: "Esperar" })).toBeNull();
 
     // Somewhere else and back: still waiting (it is stored with the task).
-    await user.click(screen.getByRole("button", { name: /^Actividad/ }));
+    await user.click(screen.getByRole("button", { name: /^Inicio/ }));
     expect(await screen.findByText(/^sigue en 4\d min$/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: new RegExp(TASK) }));
     card = await screen.findByRole("region", { name: /Claude personal llegó a su límite/ }, SLOW);
@@ -55,7 +55,7 @@ describe("Waiting for a limit", () => {
 
   it("resumes on the same account at the reset, with the held message", async () => {
     const { api, user } = setup();
-    const card = await openWaitingTask(user, /^Actividad: /, /Claude personal llegó a su límite/);
+    const card = await openWaitingTask(user, /^Inicio/, /Claude personal llegó a su límite/);
     await act(() => api.resumeDue("s3"));
     expect(await screen.findByText("Revisa también el asunto del correo.", { selector: ".bubble" })).toBeInTheDocument();
     await waitFor(() => expect(within(card).queryByText(/Entonces Hedy retoma/)).toBeNull());
@@ -65,7 +65,7 @@ describe("Waiting for a limit", () => {
 
   it("after a restart past the reset it waits for the user to continue", async () => {
     const { api, user } = setup();
-    const card = await openWaitingTask(user, /^Actividad: /, /Claude personal llegó a su límite/);
+    const card = await openWaitingTask(user, /^Inicio/, /Claude personal llegó a su límite/);
     act(() => api.simulateRestartAfterReset("s3"));
     expect(await within(card).findByText("Ya puedes continuar: el límite de Claude personal se renovó.")).toBeInTheDocument();
     expect(screen.queryByText("Revisa también el asunto del correo.", { selector: ".bubble" })).toBeNull();
@@ -94,12 +94,12 @@ describe("Waiting for a limit", () => {
 
   it("works in English", async () => {
     const { user } = setup("en");
-    const card = await openWaitingTask(user, /^Activity: /, /Claude personal hit its limit/);
+    const card = await openWaitingTask(user, /^Home/, /Claude personal hit its limit/);
     expect(
       within(card).getByText(/^Renews in 4\d min\. Then Hedy resumes the task with Claude personal\.$/),
     ).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "Stop waiting" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /^Activity/ }));
+    await user.click(screen.getByRole("button", { name: /^Home/ }));
     expect(await screen.findByText(/^resumes in 4\d min$/)).toBeInTheDocument();
   });
 });

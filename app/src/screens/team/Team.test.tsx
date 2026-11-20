@@ -109,10 +109,10 @@ describe("Teams", () => {
     expect(within(card).queryByRole("button", { name: "Revisar" })).toBeNull();
   });
 
-  it("reviews suggestions one at a time, from the status bar", async () => {
-    const { api, user } = renderAt("#settings");
-    const statusBar = await screen.findByRole("contentinfo", { name: "Barra de estado" });
-    await user.click(await within(statusBar).findByRole("button", { name: "Equipo · 2 para revisar" }));
+  it("reviews suggestions one at a time, from Inicio's row", async () => {
+    const { api, user } = renderAt("#");
+    const row = (await screen.findByText("2 sugerencias del equipo Plataforma")).closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Revisar" }));
     expect(window.location.hash).toBe("#teams");
     const card = await waitFor(section);
     await user.click(await within(card).findByRole("button", { name: /Plataforma/ }));

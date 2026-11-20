@@ -121,6 +121,7 @@ import type {
   PlanState,
   UsageWindow,
 } from "./types";
+import { taskState } from "../tasks/state";
 
 const NO_PLAN: PlanState = { usage: null, attemptedAt: null, problem: null, supported: false };
 const NO_USAGE: Usage = { weekTokens: 0, weekCostUsd: null, limit: null, plan: NO_PLAN };
@@ -215,37 +216,6 @@ export function folderName(name: string): string {
     .replace(/^[-.]+/, "")
     .slice(0, 64)
     .replace(/[-.]+$/, "");
-}
-
-/** Like the backend's `task_state`: what a task shows on the board. */
-function boardState(task: Task, events: AgentEvent[]): BoardState {
-  switch (task.status) {
-    case "waitingApproval": {
-      const open = new Set<string>();
-      for (const e of events) {
-        if (e.kind === "plan" && e.requestId) open.add(e.requestId);
-        if (e.kind === "permissionResolved") open.delete(e.requestId);
-      }
-      return open.size > 0 ? "plan" : "permission";
-    }
-    case "accepted":
-      return "accepted";
-    case "discarded":
-      return "cancelled";
-    case "review":
-      return task.mode === "project" ? "review" : "answered";
-    case "running":
-    case "failed": {
-      let limited = false;
-      for (const e of events) {
-        if (e.kind === "limitWarning" && e.level === "reached") limited = true;
-        if (e.kind === "userMessage" || e.kind === "phaseStarted") limited = false;
-        if (e.kind === "rateLimit" && e.status !== "rejected") limited = false;
-      }
-      if (limited) return "limited";
-      return task.status === "running" ? "working" : "failed";
-    }
-  }
 }
 
 /** Board order, like the backend: what needs the user first, closed tasks last. */
@@ -2272,7 +2242,7 @@ export class MockApi implements HedyApi {
       const account = this.state.accounts.find((a) => a.id === task.account);
       return {
         task: { ...task },
-        state: boardState(task, events),
+        state: taskState(task, undefined, events),
         phase: task.stages[task.stage]?.phase ?? "implement",
         agent:
           started?.kind === "phaseStarted" ? started.agent : (account?.providerName.split(" ")[0] ?? task.account),

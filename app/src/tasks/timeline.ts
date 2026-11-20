@@ -3,6 +3,7 @@
 import type { AgentEvent, Attachment, Decision, Phase, StepStatus, Task, TaskMode } from "../api/types";
 import type { MascotState } from "../components/Mascot/Mascot";
 import type { MessageKey, Translate } from "../i18n";
+import { stoppedByLimit } from "./state";
 
 /** A tool step of the agent: a tool, an edit, a command, a test run or a block by Hedy. */
 export type StepKind = "tool" | "edit" | "command" | "tests" | "blocked";
@@ -248,6 +249,8 @@ export function mascotState(task: Task | null | undefined, events: AgentEvent[])
       return finished?.kind === "finished" && finished.ok ? "done" : "idle";
     }
     case "running":
+      // Paused by a limit: asleep, like the pill and the board say.
+      if (stoppedByLimit(events)) return "sleeping";
       return task.live || runningElsewhere(task) ? "working" : "sleeping";
   }
 }
