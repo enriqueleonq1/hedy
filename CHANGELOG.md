@@ -6,6 +6,8 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-20
+
 ### Security
 
 - Agents never read a protected file (`.env`, keys) through a search over a whole folder, a
@@ -186,7 +188,8 @@ The first public release. Linux only for now.
 - `hedy account`, `hedy use`, `hedy run`, `hedy status`, `hedy tasks`, `hedy doctor`,
   `hedy skills` and `hedy template`.
 
-[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/enriqueleonq1/hedy/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/enriqueleonq1/hedy/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/enriqueleonq1/hedy/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/enriqueleonq1/hedy/compare/v1.0.0...v1.0.1
