@@ -14,8 +14,8 @@ async function setup(api = MockApi.withSampleData()) {
   render(<App api={api} queryClient={queryClient} />);
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: /^hedy/ }));
-  await user.click(await screen.findByRole("button", { name: "Más acciones" }));
-  await user.click(screen.getByRole("menuitem", { name: "Memoria" }));
+  const sections = await screen.findByRole("navigation", { name: "Secciones del proyecto" });
+  await user.click(within(sections).getByRole("button", { name: "Memoria" }));
   await screen.findByRole("heading", { name: "Memoria de hedy" });
   await user.click(screen.getByRole("tab", { name: /^Habilidades/ }));
   return { api, user };

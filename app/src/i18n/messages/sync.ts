@@ -13,7 +13,6 @@ const es = {
 
   "sync.upToDate": "Todo al día",
   "sync.pending": "Aún no sincroniza",
-  "sync.bar.pending": "Sin sincronizar aún",
   "sync.failed": "No se pudo sincronizar",
   "sync.syncing": "Sincronizando…",
   "sync.toReview.one": "1 cambio para revisar",
@@ -132,13 +131,11 @@ const es = {
   "sync.home.text": "Dónde se guarda lo que Hedy aprende aquí.",
   "sync.home.personal": "Personal",
   "sync.home.personalDetail": "Se sincroniza con todas tus computadoras.",
-  "sync.home.shared": "Compartido",
   "sync.home.sharedNamed": "Compartido · {group}",
   "sync.home.team": "Equipo",
   "sync.home.teamNamed": "Equipo · {team}",
   "sync.home.teamDetail": "Sus notas de equipo van al repo del equipo, y sus agentes leen la capa Equipo",
   "sync.home.sharedDetail": "Con un grupo: equipo, cliente o comunidad. Se queda en cada computadora.",
-  "sync.home.sharedNoRemote": "Solo para proyectos con un repo remoto.",
   "sync.home.local": "Solo en esta computadora",
   "sync.home.localDetail": "No se sincroniza ni se comparte.",
   "sync.home.follow": "Según el dueño del repo",
@@ -148,13 +145,6 @@ const es = {
   "sync.home.noRemote": "Este proyecto no tiene un repo remoto, así que su memoria se queda en esta computadora.",
   "sync.home.noOrigin": "Sin un remoto «origin» no se puede reconocer en tus otras computadoras, así que por ahora no se sincroniza.",
 
-  "sync.bar.ok": "Sincronizado",
-  "sync.bar.error": "Sin sincronizar",
-  "sync.bar.review": "{n} para revisar",
-  "sync.bar.label": "Sincronización: {state}. Ver detalles",
-  "sync.pop.pcs": "Tus computadoras",
-  "sync.pop.this": "esta",
-  "sync.pop.settings": "Ajustes",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -168,7 +158,6 @@ const en: Record<keyof typeof es, string> = {
 
   "sync.upToDate": "All up to date",
   "sync.pending": "Not synced yet",
-  "sync.bar.pending": "Not synced yet",
   "sync.failed": "Could not sync",
   "sync.syncing": "Syncing…",
   "sync.toReview.one": "1 change to review",
@@ -287,13 +276,11 @@ const en: Record<keyof typeof es, string> = {
   "sync.home.text": "Where what Hedy learns here is kept.",
   "sync.home.personal": "Personal",
   "sync.home.personalDetail": "Synced with all your computers.",
-  "sync.home.shared": "Shared",
   "sync.home.sharedNamed": "Shared · {group}",
   "sync.home.team": "Team",
   "sync.home.teamNamed": "Team · {team}",
   "sync.home.teamDetail": "Its team notes go to the team's repo, and its agents read the team layer",
   "sync.home.sharedDetail": "With a group: a team, a client or a community. Stays on each computer.",
-  "sync.home.sharedNoRemote": "Only for projects with a remote repo.",
   "sync.home.local": "This computer only",
   "sync.home.localDetail": "Neither synced nor shared.",
   "sync.home.follow": "From the repo's owner",
@@ -303,13 +290,6 @@ const en: Record<keyof typeof es, string> = {
   "sync.home.noRemote": "This project has no remote repo, so its memory stays on this computer.",
   "sync.home.noOrigin": "Without an \u201corigin\u201d remote your other computers cannot recognize it, so it does not sync for now.",
 
-  "sync.bar.ok": "Synced",
-  "sync.bar.error": "Not synced",
-  "sync.bar.review": "{n} to review",
-  "sync.bar.label": "Sync: {state}. See details",
-  "sync.pop.pcs": "Your computers",
-  "sync.pop.this": "this one",
-  "sync.pop.settings": "Settings",
 };
 
 export default { es, en };

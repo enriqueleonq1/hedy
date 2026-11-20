@@ -91,8 +91,8 @@ describe("Prompt templates", () => {
     expect(within(section).getAllByText("Ejemplo")).toHaveLength(5);
     expect(within(section).getByText("Solo hedy")).toBeInTheDocument();
 
-    await user.click(within(section).getByRole("button", { name: "Borrar Explicar código" }));
-    await user.click(within(section).getByRole("button", { name: "Borrar Explicar código" }));
+    await user.click(within(section).getByRole("button", { name: "Quitar Explicar código" }));
+    await user.click(within(section).getByRole("button", { name: "Quitar Explicar código" }));
     await waitFor(() => expect(within(section).queryByText("Explicar código")).not.toBeInTheDocument());
     await user.click(within(section).getByRole("button", { name: "Restaurar ejemplos" }));
     expect(await within(section).findByText("Explicar código")).toBeInTheDocument();

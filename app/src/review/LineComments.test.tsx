@@ -212,7 +212,7 @@ describe("Line comments in the review", () => {
 
     fireEvent.contextMenu(item, { clientX: 100, clientY: 100 });
     await user.click(screen.getByRole("menuitem", { name: "Marcar como visto" }));
-    expect(screen.getByText("1 de 3 revisados")).toBeInTheDocument();
+    expect(screen.getByText("1 de 3 vistos")).toBeInTheDocument();
 
     // The same actions behind the row's "⋯" button.
     await user.click(within(files).getByRole("button", { name: "Acciones de facturas/totales.py" }));
@@ -225,7 +225,7 @@ describe("Line comments in the review", () => {
     await openReview(user);
     const files = screen.getByRole("list", { name: "Archivos cambiados" });
     for (const box of within(files).getAllByRole("checkbox")) await user.click(box);
-    expect(screen.getByText("Todo revisado")).toBeInTheDocument();
+    expect(screen.getByText("Todo visto")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Aceptar cambios" })).toHaveClass("btn--primary");
   });
 });

@@ -20,8 +20,11 @@ import type { View } from "../../components/Layout";
 import { shortPath } from "../../components/projects";
 import { headlineText } from "../../components/planUsage";
 import { Button } from "../../components/ui/Button";
+import { StatusPill } from "../../components/ui/StatusPill";
+import { pressPanelShortcut } from "../../components/palette/codeCommands";
+import { taskState } from "../../tasks/state";
 import { Dialog } from "../../components/ui/Dialog";
-import { AskIcon, CodeIcon, PlanIcon, ResearchIcon, SendIcon, TemplateIcon } from "../../components/ui/icons";
+import { AskIcon, CodeIcon, InfoIcon, PlanIcon, ResearchIcon, SendIcon, TemplateIcon } from "../../components/ui/icons";
 import { MenuButton, type MenuItem } from "../../components/ui/Menu";
 import { Select } from "../../components/ui/Select";
 import { useToast } from "../../components/ui/Toast";
@@ -40,6 +43,7 @@ import {
   useTasks,
   useTemplates,
   useAccountCommands,
+  useActivity,
 } from "../../tasks/hooks";
 import {
   agentName,
@@ -48,7 +52,6 @@ import {
   latestMilestone,
   MODE_LABEL,
   pendingCard,
-  STATUS_LABEL,
   type Milestone,
   type PendingCard,
   type TimelineItem,
@@ -73,11 +76,15 @@ import { QueuedMessages } from "./QueuedMessages";
 import { CarryIcon, PanelIcon, PlusIcon, StopIcon } from "./icons";
 import { CarryDialog } from "./carry/CarryDialog";
 import { ContextCard, useCarryDraft } from "./carry/ContextCard";
-import { CarrySuggestion, ContinuedIn, OriginLink } from "./carry/links";
+import { CarrySuggestion, ContinuedIn } from "./carry/links";
 import { NoteDialog } from "./carry/NoteDialog";
 import { continuationsKey, contextKey, useContinuations } from "./carry/queries";
 import { jumpDigit, TaskSwitcher } from "./TaskSwitcher";
 import { Timeline } from "./Timeline";
+import { ClosingBar } from "./ClosingBar";
+import { EndCard } from "./EndCard";
+import { ProjectHead, ProjectTasks } from "./ProjectHome";
+import { TaskDetails } from "./TaskDetails";
 
 /** A card waits for the user's answer (which one, when the events say). */
 type CardWaiting = PendingCard | "other" | null;
@@ -154,7 +161,10 @@ export function Workspace({
   overview: Overview;
   /** `null`: no project, a quick question ("conversation"). */
   project: string | null;
-  /** The task to show: an id, `null` for a new one, or (unset) the most recent open one. */
+  /**
+   * The task to show: an id, or `null` for a new one. Unset, a project opens
+   * on its own home (a new task) and a conversation on the most recent open one.
+   */
   task?: string | null;
   /** Text to start the composer of a new task with. */
   draft?: string;
@@ -173,10 +183,12 @@ export function Workspace({
   const info = solo ? undefined : overview.projects.find((p) => p.path === project);
   const asking = useConversationAccount(overview, solo);
 
-  // By default, the most recent task that is still open.
+  // A project opens on its home; a conversation, by default, on the most recent open one.
   const list = useMemo(() => tasks.data ?? [], [tasks.data]);
   const task =
-    chosen === null ? null : (list.find((t) => t.id === chosen) ?? (chosen === undefined ? list.find(isOpen) : undefined) ?? null);
+    chosen === null || (chosen === undefined && !solo)
+      ? null
+      : (list.find((t) => t.id === chosen) ?? (chosen === undefined ? list.find(isOpen) : undefined) ?? null);
 
   // A conversation shows its own account; a new one, the one picked for it.
   const account: Account | undefined = solo
@@ -226,6 +238,35 @@ export function Workspace({
   const [noting, setNoting] = useState(false);
   const toast = useToast();
   const client = useQueryClient();
+  const [details, setDetails] = useState(false);
+  const boardItem = useActivity().data?.find((item) => item.task.id === task?.id);
+  const state = task ? taskState(task, boardItem, history) : null;
+  const openPanel = () => {
+    if (focusMode.focus) focusMode.toggle();
+    if (!panel.shown) panel.open();
+  };
+  // Shows or hides the side panel (changes, files, terminal, preview), on a task or the project's home.
+  const panelToggle = (
+      <button
+        type="button"
+        className="tool-btn tool-btn--icon"
+        aria-pressed={panelShown}
+        title={t("workspace.panelToggle")}
+        onClick={() => (focusMode.focus && panel.shown ? focusMode.toggle() : panel.toggle())}
+      >
+        <PanelIcon />
+        <span className="sr-only">
+          {t("workspace.panelToggle")}
+          {panel.waiting && `, ${t("workspace.panelHasChanges")}`}
+        </span>
+        {panel.waiting && <span className="tool-btn__dot" aria-hidden />}
+      </button>
+  );
+  /** A new task in this project, its composer started with `prompt` when given. */
+  const newTask = (prompt?: string) => {
+    if (prompt) setFill({ label: "", text: prompt, caret: prompt.length, n: (fill?.n ?? 0) + 1, scope: project });
+    onSelectTask(null);
+  };
   const answering = !!task && (task.status === "running" || task.status === "waitingApproval");
   const carryable = solo && !!task && !!onNavigate;
   const continued = useContinuations(carryable ? task?.id : null);
@@ -261,29 +302,50 @@ export function Workspace({
   return (
     <div className={["workspace", solo && "workspace--solo", !panelShown && "workspace--no-panel"].filter(Boolean).join(" ")}>
       <section className="chat" aria-label={t("workspace.chat")}>
+        {!solo && !task && project ? (
+          <ProjectHead
+            name={name}
+            path={project}
+            current="tasks"
+            tools={panelToggle}
+            onTab={(tab) =>
+              tab === "memory"
+                ? onOpenMemory?.()
+                : tab === "summary"
+                  ? onOpenStatus?.()
+                  : onNavigate?.({ screen: "accounts" })
+            }
+          />
+        ) : (
         <header className="chat__head">
           <div className="chat__title">
-            <h1 title={title}>{title}</h1>
-            <p className="muted">
-              {/* Where it came from or went goes first: the line is cut at its end. */}
-              {carryable && task && (continued.data?.length ?? 0) > 0 && onNavigate ? (
-                <ContinuedIn conversation={task.id} overview={overview} onNavigate={onNavigate} />
-              ) : solo ? (
-                t("conversation.subtitle")
-              ) : (
-                name
-              )}
-              {task?.origin && onNavigate && (
-                <>
-                  {" · "}
-                  <OriginLink origin={task.origin} onNavigate={onNavigate} />
-                </>
-              )}
-              {task?.workspace && <> · {t("common.branch", { branch: task.workspace.branch })}</>}
-              {task && <> · {t(MODE_LABEL[task.mode])} · {t(STATUS_LABEL[task.status])}</>}
-            </p>
+            {!solo && (
+              <button type="button" className="chat__crumb" onClick={() => onSelectTask(null)} title={t("project.home", { name })}>
+                {name} /
+              </button>
+            )}
+            <div className="chat__title-row">
+              <h1 title={title}>{title}</h1>
+              {task && state && <StatusPill state={state} task={task} />}
+            </div>
+            {solo && (
+              <p className="muted">
+                {/* Where it came from or went goes first: the line is cut at its end. */}
+                {carryable && task && (continued.data?.length ?? 0) > 0 && onNavigate ? (
+                  <ContinuedIn conversation={task.id} overview={overview} onNavigate={onNavigate} />
+                ) : (
+                  t("conversation.subtitle")
+                )}
+              </p>
+            )}
           </div>
           <div className="chat__tools">
+            {task && !solo && (
+              <button type="button" className="tool-btn" onClick={() => setDetails(true)}>
+                <InfoIcon />
+                <span className="tool-btn__label">{t("details.open")}</span>
+              </button>
+            )}
             {list.length > 0 && (
               <TaskSwitcher
                 tasks={list}
@@ -305,36 +367,20 @@ export function Workspace({
                 <span className="sr-only">{t("carry.action")}</span>
               </button>
             )}
-            {task && (
-              <button
-                type="button"
-                className="tool-btn"
-                title={solo ? t("conversation.newLabel") : t("workspace.newTask")}
-                onClick={() => onSelectTask(null)}
-              >
+            {task && solo && (
+              <button type="button" className="tool-btn" title={t("conversation.newLabel")} onClick={() => onSelectTask(null)}>
                 <PlusIcon />
-                <span className="tool-btn__label">{solo ? t("conversation.newLabel") : t("workspace.newTask")}</span>
+                <span className="tool-btn__label">{t("conversation.newLabel")}</span>
               </button>
             )}
-            {!solo && (
-              <button
-                type="button"
-                className="tool-btn tool-btn--icon"
-                aria-pressed={panelShown}
-                title={t("workspace.panelToggle")}
-                onClick={() => (focusMode.focus && panel.shown ? focusMode.toggle() : panel.toggle())}
-              >
-                <PanelIcon />
-                <span className="sr-only">
-                  {t("workspace.panelToggle")}
-                  {panel.waiting && `, ${t("workspace.panelHasChanges")}`}
-                </span>
-                {panel.waiting && <span className="tool-btn__dot" aria-hidden />}
-              </button>
-            )}
+            {!solo && panelToggle}
             {more.length > 0 && <MenuButton label={t("workspace.more")} items={more} />}
           </div>
         </header>
+        )}
+        {details && task && (
+          <TaskDetails task={task} events={history} overview={overview} onNavigate={onNavigate} onClose={() => setDetails(false)} />
+        )}
         {deleting && task && (
           <DeleteConversation task={task} onClose={() => setDeleting(false)} onDeleted={() => onSelectTask(null)} />
         )}
@@ -368,6 +414,15 @@ export function Workspace({
             footer={
               carryable && task?.status === "review" ? (
                 <CarrySuggestion onCarry={startCarry} onNote={startNote} />
+              ) : !solo ? (
+                <EndCard
+                  task={task}
+                  events={history}
+                  onReview={() => {
+                    openPanel();
+                    pressPanelShortcut("G");
+                  }}
+                />
               ) : undefined
             }
           />
@@ -389,6 +444,7 @@ export function Workspace({
                 onPick={(s) => setFill({ ...s, n: (fill?.n ?? 0) + 1, scope: project })}
               />
             )}
+            {!solo && !carried && <ProjectTasks tasks={list} onOpen={(id) => onSelectTask(id)} />}
           </div>
         )}
 
@@ -399,6 +455,9 @@ export function Workspace({
 
         {task && <QueuedMessages task={task} queue={queue} agent={agent} cardWaiting={task.status === "waitingApproval"} />}
 
+        {task && !solo && !isOpen(task) ? (
+          <ClosingBar task={task} onOpenPanel={openPanel} onNewTask={newTask} />
+        ) : (
         <Composer
           key={task?.id ?? "new"}
           scope={project}
@@ -463,6 +522,7 @@ export function Workspace({
             onSelectTask(created.id, { replace: true });
           }}
         />
+        )}
       </section>
       {/* Kept mounted while hidden: a terminal opened there keeps running. */}
       {!solo && (
@@ -470,11 +530,8 @@ export function Workspace({
           project={project}
           task={task}
           hidden={!panelShown}
-          onRequestOpen={() => {
-            // Opening a file shows the panel, out of focus mode too.
-            if (focusMode.focus) focusMode.toggle();
-            if (!panel.shown) panel.open();
-          }}
+          // Opening a file shows the panel, out of focus mode too.
+          onRequestOpen={openPanel}
         />
       )}
     </div>

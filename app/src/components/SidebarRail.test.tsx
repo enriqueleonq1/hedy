@@ -35,7 +35,7 @@ describe("Sidebar rail", () => {
     const user = userEvent.setup();
     const { unmount } = renderApp();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
-    const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
+    const sidebar = screen.getByRole("complementary", { name: "Navegación" });
     const toggle = within(sidebar).getByRole("button", { name: "Contraer la barra lateral" });
     expect(toggle).toHaveAttribute("aria-expanded", "true");
 
@@ -59,7 +59,7 @@ describe("Sidebar rail", () => {
     unmount();
     renderApp();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
-    expect(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).toHaveClass("sidebar--rail");
+    expect(screen.getByRole("complementary", { name: "Navegación" })).toHaveClass("sidebar--rail");
   });
 
   it("starts as a rail on a narrow window unless the user chose otherwise", async () => {
@@ -67,7 +67,7 @@ describe("Sidebar rail", () => {
     const user = userEvent.setup();
     const { unmount } = renderApp();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
-    const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
+    const sidebar = screen.getByRole("complementary", { name: "Navegación" });
     expect(sidebar).toHaveClass("sidebar--rail");
     await user.click(within(sidebar).getByRole("button", { name: "Expandir la barra lateral" }));
     expect(sidebar).not.toHaveClass("sidebar--rail");
@@ -76,7 +76,7 @@ describe("Sidebar rail", () => {
     unmount();
     renderApp();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
-    expect(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).not.toHaveClass("sidebar--rail");
+    expect(screen.getByRole("complementary", { name: "Navegación" })).not.toHaveClass("sidebar--rail");
   });
 
   it("keeps working when storage is blocked", async () => {
@@ -86,7 +86,7 @@ describe("Sidebar rail", () => {
     });
     renderApp();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
-    const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
+    const sidebar = screen.getByRole("complementary", { name: "Navegación" });
     await user.click(within(sidebar).getByRole("button", { name: "Contraer la barra lateral" }));
     expect(sidebar).toHaveClass("sidebar--rail");
     setItem.mockRestore();

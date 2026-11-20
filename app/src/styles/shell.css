@@ -320,18 +320,12 @@
 
 .statusbar__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .statusbar__dot--changes { background: var(--warn-ink); }
-.statusbar__dot--waiting { background: var(--warning); }
-.statusbar__dot--working { background: var(--activity); animation: statusbar-pulse 1.6s ease-in-out infinite; }
-@keyframes statusbar-pulse { 50% { opacity: 0.35; transform: scale(0.7); } }
 
 .statusbar__copy .statusbar__text { max-width: 260px; }
-.statusbar__agent--waiting { color: var(--warning); }
 .statusbar__glyph { font-weight: 600; }
 .statusbar__tests--ok .statusbar__glyph { color: var(--success); }
 .statusbar__tests--failed { color: var(--danger); }
 .statusbar__file .statusbar__text { max-width: 220px; }
-.statusbar__account-name { max-width: 160px; }
-.statusbar__figure { flex: none; }
 .statusbar__help { width: 20px; padding: 0; justify-content: center; font-weight: 600; }
 
 /* The folder's branch and ↓ / ↑ counters, in the bar's size. */
@@ -347,7 +341,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .statusbar { transition: none; }
-  .statusbar__dot--working { animation: none; }
 }
 
 @media (max-width: 1100px) {
@@ -355,9 +348,6 @@
 }
 
 @media (max-width: 860px) {
-  /* "Te espera" stays: it asks for the user. */
-  .statusbar__agent:not(.statusbar__agent--waiting) .statusbar__text,
-  .statusbar__account-name,
   .statusbar__copy .statusbar__muted { display: none; }
   .statusbar__copy .statusbar__text { max-width: 140px; }
   .folder-status--bar .folder-status__branch { max-width: 120px; }

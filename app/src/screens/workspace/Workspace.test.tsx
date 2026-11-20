@@ -23,6 +23,16 @@ async function openProject(user: ReturnType<typeof userEvent.setup>, name: RegEx
   await user.click(await screen.findByRole("button", { name }));
 }
 
+/** A project opens on its home: its tasks are listed there, a click away. */
+async function openTask(user: ReturnType<typeof userEvent.setup>, project: RegExp, title: RegExp) {
+  await openProject(user, project);
+  const tasks = await screen.findByRole("navigation", { name: "Secciones del proyecto" });
+  await user.click(await within(tasks.closest(".chat") as HTMLElement).findByRole("button", { name: title }));
+}
+
+const RUNNING = /^Revisa los tests del carrito/;
+const PLAN = /^Agrega recordatorios por WhatsApp/;
+
 describe("Workspace", () => {
   it("runs a task end to end: plan, permission, tests, diff and accept", async () => {
     const { user } = setup();
@@ -76,7 +86,7 @@ describe("Workspace", () => {
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
     // The running sample task in tienda last searched the code (Grep).
-    await openProject(user, /^tienda/);
+    await openTask(user, /^tienda/, RUNNING);
     const word = await screen.findByText("Rastreando");
     const live = word.closest(".agent-row--live");
     expect(live).toHaveAttribute("aria-hidden");
@@ -149,9 +159,14 @@ describe("Workspace", () => {
     expect(screen.getByText("Responde o pide algo más")).toHaveClass("sr-only");
     expect(screen.queryByRole("combobox", { name: "Modo" })).not.toBeInTheDocument();
 
-    // "Nueva tarea" in the header brings the selector back.
-    await user.click(screen.getByRole("button", { name: "Nueva tarea" }));
+    // The project's crumb (its home, with the new task's composer) brings the selector back; so does Ctrl+N.
+    await user.click(screen.getByRole("button", { name: "hedy /" }));
     expect(await screen.findByRole("combobox", { name: "Modo" })).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /^¿Qué librerías hay para recordatorios\?/ }));
+    await waitFor(() => expect(screen.queryByRole("combobox", { name: "Modo" })).not.toBeInTheDocument());
+    await user.keyboard("{Control>}n{/Control}");
+    expect(await screen.findByRole("combobox", { name: "Modo" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/hedy")}&new`);
   });
 
   it("answers the plan and permission cards with the keyboard", async () => {
@@ -200,7 +215,7 @@ describe("Workspace", () => {
     api.delayMs = 0;
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await openProject(user, /^hedy/);
+    await openTask(user, /^hedy/, PLAN);
     // s1's plan waits: nothing to show, so no panel and the chat takes the width.
     await screen.findByRole("heading", { name: "Agrega recordatorios por WhatsApp antes de cada cita" });
     const toggle = screen.getByRole("button", { name: /^Panel lateral/ });
@@ -251,7 +266,7 @@ describe("Workspace", () => {
     api.delayMs = 0;
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await openProject(user, /^hedy/);
+    await openTask(user, /^hedy/, PLAN);
     await user.click(await screen.findByRole("button", { name: /^Panel lateral/ }));
     const panel = await screen.findByRole("complementary", { name: PANEL });
     // A project task whose plan waits (s1), one that works (s3), one with changes (s5), a question (s6).
@@ -271,7 +286,7 @@ describe("Workspace", () => {
     api.delayMs = 0;
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await openProject(user, /^tienda/);
+    await openTask(user, /^tienda/, RUNNING);
     const composer = await screen.findByLabelText(/^Escribe mientras Claude Opus trabaja/);
     await user.type(composer, "Una cosa más");
 
@@ -289,7 +304,7 @@ describe("Workspace", () => {
     api.delayMs = 0;
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await openProject(user, /^hedy/);
+    await openTask(user, /^hedy/, PLAN);
     expect(await screen.findByRole("heading", { name: "Agrega recordatorios por WhatsApp antes de cada cita" })).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Tarea" })).not.toBeInTheDocument();
 
@@ -300,11 +315,11 @@ describe("Workspace", () => {
     const current = within(list).getByRole("button", { name: /Agrega recordatorios por WhatsApp/ });
     expect(current).toHaveAttribute("aria-current", "true");
     expect(current).toHaveFocus();
-    expect(within(current).getByText("Plan por aprobar")).toHaveClass("board-state--needs");
+    expect(within(current).getByText("Te espera: plan")).toHaveClass("status-pill--needs");
     expect(within(current).getByText("Claude personal")).toBeInTheDocument();
     expect(within(current).getByText("Ctrl+1")).toBeInTheDocument();
     const taxes = within(list).getByRole("button", { name: /Arregla el cálculo de impuestos/ });
-    expect(within(taxes).getByText("Cambios por revisar")).toHaveClass("board-state--done");
+    expect(within(taxes).getByText("Lista")).toHaveClass("status-pill--done");
     expect(within(taxes).getByText("hace 40 min")).toBeInTheDocument();
 
     // Escape closes it and gives the focus back.
@@ -390,8 +405,11 @@ describe("Workspace", () => {
   });
 
   it("previews only local addresses", async () => {
-    const { user } = setup();
-    await openProject(user, /^hedy/);
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await openTask(user, /^hedy/, PLAN);
     await user.click(await screen.findByRole("button", { name: /^Panel lateral/ }));
     await user.click(await screen.findByRole("tab", { name: "Vista previa" }));
     const address = screen.getByLabelText("Dirección del servidor local");
@@ -483,7 +501,7 @@ describe("Composer", () => {
     const stop = vi.spyOn(api, "stopTask");
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
-    await openProject(user, /^tienda/);
+    await openTask(user, /^tienda/, RUNNING);
     const composer = await screen.findByLabelText(/^Escribe mientras Claude Opus trabaja/);
     expect(composer).toHaveAttribute("placeholder", "Escribe; se lo paso cuando termine su turno…");
 
@@ -507,11 +525,21 @@ describe("Composer", () => {
     expect(stop).toHaveBeenCalledWith("s4");
   });
 
-  it("keeps the header to one quiet row: Status and Memory in the ⋯ menu", async () => {
-    const { user } = setup();
-    await openProject(user, /^hedy/);
-    await screen.findByText(/¿Qué hacemos en hedy\?/);
-    await user.click(screen.getByRole("button", { name: "Más acciones" }));
+  it("keeps the task's header to one quiet row: Status and Memory in the ⋯ menu", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await openTask(user, /^hedy/, PLAN);
+    const head = (await screen.findByRole("heading", { level: 1, name: PLAN })).closest("header") as HTMLElement;
+    expect(within(head).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "hedy /",
+      "Detalles",
+      expect.stringMatching(/^Tareas \(5\)/),
+      expect.stringMatching(/^Panel lateral/),
+      expect.anything(),
+    ]);
+    await user.click(within(head).getByRole("button", { name: "Más acciones" }));
     const menu = screen.getByRole("menu", { name: "Más acciones" });
     expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Estado", "Memoria"]);
     await user.click(within(menu).getByRole("menuitem", { name: "Memoria" }));

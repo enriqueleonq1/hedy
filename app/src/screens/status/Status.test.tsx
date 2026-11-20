@@ -17,6 +17,12 @@ function setup() {
   return { api, user: userEvent.setup() };
 }
 
+/** A project's summary: its home's "Resumen" tab. */
+async function openSummary(user: ReturnType<typeof userEvent.setup>) {
+  const sections = await screen.findByRole("navigation", { name: "Secciones del proyecto" });
+  await user.click(within(sections).getByRole("button", { name: "Resumen" }));
+}
+
 const task = (extra: Partial<Task>): Task => ({
   id: "t1",
   project: "/code/hedy",
@@ -77,8 +83,7 @@ describe("Status", () => {
   it("shows the project's indicators, week and commits", async () => {
     const { user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
-    await user.click(await screen.findByRole("button", { name: "Más acciones" }));
-    await user.click(screen.getByRole("menuitem", { name: "Estado" }));
+    await openSummary(user);
     expect(await screen.findByRole("heading", { name: "hedy" })).toBeInTheDocument();
     const tests = await screen.findByRole("region", { name: "Tests" });
     expect(within(tests).getByText("Pasaron")).toBeInTheDocument();
@@ -99,11 +104,29 @@ describe("Status", () => {
     expect(await screen.findByRole("heading", { name: "Memoria de hedy" })).toBeInTheDocument();
   });
 
+  it("opens the project's memory and summary from its home's tabs", async () => {
+    const { user } = setup();
+    await user.click(await screen.findByRole("button", { name: /^hedy/ }));
+    // A project opens on its home, not on a task.
+    expect(await screen.findByRole("heading", { level: 1, name: "hedy" })).toBeInTheDocument();
+    const sections = screen.getByRole("navigation", { name: "Secciones del proyecto" });
+    expect(within(sections).getByRole("button", { name: "Tareas" })).toHaveAttribute("aria-current", "page");
+
+    await user.click(within(sections).getByRole("button", { name: "Resumen" }));
+    expect(await screen.findByRole("region", { name: "Tests" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#s=${encodeURIComponent("/code/hedy")}`);
+
+    await user.click(screen.getByRole("button", { name: /^hedy/ }));
+    const again = await screen.findByRole("navigation", { name: "Secciones del proyecto" });
+    await user.click(within(again).getByRole("button", { name: "Memoria" }));
+    expect(await screen.findByRole("heading", { name: "Memoria de hedy" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}`);
+  });
+
   it("offers to turn on the code map in Settings while it is off", async () => {
     const { user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
-    await user.click(await screen.findByRole("button", { name: "Más acciones" }));
-    await user.click(screen.getByRole("menuitem", { name: "Estado" }));
+    await openSummary(user);
     await user.click(await screen.findByRole("button", { name: "Activar mapa del código" }));
     expect(await screen.findByRole("heading", { name: "Ajustes" })).toBeInTheDocument();
   });

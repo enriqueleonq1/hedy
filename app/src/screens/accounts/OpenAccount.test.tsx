@@ -7,7 +7,7 @@ import { MockApi } from "../../api/MockApi";
 
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
 
-const sidebar = () => screen.getByRole("complementary", { name: "Proyectos y cuentas" });
+const sidebar = () => screen.getByRole("complementary", { name: "Navegación" });
 
 describe("Opening an account from the shell", () => {
   afterEach(() => history.replaceState(null, "", "#"));
@@ -30,7 +30,7 @@ describe("Opening an account from the shell", () => {
     history.replaceState(null, "", "#p=%2Fcode%2Ftienda");
     render(<App api={MockApi.withSampleData()} queryClient={new QueryClient()} />);
     const user = userEvent.setup();
-    const side = await screen.findByRole("complementary", { name: "Proyectos y cuentas" });
+    const side = await screen.findByRole("complementary", { name: "Navegación" });
     const account = await within(side).findByRole("button", { name: "Claude trabajo: Sesión 5 h · 34%. Abrir la cuenta" });
     await user.click(account);
     expect(await screen.findByRole("article", { name: "Claude trabajo" })).toHaveClass("account-card--focus");

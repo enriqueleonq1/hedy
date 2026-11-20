@@ -10,7 +10,8 @@ export function stoppedByLimit(events: AgentEvent[]): boolean {
   for (const e of events) {
     if (e.kind === "limitWarning" && e.level === "reached") limited = true;
     if (e.kind === "userMessage" || e.kind === "phaseStarted") limited = false;
-    if (e.kind === "rateLimit" && e.status !== "rejected") limited = false;
+    // Like the backend's `LimitLevel::from_report`: rejected, or used up (Codex's 100 %).
+    if (e.kind === "rateLimit" && e.status !== "rejected" && !((e.utilization ?? 0) >= 100)) limited = false;
   }
   return limited;
 }

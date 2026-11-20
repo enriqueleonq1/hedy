@@ -139,7 +139,6 @@ const es = {
   "team.who.suggested": "La revisará un admin antes de que llegue a todos.",
   "team.who.discarded": "Descartada.",
 
-  "team.bar.review": "Equipo · {n} para revisar",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -280,7 +279,6 @@ const en: Record<keyof typeof es, string> = {
   "team.who.suggested": "An admin reviews it before it reaches everyone.",
   "team.who.discarded": "Discarded.",
 
-  "team.bar.review": "Team · {n} to review",
 };
 
 export default { es, en };

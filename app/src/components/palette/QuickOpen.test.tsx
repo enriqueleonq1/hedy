@@ -151,8 +151,8 @@ describe("Quick open (Ctrl P)", () => {
     await user.click(optionRows()[0]!);
     expect(screen.getByRole("dialog", { name: "Paleta de comandos" })).toBeInTheDocument();
     expect(await screen.findByRole("group", { name: "Todos los archivos" }, SLOW)).toBeInTheDocument();
-    // The workspace opens on its most recent open task: that is the copy searched.
-    expect(screen.getByTitle(/^hedy · Tarea: /)).toBeInTheDocument();
+    // The project opens on its own home, never an old task: its folder is what is searched.
+    expect(screen.getByTitle("hedy · Tu carpeta")).toBeInTheDocument();
   });
 
   it("does not take Ctrl P from a terminal, and takes it from the composer without touching its text", async () => {

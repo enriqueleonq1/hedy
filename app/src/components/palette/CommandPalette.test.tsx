@@ -49,7 +49,7 @@ describe("Command palette", () => {
     expect(input).toHaveAttribute("aria-activedescendant", optionRows()[0]!.id);
     await user.keyboard("{Enter}");
     expect(screen.queryByRole("dialog", { name: "Paleta de comandos" })).not.toBeInTheDocument();
-    expect(within(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).getByRole("button", { name: /^tienda/ })).toHaveAttribute("aria-current", "page");
+    expect(within(screen.getByRole("complementary", { name: "Navegación" })).getByRole("button", { name: /^tienda/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("moves with the arrows, wraps around and lists the groups with no query", async () => {

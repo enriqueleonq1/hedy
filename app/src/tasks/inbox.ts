@@ -20,7 +20,7 @@ export type InboxItem =
   | { kind: "note"; key: string; project: string; proposal: Proposal }
   | { kind: "skill"; key: string; project: string; proposal: SkillProposal }
   /** Items changed on two computers: which version stays is the user's call. */
-  | { kind: "sync"; key: string; conflicts: number }
+  | { kind: "sync"; key: string; conflicts: number; error: string | null }
   /** Suggestions to a team's memory this person may take (an admin). */
   | { kind: "team"; key: string; team: string; teamName: string; count: number };
 
@@ -70,7 +70,10 @@ export function useInbox(): { items: InboxItem[]; count: number; ready: boolean 
   proposals.sort((a, b) => b.at - a.at);
 
   const shared: InboxItem[] = [];
-  if (sync && sync.conflicts > 0) shared.push({ kind: "sync", key: "sync", conflicts: sync.conflicts });
+  // Conflicts to resolve, or a sync that keeps failing: either way the user acts.
+  if (sync && (sync.conflicts > 0 || sync.lastError)) {
+    shared.push({ kind: "sync", key: "sync", conflicts: sync.conflicts, error: sync.conflicts > 0 ? null : sync.lastError });
+  }
   teams.forEach((team, i) => {
     const count = (suggestions[i]?.data ?? []).filter((s) => s.canReview).length;
     if (count > 0) shared.push({ kind: "team", key: `team:${team.id}`, team: team.id, teamName: team.name, count });

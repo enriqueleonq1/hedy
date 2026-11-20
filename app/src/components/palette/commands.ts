@@ -123,7 +123,9 @@ export function usePaletteCommands({
       commands.push({
         id: `pending:${entry.key}`,
         group: "pending",
-        label: t(entry.conflicts === 1 ? "palette.pending.syncOne" : "palette.pending.sync", { n: entry.conflicts }),
+        label: entry.error
+          ? t("home.sync.failed")
+          : t(entry.conflicts === 1 ? "palette.pending.syncOne" : "palette.pending.sync", { n: entry.conflicts }),
         run: () => onNavigate({ screen: "settings", section: "sync" }),
       });
     } else if (entry.kind === "team") {

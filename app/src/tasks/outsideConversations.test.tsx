@@ -19,7 +19,7 @@ function setup(hash = "#") {
   return api;
 }
 
-const sidebar = () => screen.getByRole("complementary", { name: "Proyectos y cuentas" });
+const sidebar = () => screen.getByRole("complementary", { name: "Navegación" });
 
 /** The user comes back to the window. */
 const focusWindow = () => act(() => void window.dispatchEvent(new Event("focus")));

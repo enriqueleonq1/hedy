@@ -19,10 +19,10 @@ const es = {
   "review.undone": "Integración deshecha: la tarea vuelve a revisión con su rama.",
   "review.undoMerge": "Deshacer la integración",
   "review.undoHint": "Solo es posible si nada más cambió en {branch} y no se subió a un remoto.",
-  "review.progress": "{n} de {total} revisados",
+  "review.progress": "{n} de {total} vistos",
   "review.mark": "Visto",
-  "review.markNamed": "Marcar {path} como revisado",
-  "review.reviewed": "revisado",
+  "review.markNamed": "Marcar {path} como visto",
+  "review.reviewed": "visto",
   "review.keys": "j / k: archivo siguiente o anterior",
 };
 
@@ -44,10 +44,10 @@ const en: Record<keyof typeof es, string> = {
   "review.undone": "Merge undone: the task is back in review with its branch.",
   "review.undoMerge": "Undo the merge",
   "review.undoHint": "Only possible if nothing else changed on {branch} and it was not pushed.",
-  "review.progress": "{n} of {total} reviewed",
+  "review.progress": "{n} of {total} viewed",
   "review.mark": "Viewed",
-  "review.markNamed": "Mark {path} as reviewed",
-  "review.reviewed": "reviewed",
+  "review.markNamed": "Mark {path} as viewed",
+  "review.reviewed": "viewed",
   "review.keys": "j / k: next or previous file",
 };
 

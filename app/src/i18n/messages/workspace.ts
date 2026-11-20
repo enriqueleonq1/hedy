@@ -136,10 +136,8 @@ const es = {
   "workspace.limit.handOff": "Pasar la tarea a {name}",
   "workspace.limit.noOther":
     "No hay otro proveedor disponible aquí (o el proyecto está protegido). Puedes agregar Codex o una API key en Cuentas y modelos.",
-  "workspace.limit.waiting": "De acuerdo, esperamos. La tarea sigue con esta cuenta.",
 
   "workspace.panel": "Código, revisión, terminal y vista previa",
-  "workspace.tab.changes": "Cambios",
   "workspace.tab.preview": "Vista previa",
   "workspace.preview.address": "Dirección del servidor local",
   "workspace.preview.reload": "Recargar",
@@ -148,8 +146,6 @@ const es = {
   "workspace.preview.empty":
     "Arranca el servidor de desarrollo en la pestaña Terminal (por ejemplo, npm run dev) y ábrelo aquí.",
 
-  "workspace.changes.merged": "Cambios unidos a {branch}.",
-  "workspace.changes.baseBranch": "la rama base",
   "workspace.changes.noTask": "Cuando pidas algo en modo Proyecto, aquí verás los cambios.",
   "workspace.changes.noWorkspace": "Las preguntas y la investigación no cambian archivos.",
   "workspace.changes.notYet": "Aún no hay cambios: se crearán cuando la IA empiece a trabajar.",
@@ -309,10 +305,8 @@ const en: Record<keyof typeof es, string> = {
   "workspace.limit.handOff": "Hand the task to {name}",
   "workspace.limit.noOther":
     "No other provider is available here (or the project is protected). You can add Codex or an API key in Accounts and models.",
-  "workspace.limit.waiting": "OK, we'll wait. The task stays on this account.",
 
   "workspace.panel": "Code, review, terminal and preview",
-  "workspace.tab.changes": "Changes",
   "workspace.tab.preview": "Preview",
   "workspace.preview.address": "Local server address",
   "workspace.preview.reload": "Reload",
@@ -320,8 +314,6 @@ const en: Record<keyof typeof es, string> = {
   "workspace.preview.localOnly": "Local addresses only (localhost or 127.0.0.1).",
   "workspace.preview.empty": "Start the dev server in the Terminal tab (for example, npm run dev) and open it here.",
 
-  "workspace.changes.merged": "Changes merged into {branch}.",
-  "workspace.changes.baseBranch": "the base branch",
   "workspace.changes.noTask": "When you ask for something in Project mode, you'll see the changes here.",
   "workspace.changes.noWorkspace": "Questions and research don't change files.",
   "workspace.changes.notYet": "No changes yet: they'll appear once the AI starts working.",

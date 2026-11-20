@@ -217,3 +217,12 @@ export function SearchIcon() {
     </svg>
   );
 }
+
+export function InfoIcon() {
+  return (
+    <svg {...common} className="icon">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 11v5.5M12 7.6v.4" />
+    </svg>
+  );
+}

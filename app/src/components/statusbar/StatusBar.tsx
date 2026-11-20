@@ -14,8 +14,8 @@ import { timeAgo } from "../../format";
 import { useT } from "../../i18n";
 import { FolderStatus } from "../../screens/workspace/ship/FolderStatus";
 import { useFolderStatus } from "../../screens/workspace/ship/useShip";
-import { isOpen, modelLabel } from "../../tasks/timeline";
-import { needsYou, useActivity, useTaskDiff, useTasks } from "../../tasks/hooks";
+import { isOpen } from "../../tasks/timeline";
+import { useTaskDiff, useTasks } from "../../tasks/hooks";
 import { viewProject, type View } from "../Layout";
 import { pressPanelShortcut } from "../palette/codeCommands";
 import { resolveCopy } from "../palette/copy";
@@ -29,10 +29,9 @@ interface Props {
   onNavigate: (view: View) => void;
 }
 
-/** The task the workspace shows, as it picks it: the one asked for, else the most recent open one. */
+/** The task the workspace shows: the one asked for (a project alone opens on its home). */
 export function shownTask(view: View, tasks: Task[] | undefined): Task | null {
-  if (view.screen !== "workspace" || view.task === null) return null;
-  if (view.task === undefined) return tasks?.find(isOpen) ?? null;
+  if (view.screen !== "workspace" || !view.task) return null;
   return tasks?.find((t) => t.id === view.task) ?? null;
 }
 
@@ -58,7 +57,6 @@ export function StatusBar({ view, onNavigate }: Props) {
         {project && <FolderStatus project={project} placement="bar" />}
         {workspace && active && <ChangesItem project={workspace.project} copy={active.copy} task={task} />}
         {project && <TestsItem project={project} onOpen={() => onNavigate({ screen: "status", project })} />}
-        {task && isOpen(task) && <AgentItem task={task} />}
       </div>
       <div className="statusbar__group statusbar__group--end">
         {workspace && <FileItem />}
@@ -196,58 +194,6 @@ function TestsItem({ project, onOpen }: { project: string; onOpen: () => void })
         {last ? (last.passed ? "✓" : "✗") : "—"}
       </span>
       <span aria-hidden>{t("statusbar.tests")}</span>
-    </button>
-  );
-}
-
-/** Puts the focus on the composer; `false` when it is not on screen. */
-function focusComposer(): boolean {
-  const box = document.getElementById("composer-input");
-  if (!(box instanceof HTMLTextAreaElement) || box.disabled) return false;
-  box.focus();
-  return true;
-}
-
-/** Puts the focus on the card that waits for an answer (the latest), else the composer. */
-function focusCard() {
-  const cards = document.querySelectorAll<HTMLElement>(".plan-card--pending, .permission-card, .limit-card");
-  const card = cards[cards.length - 1];
-  if (!card) {
-    focusComposer();
-    return;
-  }
-  card.scrollIntoView?.({ block: "nearest" });
-  const target = card.hasAttribute("tabindex") ? card : card.querySelector<HTMLElement>("button:not(:disabled)");
-  (target ?? card).focus();
-}
-
-/** The open task's agent: working (a small live dot) or waiting for the user. */
-function AgentItem({ task }: { task: Task }) {
-  const t = useT();
-  const row = useActivity().data?.find((item) => item.task.id === task.id);
-  const agent = row?.agent ?? modelLabel(task.model);
-  const waiting = row ? needsYou(row.state) : task.status === "waitingApproval";
-  const working = row ? row.state === "working" : task.live && task.status === "running";
-
-  if (waiting) {
-    const label = t("statusbar.agent.waitingHint", { agent });
-    return (
-      <button type="button" className="statusbar__item statusbar__agent statusbar__agent--waiting" title={label} aria-label={label} onClick={focusCard}>
-        <span className="statusbar__dot statusbar__dot--waiting" aria-hidden />
-        <span className="statusbar__text" aria-hidden>
-          {t("statusbar.agent.waiting")}
-        </span>
-      </button>
-    );
-  }
-  if (!working) return null;
-  const label = t("statusbar.agent.workingHint", { agent });
-  return (
-    <button type="button" className="statusbar__item statusbar__agent" title={label} aria-label={label} onClick={focusComposer}>
-      <span className="statusbar__dot statusbar__dot--working" aria-hidden />
-      <span className="statusbar__text" aria-hidden>
-        {t("statusbar.agent.working", { agent })}
-      </span>
     </button>
   );
 }

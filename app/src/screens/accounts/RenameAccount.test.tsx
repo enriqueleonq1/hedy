@@ -73,7 +73,7 @@ describe("An account card", () => {
     const card = screen.getByRole("article", { name: "Claude trabajo" });
     // Signed in: no button on the card itself, everything is in the menu.
     expect(within(card).queryByRole("button", { name: "Reconectar" })).not.toBeInTheDocument();
-    expect(within(card).queryByRole("button", { name: "Eliminar" })).not.toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Quitar de Hedy" })).not.toBeInTheDocument();
 
     await user.click(within(card).getByRole("button", { name: "Acciones de Claude trabajo" }));
     const menu = screen.getByRole("menu", { name: "Acciones de Claude trabajo" });
@@ -81,26 +81,26 @@ describe("An account card", () => {
       "Renombrar",
       "Por defecto",
       "Reconectar",
-      "Eliminar",
+      "Quitar de Hedy",
     ]);
     expect(within(menu).getByRole("separator")).toBeInTheDocument();
-    expect(within(menu).getByRole("menuitem", { name: "Eliminar" })).toHaveClass("menu__item--danger");
+    expect(within(menu).getByRole("menuitem", { name: "Quitar de Hedy" })).toHaveClass("menu__item--danger");
     await user.click(within(menu).getByRole("menuitem", { name: "Por defecto" }));
     expect(makeDefault).toHaveBeenCalledWith("claude-trabajo");
 
     // Deleting asks first; cancelling keeps the account.
     const codex = screen.getByRole("article", { name: "ChatGPT" });
     await user.click(within(codex).getByRole("button", { name: "Acciones de ChatGPT" }));
-    await user.click(screen.getByRole("menuitem", { name: "Eliminar" }));
-    let dialog = screen.getByRole("dialog", { name: "¿Eliminar ChatGPT?" });
+    await user.click(screen.getByRole("menuitem", { name: "Quitar de Hedy" }));
+    let dialog = screen.getByRole("dialog", { name: "¿Quitar ChatGPT de Hedy?" });
     expect(within(dialog).getByText(/su carpeta con el login no se borra/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Cancelar" }));
     expect(remove).not.toHaveBeenCalled();
 
     await user.click(within(codex).getByRole("button", { name: "Acciones de ChatGPT" }));
-    await user.click(screen.getByRole("menuitem", { name: "Eliminar" }));
-    dialog = screen.getByRole("dialog", { name: "¿Eliminar ChatGPT?" });
-    await user.click(within(dialog).getByRole("button", { name: "Eliminar" }));
+    await user.click(screen.getByRole("menuitem", { name: "Quitar de Hedy" }));
+    dialog = screen.getByRole("dialog", { name: "¿Quitar ChatGPT de Hedy?" });
+    await user.click(within(dialog).getByRole("button", { name: "Quitar de Hedy" }));
     expect(remove).toHaveBeenCalledWith("chatgpt");
     await waitFor(() => expect(screen.queryByRole("article", { name: "ChatGPT" })).not.toBeInTheDocument());
   });

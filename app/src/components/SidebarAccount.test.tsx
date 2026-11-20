@@ -19,7 +19,7 @@ function setup() {
   return { api, user: userEvent.setup() };
 }
 
-const sidebar = () => screen.getByRole("complementary", { name: "Proyectos y cuentas" });
+const sidebar = () => screen.getByRole("complementary", { name: "Navegación" });
 
 describe("Sidebar account", () => {
   afterEach(() => history.replaceState(null, "", "#"));

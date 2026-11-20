@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient } from "@tanstack/react-query";
 
@@ -91,9 +91,44 @@ describe("Inicio's board", () => {
     expect(within(ready).getByText("Cambios por revisar")).toBeInTheDocument();
     expect(within(ready).getAllByText("Respondida")).toHaveLength(2);
     expect(within(ready).getByText("hace 40 min")).toBeInTheDocument();
+    // An answered task offers its answer; changes, their review.
+    expect(within(ready).getAllByRole("button", { name: "Ver la respuesta" })).toHaveLength(2);
+    expect(within(ready).getByRole("button", { name: "Revisar cambios" })).toBeInTheDocument();
+    // A task stopped by an error stays in sight, under what is ready, out of the badge.
+    const failed = screen.getByRole("region", { name: "Con error (1)" });
+    expect(titles(failed)).toEqual(["Actualiza las dependencias del panel"]);
+    expect(within(failed).getByText("Falló")).toBeInTheDocument();
+    expect(ready.compareDocumentPosition(failed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // Finished tasks no longer get a group of their own: they are in the history.
     expect(screen.queryByRole("region", { name: /^Últimas/ })).not.toBeInTheDocument();
-    expect(screen.queryByText("Actualiza las dependencias del panel")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cambia el color del botón de reservar")).not.toBeInTheDocument();
+  });
+
+  it("opens a failed task from its group to see what happened", async () => {
+    const { user } = setup();
+    const failed = await screen.findByRole("region", { name: "Con error (1)" }, SLOW);
+    await user.click(within(failed).getByRole("button", { name: "Ver qué pasó" }));
+    expect(await screen.findByRole("heading", { name: "Actualiza las dependencias del panel" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/tienda")}&t=s7`);
+  });
+
+  it("shows nothing in what needs you while the board loads", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const activity = api.activity.bind(api);
+    vi.spyOn(api, "activity").mockImplementation(async () => {
+      await gate;
+      return activity();
+    });
+    setup(api);
+    expect(await screen.findByRole("heading", { level: 1 }, SLOW)).toHaveTextContent("¡Hola, Alex!");
+    await screen.findByRole("radiogroup", { name: "Mostrar" });
+    // Not "nothing waits" (it may), nor a half inbox without the tasks.
+    expect(screen.queryByText("Nada te espera")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /^Te necesitan/ })).not.toBeInTheDocument();
+    release();
+    expect(await screen.findByRole("region", { name: NEEDS }, SLOW)).toBeInTheDocument();
   });
 
   it("shows what is running, what is ready and the whole history", async () => {
@@ -129,8 +164,9 @@ describe("Inicio's board", () => {
       "Actualiza las dependencias del panel",
       "Cambia el color del botón de reservar",
     ]);
-    expect(within(all).getByText("Con error")).toBeInTheDocument();
-    expect(within(all).getByText("Descartada")).toBeInTheDocument();
+    // Each row's state is the task's one pill.
+    expect(within(all).getByText("Falló")).toHaveClass("status-pill--failed");
+    expect(within(all).getByText("Descartada")).toHaveClass("status-pill--closed");
     expect(within(all).getByText("Sin proyecto")).toBeInTheDocument();
   });
 
@@ -157,7 +193,7 @@ describe("Inicio's board", () => {
     const needs = await screen.findByRole("region", { name: NEEDS }, SLOW);
     await user.click(within(needs).getByRole("button", { name: /Migra el reporte de comisiones/ }));
     expect(await screen.findByRole("heading", { name: "Migra el reporte de comisiones a la API nueva" })).toBeInTheDocument();
-    expect(within(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).getByRole("button", { name: /^tienda/ })).toHaveAttribute("aria-current", "page");
+    expect(within(screen.getByRole("complementary", { name: "Navegación" })).getByRole("button", { name: /^tienda/ })).toHaveAttribute("aria-current", "page");
     expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/tienda")}&t=s2`);
   });
 
@@ -211,8 +247,27 @@ describe("Inicio's board", () => {
 
     await user.click(screen.getByRole("button", { name: /^Inicio/ }));
     await screen.findByRole("group", { name: /^Plan de Agrega recordatorios/ }, SLOW);
+    // The focus is still on the sidebar's Inicio: there, the board's keys are not the board's.
+    expect(screen.getByRole("button", { name: /^Inicio/ })).toHaveFocus();
+    await user.keyboard("ja");
+    expect(selectedTitle()).toBeNull();
+    expect(answer).not.toHaveBeenCalled();
+    (document.activeElement as HTMLElement).blur();
     await user.keyboard("ja");
     expect(answer).toHaveBeenCalledWith("s1", "plan-s1", true, null);
+  });
+
+  it("leaves the board's keys to the sidebar while it has the focus", async () => {
+    const { api, user } = setup();
+    const approve = vi.spyOn(api, "answerPlan");
+    await screen.findByRole("group", { name: /^Plan de Agrega recordatorios/ }, SLOW);
+    const sidebar = screen.getByRole("complementary", { name: "Navegación" });
+    within(sidebar).getByRole("button", { name: /^tienda/ }).focus();
+    await user.keyboard("j{ArrowDown}a{Enter}");
+    // Enter on the sidebar's row is that row's: the project opens, nothing on the board moved.
+    expect(approve).not.toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { level: 1, name: "tienda" })).toBeInTheDocument();
+    expect(selectedTitle()).toBeNull();
   });
 
   it("waits for a limit or hands the task to another provider from its row, never by itself", async () => {
@@ -234,6 +289,55 @@ describe("Inicio's board", () => {
 
     await user.click(within(group).getByRole("button", { name: "Pasar a ChatGPT" }));
     expect(handoff).toHaveBeenCalledWith("s3", "chatgpt", null);
+  });
+
+  it("stops waiting for a limit from its row, and continues once the limit renewed", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    const cancel = vi.spyOn(api, "cancelWait");
+    const resume = vi.spyOn(api, "resumeAfterLimit");
+    const { user } = setup(api);
+    // The sample task is already waiting for its reset: it can stop waiting, not yet continue.
+    const group = await screen.findByRole("group", { name: "Límite de Traduce los correos de confirmación" }, SLOW);
+    expect(within(group).getByRole("button", { name: "Cancelar espera" })).toBeInTheDocument();
+    expect(within(group).queryByRole("button", { name: "Esperar" })).not.toBeInTheDocument();
+    expect(within(group).queryByRole("button", { name: "Continuar" })).not.toBeInTheDocument();
+
+    await user.click(within(group).getByRole("button", { name: "Cancelar espera" }));
+    expect(cancel).toHaveBeenCalledWith("s3");
+    expect(await within(group).findByRole("button", { name: "Esperar" })).toBeInTheDocument();
+    expect(within(group).queryByRole("button", { name: "Cancelar espera" })).not.toBeInTheDocument();
+
+    // Waiting again, and the reset passed while Hedy was closed: the user continues.
+    await user.click(within(group).getByRole("button", { name: "Esperar" }));
+    await within(group).findByRole("button", { name: "Cancelar espera" });
+    act(() => api.simulateRestartAfterReset("s3"));
+    const go = await within(group).findByRole("button", { name: "Continuar" });
+    expect(within(group).getByRole("button", { name: "Cancelar espera" })).toBeInTheDocument();
+    expect(resume).not.toHaveBeenCalled();
+    await user.click(go);
+    expect(resume).toHaveBeenCalledWith("s3");
+  });
+
+  it("shows a sync that keeps failing as something to look at", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.syncConflictList = [];
+    api.sync!.lastError = "no pude conectar con github.com";
+    const { user } = setup(api);
+    const needs = await screen.findByRole("region", { name: NEEDS }, SLOW);
+    const row = within(needs).getByText("La sincronización falló").closest("li")!;
+    expect(within(row).getByText("Sincronización")).toBeInTheDocument();
+    // Its error is what it says, not the conflicts' text.
+    expect(within(row).getByText("no pude conectar con github.com")).toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "Resolver" })).not.toBeInTheDocument();
+
+    // The palette lists it among what needs you, with the same words.
+    await user.keyboard("{Control>}k{/Control}");
+    const palette = screen.getByRole("dialog", { name: "Paleta de comandos" });
+    expect(within(palette).getByRole("option", { name: /La sincronización falló/ })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
+    await user.click(within(row).getByRole("button", { name: "Ver qué pasó" }));
+    await waitFor(() => expect(window.location.hash).toBe("#sync"));
   });
 
   it("approves and rejects proposed notes and skills from their rows", async () => {
@@ -371,12 +475,34 @@ describe("Inicio's board", () => {
     expect(document.querySelector(".board-entry--selected")).toBeNull();
   });
 
+  it("leaves the board's keys alone on the filters", async () => {
+    const { user } = setup();
+    await screen.findByRole("region", { name: NEEDS }, SLOW);
+    screen.getByRole("radio", { name: /^Listas/ }).focus();
+    await user.keyboard("jja");
+    expect(document.querySelector(".board-entry--selected")).toBeNull();
+    expect(screen.getByRole("region", { name: NEEDS })).toBeInTheDocument();
+  });
+
   it("opens a proposal in its project's memory", async () => {
     const { user } = setup();
     const needs = await screen.findByRole("region", { name: NEEDS }, SLOW);
     await user.click(within(needs).getByRole("button", { name: /^agregar-endpoint/ }));
     expect(await screen.findByRole("heading", { name: "Memoria de hedy" })).toBeInTheDocument();
     expect(window.location.hash).toBe(`#k=${encodeURIComponent("/code/hedy")}`);
+  });
+
+  it("asks again for a plan it could not read, for that account only", async () => {
+    const { api, user } = setup();
+    const refresh = vi.spyOn(api, "refreshPlanUsage");
+    const plans = await screen.findByRole("region", { name: "Tus planes" }, SLOW);
+    expect(within(plans).getByRole("button", { name: /^ChatGPT/ })).toHaveTextContent("Sin datos");
+    const retry = within(plans).getByRole("button", { name: "Volver a consultar el plan de ChatGPT" });
+    expect(retry).toHaveTextContent("Reintentar");
+    // Only the account without data offers it.
+    expect(within(plans).getAllByRole("button", { name: /^Volver a consultar/ })).toHaveLength(1);
+    await user.click(retry);
+    expect(refresh).toHaveBeenCalledWith("chatgpt");
   });
 
   it("is where Actividad's old address lands", async () => {

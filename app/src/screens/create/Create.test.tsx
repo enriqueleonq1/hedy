@@ -27,7 +27,7 @@ describe("Starting something new", () => {
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     // Home no longer has its own "Nuevo" menu: the sidebar is where things start.
     expect(screen.queryByRole("button", { name: "Empezar algo nuevo" })).not.toBeInTheDocument();
-    const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
+    const sidebar = screen.getByRole("complementary", { name: "Navegación" });
     const trigger = within(sidebar).getByRole("button", { name: "Agregar un proyecto" });
     expect(trigger).toHaveAttribute("aria-haspopup", "menu");
     await user.click(trigger);
@@ -87,7 +87,7 @@ describe("Starting something new", () => {
     const composer = await screen.findByRole("textbox", { name: "Pídele algo a Mi tienda" });
     await waitFor(() => expect(composer).toHaveFocus());
     expect(window.location.hash).toBe(`#p=${encodeURIComponent("/code/mi-tienda")}&new`);
-    expect(within(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).getByRole("button", { name: /^Mi tienda/ })).toHaveAttribute("aria-current", "page");
+    expect(within(screen.getByRole("complementary", { name: "Navegación" })).getByRole("button", { name: /^Mi tienda/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("asks a quick question outside any project: type, Enter, done", async () => {
@@ -133,8 +133,8 @@ describe("Starting something new", () => {
 
     // In the ⋯ menu, confirmed in a dialog.
     await user.click(await screen.findByRole("button", { name: "Más acciones" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Borrar esta conversación" }));
-    const confirm = screen.getByRole("dialog", { name: "¿Borrar esta conversación?" });
+    await user.click(await screen.findByRole("menuitem", { name: "Quitar esta conversación" }));
+    const confirm = screen.getByRole("dialog", { name: "¿Quitar esta conversación?" });
     expect(within(confirm).getByText(/No se puede deshacer/)).toBeInTheDocument();
     await user.click(within(confirm).getByRole("button", { name: "Quitar" }));
     expect(remove).toHaveBeenCalledWith("c1");
@@ -170,7 +170,7 @@ describe("Starting something new", () => {
     for (const p of (await api.overview()).projects.map((p) => p.path)) await api.removeProject(p);
     const { user } = setup(api);
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
-    expect(within(screen.getByRole("complementary", { name: "Proyectos y cuentas" })).getByText("Sin proyectos todavía.")).toBeInTheDocument();
+    expect(within(screen.getByRole("complementary", { name: "Navegación" })).getByText("Sin proyectos todavía.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /^Nuevo proyecto.*Una carpeta nueva/ }));
     expect(screen.getByRole("dialog", { name: "Nuevo proyecto" })).toBeInTheDocument();
     await user.keyboard("{Escape}");

@@ -25,13 +25,14 @@ import {
   windowLabel,
 } from "../../components/planUsage";
 import { Button } from "../../components/ui/Button";
-import { Meter } from "../../components/ui/Meter";
+import { Meter, meterLevel } from "../../components/ui/Meter";
+import { StatusPill } from "../../components/ui/StatusPill";
+import { taskState } from "../../tasks/state";
 import { formatTokens, formatUsd, timeAgo } from "../../format";
 import {
   useLanguage,
   useT,
   type Language,
-  type MessageKey,
   type Translate,
 } from "../../i18n";
 import { tasksKey, useActivity, useConversations } from "../../tasks/hooks";
@@ -143,6 +144,10 @@ export function HomeScreen({
       (i.state === "review" || i.state === "answered") &&
       matches(i.task.title, i.task.project),
   );
+  // Stopped by an error: out of the badge, but in sight until the board lets it go.
+  const failed = items.filter(
+    (i) => i.state === "failed" && matches(i.task.title, i.task.project),
+  );
 
   // The latest open task, to pick up where the user left off.
   const latest = items
@@ -154,7 +159,7 @@ export function HomeScreen({
 
   const keys =
     filter === "needs"
-      ? [...needs.map((e) => e.key), ...ready.map((i) => i.task.id)]
+      ? [...needs.map((e) => e.key), ...ready.map((i) => i.task.id), ...failed.map((i) => i.task.id)]
       : filter === "working"
         ? working.map((i) => i.task.id)
         : filter === "ready"
@@ -268,6 +273,7 @@ export function HomeScreen({
           <div className="home__main">
             <div
               className="home__filters"
+              data-own-keys
               role="toolbar"
               aria-label={t("home.filters")}
             >
@@ -330,7 +336,8 @@ export function HomeScreen({
             )}
 
             {filter === "needs" &&
-              (needs.length > 0 || ready.length > 0 ? (
+              !board.isError &&
+              (board.isPending ? null : needs.length > 0 || ready.length > 0 || failed.length > 0 ? (
                 <>
                   {needs.length > 0 && (
                     <BoardGroup
@@ -358,6 +365,11 @@ export function HomeScreen({
                   )}
                   {ready.length > 0 && (
                     <BoardGroup title={t("home.readyToReview")} items={ready}>
+                      {row}
+                    </BoardGroup>
+                  )}
+                  {failed.length > 0 && (
+                    <BoardGroup title={t("home.failed")} items={failed}>
                       {row}
                     </BoardGroup>
                   )}
@@ -510,13 +522,15 @@ function InboxRow({
   }
   const sync = entry.kind === "sync";
   const title = sync
-    ? entry.conflicts === 1
+    ? entry.error
+      ? t("home.sync.failed")
+      : entry.conflicts === 1
       ? t("home.sync.titleOne")
       : t("home.sync.title", { n: entry.conflicts })
     : entry.count === 1
       ? t("home.team.titleOne", { team: entry.teamName })
       : t("home.team.title", { n: entry.count, team: entry.teamName });
-  const meta = sync ? t("home.sync.meta") : t("home.team.meta");
+  const meta = sync ? (entry.error ?? t("home.sync.meta")) : t("home.team.meta");
   const open = () =>
     onNavigate({ screen: "settings", section: sync ? "sync" : "teams" });
   return (
@@ -542,7 +556,7 @@ function InboxRow({
         </button>
         <div className="board-item__actions">
           <Button small data-key-action="approve" onClick={open}>
-            {t(sync ? "home.sync.resolve" : "home.team.review")}
+            {t(sync ? (entry.error ? "home.sync.check" : "home.sync.resolve") : "home.team.review")}
           </Button>
         </div>
       </div>
@@ -592,6 +606,8 @@ function History({
     })),
   });
   const conversations = useConversations().data ?? [];
+  // The board knows the state of recent tasks (a limit, a plan); the rest, their status.
+  const byId = new Map((useActivity().data ?? []).map((item) => [item.task.id, item]));
   const name = (path: string) =>
     overview.projects.find((p) => p.path === path)?.name ??
     t("home.history.noProject");
@@ -618,9 +634,7 @@ function History({
             >
               <span className="board-row__title">{task.title}</span>
               <span className="board-row__meta">
-                <span>
-                  {t(`workspace.status.${task.status}` as MessageKey)}
-                </span>
+                <StatusPill state={taskState(task, byId.get(task.id))} task={task} />
                 <span aria-hidden>·</span>
                 <span className="board-row__project">{name(task.project)}</span>
                 <span aria-hidden>·</span>
@@ -713,7 +727,7 @@ function Plans({
                   <span className="plan-row__name">{account.name}</span>
                   {w && (
                     <span
-                      className={`plan-row__pct plan-row__pct--${w.percent >= 90 ? "danger" : w.percent >= 70 ? "warn" : "ok"}`}
+                      className={`plan-row__pct plan-row__pct--${meterLevel(w.percent)}`}
                     >
                       {Math.round(w.percent)} %
                     </span>

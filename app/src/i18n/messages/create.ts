@@ -2,7 +2,6 @@
 // quick question that belongs to no project (a "conversation").
 
 const es = {
-  "create.menu": "Nuevo",
   "create.newProject": "Nuevo proyecto",
   "create.newProjectHint": "Una carpeta nueva, lista para trabajar",
   "create.openFolder": "Abrir carpeta…",
@@ -36,8 +35,8 @@ const es = {
   "conversation.placeholder": "Escribe tu pregunta y pulsa Enter",
   "conversation.newLabel": "Nueva pregunta",
   "conversation.delete": "Quitar",
-  "conversation.deleteLabel": "Borrar esta conversación",
-  "conversation.deleteTitle": "¿Borrar esta conversación?",
+  "conversation.deleteLabel": "Quitar esta conversación",
+  "conversation.deleteTitle": "¿Quitar esta conversación?",
   "conversation.deleteBody": "Se borran su historial y su carpeta. No se puede deshacer.",
   "conversation.deleted": "Conversación borrada",
   "conversation.sidebarEmpty": "Pregunta algo sin abrir un proyecto.",
@@ -49,7 +48,6 @@ const es = {
 };
 
 const en: Record<keyof typeof es, string> = {
-  "create.menu": "New",
   "create.newProject": "New project",
   "create.newProjectHint": "A new folder, ready to work in",
   "create.openFolder": "Open folder…",
@@ -83,8 +81,8 @@ const en: Record<keyof typeof es, string> = {
   "conversation.placeholder": "Type your question and press Enter",
   "conversation.newLabel": "New question",
   "conversation.delete": "Remove",
-  "conversation.deleteLabel": "Delete this conversation",
-  "conversation.deleteTitle": "Delete this conversation?",
+  "conversation.deleteLabel": "Remove this conversation",
+  "conversation.deleteTitle": "Remove this conversation?",
   "conversation.deleteBody": "Its history and its folder are deleted. This cannot be undone.",
   "conversation.deleted": "Conversation deleted",
   "conversation.sidebarEmpty": "Ask something without opening a project.",

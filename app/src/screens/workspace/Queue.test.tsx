@@ -28,6 +28,8 @@ describe("Message queue", () => {
   it("shows, edits and removes queued messages while the agent works", async () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity());
     await user.click(await screen.findByRole("button", { name: /^tienda/ }));
+    // tienda opens on its home: the running task (s4) is one click away.
+    await user.click(await screen.findByRole("button", { name: /^Revisa los tests del carrito/ }));
 
     const queue = await screen.findByRole("region", { name: "Mensajes en cola" });
     expect(within(queue).getAllByText("En cola")).toHaveLength(2);

@@ -145,7 +145,12 @@ export function useBoardKeys(root: RefObject<HTMLDivElement | null>, keys: strin
       if (list.length === 0) return;
       const at = list.findIndex((el) => el.dataset.entry === selected);
       const focus = document.activeElement;
-      const onBoard = !focus || focus === document.body || !!root.current?.contains(focus);
+      // Elsewhere (the sidebar, the filters…) keys keep their own meaning.
+      const onBoard =
+        !focus ||
+        focus === document.body ||
+        (!!root.current?.contains(focus) && !(focus instanceof Element && focus.closest("[data-own-keys]")));
+      if (!onBoard) return;
       const press = (action: string) => {
         const button = list[at]?.querySelector<HTMLButtonElement>(`[data-key-action="${action}"]:not(:disabled)`);
         if (!button) return;
@@ -155,8 +160,6 @@ export function useBoardKeys(root: RefObject<HTMLDivElement | null>, keys: strin
       switch (e.key) {
         case "ArrowDown":
         case "ArrowUp":
-          // Elsewhere (the sidebar…) the arrows keep their own meaning.
-          if (!onBoard) return;
           e.preventDefault();
           select(list, at < 0 ? 0 : Math.max(0, Math.min(at + (e.key === "ArrowDown" ? 1 : -1), list.length - 1)));
           break;
@@ -274,7 +277,9 @@ export function BoardRow({
       <span className="board-row__title">{task.title}</span>
       <span className="board-row__meta">
         <span className={`board-state board-state--${tone}`}>
-          <span aria-hidden>{MARK[state]}</span>
+          <span className="board-state__mark" aria-hidden>
+            {MARK[state]}
+          </span>
           {activity ? (
             <>
               <span className="sr-only">{t(STATE_LABEL[state])}</span>
@@ -321,8 +326,11 @@ export function BoardRow({
       <PlanActions task={task} onOpen={() => onOpen(task.project, task.id)} selected={selected} />
     ) : state === "limited" ? (
       <LimitActions task={task} overview={overview} />
-    ) : state === "review" || state === "answered" ? (
-      <NextStep label={t(state === "review" ? "home.reviewChanges" : "home.seeAnswer")} onClick={() => onOpen(task.project, task.id)} />
+    ) : state === "review" || state === "answered" || state === "failed" ? (
+      <NextStep
+        label={t(state === "review" ? "home.reviewChanges" : state === "answered" ? "home.seeAnswer" : "home.seeError")}
+        onClick={() => onOpen(task.project, task.id)}
+      />
     ) : null;
   if (!actions) {
     return (
@@ -385,10 +393,14 @@ function LimitActions({ task, overview }: { task: Task; overview: Overview }) {
   const options = useQuery({ queryKey: ["handoff", task.id, "board"], queryFn: () => api.handoffOptions(task.id) });
   const changed = [ACTIVITY_KEY, listKeyFor(task)];
   const wait = useAction((a) => a.waitForLimit(task.id), { invalidate: changed });
+  const cancel = useAction((a) => a.cancelWait(task.id), { invalidate: changed });
+  const resume = useAction((a) => a.resumeAfterLimit(task.id), { invalidate: changed });
   const handoff = useAction((a, account: string) => a.handoffTask(task.id, account, null), { invalidate: changed });
   const other = options.data?.[0];
   const otherName = overview.accounts.find((a) => a.id === other)?.name ?? other;
-  const busy = wait.isPending || handoff.isPending;
+  const busy = wait.isPending || cancel.isPending || resume.isPending || handoff.isPending;
+  // The reset passed while Hedy was closed, or its time is unknown: the user resumes.
+  const canContinue = !!task.wait && (task.wait.ready || task.wait.until === null);
   return (
     <div className="board-item__actions" role="group" aria-label={t("home.limitOf", { title: task.title })}>
       {other && (
@@ -396,9 +408,19 @@ function LimitActions({ task, overview }: { task: Task; overview: Overview }) {
           {t("home.handoff", { name: otherName ?? "" })}
         </Button>
       )}
+      {task.wait && (
+        <Button small variant="ghost" disabled={busy} onClick={() => cancel.mutate(undefined)}>
+          {t("wait.cancel")}
+        </Button>
+      )}
       {!task.wait && (
         <Button small data-key-action="approve" disabled={busy} onClick={() => wait.mutate(undefined)}>
           {t("home.wait")}
+        </Button>
+      )}
+      {canContinue && (
+        <Button small variant="primary" data-key-action="approve" disabled={busy} onClick={() => resume.mutate(undefined)}>
+          {t("wait.continue")}
         </Button>
       )}
     </div>

@@ -133,42 +133,7 @@
 .memory-home h2 { margin: 0; }
 .memory-home p { margin: 0; }
 
-/* The status-bar item and its panel. */
-.sync-item { display: inline-flex; }
-.sync-item__button--ok { --sync-dot: var(--success); }
-.sync-item__button--review { --sync-dot: var(--warning); }
-.sync-item__button--error { --sync-dot: var(--danger); }
-.sync-item__button--syncing { --sync-dot: var(--activity); }
-.sync-item__button--pending { --sync-dot: var(--muted); }
-.statusbar__dot.sync-item__dot { background: var(--sync-dot); }
-.sync-item__button--syncing .sync-item__dot { animation: statusbar-pulse 1.6s ease-in-out infinite; }
-.sync-pop {
-  position: fixed;
-  z-index: 60;
-  width: 320px;
-  box-sizing: border-box;
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-card);
-  background: var(--panel-2);
-  box-shadow: var(--shadow-pop);
-  color: var(--ink);
-  overflow-y: auto;
-}
-.sync-pop__head { display: flex; align-items: flex-start; gap: var(--space-3); }
-.sync-pop__dot { flex: none; width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--sync-dot); }
-.sync-pop__titles { display: grid; gap: 2px; min-width: 0; }
-.sync-pop__pcs { display: grid; gap: 6px; padding-top: var(--space-3); border-top: 1px solid var(--line); font-size: var(--text-callout); }
-.sync-pop__pc { display: flex; justify-content: space-between; gap: var(--space-3); }
-.sync-pop__actions { display: flex; align-items: center; justify-content: space-between; }
-
 @media (max-width: 720px) {
   .sync-split, .sync-conflict__sides { grid-template-columns: minmax(0, 1fr); }
   .sync-hero, .owner-banner { flex-wrap: wrap; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sync-item__button--syncing .sync-item__dot { animation: none; }
 }

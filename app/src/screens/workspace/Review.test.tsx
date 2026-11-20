@@ -105,7 +105,7 @@ describe("Review before accepting", () => {
   it("moves through files with j / k and counts the ones marked reviewed", async () => {
     const { user } = setup();
     const files = await openReviewTask(user, /^Inicio/);
-    expect(screen.getByText("0 de 3 revisados")).toBeInTheDocument();
+    expect(screen.getByText("0 de 3 vistos")).toBeInTheDocument();
 
     const first = within(files).getByRole("button", { name: /^facturas\/impuestos\.py/ });
     expect(first).toHaveAttribute("aria-current", "true");
@@ -121,10 +121,10 @@ describe("Review before accepting", () => {
     await user.keyboard("k");
     expect(second).toHaveAttribute("aria-current", "true");
 
-    await user.click(within(files).getByRole("checkbox", { name: "Marcar facturas/impuestos.py como revisado" }));
+    await user.click(within(files).getByRole("checkbox", { name: "Marcar facturas/impuestos.py como visto" }));
     await user.click(screen.getByRole("checkbox", { name: "Visto" }));
-    expect(screen.getByText("2 de 3 revisados")).toBeInTheDocument();
-    expect(within(files).getByRole("button", { name: /^facturas\/impuestos\.py.*, revisado/ })).toBeInTheDocument();
+    expect(screen.getByText("2 de 3 vistos")).toBeInTheDocument();
+    expect(within(files).getByRole("button", { name: /^facturas\/impuestos\.py.*, visto/ })).toBeInTheDocument();
 
     // Typing in a field never moves the selection.
     await user.click(screen.getByLabelText("Responde o pide algo más"));
@@ -135,7 +135,7 @@ describe("Review before accepting", () => {
   it("works in English", async () => {
     const { user } = setup("en");
     await openReviewTask(user, /^Home/);
-    expect(screen.getByText("0 of 3 reviewed")).toBeInTheDocument();
+    expect(screen.getByText("0 of 3 viewed")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Accept changes" }));
     const sheet = await screen.findByRole("dialog", { name: "Accept changes" });
     expect(await within(sheet).findByText("Files: 3")).toBeInTheDocument();

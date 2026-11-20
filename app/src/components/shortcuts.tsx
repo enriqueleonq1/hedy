@@ -99,6 +99,8 @@ function groups(mod: string, alt: string, shift: string, keys: { click: string; 
       rows: [
         { label: "shell.shortcuts.palette", combos: [[mod, "K"]] },
         { label: "shell.shortcuts.quickOpen", combos: [[mod, "P"]] },
+        { label: "shell.shortcuts.newTask", combos: [[mod, "N"]] },
+        { label: "shell.shortcuts.terminal", combos: [[mod, "J"]] },
         { label: "shell.shortcuts.commands", combos: [["F1"], [mod, shift, "P"]], joiner: "or" },
         { label: "shell.shortcuts.projects", combos: [[alt, "1"], [alt, "9"]], joiner: "range" },
         { label: "shell.shortcuts.tasks", combos: [[mod, "1"], [mod, "9"]], joiner: "range" },

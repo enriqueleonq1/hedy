@@ -136,28 +136,17 @@ describe("Status bar", () => {
     expect(onNavigate).toHaveBeenCalledWith({ screen: "status", project: HEDY });
   });
 
-  it("says the agent is working and goes to the composer", async () => {
-    const composer = <textarea id="composer-input" aria-label="composer" />;
-    const { bar, user } = await renderBar({ screen: "workspace", project: "/code/tienda", task: "s4" }, composer);
-    const agent = await within(bar).findByRole("button", { name: "Claude Opus está trabajando. Ir al cuadro de texto" });
-    expect(agent).toHaveTextContent("Claude Opus trabajando…");
-    expect(agent.querySelector(".statusbar__dot--working")).not.toBeNull();
-    await user.click(agent);
-    expect(screen.getByRole("textbox", { name: "composer" })).toHaveFocus();
+  it("leaves the agent's state to the task's header, and a project alone to its folder", async () => {
+    const { bar } = await renderBar({ screen: "workspace", project: "/code/tienda", task: "s4" });
+    await within(bar).findByRole("group", { name: "Tu carpeta" });
+    expect(within(bar).queryByRole("button", { name: /trabajando|espera tu respuesta/ })).toBeNull();
+    expect(bar.querySelector(".statusbar__agent")).toBeNull();
   });
 
-  it("says when the agent waits for the user and goes to the card", async () => {
-    const card = (
-      <section className="permission-card" aria-label="card" tabIndex={-1}>
-        <button type="button">Permitir</button>
-      </section>
-    );
-    const { bar, user } = await renderBar({ screen: "workspace", project: "/code/tienda", task: "s2" }, card);
-    const agent = await within(bar).findByRole("button", { name: "Claude Opus espera tu respuesta. Ir a la tarjeta" });
-    expect(agent).toHaveTextContent("Te espera");
-    expect(agent).toHaveClass("statusbar__agent--waiting");
-    await user.click(agent);
-    expect(screen.getByRole("region", { name: "card" })).toHaveFocus();
+  it("treats a project without a task as its folder, not its latest open task", async () => {
+    const { bar } = await renderBar({ screen: "workspace", project: HEDY });
+    expect(await within(bar).findByRole("button", { name: /^3 cambios sin commit en tu carpeta/ })).toBeInTheDocument();
+    expect(within(bar).queryByRole("button", { name: /por la tarea/ })).toBeNull();
   });
 });
 
@@ -171,7 +160,7 @@ describe("Status bar in the app", () => {
     const user = userEvent.setup();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     expect(screen.queryByRole("contentinfo", { name: "Barra de estado" })).toBeNull();
-    const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
+    const sidebar = screen.getByRole("complementary", { name: "Navegación" });
     await user.click(within(sidebar).getByRole("button", { name: "Ajustes" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Ajustes" })).toBeInTheDocument();
     expect(screen.queryByRole("contentinfo", { name: "Barra de estado" })).toBeNull();

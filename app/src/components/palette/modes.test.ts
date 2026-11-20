@@ -69,9 +69,9 @@ describe("which copy the palette searches", () => {
     expect(resolveCopy({ screen: "workspace", project: "/code/hedy", task: null }, [task("s5")])).toEqual(folder);
   });
 
-  it("follows the workspace's default: the most recent open task", () => {
+  it("follows the workspace's default: a project alone opens on its home, the folder", () => {
     const tasks = [task("old", { status: "accepted", merge: null }), task("s2", { status: "running" })];
-    expect(resolveCopy({ screen: "workspace", project: "/code/hedy" }, tasks)?.copy).toEqual({ kind: "task", task: "s2" });
+    expect(resolveCopy({ screen: "workspace", project: "/code/hedy" }, tasks)).toEqual(folder);
     expect(resolveCopy({ screen: "workspace", project: "/code/hedy" }, [])).toEqual(folder);
   });
 

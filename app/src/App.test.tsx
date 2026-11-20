@@ -230,7 +230,7 @@ describe("Accounts", () => {
 
     // The sidebar's foot shows the account in use (outside a project, the default one) with the
     // window closest to its limit: a name, a figure warning-colored only near the limit, and a meter.
-    const sidebar = screen.getByRole("complementary", { name: "Proyectos y cuentas" });
+    const sidebar = screen.getByRole("complementary", { name: "Navegación" });
     const personalRow = within(sidebar).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" });
     expect(within(personalRow).getByText("83%")).toHaveClass("level--warning");
     expect(within(personalRow).getByRole("meter", { name: "Semana · 83%" })).toHaveAttribute("aria-valuenow", "83");

@@ -5,7 +5,7 @@ import { useLanguage, useT, type Language } from "../i18n";
 import { useCreate } from "../screens/create/CreateProvider";
 import { useNowSeconds } from "../tasks/countdown";
 import { isOpen } from "../tasks/timeline";
-import { useConversations } from "../tasks/hooks";
+import { useConversations, useTasks } from "../tasks/hooks";
 import { useInbox } from "../tasks/inbox";
 import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 import { useFocusMode } from "./focusMode";
@@ -104,32 +104,53 @@ export function Sidebar({
     if (path) pending.set(path, (pending.get(path) ?? 0) + 1);
   }
 
-  // The account of what is on screen (its project's), else the default one.
   const project = overview.projects.find((p) => p.path === active);
-  const account = overview.accounts.find((a) => a.id === project?.account) ?? defaultAccount(overview);
 
-  // One terminal for what is on screen: Ctrl/⌘ J, or the button at the bottom.
+  // The folder of what is on screen: the open task's copy, else its project, else home.
+  const projectTasks = useTasks(active ?? "", !!active);
+  const shownTask =
+    view.screen === "workspace" && view.task ? projectTasks.data?.find((task) => task.id === view.task) : undefined;
+  const here = shownTask?.workspace?.worktree ?? project?.path ?? null;
+
+  // The account of what is on screen (the open task's, else its project's), else the default one.
+  const account =
+    overview.accounts.find((a) => a.id === (shownTask?.account ?? project?.account)) ?? defaultAccount(overview);
+
+  // One terminal per folder, always in the one on screen: Ctrl/⌘ J, or the button at the bottom.
   const toggleTerminal = useCallback(() => {
-    if (terminals.sessions.length === 0) {
-      const name = project?.name;
-      terminals.open({ kind: "shell", path: project?.path ?? null }, name ? `${t("common.terminal")} · ${name}` : t("common.terminal"));
+    const mine = terminals.sessions.find((s) => s.request.kind === "shell" && s.request.path === here);
+    if (!mine) {
+      const name = shownTask ? shownTask.title : project?.name;
+      terminals.open({ kind: "shell", path: here }, name ? `${t("common.terminal")} · ${name}` : t("common.terminal"));
+    } else if (terminals.panelOpen && terminals.activeKey === mine.key) {
+      terminals.setPanelOpen(false);
     } else {
-      terminals.setPanelOpen(!terminals.panelOpen);
+      terminals.activate(mine.key);
+      terminals.setPanelOpen(true);
     }
-  }, [terminals, project, t]);
+  }, [terminals, here, shownTask, project, t]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "j") return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
       if (document.querySelector('[aria-modal="true"]')) return;
-      e.preventDefault();
-      toggleTerminal();
+      const key = e.key.toLowerCase();
+      if (key === "j") {
+        e.preventDefault();
+        toggleTerminal();
+      } else if (key === "n") {
+        // A new task in the project on screen, else in the first one.
+        const target = project?.path ?? overview.projects[0]?.path;
+        if (!target) return;
+        e.preventDefault();
+        onNavigate({ screen: "workspace", project: target, task: null });
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleTerminal]);
+  }, [toggleTerminal, project, overview.projects, onNavigate]);
 
   return (
-    <aside id="sidebar" className={`sidebar${rail ? " sidebar--rail" : ""}`} aria-label={t("common.projectsAndAccounts")}>
+    <aside id="sidebar" className={`sidebar${rail ? " sidebar--rail" : ""}`} aria-label={t("shell.sidebar")}>
       <div className="sidebar__top">
         <button className="brand" aria-label="Hedy" title={t("shell.home")} onClick={() => onNavigate({ screen: "welcome" })}>
           <Mascot
@@ -253,8 +274,11 @@ export function Sidebar({
                         </span>
                       )}
                       {waiting > 0 && (
-                        <span className="sidebar__count" title={t("shell.projectWaiting", { n: waiting })}>
-                          {waiting}
+                        <span className="sidebar__count" title={t(waiting === 1 ? "shell.projectWaitingOne" : "shell.projectWaiting", { n: waiting })}>
+                          <span aria-hidden>{waiting}</span>
+                          <span className="sr-only">
+                            {t(waiting === 1 ? "shell.projectWaitingOne" : "shell.projectWaiting", { n: waiting })}
+                          </span>
                         </span>
                       )}
                     </>
@@ -355,7 +379,7 @@ export function Sidebar({
           type="button"
           className="sidebar__item"
           aria-pressed={terminals.panelOpen}
-          aria-keyshortcuts="Control+J"
+          aria-keyshortcuts={modKey() === "⌘" ? "Meta+J" : "Control+J"}
           {...named(t("common.terminal"))}
           onClick={toggleTerminal}
         >
