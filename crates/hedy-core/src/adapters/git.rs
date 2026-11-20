@@ -379,6 +379,31 @@ impl Git for GitCli {
         git(repo, &["worktree", "add", "-b", branch, &path, base]).map(drop)
     }
 
+    fn add_detached_worktree(&self, repo: &Path, path: &Path, base: &str) -> PortResult<()> {
+        let path = path.to_string_lossy();
+        git(repo, &["worktree", "add", "--detach", &path, base]).map(drop)
+    }
+
+    fn remove_detached_worktree(&self, repo: &Path, path: &Path) -> PortResult<()> {
+        if path.exists() {
+            let removed = git(
+                repo,
+                &["worktree", "remove", "--force", &path.to_string_lossy()],
+            );
+            // A copy whose `.git` no longer points back (something in it
+            // rewrote it) goes anyway; `remove_dir_all` follows no link.
+            if let Err(e) = removed {
+                if task_copy(path).is_none_or(|(copy, _)| copy != path) {
+                    return Err(e);
+                }
+                fs::remove_dir_all(path)
+                    .map_err(|e| PortError::new(format!("{}: {e}", path.display())))?;
+            }
+        }
+        let _ = git(repo, &["worktree", "prune"]);
+        Ok(())
+    }
+
     fn is_ignored(&self, repo: &Path, path: &str) -> bool {
         run(repo, &["check-ignore", "-q", path]).is_ok_and(|out| out.status.success())
     }
@@ -427,22 +452,7 @@ impl Git for GitCli {
     }
 
     fn remove_worktree(&self, repo: &Path, path: &Path, branch: &str) -> PortResult<()> {
-        if path.exists() {
-            let removed = git(
-                repo,
-                &["worktree", "remove", "--force", &path.to_string_lossy()],
-            );
-            // A copy whose `.git` no longer points back (something in it
-            // rewrote it) goes anyway; `remove_dir_all` follows no link.
-            if let Err(e) = removed {
-                if task_copy(path).is_none_or(|(copy, _)| copy != path) {
-                    return Err(e);
-                }
-                fs::remove_dir_all(path)
-                    .map_err(|e| PortError::new(format!("{}: {e}", path.display())))?;
-            }
-        }
-        let _ = git(repo, &["worktree", "prune"]);
+        self.remove_detached_worktree(repo, path)?;
         git(repo, &["branch", "-D", branch]).map(drop)
     }
 
@@ -796,6 +806,26 @@ mod tests {
             ran.display()
         );
         fs::write(dir.join("config"), config).unwrap();
+    }
+
+    #[test]
+    fn a_detached_copy_adds_and_removes_no_branch() {
+        let (_tmp, repo) = repo();
+        let g = GitCli;
+        let base = g.head_commit(&repo).unwrap();
+        let branches = || git(&repo, &["branch", "--list"]).unwrap();
+        let before = branches();
+        let copy = repo.join(".hedy/worktrees/t1");
+        g.add_detached_worktree(&repo, &copy, &base).unwrap();
+        assert!(copy.join(".git").exists());
+        assert_eq!(g.head_commit(&copy).unwrap(), base);
+        fs::write(copy.join("nota.md"), "borrador\n").unwrap();
+        g.remove_detached_worktree(&repo, &copy).unwrap();
+        assert!(!copy.exists());
+        assert_eq!(branches(), before, "no branch made or left");
+        assert!(!git(&repo, &["worktree", "list"]).unwrap().contains("t1"));
+        // Already gone: nothing to do.
+        g.remove_detached_worktree(&repo, &copy).unwrap();
     }
 
     #[test]

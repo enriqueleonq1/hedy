@@ -118,6 +118,7 @@ mod tests {
                 account: AccountId::new("personal").unwrap(),
                 model: None,
                 workspace: None,
+                scratch: None,
                 session_id: None,
                 status: TaskStatus::Running,
                 created_at: 1,

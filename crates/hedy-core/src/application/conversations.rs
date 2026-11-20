@@ -93,6 +93,7 @@ impl Hedy {
             account: first.account,
             model: first.model,
             workspace: None,
+            scratch: None,
             session_id: None,
             status: TaskStatus::Running,
             created_at: now / 1000,

@@ -181,13 +181,10 @@ impl Hedy {
         );
         // Every agent of the pipeline must be allowed here and ready to work.
         let projects = self.projects()?;
-        // Agents that read without asking work in a worktree, without `.env`.
-        let mut isolated = false;
         for (index, stage) in stages.iter().enumerate() {
             policy::check_launch(Some(&project), &stage.account, &projects)?;
             let account = self.account(stage.account.as_str())?;
             self.backend(&account)?;
-            isolated |= account.provider.always_in_worktree();
             // The images go to whoever starts; later phases get them when
             // their agent takes them.
             if index == 0 {
@@ -226,9 +223,9 @@ impl Hedy {
             ),
             None => (request.prompt, None, request.images),
         };
-        // Codex and ACP agents read files without asking Hedy, so they always
-        // work in a worktree, where `.env` and friends do not exist.
-        let workspace = if request.mode.changes_files() || isolated {
+        // Only a task that changes files gets a branch; a read-only one gets
+        // a throwaway copy per turn when its agent needs it (`open_copy`).
+        let workspace = if request.mode.changes_files() {
             Some(self.create_workspace(&project.path, &title, &id)?)
         } else {
             None
@@ -244,6 +241,7 @@ impl Hedy {
             account: first.account,
             model: first.model,
             workspace,
+            scratch: None,
             session_id: None,
             status: TaskStatus::Running,
             created_at: now / 1000,
@@ -313,6 +311,104 @@ impl Hedy {
         })
     }
 
+    /// Codex and ACP agents read files without asking Hedy, so in a
+    /// read-only task they work on a copy without a branch, where `.env` and
+    /// friends do not exist. It is made when a turn starts and kept for the
+    /// turn; any other agent works in the project itself.
+    fn open_copy(&self, task: &mut Task, account: &Account) -> AppResult<()> {
+        let needed = task.workspace.is_none()
+            && !task.conversation
+            && !task.mode.changes_files()
+            && account.provider.always_in_worktree();
+        if !needed {
+            return self.close_copy(task);
+        }
+        if task
+            .scratch
+            .as_deref()
+            .is_some_and(|copy| self.fs.exists(copy))
+        {
+            return Ok(());
+        }
+        let repo = task.project.clone();
+        let copy = repo.join(WORKTREES_DIR).join(task.id.as_str());
+        let base = self.git.head_commit(&repo)?;
+        self.git.ensure_excluded(&repo, "/.hedy/")?;
+        // One Hedy lost track of starts over; one deleted by hand is still
+        // registered with git until pruned.
+        self.git.remove_detached_worktree(&repo, &copy)?;
+        self.git.add_detached_worktree(&repo, &copy, &base)?;
+        self.share_dependencies(&repo, &copy)?;
+        self.install_skills_in(&repo, &copy, &task.id);
+        task.scratch = Some(copy);
+        self.store.save_task(task)?;
+        Ok(())
+    }
+
+    /// Deletes a read-only task's copy (see [`Hedy::open_copy`]): its turn is
+    /// over. One that cannot be deleted stays recorded, for the next tidy.
+    pub(super) fn close_copy(&self, task: &mut Task) -> AppResult<()> {
+        let Some(copy) = task.scratch.clone() else {
+            return Ok(());
+        };
+        self.git.remove_detached_worktree(&task.project, &copy)?;
+        task.scratch = None;
+        self.store.save_task(task)?;
+        Ok(())
+    }
+
+    /// Copies read-only tasks no longer need: a turn's copy left behind (the
+    /// app closed mid-turn) and the worktree and `hedy/…` branch that read-only
+    /// tasks got before they worked without a branch. Never a running task's,
+    /// and never a branch of a task that changes files. How many it removed.
+    pub fn tidy_read_only_copies(&self) -> usize {
+        let Ok(projects) = self.projects() else {
+            return 0;
+        };
+        let mut removed = 0;
+        for project in projects {
+            for task in self.tasks(&project.path).unwrap_or_default() {
+                let mut task = {
+                    // Read again just before: the user may have resumed it.
+                    let _status = self.status_lock.lock().unwrap_or_else(|e| e.into_inner());
+                    match self.task(&task.id) {
+                        Ok(task)
+                            if Self::left_by_a_question(&task) && !self.is_running(&task.id) =>
+                        {
+                            task
+                        }
+                        _ => continue,
+                    }
+                };
+                if let Some(ws) = task.workspace.clone() {
+                    let _ = self
+                        .git
+                        .remove_worktree(&task.project, &ws.worktree, &ws.branch);
+                    // A branch git keeps (checked out elsewhere) stays; a
+                    // worktree that is gone must not stay the task's folder.
+                    if !self.fs.exists(&ws.worktree) {
+                        task.workspace = None;
+                        removed += usize::from(self.store.save_task(&task).is_ok());
+                    }
+                } else if self.close_copy(&mut task).is_ok() {
+                    removed += 1;
+                }
+            }
+        }
+        removed
+    }
+
+    /// A read-only task, idle (in any process), with a worktree or a copy left.
+    fn left_by_a_question(task: &Task) -> bool {
+        !task.mode.changes_files()
+            && !task.status.is_closed()
+            && !matches!(
+                task.status,
+                TaskStatus::Running | TaskStatus::WaitingApproval
+            )
+            && (task.workspace.is_some() || task.scratch.is_some())
+    }
+
     /// Links ignored dependency folders (node_modules, .venv...) into the worktree.
     pub(super) fn share_dependencies(&self, repo: &Path, worktree: &Path) -> AppResult<()> {
         for name in SHARED_DEPENDENCY_DIRS {
@@ -344,6 +440,7 @@ impl Hedy {
 
     fn fail(&self, task: &mut Task, error: &AppError) {
         self.stop_session(&task.id);
+        let _ = self.close_copy(task);
         if self.task(&task.id).is_ok_and(|t| t.status.is_closed()) {
             return;
         }
@@ -427,7 +524,25 @@ impl Hedy {
         self.spawn(task, &account, &stage, prompt, images, resume)
     }
 
+    /// Starts the agent of a turn, in the task's copy when it needs one.
     fn spawn(
+        &self,
+        task: &mut Task,
+        account: &Account,
+        stage: &Stage,
+        prompt: String,
+        images: Vec<PromptImage>,
+        resume: Option<String>,
+    ) -> AppResult<()> {
+        self.open_copy(task, account)?;
+        let started = self.start_agent(task, account, stage, prompt, images, resume);
+        if started.is_err() {
+            let _ = self.close_copy(task);
+        }
+        started
+    }
+
+    fn start_agent(
         &self,
         task: &Task,
         account: &Account,
@@ -756,6 +871,14 @@ impl Hedy {
                     );
                     return self.run_stage(&mut task, next, prompt, None);
                 }
+                // The copy goes with the turn, and so does its agent: a
+                // process left in a deleted folder breaks on the next turn,
+                // which resumes the session in a new copy instead.
+                if task.scratch.is_some() {
+                    self.stop_session(id);
+                }
+                // The turn ends even if its copy cannot go now.
+                let _ = self.close_copy(&mut task);
                 let (status, notice) = if *ok {
                     let changes = task.mode.changes_files();
                     (TaskStatus::Review, NoticeKind::Finished { changes })
@@ -1191,6 +1314,7 @@ impl Hedy {
         self.stop_session(id);
         self.hold_queue(id, HoldReason::Stopped);
         let mut task = self.task(id)?;
+        let _ = self.close_copy(&mut task);
         if !task.status.is_closed() && task.status != TaskStatus::Failed {
             self.set_status(&mut task, TaskStatus::Review)?;
         }
@@ -1231,6 +1355,7 @@ impl Hedy {
             self.git
                 .remove_worktree(&task.project, &ws.worktree, &ws.branch)?;
         }
+        let _ = self.close_copy(&mut task);
         self.forget_skills_plugin(&task.id);
         self.set_status(&mut task, TaskStatus::Discarded)?;
         self.clear_queue(id)?;
@@ -2030,7 +2155,7 @@ mod tests {
     }
 
     #[test]
-    fn acp_providers_run_their_cli_in_a_worktree() {
+    fn acp_providers_run_their_cli_in_a_copy() {
         let f = Fixture::new();
         let add = |name: &str, provider: Provider, default_folder: bool| {
             f.hedy.add_account(crate::application::NewAccount {
@@ -2057,20 +2182,23 @@ mod tests {
         ] {
             let dir = f.dir(&format!("/code/{account}"));
             f.hedy.use_account(&dir, account, None).unwrap();
-            // Even a question gets a worktree: these CLIs read without asking.
+            // Even a question gets a copy: these CLIs read without asking.
             let task = f
                 .hedy
                 .start_task(NewTask {
                     images: Vec::new(),
-                    project: dir,
+                    project: dir.clone(),
                     prompt: "¿Qué hace esto?".into(),
                     mode: TaskMode::Ask,
                     model: None,
                     plan_first: false,
                 })
                 .unwrap();
-            assert!(task.workspace.is_some(), "{account}");
+            let copy = dir.join(".hedy/worktrees").join(task.id.as_str());
+            assert!(task.workspace.is_none(), "{account}: no branch");
+            assert_eq!(task.scratch.as_ref(), Some(&copy), "{account}");
             let request = f.agents.last_request();
+            assert_eq!(request.launch.cwd.as_ref(), Some(&copy), "{account}");
             assert!(
                 matches!(&request.backend, AgentBackend::Acp { model_flag: m, .. } if *m == model_flag),
                 "{account}"
@@ -2086,5 +2214,117 @@ mod tests {
                 .any(|(var, _)| var == "KIMI_CODE_HOME"),
             "Kimi Code accounts live in their own folder"
         );
+    }
+
+    #[test]
+    fn read_only_tasks_with_codex_get_a_copy_per_turn_without_a_branch() {
+        let f = Fixture::new();
+        f.add_codex("Codex");
+        let dir = f.dir("/code/agenda");
+        f.hedy.use_account(&dir, "codex", None).unwrap();
+        let task = f
+            .hedy
+            .start_task(NewTask {
+                images: Vec::new(),
+                project: dir.clone(),
+                prompt: "¿Dónde se crean las citas?".into(),
+                mode: TaskMode::Ask,
+                model: None,
+                plan_first: false,
+            })
+            .unwrap();
+        let copy = dir.join(".hedy/worktrees").join(task.id.as_str());
+        let detached = format!("detached {} at abc123", copy.display());
+        assert!(task.workspace.is_none(), "no branch for a question");
+        assert_eq!(task.scratch.as_ref(), Some(&copy));
+        assert_eq!(f.git.worktrees(), vec![detached.clone()]);
+        assert_eq!(f.git.excluded(), vec!["/.hedy/"]);
+        assert_eq!(f.agents.last_request().launch.cwd, Some(copy.clone()));
+
+        // The turn ends: the copy goes, and so does its agent.
+        f.agents.emit(AgentEvent::SessionStarted {
+            session_id: "s-1".into(),
+            model: "m".into(),
+        });
+        f.agents.emit(AgentEvent::Finished {
+            ok: true,
+            summary: "En citas.py".into(),
+            duration_ms: None,
+        });
+        let task = f.hedy.task(&task.id).unwrap();
+        assert_eq!((task.status, task.scratch), (TaskStatus::Review, None));
+        assert!(
+            !f.hedy.is_running(&task.id),
+            "no process left in a deleted folder"
+        );
+        let removed = format!("remove detached {}", copy.display());
+        // Pruned before it is made, then removed.
+        assert_eq!(f.git.log(), vec![removed.clone(), removed.clone()]);
+
+        // A follow-up resumes the session in a new copy at the same path.
+        f.hedy.send_message(&task.id, "¿y las borra?").unwrap();
+        assert_eq!(f.git.worktrees(), vec![detached.clone(), detached.clone()]);
+        assert_eq!(f.hedy.task(&task.id).unwrap().scratch, Some(copy.clone()));
+        let request = f.agents.last_request();
+        assert_eq!(request.resume.as_deref(), Some("s-1"));
+        assert_eq!(request.launch.cwd, Some(copy.clone()));
+        f.hedy.stop_task(&task.id).unwrap();
+        assert_eq!(f.hedy.task(&task.id).unwrap().scratch, None);
+        f.hedy.send_message(&task.id, "sigue").unwrap();
+        assert_eq!(f.agents.last_request().launch.cwd, Some(copy.clone()));
+        f.hedy.discard_task(&task.id).unwrap();
+        assert_eq!(f.hedy.task(&task.id).unwrap().scratch, None);
+        assert!(
+            f.git.log().iter().all(|l| !l.starts_with("remove hedy/")),
+            "no branch to delete"
+        );
+    }
+
+    #[test]
+    fn tidy_removes_what_read_only_tasks_left_and_nothing_else() {
+        use crate::application::ports::TaskRepository;
+        let f = Fixture::new();
+        let change = new_task(&f, "Recordatorios", false);
+        let ws = |id: &str| Workspace {
+            worktree: format!("/code/agenda/.hedy/worktrees/{id}").into(),
+            branch: format!("hedy/pregunta-{id}"),
+            base_branch: "main".into(),
+            base_commit: "abc123".into(),
+        };
+        let mut old = change.clone();
+        old.id = TaskId::new("t-old");
+        old.mode = TaskMode::Ask;
+        old.status = TaskStatus::Review;
+        old.workspace = Some(ws("t-old"));
+        let mut left = old.clone();
+        left.id = TaskId::new("t-left");
+        left.workspace = None;
+        left.scratch = Some("/code/agenda/.hedy/worktrees/t-left".into());
+        let mut running = old.clone();
+        running.id = TaskId::new("t-running");
+        running.status = TaskStatus::Running;
+        running.workspace = Some(ws("t-running"));
+        // Waiting on a card, perhaps in the `hedy` CLI: its copy is in use.
+        let mut waiting = left.clone();
+        waiting.id = TaskId::new("t-waiting");
+        waiting.status = TaskStatus::WaitingApproval;
+        for task in [&old, &left, &running, &waiting] {
+            f.store.save_task(task).unwrap();
+        }
+
+        assert_eq!(f.hedy.tidy_read_only_copies(), 2);
+        assert_eq!(
+            f.git.log(),
+            vec![
+                "remove hedy/pregunta-t-old".to_owned(),
+                "remove detached /code/agenda/.hedy/worktrees/t-left".to_owned(),
+            ]
+        );
+        assert_eq!(f.hedy.task(&old.id).unwrap().workspace, None);
+        assert_eq!(f.hedy.task(&left.id).unwrap().scratch, None);
+        assert!(f.hedy.task(&running.id).unwrap().workspace.is_some());
+        assert!(f.hedy.task(&waiting.id).unwrap().scratch.is_some());
+        assert!(f.hedy.task(&change.id).unwrap().workspace.is_some());
+        assert_eq!(f.hedy.tidy_read_only_copies(), 0);
     }
 }

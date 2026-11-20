@@ -680,6 +680,21 @@ impl Git for FakeGit {
             .push(format!("{branch} at {base}"));
         Ok(())
     }
+    fn add_detached_worktree(&self, _: &Path, path: &Path, base: &str) -> PortResult<()> {
+        self.worktrees
+            .lock()
+            .unwrap()
+            .push(format!("detached {} at {base}", path.display()));
+        Ok(())
+    }
+    fn remove_detached_worktree(&self, _: &Path, path: &Path) -> PortResult<()> {
+        let path = path.display();
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("remove detached {path}"));
+        Ok(())
+    }
     fn is_ignored(&self, _: &Path, path: &str) -> bool {
         self.ignored.lock().unwrap().iter().any(|p| p == path)
     }

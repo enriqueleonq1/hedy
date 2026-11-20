@@ -408,7 +408,8 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
   `sandboxPolicy: readOnly` that only proposes a plan, then a `workspaceWrite` turn once
   approved. Approvals map to `accept` / `decline`. Multi-file patches are checked file by
   file. Codex has no equivalent of Claude's deny rules or hook, so a task with Codex
-  **always runs in a worktree** (also for questions), where `.env` does not exist.
+  **always runs in a worktree**, where `.env` does not exist. For a question or research
+  it is a copy without a branch, made for each turn and deleted when it ends (§38).
 - **Kimi and Gemini by API key** run on an OpenAI-compatible agent. Hedy gives the model
   six tools (list, read, search, write, edit, run) and runs them itself, so every rule is
   enforced natively: reads stay inside the task folder and never touch protected files;
@@ -559,8 +560,8 @@ schemas):
   - `session/load` resumes a session when the agent supports it; its replayed history is
     not shown again.
 - **Always in a worktree.** These CLIs read files without asking, like Codex, so their
-  tasks (questions too) run in a worktree, where `.env` does not exist. Their edits and
-  commands still go through Hedy's checks.
+  tasks run in a worktree, where `.env` does not exist: for questions, a copy without a
+  branch, one per turn (§38). Their edits and commands still go through Hedy's checks.
 - **Antigravity: one account per machine.** Its login lives in the OS keyring and there is
   no documented way to choose a folder. Community tools change `HOME` or use an
   undocumented `--gemini_dir`; Hedy does not, under rule 1. Hedy always uses its default
@@ -3629,3 +3630,34 @@ rule instead of ignoring it.
 - In a shallow clone, the oldest commit shows as all new. Uncommitted work reads at most 200 new
   files; past that, the check says only part was checked. "Ya no aplica" compares the note without its hidden characters; a note whose only
   difference is one of them is taken as unchanged.
+
+## 38. Questions without branches (Nov 20, 2026)
+
+Asking and researching never create a branch, with any agent. Only "Cambiar código" gets a
+worktree on a `hedy/…` branch (§10), since only its work can be accepted, shipped or undone.
+
+- **Who needs a copy.** Claude Code and the API agent answer in the project itself: Claude's
+  deny rules and hook, and Hedy's own tools for the API agent, keep protected files unread.
+  Codex and the ACP CLIs read without asking Hedy, so a question with them works in a copy
+  where `.env` does not exist (`Hedy::open_copy`).
+- **The copy.** `git worktree add --detach` at the current commit, in
+  `.hedy/worktrees/<task id>` (excluded through `.git/info/exclude`), with the shared
+  dependency folders and the project's skills, as a task's worktree. It is made when a turn
+  starts (the first prompt, a follow-up, a resumed or handed-over agent) and deleted when the
+  turn ends, the task is stopped, fails or is discarded, or its agent cannot start. Its agent
+  stops with the turn: a process left in a deleted folder (and the MCP servers it started
+  there) breaks, so the next turn resumes the session in a new copy at the same path. `Task.scratch` holds it while it exists; `Task::work_dir`
+  prefers a worktree, then the copy, then the project.
+- **Handoff.** The agent that takes over decides: a question handed from Claude to Codex
+  gets a copy, and one handed from Codex to Claude drops it.
+- **Older tasks.** Questions started before this kept a worktree and a `hedy/…` branch
+  forever. When the app starts, `Hedy::tidy_read_only_copies` deletes them, and any copy a
+  turn left behind. It never touches a task that is running or waiting for a card (perhaps in
+  the `hedy` CLI), a closed one, or a task that changes files; each task is read again just
+  before. A worktree that is gone stops being the task's folder even when git keeps its branch
+  (checked out elsewhere). A task the app left "running" when it closed keeps its copy, and
+  its next turn reuses it.
+- **Known gap.** A skill approved during a turn reaches the next turn's copy, not the open one.
+- **Not covered here.** A question still cannot write a document (next: a folder of the
+  task's own, outside the repo). A copy does not stop Codex or an ACP agent from reading
+  outside it by an absolute path: Hedy only sees what they ask permission for.

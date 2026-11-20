@@ -89,6 +89,11 @@ pub struct Task {
     pub account: AccountId,
     pub model: Option<String>,
     pub workspace: Option<Workspace>,
+    /// A read-only task's throwaway copy, without a branch: there while an
+    /// agent that reads without asking (Codex, ACP) works on a turn, deleted
+    /// when the turn ends. Never set with `workspace`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scratch: Option<PathBuf>,
     /// The CLI's session, to resume it after a restart.
     pub session_id: Option<String>,
     pub status: TaskStatus,
@@ -198,7 +203,9 @@ impl Task {
     pub fn work_dir(&self) -> PathBuf {
         self.workspace
             .as_ref()
-            .map_or_else(|| self.project.clone(), |w| w.worktree.clone())
+            .map(|w| w.worktree.clone())
+            .or_else(|| self.scratch.clone())
+            .unwrap_or_else(|| self.project.clone())
     }
 
     /// What the user asked, without the context a carried conversation put

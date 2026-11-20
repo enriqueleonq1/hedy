@@ -525,6 +525,10 @@ pub trait Git: Send + Sync {
     /// Adds `pattern` to `.git/info/exclude` (never to the team's `.gitignore`).
     fn ensure_excluded(&self, repo: &Path, pattern: &str) -> PortResult<()>;
     fn add_worktree(&self, repo: &Path, path: &Path, branch: &str, base: &str) -> PortResult<()>;
+    /// A worktree at `base` without a branch (`--detach`), for a read-only task.
+    fn add_detached_worktree(&self, repo: &Path, path: &Path, base: &str) -> PortResult<()>;
+    /// Removes a worktree added with [`Git::add_detached_worktree`].
+    fn remove_detached_worktree(&self, repo: &Path, path: &Path) -> PortResult<()>;
     /// Whether git ignores `path` (relative to `repo`).
     fn is_ignored(&self, repo: &Path, path: &str) -> bool;
     /// Every change in the worktree (committed or not) since `base`.

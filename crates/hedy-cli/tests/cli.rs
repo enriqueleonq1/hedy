@@ -1358,6 +1358,7 @@ fn seed_tasks(env: &Env, repo: &Path) {
         account: AccountId::new("personal").unwrap(),
         model: Some("opus".into()),
         workspace: None,
+        scratch: None,
         session_id: None,
         status,
         created_at: now - ago,
