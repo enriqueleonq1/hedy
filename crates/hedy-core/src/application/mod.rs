@@ -29,6 +29,10 @@ mod review;
 mod rule_check;
 mod settings;
 mod ship;
+mod skill_check;
+mod skill_library;
+mod skill_transfer;
+mod skill_trial;
 mod skills;
 mod status;
 mod sync;
@@ -76,6 +80,11 @@ pub use rule_check::{RuleCheck, RuleTarget};
 pub use settings::{CUSTOM_THEME_PREFIX, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, Setting, THEMES};
 pub use ship::{
     FolderStatus, NewPullRequest, PullRequestDraft, Pulled, Pushed, ShipError, ShipState,
+};
+pub use skill_check::SkillReview;
+pub use skill_library::SkillOverview;
+pub use skill_transfer::{
+    ExportReport, ImportCandidate, ImportPreview, ImportProblem, ImportReport,
 };
 pub use skills::{
     SkillChange, SkillDraft, SkillFiles, SkillProposal, SkillsView, format_skill,
@@ -141,6 +150,9 @@ pub struct Hedy {
     sessions: Arc<AtomicU64>,
     /// Serializes changes to message queues with their delivery.
     queue_lock: Arc<Mutex<()>>,
+    /// Serializes a status change that depends on the current one (an
+    /// answered card resuming, a turn ending) with the others like it.
+    status_lock: Arc<Mutex<()>>,
     /// One personal sync at a time (the timer, "Sincronizar ahora").
     sync_lock: Arc<Mutex<()>>,
     /// How to start the memory MCP server for CLI agents.
@@ -169,6 +181,7 @@ impl Hedy {
             live: Arc::default(),
             sessions: Arc::default(),
             queue_lock: Arc::default(),
+            status_lock: Arc::default(),
             sync_lock: Arc::default(),
             memory_server: None,
         }

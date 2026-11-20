@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{ErrorKind, Write as _};
+use std::io::{ErrorKind, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
 use crate::application::ports::{FileSystem, PortError, PortResult};
@@ -81,6 +81,25 @@ impl FileSystem for LocalFileSystem {
         path.exists()
     }
 
+    fn is_symlink(&self, path: &Path) -> bool {
+        fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink())
+    }
+
+    fn entries(&self, dir: &Path) -> PortResult<Vec<PathBuf>> {
+        let entries = match fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(io_error("leer", dir, e)),
+        };
+        entries
+            .map(|entry| {
+                entry
+                    .map(|e| e.path())
+                    .map_err(|e| io_error("leer", dir, e))
+            })
+            .collect()
+    }
+
     fn check_writable(&self, dir: &Path) -> PortResult<()> {
         let probe = dir.join(format!(".hedy-doctor-{}", std::process::id()));
         fs::write(&probe, b"").map_err(|e| io_error("escribir en", dir, e))?;
@@ -121,7 +140,65 @@ impl FileSystem for LocalFileSystem {
         if let Some(dir) = path.parent() {
             fs::create_dir_all(dir).map_err(|e| io_error("crear", dir, e))?;
         }
-        fs::write(path, contents).map_err(|e| io_error("escribir", path, e))
+        // Never through a link put where the file goes: it would write
+        // wherever the link points.
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NOFOLLOW);
+        let mut file = options
+            .open(path)
+            .map_err(|e| io_error("escribir", path, e))?;
+        file.write_all(contents.as_bytes())
+            .map_err(|e| io_error("escribir", path, e))
+    }
+
+    fn create_text(&self, path: &Path, contents: &str) -> PortResult<bool> {
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir).map_err(|e| io_error("crear", dir, e))?;
+        }
+        // `create_new` fails on anything there, a dangling link included.
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+        {
+            Ok(mut file) => {
+                file.write_all(contents.as_bytes())
+                    .map_err(|e| io_error("escribir", path, e))?;
+                Ok(true)
+            }
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => Ok(false),
+            Err(e) => Err(io_error("crear", path, e)),
+        }
+    }
+
+    fn read_regular_text(&self, path: &Path, max_bytes: u64) -> PortResult<Option<String>> {
+        let meta = match fs::symlink_metadata(path) {
+            Ok(meta) => meta,
+            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(io_error("leer", path, e)),
+        };
+        if !meta.file_type().is_file() {
+            return Err(PortError::new(format!(
+                "{} no es un archivo normal",
+                path.display()
+            )));
+        }
+        let file = fs::File::open(path).map_err(|e| io_error("leer", path, e))?;
+        let mut bytes = Vec::new();
+        file.take(max_bytes + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|e| io_error("leer", path, e))?;
+        if bytes.len() as u64 > max_bytes {
+            return Err(PortError::new(format!(
+                "{} es demasiado grande",
+                path.display()
+            )));
+        }
+        String::from_utf8(bytes)
+            .map(Some)
+            .map_err(|_| PortError::new(format!("{} no es texto UTF-8", path.display())))
     }
 
     fn write_private_file(&self, path: &Path, contents: &[u8]) -> PortResult<()> {
@@ -155,7 +232,33 @@ impl FileSystem for LocalFileSystem {
         }
     }
 
+    fn write_text_beneath(&self, root: &Path, rel: &Path, contents: &str) -> PortResult<()> {
+        let path = root.join(rel);
+        beneath::write(root, rel, contents.as_bytes()).map_err(|e| io_error("escribir", &path, e))
+    }
+
+    fn remove_file_beneath(&self, root: &Path, rel: &Path) -> PortResult<()> {
+        let path = root.join(rel);
+        match beneath::remove(root, rel) {
+            Err(e) if e.kind() != ErrorKind::NotFound => Err(io_error("borrar", &path, e)),
+            _ => Ok(()),
+        }
+    }
+
+    fn remove_empty_dir_beneath(&self, root: &Path, rel: &Path) -> PortResult<()> {
+        let path = root.join(rel);
+        match beneath::remove_dir(root, rel) {
+            Err(e) if !matches!(e.kind(), ErrorKind::NotFound | ErrorKind::DirectoryNotEmpty) => {
+                Err(io_error("borrar", &path, e))
+            }
+            _ => Ok(()),
+        }
+    }
+
     fn remove_empty_dir(&self, path: &Path) -> PortResult<()> {
+        if self.is_symlink(path) {
+            return Ok(());
+        }
         let empty = fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_none());
         if empty {
             fs::remove_dir(path).map_err(|e| io_error("borrar", path, e))?;
@@ -175,9 +278,235 @@ impl FileSystem for LocalFileSystem {
     }
 }
 
+/// Writing and deleting inside a folder without ever following a link on
+/// the way: each folder is opened from the one before with `O_NOFOLLOW`, so a
+/// folder swapped for a link meanwhile makes the call fail, never write
+/// elsewhere.
+mod beneath {
+    use std::io;
+    use std::path::{Component, Path};
+
+    /// The names of `rel`'s parts; `..`, a root or a prefix are refused.
+    fn parts(rel: &Path) -> io::Result<Vec<&std::ffi::OsStr>> {
+        rel.components()
+            .map(|c| match c {
+                Component::Normal(name) => Ok(name),
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "not a plain relative path",
+                )),
+            })
+            .collect()
+    }
+
+    #[cfg(unix)]
+    mod unix {
+        use std::ffi::{CString, OsStr};
+        use std::io;
+        use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+        use std::os::unix::ffi::OsStrExt;
+        use std::path::Path;
+
+        fn c(name: &OsStr) -> io::Result<CString> {
+            CString::new(name.as_bytes())
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "NUL in a name"))
+        }
+
+        fn open_root(root: &Path) -> io::Result<OwnedFd> {
+            let path = c(root.as_os_str())?;
+            // SAFETY: a valid C string; the descriptor is owned right away.
+            let fd = unsafe {
+                libc::open(
+                    path.as_ptr(),
+                    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC,
+                )
+            };
+            if fd < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: `fd` was just opened and is not used elsewhere.
+            Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+        }
+
+        /// The folder `name` inside `dir`, never a link; made when `create`.
+        fn step(dir: &OwnedFd, name: &OsStr, create: bool) -> io::Result<OwnedFd> {
+            let name = c(name)?;
+            let flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+            // SAFETY: a valid descriptor and C string.
+            let mut fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), flags) };
+            if fd < 0 && create && io::Error::last_os_error().kind() == io::ErrorKind::NotFound {
+                // SAFETY: as above; a folder that appears meanwhile is opened next.
+                let made = unsafe { libc::mkdirat(dir.as_raw_fd(), name.as_ptr(), 0o755) };
+                if made < 0 && io::Error::last_os_error().kind() != io::ErrorKind::AlreadyExists {
+                    return Err(io::Error::last_os_error());
+                }
+                // SAFETY: as above.
+                fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), flags) };
+            }
+            if fd < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: `fd` was just opened and is not used elsewhere.
+            Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+        }
+
+        pub fn write(root: &Path, parts: &[&OsStr], bytes: &[u8]) -> io::Result<()> {
+            let (file, folders) = parts.split_last().ok_or(io::ErrorKind::InvalidInput)?;
+            let mut dir = open_root(root)?;
+            for folder in folders {
+                dir = step(&dir, folder, true)?;
+            }
+            let name = c(file)?;
+            let flags =
+                libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+            // SAFETY: a valid descriptor and C string.
+            let fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), flags, 0o644) };
+            if fd < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: `fd` was just opened and is not used elsewhere.
+            let mut out = std::fs::File::from(unsafe { OwnedFd::from_raw_fd(fd) });
+            std::io::Write::write_all(&mut out, bytes)
+        }
+
+        pub fn remove(root: &Path, parts: &[&OsStr], folder: bool) -> io::Result<()> {
+            let (file, folders) = parts.split_last().ok_or(io::ErrorKind::InvalidInput)?;
+            let mut dir = open_root(root)?;
+            for folder in folders {
+                dir = step(&dir, folder, false)?;
+            }
+            let name = c(file)?;
+            // A folder only when empty; a link there is never a folder.
+            let flags = if folder { libc::AT_REMOVEDIR } else { 0 };
+            // SAFETY: a valid descriptor and C string; unlinkat never follows
+            // a link at the name itself.
+            if unsafe { libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), flags) } < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        }
+    }
+
+    pub fn write(root: &Path, rel: &Path, bytes: &[u8]) -> io::Result<()> {
+        let parts = parts(rel)?;
+        #[cfg(unix)]
+        return unix::write(root, &parts, bytes);
+        #[cfg(not(unix))]
+        {
+            check(root, &parts)?;
+            let path = root.join(rel);
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::write(path, bytes)
+        }
+    }
+
+    pub fn remove(root: &Path, rel: &Path) -> io::Result<()> {
+        let parts = parts(rel)?;
+        #[cfg(unix)]
+        return unix::remove(root, &parts, false);
+        #[cfg(not(unix))]
+        {
+            check(root, &parts)?;
+            std::fs::remove_file(root.join(rel))
+        }
+    }
+
+    pub fn remove_dir(root: &Path, rel: &Path) -> io::Result<()> {
+        let parts = parts(rel)?;
+        #[cfg(unix)]
+        return unix::remove(root, &parts, true);
+        #[cfg(not(unix))]
+        {
+            check(root, &parts)?;
+            std::fs::remove_dir(root.join(rel))
+        }
+    }
+
+    /// Without `openat`: a check, then the call (best effort).
+    #[cfg(not(unix))]
+    fn check(root: &Path, parts: &[&std::ffi::OsStr]) -> io::Result<()> {
+        let mut path = root.to_path_buf();
+        for part in parts {
+            path.push(part);
+            if std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink()) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "a link is in the way",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn writes_beneath_a_folder_never_go_through_a_linked_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"), tmp.path().join("chats"));
+        let project = tmp.path().join("project");
+        let elsewhere = tmp.path().join("elsewhere");
+        std::fs::create_dir_all(project.join(".claude/skills")).unwrap();
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::fs::write(elsewhere.join("SKILL.md"), "theirs").unwrap();
+        // The skill's folder is a link to another folder.
+        std::os::unix::fs::symlink(&elsewhere, project.join(".claude/skills/pr")).unwrap();
+        let rel = Path::new(".claude/skills/pr/SKILL.md");
+        assert!(fs_.write_text_beneath(&project, rel, "hedy").is_err());
+        assert!(fs_.remove_file_beneath(&project, rel).is_err());
+        assert_eq!(
+            std::fs::read_to_string(elsewhere.join("SKILL.md")).unwrap(),
+            "theirs"
+        );
+        // Folders that are missing are made; a plain file is written and removed.
+        let fine = Path::new(".agents/skills/pr/SKILL.md");
+        fs_.write_text_beneath(&project, fine, "one").unwrap();
+        fs_.write_text_beneath(&project, fine, "two").unwrap();
+        assert_eq!(std::fs::read_to_string(project.join(fine)).unwrap(), "two");
+        fs_.remove_file_beneath(&project, fine).unwrap();
+        assert!(!project.join(fine).exists());
+        fs_.remove_file_beneath(&project, fine).unwrap();
+        assert!(
+            fs_.write_text_beneath(&project, Path::new("../escape"), "x")
+                .is_err()
+        );
+        // Empty folders go; one with anything in it, or a link, stays.
+        fs_.remove_empty_dir_beneath(&project, Path::new(".agents/skills/pr"))
+            .unwrap();
+        assert!(!project.join(".agents/skills/pr").exists());
+        fs_.remove_empty_dir_beneath(&project, Path::new(".claude"))
+            .unwrap();
+        assert!(project.join(".claude/skills").exists(), "not empty");
+        assert!(
+            fs_.remove_empty_dir_beneath(&project, Path::new(".claude/skills/pr"))
+                .is_err()
+        );
+        assert!(elsewhere.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_is_never_written_through_a_link_in_its_place() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"), tmp.path().join("chats"));
+        let target = tmp.path().join("private.txt");
+        std::fs::write(&target, "mine").unwrap();
+        let link = tmp.path().join("skills/x/SKILL.md");
+        std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(fs_.write_text(&link, "hedy").is_err());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "mine");
+        let plain = tmp.path().join("skills/y/SKILL.md");
+        fs_.write_text(&plain, "one").unwrap();
+        fs_.write_text(&plain, "two").unwrap();
+        assert_eq!(std::fs::read_to_string(&plain).unwrap(), "two");
+    }
 
     #[test]
     fn attachments_are_private_and_never_overwritten() {
@@ -259,6 +588,63 @@ mod tests {
         fs_.remove_dir_all(&project).unwrap();
         assert!(!project.exists());
         fs_.remove_dir_all(&project).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn someone_elses_files_are_read_only_when_regular_and_small_and_never_written_through() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"), tmp.path().join("chats"));
+        let file = tmp.path().join("SKILL.md");
+        fs::write(&file, "hola").unwrap();
+        assert_eq!(
+            fs_.read_regular_text(&file, 4).unwrap().as_deref(),
+            Some("hola")
+        );
+        assert!(fs_.read_regular_text(&file, 3).is_err(), "too big");
+        assert_eq!(
+            fs_.read_regular_text(&tmp.path().join("missing"), 9)
+                .unwrap(),
+            None
+        );
+        let link = tmp.path().join("zero.md");
+        std::os::unix::fs::symlink("/dev/zero", &link).unwrap();
+        assert!(fs_.read_regular_text(&link, 9).is_err());
+        assert!(fs_.read_regular_text(Path::new("/dev/zero"), 9).is_err());
+        fs::write(tmp.path().join("bin"), [0xff, 0xfe]).unwrap();
+        assert!(fs_.read_regular_text(&tmp.path().join("bin"), 9).is_err());
+
+        let out = tmp.path().join("out/lint/SKILL.md");
+        assert!(fs_.create_text(&out, "uno").unwrap());
+        assert!(!fs_.create_text(&out, "dos").unwrap());
+        assert_eq!(fs::read_to_string(&out).unwrap(), "uno");
+        let target = tmp.path().join("elsewhere");
+        let dangling = tmp.path().join("out/x.md");
+        std::os::unix::fs::symlink(&target, &dangling).unwrap();
+        assert!(!fs_.create_text(&dangling, "tres").unwrap());
+        assert!(!target.exists(), "never through a link");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_are_seen_and_never_removed_as_empty_folders() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"), tmp.path().join("chats"));
+        let target = tmp.path().join("shared");
+        fs::create_dir(&target).unwrap();
+        let link = tmp.path().join("skills");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(fs_.is_symlink(&link));
+        assert!(!fs_.is_symlink(&target));
+        assert!(!fs_.is_symlink(&tmp.path().join("missing")));
+
+        fs_.remove_empty_dir(&link).unwrap();
+        assert!(fs_.is_symlink(&link), "a link to an empty folder stays");
+
+        let mut entries = fs_.entries(tmp.path()).unwrap();
+        entries.sort();
+        assert_eq!(entries, vec![target, link]);
+        assert!(fs_.entries(&tmp.path().join("missing")).unwrap().is_empty());
     }
 
     #[cfg(unix)]

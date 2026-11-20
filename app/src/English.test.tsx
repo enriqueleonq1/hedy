@@ -359,7 +359,7 @@ describe("English", () => {
     expect(spanishLeftovers()).toEqual([]);
 
     await user.click(screen.getByRole("button", { name: "Save and approve" }));
-    expect(await screen.findByText("Skill «agregar-endpoint» ready: 2 files written.")).toBeInTheDocument();
+    expect(await screen.findByText("Skill «agregar-endpoint» ready: your AIs use it inside Hedy.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "+ New skill" }));
     expect(screen.getByRole("dialog", { name: "New skill" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);

@@ -16,6 +16,7 @@ use crate::domain::carry::carried_prompt;
 use crate::domain::permissions::{self, AllowRule, Verdict};
 use crate::domain::phase::pipeline;
 use crate::domain::prompts;
+use crate::domain::skill_trial::TrialRef;
 use crate::domain::task::{SHARED_DEPENDENCY_DIRS, branch_name, title_from_prompt};
 use crate::domain::{
     Account, AccountId, AgentEvent, Attachment, Commit, Credentials, Decision, FileDiff,
@@ -143,6 +144,29 @@ impl Hedy {
         request: NewTask,
         carry: Option<Carry>,
     ) -> AppResult<Task> {
+        self.start_task_traced(request, carry, None)
+    }
+
+    /// A run of a skill trial: marked before its worktree and its agent
+    /// exist, so both leave the skill out when the run is without it. A run
+    /// that never became a task leaves no mark (one that failed is found by
+    /// its mark and discarded with its trial).
+    pub(super) fn start_task_for_trial(&self, request: NewTask, run: TrialRef) -> AppResult<Task> {
+        let id = self.new_task_id(self.clock.now_ms());
+        self.mark_trial_run(&id, &run)?;
+        let started = self.start_task_traced(request, None, Some((id.clone(), run)));
+        if started.is_err() && self.task(&id).is_err() {
+            self.forget_trial_run(&id);
+        }
+        started
+    }
+
+    fn start_task_traced(
+        &self,
+        request: NewTask,
+        carry: Option<Carry>,
+        trial: Option<(TaskId, TrialRef)>,
+    ) -> AppResult<Task> {
         let project = self.project_at(&request.project)?;
         let main_account = project.account.clone().ok_or(AppError::NoAccountResolved)?;
         if request.prompt.trim().is_empty() {
@@ -181,8 +205,19 @@ impl Hedy {
         };
 
         let now = self.clock.now_ms();
-        let id = self.new_task_id(now);
-        let title = title_from_prompt(&request.prompt);
+        let id = match &trial {
+            Some((id, _)) => id.clone(),
+            None => self.new_task_id(now),
+        };
+        let mut title = title_from_prompt(&request.prompt);
+        if let Some((_, run)) = &trial {
+            let skill = &run.skill;
+            let label = match run.with_skill {
+                true => tr!("Prueba con «{skill}»", "Trial with «{skill}»"),
+                false => tr!("Prueba sin «{skill}»", "Trial without «{skill}»"),
+            };
+            title = format!("{label} · {title}");
+        }
         let (prompt, origin, images) = match carried {
             Some(carried) => (
                 carried_prompt(&carried.origin.context, &request.prompt),
@@ -269,7 +304,7 @@ impl Hedy {
         self.git
             .add_worktree(repo, &worktree, &branch, &base_commit)?;
         self.share_dependencies(repo, &worktree)?;
-        self.install_skills_in(repo, &worktree)?;
+        self.install_skills_in(repo, &worktree, id);
         Ok(Workspace {
             worktree,
             branch,
@@ -309,6 +344,9 @@ impl Hedy {
 
     fn fail(&self, task: &mut Task, error: &AppError) {
         self.stop_session(&task.id);
+        if self.task(&task.id).is_ok_and(|t| t.status.is_closed()) {
+            return;
+        }
         self.hold_queue(&task.id, HoldReason::Failed);
         let _ = self.record(
             &task.id,
@@ -321,6 +359,7 @@ impl Hedy {
         if failed_now {
             self.notify(task, NoticeKind::Failed);
         }
+        self.after_trial_run(&task.id);
     }
 
     /// Tells the driving adapter about something the user may want to hear
@@ -442,6 +481,18 @@ impl Hedy {
         if let Some(mut old) = live.remove(&task.id) {
             old.session.stop();
         }
+        // Claude Code gets the skills as a plugin for this session only
+        // (built under the lock, as refreshes are). Without it (a full disk)
+        // it still reads them with skill_get.
+        let plugins = match (&backend, &project) {
+            (AgentBackend::ClaudeCode, Some(project)) => self
+                .skills_plugin(&project.path, &task.id)
+                .ok()
+                .flatten()
+                .into_iter()
+                .collect(),
+            _ => Vec::new(),
+        };
         let session = self.agents.start(
             AgentRequest {
                 backend,
@@ -457,6 +508,8 @@ impl Hedy {
                 mcp,
                 conversation: task.conversation,
                 no_shell: false,
+                no_tools: false,
+                plugins,
             },
             sink,
         )?;
@@ -582,6 +635,13 @@ impl Hedy {
 
     fn handle_event(&self, id: &TaskId, event: AgentEvent) -> AppResult<()> {
         let mut task = self.task(id)?;
+        // A late event of a task closed meanwhile (another process discarded
+        // it) is kept, but never reopens it; its agent here is stopped (a
+        // permission it asks for would wait forever).
+        if task.status.is_closed() {
+            self.stop_session(id);
+            return self.record(id, event);
+        }
         match &event {
             AgentEvent::PermissionRequest {
                 request_id,
@@ -593,7 +653,23 @@ impl Hedy {
                 let Some(running) = live.get_mut(id) else {
                     return Ok(());
                 };
-                let verdict = permissions::evaluate(tool, input, &task.work_dir(), &running.rules);
+                let dir = task.work_dir();
+                let verdict = match permissions::evaluate(tool, input, &dir, &running.rules) {
+                    Verdict::Deny(reason) => Verdict::Deny(reason),
+                    // Written as inside, but a link (a shared `node_modules`)
+                    // takes it out.
+                    _ if permissions::written_paths(tool, input, &dir)
+                        .iter()
+                        .any(|p| !self.really_inside(p, &dir)) =>
+                    {
+                        let folder = dir.display();
+                        Verdict::Deny(tr!(
+                            "Hedy no permite cambios fuera de la carpeta de la tarea ({folder}): esa ruta pasa por un enlace que sale de ella.",
+                            "Hedy does not allow changes outside the task folder ({folder}): that path goes through a link out of it."
+                        ))
+                    }
+                    verdict => verdict,
+                };
                 let resolved = |decision, reason| AgentEvent::PermissionResolved {
                     request_id: request_id.clone(),
                     decision,
@@ -686,11 +762,21 @@ impl Hedy {
                 } else {
                     (TaskStatus::Failed, NoticeKind::Failed)
                 };
-                let changed = task.status != status;
-                self.set_status(&mut task, status)?;
+                let changed = {
+                    let _status = self.status_lock.lock().unwrap_or_else(|e| e.into_inner());
+                    // Closed meanwhile (discarded elsewhere): it stays closed.
+                    // (The event is already recorded.)
+                    if self.task(id)?.status.is_closed() {
+                        return Ok(());
+                    }
+                    let changed = task.status != status;
+                    self.set_status(&mut task, status)?;
+                    changed
+                };
                 if changed {
                     self.notify(&task, notice);
                 }
+                self.after_trial_run(id);
                 return Ok(());
             }
             AgentEvent::Usage(_) => {}
@@ -762,6 +848,42 @@ impl Hedy {
             .get_mut(id)
             .ok_or_else(|| AppError::TaskNotRunning(id.clone()))?;
         f(running)
+    }
+
+    /// Where `path` goes after following links (from the deepest part that
+    /// exists) is inside `dir`. A dangling link is not.
+    pub(super) fn really_inside(&self, path: &Path, dir: &Path) -> bool {
+        let Ok(root) = self.fs.canonicalize(dir) else {
+            return false;
+        };
+        path.ancestors()
+            .find(|p| self.fs.exists(p) || self.fs.is_symlink(p))
+            .is_some_and(|p| {
+                self.fs
+                    .canonicalize(p)
+                    .is_ok_and(|real| real.starts_with(&root))
+            })
+    }
+
+    /// The tool and input of a request still waiting for an answer.
+    pub(super) fn pending_request(&self, id: &TaskId, request_id: &str) -> Option<(String, Value)> {
+        self.live
+            .lock()
+            .unwrap()
+            .get(id)?
+            .pending
+            .get(request_id)
+            .cloned()
+    }
+
+    /// The card still waits for the user (not answered by a rule, by the
+    /// app or by an ended session).
+    pub fn is_permission_pending(&self, id: &TaskId, request_id: &str) -> bool {
+        self.live
+            .lock()
+            .unwrap()
+            .get(id)
+            .is_some_and(|running| running.pending.contains_key(request_id))
     }
 
     /// Answers a permission card.
@@ -928,7 +1050,13 @@ impl Hedy {
         if others_waiting {
             return Ok(());
         }
+        // The agent may have finished meanwhile: only a waiting task runs
+        // again, checked and changed under the same lock as a turn's end.
+        let _status = self.status_lock.lock().unwrap_or_else(|e| e.into_inner());
         let mut task = self.task(id)?;
+        if task.status != TaskStatus::WaitingApproval {
+            return Ok(());
+        }
         self.set_status(&mut task, TaskStatus::Running)
     }
 
@@ -1008,6 +1136,8 @@ impl Hedy {
         account: &str,
         model: Option<String>,
     ) -> AppResult<Task> {
+        // A trial run at a limit is void anyway: no tokens elsewhere for it.
+        self.refuse_trial_run(id)?;
         let mut task = self.task(id)?;
         if task.status.is_closed() {
             return Err(AppError::TaskClosed(id.clone()));
@@ -1057,12 +1187,14 @@ impl Hedy {
 
     /// Stops the agent; the worktree stays for review.
     pub fn stop_task(&self, id: &TaskId) -> AppResult<()> {
+        self.trial_run_stopped(id);
         self.stop_session(id);
         self.hold_queue(id, HoldReason::Stopped);
         let mut task = self.task(id)?;
         if !task.status.is_closed() && task.status != TaskStatus::Failed {
             self.set_status(&mut task, TaskStatus::Review)?;
         }
+        self.after_trial_run(id);
         Ok(())
     }
 
@@ -1099,8 +1231,11 @@ impl Hedy {
             self.git
                 .remove_worktree(&task.project, &ws.worktree, &ws.branch)?;
         }
+        self.forget_skills_plugin(&task.id);
         self.set_status(&mut task, TaskStatus::Discarded)?;
         self.clear_queue(id)?;
+        // A trial run discarded by the user voids its trial.
+        self.after_trial_run(id);
         Ok(task)
     }
 
@@ -1250,6 +1385,46 @@ mod tests {
                 AgentCall::Answer("r1".into(), true),
                 AgentCall::Answer("r2".into(), true),
             ]
+        );
+        assert_eq!(
+            f.hedy.task(&task.id).unwrap().status,
+            TaskStatus::WaitingApproval
+        );
+    }
+
+    #[test]
+    fn a_remembered_write_never_covers_agent_settings_nor_a_way_out() {
+        let f = Fixture::new();
+        let task = new_task(&f, "Hola", false);
+        let wt = task.workspace.clone().unwrap().worktree;
+        f.fs.add_existing(wt.to_str().unwrap());
+        // A dependency folder shared with the project, as a link.
+        crate::application::ports::FileSystem::symlink_dir(
+            &*f.fs,
+            Path::new("/code/agenda/node_modules"),
+            &wt.join("node_modules"),
+        )
+        .unwrap();
+        f.fs.add_existing(wt.join("node_modules").to_str().unwrap());
+        let write = |id: &str, path: &str| {
+            f.agents
+                .emit(permission(id, "Write", json!({"file_path": wt.join(path)})));
+        };
+        write("r1", "src/a.py");
+        f.hedy
+            .answer_permission(&task.id, "r1", Decision::AllowForTask)
+            .unwrap();
+        write("r2", "src/b.py");
+        write("r3", "node_modules/pkg/index.js");
+        write("r4", ".claude/settings.json");
+        assert_eq!(
+            f.agents.calls(),
+            vec![
+                AgentCall::Answer("r1".into(), true),
+                AgentCall::Answer("r2".into(), true),
+                AgentCall::Answer("r3".into(), false),
+            ],
+            "the link is denied, the settings wait for the user"
         );
         assert_eq!(
             f.hedy.task(&task.id).unwrap().status,
@@ -1663,6 +1838,41 @@ mod tests {
             .answer_permission(&task.id, "p2", Decision::Allow)
             .unwrap();
         assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Running);
+    }
+
+    #[test]
+    fn an_answer_after_the_turn_ended_never_resumes_the_task() {
+        let f = Fixture::new();
+        let task = new_task(&f, "Hola", false);
+        f.agents
+            .emit(permission("p1", "Bash", json!({"command": "pytest"})));
+        assert!(f.hedy.is_permission_pending(&task.id, "p1"));
+        // The turn ends before the user answers (a race in the app or CLI).
+        f.agents.emit(AgentEvent::Finished {
+            ok: true,
+            summary: "listo".into(),
+            duration_ms: None,
+        });
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
+        let _ = f.hedy.answer_permission(&task.id, "p1", Decision::Allow);
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
+    }
+
+    #[test]
+    fn a_late_event_never_reopens_a_task_closed_elsewhere() {
+        let f = Fixture::new();
+        let task = new_task(&f, "Hola", false);
+        use crate::application::ports::TaskRepository as _;
+        // Another process (the app) discarded it while this one ran it.
+        let mut closed = f.hedy.task(&task.id).unwrap();
+        closed.status = TaskStatus::Discarded;
+        f.store.save_task(&closed).unwrap();
+        f.agents.emit(AgentEvent::Finished {
+            ok: true,
+            summary: "listo".into(),
+            duration_ms: None,
+        });
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Discarded);
     }
 
     #[test]

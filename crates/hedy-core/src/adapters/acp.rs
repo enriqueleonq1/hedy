@@ -741,7 +741,8 @@ fn client_request(shared: &Shared, method: &str, id: Value, params: &Value) -> P
                 } else {
                     shown.join(", ")
                 },
-                json!({"file_path": tool.paths.first(), "paths": tool.paths}),
+                // `kind`: a move or a delete is never allowed unattended.
+                json!({"file_path": tool.paths.first(), "paths": tool.paths, "kind": tool.kind}),
             )
         }
         "Bash" => {
@@ -959,6 +960,8 @@ for line in sys.stdin:
             mcp: vec![],
             conversation: false,
             no_shell: false,
+            no_tools: false,
+            plugins: Vec::new(),
         };
         let session = AcpLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
@@ -1153,6 +1156,8 @@ for line in sys.stdin:
             mcp: vec![],
             conversation: false,
             no_shell: false,
+            no_tools: false,
+            plugins: Vec::new(),
         };
         let mut session = AcpLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))

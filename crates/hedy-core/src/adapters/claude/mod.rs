@@ -170,6 +170,21 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     .map(String::from)
     .to_vec();
     args.extend(["--settings".into(), settings(hook)]);
+    // Hedy's skills, for this session only: the user's own `claude` in the
+    // same repository never sees them.
+    for plugin in &request.plugins {
+        args.extend(["--plugin-dir".into(), plugin.to_string_lossy().into_owned()]);
+    }
+    // Someone else's text and nothing to do but answer: no tool (not even
+    // the web ones an account may allow), no MCP server and no skill.
+    if request.no_tools {
+        args.extend([
+            "--tools".into(),
+            String::new(),
+            "--strict-mcp-config".into(),
+            "--disable-slash-commands".into(),
+        ]);
+    }
     // A reviewer reads and comments, like a question.
     let mode = if request.phase == Phase::Review {
         TaskMode::Ask
@@ -236,7 +251,8 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     if let Some(session) = &request.resume {
         args.extend(["--resume".into(), session.clone()]);
     }
-    if experiments::on(Experiment::LeanTools) {
+    // A request with no tools keeps none, whatever the experiment.
+    if experiments::on(Experiment::LeanTools) && !request.no_tools {
         args.extend(["--tools".into(), lean_tools(request, mode)]);
     }
     args
@@ -478,7 +494,19 @@ pub(crate) mod tests {
             mcp: vec![],
             conversation: false,
             no_shell: false,
+            no_tools: false,
+            plugins: Vec::new(),
         }
+    }
+
+    #[test]
+    fn hedys_skills_come_as_a_plugin_for_the_session_only() {
+        let mut request = request(TaskMode::Project, false);
+        assert!(!args(&request, None).contains(&"--plugin-dir".to_owned()));
+        request.plugins = vec![std::path::PathBuf::from("/data/skills-plugins/t-1")];
+        let args = args(&request, None);
+        let at = args.iter().position(|a| a == "--plugin-dir").unwrap();
+        assert_eq!(args[at + 1], "/data/skills-plugins/t-1");
     }
 
     #[test]
@@ -596,12 +624,27 @@ pub(crate) mod tests {
         let reading = args(
             &AgentRequest {
                 no_shell: true,
+                no_tools: false,
                 ..request(TaskMode::Ask, false)
             },
             None,
         )
         .join(" ");
         assert!(reading.contains("--disallowedTools Edit,Write,MultiEdit,NotebookEdit,Bash,Task"));
+        assert!(!reading.contains("--tools"));
+        let bare = args(
+            &AgentRequest {
+                no_shell: true,
+                no_tools: true,
+                ..request(TaskMode::Ask, false)
+            },
+            None,
+        );
+        let at = bare.iter().position(|a| a == "--tools").unwrap();
+        assert_eq!(bare[at + 1], "", "no tool at all");
+        assert!(bare.contains(&"--strict-mcp-config".to_owned()));
+        assert_eq!(bare.iter().filter(|a| *a == "--tools").count(), 1);
+        assert!(bare.contains(&"--disable-slash-commands".to_owned()));
         let review = args(
             &AgentRequest {
                 phase: Phase::Review,

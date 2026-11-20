@@ -150,7 +150,11 @@ claude -p --input-format stream-json --output-format stream-json --verbose \
 
 **Proposed decision:** use route 1 and keep route 2 as a fallback behind the same port.
 If an update breaks route 1, it is swapped without touching the UI. "Allow for this chat"
-is remembered by Hedy per session.
+is remembered by Hedy per session (the CLIs are only ever told "yes, this once"). It never
+covers the agents' own settings (`.claude/`, `.agents/`, `.mcp.json`, `.gemini/`,
+`.codex/`, `.kimi/`: hooks, allowed commands and MCP servers start commands), whose every
+change shows its card; nothing writes into `.git`; and a write whose path leaves the task
+folder through a link (the shared `node_modules`, `.venv`…) is denied (Nov 20, 2026).
 
 ### Usage and limits
 
@@ -685,8 +689,11 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
   pattern as note topics (§12), separate concept.
 - **Proposing.** `skill_propose {name, description, body}` in the memory MCP server and
   the API agent. The name is turned into a slug; Claude's reserved names (`synced`,
-  `anthropic-skills`) are refused; bodies up to 20,000 characters. A local heuristic
-  refuses text that looks like a secret (known key prefixes such as `sk-`, `ghp_`,
+  `anthropic-skills`) are refused; bodies up to 80,000 characters (raised from 20,000 on
+  Nov 19, 2026: 11 of 57 official Claude Code skills were longer, up to 75,000; Claude
+  Code loads the body only when the skill is used, and 80,000 is about 20,000 tokens,
+  under what it takes from an MCP tool such as `skill_get` by default). A local heuristic refuses text that
+  looks like a secret (known key prefixes such as `sk-`, `ghp_`,
   `AKIA`, `AIza`; private keys; JWTs; `TOKEN=value` assignments of secret-looking names
   that are not placeholders such as `$TOKEN` or `<your key>`), with an error that never
   repeats the value. The guidance asks only agents that may change the project, at the
@@ -697,28 +704,270 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
   `skill_get {name}` (the whole skill), progressive like `memory_search` /
   `memory_get`. Claude already pre-allows `mcp__hedy-memory`. Turning the memory off for
   an account also turns these tools off; the native files below stay.
-- **Native files.** Approving a project skill writes `.claude/skills/<name>/SKILL.md` and
-  `.agents/skills/<name>/SKILL.md` (one copy each, no symlinks: only Codex documents
-  following them) in the project and in the worktrees of its open tasks, and new
-  worktrees get them when they are created. Each folder is added to
-  `.git/info/exclude` (`/.claude/skills/<name>/`, `/.agents/skills/<name>/`, anchored, so
-  it also covers worktrees) before the file is written, so a task's diff and commit
-  never include them. Editing, renaming, moving to global or deleting rewrites or
-  removes them (and empty folders left behind); the exclude lines stay, harmless.
-  - **Claude in worktrees:** a worktree only gets Claude's copy when it already has a
-    `.claude/skills` folder (committed by the team). Otherwise Claude Code reads the
-    main checkout's, which also keeps the user's own uncommitted skills working there;
-    writing a `.claude/skills` into the worktree would hide them.
+- **Native files, inside Hedy only** (changed Nov 19, 2026: a user's own `claude` in the
+  project was loading Hedy's skills too). Nothing is written in the project's own checkout:
+  - **Claude Code** gets the approved skills (the project's and the global ones) as a
+    plugin for each session only: Hedy writes `<data>/skills-plugins/<task>/`
+    (`.claude-plugin/plugin.json` named `hedy`, `skills/<name>/SKILL.md`) and launches
+    with `--plugin-dir` ("for this session only" in Claude Code's CLI reference); they
+    show as `/hedy:<name>`. Verified with Claude Code 2.1.306: the session's `init` lists
+    `hedy:run-e2e-tests`, a plain `claude` in the same folder does not. The folder (only
+    the user can read it) is rebuilt at every launch, under the same lock as the sessions.
+    Whenever a skill is approved, edited or removed (in the app or with `hedy skills`),
+    the folders of open tasks are rebuilt, so no copy of a deleted skill stays, and those
+    of closed or deleted tasks removed; the app does the same at start. It also goes when
+    the task is accepted (merged or kept on its branch) or discarded. Ask and Research
+    tasks stay open in review, so theirs stays, kept in step, until they are closed. A project skill wins over a global one with
+    its name (as in `skill_get`), and at most 50 go, the project's first. Running sessions
+    keep the list they started with until their next launch. If the folder cannot be
+    written, the session starts without it (the MCP tools still serve the skills).
+    `/hedy:<name>` commands are the project's: they are never offered in another project.
+  - **Codex, Gemini CLI, Kimi Code, Antigravity** document no per-session skills folder,
+    so Hedy writes `.agents/skills/<name>/SKILL.md` only in the worktrees of open tasks
+    (Hedy's own folders), excluded from git (`/.agents/skills/<name>/`); new worktrees get
+    them when created. Editing, renaming, moving to global or deleting rewrites or removes
+    them. A path through a symbolic link (a repository may link `.agents/skills` to
+    `.claude/skills` or to a folder outside it) is skipped, so a skill can never end up
+    committed on accept or outside the worktree. Ask and Research tasks have no worktree:
+    those CLIs read the skills only through the MCP tools there.
+  - **Older copies:** an earlier Hedy wrote them in the project too. When a task starts or
+    a skill changes, a copy of an approved skill there is removed (with empty folders, and
+    reported) only when it is exactly what Hedy wrote (for an update, the text it
+    replaces), git still excludes it as Hedy left it (a copy someone committed stays), and
+    no link is on its path. One edited by hand stays, also when the skill is deleted.
+    Best effort: a failure there never stops a task.
+  - **Commands on load:** Claude Code runs `!`cmd`` and ```` ```! ```` blocks when a skill
+    loads, without asking. An agent's proposal with them is refused; a skill the user
+    writes may have them. Skills from another of the user's PCs (personal sync) pass the
+    same checks as local ones, or wait in the replica.
   - **Never overwrite the user's files:** every file Hedy writes carries the line
     `<!-- hedy: managed skill -->`; a file at that path without it is the user's and is
     skipped (the UI and `hedy skills` warn), and never deleted.
-- **Global skills: only through the MCP tools.** Hedy does not write into
+- **Global skills: Claude Code's plugin and the MCP tools.** Hedy does not write into
   `~/.claude/skills`, `$CODEX_HOME`, `~/.agents/skills` or any account folder: rule 1 says
   Hedy only picks the folder at launch, and `~/.agents/skills` would be shared by every
-  account. Protected projects neither see nor create global skills.
+  account. The other CLIs read global skills only through the MCP tools. Protected
+  projects neither see nor create global skills.
 - **UI and CLI.** A "Habilidades" / "Skills" tab in the memory screen (`#k=<path>`) and
   `hedy skills` with `list`, `show <name>`, `approve <id>`,
-  `reject <id>` and `remove <name>`.
+  `reject <id>`, `remove <name>`, `import <path>`, `export [names] --to <folder>`,
+  `check <name>` and `try <name>` (see the analysis phase below).
+- **Import and export** (Nov 19, 2026; `application/skill_transfer.rs`,
+  `domain/skill_import.rs`). Skills travel as `SKILL.md` files, the Agent Skills format
+  every CLI reads.
+  - **Import** takes a `SKILL.md` (any case; or a loose `.md`, named after the file), a
+    skill's folder, a folder of skill folders (`~/.claude/skills`) or a project (its
+    `.claude/skills`, `.agents/skills` and a plugin's `skills` together, a linked folder
+    once), up to 100 skills (the preview says when there were more). Only regular files
+    are read, up to 384 KiB: a `SKILL.md` that is a link is refused (a cloned pack could
+    point it at any file of the user's), and a device or a pipe cannot hang or fill memory.
+  - **Preview first:** each skill with what stops it (unreadable, a link, a bad name,
+    description or body, a secret, hidden text, commands on load, a name already approved,
+    a name repeated in the import, or the same text already approved), the frontmatter
+    keys Hedy drops (`allowed-tools`, `hooks`, `model`, `license`… Hedy keeps only name,
+    description and body), the other files in its folder (scripts, references: not
+    imported, so steps that use them may not work) and, in the terminal, the body's size
+    and first lines. A skill that looks like it holds a secret is shown by name only.
+  - **Then only what the user saw goes in**, checked again, approved at once (the user
+    chose them; author "user"). A name already approved in the same scope is updated (same
+    id) only when the user asks for that name; otherwise it is skipped. Saved skills
+    reach the session plugins even if a later one fails; a protected project's refusal of
+    global skills stops the import before anything is saved.
+  - **Refused, as in agent proposals:** commands on load (`!`cmd``, ```` ```! ````, in
+    the body or the description; a proposal is checked again when approved, since one may
+    come from an older version through sync) and hidden text (invisible tag characters,
+    bidi marks, zero-width characters; an emoji's joiners are fine), shown where it is:
+    the agents would read what the user cannot see. Only text from someone else is refused
+    for it: a skill the user writes, or one already saved, may keep a zero-width space
+    pasted from the web. `hedy skills show` marks any hidden character as `⟦U+…⟧`.
+    Secrets are looked for with hidden characters taken out, so one cannot split a key.
+  - **`---` in a description:** Claude Code's frontmatter reader ends at the first `---`,
+    even inside quotes, so the rest of the line would become the body (and could run a
+    command on load). Hedy writes a third dash in a row as `\x2D` (the same text to any
+    YAML reader), so the text stays and nothing ends there. Synced proposals pass the
+    hidden-text check too, and approving any proposal checks commands and hidden text
+    again. A secret is looked for with hidden characters removed and words split on `=`
+    (`export KEY=sk-…`).
+  - **Parser:** a small YAML reader (plain, quoted and block scalars, a quoted value on
+    the next line, `\x`/`\u`/`\U` escapes, `null`/`~`, quoted keys, comments; nested
+    values count as dropped keys), checked against js-yaml on the 57 official skills.
+    Hedy's own marker line is removed from any body, so no copy passes for Hedy's file.
+  - **Export** writes the approved skills a project sees (a project skill before a global
+    one with its name), all or by name, as `<folder>/<name>/SKILL.md` without Hedy's
+    marker: the copies are the user's own. A file is only created (`create_new`): nothing
+    already there is replaced, and a link (at the file or the skill's folder) is never
+    written through. The folder is the user's choice and is not added to
+    `.git/info/exclude`: they may want to commit it.
+  - **Only the user:** every process Hedy starts for an AI carries `HEDY_AGENT_SESSION=1`
+    (agents, `hedy run`, the app's AI terminal; not the user's own shell terminal), and
+    `hedy skills import`, `approve`, `reject` and `remove`, `hedy memory approve` and
+    `reject`, `hedy team publish`, `add` (published at once for a project note or an
+    admin), `invite`, `role`, `remove`, `rename`, `leave` and `review --accept/--reject`,
+    every `hedy sync` command but `status`, `now` and `conflicts`, and `hedy config
+    set/unset` (a setting names the program Hedy starts) refuse to run there, so an agent
+    cannot approve, publish, grant access or remove through a shell command it was
+    allowed to run. A trial's check carries it too: the code it runs is the AI's (without
+    bubblewrap it could drop the variable, so `--yes` then only goes with `--check none`). A second guard: an agent
+    could run `env -u HEDY_AGENT_SESSION hedy …`; the permission card is the first.
+  - **Sync:** a skill from another of the user's PCs is saved as this version saves its
+    own (description and body normalized), with its exact name.
+  - **Checked against 57 official Claude Code skills** (the plugin marketplace on this
+    machine): 52 import as they are; 2 run commands on load and 3 have `<` or `>` in the
+    description (Hedy's rule, from the Agent Skills docs; Claude Code itself accepts it).
+  - **Terminal:** text from someone else's file is printed without control or reordering
+    characters; descriptions are saved without them (`normalize_description`, which keeps
+    emoji whole and turns line separators into spaces).
+- **Does it help or get in the way?** (Nov 19, 2026; `domain/skill_check.rs`,
+  `application/skill_check.rs`). Many published skills make a model worse: too long,
+  always in context, vague, or against the project's own rules. Three levels, labelled
+  Útil / Dudosa / Contraproducente / Sin probar:
+  - **Level 1, what Hedy measures** (free, for every skill being imported and in `hedy
+    skills check`): size (a warning past ~5,000 tokens, or ~2,000 when the description
+    fits almost any task; never bad by itself, since the body loads only when used), a
+    description too short or too broad ("everything about", "cualquier tarea"…; not
+    "always use this skill when", the usual trigger wording), overlap with any approved
+    skill the project sees (60 % of the shorter one's key words), dangerous commands (in
+    code only: `rm -rf /` or `~` but not `/tmp/x`, a download piped or fed to a shell,
+    `base64 -d |`, `mkfs.`, `drop table`, `--dangerously-skip-permissions`…; the same in
+    prose is only risky, and a line warning against it — never, nunca, avoid — counts for
+    nothing) and risky ones (`sudo`, `--no-verify`, a forced push, `reset --hard`, `dd`,
+    `~/.ssh`…), steps that use files not imported, and no concrete steps at all. Finding
+    none of the dangerous patterns is said as a neutral note, never as a reassurance: the
+    list cannot catch everything.
+  - **Level 2, what the AI thinks against the notes** (one request through the project's
+    account, never another, like the rule check: only the skill and the project's notes
+    go, picked as for a change, never the code; Haiku by default on a Claude account).
+    The request has no tools at all (`--tools ""`, `--strict-mcp-config`,
+    `--disable-slash-commands`; the rule check too): the skill is someone else's text, and
+    a web tool the account allows could send the notes out. Hidden text is refused before
+    anything is sent. It reports contradictions (citing a note that was sent), vague
+    instructions and parts that really help, each quoting the skill (Markdown marks,
+    closing punctuation and the usual quote styles do not matter; a quote not in the
+    skill or a note number not sent is dropped). It is shown as the AI's opinion: the
+    skill's author can steer it. In `hedy skills import` it runs on its own only in a
+    terminal and for up to 3 skills to import, else with `--review`; `--no-review` skips
+    it. Not covered: Gemini's web search over ACP does not ask.
+  - **Verdict:** anything bad (a dangerous command, a contradiction) suggests
+    contraproducente, two or more warnings dudosa (the AI's vague lines count as one),
+    else "nothing against it (untested)": the AI's helpful lines never raise it. Only a
+    suggestion: level 3, trying the skill on real tasks with and without it, can tell.
+  - **Calibrated on the 57 official Claude Code skills:** 41 useful, 15 doubtful (mostly
+    their scripts are not imported), 1 harmful (a hookify guide whose example pattern is
+    `rm -rf /tmp`). Real check with Haiku: a skill asking for styled-components in a
+    project whose note says CSS modules came back as a contradiction quoting both, plus
+    "write clean code" as vague and the test command as helpful, in 7 s.
+  - **Level 3, trying it** (`domain/skill_trial.rs`, `application/skill_trial.rs`, `hedy
+    skills try <name>`; on demand only, since it spends tokens). Each task (1 to 3: the
+    user's `--task`, or proposed by the project's account from the skill alone, with no
+    tools and Haiku by default; `--yes` only with `--task` and `--check`, so tasks an AI
+    made up from someone else's skill, and the command Hedy will run, are always read
+    first) runs twice as an ordinary project task,
+    with the project's phases and accounts, each in its own worktree: one with the skill
+    and one without it. In a terminal the CLI asks about each permission; without one
+    (`--yes` from a script) nobody can answer, so a file change is allowed one request at
+    a time when every path it names really stays in the copy (links followed: the shared
+    `node_modules`, `.venv`… are links to the project) and none is under `.git`,
+    `.claude`, `.agents`, `.gemini`, `.codex`, `.kimi` or is `.mcp.json` (settings that
+    start commands; compared ignoring case, as macOS disks do), nor an ACP move or delete
+    (it may name only part of what it touches; a Codex move names its destination too); everything else, commands included, is denied, as it warns
+    before starting. Denying everything left every headless trial void.
+    - **Git in a copy never trusts the copy's `.git`:** whatever writes in it (the run,
+      its check) could point it at a git folder of its own whose config runs a command
+      (`core.fsmonitor` on every `git diff`). Hedy's git in a copy gets `GIT_DIR` and
+      `GIT_WORK_TREE` from the project's own git data (the worktree whose `gitdir`
+      names the copy), or a path that cannot exist, so it fails; a repository nested in
+      the copy is never entered (`diff.ignoreSubmodules=all`, no submodule recursion, no
+      fsmonitor: git would obey a nested `.git`'s config too; staging lists the changes
+      with `ls-files` and adds them with `update-index --ignore-submodules` instead of
+      `add --all`, which runs a nested repository's own status); `GIT_INDEX_FILE` and the
+      like from Hedy's own environment are dropped. A copy git no longer recognizes is
+      still removed. No agent writes a `.git` anywhere, even with someone to ask.
+    - **The run without it gets it from nowhere:** not in its plugin, not in its
+      worktree's `.agents/skills`, and `skill_list` / `skill_get` do not serve it. The
+      run is marked (by skill id, so a rename does not bring it back) before its
+      worktree and agent exist. A copy in the repo's `.claude/skills` or
+      `.agents/skills` refuses the trial; one Hedy cannot see (the account's own folder)
+      shows up as the run without it loading it, which voids the trial.
+    - **Judged by Hedy's check, never by the agent's tests:** once a run stops, Hedy
+      runs the same command in its copy (`--check`, `--check none` for no check, else
+      the project's test command guessed from its files and shown before starting; 10
+      minutes at most). Before it, the files that decide it are put back as the base
+      commit has them (tests, test configuration, `build.rs`, `Makefile`; the test keys
+      of `package.json` (`scripts`, `jest`…), the test tables of `Cargo.toml` and
+      `pyproject.toml` (`[lib]`, `[[test]]`, `[tool.pytest…]`) and `[package]`'s
+      `autotests`, `autolib`, `build`…, keeping the run's dependencies; dotted keys at
+      the top level are not read); new test configuration (`.cargo/config.toml`, a new `conftest.py`…)
+      is removed, a renamed test comes back under its old name only, and new test files
+      stay, since a task may ask for them. So a run cannot pass by rewriting its tests;
+      the result says how many files were touched. When no copy passes, with the skill
+      or without it, the trial keeps no result and says why (offline, a missing
+      dependency, tests already failing, or tasks that change tests Hedy puts back). Tests written inline in
+      a source file (Rust's `#[cfg(test)]`) cannot be told apart and stay as the run
+      left them.
+    - **The check runs code the run wrote,** and the CLI says so. It gets only `PATH`,
+      `HOME`, the locale, `TERM`, `TMPDIR` and `USER` (no tokens or keys), runs in a
+      process group of its own and is killed whole on timeout or cancel (only its
+      trial's checks). On Linux with bubblewrap it runs isolated: no network, no IPC,
+      its own processes (gone when it ends), the system read-only, `/run` (the
+      session bus, the keyring's way in), `/tmp` and the home folder empty but for the
+      tools' folders (`~/.cargo` without its credentials, `~/.rustup`, `~/.npm`, and
+      only the tools' own folders of `~/.cache`, where other programs keep sockets and
+      tokens), the project folder empty but for what the copy links to (`.git` and the
+      shared dependency folders, read-only; never `.env`, wherever the project lives),
+      `HEDY_AGENT_SESSION=1`, only the copy writable, killed
+      with Hedy; tools are told they are offline (`CARGO_NET_OFFLINE`,
+      `npm_config_offline`), so a check that needs to download fails rather than
+      hangs. Without bubblewrap (macOS, or not installed) it runs as the user, and the
+      CLI warns before starting. A run passes when it finished, its
+      task did not fail and the check exits 0; with no check, passing is only finishing,
+      and the result says so. A skill cannot pass by telling the agent not to test.
+      More passes with it → útil, fewer → contraproducente; the same → útil only if the
+      skill was seen used (only Claude Code reports it; for the other CLIs use is
+      unknown, never "not used") and the runs with it spent at least 15 % less (tokens,
+      else the CLI's cost estimate; none reported is no saving), else dudosa.
+    - **No verdict when it would say the wrong thing:** a run that hit a subscription
+      limit (Hedy never moves it to another account), one the user stopped or discarded,
+      one that never reached the model, or the skill loaded without it. Ctrl+C, a closed
+      terminal or `kill` cancels: every run carrying the trial's id is discarded, also
+      one that failed to start. A driver that dies without a word (`kill -9`, a crash, the
+      app closed mid-trial) is noticed by the next Hedy (the app at start, `hedy tasks`,
+      the next trial): each run names its driver (pid and start time, so a reused pid is
+      not taken for it), and a trial whose driver is gone is cancelled the same way.
+    - **Runs are measurements:** they show on the board and ask for permissions like any
+      task (in the terminal, one at a time, only those no rule answered, with line
+      breaks shown as ⏎; with no terminal, only file changes that stay in the copy, see
+      above), but cannot be accepted, continued, waited on or moved at a limit (void
+      anyway), and the skill cannot go outside Hedy while a trial of it runs. Once
+      all are done they are discarded with the skills they proposed; nothing reaches the
+      project's folder. What the user allows runs in the copies, which share the repo's
+      git settings, and the CLI says so.
+    - **The result** is kept on this PC with the skill's name and a fingerprint of its
+      text, dropped when the skill changes or is removed (ids are reused). With so few
+      tasks it is a hint, not a proof, and the CLI says so.
+    - **Real check with Haiku** on a toy crate (a broken `add`, a skill saying "add a
+      line to CHANGELOG.md and run `cargo test`"): both runs fixed it, only the one with
+      the skill wrote the changelog, and it spent 106 % more tokens → dudosa.
+    - **Not covered yet:** Codex and the ACP CLIs do not report loading a skill through
+      `skill_get` (use stays unknown).
+- **The skills section** (Nov 19, 2026; `application/skill_library.rs`, `app/src/screens/skills`,
+  `#skills`). Every skill in one place: the global ones first, then each project's (proposals
+  included), each measured (level 1) beside the approved skills its agents see, with its last
+  trial while it is the version tried. List and detail, as chosen on the design canvas: search,
+  filters (all, global, per project, proposals), and per skill its context cost, the analysis,
+  the trial, the AI review against a project's notes (for a global skill, the user picks the
+  project), and its steps or, for a proposal, the change it proposes. Import, export (by id,
+  from any project) and trials run from there; a trial's runs ask for permissions in Activity
+  like any task. What is imported is read again from the source file by Hedy, never taken from
+  the page.
+  - **«Usar también fuera de Hedy»** (off by default; approved project skills only, never a
+    global one or a proposal): writes the skill in the project's `.claude/skills` and
+    `.agents/skills`, excluded from git (rule 7), never over a file of the user's own or
+    through a link. Kept per PC in a setting; the copies follow an edit, a rename, a move to
+    global (they go) and a removal, and are rewritten when the skill changes on another PC
+    (`refresh_skills_plugins`). K1's cleanup of old copies skips them. A trial refuses while
+    it is on: the run without the skill would see it.
+  - **Checkboxes and radio buttons** are native inputs drawn from the theme everywhere (only
+    the mark moves, not with reduced motion).
 - **Not verified with the real CLIs yet:** that Codex, Gemini CLI, Kimi Code and
   Antigravity load `.agents/skills` in ACP / app-server mode (their docs describe the
   interactive CLI); that Codex and Kimi stop the root search at a linked worktree's

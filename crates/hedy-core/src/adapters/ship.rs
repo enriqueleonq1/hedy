@@ -111,6 +111,7 @@ fn git_command(dir: &Path, args: &[&str]) -> Command {
     // `GIT_DIR`): its remotes decide where its memory lives. The user's git
     // config (`GIT_CONFIG_*`) stays: commits and pushes are theirs.
     super::sync_git::clear_repo_redirects(&mut command);
+    super::git::pin_task_copy(&mut command, dir);
     command
         .arg("-C")
         .arg(dir)

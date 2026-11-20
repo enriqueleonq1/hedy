@@ -18,6 +18,7 @@ import rules from "./messages/rules";
 import settings from "./messages/settings";
 import ship from "./messages/ship";
 import shell from "./messages/shell";
+import skillLibrary from "./messages/skillLibrary";
 import skills from "./messages/skills";
 import statusbar from "./messages/statusbar";
 import status from "./messages/status";
@@ -53,6 +54,7 @@ const AREAS = {
   ship,
   shell,
   skills,
+  skillLibrary,
   statusbar,
   status,
   sync,

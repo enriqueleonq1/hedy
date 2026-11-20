@@ -64,6 +64,22 @@ pub enum AppError {
     #[error("{}", self.message())]
     GlobalSkillInProtectedProject,
     #[error("{}", self.message())]
+    NoSkillsToImport(PathBuf),
+    #[error("{}", self.message())]
+    SkillReviewFailed(Option<String>),
+    #[error("{}", self.message())]
+    SkillReviewTimedOut,
+    #[error("{}", self.message())]
+    TrialTasks,
+    #[error("{}", self.message())]
+    TrialSkillOutside(std::path::PathBuf),
+    #[error("{}", self.message())]
+    TrialRun,
+    #[error("{}", self.message())]
+    SkillOutsideDuringTrial,
+    #[error("{}", self.message())]
+    SkillOutsideProjectOnly,
+    #[error("{}", self.message())]
     EmptyPrompt,
     #[error("{}", self.message())]
     ProviderNotYetSupported(Provider),
@@ -501,6 +517,50 @@ impl AppError {
                 "un proyecto protegido no comparte habilidades globales: déjala en el proyecto",
                 "a protected project does not share global skills: keep it in the project"
             ),
+            Self::SkillReviewFailed(detail) => match detail {
+                Some(detail) => tr!(
+                    "no se pudo revisar la habilidad: {detail}",
+                    "could not review the skill: {detail}"
+                ),
+                None => tr!(
+                    "la IA no devolvió la revisión; vuelve a intentarlo",
+                    "the AI gave no review; try again"
+                ),
+            },
+            Self::TrialTasks => tr!(
+                "elige de 1 a 3 tareas para probar la habilidad",
+                "pick 1 to 3 tasks to try the skill on"
+            ),
+            Self::TrialSkillOutside(path) => {
+                let path = path.display();
+                tr!(
+                    "la habilidad también está en {path}, así que la ejecución sin ella la vería; desactiva «Usar también fuera de Hedy» o quítala de ahí para probarla",
+                    "the skill is also at {path}, so the run without it would see it; turn off «Use outside Hedy too» or remove it from there to try it"
+                )
+            }
+            Self::SkillOutsideProjectOnly => tr!(
+                "solo una habilidad aprobada de un proyecto se puede usar también fuera de Hedy",
+                "only an approved project skill can be used outside Hedy too"
+            ),
+            Self::TrialRun => tr!(
+                "es una ejecución de prueba de una habilidad: no se acepta, ni se continúa, ni pasa a otra cuenta; se descarta sola al terminar",
+                "it is a trial run of a skill: it cannot be accepted, continued or moved to another account; it is discarded on its own when it ends"
+            ),
+            Self::SkillOutsideDuringTrial => tr!(
+                "se está probando esta habilidad: la ejecución sin ella la vería; espera a que termine la prueba",
+                "this skill is being tried: the run without it would see it; wait until the trial ends"
+            ),
+            Self::SkillReviewTimedOut => tr!(
+                "la IA tardó demasiado en revisar la habilidad; vuelve a intentarlo",
+                "the AI took too long to review the skill; try again"
+            ),
+            Self::NoSkillsToImport(path) => {
+                let path = path.display();
+                tr!(
+                    "no hay habilidades en {path}: elige un SKILL.md, la carpeta de una habilidad o una carpeta de habilidades (como .claude/skills)",
+                    "there are no skills in {path}: pick a SKILL.md, a skill's folder or a folder of skills (such as .claude/skills)"
+                )
+            }
             Self::EmptyPrompt => tr!("escribe qué quieres que haga", "write what you want done"),
             Self::ProviderNotYetSupported(provider) => tr!(
                 "las tareas con {provider} todavía no están disponibles en Hedy",

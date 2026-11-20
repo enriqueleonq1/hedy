@@ -225,6 +225,69 @@ fn command_program(command: &str) -> Option<&str> {
     command.split_whitespace().find(|word| !word.contains('='))
 }
 
+/// The agents' own settings in a project: hooks, allowed commands, MCP
+/// servers to start, the skills they read. A change there always shows its
+/// card ("Permitir en este chat" never covers it), and with nobody to ask it
+/// is denied.
+const AGENT_SETTINGS: &[&str] = &[
+    ".claude",
+    ".agents",
+    ".mcp.json",
+    ".gemini",
+    ".codex",
+    ".kimi",
+];
+
+/// Some part of `path` inside `work_dir` is `name`, as a case-insensitive
+/// disk (macOS) reads it (`.GIT` is `.git` there).
+fn names(path: &Path, work_dir: &Path, name: &str) -> bool {
+    path.strip_prefix(work_dir)
+        .unwrap_or(path)
+        .components()
+        .any(|part| {
+            part.as_os_str()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(name)
+        })
+}
+
+/// The files a change request writes, as `work_dir` sees them (none for a
+/// tool that does not write).
+pub fn written_paths(tool: &str, input: &Value, work_dir: &Path) -> Vec<PathBuf> {
+    if !WRITE_TOOLS.contains(&tool) {
+        return Vec::new();
+    }
+    file_paths(input)
+        .into_iter()
+        .map(|path| normalize(work_dir, Path::new(path)))
+        .collect()
+}
+
+fn touches_agent_settings(paths: &[PathBuf], work_dir: &Path) -> bool {
+    paths
+        .iter()
+        .any(|p| AGENT_SETTINGS.iter().any(|name| names(p, work_dir, name)))
+}
+
+/// The files a change request writes, when it may be allowed with nobody to
+/// ask: a file tool naming at least one path, every one inside `work_dir`
+/// as written, none in `.git` nor in [`AGENT_SETTINGS`]. Links are not
+/// followed here: the caller checks where each path really goes.
+pub fn unattended_writes(tool: &str, input: &Value, work_dir: &Path) -> Option<Vec<PathBuf>> {
+    // An ACP move or delete may name only part of what it touches.
+    if !WRITE_TOOLS.contains(&tool) || matches!(input["kind"].as_str(), Some("move" | "delete")) {
+        return None;
+    }
+    let paths = written_paths(tool, input, work_dir);
+    let fine = |path: &PathBuf| {
+        path.strip_prefix(work_dir)
+            .is_ok_and(|rel| rel.components().next().is_some())
+            && !names(path, work_dir, ".git")
+    };
+    (!paths.is_empty() && paths.iter().all(fine) && !touches_agent_settings(&paths, work_dir))
+        .then_some(paths)
+}
+
 /// What "Permitir en este chat" remembers for this request, if anything.
 pub fn rule_for(tool: &str, input: &Value) -> Option<AllowRule> {
     if tool == "Bash" {
@@ -240,6 +303,15 @@ pub fn evaluate(tool: &str, input: &Value, work_dir: &Path, remembered: &[AllowR
     if let Some(reason) = protected_file_reason(tool, input, work_dir) {
         return Verdict::Deny(reason);
     }
+    // Git's data: a `.git` the agent writes can make git (Hedy's, the
+    // CLIs') run a command of its own.
+    let written = written_paths(tool, input, work_dir);
+    if written.iter().any(|path| names(path, work_dir, ".git")) {
+        return Verdict::Deny(tr!(
+            "Hedy no permite cambiar los datos de git (.git).",
+            "Hedy does not allow changing git's data (.git)."
+        ));
+    }
     if WRITE_TOOLS.contains(&tool)
         && file_paths(input)
             .iter()
@@ -251,8 +323,10 @@ pub fn evaluate(tool: &str, input: &Value, work_dir: &Path, remembered: &[AllowR
             "Hedy does not allow changes outside the task folder ({folder})."
         ));
     }
+    // The agents' settings can start commands: each change shows its card.
+    let settings = touches_agent_settings(&written, work_dir);
     match rule_for(tool, input) {
-        Some(rule) if remembered.contains(&rule) => Verdict::Allow,
+        Some(rule) if remembered.contains(&rule) && !settings => Verdict::Allow,
         _ => Verdict::Ask,
     }
 }
@@ -411,6 +485,9 @@ pub fn summarize(tool: &str, input: &Value) -> String {
         "WebFetch" => field("url"),
         "WebSearch" => field("query"),
         "Grep" | "Glob" => field("pattern"),
+        // Which skill: what a trial looks for (`hedy:pr-checklist`).
+        "Skill" => field("skill").or_else(|| field("command")),
+        t if t.ends_with("skill_get") => field("name"),
         _ => None,
     }
     .unwrap_or_else(|| tool.to_owned())
@@ -425,6 +502,69 @@ mod tests {
 
     fn verdict(tool: &str, input: Value, remembered: &[AllowRule]) -> Verdict {
         evaluate(tool, &input, Path::new(WT), remembered)
+    }
+
+    #[test]
+    fn unattended_writes_stay_out_of_git_and_agent_settings() {
+        let wt = Path::new(WT);
+        let writes = |tool: &str, input: Value| unattended_writes(tool, &input, wt);
+        assert!(writes("Edit", json!({"file_path": format!("{WT}/src/a.rs")})).is_some());
+        assert!(writes("Write", json!({"file_path": "src/new.rs"})).is_some());
+        for path in [
+            ".git",
+            ".claude/settings.json",
+            ".agents/skills/x/SKILL.md",
+            ".mcp.json",
+            ".gemini/settings.json",
+            ".codex/config.toml",
+            "src/../.git",
+            "../other/a.rs",
+            "",
+        ] {
+            let full = format!("{WT}/{path}");
+            assert!(
+                writes("Write", json!({"file_path": full})).is_none(),
+                "{path}"
+            );
+        }
+        assert!(writes("Write", json!({"content": "no path"})).is_none());
+        for path in [".GIT", ".Claude/settings.json", "x/.Git/config"] {
+            let full = format!("{WT}/{path}");
+            assert!(
+                writes("Write", json!({"file_path": full})).is_none(),
+                "{path}"
+            );
+        }
+        let acp = |kind: &str| json!({"file_path": format!("{WT}/a.rs"), "paths": [format!("{WT}/a.rs")], "kind": kind});
+        assert!(writes("Edit", acp("edit")).is_some());
+        assert!(writes("Edit", acp("move")).is_none());
+        assert!(writes("Edit", acp("delete")).is_none());
+        // The agents' settings always ask, even after "Permitir en este chat".
+        let rule = [AllowRule::Tool("Write".into())];
+        let write =
+            |path: &str| verdict("Write", json!({"file_path": format!("{WT}/{path}")}), &rule);
+        assert_eq!(write("src/a.rs"), Verdict::Allow);
+        for path in [
+            ".claude/settings.json",
+            ".mcp.json",
+            ".Gemini/settings.json",
+            ".agents/skills/x/SKILL.md",
+        ] {
+            assert_eq!(write(path), Verdict::Ask, "{path}");
+        }
+        // Never git's data, even when someone is asked.
+        for path in [".git", "lib/.git/config", ".GIT"] {
+            let input = json!({"file_path": format!("{WT}/{path}")});
+            assert!(
+                matches!(
+                    verdict("Write", input, &[AllowRule::Tool("Write".into())]),
+                    Verdict::Deny(_)
+                ),
+                "{path}"
+            );
+        }
+        assert!(writes("Bash", json!({"command": "ls"})).is_none());
+        assert!(writes("Read", json!({"file_path": format!("{WT}/a")})).is_none());
     }
 
     #[test]

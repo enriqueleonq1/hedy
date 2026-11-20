@@ -29,6 +29,10 @@ pub enum DomainError {
     #[error("{}", self.message())]
     SkillLooksSecret(&'static str),
     #[error("{}", self.message())]
+    SkillRunsCommands,
+    #[error("{}", self.message())]
+    SkillHiddenText(String),
+    #[error("{}", self.message())]
     ApiKeyNotSupported { provider: Provider },
     #[error("{}", self.message())]
     NothingToLaunch,
@@ -121,12 +125,20 @@ impl DomainError {
                 "the skill's description must be one line of up to 1024 characters, without < or >, saying when to use it"
             ),
             Self::InvalidSkillBody => tr!(
-                "el contenido de la habilidad no puede estar vacío ni pasar de 20000 caracteres",
-                "the skill's body cannot be empty or longer than 20000 characters"
+                "el contenido de la habilidad no puede estar vacío ni pasar de 80000 caracteres",
+                "the skill's body cannot be empty or longer than 80000 characters"
             ),
             Self::SkillLooksSecret(kind) => tr!(
                 "la habilidad parece contener un secreto ({kind}); no se guardó. Quítalo y usa un marcador como $NOMBRE_VARIABLE o <tu clave>",
                 "the skill looks like it contains a secret ({kind}); it was not saved. Remove it and use a placeholder such as $VARIABLE_NAME or <your key>"
+            ),
+            Self::SkillHiddenText(at) => tr!(
+                "la habilidad tiene texto oculto (caracteres invisibles o que reordenan el texto), que las IAs leerían y tú no verías: «{at}»",
+                "the skill has hidden text (invisible characters or ones that reorder the text), which the AIs would read and you would not see: “{at}”"
+            ),
+            Self::SkillRunsCommands => tr!(
+                "una habilidad propuesta no puede correr comandos al cargarse (!`…` o un bloque ```!); escribe el comando como un paso para que la IA lo pida",
+                "a proposed skill cannot run commands when it loads (!`…` or a ```! block); write the command as a step for the AI to ask for"
             ),
             Self::ApiKeyNotSupported { provider } => tr!(
                 "{provider} no admite cuentas por API key",

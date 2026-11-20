@@ -1011,6 +1011,9 @@ fn sync_keys(space: &str) -> String {
     format!("sync keys{space}")
 }
 
+/// What [`FakeRunner`] calls the process it runs in.
+pub const FAKE_PROCESS: &str = "4242:1";
+
 /// Records launches and answers captured runs with a canned reply, or with
 /// the reply set for that exact command line.
 #[derive(Default)]
@@ -1022,6 +1025,11 @@ pub struct FakeRunner {
     replies: Mutex<HashMap<String, PortResult<CapturedOutput>>>,
     installed: Mutex<HashSet<String>>,
     env: Mutex<Vec<String>>,
+    /// Checks run through `run_check`, with their group.
+    checks: Mutex<Vec<(String, LaunchSpec)>>,
+    stopped_checks: Mutex<Vec<String>>,
+    /// Processes [`FakeRunner::kill_process`] ended.
+    dead: Mutex<HashSet<String>>,
 }
 
 fn command_line(spec: &LaunchSpec) -> String {
@@ -1032,6 +1040,11 @@ fn command_line(spec: &LaunchSpec) -> String {
 }
 
 impl FakeRunner {
+    /// The process `process` ends (killed, crashed).
+    pub fn kill_process(&self, process: &str) {
+        self.dead.lock().unwrap().insert(process.to_owned());
+    }
+
     pub fn install(&self, program: &str) {
         self.installed.lock().unwrap().insert(program.to_owned());
     }
@@ -1066,6 +1079,13 @@ impl FakeRunner {
     pub fn captured(&self) -> Vec<LaunchSpec> {
         self.captured.lock().unwrap().clone()
     }
+    /// Checks run through `run_check` (never `run_captured` alone).
+    pub fn checks(&self) -> Vec<(String, LaunchSpec)> {
+        self.checks.lock().unwrap().clone()
+    }
+    pub fn stopped_checks(&self) -> Vec<String> {
+        self.stopped_checks.lock().unwrap().clone()
+    }
     pub fn interactive(&self) -> Vec<LaunchSpec> {
         self.interactive.lock().unwrap().clone()
     }
@@ -1097,6 +1117,31 @@ impl ProcessRunner for FakeRunner {
     ) -> PortResult<CapturedOutput> {
         self.run_captured(spec)
     }
+    fn run_check(
+        &self,
+        spec: &LaunchSpec,
+        _timeout: std::time::Duration,
+        group: &str,
+        _reads: &[PathBuf],
+    ) -> PortResult<CapturedOutput> {
+        self.checks
+            .lock()
+            .unwrap()
+            .push((group.to_owned(), spec.clone()));
+        self.run_captured(spec)
+    }
+    fn stop_checks(&self, group: &str) {
+        self.stopped_checks.lock().unwrap().push(group.to_owned());
+    }
+    fn isolates_checks(&self) -> bool {
+        true
+    }
+    fn this_process(&self) -> Option<String> {
+        Some(FAKE_PROCESS.into())
+    }
+    fn process_alive(&self, process: &str) -> bool {
+        !self.dead.lock().unwrap().contains(process)
+    }
     fn blocked_env_vars(&self) -> Vec<String> {
         self.env.lock().unwrap().clone()
     }
@@ -1127,6 +1172,8 @@ pub struct FakeFs {
     /// Folders created by `create_new_dir`, then gone with `remove_dir_all`.
     created: Mutex<Vec<PathBuf>>,
     deleted_trees: Mutex<Vec<PathBuf>>,
+    /// Paths that are symbolic links (as found in a repository).
+    symlinked: Mutex<HashSet<PathBuf>>,
 }
 
 impl FakeFs {
@@ -1136,11 +1183,25 @@ impl FakeFs {
     pub fn files(&self) -> Vec<(PathBuf, String)> {
         self.files.lock().unwrap().clone()
     }
+    /// Like the real `*_beneath`: a link on the way refuses the call.
+    fn no_link_beneath(&self, root: &Path, rel: &Path) -> PortResult<()> {
+        let mut path = root.to_path_buf();
+        for part in rel.components() {
+            path.push(part);
+            if self.symlinked.lock().unwrap().contains(&path) {
+                return Err(PortError::new("a link is in the way"));
+            }
+        }
+        Ok(())
+    }
     pub fn add_existing(&self, path: &str) {
         self.existing.lock().unwrap().insert(path.into());
     }
     pub fn symlinks(&self) -> Vec<(PathBuf, PathBuf)> {
         self.links.lock().unwrap().clone()
+    }
+    pub fn add_symlink(&self, path: &str) {
+        self.symlinked.lock().unwrap().insert(path.into());
     }
     pub fn make_read_only(&self, path: &str) {
         self.read_only.lock().unwrap().insert(path.into());
@@ -1211,6 +1272,10 @@ impl FileSystem for FakeFs {
     fn remove_dir_all(&self, path: &Path) -> PortResult<()> {
         self.existing.lock().unwrap().remove(path);
         self.dirs.lock().unwrap().remove(path);
+        self.files
+            .lock()
+            .unwrap()
+            .retain(|(p, _)| !p.starts_with(path));
         self.deleted_trees.lock().unwrap().push(path.to_owned());
         Ok(())
     }
@@ -1220,7 +1285,24 @@ impl FileSystem for FakeFs {
     }
     fn exists(&self, path: &Path) -> bool {
         self.existing.lock().unwrap().contains(path)
-            || self.files.lock().unwrap().iter().any(|(p, _)| p == path)
+            // A file's folders exist too.
+            || self.files.lock().unwrap().iter().any(|(p, _)| p.starts_with(path))
+    }
+    fn is_symlink(&self, path: &Path) -> bool {
+        self.symlinked.lock().unwrap().contains(path)
+    }
+    fn entries(&self, dir: &Path) -> PortResult<Vec<PathBuf>> {
+        let mut paths: Vec<PathBuf> = self.existing.lock().unwrap().iter().cloned().collect();
+        paths.extend(self.dirs.lock().unwrap().iter().cloned());
+        paths.extend(self.files.lock().unwrap().iter().map(|(p, _)| p.clone()));
+        let mut entries: Vec<PathBuf> = paths
+            .iter()
+            .filter_map(|p| p.strip_prefix(dir).ok()?.components().next())
+            .map(|first| dir.join(first))
+            .collect();
+        entries.sort();
+        entries.dedup();
+        Ok(entries)
     }
     fn check_writable(&self, dir: &Path) -> PortResult<()> {
         if self.read_only.lock().unwrap().contains(dir) {
@@ -1253,13 +1335,35 @@ impl FileSystem for FakeFs {
             .map(|(_, text)| text.clone()))
     }
     fn write_text(&self, path: &Path, contents: &str) -> PortResult<()> {
-        if self.read_only.lock().unwrap().contains(path) {
+        if self
+            .read_only
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|r| path.starts_with(r))
+        {
             return Err(PortError::new("permission denied"));
         }
         let mut files = self.files.lock().unwrap();
         files.retain(|(p, _)| p != path);
         files.push((path.to_owned(), contents.to_owned()));
         Ok(())
+    }
+    fn create_text(&self, path: &Path, contents: &str) -> PortResult<bool> {
+        if self.exists(path) || self.is_symlink(path) {
+            return Ok(false);
+        }
+        self.write_text(path, contents)?;
+        Ok(true)
+    }
+    fn read_regular_text(&self, path: &Path, max_bytes: u64) -> PortResult<Option<String>> {
+        if self.is_symlink(path) {
+            return Err(PortError::new("not a regular file"));
+        }
+        match self.read_text(path)? {
+            Some(text) if text.len() as u64 > max_bytes => Err(PortError::new("too big")),
+            text => Ok(text),
+        }
     }
     fn write_private_file(&self, path: &Path, contents: &[u8]) -> PortResult<()> {
         let mut blobs = self.blobs.lock().unwrap();
@@ -1285,12 +1389,29 @@ impl FileSystem for FakeFs {
         self.files.lock().unwrap().retain(|(p, _)| p != path);
         Ok(())
     }
+    fn write_text_beneath(&self, root: &Path, rel: &Path, contents: &str) -> PortResult<()> {
+        self.no_link_beneath(root, rel)?;
+        self.write_text(&root.join(rel), contents)
+    }
+    fn remove_file_beneath(&self, root: &Path, rel: &Path) -> PortResult<()> {
+        self.no_link_beneath(root, rel)?;
+        self.remove_file(&root.join(rel))
+    }
+    fn remove_empty_dir_beneath(&self, root: &Path, rel: &Path) -> PortResult<()> {
+        self.no_link_beneath(root, rel)?;
+        self.remove_empty_dir(&root.join(rel))
+    }
     fn remove_empty_dir(&self, path: &Path) -> PortResult<()> {
         self.removed_dirs.lock().unwrap().push(path.to_owned());
         Ok(())
     }
+    /// Follows the links [`FileSystem::symlink_dir`] made.
     fn canonicalize(&self, dir: &Path) -> PortResult<PathBuf> {
-        Ok(dir.to_owned())
+        let links = self.links.lock().unwrap();
+        Ok(links
+            .iter()
+            .find_map(|(target, link)| Some(target.join(dir.strip_prefix(link).ok()?)))
+            .unwrap_or_else(|| dir.to_owned()))
     }
     fn git_root(&self, dir: &Path) -> Option<PathBuf> {
         self.git_roots

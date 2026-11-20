@@ -184,7 +184,7 @@ export interface Skill {
   description: string;
   /** The steps, in Markdown. */
   body: string;
-  /** null: a global skill (every non-protected project, only through Hedy's tools). */
+  /** null: a global skill (every non-protected project; Claude Code's plugin and Hedy's tools). */
   project: string | null;
   status: "proposed" | "approved";
   /** "user" or the AI that proposed it. */
@@ -226,6 +226,137 @@ export interface SkillDraft {
   description: string;
   body: string;
   global: boolean;
+}
+
+/** What the analysis suggests, or what a trial measured. */
+export type SkillVerdict = "useful" | "doubtful" | "harmful" | "untested";
+
+/** One thing found in a skill: by Hedy (level 1) or by the AI (level 2). */
+export type SkillFinding =
+  | { kind: "long"; tokens: number }
+  | { kind: "shortDescription" }
+  | { kind: "broadDescription"; phrase: string }
+  | { kind: "overlaps"; skill: string; percent: number }
+  | { kind: "dangerous"; command: string }
+  | { kind: "risky"; command: string }
+  | { kind: "missingFiles"; files: string[] }
+  | { kind: "noSteps" }
+  | { kind: "safe" }
+  | { kind: "concreteSteps" }
+  | { kind: "contradicts"; rule: number; note: string; says: string }
+  | { kind: "vague"; quote: string; why: string }
+  | { kind: "helpful"; quote: string; why: string };
+
+/** What a trial of a skill measured (`hedy skills try`). */
+export interface TrialResult {
+  verdict: SkillVerdict;
+  tasks: number;
+  passedWith: number;
+  passedWithout: number;
+  /** Runs with the skill that loaded it; null when their CLI does not say. */
+  used: number | null;
+  tokensWith: number;
+  tokensWithout: number;
+  costWithMicros: number;
+  costWithoutMicros: number;
+  /** Hedy ran a check in each copy (else a pass is only finishing). */
+  checked: boolean;
+  /** Test files the runs had changed, put back before the check. */
+  restored: number;
+  /** Unix seconds. */
+  at: number;
+}
+
+export type TrialVoid = "stopped" | "limit" | "notRun" | "leaked" | "nothingPassed";
+
+/** How a trial ended: judged, or no result kept and why. */
+export type TrialOutcome = { judged: TrialResult } | { void: TrialVoid };
+
+/** One skill of the skills section. */
+export interface SkillOverview {
+  skill: Skill;
+  /** null: a global skill. */
+  projectName: string | null;
+  /** For a proposal: the approved skill it would update. */
+  replaces: Skill | null;
+  /** Written where the user's own CLIs read it too. */
+  outside: boolean;
+  /** About how much context it takes when loaded. */
+  tokens: number;
+  findings: SkillFinding[];
+  verdict: SkillVerdict;
+  trial: TrialResult | null;
+}
+
+/** Why a skill cannot be imported as it is. */
+export interface ImportProblem {
+  kind: string;
+  message: string;
+}
+
+export interface ImportCandidate {
+  /** Its file: what the user picks to import. */
+  source: string;
+  name: string;
+  description: string;
+  body: string;
+  droppedKeys: string[];
+  extraFiles: string[];
+  replaces: Skill | null;
+  problem: ImportProblem | null;
+  findings: SkillFinding[];
+  verdict: SkillVerdict;
+  /** Of the text shown: what is imported must still say this. */
+  fingerprint: string;
+}
+
+/** A skill picked to import: its file, and its text's fingerprint when shown. */
+export interface ImportPick {
+  file: string;
+  fingerprint: string;
+}
+
+export interface ImportPreview {
+  candidates: ImportCandidate[];
+  total: number;
+}
+
+export interface ImportReport {
+  imported: Skill[];
+  updated: Skill[];
+  skipped: { name: string; problem: ImportProblem }[];
+  files: SkillFiles;
+}
+
+/** What the AI saw in a skill against the project's notes (level 2). */
+export interface SkillReview {
+  findings: SkillFinding[];
+  /** The answer could not be read: nothing was judged. */
+  unread: boolean;
+  /** How many notes went with the skill. */
+  notes: number;
+  durationMs: number;
+  verdict: SkillVerdict;
+  account: string | null;
+}
+
+export interface ExportReport {
+  written: string[];
+  /** Something was already there: never replaced. */
+  skipped: string[];
+}
+
+export interface TrialCheck {
+  /** The project's test command, guessed from its files. */
+  check: string | null;
+  /** Checks run isolated on this machine. */
+  isolated: boolean;
+}
+
+export interface StartedTrial {
+  id: string;
+  /** Task ids: with, without, with, … */
+  tasks: string[];
 }
 
 export interface NewAccountInput {

@@ -644,6 +644,11 @@ impl Hedy {
         let space = PERSONAL;
         let _guard = self.sync_guard(space)?;
         let result = self.sync_locked(space);
+        // Skills that came in or changed reach the sessions and the copies
+        // outside Hedy now, not at the next start.
+        if result.is_ok() {
+            self.refresh_skills_plugins();
+        }
         if self.space_is_set_up(space)? {
             match &result {
                 Ok(_) => self.clear_sync_setting(space, LAST_ERROR)?,
@@ -1839,6 +1844,10 @@ impl Hedy {
                 let Ok(body) = serde_json::from_str::<SkillBody>(body) else {
                     return Ok(false);
                 };
+                // Checked as one made here: its name becomes a folder.
+                let Some(body) = super::skills::synced_skill(body) else {
+                    return Ok(false);
+                };
                 self.store
                     .write_synced_skill(row, project.as_deref(), &body)?
                     .to_string()
@@ -1908,7 +1917,11 @@ impl Hedy {
         let row = local_id.parse::<i64>().unwrap_or(-1);
         match kind {
             ItemKind::Note => self.store.delete_note(row)?,
-            ItemKind::Skill => self.store.delete_skill(row)?,
+            ItemKind::Skill => {
+                self.forget_outside_of(row);
+                self.forget_skill_trial(row);
+                self.store.delete_skill(row)?
+            }
             ItemKind::Template => self.store.delete_template(row)?,
             ItemKind::Theme => self.themes.delete(local_id)?,
             ItemKind::Suggestion => {}

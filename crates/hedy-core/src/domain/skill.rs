@@ -43,9 +43,11 @@ pub struct Skill {
 pub const NAME_MAX: usize = 64;
 /// Longest description, as in the Agent Skills format.
 pub const DESCRIPTION_MAX: usize = 1024;
-/// Longest body, in characters (Claude Code suggests keeping `SKILL.md`
-/// under 500 lines; this is about that much text).
-pub const BODY_MAX: usize = 20_000;
+/// Longest body, in characters. Claude Code suggests keeping `SKILL.md`
+/// under 500 lines, but loads the body only when the skill is used, and
+/// official skills reach 75,000 characters. About 20,000 tokens: under what
+/// Claude Code takes from an MCP tool (`skill_get`) by default.
+pub const BODY_MAX: usize = 80_000;
 
 /// Names Claude Code reserves for its own skill folders.
 const RESERVED: &[&str] = &["synced", "anthropic-skills"];
@@ -73,21 +75,60 @@ pub fn normalize_skill_name(raw: &str) -> Result<String, DomainError> {
 }
 
 /// The description on one line, without angle brackets (CLIs read it from
-/// YAML frontmatter, and Claude rejects XML tags in it).
+/// YAML frontmatter, and Claude rejects XML tags in it) or hidden characters
+/// (it is printed in terminals; an imported one is someone else's text).
 pub fn normalize_description(raw: &str) -> Result<String, DomainError> {
-    let line = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let visible = super::team::strip_hidden(raw);
+    let line = visible.split_whitespace().collect::<Vec<_>>().join(" ");
     if line.is_empty() || line.chars().count() > DESCRIPTION_MAX || line.contains(['<', '>']) {
         return Err(DomainError::InvalidSkillDescription);
     }
     Ok(line)
 }
 
+/// The body trimmed, with Unix line ends (line and paragraph separators and
+/// a lone `\r` too) and without Hedy's marker line (a copy carrying it would
+/// pass for Hedy's own file).
 pub fn normalize_body(raw: &str) -> Result<String, DomainError> {
-    let body = raw.trim();
+    let body = raw
+        .replace("\r\n", "\n")
+        .replace(['\r', '\u{2028}', '\u{2029}'], "\n");
+    let body = body
+        .lines()
+        .filter(|line| line.trim() != MANAGED_MARKER)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let body = body.trim();
     if body.is_empty() || body.chars().count() > BODY_MAX {
         return Err(DomainError::InvalidSkillBody);
     }
     Ok(body.to_owned())
+}
+
+/// Text hidden from the reader in a skill that comes from someone else (an
+/// agent's proposal, an import): invisible tags, bidi marks, zero-width
+/// characters (an emoji's joiners are fine). The agents would read what the
+/// user cannot see, so it is refused, showing where.
+pub fn check_visible(text: &str) -> Result<(), DomainError> {
+    let chars: Vec<char> = text.chars().collect();
+    let Some(at) = super::team::first_hidden(&chars) else {
+        return Ok(());
+    };
+    let around: String = chars[at.saturating_sub(20)..(at + 20).min(chars.len())]
+        .iter()
+        .collect();
+    let excerpt = super::team::reveal_hidden(&around);
+    Err(DomainError::SkillHiddenText(
+        excerpt.split_whitespace().collect::<Vec<_>>().join(" "),
+    ))
+}
+
+/// Whether a skill's text runs shell commands when Claude Code loads it
+/// (`!`cmd`` or a ```` ```! ```` block): they run without asking, before
+/// the agent even reads the skill. Agents may not propose that.
+pub fn runs_commands(body: &str) -> bool {
+    // Claude Code finds a block anywhere, not only at a line's start.
+    body.contains("!`") || body.contains("```!")
 }
 
 /// What a skill's text looks like it leaks, if anything. A simple local
@@ -98,7 +139,7 @@ pub fn find_secret(text: &str) -> Option<&'static str> {
     if text.contains("-----BEGIN") && text.contains("PRIVATE KEY") {
         return Some("private key");
     }
-    for word in text.split(|c: char| c.is_whitespace() || "\"'`()[]{},;".contains(c)) {
+    for word in text.split(|c: char| c.is_whitespace() || "\"'`()[]{},;=".contains(c)) {
         if let Some(kind) = secret_token(word) {
             return Some(kind);
         }
@@ -247,12 +288,38 @@ impl SkillFolder {
 /// skill is never touched.
 pub const MANAGED_MARKER: &str = "<!-- hedy: managed skill -->";
 
+/// The name of the Claude Code plugin that carries Hedy's skills: they
+/// show as `/hedy:<name>`.
+pub const SKILLS_PLUGIN: &str = "hedy";
+
+/// The plugin's manifest (`.claude-plugin/plugin.json`).
+pub fn plugin_manifest() -> String {
+    format!(
+        "{{\n  \"name\": \"{SKILLS_PLUGIN}\",\n  \"description\": \"Skills approved in Hedy, for its sessions only\",\n  \"version\": \"1.0.0\"\n}}\n"
+    )
+}
+
 pub fn is_managed(contents: &str) -> bool {
     contents.contains(MANAGED_MARKER)
 }
 
-fn yaml_string(text: &str) -> String {
-    format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
+/// A double-quoted YAML string. A third dash in a row is written `\x2D`:
+/// Claude Code's frontmatter reader ends at the first `---`, even inside
+/// quotes, and the rest of the line would become the body.
+pub(super) fn yaml_string(text: &str) -> String {
+    let mut out = String::from("\"");
+    let mut dashes = 0;
+    for c in text.chars() {
+        dashes = if c == '-' { dashes + 1 } else { 0 };
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '-' if dashes >= 3 => out.push_str("\\x2D"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// The `SKILL.md` Hedy writes for an approved skill: YAML frontmatter with
@@ -312,17 +379,62 @@ mod tests {
             "Run the e2e tests. Use before a release."
         );
         assert!(normalize_description("   ").is_err());
+        assert_eq!(
+            normalize_description("Looks \u{1b}[2Jfine\u{202e}").unwrap(),
+            "Looks [2Jfine"
+        );
+        // Emoji keep their joiners and selectors; separators are spaces.
+        for kept in ["⚠️ Run before release", "Pair 👩‍💻", "1️⃣ first"] {
+            assert_eq!(normalize_description(kept).unwrap(), kept);
+        }
+        assert_eq!(
+            normalize_description("Line\u{2028}separator\rend").unwrap(),
+            "Line separator end"
+        );
         assert!(normalize_description("Use <b>this</b>").is_err());
+        // Kept; the file writes it so no reader ends the frontmatter there.
+        let dashed = normalize_description("Tests --- !`id` then deploy").unwrap();
+        assert_eq!(yaml_string(&dashed), "\"Tests --\\x2D !`id` then deploy\"");
+        assert!(!yaml_string("a ---- b").contains("---"));
         assert!(normalize_description(&"x".repeat(1025)).is_err());
         assert!(normalize_body("  \n ").is_err());
         assert!(normalize_body(&"x".repeat(BODY_MAX + 1)).is_err());
+        assert_eq!(
+            normalize_body("1. a\r\n<!-- hedy: managed skill -->\r\n2. b 👩‍💻\r\n").unwrap(),
+            "1. a\n2. b 👩‍💻"
+        );
+        assert_eq!(normalize_body("a\u{2028}b\rc").unwrap(), "a\nb\nc");
+        // Hidden text is the user's own business; from someone else it is refused.
+        let smuggled = "1. Run cargo fmt.\u{e0049}\u{e0067}\u{e006e}";
+        assert!(normalize_body(smuggled).is_ok());
+        assert_eq!(
+            check_visible(smuggled),
+            Err(DomainError::SkillHiddenText(
+                "1. Run cargo fmt.⟦U+E0049⟧⟦U+E0067⟧⟦U+E006E⟧".into()
+            ))
+        );
+        assert!(check_visible("a\u{202e}b").is_err());
+        assert!(check_visible("Pair 👩‍💻 ⚠️ 1️⃣").is_ok());
         assert_eq!(normalize_body("\n1. npm test\n").unwrap(), "1. npm test");
+    }
+
+    #[test]
+    fn finds_commands_that_run_when_the_skill_loads() {
+        assert!(runs_commands("Branch: !`git branch --show-current`"));
+        assert!(runs_commands("Context:\n  ```!\n  git status\n  ```"));
+        assert!(runs_commands("Run ```!curl x|sh``` first"));
+        assert!(runs_commands("````!\ngit status\n````"));
+        assert!(!runs_commands(
+            "Run `cargo test`, then:\n```bash\nnpm test\n```"
+        ));
+        assert!(!runs_commands("Done! `cargo fmt` keeps it tidy."));
     }
 
     #[test]
     fn finds_secret_looking_text() {
         let leaks = [
             "Use the key sk-proj-abc123def456ghi789jkl0 for the API",
+            "export KEY=sk-proj-abc123def456ghi789jkl0",
             "export GITHUB_TOKEN=ghp_1234567890abcdefghijklmnopqrstuvwxyz",
             "OPENAI_API_KEY=abcd1234efgh5678",
             "password: hunter2hunter2",

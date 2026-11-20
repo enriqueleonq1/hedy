@@ -8,6 +8,7 @@ mod dto;
 mod events;
 mod rules;
 mod ship;
+mod skill_section;
 mod sync;
 mod team;
 mod terminal;
@@ -43,6 +44,13 @@ pub fn run() {
             let hedy = hedy.with_task_events(events);
             waits::start(&hedy);
             sync::start(app.handle().clone(), &hedy);
+            // Trials whose driver died, and session plugins of tasks closed
+            // while the app was away.
+            let tidy = hedy.clone();
+            std::thread::spawn(move || {
+                tidy.tidy_orphan_trials();
+                tidy.refresh_skills_plugins();
+            });
             app.manage(AppState {
                 hedy,
                 paths,
@@ -134,6 +142,18 @@ pub fn run() {
             commands::approve_skill,
             commands::reject_skill,
             commands::remove_skill,
+            skill_section::skills_overview,
+            skill_section::set_skill_outside,
+            skill_section::preview_skill_import,
+            skill_section::review_skill_import,
+            skill_section::import_skills,
+            skill_section::review_skill,
+            skill_section::export_skills,
+            skill_section::propose_trial_tasks,
+            skill_section::trial_check,
+            skill_section::start_skill_trial,
+            skill_section::cancel_skill_trial,
+            skill_section::take_trial_outcome,
             commands::project_status,
             commands::project_usage,
             commands::usage_summary,

@@ -441,6 +441,37 @@ pub trait ProcessRunner: Send + Sync {
         spec: &LaunchSpec,
         timeout: std::time::Duration,
     ) -> PortResult<CapturedOutput>;
+    /// Runs a check Hedy itself starts in a task's copy (a skill trial's test
+    /// command), which runs code an AI wrote: only the variables a build
+    /// needs (`PATH`, `HOME`, locale; never tokens or keys), in a process
+    /// group of its own, killed whole on timeout or by
+    /// [`ProcessRunner::stop_checks`].
+    /// `group` names whose check it is (a trial), for
+    /// [`ProcessRunner::stop_checks`]. On Linux with bubblewrap it runs
+    /// isolated: no network, no session bus, the system read-only, the home
+    /// folder empty but for the tools' caches, `reads` (the project the copy
+    /// links to) read-only and only the copy writable; killed with Hedy.
+    fn run_check(
+        &self,
+        spec: &LaunchSpec,
+        timeout: std::time::Duration,
+        group: &str,
+        reads: &[std::path::PathBuf],
+    ) -> PortResult<CapturedOutput>;
+    /// Kills the checks of `group` still running (its trial was cancelled).
+    fn stop_checks(&self, group: &str);
+    /// This process, told apart from a later one that reuses its pid.
+    /// `None` where it cannot be told.
+    fn this_process(&self) -> Option<String> {
+        None
+    }
+    /// Whether the process [`ProcessRunner::this_process`] named is still
+    /// running.
+    fn process_alive(&self, _process: &str) -> bool {
+        true
+    }
+    /// Whether checks run isolated here (see [`ProcessRunner::run_check`]).
+    fn isolates_checks(&self) -> bool;
     /// Names (never values) of the variables in Hedy's own environment that
     /// launched CLIs do not get, because [`crate::domain::env::is_blocked`].
     fn blocked_env_vars(&self) -> Vec<String>;
@@ -686,6 +717,12 @@ pub struct AgentRequest {
     /// read a protected file without naming it (`find … | xargs cat`), so a
     /// request that only needs to read goes without one.
     pub no_shell: bool,
+    /// No tools at all, no MCP server and no skill: a request that carries
+    /// someone else's text (a skill, a change) and only needs to answer.
+    pub no_tools: bool,
+    /// Claude Code plugins for this session only (`--plugin-dir`): Hedy's
+    /// approved skills, never written where the user's own `claude` reads.
+    pub plugins: Vec<PathBuf>,
 }
 
 impl AgentRequest {
@@ -772,6 +809,10 @@ pub trait FileSystem: Send + Sync {
     /// folders hold CLI logins.
     fn create_private_dir(&self, path: &Path) -> PortResult<()>;
     fn exists(&self, path: &Path) -> bool;
+    /// Whether `path` itself is a symbolic link (not followed).
+    fn is_symlink(&self, path: &Path) -> bool;
+    /// The entries of a folder; empty when it does not exist.
+    fn entries(&self, dir: &Path) -> PortResult<Vec<PathBuf>>;
     /// Whether files can be created in `dir` (writes and removes a probe file).
     fn check_writable(&self, dir: &Path) -> PortResult<()>;
     /// `link` → `target`.
@@ -782,6 +823,13 @@ pub trait FileSystem: Send + Sync {
     fn read_text(&self, path: &Path) -> PortResult<Option<String>>;
     /// Creates or replaces a file, creating its parent folders.
     fn write_text(&self, path: &Path, contents: &str) -> PortResult<()>;
+    /// Creates a file (and its parent folders) only when nothing is at
+    /// `path`, not even a link: `false` when something is.
+    fn create_text(&self, path: &Path, contents: &str) -> PortResult<bool>;
+    /// A regular file's text, at most `max_bytes`; `None` when it does not
+    /// exist. Fails for a link, a device or a pipe, a bigger file or one that
+    /// is not UTF-8: someone else's folder can hold any of them.
+    fn read_regular_text(&self, path: &Path, max_bytes: u64) -> PortResult<Option<String>>;
     /// Writes a file readable only by the user (its folder too), creating
     /// the folder when missing. Fails when the file already exists.
     fn write_private_file(&self, path: &Path, contents: &[u8]) -> PortResult<()>;
@@ -789,6 +837,16 @@ pub trait FileSystem: Send + Sync {
     fn read_bytes(&self, path: &Path) -> PortResult<Option<Vec<u8>>>;
     /// Deletes a file; nothing happens when it does not exist.
     fn remove_file(&self, path: &Path) -> PortResult<()>;
+    /// Creates or replaces `rel` inside `root` (making its folders), never
+    /// through a link: not at the file, not at any folder of `rel`, even one
+    /// swapped in meanwhile (each step is opened from the one before).
+    fn write_text_beneath(&self, root: &Path, rel: &Path, contents: &str) -> PortResult<()>;
+    /// Deletes `rel` inside `root` the same way (nothing when it is missing).
+    fn remove_file_beneath(&self, root: &Path, rel: &Path) -> PortResult<()>;
+    /// Deletes the folder `rel` inside `root` the same way, only when it is
+    /// empty (nothing when it is missing or holds anything; an error when a
+    /// link is on the way).
+    fn remove_empty_dir_beneath(&self, root: &Path, rel: &Path) -> PortResult<()>;
     /// Deletes a folder only when it exists and is empty.
     fn remove_empty_dir(&self, path: &Path) -> PortResult<()>;
     /// Canonical form of `dir`.

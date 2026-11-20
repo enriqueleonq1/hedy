@@ -32,6 +32,7 @@ impl Hedy {
         images: Vec<NewImage>,
     ) -> AppResult<Vec<QueuedMessage>> {
         let mut task = self.open_task(id)?;
+        self.refuse_trial_run(id)?;
         let text = text.trim();
         if text.is_empty() {
             return Err(AppError::EmptyPrompt);

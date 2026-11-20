@@ -77,6 +77,11 @@ pub fn hidden_chars(text: &str) -> Vec<char> {
         .collect()
 }
 
+/// Where the first hidden character is (as [`hidden_chars`] finds them).
+pub fn first_hidden(chars: &[char]) -> Option<usize> {
+    (0..chars.len()).find(|&i| hidden_at(chars, i))
+}
+
 /// `text` with each hidden character shown as `⟦U+202E⟧`, for a reviewer.
 pub fn reveal_hidden(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
@@ -89,6 +94,25 @@ pub fn reveal_hidden(text: &str) -> String {
         }
     }
     out
+}
+
+/// `text` without its hidden characters (as [`reveal_hidden`] finds them:
+/// the joiners and selectors of an emoji stay), line and paragraph
+/// separators turned into spaces.
+pub fn strip_hidden(text: &str) -> String {
+    let chars: Vec<char> = text
+        .chars()
+        .map(|c| match c {
+            '\u{2028}' | '\u{2029}' | '\u{85}' => ' ',
+            c => c,
+        })
+        .collect();
+    chars
+        .iter()
+        .enumerate()
+        .filter(|(i, c)| !hidden_at(&chars, *i) || **c == '\r')
+        .map(|(_, c)| if *c == '\r' { ' ' } else { *c })
+        .collect()
 }
 
 const BLACK_FLAG: char = '\u{1f3f4}';

@@ -7,6 +7,7 @@ use std::path::Path;
 
 use super::{AppResult, Hedy};
 use crate::domain::command::offerable;
+use crate::domain::skill::SKILLS_PLUGIN;
 use crate::domain::{Account, AccountId, AgentCommand, CommandSource, KnownCommands, TaskId};
 
 impl Hedy {
@@ -78,13 +79,16 @@ impl Hedy {
 
 /// The part of a list seen in some project that holds in any other: the
 /// CLI's built-ins and the account's plugins. Custom commands and skills may
-/// be that project's own (`.claude/commands`, `.claude/skills`).
+/// be that project's own (`.claude/commands`, `.claude/skills`), and so are
+/// Hedy's own skills (`/hedy:<name>`, the session plugin).
 fn account_wide(known: &KnownCommands) -> KnownCommands {
+    let hedys = format!("{SKILLS_PLUGIN}:");
     KnownCommands {
         commands: known
             .commands
             .iter()
             .filter(|c| matches!(c.source, CommandSource::Builtin | CommandSource::Plugin))
+            .filter(|c| !c.name.starts_with(&hedys))
             .cloned()
             .collect(),
         seen_at: known.seen_at,
@@ -115,6 +119,8 @@ mod tests {
             commands: vec![
                 AgentCommand::new("review", CommandSource::Builtin),
                 AgentCommand::new("studio:mockup", CommandSource::Plugin),
+                // That project's skills, from Hedy's session plugin.
+                AgentCommand::new("hedy:run-e2e-tests", CommandSource::Plugin),
                 AgentCommand::new("deploy", CommandSource::Custom),
                 AgentCommand::new("pricing", CommandSource::Skill),
                 AgentCommand::new("mcp__x__y", CommandSource::Unknown),

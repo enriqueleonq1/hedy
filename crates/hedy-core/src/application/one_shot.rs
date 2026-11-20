@@ -25,6 +25,8 @@ pub(super) struct OneShot<'a> {
     pub refusal: String,
     /// Only the tools that read files: no shell (see [`AgentRequest::no_shell`]).
     pub no_shell: bool,
+    /// No tools at all (see [`AgentRequest::no_tools`]).
+    pub no_tools: bool,
     pub timeout: Duration,
 }
 
@@ -71,6 +73,8 @@ impl Hedy {
                 mcp: Vec::new(),
                 conversation: false,
                 no_shell: shot.no_shell,
+                no_tools: shot.no_tools,
+                plugins: Vec::new(),
             },
             sink,
         )?;

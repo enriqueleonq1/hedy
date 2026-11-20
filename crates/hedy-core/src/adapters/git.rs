@@ -13,6 +13,78 @@ use crate::tr;
 
 pub struct GitCli;
 
+/// The task copy `dir` is in (`<project>/.hedy/worktrees/<id>`), if any.
+fn task_copy(dir: &Path) -> Option<(&Path, &Path)> {
+    dir.ancestors().find_map(|copy| {
+        let worktrees = copy.parent()?;
+        let hedy = worktrees.parent()?;
+        (worktrees.file_name()? == "worktrees" && hedy.file_name()? == ".hedy")
+            .then_some((copy, hedy.parent()?))
+    })
+}
+
+/// The copy's own folder in the project's git data, found from the project
+/// (which the copy cannot write) and never from the copy's `.git`.
+fn copy_git_dir(copy: &Path, project: &Path) -> Option<PathBuf> {
+    let common = plain(project, &["rev-parse", "--git-common-dir"]).ok()?;
+    if !common.status.success() {
+        return None;
+    }
+    let common = project.join(String::from_utf8_lossy(&common.stdout).trim());
+    let copy = copy.canonicalize().ok()?;
+    fs::read_dir(common.join("worktrees"))
+        .ok()?
+        .flatten()
+        .find_map(|entry| {
+            let recorded = fs::read_to_string(entry.path().join("gitdir")).ok()?;
+            // Relative to the entry with `worktree.useRelativePaths` (git 2.48+).
+            let recorded = entry.path().join(recorded.trim());
+            let recorded = recorded.parent()?.canonicalize().ok()?;
+            (recorded == copy).then(|| entry.path())
+        })
+}
+
+/// Where git looks when a copy has no real git data: a path that cannot
+/// exist (`/dev/null` is no folder), so git fails.
+const NO_GIT_DIR: &str = "/dev/null/hedy-no-git";
+
+/// Git in a task copy uses the copy's real git data whatever its `.git`
+/// says: anything that writes in the copy (the agent, the trial's check) can
+/// point it at a folder of its own, whose config git would obey (a
+/// `core.fsmonitor` command runs on every `git diff`). With no real data,
+/// git finds none and fails. A repository nested in the copy is never
+/// entered (git would obey its config too), no fsmonitor runs, and what the
+/// environment says about other git data (a hook's `GIT_INDEX_FILE`…) is
+/// dropped.
+pub(super) fn pin_task_copy(command: &mut Command, dir: &Path) {
+    let Some((copy, project)) = task_copy(dir) else {
+        return;
+    };
+    let git_dir = copy_git_dir(copy, project).unwrap_or_else(|| PathBuf::from(NO_GIT_DIR));
+    super::sync_git::clear_repo_redirects(command);
+    command
+        .env("GIT_DIR", git_dir)
+        .env("GIT_WORK_TREE", copy)
+        .args([
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "diff.ignoreSubmodules=all",
+            "-c",
+            "status.submoduleSummary=false",
+            "-c",
+            "submodule.recurse=false",
+        ]);
+}
+
+/// `git -C dir`, held to a task copy's real git data (see [`pin_task_copy`]).
+pub(super) fn git_in(dir: &Path) -> Command {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(dir).env("GIT_TERMINAL_PROMPT", "0");
+    pin_task_copy(&mut command, dir);
+    command
+}
+
 /// Diff options that keep its format Hedy's whatever the user's config:
 /// no external diff or textconv (a decrypting driver, a command of the
 /// config), and the usual `a/` `b/` prefixes (`diff.noprefix`,
@@ -69,11 +141,8 @@ fn attribute_hidden(repo: &Path, paths: &[&str]) -> std::collections::HashSet<St
     if paths.is_empty() {
         return std::collections::HashSet::new();
     }
-    let child = Command::new("git")
-        .arg("-C")
-        .arg(repo)
+    let child = git_in(repo)
         .args(["check-attr", "-z", "--stdin", "filter", "diff"])
-        .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -162,6 +231,18 @@ fn untracked_file(repo: &Path, path: &str, hidden: bool) -> FileDiff {
 }
 
 pub(super) fn run(dir: &Path, args: &[&str]) -> PortResult<Output> {
+    if task_copy(dir).is_none() {
+        return plain(dir, args);
+    }
+    git_in(dir)
+        .args(args)
+        .output()
+        .map_err(|e| PortError::new(format!("no se pudo ejecutar git: {e}")))
+}
+
+/// Git as the folder's `.git` says, for folders that are not task copies
+/// (and for finding a copy's real git data).
+fn plain(dir: &Path, args: &[&str]) -> PortResult<Output> {
     Command::new("git")
         .arg("-C")
         .arg(dir)
@@ -169,6 +250,61 @@ pub(super) fn run(dir: &Path, args: &[&str]) -> PortResult<Output> {
         .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .map_err(|e| PortError::new(format!("no se pudo ejecutar git: {e}")))
+}
+
+/// Stages every change in a task's copy as `git add --all` would, but never
+/// goes into a repository nested in it: `add` runs a nested repository's own
+/// status, and with it whatever its config says (a clean filter). Its
+/// folder is staged as git sees it from outside, or not at all.
+fn stage_all(worktree: &Path) -> PortResult<()> {
+    use std::process::Stdio;
+    let listed = git(
+        worktree,
+        &[
+            "ls-files",
+            "-z",
+            "--others",
+            "--modified",
+            "--deleted",
+            "--exclude-standard",
+        ],
+    )?;
+    if listed.is_empty() {
+        return Ok(());
+    }
+    let mut child = git_in(worktree)
+        .args([
+            "update-index",
+            "--add",
+            "--remove",
+            "--ignore-submodules",
+            "-z",
+            "--stdin",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| PortError::new(format!("no se pudo ejecutar git: {e}")))?;
+    // Written from another thread: a long list fills the pipes both ways.
+    let stdin = child.stdin.take();
+    let writer = std::thread::spawn(move || {
+        if let Some(mut stdin) = stdin {
+            let _ = stdin.write_all(listed.as_bytes());
+        }
+    });
+    let out = child
+        .wait_with_output()
+        .map_err(|e| PortError::new(format!("git update-index: {e}")))?;
+    let _ = writer.join();
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(PortError::new(format!(
+            "git update-index: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )))
+    }
 }
 
 /// Runs git and returns stdout, or an error with git's own message.
@@ -249,13 +385,13 @@ impl Git for GitCli {
 
     fn diff(&self, worktree: &Path, base: &str) -> PortResult<Vec<FileDiff>> {
         // Staging inside the task's own worktree makes new files part of the diff.
-        git(worktree, &["add", "--all"])?;
+        stage_all(worktree)?;
         let patch = git(worktree, &diff_args(&["--cached"], &[base]))?;
         Ok(parse_unified(&patch))
     }
 
     fn commit_all(&self, worktree: &Path, message: &str) -> PortResult<bool> {
-        git(worktree, &["add", "--all"])?;
+        stage_all(worktree)?;
         let staged = run(worktree, &["diff", "--cached", "--quiet"])?;
         if staged.status.success() {
             return Ok(false);
@@ -292,10 +428,19 @@ impl Git for GitCli {
 
     fn remove_worktree(&self, repo: &Path, path: &Path, branch: &str) -> PortResult<()> {
         if path.exists() {
-            git(
+            let removed = git(
                 repo,
                 &["worktree", "remove", "--force", &path.to_string_lossy()],
-            )?;
+            );
+            // A copy whose `.git` no longer points back (something in it
+            // rewrote it) goes anyway; `remove_dir_all` follows no link.
+            if let Err(e) = removed {
+                if task_copy(path).is_none_or(|(copy, _)| copy != path) {
+                    return Err(e);
+                }
+                fs::remove_dir_all(path)
+                    .map_err(|e| PortError::new(format!("{}: {e}", path.display())))?;
+            }
         }
         let _ = git(repo, &["worktree", "prune"]);
         git(repo, &["branch", "-D", branch]).map(drop)
@@ -545,7 +690,10 @@ impl Git for GitCli {
         }
         // The terminal stays git's: hooks print, the editor and a signing
         // passphrase prompt can ask.
-        let status = Command::new("git").arg("-C").arg(repo).args(&args).status();
+        let status = git_in(repo)
+            .env_remove("GIT_TERMINAL_PROMPT")
+            .args(&args)
+            .status();
         let _ = fs::remove_file(&file);
         let status = status.map_err(|e| PortError::new(format!("no se pudo ejecutar git: {e}")))?;
         if status.success() {
@@ -580,6 +728,173 @@ mod tests {
         git(&repo, &["add", "."]).unwrap();
         git(&repo, &["commit", "-qm", "Inicio"]).unwrap();
         (tmp, repo)
+    }
+
+    #[test]
+    fn a_task_copy_whose_git_file_points_elsewhere_runs_nothing_of_it() {
+        use crate::application::ports::CodeReader;
+        let (tmp, repo) = repo();
+        let g = GitCli;
+        let base = g.head_commit(&repo).unwrap();
+        let copy = repo.join(".hedy/worktrees/t1");
+        g.add_worktree(&repo, &copy, "hedy/t1", &base).unwrap();
+        fs::write(copy.join("app.py"), "def crear():\n    return 1\n").unwrap();
+        // What the run (or its check) can write: a git folder of its own,
+        // sharing the real objects, whose config runs a command on `diff`.
+        let ran = tmp.path().join("ran");
+        let evil = copy.join("evil");
+        fs::create_dir_all(evil.join("objects/info")).unwrap();
+        fs::create_dir_all(evil.join("refs/heads")).unwrap();
+        fs::write(evil.join("HEAD"), "ref: refs/heads/hedy/t1\n").unwrap();
+        fs::create_dir_all(evil.join("refs/heads/hedy")).unwrap();
+        fs::write(evil.join("refs/heads/hedy/t1"), format!("{base}\n")).unwrap();
+        let objects = repo.join(".git/objects");
+        fs::write(
+            evil.join("objects/info/alternates"),
+            format!("{}\n", objects.display()),
+        )
+        .unwrap();
+        let fsmonitor = format!("touch {}", ran.display());
+        fs::write(
+            evil.join("config"),
+            format!(
+                "[core]\n\trepositoryformatversion = 0\n\tworktree = {}\n\tfsmonitor = \"{fsmonitor}\"\n",
+                copy.display()
+            ),
+        )
+        .unwrap();
+        fs::write(copy.join(".git"), format!("gitdir: {}\n", evil.display())).unwrap();
+
+        let changes = g.changes(&copy, &base, None).unwrap();
+        assert!(changes.iter().any(|c| c.path == "app.py"), "{changes:?}");
+        let diff = g.diff(&copy, &base).unwrap();
+        assert!(diff.iter().any(|f| f.path == "app.py"));
+        assert!(!ran.exists(), "the copy's own git config ran a command");
+        // And it goes, although git no longer knows it as its worktree.
+        g.remove_worktree(&repo, &copy, "hedy/t1").unwrap();
+        assert!(!copy.exists());
+        assert!(!ran.exists());
+    }
+
+    /// A git folder that runs `touch <ran>` from `core.fsmonitor`, sharing
+    /// `repo`'s objects, at `dir` (for the work tree `work`).
+    fn plant_git_dir(dir: &Path, work: &Path, repo: &Path, ran: &Path) {
+        let base = git(repo, &["rev-parse", "HEAD"]).unwrap();
+        fs::create_dir_all(dir.join("objects/info")).unwrap();
+        fs::create_dir_all(dir.join("refs/heads")).unwrap();
+        fs::write(dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        fs::write(dir.join("refs/heads/main"), base).unwrap();
+        let objects = repo.join(".git/objects");
+        fs::write(
+            dir.join("objects/info/alternates"),
+            format!("{}\n", objects.display()),
+        )
+        .unwrap();
+        let config = format!(
+            "[core]\n\trepositoryformatversion = 0\n\tworktree = {}\n\tfsmonitor = \"touch {}\"\n",
+            work.display(),
+            ran.display()
+        );
+        fs::write(dir.join("config"), config).unwrap();
+    }
+
+    #[test]
+    fn a_task_copy_recorded_with_relative_paths_keeps_its_git() {
+        use crate::application::ports::CodeReader;
+        let (_tmp, repo) = repo();
+        if git(&repo, &["config", "worktree.useRelativePaths", "true"]).is_err() {
+            return;
+        }
+        let g = GitCli;
+        let base = g.head_commit(&repo).unwrap();
+        let copy = repo.join(".hedy/worktrees/t1");
+        g.add_worktree(&repo, &copy, "hedy/t1", &base).unwrap();
+        fs::write(copy.join("app.py"), "def crear():\n    return 1\n").unwrap();
+        let changes = g.changes(&copy, &base, None).unwrap();
+        assert!(changes.iter().any(|c| c.path == "app.py"), "{changes:?}");
+        assert!(
+            g.diff(&copy, &base)
+                .unwrap()
+                .iter()
+                .any(|f| f.path == "app.py")
+        );
+    }
+
+    #[test]
+    fn a_repository_nested_in_a_task_copy_is_never_entered() {
+        use crate::application::ports::CodeReader;
+        let (tmp, repo) = repo();
+        let g = GitCli;
+        let base = g.head_commit(&repo).unwrap();
+        let copy = repo.join(".hedy/worktrees/t1");
+        g.add_worktree(&repo, &copy, "hedy/t1", &base).unwrap();
+        let ran = tmp.path().join("ran");
+        let nested = copy.join("lib");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("a.py"), "x = 1\n").unwrap();
+        plant_git_dir(&nested.join(".git"), &nested, &repo, &ran);
+        fs::write(copy.join("app.py"), "def crear():\n    return 1\n").unwrap();
+        // A real repository of its own, with a committed file it changes
+        // after being staged and a clean filter in its config.
+        fs::remove_dir_all(nested.join(".git")).unwrap();
+        let nested_git = |args: &[&str]| {
+            let out = Command::new("git")
+                .arg("-C")
+                .arg(&nested)
+                .args([
+                    "-c",
+                    "user.name=T",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{args:?}");
+        };
+        nested_git(&["init", "-q"]);
+        nested_git(&["add", "a.py"]);
+        nested_git(&["commit", "-qm", "nested"]);
+        let mut config = fs::read_to_string(nested.join(".git/config")).unwrap();
+        config.push_str(&format!(
+            "[filter \"evil\"]\n\tclean = \"touch {}\"\n",
+            ran.display()
+        ));
+        fs::write(nested.join(".git/config"), config).unwrap();
+        fs::write(nested.join(".gitattributes"), "* filter=evil\n").unwrap();
+
+        let diff = g.diff(&copy, &base).unwrap();
+        assert!(diff.iter().any(|f| f.path == "app.py"));
+        fs::write(nested.join("a.py"), "x = 2\n").unwrap();
+        g.diff(&copy, &base).unwrap();
+        g.changes(&copy, &base, None).unwrap();
+        g.uncommitted_changes(&copy).unwrap();
+        fs::write(nested.join("a.py"), "x = 3\n").unwrap();
+        g.commit_all(&copy, "Cambios").unwrap();
+        g.diff(&copy, &base).unwrap();
+        assert!(!ran.exists(), "a nested repository's config ran a command");
+    }
+
+    #[test]
+    fn a_task_copy_git_no_longer_knows_runs_no_git_folder_of_its_own() {
+        use crate::application::ports::CodeReader;
+        let (tmp, repo) = repo();
+        let g = GitCli;
+        let base = g.head_commit(&repo).unwrap();
+        let copy = repo.join(".hedy/worktrees/t1");
+        g.add_worktree(&repo, &copy, "hedy/t1", &base).unwrap();
+        // Its `.git` gone, a prune forgets it; whatever it planted is not used.
+        fs::remove_file(copy.join(".git")).unwrap();
+        git(&repo, &["worktree", "prune"]).unwrap();
+        let ran = tmp.path().join("ran");
+        for planted in [".hedy-no-git", ".git"] {
+            plant_git_dir(&copy.join(planted), &copy, &repo, &ran);
+        }
+        assert!(g.changes(&copy, &base, None).is_err() || !ran.exists());
+        let _ = g.diff(&copy, &base);
+        assert!(!ran.exists(), "a git folder the copy made ran a command");
     }
 
     #[test]

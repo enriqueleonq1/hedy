@@ -749,8 +749,8 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             "skills approve",
             "",
             tr!(
-                "Aprueba una propuesta y la pone a disposición de las IAs (archivos de cada CLI y herramientas de Hedy)",
-                "Approve a proposal and make it available to the AIs (each CLI's files and Hedy's tools)"
+                "Aprueba una propuesta y la pone a disposición de tus IAs dentro de Hedy",
+                "Approve a proposal and make it available to your AIs inside Hedy"
             ),
         ),
         (
@@ -789,6 +789,177 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             "skills remove",
             "name",
             tr!("Nombre de la habilidad", "Name of the skill"),
+        ),
+        (
+            "skills import",
+            "",
+            tr!(
+                "Importa habilidades de archivos SKILL.md: primero muestra qué entra y qué no, y por qué",
+                "Import skills from SKILL.md files: first shows what goes in and what does not, and why"
+            ),
+        ),
+        (
+            "skills import",
+            "path",
+            tr!(
+                "Un SKILL.md, la carpeta de una habilidad, una carpeta de habilidades (como ~/.claude/skills) o un proyecto",
+                "A SKILL.md, a skill's folder, a folder of skills (such as ~/.claude/skills) or a project"
+            ),
+        ),
+        (
+            "skills import",
+            "global",
+            tr!("Para todos los proyectos", "For every project"),
+        ),
+        (
+            "skills import",
+            "replace",
+            tr!(
+                "Actualiza tus habilidades aprobadas con el mismo nombre",
+                "Update your approved skills with the same name"
+            ),
+        ),
+        (
+            "skills import",
+            "yes",
+            tr!("Sin preguntar", "Without asking"),
+        ),
+        (
+            "skills import",
+            "review",
+            tr!(
+                "Que la IA revise cada una contra tus notas, aunque sean muchas (una petición por habilidad)",
+                "Have the AI review each one against your notes, even many (one request per skill)"
+            ),
+        ),
+        (
+            "skills import",
+            "no_review",
+            tr!(
+                "Sin la revisión de la IA: solo lo que mide Hedy, sin gastar tokens",
+                "Without the AI's review: only what Hedy measures, spending no tokens"
+            ),
+        ),
+        (
+            "skills import",
+            "account",
+            tr!(
+                "Cuenta que revisa (por defecto, la del proyecto)",
+                "Account that reviews (by default, the project's)"
+            ),
+        ),
+        (
+            "skills import",
+            "model",
+            tr!("Modelo que revisa", "Model that reviews"),
+        ),
+        (
+            "skills try",
+            "",
+            tr!(
+                "Prueba una habilidad en tareas reales: cada una dos veces, con y sin ella, en copias aparte; gasta tokens",
+                "Try a skill on real tasks: each twice, with and without it, in separate copies; spends tokens"
+            ),
+        ),
+        (
+            "skills try",
+            "name",
+            tr!("Nombre de la habilidad", "Name of the skill"),
+        ),
+        (
+            "skills try",
+            "tasks",
+            tr!(
+                "Una tarea de prueba (hasta 3); sin ninguna, la IA propone",
+                "A test task (up to 3); with none, the AI proposes them"
+            ),
+        ),
+        (
+            "skills try",
+            "check",
+            tr!(
+                "Comando que Hedy corre en cada copia para ver si acierta (por defecto, los tests del proyecto)",
+                "Command Hedy runs in each copy to see whether it passes (by default, the project's tests)"
+            ),
+        ),
+        (
+            "skills try",
+            "yes",
+            tr!(
+                "Sin preguntar (solo con --task y --check)",
+                "Without asking (only with --task and --check)"
+            ),
+        ),
+        (
+            "skills try",
+            "account",
+            tr!(
+                "Cuenta que propone las tareas (las tareas usan las del proyecto)",
+                "Account that proposes the tasks (the tasks use the project's)"
+            ),
+        ),
+        (
+            "skills try",
+            "model",
+            tr!("Modelo de las tareas", "Model of the tasks"),
+        ),
+        (
+            "skills check",
+            "",
+            tr!(
+                "¿Ayuda o estorba? Lo que mide Hedy de una habilidad aprobada y lo que ve la IA contra tus notas",
+                "Does it help or get in the way? What Hedy measures of an approved skill and what the AI sees against your notes"
+            ),
+        ),
+        (
+            "skills check",
+            "name",
+            tr!("Nombre de la habilidad", "Name of the skill"),
+        ),
+        (
+            "skills check",
+            "no_review",
+            tr!(
+                "Sin la revisión de la IA: solo lo que mide Hedy, sin gastar tokens",
+                "Without the AI's review: only what Hedy measures, spending no tokens"
+            ),
+        ),
+        (
+            "skills check",
+            "account",
+            tr!(
+                "Cuenta que revisa (por defecto, la del proyecto)",
+                "Account that reviews (by default, the project's)"
+            ),
+        ),
+        (
+            "skills check",
+            "model",
+            tr!("Modelo que revisa", "Model that reviews"),
+        ),
+        (
+            "skills export",
+            "",
+            tr!(
+                "Exporta las habilidades aprobadas como archivos SKILL.md, el formato que lee cada CLI; nunca reemplaza un archivo",
+                "Export the approved skills as SKILL.md files, the format every CLI reads; never replaces a file"
+            ),
+        ),
+        (
+            "skills export",
+            "names",
+            tr!(
+                "Las habilidades que exportar (todas si no pones ninguna)",
+                "The skills to export (all of them when none is given)"
+            ),
+        ),
+        (
+            "skills export",
+            "to",
+            tr!(
+                "Carpeta donde escribirlas: <carpeta>/<nombre>/SKILL.md",
+                "Folder to write them in: <folder>/<name>/SKILL.md"
+            ),
         ),
         (
             "template",
@@ -1393,6 +1564,11 @@ fn value_names() -> Vec<(&'static str, String)> {
         ("team", tr!("EQUIPO", "TEAM")),
         ("revs", tr!("COMMITS", "COMMITS")),
         ("task", tr!("TAREA", "TASK")),
+        ("path", tr!("RUTA", "PATH")),
+        ("names", tr!("NOMBRES", "NAMES")),
+        ("tasks", tr!("TAREA", "TASK")),
+        ("check", tr!("COMANDO", "COMMAND")),
+        ("to", tr!("CARPETA", "FOLDER")),
         ("cancel", tr!("NÚMERO", "NUMBER")),
         ("category", tr!("CATEGORÍA", "CATEGORY")),
         // `hedy sync project --shared <DUEÑO>` (a flag elsewhere, without one).
@@ -1661,13 +1837,69 @@ pub enum MemoryCommand {
 pub enum SkillsCommand {
     List,
 
-    Show { name: String },
+    Show {
+        name: String,
+    },
 
-    Approve { id: i64 },
+    Approve {
+        id: i64,
+    },
 
-    Reject { id: i64 },
+    Reject {
+        id: i64,
+    },
 
-    Remove { name: String },
+    Remove {
+        name: String,
+    },
+
+    Import {
+        path: PathBuf,
+        #[arg(long)]
+        global: bool,
+        #[arg(long)]
+        replace: bool,
+        #[arg(long, short)]
+        yes: bool,
+        #[arg(long, conflicts_with = "no_review")]
+        review: bool,
+        #[arg(long)]
+        no_review: bool,
+        #[arg(long, short)]
+        account: Option<String>,
+        #[arg(long, short)]
+        model: Option<String>,
+    },
+
+    Try {
+        name: String,
+        #[arg(long = "task")]
+        tasks: Vec<String>,
+        #[arg(long)]
+        check: Option<String>,
+        #[arg(long, short)]
+        yes: bool,
+        #[arg(long, short)]
+        account: Option<String>,
+        #[arg(long, short)]
+        model: Option<String>,
+    },
+
+    Check {
+        name: String,
+        #[arg(long)]
+        no_review: bool,
+        #[arg(long, short)]
+        account: Option<String>,
+        #[arg(long, short)]
+        model: Option<String>,
+    },
+
+    Export {
+        names: Vec<String>,
+        #[arg(long)]
+        to: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -2104,6 +2336,27 @@ mod tests {
             })
         ));
         assert!(Cli::try_parse_from(["hedy", "skills", "reject", "x"]).is_err());
+        assert!(matches!(
+            parse(&["hedy", "skills", "import", "~/skills", "--replace", "-y"]),
+            Some(Command::Skills {
+                command: Some(SkillsCommand::Import {
+                    replace: true,
+                    yes: true,
+                    global: false,
+                    ..
+                })
+            })
+        ));
+        assert!(matches!(
+            parse(&["hedy", "skills", "export", "lint", "e2e", "--to", "out"]),
+            Some(Command::Skills {
+                command: Some(SkillsCommand::Export { names, .. })
+            }) if names == ["lint", "e2e"]
+        ));
+        assert!(
+            Cli::try_parse_from(["hedy", "skills", "export"]).is_err(),
+            "--to is needed"
+        );
     }
 
     #[test]

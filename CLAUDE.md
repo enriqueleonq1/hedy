@@ -14,7 +14,11 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Install the CLI: `cargo install --path crates/hedy-cli` (binary `hedy`)
 - Isolated manual testing: `HEDY_DATA_DIR=/tmp/hedy-test hedy status`
 - Learned skills from the terminal: `hedy skills` (`list`, `show <name>`, `approve <id>`,
-  `reject <id>`, `remove <name>`); in the UI, `#k=<path>` opens a project's skills tab
+  `reject <id>`, `remove <name>`, `import <path> [--global] [--replace] [--yes]`,
+  `export [names] --to <folder>`, `check <name>`: helps or gets in the way, `try <name>
+  [--task …] [--check …]`: runs real tasks with and without it, spends tokens; `--yes`
+  needs both and, with no terminal, allows only file changes inside each copy); in the UI,
+  `#k=<path>` opens a project's skills tab
 - Prompt templates from the CLI: `hedy template list|add <name> [--project] --text …|remove <name>`
 - Ask the memory (docs/decisions.md §36): `hedy memory ask "<question>"` (`--team`, `--all`,
   `--code` to look in the project's files and propose a note, `--json`); answers only from the
@@ -37,7 +41,7 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
   repo: `scripts/team-e2e.sh <url>` (real binary and keyring; three people)
 - App (from `app/`): `npm install`, then `npm run tauri dev`; UI only with sample data:
   `npm run dev` (`?theme=light|dark`, `?lang=es|en`, `?onboarding=1`, `#accounts`, `#settings`,
-  `#activity` for the task board, `#sync` for the sync card, `#teams` for the teams card)
+  `#activity` for the task board, `#skills` for the skills section, `#sync` for the sync card, `#teams` for the teams card)
 - App checks (from `app/`): `npm run typecheck`, `npm run lint`, `npm test`
 - Icons: edit `app/src-tauri/icons/logo.svg`, render it to `logo.png` (1024 px), then
   `npx tauri icon src-tauri/icons/logo.png`. Dev window icon on Wayland:

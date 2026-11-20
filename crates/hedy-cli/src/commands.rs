@@ -69,7 +69,7 @@ fn greeting(hedy: &Hedy) -> String {
 }
 
 /// Muted text whose `quoted` parts are painted as commands.
-fn hint(s: &Style, text: &str) -> String {
+pub(crate) fn hint(s: &Style, text: &str) -> String {
     if !s.enabled() {
         return text.to_owned();
     }
@@ -328,7 +328,7 @@ fn usd(cost: Option<f64>) -> String {
 }
 
 /// `~/…` path, keeping its end when it is long.
-fn short_path(path: &Path) -> String {
+pub(crate) fn short_path(path: &Path) -> String {
     const MAX: usize = 40;
     let path = tilde(path);
     let len = path.chars().count();
@@ -539,6 +539,9 @@ const TASK_TITLE_WIDTH: usize = 46;
 /// `hedy tasks`: what every project's AIs are doing, what needs the user first.
 pub fn tasks(hedy: &Hedy) -> Result<()> {
     let s = Style::for_stdout();
+    // Runs of a trial whose `hedy skills try` was killed are not shown as
+    // waiting forever.
+    hedy.tidy_orphan_trials();
     let board = hedy.activity()?;
     if board.is_empty() {
         let mut text = vec![tr!(
@@ -1377,6 +1380,7 @@ pub fn memory_list(hedy: &Hedy, dir: &Path) -> Result<()> {
 }
 
 pub fn memory_approve(hedy: &Hedy, id: i64) -> Result<()> {
+    refuse_in_agent_session()?;
     let s = Style::for_stdout();
     let note = hedy.approve_note(id)?;
     let text = s.muted(fit(&note.text, NOTE_WIDTH));
@@ -1407,7 +1411,7 @@ pub fn memory_reject(hedy: &Hedy, id: i64) -> Result<()> {
     Ok(())
 }
 
-fn project_here(hedy: &Hedy, dir: &Path) -> Result<Project> {
+pub(crate) fn project_here(hedy: &Hedy, dir: &Path) -> Result<Project> {
     match hedy.project_for(dir)? {
         Some(project) => Ok(project),
         None => bail!(
@@ -1436,14 +1440,15 @@ fn print_skill_line(s: &Style, skill: &Skill) {
         s.bold(&skill.name),
         s.muted(details.join(" · "))
     );
-    for line in wrap(&skill.description, NOTE_WIDTH) {
+    let description = crate::team::clean(&skill.description);
+    for line in wrap(&description, NOTE_WIDTH) {
         println!("  {} {line}", " ".repeat(ID_WIDTH));
     }
 }
 
 /// Tells what happened to the CLIs' skill files, warning about the user's
 /// own files that were left alone.
-fn print_skill_files(s: &Style, files: &SkillFiles) {
+pub(crate) fn print_skill_files(s: &Style, files: &SkillFiles) {
     for path in &files.written {
         let path = short_path(path);
         println!("  {}", s.muted(tr!("escrita {path}", "wrote {path}")));
@@ -1529,8 +1534,10 @@ pub fn skills_list(hedy: &Hedy, dir: &Path) -> Result<()> {
 }
 
 fn print_skill_body(s: &Style, body: &str) {
+    // An agent's or an imported text: hidden characters are shown as
+    // ⟦U+…⟧, so no escape reaches the terminal and nothing hides.
     for line in body.lines() {
-        println!("    {line}");
+        println!("    {}", hedy_core::domain::team::reveal_hidden(line));
     }
     if body.is_empty() {
         println!("    {}", s.muted("—"));
@@ -1548,6 +1555,15 @@ pub fn skills_show(hedy: &Hedy, dir: &Path, name: &str) -> Result<()> {
         SkillStatus::Proposed => tr!("propuesta", "proposal"),
     };
     println!("  {} {}", " ".repeat(ID_WIDTH), s.muted(status));
+    if let Some(result) = hedy.skill_trial(skill.id)? {
+        let verdict = crate::skill_trial::verdict(&s, &result);
+        println!(
+            "  {} {} {verdict} · {}",
+            " ".repeat(ID_WIDTH),
+            s.muted(tr!("Probada:", "Tried:")),
+            result.summary()
+        );
+    }
     println!();
     print_skill_body(&s, &skill.body);
     // Proposed updates of this skill, with their new text.
@@ -1567,7 +1583,7 @@ pub fn skills_show(hedy: &Hedy, dir: &Path, name: &str) -> Result<()> {
             ))
         );
         if proposal.skill.description != skill.description {
-            println!("  {}", proposal.skill.description);
+            println!("  {}", crate::team::clean(&proposal.skill.description));
         }
         print_skill_body(&s, &proposal.skill.body);
     }
@@ -1575,7 +1591,23 @@ pub fn skills_show(hedy: &Hedy, dir: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// What only the user may do (rule 6) is refused in a session Hedy started
+/// for an AI: an agent cannot approve through a shell command.
+pub(crate) fn refuse_in_agent_session() -> Result<()> {
+    if std::env::var_os(hedy_core::domain::env::AGENT_SESSION).is_some() {
+        bail!(
+            "{}",
+            tr!(
+                "una IA no puede aprobar, importar, publicar, dar acceso ni quitar: hazlo tú desde tu terminal o desde la app",
+                "an AI cannot approve, import, publish, grant access or remove: do it yourself from your terminal or the app"
+            )
+        );
+    }
+    Ok(())
+}
+
 pub fn skills_approve(hedy: &Hedy, id: i64) -> Result<()> {
+    refuse_in_agent_session()?;
     let s = Style::for_stdout();
     let change = hedy.approve_skill(id)?;
     let name = s.bold(&change.skill.name);
@@ -1585,6 +1617,13 @@ pub fn skills_approve(hedy: &Hedy, id: i64) -> Result<()> {
         tr!("Habilidad {name} actualizada.", "Skill {name} updated.")
     };
     println!("{} {done}", s.ok("✔"));
+    println!(
+        "  {}",
+        s.muted(tr!(
+            "Tus IAs la usan dentro de Hedy; tu Claude Code o Codex de siempre no la ven.",
+            "Your AIs use it inside Hedy; your usual Claude Code or Codex do not see it."
+        ))
+    );
     print_skill_files(&s, &change.files);
     Ok(())
 }

@@ -18,9 +18,43 @@ All notable changes to Hedy are listed here. The format follows
 - Commit message suggestions ("Sugerir con IA", `hedy commit`) no longer send removed lines (a
   secret being taken out) nor a protected file's contents in a task's changes, and file names
   are printed without their control characters.
+- An AI can no longer propose a skill that runs commands as soon as Claude Code loads it
+  (`!`…`` or a ```` ```! ```` block), and skills from your other PCs pass the same checks as
+  local ones.
+- "Permitir en este chat" no longer covers the agents' own settings (`.claude/`, `.mcp.json`,
+  `.gemini/`…, where hooks and MCP servers start commands): each change there asks. No agent
+  writes into `.git`, and a write that leaves the task folder through a link (the shared
+  `node_modules`) is denied.
+- Hedy's own git in a task's copy uses the copy's real git data, whatever its `.git` file says:
+  a run (or a skill trial's check) could point it at a folder whose settings run a command.
+- An AI cannot add or publish team notes, invite, change roles, remove people or skills, or
+  leave a team through `hedy` from its session, and a trial's check counts as its session.
 
 ### Added
 
+- Import and export skills as `SKILL.md` files, the format every CLI reads:
+  `hedy skills import <path>` shows first what goes in, what does not and why (commands that
+  run on load, secrets, names you already have, files Hedy does not keep), then asks;
+  `hedy skills export --to <folder>` writes plain copies and never replaces a file.
+- Whether a skill helps or gets in the way: on import and with `hedy skills check <name>`,
+  Hedy measures it (size, a description that fits every task, overlap with your skills,
+  dangerous commands, missing files) and an AI reads it against your notes, quoting what
+  goes against them, what is vague and what really helps.
+- A skills section in the app: every skill in one place (global and every project's), with a
+  search and filters, and the chosen one in detail: what it costs in context, what Hedy
+  measures, what the AI thinks against your notes, its last trial, and its steps. Import,
+  export and try skills from there. «Usar también fuera de Hedy» writes a project skill
+  where your usual Claude Code and other CLIs read it too (kept out of git); off by default.
+  Checkboxes and radio buttons look the same everywhere.
+- Try a skill for real: `hedy skills try <name>` runs up to 3 tasks twice each, with and
+  without the skill, in throwaway copies of the project, and says from what the runs did
+  (finished, the same check Hedy runs in each copy, the skill used, tokens) whether it is
+  useful, doubtful or harmful. Before the check, the tests a run changed are put back, and on
+  Linux the check runs isolated with bubblewrap (no network, writing only in its copy). A
+  limit, a run you stop or a copy of the skill outside Hedy keeps no verdict. Nothing reaches the project; `hedy skills show` keeps the result until
+  the skill changes. From a script (`--yes`, no terminal), each copy may change its own files
+  but runs no command. A trial whose terminal was killed is cleaned up by the next Hedy (the
+  app, `hedy tasks` or another trial).
 - Personal sync: the same Hedy on every PC you use. Notes, proposals, skills, templates and
   themes travel through a private git repo of yours (GitHub, GitLab, Bitbucket, Gitea or your
   own server), encrypted and signed on each PC; the server never sees a note. Set it up in
@@ -85,6 +119,10 @@ More of Hedy from the terminal.
 ### Changed
 
 - The app notices conversations started from the terminal without a restart.
+- Approved skills stay inside Hedy: Claude Code gets them as a plugin for Hedy's sessions
+  only (`/hedy:<name>`), the other CLIs in each task's own folder. Your project and your
+  usual `claude` or `codex` outside Hedy no longer see them, and the copies an older Hedy
+  left in your project are removed unless you edited or committed them.
 
 ## [1.0.1] - 2026-11-16
 

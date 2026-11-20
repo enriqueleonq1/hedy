@@ -9,12 +9,14 @@ interface DialogProps {
   footer?: ReactNode;
   /** `false`: no ×, and Escape and the backdrop do nothing (a step that must finish). */
   dismissible?: boolean;
+  /** Room for a list beside its details (importing, a trial). */
+  wide?: boolean;
 }
 
 const FOCUSABLE = "a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])";
 
 /** Modal dialog: Escape and backdrop close it; focus moves in, stays in and comes back. */
-export function Dialog({ title, onClose, children, footer, dismissible = true }: DialogProps) {
+export function Dialog({ title, onClose, children, footer, dismissible = true, wide = false }: DialogProps) {
   const t = useT();
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
@@ -65,7 +67,7 @@ export function Dialog({ title, onClose, children, footer, dismissible = true }:
     <div className="dialog-backdrop" onMouseDown={(e) => dismissible && e.target === e.currentTarget && onClose()}>
       <div
         ref={panel}
-        className="dialog"
+        className={wide ? "dialog dialog--wide" : "dialog"}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
