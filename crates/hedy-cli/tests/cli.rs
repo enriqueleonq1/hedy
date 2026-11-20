@@ -62,11 +62,18 @@ if [ "$1" = -p ] && [ "$2" = --input-format ]; then
       exec sleep 30
     fi
     if [ "$FAKE_CLAUDE_MODE" = edit ]; then
-      # Asks to change a file in its folder, then to run a command.
+      # Asks to change a file in its folder, one through a link out of it,
+      # git's pointer, then to run a command.
       echo '{"type":"control_request","request_id":"req-e","request":{"subtype":"can_use_tool","tool_name":"Edit","tool_use_id":"tu1","input":{"file_path":"'"$(pwd)"'/app.js","old_string":"1","new_string":"2"}}}'
       IFS= read -r answer
       printf 'Edit %s\n' "$answer" >> "$FAKE_ANSWERS"
-      echo '{"type":"control_request","request_id":"req-b","request":{"subtype":"can_use_tool","tool_name":"Bash","tool_use_id":"tu2","input":{"command":"npm test"}}}'
+      echo '{"type":"control_request","request_id":"req-l","request":{"subtype":"can_use_tool","tool_name":"Write","tool_use_id":"tu2","input":{"file_path":"'"$(pwd)"'/node_modules/pkg/index.js","content":"x"}}}'
+      IFS= read -r answer
+      printf 'Link %s\n' "$answer" >> "$FAKE_ANSWERS"
+      echo '{"type":"control_request","request_id":"req-g","request":{"subtype":"can_use_tool","tool_name":"Write","tool_use_id":"tu3","input":{"file_path":"'"$(pwd)"'/.git","content":"gitdir: evil"}}}'
+      IFS= read -r answer
+      printf 'Git %s\n' "$answer" >> "$FAKE_ANSWERS"
+      echo '{"type":"control_request","request_id":"req-b","request":{"subtype":"can_use_tool","tool_name":"Bash","tool_use_id":"tu4","input":{"command":"npm test"}}}'
       IFS= read -r answer
       printf 'Bash %s\n' "$answer" >> "$FAKE_ANSWERS"
     elif [ "$FAKE_CLAUDE_MODE" = permission ]; then
@@ -875,6 +882,12 @@ fn skills_try_without_a_terminal_lets_each_copy_change_files_but_not_run_command
         .success();
     env.hedy_in(&repo, &["use", "claude"]).assert().success();
     seed_skills(&env, &repo);
+    // Linked into each copy: a write there would land in the project.
+    fs::create_dir_all(repo.join("node_modules/pkg")).unwrap();
+    let exclude = repo.join(".git/info/exclude");
+    let mut excluded = fs::read_to_string(&exclude).unwrap_or_default();
+    excluded.push_str("/node_modules\n");
+    fs::write(&exclude, excluded).unwrap();
     let answers = env.path("answers.log");
     env.hedy_in(
         &repo,
@@ -912,14 +925,37 @@ fn skills_try_without_a_terminal_lets_each_copy_change_files_but_not_run_command
             .all(|l| l.contains(r#""behavior":"allow""#)),
         "{answers}"
     );
-    assert_eq!(of("Bash").len(), 2, "{answers}");
-    assert!(
-        of("Bash")
-            .iter()
-            .all(|l| l.contains(r#""behavior":"deny""#)),
-        "{answers}"
-    );
+    for denied in ["Link", "Git", "Bash"] {
+        assert_eq!(of(denied).len(), 2, "{answers}");
+        assert!(
+            of(denied)
+                .iter()
+                .all(|l| l.contains(r#""behavior":"deny""#)),
+            "{answers}"
+        );
+    }
+    assert!(!repo.join("node_modules/pkg/index.js").exists());
     assert_eq!(git(&repo, &["status", "--short"]), "");
+}
+
+#[test]
+fn an_ai_cannot_publish_grant_or_remove_from_its_session() {
+    let env = Env::new();
+    let repo = git_repo(&env, "code/agenda");
+    for args in [
+        &["team", "add", "Usamos", "pnpm"][..],
+        &["team", "invite", "--admin"],
+        &["team", "role", "ana", "--admin"],
+        &["team", "remove", "ana", "--yes"],
+        &["team", "leave", "--yes"],
+        &["skills", "remove", "pdf-forms"],
+    ] {
+        env.hedy_in(&repo, args)
+            .env("HEDY_AGENT_SESSION", "1")
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("una IA no puede"));
+    }
 }
 
 #[test]
@@ -957,7 +993,7 @@ fn skills_import_shows_first_and_export_writes_plain_files() {
         .assert()
         .failure()
         .stderr(predicate::str::contains(
-            "una IA no puede aprobar ni importar",
+            "una IA no puede aprobar, importar",
         ));
 
     // Outside a terminal it shows what goes in and asks for --yes.

@@ -1595,8 +1595,8 @@ pub(crate) fn refuse_in_agent_session() -> Result<()> {
         bail!(
             "{}",
             tr!(
-                "una IA no puede aprobar ni importar: hazlo tú desde tu terminal o desde la app",
-                "an AI cannot approve or import: do it yourself from your terminal or the app"
+                "una IA no puede aprobar, importar, publicar, dar acceso ni quitar: hazlo tú desde tu terminal o desde la app",
+                "an AI cannot approve, import, publish, grant access or remove: do it yourself from your terminal or the app"
             )
         );
     }

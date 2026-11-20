@@ -795,9 +795,11 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
     `.git/info/exclude`: they may want to commit it.
   - **Only the user:** every process Hedy starts for an AI carries `HEDY_AGENT_SESSION=1`
     (agents, `hedy run`, the app's AI terminal; not the user's own shell terminal), and
-    `hedy skills import`, `hedy skills approve`, `hedy memory approve`, `hedy team
-    publish` and `hedy team review --accept/--reject` refuse to run there, so an agent
-    cannot approve through a shell command it was allowed to run. A second guard: an agent
+    `hedy skills import`, `approve` and `remove`, `hedy memory approve`, `hedy team
+    publish`, `add` (published at once for a project note or an admin), `invite`, `role`,
+    `remove`, `leave` and `review --accept/--reject` refuse to run there, so an agent
+    cannot approve, publish, grant access or remove through a shell command it was
+    allowed to run. A trial's check carries it too: the code it runs is the AI's. A second guard: an agent
     could run `env -u HEDY_AGENT_SESSION hedy …`; the permission card is the first.
   - **Sync:** a skill from another of the user's PCs is saved as this version saves its
     own (description and body normalized), with its exact name.
@@ -854,10 +856,16 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
     first) runs twice as an ordinary project task,
     with the project's phases and accounts, each in its own worktree: one with the skill
     and one without it. In a terminal the CLI asks about each permission; without one
-    (`--yes` from a script) nobody can answer, so edits inside each copy are allowed as
-    "Permitir en este chat" would (writes outside it and protected files are still
-    denied) and commands are denied, as it warns before starting. Denying everything
-    left every headless trial void.
+    (`--yes` from a script) nobody can answer, so a file change is allowed one request at
+    a time when every path it names really stays in the copy (links followed: the shared
+    `node_modules`, `.venv`… are links to the project) and none is under `.git`,
+    `.claude` or `.agents`; everything else, commands included, is denied, as it warns
+    before starting. Denying everything left every headless trial void.
+    - **Git in a copy never trusts the copy's `.git`:** whatever writes in it (the run,
+      its check) could point it at a git folder of its own whose config runs a command
+      (`core.fsmonitor` on every `git diff`). Hedy's git in a copy gets `GIT_DIR` and
+      `GIT_WORK_TREE` from the project's own git data (the worktree whose `gitdir`
+      names the copy), or fails; a copy git no longer recognizes is still removed.
     - **The run without it gets it from nowhere:** not in its plugin, not in its
       worktree's `.agents/skills`, and `skill_list` / `skill_get` do not serve it. The
       run is marked (by skill id, so a rename does not bring it back) before its
@@ -888,8 +896,9 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
       session bus, the keyring's way in), `/tmp` and the home folder empty but for the
       tools' folders (`~/.cargo` without its credentials, `~/.rustup`, `~/.npm`, and
       only the tools' own folders of `~/.cache`, where other programs keep sockets and
-      tokens), from the project only what the copy links to (`.git` and the shared
-      dependency folders, read-only; never `.env`), only the copy writable, killed
+      tokens), the project folder empty but for what the copy links to (`.git` and the
+      shared dependency folders, read-only; never `.env`, wherever the project lives),
+      `HEDY_AGENT_SESSION=1`, only the copy writable, killed
       with Hedy; tools are told they are offline (`CARGO_NET_OFFLINE`,
       `npm_config_offline`), so a check that needs to download fails rather than
       hangs. Without bubblewrap (macOS, or not installed) it runs as the user, and the

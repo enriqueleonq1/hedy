@@ -67,8 +67,8 @@ const HOME_SECRETS: &[&str] = &[".cargo/credentials", ".cargo/credentials.toml"]
 /// The check inside bubblewrap: no network, no IPC, its own processes
 /// (all gone when it ends), the system read-only, `/run` (the session bus,
 /// the keyring's way in) and `/tmp` empty, the home folder empty but for
-/// the tools ([`HOME_TOOLS`]), `reads` read-only and only the copy
-/// writable. Killed with Hedy.
+/// the tools ([`HOME_TOOLS`]), a task copy's project empty, `reads`
+/// read-only and only the copy writable. Killed with Hedy.
 fn isolated(spec: &LaunchSpec, copy: &std::path::Path, reads: &[std::path::PathBuf]) -> Command {
     let mut cmd = Command::new("bwrap");
     cmd.args([
@@ -89,6 +89,17 @@ fn isolated(spec: &LaunchSpec, copy: &std::path::Path, reads: &[std::path::PathB
         "--tmpfs",
         "/run",
     ]);
+    // A task copy's project shows only what `reads` brings back (`.env`
+    // and the rest stay hidden wherever the project lives).
+    if let Some(project) = copy
+        .parent()
+        .filter(|w| w.file_name().is_some_and(|n| n == "worktrees"))
+        .and_then(std::path::Path::parent)
+        .filter(|h| h.file_name().is_some_and(|n| n == ".hedy"))
+        .and_then(std::path::Path::parent)
+    {
+        cmd.arg("--tmpfs").arg(project);
+    }
     if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
         cmd.arg("--tmpfs").arg(&home);
         for tool in HOME_TOOLS {
@@ -273,6 +284,8 @@ impl ProcessRunner for SystemProcessRunner {
         for (name, value) in offline.into_iter().filter_map(|(k, v)| Some((k, v?))) {
             cmd.env(name, value);
         }
+        // The code it runs is the AI's: `hedy` refuses to approve or publish.
+        cmd.env(crate::domain::env::AGENT_SESSION, "1");
         if let Some(cwd) = &spec.cwd {
             cmd.current_dir(cwd);
         }
@@ -442,6 +455,7 @@ mod tests {
         assert_eq!(check(dir.path(), "env > env.txt", "t1"), Some(0));
         let env = std::fs::read_to_string(dir.path().join("env.txt")).unwrap();
         assert!(env.contains("PATH=") && !env.contains("CARGO_MANIFEST_DIR"));
+        assert!(env.contains("HEDY_AGENT_SESSION=1"), "{env}");
 
         assert_eq!(
             check(dir.path(), "(sleep 2; touch late) & exit 0", "t1"),
@@ -514,6 +528,19 @@ mod tests {
             Some(0),
             "no .env"
         );
+
+        // Nor where neither the home folder nor /tmp would hide it.
+        let Ok(project) = tempfile::tempdir_in("/var/tmp") else {
+            return;
+        };
+        let copy = project.path().join(".hedy/worktrees/t1");
+        std::fs::create_dir_all(&copy).unwrap();
+        std::fs::write(project.path().join(".env"), "SECRET=1").unwrap();
+        let env = project.path().join(".env");
+        let script = format!("cat '{}'", env.display());
+        assert_ne!(check_reading(&copy, &script, "t2", &[]), Some(0), "no .env");
+        assert_eq!(check_reading(&copy, "touch made", "t2", &[]), Some(0));
+        assert!(copy.join("made").exists());
     }
 
     #[test]

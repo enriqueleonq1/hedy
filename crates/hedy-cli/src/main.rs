@@ -193,7 +193,10 @@ fn run(cli: Cli) -> Result<ExitCode> {
             SkillsCommand::Show { name } => commands::skills_show(&hedy, &dir, &name),
             SkillsCommand::Approve { id } => commands::skills_approve(&hedy, id),
             SkillsCommand::Reject { id } => commands::skills_reject(&hedy, id),
-            SkillsCommand::Remove { name } => commands::skills_remove(&hedy, &dir, &name),
+            SkillsCommand::Remove { name } => {
+                commands::refuse_in_agent_session()?;
+                commands::skills_remove(&hedy, &dir, &name)
+            }
             SkillsCommand::Import {
                 path,
                 global,
@@ -304,6 +307,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     ..
                 } => team::cancel_invite(&hedy, &pick()?, number),
                 TeamCommand::Invite { admin, mine, .. } => {
+                    commands::refuse_in_agent_session()?;
                     team::invite(&hedy, &pick()?, admin, mine)
                 }
                 TeamCommand::Join { url, me, pc } => {
@@ -316,7 +320,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     text,
                     everyone,
                     category,
-                } => team::add(&hedy, &dir, &pick()?, &text.join(" "), everyone, &category),
+                } => {
+                    // Published at once for a project note or an admin.
+                    commands::refuse_in_agent_session()?;
+                    team::add(&hedy, &dir, &pick()?, &text.join(" "), everyone, &category)
+                }
                 TeamCommand::Publish { id, everyone } => {
                     commands::refuse_in_agent_session()?;
                     team::publish(&hedy, &pick()?, id, everyone)
@@ -333,15 +341,20 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     team::review(&hedy, &pick()?, id.as_deref(), accept, reject, yes)
                 }
                 TeamCommand::Role { person, admin, .. } => {
+                    commands::refuse_in_agent_session()?;
                     team::role(&hedy, &pick()?, &person, admin)
                 }
                 TeamCommand::Remove { who, pc, yes } => {
+                    commands::refuse_in_agent_session()?;
                     team::remove(&hedy, &pick()?, &who, pc, yes)
                 }
                 TeamCommand::Rename { name, person } => {
                     team::rename(&hedy, &pick()?, &name, person.as_deref())
                 }
-                TeamCommand::Leave { yes, here } => team::leave(&hedy, &pick()?, yes, here),
+                TeamCommand::Leave { yes, here } => {
+                    commands::refuse_in_agent_session()?;
+                    team::leave(&hedy, &pick()?, yes, here)
+                }
             }
         }
         Command::Config(sub) => match sub {

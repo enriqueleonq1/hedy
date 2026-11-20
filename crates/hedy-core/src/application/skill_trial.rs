@@ -18,6 +18,7 @@ use crate::domain::Workspace;
 use crate::domain::briefing;
 use crate::domain::code::ChangeKind;
 use crate::domain::launch::LaunchSpec;
+use crate::domain::permissions::unattended_writes;
 use crate::domain::skill::{SkillFolder, check_visible};
 use crate::domain::skill_trial::{
     TRIAL_TASKS_MAX, TrialOutcome, TrialRef, TrialResult, configures_the_check, fingerprint,
@@ -26,7 +27,7 @@ use crate::domain::skill_trial::{
 };
 use crate::domain::task::SHARED_DEPENDENCY_DIRS;
 use crate::domain::{
-    Phase, Provider, Skill, SkillStatus, Stage, Task, TaskId, TaskMode, TaskStatus,
+    Decision, Phase, Provider, Skill, SkillStatus, Stage, Task, TaskId, TaskMode, TaskStatus,
 };
 use crate::tr;
 
@@ -278,6 +279,45 @@ impl Hedy {
     }
 
     /// The trial `task` is a run of, if any.
+    /// A trial run's permission request when nobody can answer it (the CLI
+    /// with no terminal): a change to files that really stay in the run's
+    /// copy is allowed, this once (each one is checked); anything else, or a
+    /// task that is not a trial run, is denied.
+    pub fn answer_trial_permission_unattended(
+        &self,
+        id: &TaskId,
+        request_id: &str,
+    ) -> AppResult<()> {
+        let allowed = self.trial_of(id).is_some()
+            && self.task(id).is_ok_and(|task| {
+                let dir = task.work_dir();
+                self.pending_request(id, request_id)
+                    .and_then(|(tool, input)| unattended_writes(&tool, &input, &dir))
+                    .is_some_and(|paths| paths.iter().all(|p| self.really_inside(p, &dir)))
+            });
+        let decision = if allowed {
+            Decision::Allow
+        } else {
+            Decision::Deny
+        };
+        self.answer_permission(id, request_id, decision)
+    }
+
+    /// Where `path` goes after following links (from the deepest part that
+    /// exists) is inside `dir`. A dangling link is not.
+    fn really_inside(&self, path: &Path, dir: &Path) -> bool {
+        let Ok(root) = self.fs.canonicalize(dir) else {
+            return false;
+        };
+        path.ancestors()
+            .find(|p| self.fs.exists(p) || self.fs.is_symlink(p))
+            .is_some_and(|p| {
+                self.fs
+                    .canonicalize(p)
+                    .is_ok_and(|real| real.starts_with(&root))
+            })
+    }
+
     pub(super) fn trial_of(&self, task: &TaskId) -> Option<TrialRef> {
         let saved = self
             .store

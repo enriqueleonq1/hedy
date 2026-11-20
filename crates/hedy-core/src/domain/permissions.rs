@@ -225,10 +225,34 @@ fn command_program(command: &str) -> Option<&str> {
     command.split_whitespace().find(|word| !word.contains('='))
 }
 
-/// Whether `tool` changes files (writes outside the task folder are denied
-/// by [`evaluate`] before anyone is asked).
-pub fn is_write_tool(tool: &str) -> bool {
-    WRITE_TOOLS.contains(&tool)
+/// Folders of a task copy no change goes to when nobody is asked: git's
+/// pointer (git would obey a folder it names), the agents' settings (hooks,
+/// allowed commands) and the skills the run reads.
+const UNATTENDED_OFF_LIMITS: &[&str] = &[".git", ".claude", ".agents"];
+
+/// The files a change request writes, when it may be allowed with nobody to
+/// ask: a file tool naming at least one path, every one inside `work_dir`
+/// as written and outside [`UNATTENDED_OFF_LIMITS`]. Links are not followed
+/// here: the caller checks where each path really goes.
+pub fn unattended_writes(tool: &str, input: &Value, work_dir: &Path) -> Option<Vec<PathBuf>> {
+    if !WRITE_TOOLS.contains(&tool) {
+        return None;
+    }
+    let paths: Vec<PathBuf> = file_paths(input)
+        .into_iter()
+        .map(|path| normalize(work_dir, Path::new(path)))
+        .collect();
+    let fine = |path: &PathBuf| {
+        path.strip_prefix(work_dir).is_ok_and(|rel| {
+            rel.components().next().is_some()
+                && !rel.components().any(|part| {
+                    UNATTENDED_OFF_LIMITS
+                        .iter()
+                        .any(|name| part.as_os_str() == *name)
+                })
+        })
+    };
+    (!paths.is_empty() && paths.iter().all(fine)).then_some(paths)
 }
 
 /// What "Permitir en este chat" remembers for this request, if anything.

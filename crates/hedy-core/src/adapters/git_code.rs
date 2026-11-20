@@ -6,7 +6,7 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use regex::RegexBuilder;
 
@@ -27,11 +27,8 @@ const RECORD: char = '\u{1e}';
 const LOG_FORMAT: &str = "--format=%x1e%H%x1f%h%x1f%an%x1f%at%x1f%s";
 
 fn spawn(dir: &Path, args: &[&str]) -> PortResult<std::process::Child> {
-    Command::new("git")
-        .arg("-C")
-        .arg(dir)
+    super::git::git_in(dir)
         .args(args)
-        .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

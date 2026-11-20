@@ -834,6 +834,17 @@ impl Hedy {
         f(running)
     }
 
+    /// The tool and input of a request still waiting for an answer.
+    pub(super) fn pending_request(&self, id: &TaskId, request_id: &str) -> Option<(String, Value)> {
+        self.live
+            .lock()
+            .unwrap()
+            .get(id)?
+            .pending
+            .get(request_id)
+            .cloned()
+    }
+
     /// The card still waits for the user (not answered by a rule, by the
     /// app or by an ended session).
     pub fn is_permission_pending(&self, id: &TaskId, request_id: &str) -> bool {

@@ -13,7 +13,6 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use hedy_core::application::Hedy;
 use hedy_core::application::ports::TaskEvents;
-use hedy_core::domain::permissions::is_write_tool;
 use hedy_core::domain::skill_check::Verdict;
 use hedy_core::domain::skill_trial::{TrialOutcome, TrialResult};
 use hedy_core::domain::{AgentEvent, Decision, Task, TaskId, TaskStatus};
@@ -322,14 +321,7 @@ pub fn try_skill(
                             ),
                         });
                     } else {
-                        // Hedy already denied writes outside the copy and
-                        // protected files: what is left stays in the copy.
-                        let decision = if is_write_tool(&tool) {
-                            Decision::AllowForTask
-                        } else {
-                            Decision::Deny
-                        };
-                        let _ = hedy.answer_permission(&id, &request_id, decision);
+                        let _ = hedy.answer_trial_permission_unattended(&id, &request_id);
                     }
                 }
             }
