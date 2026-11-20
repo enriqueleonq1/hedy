@@ -245,6 +245,16 @@ impl FileSystem for LocalFileSystem {
         }
     }
 
+    fn remove_empty_dir_beneath(&self, root: &Path, rel: &Path) -> PortResult<()> {
+        let path = root.join(rel);
+        match beneath::remove_dir(root, rel) {
+            Err(e) if !matches!(e.kind(), ErrorKind::NotFound | ErrorKind::DirectoryNotEmpty) => {
+                Err(io_error("borrar", &path, e))
+            }
+            _ => Ok(()),
+        }
+    }
+
     fn remove_empty_dir(&self, path: &Path) -> PortResult<()> {
         if self.is_symlink(path) {
             return Ok(());
@@ -359,16 +369,18 @@ mod beneath {
             std::io::Write::write_all(&mut out, bytes)
         }
 
-        pub fn remove(root: &Path, parts: &[&OsStr]) -> io::Result<()> {
+        pub fn remove(root: &Path, parts: &[&OsStr], folder: bool) -> io::Result<()> {
             let (file, folders) = parts.split_last().ok_or(io::ErrorKind::InvalidInput)?;
             let mut dir = open_root(root)?;
             for folder in folders {
                 dir = step(&dir, folder, false)?;
             }
             let name = c(file)?;
+            // A folder only when empty; a link there is never a folder.
+            let flags = if folder { libc::AT_REMOVEDIR } else { 0 };
             // SAFETY: a valid descriptor and C string; unlinkat never follows
-            // a link at the name itself (it removes the link).
-            if unsafe { libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), 0) } < 0 {
+            // a link at the name itself.
+            if unsafe { libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), flags) } < 0 {
                 return Err(io::Error::last_os_error());
             }
             Ok(())
@@ -393,11 +405,22 @@ mod beneath {
     pub fn remove(root: &Path, rel: &Path) -> io::Result<()> {
         let parts = parts(rel)?;
         #[cfg(unix)]
-        return unix::remove(root, &parts);
+        return unix::remove(root, &parts, false);
         #[cfg(not(unix))]
         {
             check(root, &parts)?;
             std::fs::remove_file(root.join(rel))
+        }
+    }
+
+    pub fn remove_dir(root: &Path, rel: &Path) -> io::Result<()> {
+        let parts = parts(rel)?;
+        #[cfg(unix)]
+        return unix::remove(root, &parts, true);
+        #[cfg(not(unix))]
+        {
+            check(root, &parts)?;
+            std::fs::remove_dir(root.join(rel))
         }
     }
 
@@ -453,6 +476,18 @@ mod tests {
             fs_.write_text_beneath(&project, Path::new("../escape"), "x")
                 .is_err()
         );
+        // Empty folders go; one with anything in it, or a link, stays.
+        fs_.remove_empty_dir_beneath(&project, Path::new(".agents/skills/pr"))
+            .unwrap();
+        assert!(!project.join(".agents/skills/pr").exists());
+        fs_.remove_empty_dir_beneath(&project, Path::new(".claude"))
+            .unwrap();
+        assert!(project.join(".claude/skills").exists(), "not empty");
+        assert!(
+            fs_.remove_empty_dir_beneath(&project, Path::new(".claude/skills/pr"))
+                .is_err()
+        );
+        assert!(elsewhere.exists());
     }
 
     #[cfg(unix)]

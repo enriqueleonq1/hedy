@@ -833,6 +833,10 @@ pub trait FileSystem: Send + Sync {
     fn write_text_beneath(&self, root: &Path, rel: &Path, contents: &str) -> PortResult<()>;
     /// Deletes `rel` inside `root` the same way (nothing when it is missing).
     fn remove_file_beneath(&self, root: &Path, rel: &Path) -> PortResult<()>;
+    /// Deletes the folder `rel` inside `root` the same way, only when it is
+    /// empty (nothing when it is missing or holds anything; an error when a
+    /// link is on the way).
+    fn remove_empty_dir_beneath(&self, root: &Path, rel: &Path) -> PortResult<()>;
     /// Deletes a folder only when it exists and is empty.
     fn remove_empty_dir(&self, path: &Path) -> PortResult<()>;
     /// Canonical form of `dir`.

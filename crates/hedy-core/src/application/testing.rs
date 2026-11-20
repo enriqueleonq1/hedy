@@ -1381,6 +1381,10 @@ impl FileSystem for FakeFs {
         self.no_link_beneath(root, rel)?;
         self.remove_file(&root.join(rel))
     }
+    fn remove_empty_dir_beneath(&self, root: &Path, rel: &Path) -> PortResult<()> {
+        self.no_link_beneath(root, rel)?;
+        self.remove_empty_dir(&root.join(rel))
+    }
     fn remove_empty_dir(&self, path: &Path) -> PortResult<()> {
         self.removed_dirs.lock().unwrap().push(path.to_owned());
         Ok(())

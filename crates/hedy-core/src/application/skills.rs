@@ -497,13 +497,13 @@ impl Hedy {
         folder: SkillFolder,
         name: &str,
     ) -> AppResult<()> {
-        let mut empty = dir.join(folder.path()).join(name);
+        // From the deepest up, each opened from `dir` without following a link.
+        let mut empty = PathBuf::from(folder.path()).join(name);
         loop {
-            if self.fs.is_symlink(&empty) {
-                break;
-            }
-            self.fs.remove_empty_dir(&empty)?;
-            if !empty.pop() || empty == dir {
+            if self.fs.remove_empty_dir_beneath(dir, &empty).is_err()
+                || !empty.pop()
+                || empty.as_os_str().is_empty()
+            {
                 break;
             }
         }
