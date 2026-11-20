@@ -9,6 +9,7 @@ import { useConversations, useTasks } from "../tasks/hooks";
 import { useInbox } from "../tasks/inbox";
 import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 import { useFocusMode } from "./focusMode";
+import { useSidebarMenus } from "./SidebarMenus";
 import { SidebarRailProvider, useSidebarRail } from "./sidebarRail";
 import { CollapseIcon, HomeIcon, LockIcon, MemoryIcon, PlusIcon, QuestionIcon, SearchIcon, SettingsIcon, TerminalIcon } from "./ui/icons";
 import { MenuButton } from "./ui/Menu";
@@ -92,6 +93,7 @@ export function Sidebar({
   const inbox = useInbox();
   const needsYou = inbox.count;
   const create = useCreate();
+  const menus = useSidebarMenus({ view, onNavigate });
   const conversations = useConversations().data ?? [];
   const [allConversations, setAllConversations] = useState(false);
   const shownConversations = allConversations ? conversations : conversations.slice(0, SIDEBAR_CONVERSATIONS);
@@ -268,6 +270,7 @@ export function Sidebar({
                   className="sidebar__item"
                   aria-current={active === p.path ? "page" : undefined}
                   {...named(p.name)}
+                  {...menus.trigger({ kind: "project", project: p })}
                   onClick={() => onNavigate({ screen: "workspace", project: p.path })}
                 >
                   {rail ? (
@@ -348,6 +351,7 @@ export function Sidebar({
                         className="sidebar__item sidebar__item--conversation"
                         aria-current={openConversation === task.id ? "page" : undefined}
                         title={task.title}
+                        {...menus.trigger({ kind: "chat", task })}
                         onClick={() => onNavigate({ screen: "conversation", task: task.id })}
                       >
                         <span
@@ -411,6 +415,7 @@ export function Sidebar({
           <span className="sidebar__name">{t("common.settings")}</span>
         </button>
       </div>
+      {menus.element}
     </aside>
   );
 }

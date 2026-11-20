@@ -19,9 +19,10 @@ export function TemplatesSection({ overview }: { overview: Overview }) {
   const list = templates.data ?? [];
 
   return (
-    <section className="card settings__section" aria-labelledby="templates-title">
+    // Ajustes draws the title ("Plantillas"); the section is named after it.
+    <section className="card settings__section" aria-label={t("templates.title")}>
       <div className="row row--between">
-        <h2 id="templates-title">{t("templates.title")}</h2>
+        <p className="hint">{t("templates.hint", { example: `{${t("templates.exampleName")}}` })}</p>
         <div className="actions">
           <Button small variant="ghost" disabled={restore.isPending} onClick={() => restore.mutate(undefined)}>
             {t("templates.restore")}
@@ -31,7 +32,6 @@ export function TemplatesSection({ overview }: { overview: Overview }) {
           </Button>
         </div>
       </div>
-      <p className="hint">{t("templates.hint", { example: `{${t("templates.exampleName")}}` })}</p>
       {templates.isSuccess && list.length === 0 && <p className="hint">{t("templates.empty")}</p>}
       <ul className="template-list">
         {list.map((template) => (

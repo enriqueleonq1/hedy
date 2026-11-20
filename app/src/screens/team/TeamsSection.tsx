@@ -3,7 +3,7 @@
 // them (3b), its layer's usage and leaving in a danger zone. Creating,
 // joining, removing and reviewing open dialogs. Ajustes draws the title.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { errorMessage, useApi } from "../../api/context";
@@ -26,23 +26,16 @@ import { SyncErrorBox } from "../sync/SyncError";
 import { CreateTeamDialog, JoinTeamDialog, RemovePersonDialog, ReviewDialog } from "./TeamDialogs";
 import "../../styles/team.css";
 
-export function TeamsSection({ focus }: { focus?: boolean }) {
+export function TeamsSection() {
   const t = useT();
   const teams = useTeams();
   const [dialog, setDialog] = useState<"create" | "join" | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!focus) return;
-    const section = document.getElementById("teams-section");
-    section?.scrollIntoView?.({ block: "start" });
-    section?.focus({ preventScroll: true });
-  }, [focus]);
-
   const list = teams.data ?? [];
   const current = list.find((team) => team.id === open && !team.waiting);
   return (
-    <section id="teams-section" className="card settings__section team" aria-label={t("team.title")} tabIndex={-1}>
+    <section className="card settings__section team" aria-label={t("team.title")}>
       {current ? (
         <TeamPanel id={current.id} onBack={() => setOpen(null)} />
       ) : (

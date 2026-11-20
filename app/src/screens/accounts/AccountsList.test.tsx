@@ -96,8 +96,44 @@ describe("The accounts list", () => {
   it("keeps the projects table under the accounts", async () => {
     await openAccounts();
     const list = document.querySelector(".account-list")!;
-    const table = screen.getByRole("combobox", { name: "Cuenta de hedy" });
+    const table = screen.getByRole("table", { name: "Proyectos y cuentas" });
     expect(list.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("sums up each project read-only, and a click on its row opens its sheet", async () => {
+    const api = MockApi.withSampleData();
+    await api.setProjectPhases("/code/hedy", {
+      implement: { account: "chatgpt", model: null },
+      tests: { account: "kimi", model: "kimi-k3" },
+      review: { account: "kimi", model: null },
+    });
+    const { user } = await openAccounts(api);
+    const table = screen.getByRole("table", { name: "Proyectos y cuentas" });
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+      "Proyecto",
+      "Cuenta",
+      "Protegido",
+      "Cliente",
+      "Quién hace cada paso",
+    ]);
+    const [, hedy, tienda] = within(table).getAllByRole("row");
+    expect(within(hedy!).getAllByRole("cell").map((c) => c.textContent)).toEqual([
+      "Claude personal",
+      "No",
+      "Estudio Norte",
+      "Claude planifica · Codex implementa · Kimi tests · Kimi verifica",
+    ]);
+    expect(within(tienda!).getAllByRole("cell").map((c) => c.textContent)).toEqual(["Claude trabajo", "Sí", "Café Aurora", "Claude"]);
+    // Nothing is edited here: everything is in the project's sheet.
+    expect(within(table).queryByRole("combobox")).toBeNull();
+    expect(within(table).queryByRole("textbox")).toBeNull();
+    expect(within(table).queryByRole("switch")).toBeNull();
+    expect(within(table).queryByRole("button")).toBeNull();
+    expect(within(table.closest("section")!).getByRole("button", { name: "Abrir carpeta…" })).toBeEnabled();
+
+    await user.click(within(tienda!).getByText("Café Aurora"));
+    expect(await screen.findByRole("heading", { level: 1, name: "Ajustes de tienda" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#ps=${encodeURIComponent("/code/tienda")}`);
   });
 });
 
@@ -123,11 +159,15 @@ describe("Adding an account", () => {
       "Gemini CLI",
     ]);
     expect(within(dialog).getByRole("radio", { name: /^Claude Code/ })).toBeChecked();
+    // Each step starts at its first control: the chosen provider, then the first choice.
+    expect(within(dialog).getByRole("radio", { name: /^Claude Code/ })).toHaveFocus();
 
     await user.click(within(dialog).getByRole("button", { name: "Atrás" }));
+    expect(dialog.querySelector(".add-account__step button")).toHaveFocus();
     await user.click(within(dialog).getByRole("button", { name: /^Con una API key/ }));
     expect(groups()).toEqual(["Google", "Kimi"]);
     expect(within(dialog).getByRole("radio", { name: /^Gemini/ })).toBeChecked();
+    expect(within(dialog).getByRole("radio", { name: /^Gemini/ })).toHaveFocus();
     expect(within(dialog).getByRole("button", { name: "Crear y guardar key" })).toBeDisabled();
   });
 

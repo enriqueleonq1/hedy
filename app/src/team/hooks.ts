@@ -9,7 +9,7 @@ import type { TeamPerson, TeamStatus } from "../api/types";
 import { useToast } from "../components/ui/Toast";
 import { useT, type Translate } from "../i18n";
 import { SYNC_KEY } from "../sync/hooks";
-import { syncErrorTitle } from "../screens/sync/SyncError";
+import { syncErrorTitle } from "../sync/errors";
 
 export const TEAMS_KEY = ["teams"] as const;
 export const teamStatusKey = (team: string) => [...TEAMS_KEY, "status", team] as const;

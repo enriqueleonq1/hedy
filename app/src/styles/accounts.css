@@ -98,8 +98,14 @@
 .pay-choice__title { font-weight: 600; font-size: var(--text-headline); }
 .pay-choice__detail { font-size: var(--text-caption); color: var(--muted); }
 .pay-choice--found { padding: var(--space-3) var(--space-4); }
+/* One step of "Agregar cuenta": a hook for focus, not a box. */
+.add-account__step { display: contents; }
 .add-account__section { display: grid; gap: var(--space-2); }
 .add-account__groups { border: 0; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
 .add-account__groups > legend { margin-bottom: 6px; }
 .add-account__group { display: grid; gap: 6px; }
 .add-account__group-name { font-size: var(--text-caption); font-weight: 600; color: var(--muted); }
+
+/* Projects and accounts: a read-only summary whose rows open each project's sheet. */
+.table__row--link { cursor: pointer; }
+.table__row--link:hover > * { background: var(--panel-2); }

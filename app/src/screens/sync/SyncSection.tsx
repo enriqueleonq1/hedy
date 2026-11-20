@@ -3,7 +3,7 @@
 // resolve, the PCs, what syncs and what stays, and the technical detail
 // behind "Cómo funciona". Ajustes draws the section's title.
 
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAction, useApi } from "../../api/context";
@@ -25,23 +25,17 @@ import {
   useSyncStatus,
 } from "../../sync/hooks";
 import { AddPcDialog, JoinDialog, RemovePcDialog, SetupDialog } from "./SyncDialogs";
-import { SyncErrorBox, syncErrorTitle } from "./SyncError";
+import { syncErrorTitle } from "../../sync/errors";
+import { SyncErrorBox } from "./SyncError";
 import "../../styles/sync.css";
 
-export function SyncSection({ focus }: { focus?: boolean }) {
+export function SyncSection() {
   const t = useT();
   const status = useSyncStatus();
   const [dialog, setDialog] = useState<"setup" | "join" | null>(null);
 
-  useEffect(() => {
-    if (!focus) return;
-    const section = document.getElementById("sync-section");
-    section?.scrollIntoView?.({ block: "start" });
-    section?.focus({ preventScroll: true });
-  }, [focus]);
-
   return (
-    <section id="sync-section" className="card settings__section sync" aria-label={t("sync.title")} tabIndex={-1}>
+    <section className="card settings__section sync" aria-label={t("sync.title")}>
       {status.data ? (
         <SyncOn status={status.data} />
       ) : (
@@ -101,7 +95,7 @@ function SyncOn({ status }: { status: SyncStatus }) {
     : status.lastError
       ? t(syncErrorTitle(status.lastError))
       : state === "review"
-        ? t(status.conflicts === 1 ? "sync.toReview.one" : "sync.toReview.other", { n: status.conflicts })
+        ? t(status.conflicts === 1 ? "sync.toResolve.one" : "sync.toResolve.other", { n: status.conflicts })
         : state === "pending"
           ? t("sync.pending")
           : t("sync.upToDate");
@@ -126,14 +120,14 @@ function SyncOn({ status }: { status: SyncStatus }) {
         )}
       </div>
       {status.lastError && (
-        <SyncErrorBox message={status.lastError} retrying={now.isPending} onRetry={() => now.mutate()} />
+        <SyncErrorBox message={status.lastError} titled={false} retrying={now.isPending} onRetry={() => now.mutate()} />
       )}
 
       <Conflicts status={status} />
 
       <div className="sync__block">
         <div className="row row--between">
-          <h3>{t("sync.pcsTitle")}</h3>
+          <h2>{t("sync.pcsTitle")}</h2>
           <button type="button" className="sync-link" onClick={() => setAdding(true)}>
             {t("sync.addPc")}
           </button>
@@ -211,7 +205,7 @@ function WhatSyncs() {
   const always: MessageKey[] = ["sync.what.skills", "sync.what.templates", "sync.what.themes"];
   return (
     <div className="sync__block">
-      <h3>{t("sync.what")}</h3>
+      <h2>{t("sync.what")}</h2>
       <ul className="sync-what">
         <li className="sync-what__row">
           <span className="sync-what__name">
@@ -270,7 +264,7 @@ function Conflicts({ status }: { status: SyncStatus }) {
   if (!conflicts?.length) return null;
   return (
     <div className="sync__block">
-      <h3>{t("sync.conflicts")}</h3>
+      <h2>{t("sync.conflicts")}</h2>
       {conflicts.map((c) => (
         <ConflictCard key={c.id} conflict={c} status={status} />
       ))}

@@ -217,12 +217,23 @@ function AccountCard({
   const classes = ["account-card", focused && "account-card--focus"];
   const loginHint = LOGIN_HINT[account.provider];
   const login = () => terminals.open({ kind: "login", account: account.id }, `Login · ${account.name}`);
+  // The default is offered everywhere, so a protected project's account cannot be it.
+  const reservedBy = overview.projects.find((p) => p.protected && p.account === account.id);
 
   // The one action the account needs stays visible (signing in, saving the key);
   // the rest live in the menu, with deleting set apart at the end.
   const items: MenuItem[] = [
     { label: t("accounts.card.renameItem"), onSelect: () => setEditing(true) },
-    ...(isDefault ? [] : [{ label: t("accounts.card.makeDefault"), onSelect: () => makeDefault.mutate(undefined) }]),
+    ...(isDefault
+      ? []
+      : [
+          {
+            label: t("accounts.card.makeDefault"),
+            onSelect: () => makeDefault.mutate(undefined),
+            disabled: !!reservedBy,
+            hint: reservedBy && t("accounts.card.makeDefaultReserved", { name: reservedBy.name }),
+          },
+        ]),
     ...(!loggedIn
       ? []
       : subscription

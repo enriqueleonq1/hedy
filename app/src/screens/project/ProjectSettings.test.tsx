@@ -4,6 +4,8 @@ import { QueryClient } from "@tanstack/react-query";
 
 import { App } from "../../App";
 import { MockApi } from "../../api/MockApi";
+import type { Project } from "../../api/types";
+import { changeStep } from "./ProjectSettings";
 import { chooseOption, optionLabels } from "../../test/select";
 import { accountPalette } from "../../theme/tokens";
 
@@ -15,8 +17,7 @@ const TIENDA = "/code/tienda";
 const sheet = (project: string) => `#ps=${encodeURIComponent(project)}`;
 
 /** The app over the sample data, on `hash`. */
-async function setup(hash = sheet(HEDY)) {
-  const api = MockApi.withSampleData();
+async function setup(hash = sheet(HEDY), api = MockApi.withSampleData()) {
   api.delayMs = 0;
   history.replaceState(null, "", hash);
   render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
@@ -62,7 +63,7 @@ describe("A project's settings", () => {
 
   it("opens from each project's name in Cuentas", async () => {
     const { user } = await setup("#accounts");
-    const table = await screen.findByRole("table", {}, { timeout: 5000 });
+    const table = await screen.findByRole("table", { name: "Proyectos y cuentas" }, { timeout: 5000 });
     await user.click(within(table).getByRole("link", { name: "tienda" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Ajustes de tienda" })).toBeInTheDocument();
     expect(window.location.hash).toBe(sheet(TIENDA));
@@ -166,11 +167,72 @@ describe("A project's settings", () => {
     await waitFor(async () => expect((await projectOf(api, HEDY)).phases).toEqual({ implement: { account: "chatgpt", model: null } }));
   });
 
-  it("saves the client on blur, the color and opens the folder", async () => {
+  it("puts a step back on Automático when its account is another provider's", async () => {
+    const { api, user } = await setup();
+    const save = vi.spyOn(api, "setProjectPhases");
+    const steps = await card("Quién hace cada paso");
+    const accountFor = (step: string) => within(steps).getByRole("combobox", { name: `Quién hace «${step}»` });
+    const modelFor = (step: string) => within(steps).getByRole("combobox", { name: `Modelo para «${step}»` });
+
+    await chooseOption(user, modelFor("Planificar"), /^Opus/);
+    await waitFor(() => expect(modelFor("Planificar")).toHaveTextContent("Opus"));
+    // Codex would get `--model opus`: the model goes with the old provider.
+    await chooseOption(user, accountFor("Planificar"), "ChatGPT");
+    expect(save).toHaveBeenLastCalledWith(HEDY, { plan: { account: "chatgpt", model: null } });
+    await waitFor(() => expect(modelFor("Planificar")).toHaveTextContent("Automático"));
+
+    // The same for an optional step moved from Kimi to Claude.
+    await chooseOption(user, accountFor("Escribir tests"), "Kimi");
+    await chooseOption(user, modelFor("Escribir tests"), /^kimi-k3$/);
+    await waitFor(async () => expect((await projectOf(api, HEDY)).phases.tests).toEqual({ account: "kimi", model: "kimi-k3" }));
+    await chooseOption(user, accountFor("Escribir tests"), "Claude personal");
+    await waitFor(async () =>
+      expect((await projectOf(api, HEDY)).phases.tests).toEqual({ account: "claude-personal", model: null }),
+    );
+  });
+
+  it("keeps a step on «Cuenta del proyecto» following the project's account", async () => {
+    const sample = MockApi.withSampleData();
+    await sample.addAccount({ name: "Claude extra", provider: "claude", apiKey: false, defaultFolder: false, color: null });
+    const { api, user } = await setup(sheet(HEDY), sample);
+    const steps = await card("Quién hace cada paso");
+    const account = await card("Cuenta");
+    const projectAccount = within(account).getByRole("combobox", { name: "Cuenta del proyecto" });
+    const accountFor = (step: string) => within(steps).getByRole("combobox", { name: `Quién hace «${step}»` });
+    const modelFor = (step: string) => within(steps).getByRole("combobox", { name: `Modelo para «${step}»` });
+
+    // Opus for the plan on the project's account, Kimi verifying.
+    await chooseOption(user, modelFor("Planificar"), /^Opus/);
+    await chooseOption(user, accountFor("Verificar"), "Kimi");
+    await waitFor(async () =>
+      expect((await projectOf(api, HEDY)).phases).toEqual({
+        plan: { account: "claude-personal", model: "opus" },
+        review: { account: "kimi", model: null },
+      }),
+    );
+
+    // Another Claude account: the plan moves with the project and keeps Opus.
+    await chooseOption(user, projectAccount, "Claude extra");
+    await waitFor(async () =>
+      expect((await projectOf(api, HEDY)).phases).toEqual({
+        plan: { account: "claude-extra", model: "opus" },
+        review: { account: "kimi", model: null },
+      }),
+    );
+    await waitFor(() => expect(accountFor("Planificar")).toHaveTextContent("Cuenta del proyecto (Claude extra)"));
+    expect(modelFor("Planificar")).toHaveTextContent("Opus");
+
+    // Codex: Opus would not run there, so the plan goes back to its default.
+    await chooseOption(user, projectAccount, "ChatGPT");
+    await waitFor(async () => expect((await projectOf(api, HEDY)).phases).toEqual({ review: { account: "kimi", model: null } }));
+    await waitFor(() => expect(accountFor("Planificar")).toHaveTextContent("Cuenta del proyecto (ChatGPT)"));
+    expect(modelFor("Planificar")).toHaveTextContent("Automático");
+  });
+
+  it("saves the client on blur and the color, and shows the folder", async () => {
     const { api, user } = await setup();
     const setClient = vi.spyOn(api, "setProjectClient");
     const setColor = vi.spyOn(api, "setProjectColor");
-    const editor = vi.spyOn(api, "openInEditor");
     const general = await card("General");
 
     const client = within(general).getByLabelText("Cliente");
@@ -200,9 +262,10 @@ describe("A project's settings", () => {
     expect(within(colors).getAllByRole("radio").every((r) => r.getAttribute("aria-checked") === "false")).toBe(true);
     expect(within(general).getByText("Sin color, usa el de su cuenta.")).toBeInTheDocument();
 
+    // The folder, without a second "Abrir en VS Code" (the header has it).
     expect(within(general).getByText("/code/hedy")).toBeInTheDocument();
-    await user.click(within(general).getByRole("button", { name: "Abrir en VS Code" }));
-    expect(editor).toHaveBeenCalledWith(HEDY);
+    expect(within(general).queryByRole("button", { name: "Abrir en VS Code" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Abrir en VS Code" })).toHaveLength(1);
 
     // Where its memory lives, as in Memoria.
     expect(await card("Memoria de este proyecto")).toBeInTheDocument();
@@ -220,5 +283,23 @@ describe("A project's settings", () => {
     expect(remove).toHaveBeenCalledWith(HEDY);
     await waitFor(() => expect(window.location.hash).toBe("#welcome"));
     expect((await api.overview()).projects.map((p) => p.path)).not.toContain(HEDY);
+  });
+});
+
+describe("The steps' plan", () => {
+  const accounts = async () => (await MockApi.withSampleData().overview()).accounts;
+  const project = (phases: Project["phases"], account = "claude-personal") =>
+    ({ path: HEDY, account, phases }) as Project;
+
+  it("keeps a step's model while its provider stays, and drops it when it changes", async () => {
+    const all = [...(await accounts()), { ...(await accounts())[0]!, id: "claude-extra" }];
+    const opus = project({ plan: { account: "claude-personal", model: "opus" } });
+    expect(changeStep(opus, all, "plan", false, { account: "claude-extra" })).toEqual({
+      plan: { account: "claude-extra", model: "opus" },
+    });
+    expect(changeStep(opus, all, "plan", false, { account: "chatgpt" })).toEqual({ plan: { account: "chatgpt", model: null } });
+    // Back on "Cuenta del proyecto" (same provider): it keeps the model, stored with the project's account.
+    const away = project({ plan: { account: "claude-extra", model: "opus" } });
+    expect(changeStep(away, all, "plan", false, { account: "" })).toEqual({ plan: { account: "claude-personal", model: "opus" } });
   });
 });

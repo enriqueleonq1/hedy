@@ -88,7 +88,7 @@ const es = {
   "team.invite.message":
     "Te invito al equipo «{team}» en Hedy. En Hedy, abre Ajustes → Equipos → «Unirme con una invitación» y pega este mensaje.\n\nDirección: {url}\nCódigo: {code}\n\nEl código sirve una vez y caduca en {hours} h. También necesitas acceso a ese repo en nuestro servidor git.",
   "team.invite.messageMine":
-    "Para sumar otra computadora tuya al equipo «{team}»: en Hedy, abre Ajustes → Equipos → «Unirme con una invitación» y pega este mensaje.\n\nDirección: {url}\nCódigo: {code}\n\nEl código sirve una vez y caduca en {hours} h.",
+    "Para agregar otra computadora tuya al equipo «{team}»: en Hedy, abre Ajustes → Equipos → «Unirme con una invitación» y pega este mensaje.\n\nDirección: {url}\nCódigo: {code}\n\nEl código sirve una vez y caduca en {hours} h.",
   "team.invite.cancel": "Anular",
   "team.invite.hint":
     "«Copiar invitación» lleva la dirección del repo y el código en un solo mensaje: pásalo por otro canal. Quien entra también necesita acceso al repo en vuestro servidor git: Hedy no puede dárselo.",

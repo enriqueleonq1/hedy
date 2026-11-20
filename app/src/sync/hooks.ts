@@ -10,7 +10,7 @@ import { useToast } from "../components/ui/Toast";
 import { useT, type Translate } from "../i18n";
 import { TEMPLATES_KEY } from "../tasks/hooks";
 import { THEMES_KEY } from "../theme/ThemeProvider";
-import { syncErrorTitle } from "../screens/sync/SyncError";
+import { syncErrorTitle } from "./errors";
 
 export const SYNC_KEY = ["sync"] as const;
 export const SYNC_STATUS_KEY = [...SYNC_KEY, "status"] as const;

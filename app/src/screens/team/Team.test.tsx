@@ -78,6 +78,44 @@ describe("Teams", () => {
     expect(parseInvite(text)).toEqual({ url: "git@github.com:empresa/hedy-team.git", code: "7-tigre-lima-nube-faro" });
   });
 
+  describe("parseInvite", () => {
+    const message = (team: string, url: string, code: string) =>
+      `Te invito al equipo «${team}» en Hedy. En Hedy, abre Ajustes → Equipos → «Unirme con una invitación» y pega este mensaje.\n\nDirección: ${url}\nCódigo: ${code}\n\nEl código sirve una vez y caduca en 47 h.`;
+
+    it("takes the labelled code over a team name that looks like one", () => {
+      expect(parseInvite(message("Squad 2-front-end", "git@github.com:acme/team.git", "7-tigre-lima-nube"))).toEqual({
+        url: "git@github.com:acme/team.git",
+        code: "7-tigre-lima-nube",
+      });
+    });
+
+    it("takes the labelled address over a team name that looks like one", () => {
+      expect(parseInvite(message("x@y:z", "https://git.acme.dev/team.git", "3-sol-mar-luz"))).toEqual({
+        url: "https://git.acme.dev/team.git",
+        code: "3-sol-mar-luz",
+      });
+    });
+
+    it("recognises local folders and file:// addresses", () => {
+      expect(parseInvite(message("Local", "/srv/git/team.git", "3-sol-mar-luz"))?.url).toBe("/srv/git/team.git");
+      expect(parseInvite(message("Local", "file:///srv/git/team.git", "3-sol-mar-luz"))?.url).toBe("file:///srv/git/team.git");
+      expect(parseInvite("~/repos/team.git 3-sol-mar-luz")).toEqual({ url: "~/repos/team.git", code: "3-sol-mar-luz" });
+      expect(parseInvite("file:///srv/team.git, 3-sol-mar-luz.")).toEqual({ url: "file:///srv/team.git", code: "3-sol-mar-luz" });
+    });
+
+    it("reads the English message and labels on one line", () => {
+      const english =
+        'You\'re invited to the team "Squad 2-front-end" in Hedy.\n\nAddress: ssh://git@acme.dev/team.git\nCode: 5-red-blue-green\n\nThe code works once.';
+      expect(parseInvite(english)).toEqual({ url: "ssh://git@acme.dev/team.git", code: "5-red-blue-green" });
+      expect(parseInvite("Dirección: /srv/team.git Código: 5-uno-dos")).toEqual({ url: "/srv/team.git", code: "5-uno-dos" });
+    });
+
+    it("needs both the address and the code", () => {
+      expect(parseInvite("Código: 5-uno-dos-tres")).toBeNull();
+      expect(parseInvite("git@github.com:acme/team.git")).toBeNull();
+    });
+  });
+
   it("adds another computer of the user's with its own invite", async () => {
     const { api, user, card } = await openPlataforma();
     const invite = vi.spyOn(api, "teamInvite");
@@ -87,7 +125,7 @@ describe("Teams", () => {
     const write = vi.spyOn(navigator.clipboard, "writeText");
     const row = within(card).getByText("Otra computadora tuya").closest("li")!;
     await user.click(within(row).getByRole("button", { name: "Copiar invitación" }));
-    await waitFor(() => expect(write.mock.calls.at(-1)![0]).toMatch(/^Para sumar otra computadora tuya al equipo «Plataforma»/));
+    await waitFor(() => expect(write.mock.calls.at(-1)![0]).toMatch(/^Para agregar otra computadora tuya al equipo «Plataforma»/));
   });
 
   it("shows the team layer's usage as a meter", async () => {

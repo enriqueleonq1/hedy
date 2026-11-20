@@ -212,14 +212,37 @@ export function CreateTeamDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** What closes a sentence around an address or a code, not part of it. */
+const TRAILING = /[.,;:)»"'\u201d]+$/u;
+/** A git address: scp-like (`git@host:repo`) or with a scheme (`https://`, `ssh://`, `git://`, `file://`). */
+const REMOTE = /(?:[\w.-]+@[\w.-]+:[^\s]+|(?:https?|ssh|git|file):\/\/[^\s]+)/gu;
+/** A local folder: `/srv/team.git`, `~/team`, `./team`, `C:\team`. */
+const LOCAL = /(?<!\S)(?:(?:~|\.{1,2})?\/[^\s]+|[A-Za-z]:\\[^\s]+)/gu;
+/** An invite code: its number and at least two words (`7-tigre-lima-nube`). */
+const CODE = /(?<![\w/-])\d+(?:-\p{L}+){2,}(?![\w/-])/gu;
+
+/** "Dirección: …" / "Address: …", up to the end of its line or a "Código:" on the same one. */
+const ADDRESS_LINE = /(?<![\p{L}\d])(?:direcci[oó]n|address)[ \t]*:[ \t]*(.+?)(?=[ \t]+(?:c[oó]digo|code)[ \t]*:|[ \t]*$)/gimu;
+/** "Código: …" / "Code: …". */
+const CODE_LINE = /(?<![\p{L}\d])(?:c[oó]digo|code)[ \t]*:[ \t]*(\S+)/giu;
+
+/** The last match of `pattern` (its first group when it has one). */
+const lastMatch = (text: string, pattern: RegExp) => {
+  const found = [...text.matchAll(pattern)].at(-1);
+  return found?.[1] ?? found?.[0];
+};
+
 /**
  * The address and the code out of a pasted invitation ("Copiar invitación"'s
- * message, or anything holding both); `null` unless both are there.
+ * message, or anything holding both); `null` unless both are there. Its
+ * labelled lines ("Dirección:"/"Address:", "Código:"/"Code:", in either
+ * language) win over anything found elsewhere, such as a team name that looks
+ * like a code or an address; without them, the last address and the last code.
  */
 export function parseInvite(text: string): { url: string; code: string } | null {
-  const trim = (found: string | undefined) => found?.replace(/[.,;:)»"'\u201d]+$/u, "");
-  const url = trim(text.match(/(?:[\w.-]+@[\w.-]+:[^\s]+|(?:https?|ssh|git):\/\/[^\s]+)/u)?.[0]);
-  const code = trim(text.match(/(?<![\w/-])\d+(?:-\p{L}+){2,}(?![\w/-])/u)?.[0]);
+  const trim = (found: string | undefined) => found?.trim().replace(TRAILING, "") || undefined;
+  const url = trim(lastMatch(text, ADDRESS_LINE)) ?? trim(lastMatch(text, REMOTE) ?? lastMatch(text, LOCAL));
+  const code = trim(lastMatch(text, CODE_LINE)) ?? trim(lastMatch(text, CODE));
   return url && code ? { url, code } : null;
 }
 

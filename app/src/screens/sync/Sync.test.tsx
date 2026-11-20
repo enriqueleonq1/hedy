@@ -7,7 +7,7 @@ import { MockApi } from "../../api/MockApi";
 import type { MemoryHome, SyncConflict } from "../../api/types";
 import { repoLabel } from "../../sync/hooks";
 import { foldWord } from "./SyncDialogs";
-import { syncErrorKind } from "./SyncError";
+import { syncErrorKind } from "../../sync/errors";
 import { conflictChoices, summarize } from "./SyncSection";
 
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
@@ -121,7 +121,7 @@ describe("Sync", () => {
   it("adds this computadora with the same address and the 12 words", async () => {
     const { api, user } = renderAt("#sync", offline());
     await user.click(within(await waitFor(section)).getByRole("button", { name: "Ya la uso en otra computadora" }));
-    const dialog = screen.getByRole("dialog", { name: "Sumar esta computadora" });
+    const dialog = screen.getByRole("dialog", { name: "Agregar esta computadora" });
     await user.type(within(dialog).getByLabelText("Dirección"), "git@github.com:alex/hedy-memory.git");
     await user.click(within(dialog).getByRole("button", { name: "Continuar" }));
     await user.clear(within(dialog).getByLabelText("Nombre"));
@@ -129,12 +129,12 @@ describe("Sync", () => {
     await user.click(within(dialog).getByRole("button", { name: "Continuar" }));
     const words = within(dialog).getByLabelText("Clave de recuperación");
     await user.type(words, "árbol nube lápiz");
-    await user.click(within(dialog).getByRole("button", { name: "Sumar esta computadora" }));
+    await user.click(within(dialog).getByRole("button", { name: "Agregar esta computadora" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("12 palabras");
 
     await user.clear(words);
     await user.type(words, MockApi.SYNC_WORDS);
-    await user.click(within(dialog).getByRole("button", { name: "Sumar esta computadora" }));
+    await user.click(within(dialog).getByRole("button", { name: "Agregar esta computadora" }));
     expect(await screen.findByText("Esta computadora ya sincroniza · 8 recibidos")).toBeInTheDocument();
     const table = within(section()).getByRole("table");
     expect(within(table).getByText("Oficina")).toBeInTheDocument();
@@ -145,7 +145,7 @@ describe("Sync", () => {
   it("shows both versions of a conflict, the other computer's as the primary choice", async () => {
     const { api, user } = renderAt("#sync", MockApi.withSampleData());
     const card = await waitFor(section);
-    expect(await within(card).findByText("1 cambio para revisar")).toBeInTheDocument();
+    expect(await within(card).findByText("1 cambio para resolver")).toBeInTheDocument();
     expect(within(card).getByRole("heading", { name: "Para resolver" })).toBeInTheDocument();
     const conflict = within(card).getByRole("article", { name: "Nota" });
     expect(within(conflict).getByText(/con dos decimales/)).toBeInTheDocument();
@@ -190,15 +190,17 @@ describe("Sync", () => {
     await user.click(within(row).getByRole("button", { name: "Resolver" }));
     expect(window.location.hash).toBe("#sync");
     const card = await waitFor(section);
-    expect(await within(card).findByText("1 cambio para revisar")).toBeInTheDocument();
+    expect(await within(card).findByText("1 cambio para resolver")).toBeInTheDocument();
     expect(within(within(card).getByRole("table")).getByText("Oficina")).toBeInTheDocument();
 
     api.syncFailure = "git push falló: fatal: unable to access 'https://github.com/alex/m/': Could not resolve host: github.com";
     await user.click(within(section()).getByRole("button", { name: "Sincronizar ahora" }));
     // In plain words, with git's message behind "Detalles" and a way to try again.
     const alert = await within(section()).findByRole("alert");
-    expect(within(alert).getByText("Sin conexión")).toBeInTheDocument();
+    // Its title once, in the status line; the box below holds the sentence.
     expect(within(section()).getByRole("status")).toHaveTextContent("Sin conexión");
+    expect(within(alert).queryByText("Sin conexión")).toBeNull();
+    expect(within(section()).getAllByText("Sin conexión")).toHaveLength(1);
     expect(within(section()).queryByRole("button", { name: "Sincronizar ahora" })).toBeNull();
     const detail = within(alert).getByText(/Could not resolve host/);
     expect(detail).not.toBeVisible();
@@ -217,7 +219,7 @@ describe("Sync", () => {
     api.sync!.lastError = "git fetch falló: git@github.com: Permission denied (publickey).";
     renderAt("#sync", api);
     const alert = await within(await waitFor(section)).findByRole("alert");
-    expect(within(alert).getByText("Sin acceso al repositorio")).toBeInTheDocument();
+    expect(within(section()).getByRole("status")).toHaveTextContent("Sin acceso al repositorio");
     expect(within(alert).getByText(/git ls-remote/)).toBeInTheDocument();
   });
 

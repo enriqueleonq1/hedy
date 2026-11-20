@@ -1367,6 +1367,21 @@ export class MockApi implements HedyApi {
       project = { ...emptyProject(path) };
       this.state.projects.push(project);
     }
+    // Like the core's `follow_project_account`: required steps on the old
+    // project account move with it (keeping the model on the same provider).
+    const old = project.account;
+    if (old && old !== account) {
+      const provider = (id: string) => this.state.accounts.find((a) => a.id === id)?.provider;
+      const same = provider(old) !== undefined && provider(old) === provider(account);
+      const phases = { ...project.phases };
+      for (const phase of ["plan", "implement"] as const) {
+        const step = phases[phase];
+        if (!step || step.account !== old) continue;
+        if (same && step.model) phases[phase] = { account, model: step.model };
+        else phases[phase] = undefined;
+      }
+      project.phases = Object.fromEntries(Object.entries(phases).filter(([, step]) => step)) as typeof project.phases;
+    }
     project.account = account;
     if (protect !== undefined) project.protected = protect;
     for (const a of this.state.accounts) {

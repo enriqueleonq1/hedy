@@ -359,7 +359,7 @@ export function JoinDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** "Sumar otra PC": what to do on the other one, with the address to paste. */
+/** "Agregar otra computadora tuya": what to do on the other one, with the address to paste. */
 export function AddPcDialog({ url, onClose }: { url: string; onClose: () => void }) {
   const t = useT();
   const toast = useToast();

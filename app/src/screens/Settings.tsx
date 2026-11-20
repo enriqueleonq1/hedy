@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useT, type LanguageSetting, type MessageKey } from "../i18n";
@@ -27,33 +27,57 @@ const CLIS: { id: CliProviderId; name: string }[] = [
 ];
 
 
-const INDEX: { group: MessageKey | null; items: { id: SettingsSection; label: MessageKey; words: MessageKey[] }[] }[] = [
+const INDEX: {
+  group: MessageKey | null;
+  items: { id: SettingsSection; label: MessageKey; words: MessageKey[] }[];
+}[] = [
   {
     group: null,
     items: [
-      { id: "general", label: "settings.section.general", words: ["common.language", "settings.name", "settings.notifications"] },
-      { id: "accounts", label: "settings.section.accounts", words: ["accounts.title", "common.projectsAndAccounts"] },
-      { id: "appearance", label: "settings.appearance", words: ["theme.mode", "settings.colors", "settings.mascotStates"] },
-      { id: "saving", label: "settings.saving", words: ["common.codeMap"] },
-      { id: "templates", label: "settings.section.templates", words: [] },
+      {
+        id: "general",
+        label: "settings.section.general",
+        words: ["common.language", "settings.name", "settings.notifications", "settings.keywords.general"],
+      },
+      { id: "accounts", label: "settings.section.accounts", words: ["accounts.title", "common.projectsAndAccounts", "settings.keywords.accounts"] },
+      {
+        id: "appearance",
+        label: "settings.appearance",
+        words: ["theme.mode", "theme.gallery", "settings.colors", "settings.mascotStates", "settings.keywords.appearance"],
+      },
+      { id: "saving", label: "settings.saving", words: ["common.codeMap", "settings.keywords.saving"] },
+      { id: "templates", label: "settings.section.templates", words: ["settings.keywords.templates"] },
     ],
   },
   {
     group: "settings.group.computers",
     items: [
-      { id: "sync", label: "settings.section.sync", words: [] },
-      { id: "teams", label: "settings.section.teams", words: [] },
+      { id: "sync", label: "settings.section.sync", words: ["settings.keywords.sync"] },
+      { id: "teams", label: "settings.section.teams", words: ["settings.keywords.teams"] },
     ],
   },
   {
     group: "settings.group.more",
-    items: [{ id: "advanced", label: "settings.section.advanced", words: ["settings.cliPaths", "settings.doctor", "settings.data"] }],
+    items: [
+      {
+        id: "advanced",
+        label: "settings.section.advanced",
+        words: ["settings.cliPaths", "settings.doctor", "settings.data", "settings.keywords.advanced"],
+      },
+    ],
   },
 ];
 
+/** Lowercase and without accents, so "diagnostico" finds "Diagnóstico". */
+export function foldText(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
 /**
  * Ajustes: an index with a search on the side and one section at a time
- * (`#settings/<section>`), instead of one page of everything.
+ * (`#settings/<section>`), instead of one page of everything. Arriving from
+ * another screen (the palette, Inicio, a link) puts focus on the section's
+ * title; moving through the index leaves it in the index.
  */
 export function Settings({
   overview,
@@ -72,10 +96,20 @@ export function Settings({
 }) {
   const t = useT();
   const [query, setQuery] = useState("");
-  const needle = query.trim().toLowerCase();
-  const matches = (item: (typeof INDEX)[number]["items"][number]) =>
-    !needle || [item.label, ...item.words].some((key) => t(key).toLowerCase().includes(needle));
+  const title = useRef<HTMLHeadingElement>(null);
+  const needle = foldText(query.trim());
+  const matches = (group: MessageKey | null, item: (typeof INDEX)[number]["items"][number]) =>
+    !needle || [group, item.label, ...item.words].some((key) => key !== null && foldText(t(key)).includes(needle));
   const current = INDEX.flatMap((g) => g.items).find((i) => i.id === section);
+
+  // Only on arrival: the index keeps focus while moving through it. Cuentas
+  // draws its own title, and the gallery focuses its own.
+  const arrival = useRef({ section, gallery, account });
+  useEffect(() => {
+    const { section: first, gallery: toGallery, account: card } = arrival.current;
+    if (first === "general" || first === "accounts" || toGallery || card) return;
+    title.current?.focus({ preventScroll: true });
+  }, []);
 
   return (
     <div className="screen settings settings--indexed">
@@ -89,7 +123,7 @@ export function Settings({
           onChange={(e) => setQuery(e.target.value)}
         />
         {INDEX.map(({ group, items }) => {
-          const shown = items.filter(matches);
+          const shown = items.filter((item) => matches(group, item));
           if (shown.length === 0) return null;
           return (
             <div key={group ?? "main"} className="settings__index-group">
@@ -108,10 +142,16 @@ export function Settings({
             </div>
           );
         })}
-        {needle && !INDEX.some((g) => g.items.some(matches)) && <p className="small muted">{t("settings.noMatch")}</p>}
+        {needle && !INDEX.some((g) => g.items.some((item) => matches(g.group, item))) && (
+          <p className="small muted">{t("settings.noMatch")}</p>
+        )}
       </nav>
       <div className="settings__content">
-        {section !== "accounts" && current && <h1>{t(current.label)}</h1>}
+        {section !== "accounts" && current && (
+          <h1 ref={title} tabIndex={-1}>
+            {t(current.label)}
+          </h1>
+        )}
         {section === "general" && <GeneralSection overview={overview} />}
         {section === "accounts" && <AccountsScreen overview={overview} focus={account} />}
         {section === "appearance" && <AppearanceSection overview={overview} gallery={gallery} />}
@@ -122,9 +162,9 @@ export function Settings({
           </>
         )}
         {section === "templates" && <TemplatesSection overview={overview} />}
-        {section === "sync" && <SyncSection focus />}
-        {section === "teams" && <TeamsSection focus />}
-        {section === "advanced" && <AdvancedSection overview={overview} />}
+        {section === "sync" && <SyncSection />}
+        {section === "teams" && <TeamsSection />}
+        {section === "advanced" && <AdvancedSection overview={overview} onAccounts={() => onSection("accounts")} />}
       </div>
     </div>
   );
@@ -195,7 +235,7 @@ function AppearanceSection({ overview, gallery }: { overview: Overview; gallery:
     if (!gallery) return;
     const list = document.getElementById("theme-gallery");
     list?.scrollIntoView?.({ block: "start" });
-    list?.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
+    list?.querySelector<HTMLElement>("h2")?.focus({ preventScroll: true });
   }, [gallery]);
 
   return (
@@ -262,8 +302,11 @@ function AppearanceSection({ overview, gallery }: { overview: Overview; gallery:
   );
 }
 
-/** What few people touch: the CLIs' paths, the diagnosis, the APIs' addresses and prices, and the data folder. */
-function AdvancedSection({ overview }: { overview: Overview }) {
+/**
+ * What few people touch: the CLIs' paths, the diagnosis, where the APIs'
+ * addresses and prices live (each API account's "Avanzado"), and the data folder.
+ */
+function AdvancedSection({ overview, onAccounts }: { overview: Overview; onAccounts: () => void }) {
   const t = useT();
   const setSetting = useSetSetting();
   return (
@@ -295,49 +338,12 @@ function AdvancedSection({ overview }: { overview: Overview }) {
 
       <section className="card settings__section">
         <h2>APIs</h2>
-        <p className="hint">{t("settings.apiUrlHint")}</p>
-        {(
-          [
-            { id: "kimi", name: "Kimi", placeholder: "https://api.moonshot.ai/v1" },
-            { id: "gemini", name: "Gemini", placeholder: "https://generativelanguage.googleapis.com/v1beta/openai" },
-          ] as const
-        ).map((api) => (
-          <Field key={api.id} label={t("settings.apiUrl", { name: api.name })}>
-            {(id) => (
-              <input
-                id={id}
-                className="mono"
-                key={overview.apiUrls[api.id] ?? ""}
-                defaultValue={overview.apiUrls[api.id] ?? ""}
-                placeholder={api.placeholder}
-                spellCheck={false}
-                onBlur={(e) =>
-                  e.target.value.trim() !== (overview.apiUrls[api.id] ?? "") &&
-                  setSetting.mutate({ key: `api_url.${api.id}`, value: e.target.value })
-                }
-              />
-            )}
-          </Field>
-        ))}
-        <p className="hint">{t("settings.priceHint")}</p>
-        {(["kimi", "gemini"] as const).map((provider) => (
-          <Field key={provider} label={t("settings.price", { name: provider === "kimi" ? "Kimi" : "Gemini" })}>
-            {(id) => (
-              <input
-                id={id}
-                className="mono"
-                key={overview.apiPrices[provider] ?? ""}
-                defaultValue={overview.apiPrices[provider] ?? ""}
-                placeholder={t("settings.pricePlaceholder")}
-                spellCheck={false}
-                onBlur={(e) =>
-                  e.target.value.trim() !== (overview.apiPrices[provider] ?? "") &&
-                  setSetting.mutate({ key: `api_price.${provider}`, value: e.target.value.trim() || null })
-                }
-              />
-            )}
-          </Field>
-        ))}
+        <p className="hint">
+          {t("settings.apiPointer")}{" "}
+          <button type="button" className="link-button" onClick={onAccounts}>
+            {t("settings.apiPointerLink")}
+          </button>
+        </p>
       </section>
 
       <section className="card settings__section">

@@ -17,8 +17,8 @@ const isApiProvider = (provider: string): provider is ApiProvider => provider in
 
 /**
  * "Avanzado" of an API-key account: its provider's address and price, which
- * few people touch, closed by default. They are the same settings as in
- * Ajustes → Avanzado, so they apply to every key of that provider.
+ * few people touch, closed by default. This is their only home (Ajustes →
+ * Avanzado points here); they apply to every key of that provider.
  */
 export function ApiAdvanced({ account, overview }: { account: Account; overview: Overview }) {
   const t = useT();

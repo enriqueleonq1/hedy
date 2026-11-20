@@ -39,7 +39,6 @@ const es = {
   "projectSettings.noColor": "Sin color",
   "projectSettings.noColorHint": "Sin color, usa el de su cuenta.",
   "projectSettings.folder": "Carpeta",
-  "projectSettings.openEditor": "Abrir en VS Code",
 
   "projectSettings.danger.title": "Zona de peligro",
   "projectSettings.remove": "Quitar de Hedy…",
@@ -86,7 +85,6 @@ const en: Record<keyof typeof es, string> = {
   "projectSettings.noColor": "No color",
   "projectSettings.noColorHint": "Without a color, it uses its account's.",
   "projectSettings.folder": "Folder",
-  "projectSettings.openEditor": "Open in VS Code",
 
   "projectSettings.danger.title": "Danger zone",
   "projectSettings.remove": "Remove from Hedy…",

@@ -82,23 +82,23 @@ export function ThemeGallery({ overview }: { overview: Overview }) {
   return (
     <div className="theme-gallery" id="theme-gallery">
       <div className="theme-gallery__head">
-        <h3 tabIndex={-1}>{t("theme.gallery")}</h3>
+        <h2 tabIndex={-1}>{t("theme.gallery")}</h2>
         <p className="hint">{t("theme.galleryHint")}</p>
       </div>
       {(["dark", "light"] as const).map((group) => (
         <section key={group} className="theme-group" aria-labelledby={`theme-group-${group}`}>
-          <h4 id={`theme-group-${group}`} className="theme-group__title">
+          <h3 id={`theme-group-${group}`} className="theme-group__title">
             {t(group === "dark" ? "theme.group.dark" : "theme.group.light")}
-          </h4>
+          </h3>
           <ul className="theme-grid">
             {PRESETS.filter((p) => p.base === group).map((p) => card(p, p.note ? t(p.note) : ""))}
           </ul>
         </section>
       ))}
       <section className="theme-group" aria-labelledby="theme-group-custom">
-        <h4 id="theme-group-custom" className="theme-group__title">
+        <h3 id="theme-group-custom" className="theme-group__title">
           {t("theme.group.custom")}
-        </h4>
+        </h3>
         <ul className="theme-grid">
           {customs.map((c) =>
             card(

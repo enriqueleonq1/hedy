@@ -132,7 +132,7 @@ describe("Status", () => {
     await openSummary(user);
     await user.click(await screen.findByRole("button", { name: "Activar mapa del código" }));
     // Straight to the section with the code map, not Ajustes' first page.
-    expect(await screen.findByRole("heading", { level: 1, name: "Ahorro" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Ahorro de contexto" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Mapa del código" })).toBeInTheDocument();
   });
 
@@ -146,8 +146,10 @@ describe("Status", () => {
     expect(within(spend).queryByRole("columnheader", { name: /Costo estimado/ })).not.toBeInTheDocument();
     expect(within(spend).queryByText(/\$/)).not.toBeInTheDocument();
 
-    const input = screen.getByLabelText("Cliente de hedy");
-    expect(input).toHaveAccessibleDescription(/agrupa proyectos del mismo cliente para ver cuánto uso lleva cada uno/);
+    // The client is edited in the project's own settings, a click away from the table.
+    await user.click(screen.getByRole("link", { name: "hedy" }));
+    const input = await screen.findByLabelText("Cliente");
+    expect(input).toHaveAccessibleDescription(/Agrupa los proyectos de un mismo cliente/);
     await user.clear(input);
     await user.type(input, "Taller Sur");
     await user.tab();
@@ -162,11 +164,14 @@ describe("Status", () => {
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /Abrir la cuenta$/ }));
-    const input = await screen.findByLabelText("Cliente de hedy");
+    await screen.findByRole("link", { name: "hedy" });
     expect(screen.queryByRole("region", { name: "Uso de la semana por cliente" })).not.toBeInTheDocument();
 
+    await user.click(screen.getByRole("link", { name: "hedy" }));
+    const input = await screen.findByLabelText("Cliente");
     await user.type(input, "Estudio Norte");
     await user.tab();
+    await user.click(screen.getByRole("button", { name: /Abrir la cuenta$/ }));
     const spend = await screen.findByRole("region", { name: "Uso de la semana por cliente" });
     expect(await within(spend).findByText("Estudio Norte")).toBeInTheDocument();
   });

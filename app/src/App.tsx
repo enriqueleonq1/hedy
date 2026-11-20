@@ -71,7 +71,8 @@ function Localized({ children }: { children: ReactNode }) {
 }
 
 /**
- * `#accounts`, `#a=<id>` (accounts, that card), `#settings`, `#sync` (its sync card), `#activity`, `#p=<path>` (workspace; `&t=<id>`
+ * `#accounts`, `#a=<id>` (accounts, that card), `#settings` (`/<section>` one of Ajustes' sections, `/themes` Apariencia at the
+ * theme gallery), `#sync` (its sync card), `#activity`, `#p=<path>` (workspace; `&t=<id>`
  * that task, `&new` a new one, `&new&from=<id>` a new one continuing that conversation), `#memory` (Memoria, for everything;
  * `#memory=<tab>` that section), `#m=<path>` (Memoria for that project; `&<tab>` that section), `#s=<path>` (status),
  * `#c` (a new quick question), `#c=<id>` (that conversation). The old `#k=<path>`, `#skills`, `#ask` and `#ask=<path>` land in Memoria.
@@ -104,7 +105,8 @@ function viewFromHash(): View {
   if (hash === "accounts" || hash === "settings") return { screen: hash };
   if (hash.startsWith("settings/")) {
     const section = hash.slice(9);
-    return { screen: "settings", ...(isSettingsSection(section) ? { section } : {}) };
+    // "themes" is Apariencia at its theme gallery.
+    return { screen: "settings", ...(isSettingsSection(section) || section === "themes" ? { section } : {}) };
   }
   // Memoria, and the addresses its parts had before.
   if (hash === "memory" || hash === "ask") return { screen: "memory" };

@@ -279,7 +279,9 @@ describe("English", () => {
     expect(within(screen.getByRole("article", { name: "ChatGPT" })).queryByText(/could not refresh/)).not.toBeInTheDocument();
     expect(within(screen.getByRole("article", { name: "ChatGPT" })).getByRole("button", { name: "Sign in" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "This week's usage by client" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Client for hedy")).toBeInTheDocument();
+    const table = screen.getByRole("table", { name: "Projects and accounts" });
+    expect(within(table).getByRole("columnheader", { name: "Who does each step" })).toBeInTheDocument();
+    expect(within(table).getByRole("cell", { name: "Yes" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "+ Add account" }));
     const dialog = screen.getByRole("dialog", { name: "Add account" });
@@ -393,7 +395,7 @@ describe("English", () => {
       "General",
       "Accounts",
       "Appearance",
-      "Savings",
+      "Context saving",
       "Templates",
       "Sync",
       "Teams",
@@ -423,7 +425,7 @@ describe("English", () => {
     expect(within(working).getByText("Sniffing around · Tracking · Searching")).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
 
-    await open("Savings");
+    await open("Context saving");
     expect(screen.getByRole("heading", { name: "Code map" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
 
@@ -442,8 +444,18 @@ describe("English", () => {
     expect(screen.getByRole("heading", { name: "Data" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
 
+    expect(screen.getByText(/under each API-key account's “Advanced”/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Go to Accounts" })).toBeInTheDocument();
+
     // The search narrows the index, in English too.
-    await user.type(within(index).getByRole("searchbox", { name: "Search settings" }), "zzz");
+    const search = within(index).getByRole("searchbox", { name: "Search settings" });
+    await user.type(search, "price");
+    expect(within(index).getAllByRole("button").map((b) => b.textContent)).toEqual(["Accounts", "Advanced"]);
+    await user.clear(search);
+    await user.type(search, "theme");
+    expect(within(index).getAllByRole("button").map((b) => b.textContent)).toEqual(["Appearance"]);
+    await user.clear(search);
+    await user.type(search, "zzz");
     expect(within(index).getByText("Nothing matches.")).toBeInTheDocument();
   });
 

@@ -8,7 +8,7 @@ import type { Account, Assignment, Overview, Phase, PhasePlan, Project } from ".
 import { accountOption } from "../../components/accounts";
 import type { View } from "../../components/Layout";
 import { MODEL_HINTS, MODEL_SUGGESTIONS, modelLabel } from "../../components/models";
-import { shortPath, useProjectActions } from "../../components/projects";
+import { shortPath } from "../../components/projects";
 import { Button, ConfirmButton } from "../../components/ui/Button";
 import { ColorPicker, Switch } from "../../components/ui/controls";
 import { Select, type SelectOption } from "../../components/ui/Select";
@@ -88,6 +88,7 @@ function AccountCard({ project, overview }: { project: Project; overview: Overvi
   const titleId = useId();
   const accountId = useId();
   const assign = useAction(
+    // The backend moves the steps on "Cuenta del proyecto" along with it.
     (api, vars: { account: string; protect?: boolean }) => api.useAccount(project.path, vars.account, vars.protect),
     { invalidate: [OVERVIEW_KEY, ["status", project.path]] },
   );
@@ -130,15 +131,31 @@ function AccountCard({ project, overview }: { project: Project; overview: Overvi
   );
 }
 
+/** Who works on a step: its own account or, for a required one, the project's. */
+function stepWorker(project: Project, optional: boolean, account: string | undefined): string | null {
+  return account || (optional ? null : project.account);
+}
+
 /**
  * The plan after changing one step. A step back at its default goes: an
  * optional one without an account (its model too), a required one on the
- * project's account without a model.
+ * project's account without a model. A model only fits its provider (Codex
+ * would get `--model opus`), so moving a step to another provider's account
+ * puts it back on Automático.
  */
-export function changeStep(project: Project, phase: Phase, optional: boolean, change: Partial<Assignment>): PhasePlan {
-  const next = { ...(project.phases[phase] ?? { account: "", model: null }), ...change };
-  const account = next.account || (optional ? null : project.account);
-  const model = next.model?.trim() || null;
+export function changeStep(
+  project: Project,
+  accounts: Account[],
+  phase: Phase,
+  optional: boolean,
+  change: Partial<Assignment>,
+): PhasePlan {
+  const before = project.phases[phase] ?? { account: "", model: null };
+  const next = { ...before, ...change };
+  const account = stepWorker(project, optional, next.account);
+  const provider = (id: string | null) => accounts.find((a) => a.id === id)?.provider;
+  const sameProvider = provider(stepWorker(project, optional, before.account)) === provider(account);
+  const model = (sameProvider && next.model?.trim()) || null;
   const others = Object.fromEntries(Object.entries(project.phases).filter(([p]) => p !== phase)) as PhasePlan;
   if (!account || (!optional && account === project.account && !model)) return others;
   return { ...others, [phase]: { account, model } };
@@ -197,7 +214,7 @@ function StepsCard({ project, overview }: { project: Project; overview: Overview
                 title={step}
                 value={chosen}
                 disabled={save.isPending || accountOptions.length < 2}
-                onChange={(account) => save.mutate(changeStep(project, phase, optional, { account }))}
+                onChange={(account) => save.mutate(changeStep(project, overview.accounts, phase, optional, { account }))}
                 options={accountOptions}
               />
               <Select
@@ -205,7 +222,7 @@ function StepsCard({ project, overview }: { project: Project; overview: Overview
                 title={t("projectSettings.step.modelFor", { step })}
                 value={model}
                 disabled={save.isPending || !worker || modelOptions.length < 2}
-                onChange={(next) => save.mutate(changeStep(project, phase, optional, { model: next || null }))}
+                onChange={(next) => save.mutate(changeStep(project, overview.accounts, phase, optional, { model: next || null }))}
                 options={modelOptions}
               />
             </div>
@@ -221,7 +238,6 @@ function GeneralCard({ project }: { project: Project }) {
   const titleId = useId();
   const clientId = useId();
   const clientHintId = useId();
-  const actions = useProjectActions();
   const setClient = useAction((api, client: string) => api.setProjectClient(project.path, client), {
     invalidate: [OVERVIEW_KEY, ["usageSummary"]],
   });
@@ -261,14 +277,10 @@ function GeneralCard({ project }: { project: Project }) {
       </div>
       <div className="field">
         <span className="field__label">{t("projectSettings.folder")}</span>
-        <div className="row row--between">
-          <span className="mono project-settings__path" title={project.path}>
-            {shortPath(project.path)}
-          </span>
-          <Button small onClick={() => actions.openEditor(project)}>
-            {t("projectSettings.openEditor")}
-          </Button>
-        </div>
+        {/* Opening it in the editor is in the header, once. */}
+        <span className="mono project-settings__path" title={project.path}>
+          {shortPath(project.path)}
+        </span>
       </div>
     </section>
   );

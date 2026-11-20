@@ -1,22 +1,19 @@
-import { useId, useState } from "react";
+import { useRef } from "react";
 
-import { OVERVIEW_KEY, useAction } from "../../api/context";
-import { phaseSummary } from "../../components/models";
 import type { Overview, Project } from "../../api/types";
-import { accountOption, shortAccountLabel } from "../../components/accounts";
-import { projectColor, shortPath, useProjectActions } from "../../components/projects";
-import { Button, ConfirmButton } from "../../components/ui/Button";
-import { Switch } from "../../components/ui/controls";
-import { ColorDot, Select } from "../../components/ui/Select";
+import { phaseSummary } from "../../components/models";
+import { projectColor } from "../../components/projects";
+import { Button } from "../../components/ui/Button";
 import { useT } from "../../i18n";
-import { accountPalette } from "../../theme/tokens";
 import { AddProjectDialog, useAddProject } from "./AddProjectDialog";
-import { PhasesDialog } from "./PhasesDialog";
 
+/**
+ * Every project at a glance, read-only: each row opens its settings sheet
+ * (`#ps=`, App's route), where all of it is changed.
+ */
 export function ProjectsTable({ overview }: { overview: Overview }) {
   const t = useT();
   const adding = useAddProject();
-  const clientHintId = useId();
 
   return (
     <section className="card table-card" aria-labelledby="projects-table-title">
@@ -30,68 +27,40 @@ export function ProjectsTable({ overview }: { overview: Overview }) {
         <p className="empty">{t("accounts.table.empty")}</p>
       ) : (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table" aria-labelledby="projects-table-title">
             <thead>
               <tr>
                 <th>{t("accounts.table.project")}</th>
-                <th>{t("accounts.project.folder")}</th>
-                <th>{t("common.client")}</th>
                 <th>{t("common.account")}</th>
-                <th>{t("common.models")}</th>
                 <th>{t("common.protected")}</th>
-                <th>{t("common.color")}</th>
-                <th>
-                  <span className="sr-only">{t("accounts.table.actions")}</span>
-                </th>
+                <th>{t("common.client")}</th>
+                <th>{t("accounts.table.steps")}</th>
               </tr>
             </thead>
             <tbody>
               {overview.projects.map((p) => (
-                <ProjectRow key={p.path} project={p} overview={overview} clientHintId={clientHintId} />
+                <ProjectRow key={p.path} project={p} overview={overview} />
               ))}
             </tbody>
           </table>
         </div>
-      )}
-      {overview.projects.length > 0 && (
-        <p id={clientHintId} className="small muted">
-          {t("accounts.table.clientHint")}
-        </p>
       )}
       {adding.path && <AddProjectDialog overview={overview} path={adding.path} onClose={adding.close} />}
     </section>
   );
 }
 
-function ProjectRow({
-  project,
-  overview,
-  clientHintId,
-}: {
-  project: Project;
-  overview: Overview;
-  /** The line under the table that says what the client is for. */
-  clientHintId: string;
-}) {
+function ProjectRow({ project, overview }: { project: Project; overview: Overview }) {
   const t = useT();
-  const actions = useProjectActions();
-  const assign = useAction(
-    (api, vars: { account: string; protect?: boolean }) => api.useAccount(project.path, vars.account, vars.protect),
-    { invalidate: [OVERVIEW_KEY, ["status", project.path]] },
-  );
-  const setColor = useAction((api, color: string | null) => api.setProjectColor(project.path, color));
-  const setClient = useAction((api, client: string) => api.setProjectClient(project.path, client), {
-    invalidate: [OVERVIEW_KEY, ["usageSummary"]],
-  });
-  const remove = useAction((api) => api.removeProject(project.path));
-  const [editingPhases, setEditingPhases] = useState(false);
-  const offered = overview.accounts.filter((a) => project.offerableAccounts.includes(a.id) || a.id === project.account);
+  const link = useRef<HTMLAnchorElement>(null);
+  const account = overview.accounts.find((a) => a.id === project.account);
 
   return (
-    <tr>
+    // A click anywhere on the row follows its link; the link is what the keyboard reaches.
+    <tr className="table__row--link" onClick={(e) => !(e.target as Element).closest("a") && link.current?.click()}>
       <th scope="row">
-        {/* Its settings sheet (`#ps=`, App's route): the rest of the row is a summary. */}
         <a
+          ref={link}
           className="link-button"
           href={`#ps=${encodeURIComponent(project.path)}`}
           title={t("projectSettings.title", { name: project.name })}
@@ -100,74 +69,10 @@ function ProjectRow({
           {project.name}
         </a>
       </th>
-      <td className="muted">{shortPath(project.path)}</td>
-      <td>
-        <input
-          className="table__input"
-          aria-label={t("accounts.table.clientOf", { name: project.name })}
-          aria-describedby={clientHintId}
-          placeholder={t("common.noClient")}
-          key={project.client ?? ""}
-          defaultValue={project.client ?? ""}
-          onBlur={(e) => e.target.value.trim() !== (project.client ?? "") && setClient.mutate(e.target.value)}
-        />
-      </td>
-      <td>
-        <Select
-          variant="pill"
-          className="select--account"
-          label={t("accounts.table.accountOf", { name: project.name })}
-          title={t("common.account")}
-          value={project.account ?? ""}
-          disabled={project.protected}
-          tooltip={project.protected ? t("accounts.table.unprotectToChange") : undefined}
-          onChange={(account) => assign.mutate({ account })}
-          options={[
-            ...(project.account ? [] : [{ value: "", label: t("common.noAccount") }]),
-            ...offered.map((a) => ({ ...accountOption(a), label: shortAccountLabel(a) })),
-          ]}
-        />
-      </td>
-      <td>
-        <button className="link-button" aria-label={t("accounts.table.phasesOf", { name: project.name })} onClick={() => setEditingPhases(true)}>
-          {phaseSummary(project, overview.accounts, t)}
-          {project.protected && t("accounts.table.protectedSuffix")}
-        </button>
-        {editingPhases && <PhasesDialog project={project} overview={overview} onClose={() => setEditingPhases(false)} />}
-      </td>
-      <td>
-        <Switch
-          checked={project.protected}
-          disabled={!project.account}
-          label={t("accounts.table.protectNamed", { name: project.name })}
-          onChange={(protect) => project.account && assign.mutate({ account: project.account, protect })}
-        />
-      </td>
-      <td>
-        <Select
-          variant="pill"
-          label={t("common.colorOf", { name: project.name })}
-          title={t("common.color")}
-          value={project.color ?? ""}
-          onChange={(color) => setColor.mutate(color || null)}
-          options={[
-            {
-              value: "",
-              label: t("accounts.table.fromAccount"),
-              icon: <ColorDot color={projectColor({ ...project, color: null }, overview.accounts)} />,
-            },
-            ...accountPalette.map((c) => ({ value: c.hex, label: t(c.label), icon: <ColorDot color={c.hex} /> })),
-          ]}
-        />
-      </td>
-      <td className="row-actions">
-        <Button small variant="ghost" onClick={() => actions.openEditor(project)}>
-          VS Code
-        </Button>
-        <ConfirmButton small confirmLabel={t("accounts.table.removeConfirm")} onConfirm={() => remove.mutate(undefined)}>
-          {t("common.remove")}
-        </ConfirmButton>
-      </td>
+      <td>{account?.name ?? <span className="muted">{t("common.noAccount")}</span>}</td>
+      <td>{project.protected ? t("accounts.table.protectedYes") : <span className="muted">{t("accounts.table.protectedNo")}</span>}</td>
+      <td>{project.client ?? <span className="muted">{t("common.noClient")}</span>}</td>
+      <td>{phaseSummary(project, overview.accounts, t)}</td>
     </tr>
   );
 }

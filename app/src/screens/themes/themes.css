@@ -4,7 +4,7 @@
 
 .theme-gallery { display: grid; gap: var(--space-5); }
 .theme-gallery__head { display: grid; gap: 2px; }
-.theme-gallery__head h3 { font-size: var(--text-title); }
+.theme-gallery__head h2 { font-size: var(--text-title); }
 
 .theme-group { display: grid; gap: var(--space-3); }
 .theme-group__title {

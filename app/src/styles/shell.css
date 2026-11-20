@@ -4,8 +4,6 @@
 
 /* ---------------------------------------------------------------- plan usage */
 
-.bar__fill { display: block; }
-
 /* Accounts in the sidebar are navigation rows: the figure stays quiet until it nears the limit. */
 .sidebar__percent { font-variant-numeric: tabular-nums; }
 .sidebar__item[aria-current="true"] { background: var(--selection); }

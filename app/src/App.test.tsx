@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient } from "@tanstack/react-query";
 
@@ -289,53 +289,38 @@ describe("Accounts", () => {
   it("does not offer a protected project's account to other projects", async () => {
     const api = MockApi.withSampleData();
     await api.useAccount("/code/hobby", "claude-personal");
+    history.replaceState(null, "", `#ps=${encodeURIComponent("/code/hobby")}`);
     const { user } = renderApp(api);
-    await user.click(await screen.findByRole("button", { name: /Abrir la cuenta$/ }));
 
-    await user.click(await screen.findByRole("combobox", { name: "Cuenta de hobby" }));
+    await user.click(await screen.findByRole("combobox", { name: "Cuenta del proyecto" }, { timeout: 5000 }));
     const options = optionLabels();
-    expect(options).not.toContain("trabajo");
-    expect(options).toContain("personal");
+    expect(options).not.toContain("Claude trabajo");
+    expect(options).toContain("Claude personal");
     await user.keyboard("{Escape}");
-    expect(screen.getByRole("combobox", { name: "Cuenta de tienda" })).toBeDisabled();
+    history.replaceState(null, "", "#");
   });
 });
 
-describe("Models per phase", () => {
-  it("assigns phases to other providers and summarises them", async () => {
+describe("Who does each step", () => {
+  afterEach(() => history.replaceState(null, "", "#"));
+
+  it("is set in the project's sheet and summed up in Cuentas", async () => {
     const { user } = renderApp();
     await user.click(await screen.findByRole("button", { name: /Abrir la cuenta$/ }));
-    const edit = screen.getByRole("button", { name: "Modelos por fase de hedy" });
-    expect(edit).toHaveTextContent(/^Claude$/);
-    await user.click(edit);
+    const row = () => within(screen.getByRole("table", { name: "Proyectos y cuentas" })).getByRole("row", { name: /^hedy/ });
+    expect(within(row()).getAllByRole("cell").at(-1)).toHaveTextContent(/^Claude$/);
 
-    const dialog = screen.getByRole("dialog", { name: "Modelos por fase · hedy" });
-    await chooseOption(user, within(dialog).getByLabelText("Cuenta para Implementar"), "ChatGPT");
-    await chooseOption(user, within(dialog).getByLabelText("Cuenta para Escribir tests"), "Kimi");
-    await user.type(within(dialog).getByLabelText("Modelo para Escribir tests"), "kimi-k3");
-    await user.click(within(dialog).getByRole("button", { name: "Guardar" }));
+    await user.click(within(row()).getByRole("link", { name: "hedy" }));
+    const steps = (await screen.findByRole("heading", { level: 2, name: "Quién hace cada paso" })).closest("section")!;
+    await chooseOption(user, within(steps).getByRole("combobox", { name: "Quién hace «Implementar»" }), "ChatGPT");
+    await waitFor(() => expect(within(steps).getByRole("combobox", { name: "Quién hace «Implementar»" })).toHaveTextContent("ChatGPT"));
+    await chooseOption(user, within(steps).getByRole("combobox", { name: "Quién hace «Verificar»" }), "Kimi");
+    await waitFor(() => expect(within(steps).getByRole("combobox", { name: "Quién hace «Verificar»" })).toHaveTextContent("Kimi"));
 
+    history.back();
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Modelos por fase de hedy" })).toHaveTextContent(
-        "Claude planifica · Codex implementa · Kimi tests",
-      ),
+      expect(within(row()).getAllByRole("cell").at(-1)).toHaveTextContent("Claude planifica · Codex implementa · Kimi verifica"),
     );
-  });
-
-  it("turns an optional phase off even after a model was typed", async () => {
-    const { api, user } = renderApp();
-    await user.click(await screen.findByRole("button", { name: /Abrir la cuenta$/ }));
-    await user.click(screen.getByRole("button", { name: "Modelos por fase de hedy" }));
-
-    const dialog = screen.getByRole("dialog", { name: "Modelos por fase · hedy" });
-    await chooseOption(user, within(dialog).getByLabelText("Cuenta para Revisar"), "Kimi");
-    await user.type(within(dialog).getByLabelText("Modelo para Revisar"), "kimi-k3");
-    await chooseOption(user, within(dialog).getByLabelText("Cuenta para Revisar"), "No usar esta fase");
-    expect(within(dialog).getByLabelText("Modelo para Revisar")).toHaveValue("");
-    await user.click(within(dialog).getByRole("button", { name: "Guardar" }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect((await api.overview()).projects.find((p) => p.name === "hedy")?.phases).toEqual({});
   });
 });
 
@@ -364,7 +349,7 @@ describe("Settings", () => {
       "General",
       "Cuentas",
       "Apariencia",
-      "Ahorro",
+      "Ahorro de contexto",
       "Plantillas",
       "Sincronización",
       "Equipos",
@@ -412,7 +397,8 @@ describe("Settings", () => {
     ["#settings", "General", "General"],
     ["#settings/general", "General", "General"],
     ["#settings/appearance", "Apariencia", "Apariencia"],
-    ["#settings/saving", "Ahorro", "Ahorro"],
+    ["#settings/saving", "Ahorro de contexto", "Ahorro de contexto"],
+    ["#settings/themes", "Apariencia", "Apariencia"],
     ["#settings/templates", "Plantillas", "Plantillas"],
     ["#settings/advanced", "Avanzado", "Avanzado"],
     ["#sync", "Sincronización", "Sincronización"],
@@ -446,10 +432,28 @@ describe("Settings", () => {
     expect(within(index()).getByText("Más")).toBeInTheDocument();
     await user.clear(search);
     await user.type(search, "mapa del código");
-    expect(indexItems()).toEqual(["Ahorro"]);
+    expect(indexItems()).toEqual(["Ahorro de contexto"]);
     await user.clear(search);
     await user.type(search, "IDIOMA");
     expect(indexItems()).toEqual(["General"]);
+
+
+    // Common words, without accents or case, and the groups' titles.
+    const finds = async (word: string, items: string[]) => {
+      await user.clear(search);
+      await user.type(search, word);
+      expect(indexItems()).toEqual(items);
+    };
+    await finds("diagnostico", ["Avanzado"]);
+    await finds("tema", ["Apariencia"]);
+    await finds("precio", ["Cuentas", "Avanzado"]);
+    await finds("contexto", ["Ahorro de contexto"]);
+    await finds("invitacion", ["Equipos"]);
+    await finds("conflicto", ["Sincronización"]);
+    await finds("prompt", ["Plantillas"]);
+    await finds("proteger", ["Cuentas"]);
+    await finds("notificaciones", ["General"]);
+    await finds("entre computadoras", ["Sincronización", "Equipos"]);
 
     await user.clear(search);
     await user.type(search, "zzz");
@@ -466,6 +470,49 @@ describe("Settings", () => {
     await user.type(search, "plant");
     await user.click(within(index()).getByRole("button", { name: "Plantillas" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Plantillas" })).toBeInTheDocument();
+  });
+
+  it("puts focus on the section's title on arrival, and leaves it in the index while moving through it", async () => {
+    const { user } = renderAt("#sync");
+    const title = await screen.findByRole("heading", { level: 1, name: "Sincronización" });
+    await waitFor(() => expect(title).toHaveFocus());
+
+    const teams = within(index()).getByRole("button", { name: "Equipos" });
+    await user.click(teams);
+    expect(await screen.findByRole("heading", { level: 1, name: "Equipos" })).not.toHaveFocus();
+    expect(teams).toHaveFocus();
+    await user.click(within(index()).getByRole("button", { name: "Sincronización" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Sincronización" })).not.toHaveFocus();
+  });
+
+  it("opens Apariencia at the theme gallery from #settings/themes", async () => {
+    renderAt("#settings/themes");
+    expect(await screen.findByRole("heading", { level: 1, name: "Apariencia" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("heading", { level: 2, name: "Temas" })).toHaveFocus());
+  });
+
+  it("keeps each section's headings in order: h1, then h2, then h3", async () => {
+    const levels = () =>
+      [...document.querySelectorAll(".settings__content :is(h1, h2, h3, h4)")].map((h) => Number(h.tagName[1]));
+    const inOrder = (list: number[]) => list.every((level, i) => i === 0 || level <= list[i - 1]! + 1);
+    for (const hash of ["#settings/appearance", "#settings/templates", "#sync", "#teams", "#settings/advanced"]) {
+      renderAt(hash);
+      await screen.findByRole("heading", { level: 1 });
+      await waitFor(() => expect(levels().length).toBeGreaterThan(0));
+      expect(levels()[0]).toBe(1);
+      expect(inOrder(levels())).toBe(true);
+      cleanup();
+    }
+  });
+
+  it("points to each API account's Avanzado for the APIs' addresses and prices", async () => {
+    const { user } = renderAt("#settings/advanced");
+    await screen.findByRole("heading", { name: "APIs" });
+    expect(screen.queryByRole("textbox", { name: "Kimi: dirección" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Gemini: precio" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ir a Cuentas" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Tus cuentas y modelos" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#accounts");
   });
 
   it("changes the theme", async () => {
@@ -510,7 +557,7 @@ describe("Settings", () => {
 
   it("turns context saving off and explains how it works", async () => {
     const { api, user } = renderAt("#settings/saving");
-    expect(await screen.findByRole("heading", { level: 1, name: "Ahorro" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Ahorro de contexto" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Mapa del código" })).toBeInTheDocument();
     const toggle = screen.getByRole("switch", { name: "Gastar menos en cada tarea" });
     expect(toggle).toHaveAttribute("aria-checked", "true");

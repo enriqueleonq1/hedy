@@ -79,14 +79,20 @@ describe("An account card", () => {
     const menu = screen.getByRole("menu", { name: "Acciones de Claude trabajo" });
     expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
       "Renombrar",
-      "Usar por defecto (para proyectos y chats nuevos)",
+      "Usar por defecto (para proyectos y chats nuevos)Reservada para tienda, que está protegido",
       "Reconectar",
       "Quitar de Hedy",
     ]);
     expect(within(menu).getByRole("separator")).toBeInTheDocument();
     expect(within(menu).getByRole("menuitem", { name: "Quitar de Hedy" })).toHaveClass("menu__item--danger");
-    await user.click(within(menu).getByRole("menuitem", { name: "Usar por defecto (para proyectos y chats nuevos)" }));
-    expect(makeDefault).toHaveBeenCalledWith("claude-trabajo");
+    // Protected tienda keeps this account, so it cannot be the default (offered everywhere).
+    expect(within(menu).getByRole("menuitem", { name: /^Usar por defecto/ })).toBeDisabled();
+    await user.keyboard("{Escape}");
+
+    const kimi = screen.getByRole("article", { name: "Kimi" });
+    await user.click(within(kimi).getByRole("button", { name: "Acciones de Kimi" }));
+    await user.click(screen.getByRole("menuitem", { name: "Usar por defecto (para proyectos y chats nuevos)" }));
+    expect(makeDefault).toHaveBeenCalledWith("kimi");
 
     // Deleting asks first; cancelling keeps the account.
     const codex = screen.getByRole("article", { name: "ChatGPT" });
