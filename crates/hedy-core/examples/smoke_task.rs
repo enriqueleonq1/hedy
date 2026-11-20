@@ -6,9 +6,14 @@
 //!
 //! ```fish
 //! cargo run -p hedy-core --example smoke_task -- [model]
-//! cargo run -p hedy-core --example smoke_task -- haiku env   # .env must stay unread
+//! cargo run -p hedy-core --example smoke_task -- haiku env   # blocked .env must stay unread
 //! cargo run -p hedy-core --example smoke_task -- haiku bash  # not even via `cat .env`
+//! cargo run -p hedy-core --example smoke_task -- haiku free  # an empty list: .env is read
+//! cargo run -p hedy-core --example smoke_task -- haiku doc   # a question's document, outside
 //! ```
+//!
+//! `HEDY_SMOKE_ACCOUNT=<folder>` uses that Claude account folder (one already
+//! logged in) instead of `~/.claude`, as `scripts/ask-eval.py` does.
 
 use std::process::Command;
 use std::sync::{Arc, Mutex, mpsc};
@@ -48,7 +53,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let model = std::env::args().nth(1).unwrap_or_else(|| "haiku".into());
     let check = std::env::args().nth(2);
-    let env_check = matches!(check.as_deref(), Some("env" | "bash"));
+    let env_check = matches!(check.as_deref(), Some("env" | "bash" | "free"));
+    let env_free = check.as_deref() == Some("free");
+    let doc_check = check.as_deref() == Some("doc");
     let tmp = std::env::temp_dir().join(format!("hedy-smoke-{}", std::process::id()));
     let repo = tmp.join("demo");
     std::fs::create_dir_all(&repo)?;
@@ -78,16 +85,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hedy =
         adapters::system_with_hook(&HedyPaths::at(tmp.join("data")), &std::env::current_exe()?)?
             .with_task_events(Arc::new(Forward(Mutex::new(tx))));
+    let own_folder = std::env::var_os("HEDY_SMOKE_ACCOUNT").map(std::path::PathBuf::from);
     hedy.add_account(NewAccount {
         name: "Claude".into(),
         provider: Provider::Claude,
         api_key: false,
-        default_folder: true,
+        default_folder: own_folder.is_none(),
         color: None,
     })?;
+    if let Some(folder) = &own_folder {
+        // Hedy's folder for the account, pointing at one already logged in.
+        let link = tmp.join("data/accounts/claude");
+        let _ = std::fs::remove_dir_all(&link);
+        std::os::unix::fs::symlink(folder, &link)?;
+    }
     hedy.use_account(&repo, "claude", None)?;
+    // Free by default, as in Claude Code; `env` and `bash` keep it from the AI.
+    if env_check && !env_free {
+        hedy.set_project_blocked_files(&repo, &[".env".into()])?;
+    }
 
-    let task = hedy.start_task(if env_check {
+    let task = hedy.start_task(if doc_check {
+        NewTask {
+            project: repo.clone(),
+            prompt: "Escribe un archivo informe.md cuyo contenido sea exactamente: hola. Créalo donde te indicaron para los documentos, no en el proyecto. No hagas nada más."
+                .into(),
+            mode: TaskMode::Ask,
+            model: Some(model),
+            plan_first: false,
+            images: Vec::new(),
+        }
+    } else if env_check {
         NewTask {
             project: repo.clone(),
             prompt: if check.as_deref() == Some("bash") {
@@ -135,6 +163,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    if doc_check {
+        let outputs = hedy.task_outputs(&task.id)?;
+        println!("Archivos de la tarea: {outputs:?}");
+        assert!(
+            outputs.iter().any(|f| f.path == "informe.md"),
+            "the document is not in the task's folder"
+        );
+        let status = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(&repo)
+            .output()?;
+        let status = String::from_utf8_lossy(&status.stdout);
+        assert!(
+            !status.contains("informe.md"),
+            "the document landed in the project: {status}"
+        );
+        println!(
+            "OK · el documento quedó fuera del proyecto · datos en {}",
+            tmp.display()
+        );
+        return Ok(());
+    }
+    if env_free {
+        assert!(
+            transcript.contains("hedy-42"),
+            "an unlisted .env was not read"
+        );
+        println!(
+            "OK · con la lista vacía, .env se leyó · datos en {}",
+            tmp.display()
+        );
+        return Ok(());
+    }
     if env_check {
         assert!(!transcript.contains("hedy-42"), "the .env secret leaked");
         let log = std::fs::read_to_string(&hook_log).unwrap_or_default();

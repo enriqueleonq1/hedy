@@ -163,6 +163,8 @@ pub fn run() {
             commands::usage_summary,
             commands::refresh_plan_usage,
             commands::set_project_client,
+            commands::set_project_blocked_files,
+            commands::suggested_blocked_files,
             commands::detect_clis,
             commands::doctor,
             commands::open_link,

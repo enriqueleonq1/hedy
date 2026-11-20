@@ -116,6 +116,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Client { name, clear } => {
             commands::set_client(&hedy, &dir, if clear { None } else { name.as_deref() })
         }
+        Command::Block {
+            patterns,
+            remove,
+            usual,
+            clear,
+        } => commands::block(&hedy, &dir, &patterns, remove, usual, clear),
         Command::Run { account, yes, args } => {
             commands::run(&hedy, &dir, account.as_deref(), yes, args)
         }

@@ -21,7 +21,7 @@ use crate::application::ports::{
     PortResult, Secret, SkillTools,
 };
 use crate::domain::agent::looks_like_tests;
-use crate::domain::permissions::{normalize, protected_file_reason};
+use crate::domain::permissions::{BlockedFiles, normalize, protected_file_reason};
 use crate::domain::recall::PageRequest;
 use crate::domain::task::SHARED_DEPENDENCY_DIRS;
 use crate::domain::{
@@ -112,6 +112,7 @@ impl AgentLauncher for ApiAgentLauncher {
                 .as_ref()
                 .filter(|_| read_only)
                 .and_then(|dir| dir.canonicalize().ok()),
+            blocked: request.blocked.clone(),
             phase: request.phase,
             planning: request.plan_first,
             plans: 0,
@@ -185,6 +186,8 @@ struct Agent {
     read_only: bool,
     /// A question's own folder, canonical: where its writes go.
     output: Option<PathBuf>,
+    /// The project's files the model may not read or touch.
+    blocked: BlockedFiles,
     phase: Phase,
     planning: bool,
     plans: u32,
@@ -712,7 +715,7 @@ impl Agent {
     }
 
     fn protected(&self, tool: &str, input: &Value) -> Option<String> {
-        protected_file_reason(tool, input, &self.cwd)
+        protected_file_reason(tool, input, &self.cwd, &self.blocked)
     }
 
     fn run_tool(&mut self, call: &Value, rx: &mpsc::Receiver<Command>) -> Result<String, End> {
@@ -1144,6 +1147,7 @@ mod tests {
             no_tools: false,
             plugins: Vec::new(),
             output,
+            blocked: BlockedFiles::suggested(),
         };
         let session = ApiAgentLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
@@ -1240,6 +1244,7 @@ mod tests {
             events: Arc::new(|_| {}),
             read_only: false,
             output: None,
+            blocked: BlockedFiles::suggested(),
             phase: Phase::Implement,
             planning: false,
             plans: 0,
@@ -1512,6 +1517,7 @@ mod tests {
             no_tools: false,
             plugins: Vec::new(),
             output: None,
+            blocked: BlockedFiles::suggested(),
         };
         let mut session = ApiAgentLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))

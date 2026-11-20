@@ -1,9 +1,10 @@
 // A project's own settings ("Ajustes" on its home): who works on it, how,
 // and what else belongs to it. Every control saves as soon as it changes.
 
-import { useId } from "react";
+import { useId, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
-import { OVERVIEW_KEY, useAction } from "../../api/context";
+import { OVERVIEW_KEY, useAction, useApi } from "../../api/context";
 import type { Account, Assignment, Overview, Phase, PhasePlan, Project } from "../../api/types";
 import { accountOption } from "../../components/accounts";
 import type { View } from "../../components/Layout";
@@ -72,6 +73,7 @@ export function ProjectSettings({
       <AccountCard project={project} overview={overview} />
       <StepsCard project={project} overview={overview} />
       <GeneralCard project={project} />
+      <BlockedFilesCard project={project} />
       <MemoryHomeCard project={path} />
       <DangerCard project={project} onRemoved={() => onNavigate?.({ screen: "welcome" })} />
     </div>
@@ -282,6 +284,81 @@ function GeneralCard({ project }: { project: Project }) {
           {shortPath(project.path)}
         </span>
       </div>
+    </section>
+  );
+}
+
+/** "Archivos que la IA no lee": empty by default, as in Claude Code. */
+function BlockedFilesCard({ project }: { project: Project }) {
+  const t = useT();
+  const api = useApi();
+  const titleId = useId();
+  const inputId = useId();
+  const hintId = useId();
+  const [draft, setDraft] = useState("");
+  const usual = useQuery({ queryKey: ["suggestedBlockedFiles"], queryFn: () => api.suggestedBlockedFiles(), staleTime: Infinity });
+  const save = useAction((api, patterns: string[]) => api.setProjectBlockedFiles(project.path, patterns));
+  const list = project.blockedFiles;
+  const add = (patterns: string[]) => save.mutate([...list, ...patterns.filter((p) => !list.includes(p))]);
+  const missingUsual = (usual.data ?? []).filter((p) => !list.includes(p));
+
+  return (
+    <section className="card" aria-labelledby={titleId}>
+      <h2 id={titleId}>{t("projectSettings.blocked.title")}</h2>
+      {list.length === 0 ? (
+        <p className="small muted">{t("projectSettings.blocked.empty")}</p>
+      ) : (
+        <ul className="blocked-files">
+          {list.map((pattern) => (
+            <li key={pattern} className="blocked-files__row">
+              <span className="mono">{pattern}</span>
+              <Button
+                small
+                variant="ghost"
+                aria-label={t("projectSettings.blocked.remove", { pattern })}
+                disabled={save.isPending}
+                onClick={() => save.mutate(list.filter((p) => p !== pattern))}
+              >
+                ×
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!draft.trim()) return;
+          add([draft.trim()]);
+          setDraft("");
+        }}
+      >
+        <label htmlFor={inputId} className="sr-only">
+          {t("projectSettings.blocked.addLabel")}
+        </label>
+        <input
+          id={inputId}
+          className="mono"
+          aria-describedby={hintId}
+          placeholder=".env"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        <Button type="submit" small disabled={!draft.trim() || save.isPending}>
+          {t("projectSettings.blocked.add")}
+        </Button>
+      </form>
+      <p id={hintId} className="hint">
+        {t("projectSettings.blocked.hint")}
+      </p>
+      {missingUsual.length > 0 && (
+        <div className="actions">
+          <Button small variant="ghost" disabled={save.isPending} onClick={() => add(missingUsual)}>
+            {t("projectSettings.blocked.usual")}
+          </Button>
+        </div>
+      )}
     </section>
   );
 }

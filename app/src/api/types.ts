@@ -37,6 +37,8 @@ export interface Project {
   phases: PhasePlan;
   /** Who the work is for, to group usage per client. */
   client: string | null;
+  /** Files the AI does not read here (patterns on a name); empty: none, as in Claude Code. */
+  blockedFiles: string[];
 }
 
 /**

@@ -32,8 +32,8 @@ export { textDiff };
 import { SAMPLE_REPOS, type SampleFile, type SampleRepo } from "./mockCodeSamples";
 import type { FileDiff, Task } from "./types";
 
-/** Same as `permissions::DEFAULT_BLOCKED` in the backend. */
-const BLOCKED = [".env", ".env.*", "*.pem", "*.key", "id_rsa*", "id_ed25519*", ".npmrc", ".pypirc", "credentials*"];
+/** Same as `permissions::SUGGESTED_BLOCKED` in the backend: the sample projects keep these from the AI. */
+export const SUGGESTED_BLOCKED = [".env", ".env.*", "*.pem", "*.key", "id_rsa*", "id_ed25519*", ".npmrc", ".pypirc", "credentials*"];
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 const MAX_SEARCH_MATCHES = 2_000;
 const MAX_LINE_CHARS = 400;
@@ -57,7 +57,7 @@ function globToRegExp(glob: string): RegExp {
 /** A protected file (`.env`, keys…): never read. */
 export function isProtectedPath(path: string): boolean {
   const name = path.replace(/\/$/, "").split("/").pop() ?? path;
-  return BLOCKED.some((pattern) => globToRegExp(pattern).test(name));
+  return SUGGESTED_BLOCKED.some((pattern) => globToRegExp(pattern).test(name));
 }
 
 /** The backend's `normalize_code_path`: relative, inside the copy, no `.git`. */

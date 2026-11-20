@@ -16,7 +16,7 @@ use super::process::{headless_command, launch_error, wait_unlocked};
 use crate::application::ports::{
     AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
-use crate::domain::permissions::DEFAULT_BLOCKED;
+use crate::domain::permissions::BlockedFiles;
 use crate::domain::version::{CLAUDE_SHARED_CACHE_SINCE, parse_version, version_at_least};
 use crate::domain::{AgentEvent, Phase, PromptImage, TaskMode, prompts};
 use crate::experiments::{self, Experiment};
@@ -163,11 +163,13 @@ fn lean_tools(request: &AgentRequest, mode: TaskMode) -> String {
     tools.join(",")
 }
 
-/// Protected files as Claude Code's own `deny` rules. Claude runs some tools
-/// without asking (Read, read-only shell commands, plan files), so Hedy's
-/// permission rules alone would not see them; these the CLI enforces itself.
-pub fn settings(hook: Option<&str>) -> String {
-    let rules: Vec<String> = DEFAULT_BLOCKED
+/// The project's blocked files as Claude Code's own `deny` rules. Claude runs
+/// some tools without asking (Read, read-only shell commands, plan files), so
+/// Hedy's permission rules alone would not see them; these the CLI enforces
+/// itself. None when the project keeps nothing from the AI.
+pub fn settings(hook: Option<&str>, blocked: &BlockedFiles) -> String {
+    let rules: Vec<String> = blocked
+        .patterns()
         .iter()
         .flat_map(|pattern| [format!("Read(**/{pattern})"), format!("Edit(**/{pattern})")])
         .collect();
@@ -201,7 +203,7 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     ]
     .map(String::from)
     .to_vec();
-    args.extend(["--settings".into(), settings(hook)]);
+    args.extend(["--settings".into(), settings(hook, &request.blocked)]);
     // Hedy's skills, for this session only: the user's own `claude` in the
     // same repository never sees them.
     for plugin in &request.plugins {
@@ -350,6 +352,10 @@ impl AgentLauncher for ClaudeCodeLauncher {
         );
         if let Some(folder) = writable_output(&request, self.hook.as_deref()) {
             spec.env.push((hook::OUTPUT_ENV.to_owned(), folder.clone()));
+        }
+        if !request.blocked.is_empty() {
+            let list = serde_json::to_string(request.blocked.patterns()).unwrap_or_default();
+            spec.env.push((hook::BLOCKED_ENV.to_owned(), list.into()));
         }
         let mut child = headless_command(&spec)
             .stdin(Stdio::piped())
@@ -537,6 +543,7 @@ pub(crate) mod tests {
             no_tools: false,
             plugins: Vec::new(),
             output: None,
+            blocked: BlockedFiles::suggested(),
         }
     }
 
@@ -657,6 +664,16 @@ pub(crate) mod tests {
         assert!(project.contains("--permission-mode plan"));
         assert!(project.ends_with("--model opus --resume s-1"));
         assert!(!project.contains("disallowedTools"));
+        // A project that keeps nothing from the AI gives Claude no deny rule.
+        let open = args(
+            &AgentRequest {
+                blocked: BlockedFiles::default(),
+                ..request(TaskMode::Project, true)
+            },
+            None,
+        )
+        .join(" ");
+        assert!(open.contains(r#"{"permissions":{"deny":[]}}"#), "{open}");
 
         let ask = args(&request(TaskMode::Ask, false), None).join(" ");
         assert!(ask.contains("--permission-mode default"));

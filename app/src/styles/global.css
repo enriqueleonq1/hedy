@@ -2506,6 +2506,15 @@ a.link-button { display: inline-flex; align-items: center; text-decoration: none
 .end-card p { font-size: var(--text-callout); }
 .end-card .actions { margin-top: 6px; }
 .outputs { display: grid; gap: 2px; margin-top: 4px; }
+.blocked-files { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.blocked-files__row {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
 .outputs__row {
   display: flex;
   flex-wrap: wrap;

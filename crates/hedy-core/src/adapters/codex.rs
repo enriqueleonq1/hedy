@@ -698,6 +698,7 @@ for line in sys.stdin:
             no_tools: false,
             plugins: Vec::new(),
             output: None,
+            blocked: Default::default(),
         };
         let _session = CodexLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
@@ -730,6 +731,7 @@ for line in sys.stdin:
             no_tools: false,
             plugins: Vec::new(),
             output: None,
+            blocked: Default::default(),
         };
         assert!(mcp_overrides(&request).is_empty());
         request.mcp = vec![crate::application::ports::McpServer {
@@ -781,6 +783,7 @@ for line in sys.stdin:
             no_tools: false,
             plugins: Vec::new(),
             output: None,
+            blocked: Default::default(),
         };
         let session = CodexLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
@@ -944,6 +947,7 @@ for line in sys.stdin:
             no_tools: false,
             plugins: Vec::new(),
             output: None,
+            blocked: Default::default(),
         };
         let mut session = CodexLauncher.start(request, Arc::new(|_| {})).unwrap();
         let turns = crate::adapters::claude::tests::lines_when(&log, 1);

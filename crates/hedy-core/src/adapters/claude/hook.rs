@@ -17,8 +17,7 @@ use std::rc::Rc;
 use serde_json::{Value, json};
 
 use crate::domain::permissions::{
-    is_blocked_name, is_write_tool, matches, protected_file_reason, whole_search_root,
-    written_paths,
+    BlockedFiles, is_write_tool, matches, protected_file_reason, whole_search_root, written_paths,
 };
 use crate::domain::read_guard::{self, FileStamp, ReadKey, ReadRecord};
 use crate::experiments::{self, Experiment};
@@ -31,6 +30,18 @@ pub const HOOK_ARGS: [&str; 2] = ["hook", "pre-tool-use"];
 /// the repository's Claude settings, which would skip Hedy's own answer.
 pub const OUTPUT_ENV: &str = "HEDY_OUTPUT_DIR";
 
+/// Set on `claude`: the project's files the AI does not read, as a JSON list
+/// of patterns. Missing or empty: nothing is kept from it, as in Claude Code.
+pub const BLOCKED_ENV: &str = "HEDY_BLOCKED_FILES";
+
+fn blocked_from_env() -> BlockedFiles {
+    std::env::var(BLOCKED_ENV)
+        .ok()
+        .and_then(|list| serde_json::from_str::<Vec<String>>(&list).ok())
+        .map(BlockedFiles::new)
+        .unwrap_or_default()
+}
+
 /// Tools the hook is registered for.
 pub const HOOK_MATCHER: &str = "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob";
 
@@ -38,7 +49,12 @@ pub const HOOK_MATCHER: &str = "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep
 pub fn decide(input: &str) -> Option<String> {
     let guard = experiments::on(Experiment::ReadGuard).then(guard_dir);
     let output = std::env::var_os(OUTPUT_ENV).map(PathBuf::from);
-    decide_in(input, guard.as_deref(), output.as_deref())
+    decide_in(
+        input,
+        guard.as_deref(),
+        output.as_deref(),
+        &blocked_from_env(),
+    )
 }
 
 /// Where the read guard keeps each session's reads.
@@ -46,27 +62,34 @@ fn guard_dir() -> PathBuf {
     std::env::temp_dir().join("hedy-read-guard")
 }
 
-/// [`decide`]; with `guard`, the read guard keeps its sessions there.
+/// [`decide`] for a project that keeps the usual files from the AI; with
+/// `guard`, the read guard keeps its sessions there.
 #[cfg(test)]
 fn decide_with(input: &str, guard: Option<&Path>) -> Option<String> {
-    decide_in(input, guard, None)
+    decide_in(input, guard, None, &BlockedFiles::suggested())
 }
 
-/// [`decide_with`]; with `output`, writes may go only there.
-fn decide_in(input: &str, guard: Option<&Path>, output: Option<&Path>) -> Option<String> {
+/// [`decide`]: with `output`, writes may go only there; `blocked`, the
+/// project's files the AI does not read.
+fn decide_in(
+    input: &str,
+    guard: Option<&Path>,
+    output: Option<&Path>,
+    blocked: &BlockedFiles,
+) -> Option<String> {
     let input: Value = serde_json::from_str(input).ok()?;
     let tool = input["tool_name"].as_str()?;
     let cwd = PathBuf::from(input["cwd"].as_str().unwrap_or("/"));
     let reason = output
         .and_then(|output| write_outside(tool, &input["tool_input"], &cwd, output))
-        .or_else(|| protected_file_reason(tool, &input["tool_input"], &cwd))
-        .or_else(|| linked_protected(&input["tool_input"], &cwd))
+        .or_else(|| protected_file_reason(tool, &input["tool_input"], &cwd, blocked))
+        .or_else(|| linked_protected(&input["tool_input"], &cwd, blocked))
         .or_else(|| {
-            let root = whole_search_root(tool, &input["tool_input"], &cwd)?;
+            let root = whole_search_root(tool, &input["tool_input"], &cwd, blocked)?;
             let respect = input["tool_input"]["command"]
                 .as_str()
                 .is_some_and(respects_gitignore);
-            Some(match protected_inside(&root, respect)? {
+            Some(match protected_inside(&root, respect, blocked)? {
                 Inside::Protected(name) => tr!(
                     "La búsqueda leería «{name}» (archivo protegido) sin nombrarlo: acótala con un glob (por ejemplo *.ts), o pide solo los nombres de los archivos.",
                     "The search would read «{name}» (protected file) without naming it: narrow it with a glob (for example *.ts), or ask only for file names."
@@ -128,14 +151,17 @@ const PROTECTED_ENTRIES: usize = 20_000;
 
 /// A file the tool names that is a link to a protected file (`docs/setup.txt`
 /// → `../.env`): the name alone says nothing.
-fn linked_protected(input: &Value, cwd: &Path) -> Option<String> {
+fn linked_protected(input: &Value, cwd: &Path, blocked: &BlockedFiles) -> Option<String> {
+    if blocked.is_empty() {
+        return None;
+    }
     ["file_path", "notebook_path", "path"]
         .iter()
         .filter_map(|key| input[*key].as_str())
         .find_map(|path| {
             let real = std::fs::canonicalize(cwd.join(path)).ok()?;
             let name = real.file_name()?.to_string_lossy().into_owned();
-            is_blocked_name(&name).then(|| {
+            blocked.blocks_name(&name).then(|| {
                 tr!(
                     "Hedy no permite tocar «{name}» (archivo protegido), tampoco por un enlace.",
                     "Hedy does not allow touching «{name}» (protected file), not through a link either."
@@ -196,10 +222,12 @@ fn ignored_names(dir: &Path, parent: &Rc<Vec<String>>) -> Rc<Vec<String>> {
 /// A protected file under `root` (a file `root` itself counts too), looking
 /// where a search would: not in what git ignores. Past its limits it cannot
 /// tell, and says so.
-fn protected_inside(root: &Path, respect_ignored: bool) -> Option<Inside> {
+fn protected_inside(root: &Path, respect_ignored: bool, blocked: &BlockedFiles) -> Option<Inside> {
     if root.is_file() {
         let name = root.file_name()?.to_string_lossy().into_owned();
-        return is_blocked_name(&name).then_some(Inside::Protected(name));
+        return blocked
+            .blocks_name(&name)
+            .then_some(Inside::Protected(name));
     }
     let base = Rc::new(
         std::fs::read_to_string(root.join(".git/info/exclude"))
@@ -227,7 +255,7 @@ fn protected_inside(root: &Path, respect_ignored: bool) -> Option<Inside> {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             // A protected file is never skipped, even if git ignores it.
-            if is_blocked_name(&name) {
+            if blocked.blocks_name(&name) {
                 return Some(Inside::Protected(name));
             }
             let Ok(kind) = entry.file_type() else {
@@ -242,7 +270,7 @@ fn protected_inside(root: &Path, respect_ignored: bool) -> Option<Inside> {
             {
                 if !real.is_dir() {
                     let target = real.file_name()?.to_string_lossy().into_owned();
-                    if is_blocked_name(&target) {
+                    if blocked.blocks_name(&target) {
                         return Some(Inside::Protected(target));
                     }
                     None
@@ -364,9 +392,30 @@ pub fn command(program: &Path) -> String {
 mod tests {
     use super::*;
 
+    /// The hook of a project that keeps the usual files from the AI.
     fn hook(tool: &str, input: Value) -> Option<Value> {
         let payload = json!({"hook_event_name": "PreToolUse", "cwd": "/wt", "tool_name": tool, "tool_input": input});
-        decide(&payload.to_string()).map(|s| serde_json::from_str(&s).unwrap())
+        decide_in(&payload.to_string(), None, None, &BlockedFiles::suggested())
+            .map(|s| serde_json::from_str(&s).unwrap())
+    }
+
+    #[test]
+    fn with_nothing_blocked_env_is_read_like_any_file() {
+        let payload = |tool: &str, input: Value| {
+            json!({"cwd": "/wt", "tool_name": tool, "tool_input": input}).to_string()
+        };
+        let none = BlockedFiles::default();
+        for (tool, input) in [
+            ("Bash", json!({"command": "cat .env"})),
+            ("Read", json!({"file_path": ".env"})),
+            ("Grep", json!({"pattern": "KEY", "output_mode": "content"})),
+        ] {
+            assert_eq!(
+                decide_in(&payload(tool, input), None, None, &none),
+                None,
+                "{tool}"
+            );
+        }
     }
 
     #[test]
@@ -547,7 +596,8 @@ mod tests {
             json!({"tool_name": tool, "cwd": project, "tool_input": {"file_path": path, "content": "x"}})
                 .to_string()
         };
-        let decide = |input: String| decide_in(&input, None, Some(&output));
+        let none = BlockedFiles::default();
+        let decide = |input: String| decide_in(&input, None, Some(&output), &none);
         assert_eq!(decide(call("Write", &output.join("informe.md"))), None);
         assert_eq!(decide(call("Edit", &output.join("sub/nuevo.md"))), None);
         for path in [

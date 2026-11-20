@@ -243,6 +243,46 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             tr!("Quita el cliente", "Remove the client"),
         ),
         (
+            "block",
+            "",
+            tr!(
+                "Archivos que la IA no lee en el proyecto actual (sin nada: la lista; vacía por defecto, como en Claude Code)",
+                "Files the AI does not read in the current project (with nothing: the list; empty by default, as in Claude Code)"
+            ),
+        ),
+        (
+            "block",
+            "patterns",
+            tr!(
+                "Nombres o patrones a agregar (.env, .env.*, *.pem)",
+                "Names or patterns to add (.env, .env.*, *.pem)"
+            ),
+        ),
+        (
+            "block",
+            "remove",
+            tr!(
+                "Quita esos patrones en vez de agregarlos",
+                "Remove those patterns instead of adding them"
+            ),
+        ),
+        (
+            "block",
+            "usual",
+            tr!(
+                "Agrega los de siempre: .env, claves y credenciales",
+                "Add the usual ones: .env, keys and credentials"
+            ),
+        ),
+        (
+            "block",
+            "clear",
+            tr!(
+                "Vacía la lista: la IA lee todo",
+                "Empty the list: the AI reads everything"
+            ),
+        ),
+        (
             "run",
             "",
             tr!(
@@ -1699,6 +1739,16 @@ pub enum Command {
         clear: bool,
     },
 
+    Block {
+        patterns: Vec<String>,
+        #[arg(long, requires = "patterns", conflicts_with_all = ["usual", "clear"])]
+        remove: bool,
+        #[arg(long, conflicts_with = "clear")]
+        usual: bool,
+        #[arg(long, conflicts_with = "patterns")]
+        clear: bool,
+    },
+
     Run {
         #[arg(long, short)]
         account: Option<String>,
@@ -2248,6 +2298,11 @@ mod tests {
         assert!(parse(&["hedy", "account", "default", "--clear"]).is_ok());
         assert!(parse(&["hedy", "client", "--clear"]).is_ok());
         assert!(parse(&["hedy", "client"]).is_err());
+        assert!(parse(&["hedy", "block"]).is_ok());
+        assert!(parse(&["hedy", "block", ".env", "*.pem"]).is_ok());
+        assert!(parse(&["hedy", "block", "--usual"]).is_ok());
+        assert!(parse(&["hedy", "block", "--remove"]).is_err());
+        assert!(parse(&["hedy", "block", ".env", "--clear"]).is_err());
     }
 
     #[test]

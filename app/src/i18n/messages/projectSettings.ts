@@ -31,6 +31,14 @@ const es = {
   "projectSettings.step.auto": "Automático",
   "projectSettings.step.autoDetail": "Lo elige la IA",
 
+  "projectSettings.blocked.title": "Archivos que la IA no lee",
+  "projectSettings.blocked.empty": "Ninguno: la IA lee todos los archivos del proyecto, también .env, como en Claude Code.",
+  "projectSettings.blocked.hint": "Nombres o patrones de nombre (.env, .env.*, *.pem), sin carpetas. La IA no los lee ni los toca, y Hedy no los muestra ni los copia en las tareas. Una tarea abierta lo aplica desde su próximo turno.",
+  "projectSettings.blocked.add": "Agregar",
+  "projectSettings.blocked.addLabel": "Nombre o patrón",
+  "projectSettings.blocked.usual": "Agregar los de siempre (.env, claves, credenciales)",
+  "projectSettings.blocked.remove": "Quitar {pattern}",
+
   "projectSettings.general.title": "General",
   "projectSettings.client": "Cliente",
   "projectSettings.clientHint": "Agrupa los proyectos de un mismo cliente para ver cuánto uso lleva cada uno.",
@@ -76,6 +84,14 @@ const en: Record<keyof typeof es, string> = {
   "projectSettings.step.skip": "Skip this step",
   "projectSettings.step.auto": "Automatic",
   "projectSettings.step.autoDetail": "The AI picks it",
+
+  "projectSettings.blocked.title": "Files the AI does not read",
+  "projectSettings.blocked.empty": "None: the AI reads every file in the project, .env too, as in Claude Code.",
+  "projectSettings.blocked.hint": "Names or name patterns (.env, .env.*, *.pem), without folders. The AI does not read or touch them, and Hedy does not show them or copy them into tasks. An open task applies it from its next turn.",
+  "projectSettings.blocked.add": "Add",
+  "projectSettings.blocked.addLabel": "Name or pattern",
+  "projectSettings.blocked.usual": "Add the usual ones (.env, keys, credentials)",
+  "projectSettings.blocked.remove": "Remove {pattern}",
 
   "projectSettings.general.title": "General",
   "projectSettings.client": "Client",

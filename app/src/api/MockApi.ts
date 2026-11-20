@@ -15,7 +15,7 @@ import type {
   SearchResults,
   WriteResult,
 } from "./codeTypes";
-import { MockCode } from "./mockCode";
+import { MockCode, SUGGESTED_BLOCKED } from "./mockCode";
 import { MOCK_THEME_SEEDS } from "./mockThemes";
 import { resolveLanguage } from "../i18n";
 import { placeholders } from "../templates/placeholders";
@@ -556,6 +556,15 @@ export class MockApi implements HedyApi {
 
   async setProjectClient(path: string, client: string | null): Promise<void> {
     this.project(path).client = client?.trim() || null;
+  }
+
+  async setProjectBlockedFiles(path: string, patterns: string[]): Promise<void> {
+    const clean = patterns.map((p) => (p.trim().split(/[\\/]/).pop() ?? "").toLowerCase()).filter(Boolean);
+    this.project(path).blockedFiles = [...new Set(clean)];
+  }
+
+  async suggestedBlockedFiles(): Promise<string[]> {
+    return [...SUGGESTED_BLOCKED];
   }
 
   async projectStatus(path: string): Promise<ProjectStatus> {
@@ -3701,11 +3710,13 @@ function emptyProject(path: string): Project {
     offerableAccounts: [],
     phases: {},
     client: null,
+    blockedFiles: [],
   };
 }
 
+/** A sample project: like the sample code's locked files, it keeps the usual ones from the AI. */
 function project(path: string, account: string, extra: Partial<Project>): Project {
-  return { ...emptyProject(path), account, ...extra };
+  return { ...emptyProject(path), account, blockedFiles: [...SUGGESTED_BLOCKED], ...extra };
 }
 
 function sampleDiff(path: string): FileDiff {

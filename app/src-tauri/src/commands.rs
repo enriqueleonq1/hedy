@@ -834,6 +834,28 @@ pub async fn set_project_client(
     .await
 }
 
+/// "Archivos que la IA no lee" of a project.
+#[tauri::command]
+pub async fn set_project_blocked_files(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    patterns: Vec<String>,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.set_project_blocked_files(&path, &patterns).map(drop)
+    })
+    .await
+}
+
+/// What "Agregar los de siempre" adds.
+#[tauri::command]
+pub fn suggested_blocked_files() -> Vec<String> {
+    hedy_core::domain::permissions::SUGGESTED_BLOCKED
+        .iter()
+        .map(|p| p.to_string())
+        .collect()
+}
+
 /// The official CLIs on this computer and their default logins (onboarding).
 #[tauri::command]
 pub async fn detect_clis(state: State<'_, AppState>) -> CommandResult<Vec<dto::DetectedCliDto>> {

@@ -58,6 +58,8 @@ impl Hedy {
         let sink: EventSink = Arc::new(move |event| {
             let _ = tx.send(event);
         });
+        // One that reads the project keeps away from what its AI may not read.
+        let blocked = self.blocked_files_at(&shot.cwd);
         let mut session = self.agents.start(
             AgentRequest {
                 backend,
@@ -76,6 +78,7 @@ impl Hedy {
                 no_tools: shot.no_tools,
                 plugins: Vec::new(),
                 output: None,
+                blocked,
             },
             sink,
         )?;

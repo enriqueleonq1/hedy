@@ -373,9 +373,9 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
   with `control_response` (`allow` + `updatedInput`, or `deny` + `message`). Confirmed.
 - **Claude does not ask for everything.** In real runs it read files, ran read-only shell
   commands (`wc`, `cat`) and wrote its plan to `~/.claude/plans/` without a request. So:
-  - Protected files are also passed as Claude Code's own `permissions.deny` rules
-    (`--settings`, `Read(**/.env)`, `Edit(**/.env)`...), which the CLI enforces itself.
-    Verified: the `.env` read was blocked by the CLI.
+  - The project's blocked files (§40) are also passed as Claude Code's own
+    `permissions.deny` rules (`--settings`, `Read(**/.env)`, `Edit(**/.env)`...), which the
+    CLI enforces itself. Verified: the `.env` read was blocked by the CLI.
   - A **`PreToolUse` hook** (also in `--settings`) runs the same protected-file rules on
     every Bash/Read/Edit/Write call, including the ones Claude Code runs without asking.
     The app binary serves it (`hedy-app hook pre-tool-use`). Verified: `cat .env` through
@@ -383,7 +383,8 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
 - **Dependencies in the worktree:** git-ignored `node_modules`, `.venv`, `venv` and
   `vendor` are symlinked from the main checkout (and excluded locally, since git does not
   treat a symlink as an ignored directory), so builds and tests work without reinstalling.
-  `.env` files are deliberately not shared: a task never has the secrets at hand.
+  Since §40 the ignored `.env` files are copied in too, unless the project keeps them from
+  the AI.
 - **Preview:** the "Vista previa" tab embeds a local dev server (localhost / 127.0.0.1
   only, enforced in the UI and in the CSP `frame-src`).
 - **Pregunta / Research:** no worktree; edit tools disabled with `--disallowedTools`;
@@ -1321,8 +1322,8 @@ claude -p /usage --output-format json --no-session-persistence --safe-mode
 - Typing `@` in a project's composer lists the project's files (`Hedy::project_files`, the
   `Git::list_files` port): `git ls-files -z --cached --others --exclude-standard` in the
   main checkout, so tracked files plus untracked ones git does not ignore, never
-  `.hedy/`. Protected names (`permissions::DEFAULT_BLOCKED`: `.env`, `.env.*`, keys,
-  credentials…) are never offered, the same rule that keeps agents away from them.
+  `.hedy/`. Names the project keeps from the AI (its "Archivos que la IA no lee", §40) are
+  never offered, the same rule that keeps agents away from them.
   Sorted and cut at 5,000 paths (`MAX_PROJECT_FILES`).
 - The picker ranks file names that start with the query, then names that contain it, then
   paths that contain it (no case), shorter paths first; ↑/↓, Enter or Tab insert
@@ -3693,4 +3694,56 @@ project. Putting something in the project is a «Cambiar código» task the user
 - **Changed from the plan.** A page opens in the browser, not in «Vista previa»: that tab only
   embeds local dev servers (its CSP allows nothing else), and a page with scripts from a CDN
   would not work there.
+
+## 40. `.env` like in Claude Code: a list per project, empty by default (Nov 20, 2026)
+
+Until now `.env`, keys and credentials (`DEFAULT_BLOCKED`) were kept from every AI in every
+project. Claude Code reads them unless told not to, and the user found Hedy too blocking. Now
+each project has "Archivos que la IA no lee" (`Project::blocked_files`, a
+`permissions::BlockedFiles`), **empty in every project**, existing ones too (no data is
+migrated: a new `projects.blocked_files` column, `NULL` = none). When the project cannot be
+read (a busy store), the checks fall back to the usual list, never to none.
+
+- **One list for everything the AI reads.** Every check takes the project's list: Claude's
+  `deny` rules and its hook (through `HEDY_BLOCKED_FILES`, as `HEDY_EXPERIMENTS` reaches it),
+  Hedy's permission cards (`evaluate`), the API agent's tools, one-shot requests that read the
+  project, the briefing's search, `@` mentions and the code views (locked, search, blame, the
+  editor). With an empty list each check lets everything through at once, and the hook skips
+  walking a whole search.
+- **Hedy's own messages keep a fixed list.** What Hedy itself sends an AI (a commit message,
+  a rule check, a pull request text) and shows in a diff never carries the contents of a
+  usual secret (`is_secret_path`, the old list now `SUGGESTED_BLOCKED`), whatever the project
+  lets its agents read: the risk there is a secret reaching git or a prompt Hedy writes.
+- **Task copies get the `.env` files.** `Git::ignored_env_files` lists the ignored `.env`,
+  `.env.*` files outside ignored folders; Hedy copies them (not links: the agent's changes
+  stay in the copy, and links out of the copy are refused) into each worktree and each
+  question copy, unless listed. Tests and dev servers then work as in the project. Each copy
+  is private to the user, at most 1 MB, and never written through a link in the copy.
+- **Changing the list.** A `.env` listed now leaves the copies of the project's open tasks
+  (only one still as Hedy copied it). An agent started with the old list (its deny rules and
+  hook come at launch) resumes its session with the new one on its next turn.
+- **Setting it.** Ajustes of the project ("Archivos que la IA no lee", with «Agregar los de
+  siempre (.env, claves, credenciales)»), `hedy block [patterns] [--remove|--usual|--clear]`
+  (with nothing, the list). Patterns are names or name patterns; case and invisible
+  characters do not count, a leading `**/` is dropped, and one with a folder (`config/`,
+  `secrets/*`) or that matches everything (`*`) is refused: it would keep nothing, or every
+  file. The UI's own copy of the list is gone: the backend decides. Known gap: Claude's own
+  deny rules are written in lower case and match case-sensitively on Linux; the hook, which
+  ignores case, covers the rest.
+- **Other agents.** Investigated on Nov 20, 2026 in their source and docs, not live:
+  - Codex's sandbox reads the whole disk, but with `approvalPolicy: untrusted` every command
+    not allowed by an exec-policy rule asks (`core/src/exec_policy.rs` on Nov 20, 2026; older
+    versions let known read-only commands such as `cat` through), so Hedy sees
+    `cat ../../../.env` and denies it by name. An exec-policy rule in the
+    user's Codex folder could skip that card. A permission profile passed in `thread/start`'s
+    `config` (`"<pattern>" = "none"`) would make bubblewrap hide listed files; it is
+    experimental and left until it can be checked with Codex installed.
+  - Gemini CLI's tools read only inside the workspace and skip git-ignored files, so it does
+    not read `.env` with them even with an empty list. Kimi Code always blocks `.env`,
+    `id_rsa*` and `credentials` itself, and reads other absolute paths outside its copy
+    without asking. Antigravity does not document it. For them the list is best effort.
+- **Verified for real** (Claude Code, haiku, a scratch data folder on the personal account):
+  `smoke_task -- haiku free` reads an unlisted `.env`; `env` and `bash` with `.env` listed
+  never see it (Claude's deny rule and the hook); `doc` writes a question's document in its
+  own folder and leaves `git status` clean (§39).
 

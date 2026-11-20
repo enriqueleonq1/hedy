@@ -20,6 +20,9 @@ pub struct Project {
     pub memory_off: BTreeSet<AccountId>,
     /// Who the work is for, to add up cost per client.
     pub client: Option<String>,
+    /// Files the AI does not read here ("Archivos que la IA no lee"); empty
+    /// by default, as in Claude Code.
+    pub blocked_files: super::permissions::BlockedFiles,
 }
 
 impl Project {
@@ -37,6 +40,7 @@ impl Project {
             phases: PhasePlan::new(),
             memory_off: BTreeSet::new(),
             client: None,
+            blocked_files: Default::default(),
         }
     }
 

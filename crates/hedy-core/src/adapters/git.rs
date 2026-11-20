@@ -8,7 +8,7 @@ use std::process::{Command, Output};
 
 use crate::application::ports::{Git, MergeOutcome, PortError, PortResult};
 use crate::domain::diff::{Commit, DiffLine, FileDiff, FileStatus, Hunk, LineKind, parse_unified};
-use crate::domain::permissions::is_protected_path;
+use crate::domain::permissions::is_secret_path;
 use crate::tr;
 
 pub struct GitCli;
@@ -189,7 +189,7 @@ fn untracked_file(repo: &Path, path: &str, hidden: bool) -> FileDiff {
         binary: false,
         hunks: Vec::new(),
     };
-    if is_protected_path(path) {
+    if is_secret_path(path) {
         return file;
     }
     if hidden {
@@ -504,6 +504,31 @@ impl Git for GitCli {
         Err(PortError::new(format!("git commit: {}", stderr.trim())))
     }
 
+    fn ignored_env_files(&self, repo: &Path) -> PortResult<Vec<String>> {
+        // `--directory`: an ignored folder (node_modules) is one entry, not
+        // walked.
+        let out = git(
+            repo,
+            &[
+                "ls-files",
+                "-z",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                "--directory",
+            ],
+        )?;
+        Ok(out
+            .split('\0')
+            .filter(|p| !p.is_empty() && !p.ends_with('/') && !p.starts_with(".hedy/"))
+            .filter(|p| {
+                let name = p.rsplit('/').next().unwrap_or(p);
+                name == ".env" || name.starts_with(".env.")
+            })
+            .map(str::to_owned)
+            .collect())
+    }
+
     fn list_files(&self, repo: &Path) -> PortResult<Vec<String>> {
         // `-z`: names as they are, without quoting unusual characters.
         let out = git(
@@ -806,6 +831,30 @@ mod tests {
             ran.display()
         );
         fs::write(dir.join("config"), config).unwrap();
+    }
+
+    #[test]
+    fn ignored_env_files_are_found_outside_ignored_folders() {
+        let (_tmp, repo) = repo();
+        fs::write(repo.join(".gitignore"), ".env*\nnode_modules/\n.hedy/\n").unwrap();
+        fs::write(repo.join(".env.example"), "KEY=\n").unwrap();
+        git(&repo, &["add", "-f", ".gitignore", ".env.example"]).unwrap();
+        git(&repo, &["commit", "-qm", "ignorar"]).unwrap();
+        for file in [
+            ".env",
+            "apps/web/.env.local",
+            "node_modules/x/.env",
+            ".hedy/worktrees/t1/.env",
+        ] {
+            let path = repo.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "KEY=1\n").unwrap();
+        }
+        assert_eq!(
+            GitCli.ignored_env_files(&repo).unwrap(),
+            vec![".env".to_owned(), "apps/web/.env.local".to_owned()],
+            "tracked, in an ignored folder or in Hedy's copies: not listed"
+        );
     }
 
     #[test]

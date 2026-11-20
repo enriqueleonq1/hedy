@@ -48,6 +48,8 @@ pub enum AppError {
     #[error("{}", self.message())]
     NotAnOutput(String),
     #[error("{}", self.message())]
+    InvalidBlockedPattern(String),
+    #[error("{}", self.message())]
     OutputNotOpened(String),
     #[error("{}", self.message())]
     OutputNotSaved(String),
@@ -383,6 +385,10 @@ impl AppError {
             Self::TaskWithoutChanges(id) => tr!(
                 "la tarea {id} no cambia archivos (es una pregunta)",
                 "task {id} changes no files (it is a question)"
+            ),
+            Self::InvalidBlockedPattern(pattern) => tr!(
+                "«{pattern}» no sirve: pon nombres de archivo o patrones de nombre (.env, .env.*, *.pem), sin carpetas y sin que abarquen todo",
+                "«{pattern}» does not work: use file names or name patterns (.env, .env.*, *.pem), without folders and not matching everything"
             ),
             Self::NotAnOutput(path) => tr!(
                 "«{path}» no es un archivo que escribió la tarea",

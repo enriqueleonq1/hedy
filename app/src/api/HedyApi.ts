@@ -122,6 +122,10 @@ export interface HedyApi {
   setProjectPhases(path: string, phases: PhasePlan): Promise<void>;
   /** Empty or null clears it. */
   setProjectClient(path: string, client: string | null): Promise<void>;
+  /** "Archivos que la IA no lee": the project's whole list. */
+  setProjectBlockedFiles(path: string, patterns: string[]): Promise<void>;
+  /** What "Agregar los de siempre" adds (.env, keys, credentials). */
+  suggestedBlockedFiles(): Promise<string[]>;
   projectStatus(path: string): Promise<ProjectStatus>;
   /** Usage records of the last `days` days, oldest first. */
   projectUsage(path: string, days: number): Promise<UsagePoint[]>;

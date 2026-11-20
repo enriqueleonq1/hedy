@@ -698,6 +698,17 @@ impl Git for FakeGit {
     fn is_ignored(&self, _: &Path, path: &str) -> bool {
         self.ignored.lock().unwrap().iter().any(|p| p == path)
     }
+    fn ignored_env_files(&self, _: &Path) -> PortResult<Vec<String>> {
+        let ignored = self.ignored.lock().unwrap();
+        Ok(ignored
+            .iter()
+            .filter(|p| {
+                let name = p.rsplit('/').next().unwrap_or(p);
+                name == ".env" || name.starts_with(".env.")
+            })
+            .cloned()
+            .collect())
+    }
     fn diff(&self, _: &Path, _: &str) -> PortResult<Vec<FileDiff>> {
         Ok(self.diff.lock().unwrap().clone())
     }
@@ -1410,6 +1421,7 @@ impl FileSystem for FakeFs {
     }
     fn remove_file(&self, path: &Path) -> PortResult<()> {
         self.files.lock().unwrap().retain(|(p, _)| p != path);
+        self.blobs.lock().unwrap().retain(|(p, _)| p != path);
         Ok(())
     }
     fn files_beneath(&self, dir: &Path) -> PortResult<Vec<(String, u64)>> {

@@ -6,7 +6,6 @@ use std::path::Path;
 use super::Hedy;
 use crate::domain::briefing::{self, Briefing, MAX_NOTES};
 use crate::domain::code::TextQuery;
-use crate::domain::permissions::DEFAULT_BLOCKED;
 use crate::domain::{Account, NoteStatus, Task};
 
 /// Matching lines read per name, at most.
@@ -64,10 +63,11 @@ impl Hedy {
         files: &[String],
         prompt: &str,
     ) -> Vec<(String, Vec<String>, usize)> {
+        let blocked = self.blocked_files_at(dir);
         let exclude: Vec<&str> = SKIPPED_NAMES
             .iter()
-            .chain(DEFAULT_BLOCKED)
             .copied()
+            .chain(blocked.patterns().iter().map(String::as_str))
             .collect();
         let mut hits: Vec<(String, String)> = Vec::new();
         for term in briefing::search_terms(prompt) {

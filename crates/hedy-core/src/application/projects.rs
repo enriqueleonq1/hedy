@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::{AppError, AppResult, Hedy};
+use crate::domain::permissions::BlockedFiles;
 use crate::domain::{AccountId, Color, PhasePlan, Project, phase, policy, project};
 use crate::tr;
 
@@ -41,6 +42,44 @@ impl Hedy {
     pub fn project_for(&self, dir: &Path) -> AppResult<Option<Project>> {
         let dir = self.fs.canonicalize(dir)?;
         Ok(project::find_for_dir(&self.projects()?, &dir).cloned())
+    }
+
+    /// The files the AI does not read in the project holding `dir` (a task's
+    /// copy inside it too); none outside any project. When the project
+    /// cannot be read (a busy store), the usual ones: never everything.
+    pub(super) fn blocked_files_at(&self, dir: &Path) -> BlockedFiles {
+        match self.project_for(dir) {
+            Ok(Some(project)) => project.blocked_files,
+            Ok(None) => BlockedFiles::default(),
+            Err(_) => BlockedFiles::suggested(),
+        }
+    }
+
+    /// "Archivos que la IA no lee": the project's list, cleaned. Only names
+    /// and name patterns: one with a folder (`config/`, `secrets/*`) would
+    /// keep nothing or everything, so it is refused. A `.env` listed now
+    /// leaves the copies of the project's open tasks too.
+    pub fn set_project_blocked_files(
+        &self,
+        path: &Path,
+        patterns: &[String],
+    ) -> AppResult<Project> {
+        for pattern in patterns {
+            let pattern = pattern.trim();
+            let name = pattern.strip_prefix("**/").unwrap_or(pattern);
+            let everything = !name.is_empty() && name.chars().all(|c| matches!(c, '*' | '?' | '.'));
+            if name.contains(['/', '\\']) || everything {
+                return Err(AppError::InvalidBlockedPattern(pattern.to_owned()));
+            }
+        }
+        let mut project = self.project_at(path)?;
+        project.blocked_files = BlockedFiles::new(patterns.iter().map(|p| {
+            let p = p.trim();
+            p.strip_prefix("**/").unwrap_or(p).to_owned()
+        }));
+        self.store.save_project(&project)?;
+        self.remove_listed_env_files(&project);
+        Ok(project)
     }
 
     /// The project registered exactly at `path`.

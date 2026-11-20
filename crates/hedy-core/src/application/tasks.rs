@@ -13,6 +13,7 @@ use super::carry::Carry;
 use super::ports::{AgentBackend, AgentRequest, AgentSession, RateLimit, Secret, UsageRecord};
 use super::{AppError, AppResult, Hedy, NewImage, Setting};
 use crate::domain::carry::carried_prompt;
+use crate::domain::permissions::BlockedFiles;
 use crate::domain::permissions::{self, AllowRule, Verdict};
 use crate::domain::phase::pipeline;
 use crate::domain::prompts;
@@ -20,14 +21,17 @@ use crate::domain::skill_trial::TrialRef;
 use crate::domain::task::{SHARED_DEPENDENCY_DIRS, branch_name, title_from_prompt};
 use crate::domain::{
     Account, AccountId, AgentEvent, Attachment, Commit, Credentials, Decision, FileDiff,
-    HoldReason, LaunchPurpose, LaunchSpec, LimitLevel, Notice, NoticeKind, Phase, PromptImage,
-    Provider, Stage, Task, TaskId, TaskMode, TaskStatus, UsageSample, Workspace, policy,
+    HoldReason, LaunchPurpose, LaunchSpec, LimitLevel, Notice, NoticeKind, Phase, Project,
+    PromptImage, Provider, Stage, Task, TaskId, TaskMode, TaskStatus, UsageSample, Workspace,
+    policy,
 };
 use crate::experiments::{self, Experiment};
 use crate::tr;
 
 /// Worktrees live inside the repository, excluded locally from git.
 const WORKTREES_DIR: &str = ".hedy/worktrees";
+/// A `.env` bigger than this is not copied into a task's copy: not settings.
+const MAX_SHARED_ENV_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewTask {
@@ -54,6 +58,9 @@ pub(super) struct LiveTask {
     pub(super) pending: HashMap<String, (String, Value)>,
     /// Highest limit level already shown for this session.
     pub(super) warned: Option<LimitLevel>,
+    /// The project's blocked files the agent started with (its deny rules
+    /// and hook): a changed list starts it again on the next turn.
+    blocked: BlockedFiles,
 }
 
 /// Tasks stored before phases existed have no stages.
@@ -302,6 +309,7 @@ impl Hedy {
         self.git
             .add_worktree(repo, &worktree, &branch, &base_commit)?;
         self.share_dependencies(repo, &worktree)?;
+        self.share_env_files(repo, &worktree);
         self.install_skills_in(repo, &worktree, id);
         Ok(Workspace {
             worktree,
@@ -339,6 +347,7 @@ impl Hedy {
         self.git.remove_detached_worktree(&repo, &copy)?;
         self.git.add_detached_worktree(&repo, &copy, &base)?;
         self.share_dependencies(&repo, &copy)?;
+        self.share_env_files(&repo, &copy);
         self.install_skills_in(&repo, &copy, &task.id);
         task.scratch = Some(copy);
         self.store.save_task(task)?;
@@ -363,7 +372,8 @@ impl Hedy {
     fn output_write(&self, task: &Task, tool: &str, input: &Value) -> Verdict {
         let output = self.output_folder(&task.id);
         let dir = task.work_dir();
-        if let Some(reason) = permissions::protected_file_reason(tool, input, &dir) {
+        let blocked = self.blocked_files_at(&task.project);
+        if let Some(reason) = permissions::protected_file_reason(tool, input, &dir, &blocked) {
             return Verdict::Deny(reason);
         }
         let paths = permissions::written_paths(tool, input, &dir);
@@ -434,6 +444,77 @@ impl Hedy {
                 TaskStatus::Running | TaskStatus::WaitingApproval
             )
             && (task.workspace.is_some() || task.scratch.is_some())
+    }
+
+    /// Copies the project's ignored `.env` files into a task's copy, so its
+    /// tests and dev server find them, as in the project: never one the
+    /// project keeps from the AI. Copies, not links: the agent's changes stay
+    /// in the copy. One that cannot be copied is left out.
+    pub(super) fn share_env_files(&self, repo: &Path, copy: &Path) {
+        let blocked = self.blocked_files_at(repo);
+        for file in self.git.ignored_env_files(repo).unwrap_or_default() {
+            let target = copy.join(&file);
+            let folder_there = target.parent().is_some_and(|p| self.fs.exists(p));
+            if blocked.blocks_path(&file)
+                || !folder_there
+                || self.fs.exists(&target)
+                || self.link_on_the_way(copy, &file)
+            {
+                continue;
+            }
+            // Private like the original should be, and never a dump.
+            match self.fs.read_bytes(&repo.join(&file)) {
+                Ok(Some(bytes)) if bytes.len() <= MAX_SHARED_ENV_BYTES => {
+                    let _ = self.fs.write_private_file(&target, &bytes);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Whether a folder of `rel` inside `copy` is a link: a write there could
+    /// land outside the copy.
+    fn link_on_the_way(&self, copy: &Path, rel: &str) -> bool {
+        let mut at = copy.to_path_buf();
+        let parts: Vec<&str> = rel.split('/').collect();
+        parts[..parts.len().saturating_sub(1)].iter().any(|part| {
+            at.push(part);
+            self.fs.is_symlink(&at)
+        })
+    }
+
+    /// Takes the `.env` files a project now keeps from the AI out of its open
+    /// tasks' copies, where Hedy put them: only a file still as copied.
+    pub(super) fn remove_listed_env_files(&self, project: &Project) {
+        let listed: Vec<String> = self
+            .git
+            .ignored_env_files(&project.path)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|f| project.blocked_files.blocks_path(f))
+            .collect();
+        if listed.is_empty() {
+            return;
+        }
+        for task in self.tasks(&project.path).unwrap_or_default() {
+            if task.status.is_closed() {
+                continue;
+            }
+            let copies = task
+                .workspace
+                .iter()
+                .map(|w| w.worktree.clone())
+                .chain(task.scratch.clone());
+            for copy in copies {
+                for file in &listed {
+                    let original = self.fs.read_bytes(&project.path.join(file)).ok().flatten();
+                    let there = self.fs.read_bytes(&copy.join(file)).ok().flatten();
+                    if there.is_some() && there == original {
+                        let _ = self.fs.remove_file(&copy.join(file));
+                    }
+                }
+            }
+        }
     }
 
     /// Links ignored dependency folders (node_modules, .venv...) into the worktree.
@@ -619,6 +700,7 @@ impl Hedy {
         let spender = account.id.clone();
         let sink = Arc::new(move |event| hedy.on_agent_event(&id, number, &spender, event));
         let output = self.output_for(task, &backend)?;
+        let blocked = self.blocked_files_at(&task.project);
         // Held while starting, so events that arrive early wait for the session.
         let mut live = self.live.lock().unwrap();
         if let Some(mut old) = live.remove(&task.id) {
@@ -654,6 +736,7 @@ impl Hedy {
                 no_tools: false,
                 plugins,
                 output,
+                blocked: blocked.clone(),
             },
             sink,
         )?;
@@ -665,6 +748,7 @@ impl Hedy {
                 rules: Vec::new(),
                 pending: HashMap::new(),
                 warned: None,
+                blocked,
             },
         );
         Ok(())
@@ -801,7 +885,14 @@ impl Hedy {
                 // project, and needs nobody to approve that.
                 let output_write = !task.mode.changes_files() && permissions::is_write_tool(tool);
                 let dir = task.work_dir();
-                let verdict = match permissions::evaluate(tool, input, &dir, &running.rules) {
+                let blocked = self.blocked_files_at(&task.project);
+                let verdict = match permissions::evaluate(
+                    tool,
+                    input,
+                    &dir,
+                    &running.rules,
+                    &blocked,
+                ) {
                     _ if output_write => self.output_write(&task, tool, input),
                     Verdict::Deny(reason) => Verdict::Deny(reason),
                     // Written as inside, but a link (a shared `node_modules`)
@@ -1246,6 +1337,18 @@ impl Hedy {
                 images: attachments,
             },
         )?;
+        // An agent started before the project's list changed keeps its old
+        // rules: it resumes its session with the new ones instead.
+        let blocked = self.blocked_files_at(&task.project);
+        let stale = self
+            .live
+            .lock()
+            .unwrap()
+            .get(id)
+            .is_some_and(|running| running.blocked != blocked);
+        if stale {
+            self.stop_session(id);
+        }
         let sent = {
             let mut live = self.live.lock().unwrap();
             live.get_mut(id)
@@ -1489,6 +1592,10 @@ mod tests {
     fn protected_files_and_outside_writes_are_denied_without_asking() {
         let f = Fixture::new();
         let task = new_task(&f, "Hola", false);
+        // A project that keeps `.env` from the AI.
+        f.hedy
+            .set_project_blocked_files(&f.dir("/code/agenda"), &[".env".into()])
+            .unwrap();
         f.agents
             .emit(permission("r1", "Read", json!({"file_path": ".env"})));
         f.agents.emit(permission(
@@ -2362,5 +2469,126 @@ mod tests {
         assert!(f.hedy.task(&waiting.id).unwrap().scratch.is_some());
         assert!(f.hedy.task(&change.id).unwrap().workspace.is_some());
         assert_eq!(f.hedy.tidy_read_only_copies(), 0);
+    }
+
+    #[test]
+    fn a_copy_gets_the_ignored_env_files_the_project_lets_the_ai_read() {
+        use crate::application::ports::FileSystem;
+        let f = Fixture::new();
+        new_task(&f, "Hola", false);
+        let repo = f.dir("/code/agenda");
+        let copy = repo.join(".hedy/worktrees/t1");
+        f.git.ignore(".env");
+        f.git.ignore("apps/web/.env.local");
+        f.git.ignore("node_modules");
+        for file in [".env", "apps/web/.env.local"] {
+            f.fs.write_private_file(&repo.join(file), b"KEY=1").unwrap();
+        }
+        f.fs.add_existing(copy.to_str().unwrap());
+        f.fs.add_existing(copy.join("apps/web").to_str().unwrap());
+
+        // Free by default, as in Claude Code: both go.
+        f.hedy.share_env_files(&repo, &copy);
+        for file in [".env", "apps/web/.env.local"] {
+            assert_eq!(
+                f.fs.read_bytes(&copy.join(file)).unwrap(),
+                Some(b"KEY=1".to_vec())
+            );
+        }
+
+        // A project that keeps `.env` from the AI: that one stays out.
+        let other = repo.join(".hedy/worktrees/t2");
+        f.fs.add_existing(other.to_str().unwrap());
+        f.fs.add_existing(other.join("apps/web").to_str().unwrap());
+        f.hedy
+            .set_project_blocked_files(&repo, &[".env".into()])
+            .unwrap();
+        f.hedy.share_env_files(&repo, &other);
+        assert_eq!(f.fs.read_bytes(&other.join(".env")).unwrap(), None);
+        assert!(
+            f.fs.read_bytes(&other.join("apps/web/.env.local"))
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn a_project_list_refuses_folders_and_catch_alls_and_leaves_open_copies() {
+        use crate::application::ports::FileSystem;
+        let f = Fixture::new();
+        let task = new_task(&f, "Hola", false);
+        let repo = f.dir("/code/agenda");
+        for pattern in ["config/", "secrets/*", "*", "*.*", "a\\b"] {
+            assert!(
+                matches!(
+                    f.hedy.set_project_blocked_files(&repo, &[pattern.into()]),
+                    Err(AppError::InvalidBlockedPattern(_))
+                ),
+                "{pattern}"
+            );
+        }
+        let project = f
+            .hedy
+            .set_project_blocked_files(&repo, &["**/.env".into(), "*.pem".into()])
+            .unwrap();
+        assert_eq!(project.blocked_files.patterns(), [".env", "*.pem"]);
+
+        // The task's copy holds the `.env` Hedy copied, and one the agent changed.
+        let ws = task.workspace.unwrap().worktree;
+        f.hedy.set_project_blocked_files(&repo, &[]).unwrap();
+        f.git.ignore(".env");
+        f.git.ignore("api/.env");
+        for (file, bytes) in [(".env", b"A=1".as_slice()), ("api/.env", b"B=1".as_slice())] {
+            f.fs.write_private_file(&repo.join(file), bytes).unwrap();
+        }
+        f.fs.write_private_file(&ws.join(".env"), b"A=1").unwrap();
+        f.fs.write_private_file(&ws.join("api/.env"), b"B=2")
+            .unwrap();
+        f.hedy
+            .set_project_blocked_files(&repo, &[".env".into()])
+            .unwrap();
+        assert_eq!(
+            f.fs.read_bytes(&ws.join(".env")).unwrap(),
+            None,
+            "taken out"
+        );
+        assert_eq!(
+            f.fs.read_bytes(&ws.join("api/.env")).unwrap(),
+            Some(b"B=2".to_vec()),
+            "the agent's own file stays"
+        );
+    }
+
+    #[test]
+    fn a_changed_list_restarts_the_agent_on_its_next_turn() {
+        let f = Fixture::new();
+        let task = new_task(&f, "Hola", false);
+        f.agents.emit(AgentEvent::SessionStarted {
+            session_id: "s-1".into(),
+            model: "m".into(),
+        });
+        f.agents.emit(AgentEvent::Finished {
+            ok: true,
+            summary: "Listo".into(),
+            duration_ms: None,
+        });
+        f.hedy
+            .set_project_blocked_files(&f.dir("/code/agenda"), &[".env".into()])
+            .unwrap();
+        f.hedy.send_message(&task.id, "sigue").unwrap();
+        let request = f.agents.last_request();
+        assert_eq!(request.resume.as_deref(), Some("s-1"));
+        assert_eq!(request.blocked.patterns(), [".env"]);
+        // Unchanged: the same session takes the message.
+        f.agents.emit(AgentEvent::Finished {
+            ok: true,
+            summary: "Listo".into(),
+            duration_ms: None,
+        });
+        f.hedy.send_message(&task.id, "y más").unwrap();
+        assert_eq!(
+            f.agents.calls().last(),
+            Some(&AgentCall::Send("y más".into()))
+        );
     }
 }

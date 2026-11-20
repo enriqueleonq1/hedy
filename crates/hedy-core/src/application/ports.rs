@@ -531,6 +531,9 @@ pub trait Git: Send + Sync {
     fn remove_detached_worktree(&self, repo: &Path, path: &Path) -> PortResult<()>;
     /// Whether git ignores `path` (relative to `repo`).
     fn is_ignored(&self, repo: &Path, path: &str) -> bool;
+    /// The `.env` files git ignores in `repo` (`.env`, `.env.local`,
+    /// `apps/web/.env`), relative to it; not inside ignored folders.
+    fn ignored_env_files(&self, repo: &Path) -> PortResult<Vec<String>>;
     /// Every change in the worktree (committed or not) since `base`.
     fn diff(&self, worktree: &Path, base: &str) -> PortResult<Vec<FileDiff>>;
     /// Commits everything; `false` when there was nothing to commit.
@@ -730,6 +733,8 @@ pub struct AgentRequest {
     /// A read-only task's own folder outside the project: the only place it
     /// may write (a document or a page it was asked for).
     pub output: Option<PathBuf>,
+    /// The project's files the agent may not read or touch.
+    pub blocked: crate::domain::permissions::BlockedFiles,
 }
 
 impl AgentRequest {

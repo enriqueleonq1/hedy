@@ -21,7 +21,7 @@ use crate::domain::code::{
     TextQuery, TreeEntry, content_version, looks_binary, normalize_code_path, outline,
 };
 use crate::domain::diff::FileStatus;
-use crate::domain::permissions::{DEFAULT_BLOCKED, is_protected_path};
+use crate::domain::permissions::BlockedFiles;
 use crate::domain::{LaunchSpec, Task, TaskId, TaskStatus};
 
 /// Git's empty tree: the base of a repository without commits yet.
@@ -161,6 +161,8 @@ pub(super) struct Resolved {
     base: String,
     /// A task copy: new files are `Added`, never `Untracked`.
     task: bool,
+    /// The project's files the AI does not read: Hedy does not offer them either.
+    pub(super) blocked: BlockedFiles,
 }
 
 pub(super) fn checked_path(path: &str) -> AppResult<String> {
@@ -188,7 +190,7 @@ fn change_of(status: FileStatus) -> ChangeKind {
 
 impl Hedy {
     pub(super) fn resolve_copy(&self, copy: &CodeCopy) -> AppResult<Resolved> {
-        match copy {
+        let mut resolved = match copy {
             CodeCopy::Folder(path) => {
                 let project = self.project_at(path)?;
                 self.folder_copy(&project.path, None)
@@ -197,7 +199,9 @@ impl Hedy {
                 let task = self.task(id)?;
                 self.task_copy(&task)
             }
-        }
+        }?;
+        resolved.blocked = self.blocked_files_at(&resolved.info.project);
+        Ok(resolved)
     }
 
     fn folder_copy(&self, path: &Path, task: Option<&Task>) -> AppResult<Resolved> {
@@ -219,6 +223,7 @@ impl Hedy {
             at: None,
             base: head.unwrap_or_else(|| EMPTY_TREE.to_owned()),
             task: false,
+            blocked: BlockedFiles::default(),
         })
     }
 
@@ -249,6 +254,7 @@ impl Hedy {
                 at: None,
                 base: ws.base_commit.clone(),
                 task: true,
+                blocked: BlockedFiles::default(),
             });
         }
         match (&task.status, &task.merge) {
@@ -262,6 +268,7 @@ impl Hedy {
                     at: Some(record.tip.clone()),
                     base: ws.base_commit.clone(),
                     task: true,
+                    blocked: BlockedFiles::default(),
                 })
             }
             _ => Err(AppError::CopyUnavailable(task.id.clone())),
@@ -316,7 +323,7 @@ impl Hedy {
         let entry = |path: String, ignored: bool| {
             let change = changes.get(&path);
             TreeEntry {
-                locked: is_protected_path(path.trim_end_matches('/')),
+                locked: copy.blocked.blocks_path(path.trim_end_matches('/')),
                 status: change.map(|c| c.kind),
                 old_path: change.and_then(|c| c.old_path.clone()),
                 path,
@@ -374,7 +381,7 @@ impl Hedy {
         path: &str,
         rev: Option<&str>,
     ) -> AppResult<FileContent> {
-        if is_protected_path(path) {
+        if copy.blocked.blocks_path(path) {
             return Ok(FileContent::Locked);
         }
         let max = MAX_TEXT_BYTES.max(MAX_PREVIEW_IMAGE_BYTES);
@@ -382,7 +389,7 @@ impl Hedy {
             return Ok(FileContent::Missing);
         };
         // A symbolic link to a protected file is protected too.
-        if is_protected_path(&file.resolved) {
+        if copy.blocked.blocks_path(&file.resolved) {
             return Ok(FileContent::Locked);
         }
         let size = file.size;
@@ -447,7 +454,8 @@ impl Hedy {
             against: resolved,
             body: DiffBody::Locked,
         };
-        if is_protected_path(&path) || old_path.as_deref().is_some_and(is_protected_path) {
+        let blocked = |p: &str| copy.blocked.blocks_path(p);
+        if blocked(&path) || old_path.as_deref().is_some_and(blocked) {
             return Ok(diff);
         }
         let to = copy.at.as_deref();
@@ -502,15 +510,16 @@ impl Hedy {
         if query.query.trim().is_empty() {
             return Ok(SearchResults::default());
         }
+        let blocked: Vec<&str> = copy.blocked.patterns().iter().map(String::as_str).collect();
         let (mut lines, truncated) = self.code.grep(
             &copy.dir,
             copy.at.as_deref(),
             query,
-            DEFAULT_BLOCKED,
+            &blocked,
             &[".hedy"],
             MAX_SEARCH_MATCHES,
         )?;
-        lines.retain(|(path, _)| !is_protected_path(path) && !hidden(path));
+        lines.retain(|(path, _)| !copy.blocked.blocks_path(path) && !hidden(path));
         Ok(SearchResults::from_lines(lines, truncated))
     }
 
@@ -599,7 +608,7 @@ impl Hedy {
     ) -> AppResult<Blame> {
         let copy = self.resolve_copy(copy)?;
         let path = checked_path(path)?;
-        if is_protected_path(&path) {
+        if copy.blocked.blocks_path(&path) {
             return Err(AppError::FileLocked(path));
         }
         let rev = self.rev(&copy, rev)?;
@@ -693,10 +702,18 @@ mod tests {
 
     const ROOT: &str = "/code/agenda";
 
+    /// A project that keeps the usual files (`.env`, keys) from the AI.
     fn project(f: &Fixture) {
         f.add_claude("Personal");
         f.fs.add_git_root(ROOT);
         f.hedy.use_account(&f.dir(ROOT), "personal", None).unwrap();
+        let usual: Vec<String> = crate::domain::permissions::SUGGESTED_BLOCKED
+            .iter()
+            .map(|p| p.to_string())
+            .collect();
+        f.hedy
+            .set_project_blocked_files(&f.dir(ROOT), &usual)
+            .unwrap();
     }
 
     fn folder() -> CodeCopy {
@@ -1045,6 +1062,29 @@ mod tests {
     }
 
     #[test]
+    fn a_project_that_blocks_nothing_shows_its_env_like_any_file() {
+        let f = Fixture::new();
+        project(&f);
+        f.hedy.set_project_blocked_files(&f.dir(ROOT), &[]).unwrap();
+        f.code.add_file(ROOT, None, ".env", b"TOKEN=x\n");
+        let results = f
+            .hedy
+            .search_code(
+                &folder(),
+                &TextQuery {
+                    query: "TOKEN".into(),
+                    ..TextQuery::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(results.files[0].path, ".env");
+        assert!(matches!(
+            f.hedy.read_code_file(&folder(), ".env", None).unwrap(),
+            FileContent::Text { .. }
+        ));
+    }
+
+    #[test]
     fn search_never_returns_protected_files_and_skips_empty_queries() {
         let f = Fixture::new();
         project(&f);
@@ -1063,7 +1103,10 @@ mod tests {
         assert_eq!(results.files[0].matches[0].ranges[0].end, 5);
         let call = f.code.calls().pop().unwrap();
         assert!(
-            call.contains(&format!("excluding {} names", DEFAULT_BLOCKED.len())),
+            call.contains(&format!(
+                "excluding {} names",
+                crate::domain::permissions::SUGGESTED_BLOCKED.len()
+            )),
             "{call}"
         );
         assert!(call.contains("[\".hedy\"]"), "{call}");

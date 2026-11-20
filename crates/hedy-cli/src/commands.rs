@@ -11,6 +11,7 @@ use hedy_core::application::{
     UsageSummary,
 };
 use hedy_core::domain::memory::USER_AUTHOR;
+use hedy_core::domain::permissions::BlockedFiles;
 use hedy_core::domain::{
     Account, Category, ConfigFolder, Credentials, LoginState, Note, Phase, Project, PromptTemplate,
     Provider, Skill, SkillStatus, TaskState, UsageProblem, UsageSource, UsageWindow, WindowKind,
@@ -269,6 +270,69 @@ pub fn status(hedy: &Hedy, dir: &Path) -> Result<()> {
                 "Usage by project and client: `hedy summary`."
             )
         );
+    }
+    Ok(())
+}
+
+/// `hedy block`: the files the AI does not read in the current project.
+pub fn block(
+    hedy: &Hedy,
+    dir: &Path,
+    patterns: &[String],
+    remove: bool,
+    usual: bool,
+    clear: bool,
+) -> Result<()> {
+    let s = Style::for_stdout();
+    let Some(project) = hedy.project_for(dir)? else {
+        bail!(
+            "{}",
+            tr!(
+                "esta carpeta no es un proyecto de Hedy; usa `hedy use <cuenta>` primero",
+                "this folder is not a Hedy project; use `hedy use <account>` first"
+            )
+        );
+    };
+    let current = project.blocked_files.patterns().to_vec();
+    let changes = !patterns.is_empty() || usual || clear;
+    let project = if changes {
+        let named = BlockedFiles::new(patterns);
+        let list: Vec<String> = if clear {
+            Vec::new()
+        } else if remove {
+            current
+                .into_iter()
+                .filter(|p| !named.patterns().contains(p))
+                .collect()
+        } else {
+            let usual = usual.then(BlockedFiles::suggested).unwrap_or_default();
+            current
+                .into_iter()
+                .chain(named.patterns().iter().cloned())
+                .chain(usual.patterns().iter().cloned())
+                .collect()
+        };
+        hedy.set_project_blocked_files(&project.path, &list)?
+    } else {
+        project
+    };
+    let name = s.bold(&project.name);
+    if project.blocked_files.is_empty() {
+        println!(
+            "{}",
+            tr!(
+                "La IA lee todos los archivos de {name}, también .env (como en Claude Code). Para guardar algunos: hedy block .env, o hedy block --usual.",
+                "The AI reads every file in {name}, .env too (as in Claude Code). To keep some from it: hedy block .env, or hedy block --usual."
+            )
+        );
+    } else {
+        println!(
+            "{}",
+            tr!("La IA no lee en {name}:", "The AI does not read in {name}:")
+        );
+        for pattern in project.blocked_files.patterns() {
+            println!("  {}", s.bold(pattern));
+        }
     }
     Ok(())
 }

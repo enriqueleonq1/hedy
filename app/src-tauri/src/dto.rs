@@ -475,6 +475,8 @@ pub struct ProjectDto {
     /// Who plans, implements, writes tests and reviews.
     pub phases: PhasePlan,
     pub client: Option<String>,
+    /// Files the AI does not read here (empty: none, as in Claude Code).
+    pub blocked_files: Vec<String>,
 }
 
 /// Tokens and estimated cost.
@@ -784,6 +786,7 @@ impl ProjectDto {
             offerable_accounts,
             phases: project.phases.clone(),
             client: project.client.clone(),
+            blocked_files: project.blocked_files.patterns().to_vec(),
         }
     }
 }
