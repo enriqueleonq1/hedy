@@ -62,6 +62,18 @@ describe("Segmented", () => {
     await user.tab();
     expect(screen.getByRole("button", { name: "Después" })).toHaveFocus();
   });
+
+  it("lets Alt, Ctrl and ⌘ with an arrow, Home or End pass through", async () => {
+    const user = userEvent.setup();
+    render(<Mode />);
+    const system = screen.getByRole("radio", { name: "Sistema" });
+    system.focus();
+    await user.keyboard("{Alt>}{ArrowRight}{/Alt}");
+    await user.keyboard("{Control>}{End}{/Control}");
+    await user.keyboard("{Meta>}{ArrowLeft}{/Meta}");
+    expect(system).toHaveFocus();
+    expect(system).toBeChecked();
+  });
 });
 
 describe("ColorPicker", () => {

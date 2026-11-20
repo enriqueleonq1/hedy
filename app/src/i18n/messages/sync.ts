@@ -71,7 +71,7 @@ const es = {
   "sync.how.repo":
     "Cada computadora guarda sus cambios cifrados en el repo con tu git de siempre (SSH o el gestor de credenciales). Hedy no guarda contraseñas ni tokens.",
   "sync.how.keys":
-    "La clave de cada computadora vive en el llavero del sistema. Las 12 palabras solo sirven para agregar una computadora nueva.",
+    "La clave de cada computadora vive en el llavero del sistema. La clave de recuperación solo sirve para agregar una computadora nueva.",
   "sync.how.projects":
     "Solo viaja la memoria de tus proyectos personales. La de un proyecto compartido (de una empresa, un cliente o una comunidad) se queda en cada computadora.",
   "sync.how.conflicts":
@@ -131,7 +131,7 @@ const es = {
 
   "sync.join.title": "Agregar esta computadora",
   "sync.join.wordsTitle": "Escribe tu clave de recuperación",
-  "sync.join.wordsText": "Las 12 palabras que guardaste al configurar la sincronización en tu otra computadora.",
+  "sync.join.wordsText": "La clave de recuperación (12 palabras) que guardaste al configurar la sincronización en tu otra computadora.",
   "sync.join.start": "Agregar esta computadora",
   "sync.join.joining": "Sumando…",
   "sync.join.done": "Esta computadora ya sincroniza · {received} recibidos",
@@ -155,7 +155,7 @@ const es = {
   "sync.home.sharedNamed": "Compartido · {group}",
   "sync.home.team": "Equipo",
   "sync.home.teamNamed": "Equipo · {team}",
-  "sync.home.teamDetail": "Sus notas de equipo van al repo del equipo, y sus agentes leen la capa Equipo",
+  "sync.home.teamDetail": "Sus notas de equipo van al repo del equipo, y sus agentes leen las notas para todo el equipo",
   "sync.home.sharedDetail": "Con un grupo: equipo, cliente o comunidad. Se queda en cada computadora.",
   "sync.home.local": "Solo en esta computadora",
   "sync.home.localDetail": "No se sincroniza ni se comparte.",
@@ -237,7 +237,7 @@ const en: Record<keyof typeof es, string> = {
   "sync.how.repo":
     "Each computer saves its changes, encrypted, in the repo with your usual git (SSH or the credential helper). Hedy keeps no password or token.",
   "sync.how.keys":
-    "Each computer's key lives in the system keyring. The 12 words are only for adding a new computer.",
+    "Each computer's key lives in the system keyring. The recovery key is only for adding a new computer.",
   "sync.how.projects":
     "Only your personal projects' memory travels. A shared project's (a company's, a client's or a community's) stays on each computer.",
   "sync.how.conflicts":
@@ -297,7 +297,7 @@ const en: Record<keyof typeof es, string> = {
 
   "sync.join.title": "Add this computer",
   "sync.join.wordsTitle": "Type your recovery key",
-  "sync.join.wordsText": "The 12 words you kept when you set up sync on your other computer.",
+  "sync.join.wordsText": "The recovery key (12 words) you kept when you set up sync on your other computer.",
   "sync.join.start": "Add this computer",
   "sync.join.joining": "Adding…",
   "sync.join.done": "This computer syncs now · {received} received",
@@ -321,7 +321,7 @@ const en: Record<keyof typeof es, string> = {
   "sync.home.sharedNamed": "Shared · {group}",
   "sync.home.team": "Team",
   "sync.home.teamNamed": "Team · {team}",
-  "sync.home.teamDetail": "Its team notes go to the team's repo, and its agents read the team layer",
+  "sync.home.teamDetail": "Its team notes go to the team's repo, and its agents read the notes for the whole team",
   "sync.home.sharedDetail": "With a group: a team, a client or a community. Stays on each computer.",
   "sync.home.local": "This computer only",
   "sync.home.localDetail": "Neither synced nor shared.",

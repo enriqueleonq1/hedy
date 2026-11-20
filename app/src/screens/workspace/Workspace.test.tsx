@@ -175,7 +175,9 @@ describe("Workspace", () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
     await chooseMode(user, "Solo preguntar");
-    expect(screen.queryByRole("button", { name: "Planificar primero" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "Modo" }));
+    expect(screen.queryByRole("option", { name: "Enséñame el plan primero" })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     expect(await screen.findByText(/no cambian archivos/)).toBeInTheDocument();
@@ -188,16 +190,21 @@ describe("Workspace", () => {
     const modes = await screen.findByRole("combobox", { name: "Modo" });
     expect(modes.closest(".composer")).not.toBeNull();
     expect(document.querySelector(".topbar [role=combobox]")).toBeNull();
-    expect(screen.getByRole("button", { name: "Planificar primero" })).toHaveAttribute("aria-pressed", "true");
 
     await user.click(modes);
     expect(screen.getByRole("listbox", { name: "Modo" })).toBeInTheDocument();
-    expect(optionLabels()).toEqual(["Cambiar código", "Solo preguntar", "Investigar"]);
+    // "Show me the plan first" is a checkbox in the same menu, on by default.
+    expect(optionLabels()).toEqual(["Cambiar código", "Solo preguntar", "Investigar", "Enséñame el plan primero"]);
+    expect(screen.getByRole("option", { name: "Enséñame el plan primero" })).toHaveAccessibleDescription(
+      "Sí: lo apruebas antes de que toque el código",
+    );
     expect(screen.getByRole("option", { name: "Cambiar código" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("option", { name: "Solo preguntar" })).toHaveAccessibleDescription("Responde sin tocar archivos");
     await user.click(screen.getByRole("option", { name: "Investigar" }));
     expect(modes).toHaveTextContent("Investigar");
-    expect(screen.queryByRole("button", { name: "Planificar primero" })).not.toBeInTheDocument();
+    await user.click(modes);
+    expect(optionLabels()).toEqual(["Cambiar código", "Solo preguntar", "Investigar"]);
+    await user.keyboard("{Escape}");
     expect(localStorage.getItem("hedy.mode./code/hedy")).toBe("research");
 
     // Another project keeps its own mode; coming back finds the one chosen here.
@@ -441,7 +448,7 @@ describe("Workspace", () => {
     const { api, user } = setup();
     await openProject(user, /^hedy/);
     await user.type(await screen.findByLabelText("Pídele algo a hedy"), "Recordatorios");
-    await user.click(screen.getByRole("button", { name: "Planificar primero" }));
+    await chooseMode(user, "Enséñame el plan primero");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     await screen.findByRole("region", { name: "Claude quiere correr un comando" });
 
@@ -618,10 +625,20 @@ describe("Composer", () => {
     await user.click(screen.getByRole("option", { name: "Sonnet" }));
     expect(model).toHaveTextContent("Sonnet");
 
-    const plan = screen.getByRole("button", { name: "Planificar primero" });
-    expect(plan).toHaveAttribute("aria-pressed", "true");
-    await user.click(plan);
-    expect(plan).toHaveAttribute("aria-pressed", "false");
+    // The plan-first checkbox in the mode menu, by keyboard: it stays on the mode.
+    const modes = screen.getByRole("combobox", { name: "Modo" });
+    modes.focus();
+    await user.keyboard("{ArrowDown}{End}");
+    const plan = screen.getByRole("option", { name: "Enséñame el plan primero" });
+    expect(modes).toHaveAttribute("aria-activedescendant", plan.id);
+    await user.keyboard("{Enter}");
+    expect(modes).toHaveTextContent("Cambiar código");
+    await user.click(modes);
+    expect(screen.getByRole("option", { name: "Enséñame el plan primero" })).toHaveAccessibleDescription(
+      "No: empieza a cambiar el código enseguida",
+    );
+    await user.keyboard("{Escape}");
+    await user.click(composer);
 
     // Shift+Enter is a new line; Enter sends, as everywhere.
     await user.type(composer, "Primera línea{Shift>}{Enter}{/Shift}segunda");
@@ -657,7 +674,9 @@ describe("Composer", () => {
 
     await chooseOption(user, screen.getByRole("combobox", { name: "Modelo" }), "kimi-k3");
     await chooseMode(user, "Investigar");
-    expect(screen.queryByRole("button", { name: "Planificar primero" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "Modo" }));
+    expect(screen.queryByRole("option", { name: "Enséñame el plan primero" })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
 
     // Shift+Enter is a new line; Enter sends.
     await user.type(composer, "Uno{Shift>}{Enter}{/Shift}dos");
@@ -714,7 +733,7 @@ describe("Composer", () => {
     const menu = screen.getByRole("menu", { name: "Más acciones" });
     expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Estado", "Memoria"]);
     await user.click(within(menu).getByRole("menuitem", { name: "Memoria" }));
-    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria de hedy" })).toBeInTheDocument();
     expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}`);
     expect(screen.getByRole("combobox", { name: "Para" })).toHaveValue("project:/code/hedy");
   });

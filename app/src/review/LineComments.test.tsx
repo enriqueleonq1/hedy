@@ -98,7 +98,7 @@ describe("Line comments in the review", () => {
     await user.type(edit, "Usa Decimal.quantize");
     await user.click(screen.getByRole("button", { name: "Guardar" }));
     expect(within(table).getByText("Usa Decimal.quantize")).toBeInTheDocument();
-    await user.click(within(table).getByRole("button", { name: "Eliminar comentario" }));
+    await user.click(within(table).getByRole("button", { name: "Quitar comentario" }));
     expect(within(table).queryByText("Usa Decimal.quantize")).toBeNull();
   });
 

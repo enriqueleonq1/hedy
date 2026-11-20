@@ -25,7 +25,7 @@ async function setup() {
   await user.click(await screen.findByRole("button", { name: /^hedy/ }));
   const sections = await screen.findByRole("navigation", { name: "Secciones del proyecto" });
   await user.click(within(sections).getByRole("button", { name: "Memoria" }));
-  await screen.findByRole("heading", { level: 1, name: "Memoria" });
+  await screen.findByRole("heading", { level: 1, name: "Memoria de hedy" });
   await screen.findByRole("region", { name: "Decisiones" });
   return { api, user };
 }
@@ -297,7 +297,8 @@ describe("Memoria's hub", () => {
     [`#k=${encodeURIComponent("/code/hedy")}`, /^Habilidades/, "hedy"],
   ])("lands %s in Memoria's right section", async (hash, selected, para) => {
     renderAt(hash);
-    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    // In a project the heading names it, as Resumen and Ajustes do.
+    expect(await screen.findByRole("heading", { level: 1, name: para === "Todo" ? "Memoria" : "Memoria de hedy" })).toBeInTheDocument();
     await waitFor(() => expect(tab(selected)).toHaveAttribute("aria-selected", "true"));
     expect(screen.getByRole("combobox", { name: "Para" })).toHaveDisplayValue(para);
   });

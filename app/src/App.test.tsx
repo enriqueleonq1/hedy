@@ -107,8 +107,11 @@ describe("Inicio", () => {
     const side = screen.getByRole("complementary", { name: "Tus planes y lo que está en marcha" });
     expect(within(side).getByRole("button", { name: /Revisa los tests del carrito/ })).toBeInTheDocument();
 
-    // Sync and teams are settled in Settings, on their cards.
-    await user.click(within(needs).getByRole("button", { name: "Resolver" }));
+    // The one sync conflict is chosen on its row; its title, like the team's, opens Settings.
+    const sync = within(needs).getByRole("group", { name: "Elige qué versión se queda" });
+    expect(within(sync).getByRole("button", { name: "Usar la de Oficina" })).toBeInTheDocument();
+    expect(within(sync).getByRole("button", { name: "Mantener la mía" })).toBeInTheDocument();
+    await user.click(within(needs).getByRole("button", { name: /^Un cambio en tus computadoras para resolver/ }));
     await waitFor(() => expect(window.location.hash).toBe("#sync"));
     await user.click(screen.getByRole("button", { name: /^Inicio/ }));
     await user.click(within(await screen.findByRole("region", { name: "Te necesitan (10)" })).getByRole("button", { name: "Revisar" }));

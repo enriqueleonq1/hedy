@@ -5,6 +5,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { App } from "./App";
 import { MockApi } from "./api/MockApi";
 import { messages } from "./i18n/messages";
+import { chooseMode } from "./test/select";
 
 // xterm needs a real canvas; terminals are not exercised here.
 vi.mock("./components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
@@ -92,7 +93,7 @@ describe("English", () => {
     expect(screen.getByRole("searchbox", { name: "Search tasks and pending items" })).toBeInTheDocument();
     const needs = screen.getByRole("region", { name: "Need you (7)" });
     expect(within(needs).getByText("One change on your computers to resolve")).toBeInTheDocument();
-    expect(within(needs).getByRole("button", { name: "Resolve" })).toBeInTheDocument();
+    expect(await within(needs).findByRole("button", { name: "Use Oficina's" })).toBeInTheDocument();
     expect(within(needs).getByText("2 suggestions from team Plataforma")).toBeInTheDocument();
     expect(within(needs).getByText("As an admin, you decide if they go into the team's memory")).toBeInTheDocument();
     expect(within(needs).getAllByText("Note to approve").length).toBeGreaterThan(0);
@@ -228,7 +229,7 @@ describe("English", () => {
     const { api, user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
     await user.type(await screen.findByLabelText("Ask hedy for something"), "Recordatorios");
-    await user.click(screen.getByRole("button", { name: "Plan first" }));
+    await chooseMode(user, "Show me the plan first", "Mode");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByRole("region", { name: "Claude wants to run a command" });
     await user.type(screen.getByLabelText(/^Answer the permission request above first/), "Sigue");
@@ -247,7 +248,7 @@ describe("English", () => {
     const { api, user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
     await user.type(await screen.findByLabelText("Ask hedy for something"), "Recordatorios");
-    await user.click(screen.getByRole("button", { name: "Plan first" }));
+    await chooseMode(user, "Show me the plan first", "Mode");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByRole("region", { name: "Claude wants to run a command" });
 
@@ -474,7 +475,7 @@ describe("English", () => {
 
     // The status screen's own way there, not the sidebar's.
     await user.click(within(screen.getByRole("main")).getByRole("button", { name: "Memory" }));
-    expect(await screen.findByRole("heading", { level: 1, name: "Memory" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "hedy memory" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "For" })).toHaveDisplayValue("hedy");
     expect(await screen.findByRole("region", { name: "Decisions" })).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: "Ask or search your memory" })).toBeInTheDocument();

@@ -380,7 +380,7 @@ describe("Inicio's board", () => {
     expect(within(like).queryByRole("button", { name: "Aprobar" })).not.toBeInTheDocument();
     expect(within(like).queryByRole("button", { name: "Rechazar" })).not.toBeInTheDocument();
     await user.click(within(like).getByRole("button", { name: "Ver y decidir" }));
-    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria de hedy" })).toBeInTheDocument();
     expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}&pending`);
     expect(screen.getByRole("tab", { name: /^Por aprobar/ })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByText("Los precios se guardan en USD")).toBeInTheDocument();
@@ -400,9 +400,17 @@ describe("Inicio's board", () => {
   });
 
   it("takes sync conflicts and team suggestions to where they are resolved", async () => {
-    const { user } = setup();
-    const needs = await screen.findByRole("region", { name: NEEDS }, SLOW);
-    const sync = within(needs).getByText("Un cambio en tus computadoras para resolver").closest("li")!;
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.syncConflictList.push({
+      ...api.syncConflictList[0]!,
+      id: 2,
+      kind: "template",
+    });
+    const { user } = setup(api);
+    const needs = await screen.findByRole("region", { name: "Te necesitan (10)" }, SLOW);
+    // More than one change: they are chosen in Ajustes, one by one.
+    const sync = within(needs).getByText("2 cambios en tus computadoras para resolver").closest("li")!;
+    expect(within(sync).queryByRole("button", { name: "Usar la de Oficina" })).not.toBeInTheDocument();
     await user.click(within(sync).getByRole("button", { name: "Resolver" }));
     await waitFor(() => expect(window.location.hash).toBe("#sync"));
 
@@ -411,6 +419,54 @@ describe("Inicio's board", () => {
     const team = within(again).getByText("2 sugerencias del equipo Plataforma").closest("li")!;
     await user.click(within(team).getByRole("button", { name: "Revisar" }));
     await waitFor(() => expect(window.location.hash).toBe("#teams"));
+  });
+
+  it("resolves the one sync conflict right on its row, in one click", async () => {
+    const { api, user } = setup();
+    const resolve = vi.spyOn(api, "resolveSyncConflict");
+    const choices = await screen.findByRole("group", { name: "Elige qué versión se queda" }, SLOW);
+    expect(choices.closest("li")).toHaveTextContent("Un cambio en tus computadoras para resolver");
+    // As in Ajustes: the other computer's version first, or keep this one's.
+    expect(within(choices).getByRole("button", { name: "Mantener la mía" })).toBeInTheDocument();
+    await user.click(within(choices).getByRole("button", { name: "Usar la de Oficina" }));
+    // Oficina's is the version in use (`kept`), so it stays and this PC's goes.
+    expect(resolve).toHaveBeenCalledWith(1, false);
+    await waitFor(() => expect(screen.queryByText("Un cambio en tus computadoras para resolver")).not.toBeInTheDocument());
+    expect(await screen.findByText("Listo; se envía con la próxima sincronización.")).toBeInTheDocument();
+    // Still on Inicio.
+    expect(window.location.hash).not.toBe("#sync");
+  });
+
+  it("keeps this computer's version of the one conflict from its row", async () => {
+    const { api, user } = setup();
+    const resolve = vi.spyOn(api, "resolveSyncConflict");
+    const choices = await screen.findByRole("group", { name: "Elige qué versión se queda" }, SLOW);
+    await user.click(within(choices).getByRole("button", { name: "Mantener la mía" }));
+    expect(resolve).toHaveBeenCalledWith(1, true);
+  });
+
+  it("says the board did not load, with Reintentar, and counts nothing it could not read", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    let failing = true;
+    const activity = api.activity.bind(api);
+    vi.spyOn(api, "activity").mockImplementation(() => (failing ? Promise.reject("la base de datos está ocupada") : activity()));
+    const { user } = setup(api);
+    const title = await screen.findByText("No se pudieron cargar tus tareas", undefined, SLOW);
+    const box = title.closest(".empty-state")!;
+    expect(box).toHaveAttribute("role", "alert");
+    expect(box).toHaveTextContent("la base de datos está ocupada");
+    // Not "nothing waits", and no counts read from a board that failed.
+    expect(screen.queryByText("Nada te espera")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nada te espera ahora.")).not.toBeInTheDocument();
+    for (const radio of screen.getAllByRole("radio")) expect(radio).not.toHaveTextContent(/\d/);
+    await user.click(screen.getByRole("radio", { name: "En marcha" }));
+    expect(screen.queryByText("Ninguna IA está trabajando ahora")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: "Te necesitan" }));
+
+    failing = false;
+    await user.click(within(box as HTMLElement).getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByRole("region", { name: NEEDS }, SLOW)).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /^Te necesitan/ })).toHaveTextContent(/10$/);
   });
 
   it("tells the waiting kinds apart by color", async () => {
@@ -531,7 +587,7 @@ describe("Inicio's board", () => {
     const { user } = setup();
     const needs = await screen.findByRole("region", { name: NEEDS }, SLOW);
     await user.click(within(needs).getByRole("button", { name: /^agregar-endpoint/ }));
-    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria de hedy" })).toBeInTheDocument();
     expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}&pending`);
     expect(screen.getByRole("tab", { name: /^Por aprobar/ })).toHaveAttribute("aria-selected", "true");
   });

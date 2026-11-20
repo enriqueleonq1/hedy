@@ -35,6 +35,11 @@ export function ThemeGallery({ overview }: { overview: Overview }) {
   const { theme: shown, inUse, mode, system, customs, previewing, preview, cancelPreview } = useTheme();
   const base = mode === "system" ? system : mode;
 
+  // In use: the theme of the mode chosen (Claro or Oscuro); with Sistema, the
+  // theme of each mode, since either shows when the system switches.
+  const usedIn = (def: ThemeDef) =>
+    mode === "system" ? inUse[def.base].id === def.id : def.base === mode && inUse[mode].id === def.id;
+
   const select = (def: ThemeDef) => {
     // The theme the app shows without a preview: back to it.
     if (def.id === inUse[base].id) return cancelPreview();
@@ -62,7 +67,7 @@ export function ThemeGallery({ overview }: { overview: Overview }) {
       note={note}
       tokens={def.tokens}
       pressed={shown.id === def.id}
-      inUse={inUse[def.base].id === def.id}
+      inUse={usedIn(def)}
       viewing={previewing?.theme.id === def.id}
       onSelect={() => select(def)}
       onContextMenu={

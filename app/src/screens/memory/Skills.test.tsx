@@ -16,7 +16,7 @@ async function setup(api = MockApi.withSampleData()) {
   await user.click(await screen.findByRole("button", { name: /^hedy/ }));
   const sections = await screen.findByRole("navigation", { name: "Secciones del proyecto" });
   await user.click(within(sections).getByRole("button", { name: "Memoria" }));
-  await screen.findByRole("heading", { level: 1, name: "Memoria" });
+  await screen.findByRole("heading", { level: 1, name: "Memoria de hedy" });
   await user.click(screen.getByRole("tab", { name: /^Habilidades/ }));
   return { api, user };
 }
@@ -105,7 +105,7 @@ describe("Skills", () => {
     await user.type(within(dialog).getByRole("textbox", { name: /Nombre/ }), "lint");
     await user.type(within(dialog).getByRole("textbox", { name: /Cuándo usarla/ }), "Antes de cada commit.");
     await user.type(within(dialog).getByRole("textbox", { name: /Pasos/ }), "npm run lint");
-    await user.click(within(dialog).getByRole("radio", { name: "Todos los proyectos" }));
+    await user.click(within(dialog).getByRole("radio", { name: "Todos tus proyectos" }));
     await user.click(save);
     expect(await screen.findByText("Habilidad «lint» lista: tus IAs la usan dentro de Hedy.")).toBeInTheDocument();
     const view = await api.skills("/code/hedy");
@@ -139,6 +139,6 @@ describe("Skills", () => {
     expect(screen.getByRole("img", { name: "Durmiendo" })).toBeInTheDocument();
     expect(screen.getByText(/Proyecto protegido: sus habilidades se quedan aquí/)).toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("button", { name: "+ Nueva habilidad" }));
-    expect(screen.queryByRole("radio", { name: "Todos los proyectos" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Todos tus proyectos" })).not.toBeInTheDocument();
   });
 });

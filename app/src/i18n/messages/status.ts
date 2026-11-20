@@ -56,6 +56,7 @@ const es = {
   "status.week.caption": "Tokens por día",
   "status.week.busiest": "El {day} fue el día más intenso · {total} tokens en total.",
   "status.week.error": "No se pudo cargar el uso de la semana.",
+  "status.week.loading": "Cargando el uso de la semana…",
   "status.week.letters": "DLMMJVS",
 };
 
@@ -115,6 +116,7 @@ const en: Record<keyof typeof es, string> = {
   "status.week.caption": "Tokens per day",
   "status.week.busiest": "{day} was the busiest day · {total} tokens in total.",
   "status.week.error": "Couldn't load this week's usage.",
+  "status.week.loading": "Loading this week's usage…",
   "status.week.letters": "SMTWTFS",
 };
 

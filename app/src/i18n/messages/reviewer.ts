@@ -1,4 +1,4 @@
-// The Revisión tab: reviewing a task's diff like a pull request, comments on
+// The Cambios tab: reviewing a task's diff like a pull request, comments on
 // lines and sending them to the AI as one follow-up.
 
 const es = {
@@ -48,7 +48,7 @@ const es = {
   "reviewer.comment.sent": "Enviado",
   "reviewer.comment.sendOne": "Enviar este comentario a la IA",
   "reviewer.comment.edit": "Editar comentario",
-  "reviewer.comment.delete": "Eliminar comentario",
+  "reviewer.comment.delete": "Quitar comentario",
   "reviewer.bar.pending": "{n} comentarios",
   "reviewer.bar.pendingOne": "1 comentario",
   "reviewer.bar.preview": "Ver el mensaje que recibirá la IA",
@@ -70,7 +70,7 @@ const es = {
   "reviewer.diffError": "No se pudieron cargar los cambios.",
   "reviewer.history.empty": "Este archivo aún no tiene commits.",
   "reviewer.history.openAt": "Ver el archivo en {rev}",
-  "reviewer.shortcuts.title": "Revisión de cambios",
+  "reviewer.shortcuts.title": "Cambios",
   "reviewer.shortcuts.files": "Archivo siguiente o anterior",
   "reviewer.shortcuts.lines": "Línea siguiente o anterior del diff",
   "reviewer.shortcuts.select": "Seleccionar varias líneas",
@@ -126,7 +126,7 @@ const en: Record<keyof typeof es, string> = {
   "reviewer.comment.sent": "Sent",
   "reviewer.comment.sendOne": "Send this comment to the AI",
   "reviewer.comment.edit": "Edit comment",
-  "reviewer.comment.delete": "Delete comment",
+  "reviewer.comment.delete": "Remove comment",
   "reviewer.bar.pending": "{n} comments",
   "reviewer.bar.pendingOne": "1 comment",
   "reviewer.bar.preview": "See the message the AI will get",
@@ -148,7 +148,7 @@ const en: Record<keyof typeof es, string> = {
   "reviewer.diffError": "Couldn't load the changes.",
   "reviewer.history.empty": "This file has no commits yet.",
   "reviewer.history.openAt": "See the file at {rev}",
-  "reviewer.shortcuts.title": "Reviewing changes",
+  "reviewer.shortcuts.title": "Changes",
   "reviewer.shortcuts.files": "Next or previous file",
   "reviewer.shortcuts.lines": "Next or previous line of the diff",
   "reviewer.shortcuts.select": "Select several lines",

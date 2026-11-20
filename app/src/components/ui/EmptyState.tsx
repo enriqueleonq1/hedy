@@ -12,6 +12,7 @@ export function EmptyState({
   actions,
   onRetry,
   error = false,
+  announce = true,
   art,
 }: {
   title: string;
@@ -21,12 +22,17 @@ export function EmptyState({
   /** An error that may pass: a "Reintentar" button after the actions. */
   onRetry?: () => void;
   error?: boolean;
+  /**
+   * An error is announced (`role="alert"`) unless the screen gathers several
+   * of them in one alert of its own.
+   */
+  announce?: boolean;
   /** A mascot or an icon above the title (decorative). */
   art?: ReactNode;
 }) {
   const t = useT();
   return (
-    <div className={`empty-state${error ? " empty-state--error" : ""}`} role={error ? "alert" : undefined}>
+    <div className={`empty-state${error ? " empty-state--error" : ""}`} role={error && announce ? "alert" : undefined}>
       {art && (
         <div className="empty-state__art" aria-hidden>
           {art}

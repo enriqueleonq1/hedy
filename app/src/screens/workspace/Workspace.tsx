@@ -632,6 +632,9 @@ const MODE_ICON: Record<TaskMode, ReactNode> = {
   research: <ResearchIcon />,
 };
 
+/** The mode menu's checkbox: not a mode, it toggles showing the plan first. */
+const PLAN_FIRST = "plan-first" as const;
+
 const MODE_DETAIL: Record<TaskMode, MessageKey> = {
   project: "workspace.composer.modeProjectDetail",
   ask: "workspace.composer.modeAskDetail",
@@ -1128,18 +1131,55 @@ function Composer({
         <div className="composer__chips">
           {!followUp && (
             <>
-              <Select<TaskMode>
+              <Select<TaskMode | typeof PLAN_FIRST>
                 variant="chip"
                 label={t("workspace.composer.mode")}
                 title={t("workspace.composer.mode")}
                 value={mode}
-                options={(solo ? CONVERSATION_MODES : MODES).map((value) => ({
-                  value,
-                  label: t(MODE_LABEL[value]),
-                  detail: t(MODE_DETAIL[value]),
-                  icon: MODE_ICON[value],
-                }))}
-                onChange={setNewMode}
+                sections={[
+                  {
+                    options: (solo ? CONVERSATION_MODES : MODES).map((value) => ({
+                      value,
+                      label: t(MODE_LABEL[value]),
+                      detail: t(MODE_DETAIL[value]),
+                      icon: MODE_ICON[value],
+                    })),
+                  },
+                  // "Show me the plan first" is a checkbox in the same menu, for changing code only.
+                  ...(mode === "project"
+                    ? [
+                        {
+                          options: [
+                            {
+                              value: PLAN_FIRST,
+                              label: t("workspace.composer.planFirst"),
+                              detail: t(planFirst ? "workspace.composer.planFirstOn" : "workspace.composer.planFirstOff"),
+                              icon: (
+                                <input type="checkbox" checked={planFirst} readOnly tabIndex={-1} style={{ pointerEvents: "none" }} />
+                              ),
+                            },
+                          ],
+                        },
+                      ]
+                    : []),
+                ]}
+                renderValue={(option) => (
+                  <>
+                    {option?.icon && (
+                      <span className="select__icon" aria-hidden>
+                        {option.icon}
+                      </span>
+                    )}
+                    <span className="select__text">{option?.label ?? ""}</span>
+                    {mode === "project" && planFirst && (
+                      <span className="select__icon" aria-hidden>
+                        <PlanIcon />
+                      </span>
+                    )}
+                  </>
+                )}
+                tooltip={mode === "project" && planFirst ? t("workspace.composer.planFirst") : undefined}
+                onChange={(value) => (value === PLAN_FIRST ? setPlanFirst((on) => !on) : setNewMode(value))}
               />
               {accountPicker}
               {models.length > 0 && (
@@ -1161,12 +1201,6 @@ function Composer({
                   ]}
                   onChange={setModel}
                 />
-              )}
-              {mode === "project" && (
-                <button type="button" className="chip" aria-pressed={planFirst} onClick={() => setPlanFirst((on) => !on)}>
-                  <PlanIcon />
-                  {t("workspace.composer.planFirst")}
-                </button>
               )}
             </>
           )}

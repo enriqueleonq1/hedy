@@ -104,7 +104,7 @@ describe("Status", () => {
     const sections = screen.getByRole("navigation", { name: "Secciones del proyecto" });
     expect(within(sections).getByRole("button", { name: "Resumen" })).toHaveAttribute("aria-current", "page");
     await user.click(within(sections).getByRole("button", { name: "Memoria" }));
-    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria de hedy" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Para" })).toHaveDisplayValue("hedy");
   });
 
@@ -128,9 +128,11 @@ describe("Status", () => {
     const status = fail(api.projectStatus.bind(api), "sin acceso al repositorio");
     const tasks = fail(api.tasks.bind(api), "la base de datos está ocupada");
     const commits = fail(api.recentCommits.bind(api), "git no responde");
+    const usage = fail(api.projectUsage.bind(api), "el registro de uso no abre");
     vi.spyOn(api, "projectStatus").mockImplementation(status);
     vi.spyOn(api, "tasks").mockImplementation(tasks);
     vi.spyOn(api, "recentCommits").mockImplementation(commits);
+    vi.spyOn(api, "projectUsage").mockImplementation(usage);
     history.replaceState(null, "", `#s=${encodeURIComponent("/code/hedy")}`);
     render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const user = userEvent.setup();
@@ -138,22 +140,40 @@ describe("Status", () => {
     const failures: [string, string][] = [
       ["No se pudo cargar el estado del proyecto.", "sin acceso al repositorio"],
       ["No se pudieron cargar las tareas.", "la base de datos está ocupada"],
+      ["No se pudo cargar el uso de la semana.", "el registro de uso no abre"],
       ["No se pudieron cargar los commits.", "git no responde"],
     ];
-    const alerts: HTMLElement[] = [];
+    const boxes: HTMLElement[] = [];
     for (const [title, detail] of failures) {
-      const alert = (await screen.findByText(title)).closest("[role=alert]");
-      if (!(alert instanceof HTMLElement)) throw new Error(`no alert for ${title}`);
-      expect(alert).toHaveTextContent(detail);
-      alerts.push(alert);
+      const box = (await screen.findByText(title)).closest(".empty-state");
+      if (!(box instanceof HTMLElement)) throw new Error(`no box for ${title}`);
+      expect(box).toHaveTextContent(detail);
+      boxes.push(box);
     }
-    // No "no tasks yet" while the tasks did not load.
+    // One alert for the screen, naming what failed, without each box's Reintentar.
+    const alert = screen.getByRole("alert");
+    for (const [title] of failures) expect(alert).toHaveTextContent(title);
+    expect(alert).not.toHaveTextContent("Reintentar");
+    // No "no tasks yet", and no headline built from tasks that did not load.
     expect(screen.queryByText("Todavía no hay tareas en este proyecto.")).toBeNull();
+    expect(screen.queryByText(/^No hay tareas en curso/)).toBeNull();
+    expect(screen.queryByText("Sin uso registrado esta semana.")).toBeNull();
     failing = false;
-    for (const alert of alerts) await user.click(within(alert).getByRole("button", { name: "Reintentar" }));
+    for (const box of boxes) await user.click(within(box).getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByRole("region", { name: "Tests" })).toBeInTheDocument();
     expect(await screen.findByText("a3f9c1e")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("alert")).toBeEmptyDOMElement();
+  });
+
+  it("says the week is loading, not that it had no usage, until it arrives", async () => {
+    const api = MockApi.withSampleData();
+    api.delayMs = 0;
+    vi.spyOn(api, "projectUsage").mockImplementation(() => new Promise(() => {}));
+    history.replaceState(null, "", `#s=${encodeURIComponent("/code/hedy")}`);
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    expect(await screen.findByText("Cargando el uso de la semana…")).toBeInTheDocument();
+    expect(screen.queryByText("Sin uso registrado esta semana.")).toBeNull();
+    expect(screen.queryByRole("img", { name: /^Tokens por día/ })).toBeNull();
   });
 
   it("opens the project's memory and summary from its home's tabs", async () => {
@@ -171,7 +191,7 @@ describe("Status", () => {
     await user.click(screen.getByRole("button", { name: /^hedy/ }));
     const again = await screen.findByRole("navigation", { name: "Secciones del proyecto" });
     await user.click(within(again).getByRole("button", { name: "Memoria" }));
-    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria de hedy" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Para" })).toHaveDisplayValue("hedy");
     expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}`);
   });

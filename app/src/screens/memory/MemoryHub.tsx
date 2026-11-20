@@ -158,7 +158,7 @@ export function MemoryHub({
       {projectPath ? (
         <ProjectHead
           name={info?.name ?? projectPath}
-          title={t("memory.hub.title")}
+          title={t("memory.hub.projectTitle", { name: info?.name ?? projectPath })}
           path={projectPath}
           current="memory"
           tools={pickFor}

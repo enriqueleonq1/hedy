@@ -111,6 +111,18 @@ describe("Theme gallery", () => {
     expect(screen.getByRole("radio", { name: "Claro" })).toHaveAttribute("aria-checked", "true");
   });
 
+  it("marks as in use only the theme of the mode chosen", async () => {
+    await setup("light");
+    expect(within(card("Hedy Light")).getByText("En uso")).toBeInTheDocument();
+    expect(within(card("Hedy Dark")).queryByText("En uso")).toBeNull();
+  });
+
+  it("in system mode, marks the theme of each mode as in use", async () => {
+    await setup("system");
+    expect(within(card("Hedy Dark")).getByText("En uso")).toBeInTheDocument();
+    expect(within(card("Hedy Light")).getByText("En uso")).toBeInTheDocument();
+  });
+
   it("in system mode, keeps a theme for the other mode and offers to always use it", async () => {
     const { api, user } = await setup("system");
     const setSetting = vi.spyOn(api, "setSetting");
@@ -207,11 +219,11 @@ describe("Theme gallery", () => {
     expect(await screen.findByRole("button", { name: /^Café de noche/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Opciones de Café de noche" }));
-    await user.click(screen.getByRole("menuitem", { name: "Eliminar" }));
-    const confirm = screen.getByRole("dialog", { name: "¿Eliminar «Café de noche»?" });
-    await user.click(within(confirm).getByRole("button", { name: "Eliminar" }));
+    await user.click(screen.getByRole("menuitem", { name: "Quitar" }));
+    const confirm = screen.getByRole("dialog", { name: "¿Quitar «Café de noche»?" });
+    await user.click(within(confirm).getByRole("button", { name: "Quitar" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: /^Café de noche/ })).toBeNull());
-    expect(await screen.findByText("Tema eliminado: Café de noche")).toBeInTheDocument();
+    expect(await screen.findByText("Tema quitado: Café de noche")).toBeInTheDocument();
   });
 
   it("falls back to Hedy's theme when the theme in use is deleted", async () => {
@@ -221,10 +233,10 @@ describe("Theme gallery", () => {
     await user.click(within(bar()!).getByRole("button", { name: "Aplicar tema" }));
     await waitFor(() => expect(cssVar("--bg")).toBe(cafe?.colors.bg));
     await user.click(screen.getByRole("button", { name: "Opciones de Café de la tarde" }));
-    await user.click(screen.getByRole("menuitem", { name: "Eliminar" }));
-    const confirm = screen.getByRole("dialog", { name: "¿Eliminar «Café de la tarde»?" });
+    await user.click(screen.getByRole("menuitem", { name: "Quitar" }));
+    const confirm = screen.getByRole("dialog", { name: "¿Quitar «Café de la tarde»?" });
     expect(within(confirm).getByText("Ahora está en uso: se volverá a Hedy Dark.")).toBeInTheDocument();
-    await user.click(within(confirm).getByRole("button", { name: "Eliminar" }));
+    await user.click(within(confirm).getByRole("button", { name: "Quitar" }));
     await waitFor(() => expect(cssVar("--bg")).toBe("#0A0A0C"));
     expect((await api.overview()).themeDark).toBe("hedy");
   });

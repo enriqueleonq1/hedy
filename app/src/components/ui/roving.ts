@@ -9,6 +9,8 @@ const ITEMS = '[role="tab"]:not(:disabled), [role="radio"]:not(:disabled)';
 
 /** The group's `onKeyDown`: put it on the element with `role="tablist"` or `role="radiogroup"`. */
 export function rovingKeyDown(e: KeyboardEvent<HTMLElement>) {
+  // Alt, Ctrl or ⌘ with an arrow belong to someone else (history, the app's shortcuts).
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
   const items = [...e.currentTarget.querySelectorAll<HTMLElement>(ITEMS)];
   const index = items.indexOf(document.activeElement as HTMLElement);
   if (index < 0) return;

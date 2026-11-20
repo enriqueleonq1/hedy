@@ -3,14 +3,16 @@
 // it shows; what is running or ready; the history; and the plans at a glance.
 // It replaces the old Welcome and Actividad screens.
 
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 
-import { errorMessage, useApi } from "../../api/context";
+import { errorMessage, useAction, useApi } from "../../api/context";
 import type {
   Account,
   ActivityItem,
   Overview,
+  SyncConflict,
+  SyncStatus,
   Task,
   UsageSummary,
   UsageWindow,
@@ -29,6 +31,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Meter, meterLevel } from "../../components/ui/Meter";
 import { rovingKeyDown } from "../../components/ui/roving";
 import { StatusPill } from "../../components/ui/StatusPill";
+import { useToast } from "../../components/ui/Toast";
 import { taskState } from "../../tasks/state";
 import { formatTokens, formatUsd, timeAgo } from "../../format";
 import {
@@ -39,6 +42,7 @@ import {
 } from "../../i18n";
 import { tasksKey, useActivity, useConversations } from "../../tasks/hooks";
 import { useInbox, type InboxItem } from "../../tasks/inbox";
+import { pcName, refreshAfterSync, SYNC_CONFLICTS_KEY, useSyncStatus } from "../../sync/hooks";
 import { DEFAULT_ACCOUNT_COLOR, ERROR_MASCOT_COLOR } from "../../theme/tokens";
 import {
   BoardGroup,
@@ -49,6 +53,7 @@ import {
   useNow,
 } from "../activity/ActivityScreen";
 import { useCreate } from "../create/CreateProvider";
+import { conflictChoices } from "../sync/SyncSection";
 import "../../styles/home.css";
 
 type Filter = "needs" | "working" | "ready" | "history";
@@ -126,6 +131,9 @@ export function HomeScreen({
   const root = useRef<HTMLDivElement>(null);
 
   const hasAccounts = overview.accounts.length > 0;
+  // Counts and the sentence come only from a board that loaded: a failed or
+  // pending one is not "nothing waits".
+  const known = board.isSuccess;
   const color = defaultAccount(overview)?.color ?? DEFAULT_ACCOUNT_COLOR;
   const greeting = overview.userName
     ? t("welcome.greetingNamed", { name: overview.userName })
@@ -159,8 +167,9 @@ export function HomeScreen({
     overview.projects.find((p) => p.path === latest?.task.project) ??
     overview.projects[0];
 
-  const keys =
-    filter === "needs"
+  const keys = !known
+    ? []
+    : filter === "needs"
       ? [...needs.map((e) => e.key), ...ready.map((i) => i.task.id), ...failed.map((i) => i.task.id)]
       : filter === "working"
         ? working.map((i) => i.task.id)
@@ -183,13 +192,13 @@ export function HomeScreen({
   );
 
   const pills: { value: Filter; label: string; count?: number }[] = [
-    { value: "needs", label: t("home.filter.needs"), count: needs.length },
+    { value: "needs", label: t("home.filter.needs"), count: known ? needs.length : undefined },
     {
       value: "working",
       label: t("home.filter.working"),
-      count: working.length,
+      count: known ? working.length : undefined,
     },
-    { value: "ready", label: t("home.filter.ready"), count: ready.length },
+    { value: "ready", label: t("home.filter.ready"), count: known ? ready.length : undefined },
     { value: "history", label: t("home.filter.history") },
   ];
 
@@ -198,7 +207,7 @@ export function HomeScreen({
       <header className="home__head">
         <div>
           <h1>{greeting}</h1>
-          {hasAccounts && (
+          {hasAccounts && known && (
             <p className="muted">{summary(inbox.count, overview.accounts, t)}</p>
           )}
         </div>
@@ -332,14 +341,14 @@ export function HomeScreen({
               />
             </div>
 
-            {board.isError && (
-              <div className="board__empty">
-                <Mascot color={ERROR_MASCOT_COLOR} state="sleeping" size={96} />
-                <p role="alert">{errorMessage(board.error, t)}</p>
-                <Button onClick={() => board.refetch()}>
-                  {t("common.retry")}
-                </Button>
-              </div>
+            {board.isError && filter !== "history" && (
+              <EmptyState
+                error
+                art={<Mascot color={ERROR_MASCOT_COLOR} state="sleeping" size={96} />}
+                title={t("home.error.title")}
+                text={errorMessage(board.error, t)}
+                onRetry={() => void board.refetch()}
+              />
             )}
 
             {filter === "needs" &&
@@ -389,6 +398,7 @@ export function HomeScreen({
                 />
               ))}
             {filter === "working" &&
+              known &&
               (working.length > 0 ? (
                 <BoardGroup title={t("home.filter.working")} items={working}>
                   {row}
@@ -397,6 +407,7 @@ export function HomeScreen({
                 <Empty color={color} title={t("home.empty.working")} />
               ))}
             {filter === "ready" &&
+              known &&
               (ready.length > 0 ? (
                 <BoardGroup title={t("home.filter.ready")} items={ready}>
                   {row}
@@ -562,13 +573,81 @@ function InboxRow({
             <span>{meta}</span>
           </span>
         </button>
-        <div className="board-item__actions">
-          <Button small data-key-action="approve" onClick={open}>
-            {t(sync ? (entry.error ? "home.sync.check" : "home.sync.resolve") : "home.team.review")}
-          </Button>
-        </div>
+        {/* One change to resolve: its two choices right here; more, in Ajustes. */}
+        {sync && !entry.error && entry.conflicts === 1 ? (
+          <SyncChoices onMore={open} />
+        ) : (
+          <div className="board-item__actions">
+            <Button small data-key-action="approve" onClick={open}>
+              {t(sync ? (entry.error ? "home.sync.check" : "home.sync.resolve") : "home.team.review")}
+            </Button>
+          </div>
+        )}
       </div>
     </li>
+  );
+}
+
+/**
+ * The one sync conflict's two choices, as in Ajustes → Sincronización: the
+ * other computer's version first ("Usar la de Oficina"), or keep this one's.
+ * Until the conflict is read (or if it cannot be), "Resolver" goes there.
+ */
+function SyncChoices({ onMore }: { onMore: () => void }) {
+  const t = useT();
+  const api = useApi();
+  const status = useSyncStatus().data;
+  const conflicts = useQuery({
+    queryKey: [...SYNC_CONFLICTS_KEY, status?.conflicts ?? 0],
+    queryFn: () => api.syncConflicts(),
+    enabled: status?.conflicts === 1,
+  }).data;
+  const conflict = conflicts?.length === 1 ? conflicts[0] : undefined;
+  if (!status || !conflict) {
+    return (
+      <div className="board-item__actions">
+        <Button small data-key-action="approve" onClick={onMore}>
+          {t("home.sync.resolve")}
+        </Button>
+      </div>
+    );
+  }
+  return <ConflictChoices conflict={conflict} status={status} />;
+}
+
+function ConflictChoices({ conflict, status }: { conflict: SyncConflict; status: SyncStatus }) {
+  const t = useT();
+  const toast = useToast();
+  const client = useQueryClient();
+  const resolve = useAction((api, useOther: boolean) => api.resolveSyncConflict(conflict.id, useOther), {
+    invalidate: [],
+    onSuccess: () => {
+      toast.info(t("sync.conflict.resolved"));
+      return refreshAfterSync(client);
+    },
+  });
+  const isThisPc = (device: string) => status.devices.some((d) => d.id === device && d.thisPc);
+  const { primary, secondary } = conflictChoices(conflict, isThisPc);
+  // Two sides from the same PC are told apart by when they were written.
+  const samePc = pcName(status, conflict.kept.device, t) === pcName(status, conflict.other.device, t);
+  const useLabel = samePc
+    ? t("sync.conflict.useAt", { when: timeAgo(primary.side.at, t) })
+    : t("sync.conflict.use", { pc: pcName(status, primary.side.device, t) });
+  return (
+    <div className="board-item__actions" role="group" aria-label={t("home.sync.choices")}>
+      <Button small data-key-action="reject" disabled={resolve.isPending} onClick={() => resolve.mutate(secondary.useOther)}>
+        {secondary.mine ? t("sync.conflict.keepMine") : t("sync.conflict.keepInUse")}
+      </Button>
+      <Button
+        small
+        variant="primary"
+        data-key-action="approve"
+        disabled={resolve.isPending}
+        onClick={() => resolve.mutate(primary.useOther)}
+      >
+        {useLabel}
+      </Button>
+    </div>
   );
 }
 
@@ -632,7 +711,21 @@ function History({
         (!words || task.title.toLowerCase().includes(words)),
     )
     .sort((a, b) => b.createdAt - a.createdAt);
+  // A project whose tasks did not load: say so, never "no history yet".
+  const failed = lists.find((q) => q.isError);
+  if (failed && all.length === 0) {
+    return (
+      <EmptyState
+        error
+        title={t("home.error.title")}
+        text={errorMessage(failed.error, t)}
+        onRetry={() => lists.forEach((q) => q.isError && void q.refetch())}
+      />
+    );
+  }
   if (all.length === 0) {
+    // Still reading: not "empty" yet.
+    if (lists.some((q) => q.isPending)) return null;
     // Filtered to nothing: no next step to offer but clearing the filters.
     if (project || words) return <p className="empty">{t("home.history.empty")}</p>;
     const first = overview.projects[0];

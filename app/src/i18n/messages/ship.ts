@@ -5,7 +5,7 @@
 const es = {
   "ship.folder.menu": "Tu carpeta: rama {branch}",
   "ship.folder.menuTitle": "Tu carpeta",
-  "ship.folder.detached": "HEAD separado",
+  "ship.folder.detached": "sin rama",
   "ship.folder.changesDetail": "Cambios sin commit: {n} · preparados: {staged} · modificados: {unstaged} · nuevos: {untracked}",
   "ship.folder.ahead": "Commits por publicar: {n} · Publicar en {upstream}",
   "ship.folder.behind": "Commits por traer: {n} · Traer de {upstream} (solo avance rápido)",
@@ -79,7 +79,7 @@ const es = {
   "ship.panel.ghLoggedOut": "Para crear PRs, inicia sesión con gh auth login.",
   "ship.panel.noRemote": "Esta carpeta no tiene remoto: añade uno para publicar.",
   "ship.reopen": "Reabrir la tarea",
-  "ship.reopenHint": "Vuelve a revisión en {branch}; la rama y su PR se mantienen.",
+  "ship.reopenHint": "Vuelve a estar lista en {branch}; la rama y su PR se mantienen.",
   "ship.reopened": "Tarea reabierta en su rama.",
   "ship.keptAccepted": "Esta tarea ya se aceptó: sus cambios tienen commit en su rama.",
 
@@ -90,7 +90,7 @@ const es = {
 const en: Record<keyof typeof es, string> = {
   "ship.folder.menu": "Your folder: branch {branch}",
   "ship.folder.menuTitle": "Your folder",
-  "ship.folder.detached": "detached HEAD",
+  "ship.folder.detached": "no branch",
   "ship.folder.changesDetail": "Uncommitted changes: {n} · staged: {staged} · modified: {unstaged} · new: {untracked}",
   "ship.folder.ahead": "Commits to push: {n} · Push to {upstream}",
   "ship.folder.behind": "Commits to pull: {n} · Pull from {upstream} (fast-forward only)",
@@ -164,7 +164,7 @@ const en: Record<keyof typeof es, string> = {
   "ship.panel.ghLoggedOut": "To create PRs, log in with gh auth login.",
   "ship.panel.noRemote": "This folder has no remote: add one to publish.",
   "ship.reopen": "Reopen the task",
-  "ship.reopenHint": "Back to review on {branch}; the branch and its PR stay.",
+  "ship.reopenHint": "Ready again on {branch}; the branch and its PR stay.",
   "ship.reopened": "Task reopened on its branch.",
   "ship.keptAccepted": "This task was accepted: its changes are committed on its branch.",
 

@@ -109,7 +109,7 @@ describe("Asking the memory", () => {
     expect(asked).toHaveBeenLastCalledWith("¿Cómo son los commits?", { kind: "team", team: "team-1" });
     const sources = await within(panel).findByRole("list");
     expect(within(sources).getByText(/Conventional Commits/)).toBeInTheDocument();
-    expect(within(sources).getByText(/Equipo Plataforma · capa del equipo · \w+/)).toBeInTheDocument();
+    expect(within(sources).getByText(/Equipo Plataforma · para todo el equipo · \w+/)).toBeInTheDocument();
   });
 
   it("asks a project's memory, looks in the code for what is not written, or writes it down", async () => {
@@ -224,7 +224,7 @@ describe("Asking the memory", () => {
     const panel = await ask(user, "¿Qué tipografía usan los boletines?");
     await user.click(await within(panel).findByRole("button", { name: "Anotarlo" }));
     const dialog = screen.getByRole("dialog", { name: "Nueva nota" });
-    expect(within(dialog).queryByRole("radio", { name: "Todos los proyectos" })).toBeNull();
+    expect(within(dialog).queryByRole("radio", { name: "Todos tus proyectos" })).toBeNull();
   });
 });
 

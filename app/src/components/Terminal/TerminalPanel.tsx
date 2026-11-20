@@ -66,7 +66,8 @@ function usePanelHeight() {
 }
 
 export function TerminalPanel() {
-  const { sessions, activeKey, panelOpen, open, close, activate, markExited, setPanelOpen } = useTerminals();
+  const { sessions, activeKey, focusRequest, panelOpen, open, close, activate, markExited, setPanelOpen } =
+    useTerminals();
   const queryClient = useQueryClient();
   const t = useT();
   const panel = usePanelHeight();
@@ -103,7 +104,9 @@ export function TerminalPanel() {
                 className={`terminal-tab${selected ? " terminal-tab--active" : ""}`}
                 // A middle click closes it, as in a browser.
                 onAuxClick={(e) => e.button === 1 && close(s.key)}
-                onClick={() => activate(s.key)}
+                // A pointer click moves the keyboard into the terminal; the arrow
+                // keys (and Enter or Space) choose a tab and keep the focus on it.
+                onClick={(e) => activate(s.key, e.detail > 0)}
               >
                 <span className={`dot ${s.running ? "dot--running" : "dot--idle"}`} aria-hidden />
                 {s.title}
@@ -142,6 +145,7 @@ export function TerminalPanel() {
             request={s.request}
             input={s.input}
             active={panelOpen && s.key === activeKey}
+            focusToken={focusRequest?.key === s.key ? focusRequest.seq : 0}
             onExit={() => {
               markExited(s.key);
               // A finished login changes the account's state.

@@ -80,7 +80,7 @@ describe("Explorer file operations", () => {
     await waitFor(() => expect(row(tree, /^LEEME\.md/)).toBeInTheDocument());
     await user.click(row(tree, /^LEEME\.md/));
     fireEvent.keyDown(tree, { key: "Delete" });
-    const dialog = await screen.findByRole("dialog", { name: "¿Eliminar LEEME.md?" });
+    const dialog = await screen.findByRole("dialog", { name: "¿Quitar LEEME.md?" });
     expect(dialog).toHaveTextContent("papelera del sistema");
     await user.click(within(dialog).getByRole("button", { name: "Mover a la papelera" }));
     await waitFor(() => expect(onMoved).toHaveBeenCalledWith("LEEME.md", null));
@@ -97,17 +97,17 @@ describe("Explorer file operations", () => {
 
     fireEvent.contextMenu(row(tree, /^\.env\.example/), { clientX: 10, clientY: 10 });
     expect(screen.getByRole("menuitem", { name: /Renombrar/ })).toBeDisabled();
-    expect(screen.getByRole("menuitem", { name: /Eliminar/ })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: /Quitar/ })).toBeDisabled();
   });
 
   it("says why nothing can change in a snapshot or while the agent works", async () => {
     const { user } = await setup({ live: false });
     const button = screen.getByRole("button", { name: "Nuevo archivo" });
     expect(button).toHaveAttribute("aria-disabled", "true");
-    expect(button).toHaveAttribute("title", expect.stringMatching(/^Solo lectura: Instantánea de solo lectura/));
+    expect(button).toHaveAttribute("title", expect.stringMatching(/^Solo lectura: Copia de la tarea, de solo lectura/));
     await user.click(button);
     expect(screen.queryByRole("textbox", { name: "Nombre del nuevo archivo" })).toBeNull();
-    expect(await screen.findByText(/^Solo lectura: Instantánea/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Solo lectura: Copia de la tarea/)).toBeInTheDocument();
   });
 
   it("checks names like the backend", () => {

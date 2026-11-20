@@ -98,7 +98,7 @@ describe("A project's home", () => {
     };
 
     await tab("Memoria");
-    expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Memoria de hedy" })).toBeInTheDocument();
     expect(window.location.hash).toBe(`#m=${encodeURIComponent("/code/hedy")}`);
     expect(screen.getByRole("combobox", { name: "Para" })).toHaveValue("project:/code/hedy");
     expect(within(await sections()).getByRole("button", { name: "Memoria" })).toHaveAttribute("aria-current", "page");

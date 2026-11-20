@@ -68,7 +68,9 @@ const es = {
   "workspace.model.balanced": "Equilibrado",
   "workspace.model.fastest": "El más rápido",
   "workspace.model.faster": "Más rápido",
-  "workspace.composer.planFirst": "Planificar primero",
+  "workspace.composer.planFirst": "Enséñame el plan primero",
+  "workspace.composer.planFirstOn": "Sí: lo apruebas antes de que toque el código",
+  "workspace.composer.planFirstOff": "No: empieza a cambiar el código enseguida",
   "workspace.composer.send": "Enviar",
   "workspace.composer.mode": "Modo",
   "workspace.composer.cardPlan":
@@ -150,7 +152,7 @@ const es = {
   "workspace.preview.empty":
     "Arranca el servidor de desarrollo en la pestaña Terminal (por ejemplo, npm run dev) y ábrelo aquí.",
 
-  "workspace.changes.noTask": "Cuando pidas algo en modo Proyecto, aquí verás los cambios.",
+  "workspace.changes.noTask": "Cuando pidas algo en modo «Cambiar código», aquí verás los cambios.",
   "workspace.changes.noWorkspace": "Las preguntas y la investigación no cambian archivos.",
   "workspace.changes.notYet": "Aún no hay cambios: se crearán cuando la IA empiece a trabajar.",
   "workspace.changes.afterPlan": "Aún no hay cambios: se crearán al aprobar el plan.",
@@ -242,7 +244,9 @@ const en: Record<keyof typeof es, string> = {
   "workspace.model.balanced": "Balanced",
   "workspace.model.fastest": "The fastest",
   "workspace.model.faster": "Faster",
-  "workspace.composer.planFirst": "Plan first",
+  "workspace.composer.planFirst": "Show me the plan first",
+  "workspace.composer.planFirstOn": "Yes: you approve it before the code changes",
+  "workspace.composer.planFirstOff": "No: it starts changing the code right away",
   "workspace.composer.send": "Send",
   "workspace.composer.mode": "Mode",
   "workspace.composer.cardPlan":
@@ -322,7 +326,7 @@ const en: Record<keyof typeof es, string> = {
   "workspace.preview.localOnly": "Local addresses only (localhost or 127.0.0.1).",
   "workspace.preview.empty": "Start the dev server in the Terminal tab (for example, npm run dev) and open it here.",
 
-  "workspace.changes.noTask": "When you ask for something in Project mode, you'll see the changes here.",
+  "workspace.changes.noTask": "When you ask for something in “Change code” mode, you'll see the changes here.",
   "workspace.changes.noWorkspace": "Questions and research don't change files.",
   "workspace.changes.notYet": "No changes yet: they'll appear once the AI starts working.",
   "workspace.changes.afterPlan": "No changes yet: they'll appear once you approve the plan.",

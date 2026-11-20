@@ -2,6 +2,7 @@
 
 const es = {
   "memory.hub.title": "Memoria",
+  "memory.hub.projectTitle": "Memoria de {name}",
   "memory.hub.subtitle": "Notas: hechos y reglas. Habilidades: pasos para hacer algo. Todo se guarda en tu computadora.",
   "memory.hub.for": "Para",
   "memory.hub.forAll": "Todo",
@@ -87,13 +88,14 @@ const es = {
   "memory.new.save": "Guardar nota",
   "memory.new.note": "Nota",
   "memory.new.placeholder": "Por ejemplo: los precios se guardan en USD.",
-  "memory.new.where": "Dónde",
+  "memory.new.where": "Para",
   "memory.new.project": "Solo este proyecto",
-  "memory.new.global": "Todos los proyectos",
+  "memory.new.global": "Todos tus proyectos",
 };
 
 const en: Record<keyof typeof es, string> = {
   "memory.hub.title": "Memory",
+  "memory.hub.projectTitle": "{name} memory",
   "memory.hub.subtitle": "Notes: facts and rules. Skills: steps to do something. Everything stays on your computer.",
   "memory.hub.for": "For",
   "memory.hub.forAll": "Everything",
@@ -179,9 +181,9 @@ const en: Record<keyof typeof es, string> = {
   "memory.new.save": "Save note",
   "memory.new.note": "Note",
   "memory.new.placeholder": "For example: prices are stored in USD.",
-  "memory.new.where": "Where",
+  "memory.new.where": "For",
   "memory.new.project": "This project only",
-  "memory.new.global": "All projects",
+  "memory.new.global": "All your projects",
 };
 
 export default { es, en };

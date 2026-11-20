@@ -43,7 +43,7 @@ describe("Teams", () => {
     expect(await within(card).findByRole("heading", { name: "Plataforma" })).toBeInTheDocument();
     expect(within(card).getByText("Marta")).toBeInTheDocument();
     expect(within(card).getByText("Portátil de Ana")).toBeInTheDocument();
-    expect(within(card).getByText(/Capa del equipo: \d+ de 1500 tokens/)).toBeInTheDocument();
+    expect(within(card).getByText(/Notas para todo el equipo: \d+ de 1500 tokens/)).toBeInTheDocument();
     // The open invite is a row of the people list; its code shows when asked.
     expect(within(card).queryByText("7-tigre-lima-nube-faro")).toBeNull();
     expect(within(card).getByText("7-••••")).toBeInTheDocument();
@@ -131,7 +131,7 @@ describe("Teams", () => {
   it("shows the team layer's usage as a meter", async () => {
     const { api, card } = await openPlataforma();
     const team = await api.teamStatus("team-1");
-    const meter = within(card).getByRole("meter", { name: "Uso de la capa del equipo" });
+    const meter = within(card).getByRole("meter", { name: "Espacio de las notas para todo el equipo" });
     expect(meter).toHaveAttribute("aria-valuenow", String(Math.round((team.layerTokens / team.layerMax) * 100)));
   });
 
@@ -283,7 +283,7 @@ describe("Teams", () => {
     const api = MockApi.withSampleData();
     await api.teamLinkProject("team-1", "/code/tienda");
     const { user } = renderAt("#m=%2Fcode%2Ftienda", api);
-    const filter = await screen.findByRole("radiogroup", { name: "Capa" });
+    const filter = await screen.findByRole("radiogroup", { name: "Para" });
     await user.click(within(filter).getByRole("radio", { name: /^Equipo · 2/ }));
     const team = screen.getByRole("heading", { name: "Memoria del equipo Plataforma" }).closest("section")!;
     expect(within(team).getByText("Los commits siguen Conventional Commits.")).toBeInTheDocument();
@@ -378,7 +378,7 @@ describe("Teams", () => {
     await user.click(home);
     // Not "Para"'s option of the same name: the card's own list.
     await user.click(within(screen.getByRole("listbox")).getByRole("option", { name: /Equipo · Plataforma/ }));
-    expect(await screen.findByRole("radiogroup", { name: "Capa" })).toBeInTheDocument();
+    expect(await screen.findByRole("radiogroup", { name: "Para" })).toBeInTheDocument();
     expect((await api.memoryHome("/code/tienda")).home).toEqual({ kind: "team", team: "team-1" });
   });
 });

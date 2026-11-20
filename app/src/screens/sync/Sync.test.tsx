@@ -201,7 +201,7 @@ describe("Sync", () => {
   it("opens from Inicio's row when a change waits, and says when a sync fails", async () => {
     const { api, user } = renderAt("#", MockApi.withSampleData());
     const row = (await screen.findByText("Un cambio en tus computadoras para resolver")).closest("li")!;
-    await user.click(within(row).getByRole("button", { name: "Resolver" }));
+    await user.click(within(row).getByRole("button", { name: /^Un cambio en tus computadoras para resolver/ }));
     expect(window.location.hash).toBe("#sync");
     const card = await waitFor(section);
     expect(await within(card).findByText("1 cambio para resolver")).toBeInTheDocument();

@@ -30,8 +30,8 @@
   font-size: var(--text-callout);
 }
 
-/* The filter pills: the chosen one as a chosen Segmented option (raised
-   surface, ink text, a fine edge). */
+/* The filter pills: the chosen one has the one "chosen" look (global.css,
+   with Segmented). */
 .home__filters .pill {
   display: inline-flex;
   align-items: center;
@@ -44,8 +44,6 @@
   cursor: pointer;
 }
 .home__filters .pill:hover { color: var(--ink); border-color: var(--line-strong); }
-.home__filters .pill--on,
-.home__filters .pill--on:hover { background: var(--panel-2); border-color: var(--line-strong); color: var(--ink); }
 .pill__count { font-family: var(--font-mono); font-size: var(--text-eyebrow); opacity: 0.8; }
 
 .home-card {

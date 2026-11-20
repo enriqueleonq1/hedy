@@ -119,6 +119,14 @@ export function StatusScreen({
   const agents = (status.data?.agents ?? [])
     .map((id) => overview.accounts.find((a) => a.id === id))
     .filter((a): a is Account => !!a);
+  // What failed to load, said once: one alert for the screen (each box below
+  // keeps its title, its reason and its Reintentar, without announcing itself).
+  const failures = [
+    status.isError && t("status.loadError"),
+    tasks.isError && t("status.tasks.error"),
+    usage.isError && t("status.week.error"),
+    commits.isError && t("status.commits.error"),
+  ].filter(Boolean);
   // The project's tabs: Tareas is its home, the others their own screens.
   const onTab = (tab: ProjectTab) => {
     if (tab === "tasks") onOpenChat();
@@ -137,7 +145,10 @@ export function StatusScreen({
         <Mascot color={color} state={mascot.state} activity={mascot.activity} size={120} label="" />
         <div className="status__hero-text">
           <p className="status__eyebrow">{t("status.title")}</p>
-          <p className="status__headline">{headline(current, agentName(history), overview.accounts, t)}</p>
+          {/* Only from tasks that loaded: a failed list is not "no tasks". */}
+          {tasks.isSuccess && (
+            <p className="status__headline">{headline(current, agentName(history), overview.accounts, t)}</p>
+          )}
           {mascot.activity && <WorkingWord activity={mascot.activity} className="working-word--status" />}
           <div className="actions">
             <Button small variant="primary" onClick={onOpenChat}>
@@ -163,9 +174,14 @@ export function StatusScreen({
 
       <OwnerBanner project={project} />
 
+      <div role="alert" className="sr-only">
+        {failures.join(" ")}
+      </div>
+
       {status.isError && (
         <EmptyState
           error
+          announce={false}
           title={t("status.loadError")}
           text={errorMessage(status.error, t)}
           onRetry={() => void status.refetch()}
@@ -223,6 +239,7 @@ export function StatusScreen({
           {tasks.isError ? (
             <EmptyState
               error
+              announce={false}
               title={t("status.tasks.error")}
               text={errorMessage(tasks.error, t)}
               onRetry={() => void tasks.refetch()}
@@ -249,7 +266,7 @@ export function StatusScreen({
         <div className="status__side">
           <WeekChart
             name={name}
-            points={usage.data ?? []}
+            points={usage.data ?? null}
             error={usage.isError ? errorMessage(usage.error, t) : null}
             onRetry={() => void usage.refetch()}
           />
@@ -258,6 +275,7 @@ export function StatusScreen({
             {commits.isError && (
               <EmptyState
                 error
+                announce={false}
                 title={t("status.commits.error")}
                 text={errorMessage(commits.error, t)}
                 onRetry={() => void commits.refetch()}
@@ -365,14 +383,16 @@ function WeekChart({
   onRetry,
 }: {
   name: string;
-  points: UsagePoint[];
+  /** `null` while the week is still loading. */
+  points: UsagePoint[] | null;
   error: string | null;
   onRetry: () => void;
 }) {
   const t = useT();
   const language = useLanguage();
   const letters = t("status.week.letters");
-  const days = usageByDay(points);
+  const loading = points === null && !error;
+  const days = usageByDay(points ?? []);
   const max = Math.max(...days.map((d) => d.tokens), 1);
   const busiest = days.reduce((a, b) => (b.tokens > a.tokens ? b : a));
   const total = days.reduce((sum, d) => sum + d.tokens, 0);
@@ -380,7 +400,11 @@ function WeekChart({
     <section className="card" aria-labelledby="status-week">
       <h2 id="status-week">{t("status.week.title", { name })}</h2>
       {error ? (
-        <EmptyState error title={t("status.week.error")} text={error} onRetry={onRetry} />
+        <EmptyState error announce={false} title={t("status.week.error")} text={error} onRetry={onRetry} />
+      ) : loading ? (
+        <p className="small muted" role="status">
+          {t("status.week.loading")}
+        </p>
       ) : (
         <div className="week-chart" role="img" aria-label={t("status.week.chart", { total: formatTokens(total) })}>
           {days.map((d) => {
@@ -409,24 +433,26 @@ function WeekChart({
           })}
         </div>
       )}
-      {!error && (
+      {!error && !loading && (
         <p className="small muted">
           {total === 0
             ? t("common.noUsageThisWeek")
             : t("status.week.busiest", { day: dayName(busiest.date, language), total: formatTokens(total) })}
         </p>
       )}
-      <table className="sr-only">
-        <caption>{t("status.week.caption")}</caption>
-        <tbody>
-          {days.map((d) => (
-            <tr key={d.date.toISOString()}>
-              <th scope="row">{`${dayName(d.date, language)} ${d.date.getDate()}`}</th>
-              <td>{d.tokens}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {!error && !loading && (
+        <table className="sr-only">
+          <caption>{t("status.week.caption")}</caption>
+          <tbody>
+            {days.map((d) => (
+              <tr key={d.date.toISOString()}>
+                <th scope="row">{`${dayName(d.date, language)} ${d.date.getDate()}`}</th>
+                <td>{d.tokens}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </section>
   );
 }
