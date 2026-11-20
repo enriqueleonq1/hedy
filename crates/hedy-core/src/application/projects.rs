@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::{AppError, AppResult, Hedy};
-use crate::domain::{AccountId, Color, PhasePlan, Project, policy, project};
+use crate::domain::{AccountId, Color, PhasePlan, Project, phase, policy, project};
 use crate::tr;
 
 /// The empty first commit of a new project: tasks fork their worktrees from it.
@@ -213,6 +213,13 @@ impl Hedy {
         };
 
         policy::check_assignment(&project, &account.id, &projects)?;
+        // Steps on "the project's account" follow it to the new one.
+        if let Some(old) = project.account.clone().filter(|old| old != &account.id) {
+            let same_provider = self
+                .account(old.as_str())
+                .is_ok_and(|a| a.provider == account.provider);
+            phase::follow_project_account(&mut project.phases, &old, &account.id, same_provider);
+        }
         project.account = Some(account.id.clone());
         if let Some(protect) = protect {
             project.protected = protect;
@@ -503,5 +510,49 @@ mod tests {
             .use_account(&f.dir("/code/a"), "trabajo", Some(false))
             .unwrap();
         assert!(!a.protected);
+    }
+
+    #[test]
+    fn steps_on_the_project_account_follow_it() {
+        use crate::domain::{AccountId, Assignment, Phase, PhasePlan};
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        f.add_claude("Trabajo");
+        f.add_codex("ChatGPT");
+        f.fs.add_git_root("/code/agenda");
+        let dir = f.dir("/code/agenda");
+        f.hedy.use_account(&dir, "personal", None).unwrap();
+        let assign = |account: &str, model: Option<&str>| Assignment {
+            account: AccountId::new(account).unwrap(),
+            model: model.map(str::to_owned),
+        };
+        f.hedy
+            .set_project_phases(
+                &dir,
+                PhasePlan::from([
+                    (Phase::Plan, assign("personal", Some("opus"))),
+                    (Phase::Tests, assign("personal", Some("sonnet"))),
+                ]),
+            )
+            .unwrap();
+
+        // Same provider: the step moves with its model; an optional step names its account and stays.
+        let moved = f.hedy.use_account(&dir, "trabajo", None).unwrap();
+        assert_eq!(
+            moved.phases.get(&Phase::Plan),
+            Some(&assign("trabajo", Some("opus")))
+        );
+        assert_eq!(
+            moved.phases.get(&Phase::Tests),
+            Some(&assign("personal", Some("sonnet")))
+        );
+
+        // Another provider: the model would not run there, so the step goes back to the default.
+        let other = f.hedy.use_account(&dir, "chatgpt", None).unwrap();
+        assert_eq!(other.phases.get(&Phase::Plan), None);
+        assert_eq!(
+            other.phases.get(&Phase::Tests),
+            Some(&assign("personal", Some("sonnet")))
+        );
     }
 }
