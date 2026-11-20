@@ -5,7 +5,7 @@ import { accountPalette } from "../../theme/tokens";
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
-/** Palette swatches plus a custom hex field. */
+/** Palette swatches plus a custom hex field; an empty `value` is no color yet. */
 export function ColorPicker({
   value,
   onChange,
@@ -38,7 +38,7 @@ export function ColorPicker({
       })}
       <input
         key={value}
-        className={`hex-input${isPalette ? "" : " hex-input--active"}`}
+        className={`hex-input${isPalette || !value ? "" : " hex-input--active"}`}
         aria-label={t("shell.customColor", { label })}
         defaultValue={value}
         maxLength={7}

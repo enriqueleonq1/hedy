@@ -72,7 +72,7 @@ describe("English", () => {
     // The sidebar.
     const sidebar = screen.getByRole("complementary", { name: "Navigation" });
     expect(await within(sidebar).findByRole("button", { name: "Home: 7 things are waiting for you" })).toBeInTheDocument();
-    expect(within(sidebar).getByRole("button", { name: "Memory" })).toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: /^Memory/ })).toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: "Search and run commands (Ctrl K)" })).toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: "Add a project" })).toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: /^hedy/ })).toBeInTheDocument();
@@ -276,13 +276,15 @@ describe("English", () => {
     expect(within(personal).getByText("from Claude Code's /usage · 2 min ago")).toBeInTheDocument();
     expect(within(personal).getByText("Tokens in Hedy this week")).toBeInTheDocument();
     expect(within(personal).getAllByText(/^Resets (today|tomorrow|on .+) at .+$/)).toHaveLength(2);
-    expect(within(screen.getByRole("article", { name: "ChatGPT" })).getByText("could not refresh")).toBeInTheDocument();
+    expect(within(screen.getByRole("article", { name: "ChatGPT" })).queryByText(/could not refresh/)).not.toBeInTheDocument();
     expect(within(screen.getByRole("article", { name: "ChatGPT" })).getByRole("button", { name: "Sign in" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "This week's usage by client" })).toBeInTheDocument();
     expect(screen.getByLabelText("Client for hedy")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "+ Add account" }));
     const dialog = screen.getByRole("dialog", { name: "Add account" });
+    expect(within(dialog).getByText("How do you pay for this AI?")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: /^With your subscription/ }));
     expect(within(dialog).getByText("Pro, Max or Team subscription")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Create and sign in" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
@@ -383,25 +385,66 @@ describe("English", () => {
 
   it("shows settings in English", async () => {
     window.history.replaceState(null, "", "#settings");
-    setup();
-    expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    const { user } = setup();
+    expect(await screen.findByRole("heading", { level: 1, name: "General" })).toBeInTheDocument();
+    const index = screen.getByRole("navigation", { name: "Settings sections" });
+    expect(within(index).getByRole("searchbox", { name: "Search settings" })).toBeInTheDocument();
+    expect(within(index).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "General",
+      "Accounts",
+      "Appearance",
+      "Savings",
+      "Templates",
+      "Sync",
+      "Teams",
+      "Advanced",
+    ]);
+    expect(within(index).getByText("Across computers")).toBeInTheDocument();
+    expect(within(index).getByText("More")).toBeInTheDocument();
+    expect(screen.getByLabelText("Your name")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Tell me when a task needs me or finishes" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+
+    const open = async (section: string) => {
+      await user.click(within(index).getByRole("button", { name: section }));
+      expect(await screen.findByRole("heading", { level: 1, name: section })).toBeInTheDocument();
+    };
+
+    await open("Appearance");
     expect(screen.getByRole("radiogroup", { name: "Mode" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Light" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "See the mascot" }));
+    expect(screen.getByRole("button", { name: "Hide the mascot" })).toBeInTheDocument();
     expect(screen.getByText("Done!")).toBeInTheDocument();
     const working = screen.getByLabelText("The mascot at work, by what the AI is doing");
     for (const name of ["Reading files", "Searching the web", "Thinking it through", "Waiting for a slow answer"]) {
       expect(within(working).getByRole("img", { name })).toBeInTheDocument();
     }
     expect(within(working).getByText("Sniffing around · Tracking · Searching")).toBeInTheDocument();
-    expect(screen.getByLabelText("Your name")).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+
+    await open("Savings");
     expect(screen.getByRole("heading", { name: "Code map" })).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "Tell me when a task needs me or finishes" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+
+    await open("Templates");
     const templates = screen.getByRole("region", { name: "Templates" });
     expect(await within(templates).findByText("Explain code")).toBeInTheDocument();
     expect(within(templates).getAllByText("Every project").length).toBeGreaterThan(0);
     expect(within(templates).getByRole("button", { name: "Restore examples" })).toBeInTheDocument();
     expect(within(templates).getByRole("button", { name: "Edit Explain code" })).toBeInTheDocument();
     expect(spanishLeftovers()).toEqual([]);
+
+    await open("Advanced");
+    expect(screen.getByRole("heading", { name: "CLI paths" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Health check" })).toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "Health check results" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Data" })).toBeInTheDocument();
+    expect(spanishLeftovers()).toEqual([]);
+
+    // The search narrows the index, in English too.
+    await user.type(within(index).getByRole("searchbox", { name: "Search settings" }), "zzz");
+    expect(within(index).getByText("Nothing matches.")).toBeInTheDocument();
   });
 
   it("shows a project's status and memory in English", async () => {

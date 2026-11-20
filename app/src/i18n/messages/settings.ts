@@ -1,6 +1,19 @@
 // Ajustes / Settings.
 
 const es = {
+  "settings.section.general": "General",
+  "settings.section.accounts": "Cuentas",
+  "settings.section.templates": "Plantillas",
+  "settings.section.sync": "Sincronización",
+  "settings.section.teams": "Equipos",
+  "settings.section.advanced": "Avanzado",
+  "settings.group.computers": "Entre computadoras",
+  "settings.group.more": "Más",
+  "settings.index": "Secciones de Ajustes",
+  "settings.search": "Buscar en Ajustes",
+  "settings.noMatch": "Nada coincide.",
+  "settings.mascotShow": "Ver la mascota",
+  "settings.mascotHide": "Ocultar la mascota",
   "settings.appearance": "Apariencia",
   "settings.theme.system": "Según el sistema",
   "settings.theme.light": "Claro",
@@ -66,6 +79,19 @@ const es = {
 };
 
 const en: Record<keyof typeof es, string> = {
+  "settings.section.general": "General",
+  "settings.section.accounts": "Accounts",
+  "settings.section.templates": "Templates",
+  "settings.section.sync": "Sync",
+  "settings.section.teams": "Teams",
+  "settings.section.advanced": "Advanced",
+  "settings.group.computers": "Across computers",
+  "settings.group.more": "More",
+  "settings.index": "Settings sections",
+  "settings.search": "Search settings",
+  "settings.noMatch": "Nothing matches.",
+  "settings.mascotShow": "See the mascot",
+  "settings.mascotHide": "Hide the mascot",
   "settings.appearance": "Appearance",
   "settings.theme.system": "System default",
   "settings.theme.light": "Light",

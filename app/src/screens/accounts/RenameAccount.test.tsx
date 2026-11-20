@@ -79,13 +79,13 @@ describe("An account card", () => {
     const menu = screen.getByRole("menu", { name: "Acciones de Claude trabajo" });
     expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
       "Renombrar",
-      "Por defecto",
+      "Usar por defecto (para proyectos y chats nuevos)",
       "Reconectar",
       "Quitar de Hedy",
     ]);
     expect(within(menu).getByRole("separator")).toBeInTheDocument();
     expect(within(menu).getByRole("menuitem", { name: "Quitar de Hedy" })).toHaveClass("menu__item--danger");
-    await user.click(within(menu).getByRole("menuitem", { name: "Por defecto" }));
+    await user.click(within(menu).getByRole("menuitem", { name: "Usar por defecto (para proyectos y chats nuevos)" }));
     expect(makeDefault).toHaveBeenCalledWith("claude-trabajo");
 
     // Deleting asks first; cancelling keeps the account.
@@ -116,6 +116,6 @@ describe("An account card", () => {
     // The default account is not offered to become the default again.
     await user.keyboard("{Escape}");
     await user.click(within(screen.getByRole("article", { name: "Claude personal" })).getByRole("button", { name: "Acciones de Claude personal" }));
-    expect(within(screen.getByRole("menu")).queryByRole("menuitem", { name: "Por defecto" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("menu")).queryByRole("menuitem", { name: /^Usar por defecto/ })).not.toBeInTheDocument();
   });
 });

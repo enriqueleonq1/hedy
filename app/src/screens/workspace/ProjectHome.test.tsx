@@ -102,7 +102,7 @@ describe("A project's home", () => {
     expect(window.location.hash).not.toBe(hash);
     history.back();
     await tab("Ajustes");
-    expect(await screen.findByRole("heading", { name: "Tus cuentas y modelos" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Ajustes de hedy" })).toBeInTheDocument();
   });
 });
 

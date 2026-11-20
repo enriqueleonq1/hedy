@@ -10,7 +10,7 @@ import type { AskScope, GraphNode, Overview, SourceRef } from "../../api/types";
 import type { MemoryTab, View } from "../../components/Layout";
 import { Button } from "../../components/ui/Button";
 import { useT, type MessageKey } from "../../i18n";
-import { useInbox } from "../../tasks/inbox";
+import { useInbox, type InboxItem } from "../../tasks/inbox";
 import { useTeams } from "../../team/hooks";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { AskPanel, MEMORY_GRAPH_KEY, type AskRequest } from "../ask/AskPanel";
@@ -21,6 +21,7 @@ import { NewNoteDialog } from "./NewNoteDialog";
 import { NoteCard } from "./NoteCard";
 import { NotesPanel } from "./NotesPanel";
 import { SkillCard } from "./SkillCard";
+import { memoryKey } from "./notes";
 import { skillsKey } from "./skills";
 import { NewSkillDialog, SkillsPanel } from "./SkillsPanel";
 
@@ -44,6 +45,8 @@ const forOf = (value: string): For =>
 const askScope = (f: For): AskScope =>
   f.kind === "project" ? { kind: "project", project: f.path } : f.kind === "team" ? { kind: "team", team: f.id } : { kind: "mine" };
 
+type Proposed = Extract<InboxItem, { kind: "note" | "skill" }>;
+
 export function MemoryHub({
   overview,
   project,
@@ -60,8 +63,13 @@ export function MemoryHub({
   const api = useApi();
   const teams = (useTeams().data ?? []).filter((team) => !team.waiting);
   const inbox = useInbox();
-  const [team, setTeam] = useState<string | null>(null);
+  // A team is chosen for asking only, while the route stays where it was: any
+  // navigation (a project picked, the sidebar, the palette) drops it.
+  const [teamPick, setTeamPick] = useState<{ team: string; at: string | undefined; tab: MemoryTab } | null>(null);
+  const team = teamPick && teamPick.at === project && teamPick.tab === tab ? teamPick.team : null;
+  const setTeam = (id: string | null) => setTeamPick(id ? { team: id, at: project, tab } : null);
   const shown: For = team ? { kind: "team", id: team } : project ? { kind: "project", path: project } : { kind: "all" };
+  const [asking, setAsking] = useState(false);
   const [query, setQuery] = useState("");
   const [request, setRequest] = useState<AskRequest | null>(null);
   const [cited, setCited] = useState<{ cited: { ref: SourceRef; n: number }[]; asked: number }>({ cited: [], asked: 0 });
@@ -70,16 +78,24 @@ export function MemoryHub({
   const [node, setNode] = useState<GraphNode | null>(null);
   const graph = useQuery({ queryKey: MEMORY_GRAPH_KEY, queryFn: () => api.memoryGraph(), enabled: tab === "map" });
   const projectPath = shown.kind === "project" ? shown.path : null;
-  const skills = useQuery({
+
+  // A project's own lists (a global proposal shows in every project that sees it); else the inbox's, once each.
+  const memory = useQuery({
+    queryKey: memoryKey(projectPath ?? ""),
+    queryFn: () => api.memory(projectPath ?? ""),
+    enabled: !!projectPath,
+  });
+  const projectSkills = useQuery({
     queryKey: skillsKey(projectPath ?? ""),
     queryFn: () => api.skills(projectPath ?? ""),
-    enabled: !!projectPath && tab === "skills",
+    enabled: !!projectPath,
   });
-
-  const proposals = inbox.items.filter(
-    (entry): entry is Extract<typeof entry, { kind: "note" | "skill" }> =>
-      (entry.kind === "note" || entry.kind === "skill") && (!projectPath || entry.project === projectPath),
-  );
+  const proposals: Proposed[] = projectPath
+    ? [
+        ...(memory.data?.proposed ?? []).map((proposal) => ({ kind: "note" as const, key: `note:${proposal.note.id}`, project: projectPath, proposal })),
+        ...(projectSkills.data?.proposed ?? []).map((proposal) => ({ kind: "skill" as const, key: `skill:${proposal.skill.id}`, project: projectPath, proposal })),
+      ]
+    : inbox.items.filter((entry): entry is Proposed => entry.kind === "note" || entry.kind === "skill");
   const info = overview.projects.find((p) => p.path === projectPath);
   const color = overview.accounts.find((a) => a.id === info?.account)?.color ?? DEFAULT_ACCOUNT_COLOR;
 
@@ -97,7 +113,8 @@ export function MemoryHub({
   const ask = (e: FormEvent) => {
     e.preventDefault();
     const text = query.trim();
-    if (text) setRequest((r) => ({ text, scope: askScope(shown), seq: (r?.seq ?? 0) + 1 }));
+    // One question at a time: each one is a model call.
+    if (text && !asking) setRequest((r) => ({ text, scope: askScope(shown), seq: (r?.seq ?? 0) + 1 }));
   };
   const onCited = useCallback((list: { ref: SourceRef; n: number }[], asked: number) => setCited({ cited: list, asked }), []);
   // Typing searches the project's notes as it goes; Enter asks.
@@ -137,7 +154,7 @@ export function MemoryHub({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <Button variant="primary" type="submit" disabled={!query.trim()}>
+        <Button variant="primary" type="submit" disabled={!query.trim() || asking}>
           {t("ask.submit")}
         </Button>
       </form>
@@ -152,7 +169,12 @@ export function MemoryHub({
             go({ project: path, tab: "notes" });
           }}
           onWrite={(path, text) => setWriting({ project: path, text })}
-          onClose={() => setRequest(null)}
+          onBusy={setAsking}
+          onClose={() => {
+            setRequest(null);
+            setAsking(false);
+            setCited({ cited: [], asked: 0 });
+          }}
         />
       )}
 
@@ -191,7 +213,7 @@ export function MemoryHub({
                   {t("memory.hub.allSkills")}
                 </Button>
               </div>
-              <SkillsPanel project={projectPath} skills={skills} color={color} />
+              <SkillsPanel project={projectPath} skills={projectSkills} color={color} />
             </>
           ) : (
             <SkillsScreen overview={overview} embedded />

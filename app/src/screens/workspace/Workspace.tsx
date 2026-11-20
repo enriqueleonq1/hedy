@@ -311,7 +311,7 @@ export function Workspace({
                 ? onOpenMemory?.()
                 : tab === "summary"
                   ? onOpenStatus?.()
-                  : onNavigate?.({ screen: "accounts" })
+                  : onNavigate?.({ screen: "projectSettings", project })
             }
           />
         ) : (

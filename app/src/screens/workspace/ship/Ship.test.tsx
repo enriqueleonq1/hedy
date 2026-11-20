@@ -50,8 +50,8 @@ describe("Ship: commit, push and pull request", () => {
     await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
     expect(within(sheet).getByText(`Commit en ${BRANCH}; tu carpeta no cambia.`)).toBeInTheDocument();
     expect(within(sheet).queryByText(/Tu carpeta principal está en la rama/)).toBeNull();
-    // Without "Publicar y abrir un PR", the publish step comes after the commit.
-    await user.click(within(sheet).getByRole("switch", { name: "Publicar y abrir un PR" }));
+    // "Publicar y abrir un PR" starts off: the publish step comes after the commit.
+    expect(within(sheet).getByRole("switch", { name: "Publicar y abrir un PR" })).toHaveAttribute("aria-checked", "false");
     expect(within(sheet).queryByLabelText("Título")).toBeNull();
     await user.click(within(sheet).getByRole("button", { name: "Hacer commit en la rama" }));
     expect(await screen.findByText(`Commit hecho en ${BRANCH}.`, undefined, SLOW)).toBeInTheDocument();
@@ -106,7 +106,13 @@ describe("Ship: commit, push and pull request", () => {
     expect(within(sheet).queryByRole("switch", { name: "Publicar y abrir un PR" })).toBeNull();
 
     await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
-    expect(within(sheet).getByRole("switch", { name: "Publicar y abrir un PR" })).toHaveAttribute("aria-checked", "true");
+    // Publishing is chosen, never preset.
+    const publishPr = within(sheet).getByRole("switch", { name: "Publicar y abrir un PR" });
+    expect(publishPr).toHaveAttribute("aria-checked", "false");
+    expect(within(sheet).queryByLabelText("Título")).toBeNull();
+    expect(within(sheet).getByRole("button", { name: "Hacer commit en la rama" })).toBeInTheDocument();
+    await user.click(publishPr);
+    expect(publishPr).toHaveAttribute("aria-checked", "true");
     const title = within(sheet).getByLabelText("Título");
     expect(title).toHaveValue("");
     expect(title).toHaveAttribute("placeholder", TASK);
@@ -150,6 +156,7 @@ describe("Ship: commit, push and pull request", () => {
     await openReviewTask(user);
     const sheet = await openSheet(user);
     await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
+    await user.click(within(sheet).getByRole("switch", { name: "Publicar y abrir un PR" }));
     const title = within(sheet).getByLabelText("Título");
     await user.type(title, "fix(facturas): IVA{Enter}");
     expect(title).toHaveValue("fix(facturas): IVA");
@@ -181,9 +188,42 @@ describe("Ship: commit, push and pull request", () => {
 
     sheet = await openSheet(user);
     expect(within(sheet).getByRole("radio", { name: "Guardar en su rama" })).toBeChecked();
-    expect(within(sheet).getByRole("button", { name: "Guardar y abrir PR" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Hacer commit en la rama" })).toBeInTheDocument();
     await user.click(within(sheet).getByRole("radio", { name: "Unir a main ahora" }));
     expect(localStorage.getItem("hedy.acceptMode./code/hedy")).toBe("merge");
+  });
+
+  it("remembers in each project whether to publish and open a PR", async () => {
+    // Chosen in another project: it does not carry over to this one.
+    localStorage.setItem("hedy.acceptPr./code/tienda", "on");
+    const { user } = setup();
+    await openReviewTask(user);
+    let sheet = await openSheet(user);
+    await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
+    let publishPr = within(sheet).getByRole("switch", { name: "Publicar y abrir un PR" });
+    expect(publishPr).toHaveAttribute("aria-checked", "false");
+    await user.click(publishPr);
+    expect(localStorage.getItem("hedy.acceptPr./code/hedy")).toBe("on");
+    await user.click(within(sheet).getByRole("button", { name: "Cancelar" }));
+    expect(screen.queryByRole("dialog", { name: "Aceptar cambios" })).toBeNull();
+
+    // Reopened: still on, with the PR fields and button.
+    sheet = await openSheet(user);
+    publishPr = within(sheet).getByRole("switch", { name: "Publicar y abrir un PR" });
+    expect(publishPr).toHaveAttribute("aria-checked", "true");
+    expect(within(sheet).getByLabelText("Título")).toBeInTheDocument();
+    expect(within(sheet).getByLabelText("Descripción")).toBeInTheDocument();
+    expect(within(sheet).getByRole("switch", { name: "Como borrador" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Guardar y abrir PR" })).toBeInTheDocument();
+
+    // Turned off, it stays off.
+    await user.click(publishPr);
+    expect(localStorage.getItem("hedy.acceptPr./code/hedy")).toBe("off");
+    expect(localStorage.getItem("hedy.acceptPr./code/tienda")).toBe("on");
+    await user.click(within(sheet).getByRole("button", { name: "Cancelar" }));
+    sheet = await openSheet(user);
+    expect(within(sheet).getByRole("switch", { name: "Publicar y abrir un PR" })).toHaveAttribute("aria-checked", "false");
+    expect(within(sheet).getByRole("button", { name: "Hacer commit en la rama" })).toBeInTheDocument();
   });
 
   it("leaves the branch committed when the push fails, and opens no PR", async () => {
@@ -196,6 +236,7 @@ describe("Ship: commit, push and pull request", () => {
     await openReviewTask(user);
     const sheet = await openSheet(user);
     await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
+    await user.click(within(sheet).getByRole("switch", { name: "Publicar y abrir un PR" }));
     await user.click(within(sheet).getByRole("button", { name: "Guardar y abrir PR" }));
 
     expect(await screen.findByText(/Hedy nunca fuerza un push/, undefined, SLOW)).toBeInTheDocument();
@@ -214,6 +255,7 @@ describe("Ship: commit, push and pull request", () => {
     await openReviewTask(user);
     const sheet = await openSheet(user);
     await user.click(within(sheet).getByRole("radio", { name: "Guardar en su rama" }));
+    await user.click(within(sheet).getByRole("switch", { name: "Publicar y abrir un PR" }));
     await user.click(within(sheet).getByRole("button", { name: "Guardar y abrir PR" }));
 
     expect(await screen.findByText(/no se pudo crear el PR/, undefined, SLOW)).toBeInTheDocument();
@@ -307,6 +349,7 @@ describe("Ship: commit, push and pull request", () => {
 describe("Folder status in the status bar", () => {
   afterEach(() => {
     history.replaceState(null, "", "#");
+    localStorage.clear();
   });
 
   it("shows the branch and counters once, in the status bar, and pulls or pushes on click", async () => {
@@ -364,6 +407,8 @@ describe("Folder status in the status bar", () => {
     await user.click(screen.getByRole("button", { name: "Accept changes…" }));
     const sheet = await screen.findByRole("dialog", { name: "Accept changes" }, SLOW);
     await user.click(await within(sheet).findByRole("radio", { name: "Keep on its branch" }));
+    expect(within(sheet).getByRole("switch", { name: "Publish and open a PR" })).toHaveAttribute("aria-checked", "false");
+    await user.click(within(sheet).getByRole("switch", { name: "Publish and open a PR" }));
     expect(within(sheet).getByRole("button", { name: "Save and open PR" })).toBeInTheDocument();
     await user.click(within(sheet).getByRole("switch", { name: "Publish and open a PR" }));
     await user.click(within(sheet).getByRole("button", { name: "Commit on the branch" }));

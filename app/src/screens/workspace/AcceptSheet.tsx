@@ -67,8 +67,26 @@ export function AcceptSheet({
       // Remembering the choice is only a convenience.
     }
   };
-  // "Publicar y abrir un PR": on by default when the work stays on its branch.
-  const [pr, setPr] = useState<PullRequestChoice>({ on: true, title: "", body: "", draft: false });
+  // "Publicar y abrir un PR": publishing is chosen, never preset; once chosen
+  // in this project, it stays chosen (accepting with a PR is then two clicks).
+  const prKey = `hedy.acceptPr.${task.project}`;
+  const [pr, setPrState] = useState<PullRequestChoice>(() => {
+    let on = false;
+    try {
+      on = localStorage.getItem(prKey) === "on";
+    } catch {
+      // Remembering the choice is only a convenience.
+    }
+    return { on, title: "", body: "", draft: false };
+  });
+  const setPr = (next: PullRequestChoice) => {
+    setPrState(next);
+    try {
+      localStorage.setItem(prKey, next.on ? "on" : "off");
+    } catch {
+      // Remembering the choice is only a convenience.
+    }
+  };
   const setQueue = useSetQueue();
   const fixTests = useAction((a) => a.queueMessage(task.id, t("end.fixTestsPrompt")), {
     invalidate: [tasksKey(task.project)],

@@ -4,10 +4,11 @@ import { QueryClient } from "@tanstack/react-query";
 
 import { App } from "../../App";
 import { MockApi } from "../../api/MockApi";
-import type { MemoryHome } from "../../api/types";
+import type { MemoryHome, SyncConflict } from "../../api/types";
 import { repoLabel } from "../../sync/hooks";
 import { foldWord } from "./SyncDialogs";
-import { summarize } from "./SyncSection";
+import { syncErrorKind } from "./SyncError";
+import { conflictChoices, summarize } from "./SyncSection";
 
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
 
@@ -26,7 +27,8 @@ function offline(): MockApi {
   return api;
 }
 
-const section = () => screen.getByRole("heading", { name: "Sincronización" }).closest("section")!;
+// Ajustes draws the title; the section is named after it.
+const section = () => screen.getByRole("region", { name: "Sincronización" });
 
 describe("Sync", () => {
   afterEach(() => history.replaceState(null, "", "#"));
@@ -140,21 +142,46 @@ describe("Sync", () => {
     expect(api.sync?.devices.find((d) => d.thisPc)?.name).toBe("Oficina");
   });
 
-  it("shows both versions of a conflict and keeps the one chosen", async () => {
+  it("shows both versions of a conflict, the other computer's as the primary choice", async () => {
     const { api, user } = renderAt("#sync", MockApi.withSampleData());
     const card = await waitFor(section);
     expect(await within(card).findByText("1 cambio para revisar")).toBeInTheDocument();
+    expect(within(card).getByRole("heading", { name: "Para resolver" })).toBeInTheDocument();
     const conflict = within(card).getByRole("article", { name: "Nota" });
     expect(within(conflict).getByText(/con dos decimales/)).toBeInTheDocument();
     expect(within(conflict).getByText(/solo si no son cero/)).toBeInTheDocument();
     expect(within(conflict).getByText(/Oficina · hace 1 h · en uso/)).toBeInTheDocument();
-    await user.click(within(conflict).getByRole("button", { name: "Usar la de esta computadora" }));
+    expect(within(conflict).getByRole("button", { name: "Usar la de Oficina" })).toHaveClass("btn--primary");
+    const mine = within(conflict).getByRole("button", { name: "Mantener la mía" });
+    expect(mine).toHaveClass("btn--secondary");
+    // This computer's version is the one not in use here: keeping it takes the other side.
+    await user.click(mine);
     expect(await within(card).findByText("Todo al día")).toBeInTheDocument();
     expect(api.resolved).toEqual([{ id: 1, useOther: true }]);
     expect(within(card).queryByRole("article")).toBeNull();
-    // What syncs and what stays.
-    expect(within(card).getByText("1 proyecto personal")).toBeInTheDocument();
+  });
+
+  it("keeps the other computer's version from its primary button", async () => {
+    const { api, user } = renderAt("#sync", MockApi.withSampleData());
+    const conflict = await within(await waitFor(section)).findByRole("article", { name: "Nota" });
+    await user.click(within(conflict).getByRole("button", { name: "Usar la de Oficina" }));
+    await waitFor(() => expect(api.resolved).toEqual([{ id: 1, useOther: false }]));
+  });
+
+  it("lists what syncs and what stays, read-only", async () => {
+    renderAt("#sync", MockApi.withSampleData());
+    const card = await waitFor(section);
+    expect(await within(card).findByText("1 proyecto personal")).toBeInTheDocument();
+    expect(within(card).getByRole("heading", { name: "Qué se sincroniza" })).toBeInTheDocument();
+    for (const item of ["Memoria", "Habilidades", "Plantillas", "Temas"]) {
+      expect(within(card).getByText(item)).toBeInTheDocument();
+    }
+    expect(within(card).getAllByText("Se sincroniza")).toHaveLength(4);
     expect(within(card).getByText(/1 espera tu respuesta/)).toBeInTheDocument();
+    expect(within(card).getByText("Sesiones y claves")).toBeInTheDocument();
+    // Nothing to switch here: a project's memory is chosen in its Memoria.
+    expect(within(card).queryByRole("switch")).toBeNull();
+    expect(within(card).getByText(/se elige en su Memoria/)).toBeInTheDocument();
   });
 
   it("opens from Inicio's row when a change waits, and says when a sync fails", async () => {
@@ -166,13 +193,65 @@ describe("Sync", () => {
     expect(await within(card).findByText("1 cambio para revisar")).toBeInTheDocument();
     expect(within(within(card).getByRole("table")).getByText("Oficina")).toBeInTheDocument();
 
-    api.syncFailure = "git push falló: sin conexión";
+    api.syncFailure = "git push falló: fatal: unable to access 'https://github.com/alex/m/': Could not resolve host: github.com";
     await user.click(within(section()).getByRole("button", { name: "Sincronizar ahora" }));
-    await waitFor(() => expect(within(section()).getAllByText("git push falló: sin conexión").length).toBeGreaterThan(0));
+    // In plain words, with git's message behind "Detalles" and a way to try again.
+    const alert = await within(section()).findByRole("alert");
+    expect(within(alert).getByText("Sin conexión")).toBeInTheDocument();
+    expect(within(section()).getByRole("status")).toHaveTextContent("Sin conexión");
+    expect(within(section()).queryByRole("button", { name: "Sincronizar ahora" })).toBeNull();
+    const detail = within(alert).getByText(/Could not resolve host/);
+    expect(detail).not.toBeVisible();
+    await user.click(within(alert).getByRole("button", { name: "Detalles" }));
+    expect(detail).toBeVisible();
 
     api.syncFailure = null;
-    await user.click(within(section()).getByRole("button", { name: "Sincronizar ahora" }));
+    await user.click(within(alert).getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByText("Sincronizado · 0 enviados, 0 recibidos")).toBeInTheDocument();
+    await waitFor(() => expect(within(section()).queryByRole("alert")).toBeNull());
+    expect(within(section()).getByRole("button", { name: "Sincronizar ahora" })).toBeInTheDocument();
+  });
+
+  it("says when git cannot get into the repo, and anything else generically", async () => {
+    const api = MockApi.withSampleData();
+    api.sync!.lastError = "git fetch falló: git@github.com: Permission denied (publickey).";
+    renderAt("#sync", api);
+    const alert = await within(await waitFor(section)).findByRole("alert");
+    expect(within(alert).getByText("Sin acceso al repositorio")).toBeInTheDocument();
+    expect(within(alert).getByText(/git ls-remote/)).toBeInTheDocument();
+  });
+
+  it("tells failures apart as the core does", () => {
+    expect(syncErrorKind("git push falló: sin conexión")).toBe("offline");
+    expect(syncErrorKind("ssh: connect to host github.com port 22: Network is unreachable")).toBe("offline");
+    // The network first: ssh says it could not read the repo too.
+    expect(syncErrorKind("ssh: Could not resolve hostname x\nfatal: Could not read from remote repository.")).toBe("offline");
+    expect(syncErrorKind("remote: Repository not found.")).toBe("access");
+    expect(syncErrorKind("The requested URL returned error: 403")).toBe("access");
+    expect(syncErrorKind("otra computadora acaba de cambiar las claves")).toBe("other");
+  });
+
+  it("makes the other computer's version the primary choice, whichever side is in use", () => {
+    const side = (device: string, at: number) => ({ text: device, device, at });
+    const conflict = (kept: string, other: string): SyncConflict => ({
+      id: 1,
+      kind: "note",
+      kept: side(kept, 2),
+      other: side(other, 1),
+    });
+    const here = (device: string) => device === "casa";
+    // Mine in use: using theirs takes the other side.
+    let choice = conflictChoices(conflict("casa", "oficina"), here);
+    expect(choice.primary).toMatchObject({ useOther: true, mine: false, side: { device: "oficina" } });
+    expect(choice.secondary).toMatchObject({ useOther: false, mine: true });
+    // Theirs in use: keeping mine takes the other side.
+    choice = conflictChoices(conflict("oficina", "casa"), here);
+    expect(choice.primary).toMatchObject({ useOther: false, side: { device: "oficina" } });
+    expect(choice.secondary).toMatchObject({ useOther: true, mine: true });
+    // Neither is mine: the one not in use is offered, the one in use kept.
+    choice = conflictChoices(conflict("oficina", "portatil"), here);
+    expect(choice.primary).toMatchObject({ useOther: true, side: { device: "portatil" } });
+    expect(choice.secondary).toMatchObject({ useOther: false, mine: false });
   });
 
   it("asks once about a project's owner", async () => {

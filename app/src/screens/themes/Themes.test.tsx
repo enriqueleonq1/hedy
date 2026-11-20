@@ -32,9 +32,16 @@ async function setup(mode: ThemeSetting = "dark") {
   await api.setSetting("ui.theme", mode);
   render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Ajustes" }));
-  await screen.findByRole("heading", { name: "Temas" });
+  await openAppearance(user);
   return { api, user };
+}
+
+/** Ajustes, then Apariencia in its index: where the gallery lives. */
+async function openAppearance(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: "Ajustes" }));
+  const index = await screen.findByRole("navigation", { name: "Secciones de Ajustes" });
+  await user.click(within(index).getByRole("button", { name: "Apariencia" }));
+  await screen.findByRole("heading", { name: "Temas" });
 }
 
 const cssVar = (name: string) => document.documentElement.style.getPropertyValue(name);
@@ -62,7 +69,7 @@ describe("Theme gallery", () => {
     await user.click(screen.getByRole("button", { name: /^Inicio/ }));
     expect(bar()).toBeInTheDocument();
     expect(cssVar("--bg")).toBe("#282A36");
-    await user.click(screen.getByRole("button", { name: "Ajustes" }));
+    await openAppearance(user);
 
     await user.click(within(bar()!).getByRole("button", { name: "Aplicar tema" }));
     await waitFor(() => expect(bar()).toBeNull());

@@ -162,7 +162,7 @@ describe("Status bar in the app", () => {
     expect(screen.queryByRole("contentinfo", { name: "Barra de estado" })).toBeNull();
     const sidebar = screen.getByRole("complementary", { name: "Navegación" });
     await user.click(within(sidebar).getByRole("button", { name: "Ajustes" }));
-    expect(await screen.findByRole("heading", { level: 1, name: "Ajustes" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "General" })).toBeInTheDocument();
     expect(screen.queryByRole("contentinfo", { name: "Barra de estado" })).toBeNull();
     await user.click(within(sidebar).getByRole("button", { name: /^hedy/ }));
     expect(await screen.findByRole("contentinfo", { name: "Barra de estado" })).toBeInTheDocument();

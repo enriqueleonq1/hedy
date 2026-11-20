@@ -62,6 +62,7 @@ export function AskPanel({
   onCited,
   onOpenProject,
   onWrite,
+  onBusy,
   onClose,
 }: {
   overview: Overview;
@@ -72,6 +73,8 @@ export function AskPanel({
   onOpenProject: (project: string) => void;
   /** "Anotarlo": a new note in that project, with the question written. */
   onWrite: (project: string, question: string) => void;
+  /** While a question is being answered (no other one meanwhile). */
+  onBusy: (busy: boolean) => void;
   onClose: () => void;
 }) {
   const api = useApi();
@@ -102,10 +105,16 @@ export function AskPanel({
       setError(errorMessage(e, t));
     },
   });
-  const { mutate } = ask;
+  const { mutate, isPending } = ask;
+  // Each request once, even when an effect runs twice (StrictMode in development).
+  const sent = useRef<number | null>(null);
   useEffect(() => {
+    if (sent.current === request.seq) return;
+    sent.current = request.seq;
     mutate(request);
   }, [request, mutate]);
+  useEffect(() => onBusy(isPending), [isPending, onBusy]);
+  const [removed, setRemoved] = useState<Set<number>>(() => new Set());
 
   const look = useMutation({
     mutationFn: ({ text, project }: { text: string; project: string; asked: number }) => api.lookInCode(text, project),
@@ -135,7 +144,8 @@ export function AskPanel({
   });
   const forget = useMutation({
     mutationFn: (id: number) => api.forgetNote(id),
-    onSuccess: async () => {
+    onSuccess: async (_, id) => {
+      setRemoved((done) => new Set(done).add(id));
       await client.invalidateQueries({ queryKey: MEMORY_GRAPH_KEY });
       await client.invalidateQueries({ queryKey: ["memory"] });
     },
@@ -253,7 +263,7 @@ export function AskPanel({
                     const source = result.sources[n - 1];
                     if (!source) return null;
                     const home = projectOf(source);
-                    const local = source.note.kind === "local" ? source.note.id : null;
+                    const local = source.note.kind === "local" && !removed.has(source.note.id) ? source.note.id : null;
                     const open = opened === n;
                     return (
                       <li

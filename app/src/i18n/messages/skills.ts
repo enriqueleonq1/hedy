@@ -4,10 +4,6 @@
 const es = {
   "skills.tabNotes": "Notas",
   "skills.tabSkills": "Habilidades",
-  "skills.tabs": "Memoria y habilidades",
-  "skills.pendingBadge": "{n} por aprobar",
-  "skills.subtitle":
-    "Procedimientos que tus IAs descubrieron y tú aprobaste: cómo correr los tests, cómo publicar una versión… Las IAs los consultan antes de averiguarlo otra vez.",
   "skills.newButton": "+ Nueva habilidad",
   "skills.loading": "Cargando las habilidades…",
   "skills.loadError": "No se pudieron leer las habilidades: {error}",
@@ -66,10 +62,6 @@ const es = {
 const en: Record<keyof typeof es, string> = {
   "skills.tabNotes": "Notes",
   "skills.tabSkills": "Skills",
-  "skills.tabs": "Memory and skills",
-  "skills.pendingBadge": "{n} to approve",
-  "skills.subtitle":
-    "Procedures your AIs worked out and you approved: how to run the tests, how to cut a release… The AIs check them before working it out again.",
   "skills.newButton": "+ New skill",
   "skills.loading": "Loading the skills…",
   "skills.loadError": "Could not read the skills: {error}",

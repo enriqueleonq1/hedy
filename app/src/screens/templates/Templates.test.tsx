@@ -84,8 +84,9 @@ describe("Prompt templates", () => {
   });
 
   it("manages templates in Settings: create, delete and restore examples", async () => {
-    window.history.replaceState(null, "", "#settings");
+    window.history.replaceState(null, "", "#settings/templates");
     const { user } = setup();
+    expect(await screen.findByRole("heading", { level: 1, name: "Plantillas" })).toBeInTheDocument();
     const section = await screen.findByRole("region", { name: "Plantillas" });
     expect(await within(section).findByText("Explicar código")).toBeInTheDocument();
     expect(within(section).getAllByText("Ejemplo")).toHaveLength(5);

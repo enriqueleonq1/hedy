@@ -214,11 +214,32 @@ describe("Command palette", () => {
     await user.keyboard("{Control>}k{/Control}");
     await user.type(field(), "ajustes");
     await user.keyboard("{Enter}");
-    expect(await screen.findByRole("heading", { name: "Ajustes" })).toBeInTheDocument();
+    // Ajustes opens at its first section.
+    expect(await screen.findByRole("heading", { level: 1, name: "General" })).toBeInTheDocument();
     await user.keyboard("{Control>}k{/Control}");
     const recent = screen.getByRole("group", { name: "Recientes" });
     expect(within(recent).getAllByRole("option").map((o) => o.textContent)).toEqual(["Ajustes"]);
     expect(optionRows()[0]).toHaveTextContent("Ajustes");
+  });
+
+  it("changes the theme in Apariencia, at the theme gallery", async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { user } = setup();
+    await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
+    await user.keyboard("{Control>}k{/Control}");
+    await user.type(field(), "cambiar tema");
+    expect(options()[0]).toBe("Cambiar tema…");
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("heading", { level: 1, name: "Apariencia" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#settings/appearance");
+    const index = screen.getByRole("navigation", { name: "Secciones de Ajustes" });
+    expect(within(index).getByRole("button", { name: "Apariencia" })).toHaveAttribute("aria-current", "page");
+    // Straight to the gallery: scrolled to it, its title focused.
+    const gallery = screen.getByRole("heading", { name: "Temas" });
+    await waitFor(() => expect(gallery).toHaveFocus());
+    expect(scroll).toHaveBeenCalled();
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
   });
 
   it("speaks English", async () => {

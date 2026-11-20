@@ -39,6 +39,7 @@ function TextField({
   mono,
   placeholder,
   disabled,
+  onPaste,
 }: {
   id: string;
   label: string;
@@ -47,6 +48,8 @@ function TextField({
   mono?: boolean;
   placeholder?: string;
   disabled?: boolean;
+  /** The pasted text as copied (an input drops its line breaks); `true` when it was taken. */
+  onPaste?: (text: string) => boolean;
 }) {
   return (
     <div className="field">
@@ -61,6 +64,9 @@ function TextField({
         maxLength={mono ? undefined : 60}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
+        onPaste={(e) => {
+          if (onPaste?.(e.clipboardData.getData("text/plain"))) e.preventDefault();
+        }}
       />
     </div>
   );
@@ -206,6 +212,17 @@ export function CreateTeamDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
+/**
+ * The address and the code out of a pasted invitation ("Copiar invitación"'s
+ * message, or anything holding both); `null` unless both are there.
+ */
+export function parseInvite(text: string): { url: string; code: string } | null {
+  const trim = (found: string | undefined) => found?.replace(/[.,;:)»"'\u201d]+$/u, "");
+  const url = trim(text.match(/(?:[\w.-]+@[\w.-]+:[^\s]+|(?:https?|ssh|git):\/\/[^\s]+)/u)?.[0]);
+  const code = trim(text.match(/(?<![\w/-])\d+(?:-\p{L}+){2,}(?![\w/-])/u)?.[0]);
+  return url && code ? { url, code } : null;
+}
+
 /** "Unirme con una invitación": the address and the code, then the wait (4b). */
 export function JoinTeamDialog({ onClose }: { onClose: () => void }) {
   const api = useApi();
@@ -220,6 +237,14 @@ export function JoinTeamDialog({ onClose }: { onClose: () => void }) {
     onSuccess: () => void refreshTeams(client),
   });
   const waiting = join.data && !join.data.joined;
+  // The whole invitation pasted in either field fills both.
+  const takeInvite = (text: string) => {
+    const found = parseInvite(text);
+    if (!found) return false;
+    setUrl(found.url);
+    setCode(found.code);
+    return true;
+  };
 
   return (
     <Dialog
@@ -260,8 +285,24 @@ export function JoinTeamDialog({ onClose }: { onClose: () => void }) {
       ) : (
         <>
           <p className="muted">{t("team.join.text")}</p>
-          <TextField id="team-join-url" label={t("team.join.url")} value={url} mono placeholder={t("team.url.placeholder")} onChange={setUrl} />
-          <TextField id="team-join-code" label={t("team.join.code")} value={code} mono placeholder="7-tigre-lima-nube-faro" onChange={setCode} />
+          <TextField
+            id="team-join-url"
+            label={t("team.join.url")}
+            value={url}
+            mono
+            placeholder={t("team.url.placeholder")}
+            onChange={setUrl}
+            onPaste={takeInvite}
+          />
+          <TextField
+            id="team-join-code"
+            label={t("team.join.code")}
+            value={code}
+            mono
+            placeholder="7-tigre-lima-nube-faro"
+            onChange={setCode}
+            onPaste={takeInvite}
+          />
           <TextField id="team-join-me" label={t("team.me")} value={me} onChange={setMe} />
           <TextField id="team-join-pc" label={t("sync.name.label")} value={pc} onChange={setPc} />
           {join.isError && (

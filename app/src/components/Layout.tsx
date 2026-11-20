@@ -20,6 +20,9 @@ import { projectColor } from "./projects";
 import { useTerminals } from "./Terminal/TerminalProvider";
 import { Button } from "./ui/Button";
 
+/** Ajustes' sections (`#settings/<section>`). */
+export type SettingsSection = "general" | "accounts" | "appearance" | "saving" | "templates" | "sync" | "teams" | "advanced";
+
 /** Memoria's sections. */
 export type MemoryTab = "notes" | "skills" | "pending" | "map";
 
@@ -27,8 +30,8 @@ export type View =
   | { screen: "welcome" }
   /** `account`: scroll to that account's card and highlight it. */
   | { screen: "accounts"; account?: string }
-  /** `section`: scroll to the theme gallery ("Cambiar tema…"), the sync card or the teams card. */
-  | { screen: "settings"; section?: "themes" | "sync" | "teams" }
+  /** `section`: which part of Ajustes; "themes" is Apariencia at its theme gallery ("Cambiar tema…"). */
+  | { screen: "settings"; section?: SettingsSection | "themes" }
   | { screen: "activity" }
   /**
    * `task`: open that task; `null` or unset: the project's home (a new task),
@@ -38,6 +41,8 @@ export type View =
   /** Memoria; `project`: "Para" that project (unset: everything); `tab`: which section. */
   | { screen: "memory"; project?: string; tab?: MemoryTab }
   | { screen: "status"; project: string }
+  /** A project's settings ("Ajustes" on its home). */
+  | { screen: "projectSettings"; project: string }
   /**
    * A question outside any project: `task` opens that conversation, none a
    * new one (its composer starting with `draft`, if given).
@@ -56,7 +61,9 @@ const SIDEBAR_CONVERSATIONS = 5;
 
 /** The project a view belongs to (its workspace, memory or status). */
 export function viewProject(view: View): string | null {
-  return view.screen === "workspace" || view.screen === "memory" || view.screen === "status" ? (view.project ?? null) : null;
+  return view.screen === "workspace" || view.screen === "memory" || view.screen === "status" || view.screen === "projectSettings"
+    ? (view.project ?? null)
+    : null;
 }
 
 export function defaultAccount(overview: Overview): Account | undefined {
@@ -95,6 +102,9 @@ export function Sidebar({
   // In the rail, names are not on screen: they go in the accessible name and the tooltip.
   const named = (name: string) => (rail ? { "aria-label": name, title: name } : {});
   const home = view.screen === "welcome" || view.screen === "activity";
+
+  // Notes and skills the AIs proposed, for Memoria's badge.
+  const proposals = inbox.items.filter((entry) => entry.kind === "note" || entry.kind === "skill").length;
 
   // What waits for the user in each project, for its row.
   const pending = new Map<string, number>();
@@ -229,6 +239,12 @@ export function Sidebar({
         >
           <MemoryIcon />
           <span className="sidebar__name">{t("ask.nav")}</span>
+          {proposals > 0 && (
+            <span className="nav-badge nav-badge--quiet" title={t("shell.memoryPending", { n: proposals })}>
+              <span aria-hidden>{proposals}</span>
+              <span className="sr-only">{t("shell.memoryPending", { n: proposals })}</span>
+            </span>
+          )}
         </button>
       </nav>
 

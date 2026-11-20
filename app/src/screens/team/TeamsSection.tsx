@@ -1,6 +1,7 @@
 // Ajustes → Equipos (docs/decisions.md §35): the list of teams (1b), and a
 // team's people as cards with their PCs (8b) with the invite inline among
-// them (3b). Creating, joining, removing and reviewing open dialogs.
+// them (3b), its layer's usage and leaving in a danger zone. Creating,
+// joining, removing and reviewing open dialogs. Ajustes draws the title.
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -8,9 +9,10 @@ import { useQuery } from "@tanstack/react-query";
 import { errorMessage, useApi } from "../../api/context";
 import type { TeamInvite, TeamPerson, TeamStatus, TeamSummary } from "../../api/types";
 import { Button, ConfirmButton } from "../../components/ui/Button";
+import { Meter } from "../../components/ui/Meter";
 import { useToast } from "../../components/ui/Toast";
 import { timeAgo } from "../../format";
-import { useT } from "../../i18n";
+import { useT, type Translate } from "../../i18n";
 import { MEMORY_HOMES_KEY } from "../../sync/hooks";
 import {
   roleLabel,
@@ -20,6 +22,7 @@ import {
   useTeamStatus,
   useTeamSync,
 } from "../../team/hooks";
+import { SyncErrorBox } from "../sync/SyncError";
 import { CreateTeamDialog, JoinTeamDialog, RemovePersonDialog, ReviewDialog } from "./TeamDialogs";
 import "../../styles/team.css";
 
@@ -33,13 +36,13 @@ export function TeamsSection({ focus }: { focus?: boolean }) {
     if (!focus) return;
     const section = document.getElementById("teams-section");
     section?.scrollIntoView?.({ block: "start" });
-    section?.querySelector<HTMLElement>("h2")?.focus({ preventScroll: true });
+    section?.focus({ preventScroll: true });
   }, [focus]);
 
   const list = teams.data ?? [];
   const current = list.find((team) => team.id === open && !team.waiting);
   return (
-    <section id="teams-section" className="card settings__section team">
+    <section id="teams-section" className="card settings__section team" aria-label={t("team.title")} tabIndex={-1}>
       {current ? (
         <TeamPanel id={current.id} onBack={() => setOpen(null)} />
       ) : (
@@ -48,10 +51,7 @@ export function TeamsSection({ focus }: { focus?: boolean }) {
             <span className="sync__icon" aria-hidden>
               <TeamIcon />
             </span>
-            <div className="sync__titles">
-              <h2 tabIndex={-1}>{t("team.title")}</h2>
-              <span className="small muted">{t("team.tagline")}</span>
-            </div>
+            <p className="sync__titles muted">{t("team.tagline")}</p>
           </div>
           {list.length > 0 && (
             <ul className="team-list">
@@ -153,6 +153,7 @@ function TeamPanel({ id, onBack }: { id: string; onBack: () => void }) {
   const t = useT();
   const status = useTeamStatus(id);
   const sync = useTeamSync(id);
+  const [renaming, setRenaming] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [removing, setRemoving] = useState<TeamPerson | null>(null);
   const leave = useTeamAction((api, here: boolean) => api.teamLeave(id, here));
@@ -173,20 +174,29 @@ function TeamPanel({ id, onBack }: { id: string; onBack: () => void }) {
       </nav>
       <div className="sync__head">
         <Initial name={team.summary.name} />
-        <div className="sync__titles">
-          <h2 tabIndex={-1}>{team.summary.name}</h2>
-          <span className="small muted">
-            {roleLabel(team.summary.role, t)} · {t("team.last", { when: last })}
-          </span>
-        </div>
-        <Button small disabled={sync.isPending} onClick={() => sync.mutate()}>
-          {sync.isPending ? t("sync.syncing") : t("sync.now")}
-        </Button>
+        {renaming ? (
+          <RenameTeam team={team} onDone={() => setRenaming(false)} />
+        ) : (
+          <div className="sync__titles">
+            <h2 tabIndex={-1}>{team.summary.name}</h2>
+            <span className="small muted">
+              {roleLabel(team.summary.role, t)} · {t("team.last", { when: last })}
+            </span>
+          </div>
+        )}
+        {admin && !renaming && (
+          <Button small variant="ghost" onClick={() => setRenaming(true)}>
+            {t("team.rename")}
+          </Button>
+        )}
+        {!team.summary.lastError && (
+          <Button small disabled={sync.isPending} onClick={() => sync.mutate()}>
+            {sync.isPending ? t("sync.syncing") : t("sync.now")}
+          </Button>
+        )}
       </div>
       {team.summary.lastError && (
-        <p className="small sync-hero__error" role="alert">
-          {team.summary.lastError}
-        </p>
+        <SyncErrorBox message={team.summary.lastError} retrying={sync.isPending} onRetry={() => sync.mutate()} />
       )}
       {team.summary.leaving && (
         <div className="team-alert" role="status">
@@ -212,7 +222,10 @@ function TeamPanel({ id, onBack }: { id: string; onBack: () => void }) {
           </Button>
         </div>
       )}
-      <p className="small muted">{t("team.layer", { used: team.layerTokens, max: team.layerMax })}</p>
+      <div className="team-layer">
+        <span className="small muted">{t("team.layer", { used: team.layerTokens, max: team.layerMax })}</span>
+        <Meter percent={team.layerMax > 0 ? (team.layerTokens / team.layerMax) * 100 : 0} label={t("team.layerUsage")} />
+      </div>
 
       <h3 className="team-subtitle">{t("team.people")}</h3>
       <Invite team={team} />
@@ -229,19 +242,68 @@ function TeamPanel({ id, onBack }: { id: string; onBack: () => void }) {
         <p className="small muted mono">{team.summary.url}</p>
       </details>
 
-      <div className="row team-leave">
-        <ConfirmButton
-          small
-          variant="ghost"
-          confirmLabel={t(admin ? "team.leaveConfirmAdmin" : "team.leaveConfirm")}
-          onConfirm={() => leave.mutate(false, { onSuccess: () => !admin && onBack() })}
-        >
-          {t("team.leave")}
-        </ConfirmButton>
-      </div>
+      <section className="danger-zone" aria-labelledby="team-danger-title">
+        <h3 id="team-danger-title">{t("team.danger")}</h3>
+        <div className="danger-zone__row">
+          <div className="danger-zone__text">
+            <strong>{t("team.leave")}</strong>
+            <span className="small muted">{t(admin ? "team.leave.textAdmin" : "team.leave.text")}</span>
+          </div>
+          <ConfirmButton
+            small
+            disabled={leave.isPending || team.summary.leaving}
+            confirmLabel={t(admin ? "team.leaveConfirmAdmin" : "team.leaveConfirm")}
+            onConfirm={() => leave.mutate(false, { onSuccess: () => !admin && onBack() })}
+          >
+            {t("team.leave.button")}
+          </ConfirmButton>
+        </div>
+      </section>
       {reviewing && <ReviewDialog team={team} onClose={() => setReviewing(false)} />}
       {removing && <RemovePersonDialog team={team} person={removing} onClose={() => setRemoving(null)} />}
     </>
+  );
+}
+
+/** An admin renames the team in place. */
+function RenameTeam({ team, onDone }: { team: TeamStatus; onDone: () => void }) {
+  const t = useT();
+  const toast = useToast();
+  const [name, setName] = useState(team.summary.name);
+  const rename = useTeamAction((api, next: string) => api.teamRename(team.summary.id, next));
+  const next = name.trim();
+  return (
+    <form
+      className="team-rename"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!next || next === team.summary.name) return onDone();
+        rename.mutate(next, {
+          onSuccess: () => {
+            toast.info(t("team.renamed", { name: next }));
+            onDone();
+          },
+        });
+      }}
+    >
+      <label htmlFor="team-rename" className="sr-only">
+        {t("team.create.name")}
+      </label>
+      <input
+        id="team-rename"
+        value={name}
+        maxLength={60}
+        autoFocus
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => e.key === "Escape" && (e.stopPropagation(), onDone())}
+      />
+      <Button small variant="primary" type="submit" disabled={!next || rename.isPending}>
+        {t("common.save")}
+      </Button>
+      <Button small variant="ghost" disabled={rename.isPending} onClick={onDone}>
+        {t("common.cancel")}
+      </Button>
+    </form>
   );
 }
 
@@ -297,9 +359,11 @@ function Invite({ team }: { team: TeamStatus }) {
           </Button>
         </form>
       ) : null}
-      <button type="button" className="link-button small" onClick={() => create.mutate(true)}>
-        {t("team.invite.mine")}
-      </button>
+      <div className="row">
+        <Button small disabled={create.isPending} onClick={() => create.mutate(true)}>
+          {t("team.invite.mine")}
+        </Button>
+      </div>
       {team.invites.length > 0 && (
         <ul className="team-invites">
           {team.invites.map((invite) => (
@@ -308,7 +372,7 @@ function Invite({ team }: { team: TeamStatus }) {
               invite={invite}
               who={invite.ownPc ? t("team.invite.yourPc") : who.trim() || t("team.invite.someone")}
               onCopy={() =>
-                void navigator.clipboard?.writeText(invite.code).then(
+                void navigator.clipboard?.writeText(inviteMessage(team, invite, t)).then(
                   () => toast.info(t("team.invite.copied")),
                   (e: unknown) => toast.error(errorMessage(e, t)),
                 )
@@ -321,6 +385,19 @@ function Invite({ team }: { team: TeamStatus }) {
       {team.invites.length > 0 && <p className="small muted">{t("team.invite.hint")}</p>}
     </div>
   );
+}
+
+/**
+ * "Copiar invitación": one short message with the repo's address and the
+ * code, to paste in a chat; "Unirme con una invitación" reads both back.
+ */
+export function inviteMessage(team: TeamStatus, invite: TeamInvite, t: Translate): string {
+  return t(invite.ownPc ? "team.invite.messageMine" : "team.invite.message", {
+    team: team.summary.name,
+    url: team.summary.url,
+    code: invite.code,
+    hours: hoursLeft(invite.expiresAt),
+  });
 }
 
 /** Whole hours until `at` (Unix seconds), never below zero. */

@@ -41,10 +41,10 @@ describe("Shell", () => {
     // One entry for the memory: outside a project, everything.
     expect(within(nav).queryByRole("button", { name: "Habilidades" })).not.toBeInTheDocument();
     expect(within(nav).queryByRole("button", { name: "Tu memoria" })).not.toBeInTheDocument();
-    await user.click(within(nav).getByRole("button", { name: "Memoria" }));
+    await user.click(within(nav).getByRole("button", { name: /^Memoria/ }));
     expect(window.location.hash).toBe("#memory");
     expect(await screen.findByRole("heading", { level: 1, name: "Memoria" })).toBeInTheDocument();
-    expect(within(nav).getByRole("button", { name: "Memoria" })).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("button", { name: /^Memoria/ })).toHaveAttribute("aria-current", "page");
     expect(home).not.toHaveAttribute("aria-current");
     // The brand goes home too.
     await user.click(within(sidebar()).getByRole("button", { name: "Hedy" }));

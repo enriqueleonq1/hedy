@@ -3,21 +3,29 @@ import { useEffect, useRef, useState } from "react";
 import { LOGIN_HINT } from "../../components/providers";
 import { useAction } from "../../api/context";
 import type { Account, Overview } from "../../api/types";
-import { accountSubtitle, LoginStatus, UsageBars, usageSource } from "../../components/accounts";
-import { Mascot } from "../../components/Mascot/Mascot";
+import { accountSubtitle, LoginStatus } from "../../components/accounts";
 import { useTerminals } from "../../components/Terminal/TerminalProvider";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { MenuButton, type MenuItem } from "../../components/ui/Menu";
 import { useT } from "../../i18n";
+import { useActivity } from "../../tasks/hooks";
+import { AccountPlan, HedyWeek, PausedLine, pausedOn, type Paused } from "./AccountPlan";
 import { AddAccountDialog } from "./AddAccountDialog";
+import { ApiAdvanced } from "./ApiAdvanced";
 import { ApiKeyDialog } from "./ApiKeyDialog";
 import { ProjectsTable } from "./ProjectsTable";
 import { SpendByClient } from "./SpendByClient";
+import "../../styles/accounts.css";
 
-/** `focus`: the account whose card is scrolled to, highlighted and focused (from the sidebar or the top bar). */
+/**
+ * Ajustes → Cuentas: a calm list of the accounts, one meter per plan window,
+ * then the projects table. `focus`: the account scrolled to, highlighted and
+ * focused (from the sidebar or the palette).
+ */
 export function AccountsScreen({ overview, focus }: { overview: Overview; focus?: string }) {
   const t = useT();
+  const activity = useActivity().data;
   const [adding, setAdding] = useState(false);
   const [keyFor, setKeyFor] = useState<Account | null>(null);
   const projectName = (path: string) => overview.projects.find((p) => p.path === path)?.name ?? path;
@@ -39,12 +47,14 @@ export function AccountsScreen({ overview, focus }: { overview: Overview; focus?
       {overview.accounts.length === 0 ? (
         <p className="empty">{t("accounts.empty")}</p>
       ) : (
-        <div className="account-grid">
+        <div className="account-list">
           {overview.accounts.map((a) => (
             <AccountCard
               key={a.id}
               account={a}
+              overview={overview}
               projects={a.projects.map((path) => ({ path, name: projectName(path) }))}
+              paused={pausedOn(a, activity)}
               isDefault={overview.defaultAccount === a.id}
               focused={focus === a.id}
               onApiKey={() => setKeyFor(a)}
@@ -174,13 +184,17 @@ function RemoveAccountDialog({
 
 function AccountCard({
   account,
+  overview,
   projects,
+  paused,
   isDefault,
   focused,
   onApiKey,
 }: {
   account: Account;
+  overview: Overview;
   projects: { path: string; name: string }[];
+  paused: Paused | null;
   isDefault: boolean;
   focused: boolean;
   onApiKey: () => void;
@@ -200,18 +214,11 @@ function AccountCard({
   const [removing, setRemoving] = useState(false);
   const loggedIn = account.login.state === "loggedIn";
   const subscription = account.kind === "subscription";
-  const classes = [
-    "card",
-    "account-card",
-    isDefault && "account-card--current",
-    account.kind === "apiKey" && "account-card--wide",
-    focused && "account-card--focus",
-  ];
+  const classes = ["account-card", focused && "account-card--focus"];
   const loginHint = LOGIN_HINT[account.provider];
   const login = () => terminals.open({ kind: "login", account: account.id }, `Login · ${account.name}`);
-  const source = usageSource(account, t);
 
-  // The one action the card needs stays visible (signing in, saving the key);
+  // The one action the account needs stays visible (signing in, saving the key);
   // the rest live in the menu, with deleting set apart at the end.
   const items: MenuItem[] = [
     { label: t("accounts.card.renameItem"), onSelect: () => setEditing(true) },
@@ -227,12 +234,7 @@ function AccountCard({
   return (
     <article ref={card} tabIndex={-1} className={classes.filter(Boolean).join(" ")} aria-label={account.name}>
       <header className="account-card__head">
-        <Mascot
-          color={account.color}
-          state={loggedIn ? "idle" : "sleeping"}
-          size={44}
-          label={t("accounts.card.mascot", { name: account.name })}
-        />
+        <span className="dot account-card__dot" style={{ background: account.color }} aria-hidden />
         <div className="account-card__title">
           <AccountName account={account} editing={editing} setEditing={setEditing} />
           <p className="account-card__sub">
@@ -244,39 +246,39 @@ function AccountCard({
         <MenuButton label={t("accounts.card.actions", { name: account.name })} items={items} />
       </header>
 
-      <UsageBars account={account} />
+      <div className="account-card__body">
+        {paused && <PausedLine paused={paused} projects={overview.projects} />}
+        <AccountPlan account={account} />
+        <HedyWeek account={account} />
 
-      {projects.length > 0 && (
-        <ul className="pills" aria-label={t("common.projects")}>
-          {projects.map((p) => (
-            <li key={p.path} className="pill">
-              {p.name}
-            </li>
-          ))}
-        </ul>
-      )}
+        {projects.length > 0 && (
+          <ul className="pills" aria-label={t("common.projects")}>
+            {projects.map((p) => (
+              <li key={p.path} className="pill">
+                {p.name}
+              </li>
+            ))}
+          </ul>
+        )}
 
-      {!loggedIn && (
-        <div className="account-card__action">
-          {subscription && loginHint && <p className="small muted">{t(loginHint)}</p>}
-          {subscription ? (
-            <Button small variant="primary" onClick={login}>
-              {t("accounts.card.signIn")}
-            </Button>
-          ) : (
-            <Button small variant="primary" onClick={onApiKey}>
-              {t("accounts.card.saveKey")}
-            </Button>
-          )}
-        </div>
-      )}
+        {!loggedIn && (
+          <div className="account-card__action">
+            {subscription && loginHint && <p className="small muted">{t(loginHint)}</p>}
+            {subscription ? (
+              <Button small variant="primary" onClick={login}>
+                {t("accounts.card.signIn")}
+              </Button>
+            ) : (
+              <Button small variant="primary" onClick={onApiKey}>
+                {t("accounts.card.saveKey")}
+              </Button>
+            )}
+          </div>
+        )}
 
-      {(source || account.defaultFolder) && (
-        <footer className="account-card__foot">
-          {source && <p>{source}</p>}
-          {account.defaultFolder && <p>{t("accounts.card.defaultFolderNote")}</p>}
-        </footer>
-      )}
+        {account.defaultFolder && <p className="usage__note">{t("accounts.card.defaultFolderNote")}</p>}
+        <ApiAdvanced account={account} overview={overview} />
+      </div>
 
       {removing && (
         <RemoveAccountDialog

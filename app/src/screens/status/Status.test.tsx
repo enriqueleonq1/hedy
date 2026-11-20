@@ -131,7 +131,9 @@ describe("Status", () => {
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
     await openSummary(user);
     await user.click(await screen.findByRole("button", { name: "Activar mapa del código" }));
-    expect(await screen.findByRole("heading", { name: "Ajustes" })).toBeInTheDocument();
+    // Straight to the section with the code map, not Ajustes' first page.
+    expect(await screen.findByRole("heading", { level: 1, name: "Ahorro" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Mapa del código" })).toBeInTheDocument();
   });
 
   it("adds up the week per client and edits a project's client", async () => {

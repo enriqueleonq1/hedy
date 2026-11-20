@@ -1,7 +1,6 @@
 // A project's memory: notes, proposals, contradictions and who reads it.
 
 const es = {
-  "memory.title": "Memoria de {name}",
   "memory.hub.title": "Memoria",
   "memory.hub.subtitle": "Notas: hechos y reglas. Habilidades: pasos para hacer algo. Todo se guarda en tu computadora.",
   "memory.hub.for": "Para",
@@ -22,11 +21,7 @@ const es = {
   "memory.hint.convention": "Cómo lo escribimos.",
   "memory.hint.rule": "Obligatorio.",
   "memory.hint.preference": "Un gusto tuyo.",
-  "memory.subtitle": "Lo que Hedy y tus IAs saben de este proyecto. Todo se guarda en tu computadora.",
-  "memory.search": "Buscar en la memoria",
-  "memory.searchPlaceholder": "Buscar en la memoria…",
   "memory.newNoteButton": "+ Nueva nota",
-  "memory.backToChat": "Volver al chat",
   "memory.loading": "Cargando la memoria…",
   "memory.loadError": "No se pudo leer la memoria: {error}",
   "memory.protected": "Proyecto protegido: sus notas se quedan aquí y no lee tus notas de todos los proyectos.",
@@ -39,7 +34,6 @@ const es = {
   "memory.group.convention": "Convenciones",
   "memory.group.rule": "Reglas",
   "memory.group.preference": "Preferencias",
-  "memory.group.proposed": "Propuestas por tus IAs · para aprobar",
   "memory.group.global": "Tuyas · en todos los proyectos",
   "memory.empty": "Todavía no hay notas.",
   "memory.emptyHint":
@@ -96,7 +90,6 @@ const es = {
 };
 
 const en: Record<keyof typeof es, string> = {
-  "memory.title": "{name} memory",
   "memory.hub.title": "Memory",
   "memory.hub.subtitle": "Notes: facts and rules. Skills: steps to do something. Everything stays on your computer.",
   "memory.hub.for": "For",
@@ -117,11 +110,7 @@ const en: Record<keyof typeof es, string> = {
   "memory.hint.convention": "How we write it.",
   "memory.hint.rule": "Mandatory.",
   "memory.hint.preference": "A taste of yours.",
-  "memory.subtitle": "What Hedy and your AIs know about this project. Everything stays on your computer.",
-  "memory.search": "Search memory",
-  "memory.searchPlaceholder": "Search memory…",
   "memory.newNoteButton": "+ New note",
-  "memory.backToChat": "Back to chat",
   "memory.loading": "Loading memory…",
   "memory.loadError": "Couldn't read the memory: {error}",
   "memory.protected": "Protected project: its notes stay here and it doesn't read your notes for all projects.",
@@ -134,7 +123,6 @@ const en: Record<keyof typeof es, string> = {
   "memory.group.convention": "Conventions",
   "memory.group.rule": "Rules",
   "memory.group.preference": "Preferences",
-  "memory.group.proposed": "Proposed by your AIs · awaiting approval",
   "memory.group.global": "Yours · across all projects",
   "memory.empty": "No notes yet.",
   "memory.emptyHint":

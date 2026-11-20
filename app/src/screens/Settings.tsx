@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useT, type LanguageSetting, type MessageKey } from "../i18n";
+import type { SettingsSection } from "../components/Layout";
 
 import { OVERVIEW_KEY, useAction, useApi } from "../api/context";
 import { useTerminals } from "../components/Terminal/TerminalProvider";
@@ -11,6 +12,7 @@ import { Mascot, MASCOT_STATE_LABEL, type MascotState } from "../components/Masc
 import { ACTIVITY_LABEL, ACTIVITY_WORDS, WORKING_ACTIVITIES } from "../components/Mascot/activity";
 import { ColorPicker, Field, Segmented, Switch } from "../components/ui/controls";
 import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
+import { AccountsScreen } from "./accounts/AccountsScreen";
 import { SyncSection } from "./sync/SyncSection";
 import { TeamsSection } from "./team/TeamsSection";
 import { TemplatesSection } from "./templates/TemplatesSection";
@@ -24,31 +26,181 @@ const CLIS: { id: CliProviderId; name: string }[] = [
   { id: "antigravity", name: "Antigravity" },
 ];
 
-export function Settings({ overview, focus }: { overview: Overview; focus?: { section?: "themes" | "sync" | "teams" } }) {
-  const setSetting = useAction((api, vars: { key: SettingKey; value: string | null }) =>
-    api.setSetting(vars.key, vars.value),
-  );
+
+const INDEX: { group: MessageKey | null; items: { id: SettingsSection; label: MessageKey; words: MessageKey[] }[] }[] = [
+  {
+    group: null,
+    items: [
+      { id: "general", label: "settings.section.general", words: ["common.language", "settings.name", "settings.notifications"] },
+      { id: "accounts", label: "settings.section.accounts", words: ["accounts.title", "common.projectsAndAccounts"] },
+      { id: "appearance", label: "settings.appearance", words: ["theme.mode", "settings.colors", "settings.mascotStates"] },
+      { id: "saving", label: "settings.saving", words: ["common.codeMap"] },
+      { id: "templates", label: "settings.section.templates", words: [] },
+    ],
+  },
+  {
+    group: "settings.group.computers",
+    items: [
+      { id: "sync", label: "settings.section.sync", words: [] },
+      { id: "teams", label: "settings.section.teams", words: [] },
+    ],
+  },
+  {
+    group: "settings.group.more",
+    items: [{ id: "advanced", label: "settings.section.advanced", words: ["settings.cliPaths", "settings.doctor", "settings.data"] }],
+  },
+];
+
+/**
+ * Ajustes: an index with a search on the side and one section at a time
+ * (`#settings/<section>`), instead of one page of everything.
+ */
+export function Settings({
+  overview,
+  section = "general",
+  account,
+  gallery = false,
+  onSection,
+}: {
+  overview: Overview;
+  section?: SettingsSection;
+  /** In Cuentas: that account's card. */
+  account?: string;
+  /** In Apariencia: straight to the theme gallery ("Cambiar tema…"). */
+  gallery?: boolean;
+  onSection: (section: SettingsSection) => void;
+}) {
   const t = useT();
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+  const matches = (item: (typeof INDEX)[number]["items"][number]) =>
+    !needle || [item.label, ...item.words].some((key) => t(key).toLowerCase().includes(needle));
+  const current = INDEX.flatMap((g) => g.items).find((i) => i.id === section);
+
+  return (
+    <div className="screen settings settings--indexed">
+      <nav className="settings__index" aria-label={t("settings.index")}>
+        <input
+          type="search"
+          className="settings__search"
+          aria-label={t("settings.search")}
+          placeholder={t("settings.search")}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {INDEX.map(({ group, items }) => {
+          const shown = items.filter(matches);
+          if (shown.length === 0) return null;
+          return (
+            <div key={group ?? "main"} className="settings__index-group">
+              {group && <span className="settings__index-title">{t(group)}</span>}
+              {shown.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="settings__index-item"
+                  aria-current={item.id === section ? "page" : undefined}
+                  onClick={() => onSection(item.id)}
+                >
+                  {t(item.label)}
+                </button>
+              ))}
+            </div>
+          );
+        })}
+        {needle && !INDEX.some((g) => g.items.some(matches)) && <p className="small muted">{t("settings.noMatch")}</p>}
+      </nav>
+      <div className="settings__content">
+        {section !== "accounts" && current && <h1>{t(current.label)}</h1>}
+        {section === "general" && <GeneralSection overview={overview} />}
+        {section === "accounts" && <AccountsScreen overview={overview} focus={account} />}
+        {section === "appearance" && <AppearanceSection overview={overview} gallery={gallery} />}
+        {section === "saving" && (
+          <>
+            <ContextSaving overview={overview} />
+            <CodeMap overview={overview} />
+          </>
+        )}
+        {section === "templates" && <TemplatesSection overview={overview} />}
+        {section === "sync" && <SyncSection focus />}
+        {section === "teams" && <TeamsSection focus />}
+        {section === "advanced" && <AdvancedSection overview={overview} />}
+      </div>
+    </div>
+  );
+}
+
+function useSetSetting() {
+  return useAction((api, vars: { key: SettingKey; value: string | null }) => api.setSetting(vars.key, vars.value));
+}
+
+/** Language, the name Hedy calls the user, notifications and the guide. */
+function GeneralSection({ overview }: { overview: Overview }) {
+  const t = useT();
+  const setSetting = useSetSetting();
+  return (
+    <section className="card settings__section">
+      <div className="field">
+        <span className="field__label">{t("common.language")}</span>
+        <Segmented<LanguageSetting>
+          label={t("common.language")}
+          value={overview.language}
+          onChange={(value) => setSetting.mutate({ key: "ui.language", value })}
+          options={[
+            { value: "system", label: t("common.languageSystem") },
+            { value: "es", label: t("language.es") },
+            { value: "en", label: t("language.en") },
+          ]}
+        />
+      </div>
+      <Field label={t("settings.name")} hint={t("settings.nameHint")}>
+        {(id) => (
+          <input
+            id={id}
+            key={overview.userName}
+            defaultValue={overview.userName}
+            onBlur={(e) =>
+              e.target.value.trim() !== overview.userName && setSetting.mutate({ key: "ui.name", value: e.target.value })
+            }
+          />
+        )}
+      </Field>
+      <div className="row row--between">
+        <span>{t("settings.notifications.toggle")}</span>
+        <Switch
+          label={t("settings.notifications.toggle")}
+          checked={overview.notifications}
+          disabled={setSetting.isPending}
+          onChange={(on) => setSetting.mutate({ key: "ui.notifications", value: on ? "on" : "off" })}
+        />
+      </div>
+      <p className="small muted">{t("settings.notifications.hint")}</p>
+      <div>
+        <Button onClick={() => setSetting.mutate({ key: "ui.onboarded", value: null })}>{t("onboarding.showAgain")}</Button>
+      </div>
+    </section>
+  );
+}
+
+/** Light or dark and the themes in one place, each account's color, and the mascot one click away. */
+function AppearanceSection({ overview, gallery }: { overview: Overview; gallery: boolean }) {
+  const t = useT();
+  const setSetting = useSetSetting();
   const setColor = useAction((api, vars: { id: string; color: string }) => api.setAccountColor(vars.id, vars.color));
   const [preview, setPreview] = useState(overview.accounts[0]?.color ?? DEFAULT_ACCOUNT_COLOR);
+  const [mascot, setMascot] = useState(false);
 
   // "Cambiar tema…" in the palette: straight to the gallery.
   useEffect(() => {
-    if (focus?.section !== "themes") return;
-    const gallery = document.getElementById("theme-gallery");
-    gallery?.scrollIntoView?.({ block: "start" });
-    gallery?.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
-  }, [focus]);
+    if (!gallery) return;
+    const list = document.getElementById("theme-gallery");
+    list?.scrollIntoView?.({ block: "start" });
+    list?.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
+  }, [gallery]);
 
   return (
-    <div className="screen settings">
-      <h1>{t("common.settings")}</h1>
-
-      <SyncSection focus={focus?.section === "sync"} />
-      <TeamsSection focus={focus?.section === "teams"} />
-
+    <>
       <section className="card settings__section">
-        <h2>{t("settings.appearance")}</h2>
         <div className="field">
           <span className="field__label">{t("theme.mode")}</span>
           <Segmented<ThemeSetting>
@@ -63,32 +215,6 @@ export function Settings({ overview, focus }: { overview: Overview; focus?: { se
           />
         </div>
         <ThemeGallery overview={overview} />
-        <div className="field">
-          <span className="field__label">{t("common.language")}</span>
-          <Segmented<LanguageSetting>
-            label={t("common.language")}
-            value={overview.language}
-            onChange={(value) => setSetting.mutate({ key: "ui.language", value })}
-            options={[
-              { value: "system", label: t("common.languageSystem") },
-              { value: "es", label: t("language.es") },
-              { value: "en", label: t("language.en") },
-            ]}
-          />
-        </div>
-        <Field label={t("settings.name")} hint={t("settings.nameHint")}>
-          {(id) => (
-            <input
-              id={id}
-              key={overview.userName}
-              defaultValue={overview.userName}
-              onBlur={(e) =>
-                e.target.value.trim() !== overview.userName &&
-                setSetting.mutate({ key: "ui.name", value: e.target.value })
-              }
-            />
-          )}
-        </Field>
       </section>
 
       <section className="card settings__section">
@@ -97,39 +223,51 @@ export function Settings({ overview, focus }: { overview: Overview; focus?: { se
         {overview.accounts.map((a) => (
           <div key={a.id} className="row row--between settings__color-row">
             <span>{a.name}</span>
-            <ColorPicker
-              label={t("common.colorOf", { name: a.name })}
-              value={a.color}
-              onChange={(color) => setColor.mutate({ id: a.id, color })}
-            />
+            <ColorPicker label={t("common.colorOf", { name: a.name })} value={a.color} onChange={(color) => setColor.mutate({ id: a.id, color })} />
           </div>
         ))}
-        <div className="mascot-gallery" aria-label={t("settings.mascotStates")}>
-          {(Object.keys(MASCOT_STATE_LABEL) as MascotState[]).map((state) => (
-            <figure key={state}>
-              <Mascot color={preview} state={state} size={110} />
-              <figcaption>{t(MASCOT_STATE_LABEL[state])}</figcaption>
-            </figure>
-          ))}
+        <div>
+          <Button variant="ghost" aria-expanded={mascot} onClick={() => setMascot((m) => !m)}>
+            {mascot ? t("settings.mascotHide") : t("settings.mascotShow")}
+          </Button>
         </div>
-        <h3 className="mascot-gallery__title">{t("settings.mascotWorking")}</h3>
-        <div className="mascot-gallery" aria-label={t("settings.mascotWorking")}>
-          {WORKING_ACTIVITIES.map((activity) => (
-            <figure key={activity}>
-              <Mascot color={preview} state="working" activity={activity} size={110} />
-              <figcaption>{t(ACTIVITY_LABEL[activity])}</figcaption>
-              <span className="mascot-gallery__words">{ACTIVITY_WORDS[activity].map((key) => t(key)).join(" · ")}</span>
-            </figure>
-          ))}
-        </div>
-        <div className="field">
-          <span className="field__label">{t("settings.tryColor")}</span>
-          <ColorPicker label={t("settings.tryColorLabel")} value={preview} onChange={setPreview} />
-        </div>
+        {mascot && (
+          <>
+            <div className="mascot-gallery" aria-label={t("settings.mascotStates")}>
+              {(Object.keys(MASCOT_STATE_LABEL) as MascotState[]).map((state) => (
+                <figure key={state}>
+                  <Mascot color={preview} state={state} size={110} />
+                  <figcaption>{t(MASCOT_STATE_LABEL[state])}</figcaption>
+                </figure>
+              ))}
+            </div>
+            <h3 className="mascot-gallery__title">{t("settings.mascotWorking")}</h3>
+            <div className="mascot-gallery" aria-label={t("settings.mascotWorking")}>
+              {WORKING_ACTIVITIES.map((activity) => (
+                <figure key={activity}>
+                  <Mascot color={preview} state="working" activity={activity} size={110} />
+                  <figcaption>{t(ACTIVITY_LABEL[activity])}</figcaption>
+                  <span className="mascot-gallery__words">{ACTIVITY_WORDS[activity].map((key) => t(key)).join(" · ")}</span>
+                </figure>
+              ))}
+            </div>
+            <div className="field">
+              <span className="field__label">{t("settings.tryColor")}</span>
+              <ColorPicker label={t("settings.tryColorLabel")} value={preview} onChange={setPreview} />
+            </div>
+          </>
+        )}
       </section>
+    </>
+  );
+}
 
-      <TemplatesSection overview={overview} />
-
+/** What few people touch: the CLIs' paths, the diagnosis, the APIs' addresses and prices, and the data folder. */
+function AdvancedSection({ overview }: { overview: Overview }) {
+  const t = useT();
+  const setSetting = useSetSetting();
+  return (
+    <>
       <section className="card settings__section">
         <h2>{t("settings.cliPaths")}</h2>
         <p className="hint">{t("settings.cliPathsHint")}</p>
@@ -203,24 +341,6 @@ export function Settings({ overview, focus }: { overview: Overview; focus?: { se
       </section>
 
       <section className="card settings__section">
-        <h2>{t("settings.notifications")}</h2>
-        <div className="row row--between">
-          <span>{t("settings.notifications.toggle")}</span>
-          <Switch
-            label={t("settings.notifications.toggle")}
-            checked={overview.notifications}
-            disabled={setSetting.isPending}
-            onChange={(on) => setSetting.mutate({ key: "ui.notifications", value: on ? "on" : "off" })}
-          />
-        </div>
-        <p className="small muted">{t("settings.notifications.hint")}</p>
-      </section>
-
-      <ContextSaving overview={overview} />
-
-      <CodeMap overview={overview} />
-
-      <section className="card settings__section">
         <h2>{t("settings.data")}</h2>
         <p>
           {t("settings.dataDir")} <span className="mono">{overview.dataDir}</span>
@@ -229,13 +349,8 @@ export function Settings({ overview, focus }: { overview: Overview; focus?: { se
           {t("settings.dataHintBefore")} <span className="mono">HEDY_DATA_DIR</span>
           {t("settings.dataHintAfter")}
         </p>
-        <div>
-          <Button onClick={() => setSetting.mutate({ key: "ui.onboarded", value: null })}>
-            {t("onboarding.showAgain")}
-          </Button>
-        </div>
       </section>
-    </div>
+    </>
   );
 }
 
@@ -348,7 +463,6 @@ function ContextSaving({ overview }: { overview: Overview }) {
   ];
   return (
     <section className="card settings__section">
-      <h2>{t("settings.saving")}</h2>
       <div className="row row--between">
         <span>{t("settings.saving.toggle")}</span>
         <Switch

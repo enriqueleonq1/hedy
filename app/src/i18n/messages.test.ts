@@ -26,6 +26,7 @@ import sync from "./messages/sync";
 import team from "./messages/team";
 import templates from "./messages/templates";
 import themes from "./messages/themes";
+import projectSettings from "./messages/projectSettings";
 import task from "./messages/task";
 import waits from "./messages/waits";
 import welcome from "./messages/welcome";
@@ -62,6 +63,7 @@ const AREAS = {
   team,
   templates,
   themes,
+  projectSettings,
   task,
   waits,
   welcome,

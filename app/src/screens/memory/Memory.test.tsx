@@ -241,7 +241,7 @@ describe("Memory", () => {
 
   it("installs the code map in the integrated terminal", async () => {
     const api = new MockApi({ codeMap: { enabled: null, found: null } });
-    history.replaceState(null, "", "#settings");
+    history.replaceState(null, "", "#settings/saving");
     render(<App api={api} queryClient={new QueryClient()} />);
     const user = userEvent.setup();
     const section = (await screen.findByRole("heading", { name: "Mapa del código" })).closest("section");
@@ -345,7 +345,7 @@ describe("Memoria's hub", () => {
   it("opens from the sidebar for the project on screen, else for everything", async () => {
     const { user } = renderAt(`#s=${encodeURIComponent("/code/hedy")}`);
     await screen.findByRole("region", { name: "Tests" });
-    const nav = () => screen.getAllByRole("button", { name: "Memoria" }).find((b) => b.classList.contains("sidebar__nav"));
+    const nav = () => screen.getAllByRole("button", { name: /^Memoria/ }).find((b) => b.classList.contains("sidebar__nav"));
     expect(nav()).toBeDefined();
     await user.click(nav() as HTMLElement);
     expect(window.location.hash).toBe(HEDY);
@@ -353,7 +353,7 @@ describe("Memoria's hub", () => {
     expect(nav()).toHaveAttribute("aria-current", "page");
 
     window.location.hash = "#settings";
-    await screen.findByRole("heading", { name: "Ajustes" });
+    await screen.findByRole("heading", { level: 1, name: "General" });
     await user.click(nav() as HTMLElement);
     expect(window.location.hash).toBe("#memory");
     expect(await screen.findByRole("combobox", { name: "Para" })).toHaveDisplayValue("Todo");

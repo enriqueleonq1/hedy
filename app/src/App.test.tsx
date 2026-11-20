@@ -224,9 +224,10 @@ describe("Accounts", () => {
     expect(within(personal).getByText("58%")).not.toHaveClass("usage__value--warning");
     expect(within(personal).getByText("Por modelo: Opus 12%")).toBeInTheDocument();
 
-    // A source that failed keeps the last reading quiet: a muted note.
     const codex = screen.getByRole("article", { name: "ChatGPT" });
-    expect(within(codex).getByText("no se pudo actualizar")).toBeInTheDocument();
+    // Signed out: no plan figures at all.
+    expect(within(codex).queryByText(/no se pudo actualizar/)).not.toBeInTheDocument();
+    expect(within(codex).queryByRole("meter")).not.toBeInTheDocument();
 
     // The sidebar's foot shows the account in use (outside a project, the default one) with the
     // window closest to its limit: a name, a figure warning-colored only near the limit, and a meter.
@@ -264,8 +265,9 @@ describe("Accounts", () => {
     const { user } = await openAccounts();
     await user.click(screen.getByRole("button", { name: "+ Agregar cuenta" }));
     const dialog = screen.getByRole("dialog", { name: "Agregar cuenta" });
-    await user.type(within(dialog).getByLabelText("Nombre"), "Gemini personal");
+    await user.click(within(dialog).getByRole("button", { name: /^Con una API key/ }));
     await user.click(within(dialog).getByRole("radio", { name: /API key de Google/ }));
+    await user.type(within(dialog).getByLabelText("Nombre"), "Gemini personal");
     await user.click(within(dialog).getByRole("button", { name: "Crear y guardar key" }));
 
     const keyDialog = await screen.findByRole("dialog", { name: "API key de Gemini personal" });
@@ -279,6 +281,7 @@ describe("Accounts", () => {
   it("warns that Gemini CLI does not accept personal accounts", async () => {
     const { user } = await openAccounts();
     await user.click(screen.getByRole("button", { name: "+ Agregar cuenta" }));
+    await user.click(screen.getByRole("button", { name: /^Con tu suscripción/ }));
     await user.click(screen.getByRole("radio", { name: /Gemini CLI/ }));
     expect(screen.getByText(/ya no acepta cuentas personales/)).toBeInTheDocument();
   });
@@ -337,18 +340,150 @@ describe("Models per phase", () => {
 });
 
 describe("Settings", () => {
-  it("changes the theme", async () => {
+  afterEach(() => history.replaceState(null, "", "#"));
+
+  /** The app opened at that address. */
+  function renderAt(hash: string, api?: MockApi) {
+    history.replaceState(null, "", hash);
+    return renderApp(api);
+  }
+
+  const index = () => screen.getByRole("navigation", { name: "Secciones de Ajustes" });
+  const indexItems = () => within(index()).queryAllByRole("button").map((b) => b.textContent);
+  const current = () => within(index()).getByRole("button", { current: "page" });
+
+  it("opens General from the sidebar, with an index of its sections in groups", async () => {
     const { user } = renderApp();
-    await user.click(await screen.findByRole("button", { name: "Ajustes" }));
+    const sidebar = await screen.findByRole("complementary", { name: "Navegación" });
+    await user.click(within(sidebar).getByRole("button", { name: "Ajustes" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "General" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#settings");
+    expect(within(sidebar).getByRole("button", { name: "Ajustes" })).toHaveAttribute("aria-current", "page");
+
+    expect(indexItems()).toEqual([
+      "General",
+      "Cuentas",
+      "Apariencia",
+      "Ahorro",
+      "Plantillas",
+      "Sincronización",
+      "Equipos",
+      "Avanzado",
+    ]);
+    const groups = index().querySelectorAll(".settings__index-group");
+    expect(groups).toHaveLength(3);
+    expect(groups[1]).toHaveTextContent(/^Entre computadoras/);
+    expect(within(groups[1] as HTMLElement).getAllByRole("button").map((b) => b.textContent)).toEqual(["Sincronización", "Equipos"]);
+    expect(groups[2]).toHaveTextContent(/^Más/);
+    expect(within(groups[2] as HTMLElement).getAllByRole("button").map((b) => b.textContent)).toEqual(["Avanzado"]);
+    expect(current()).toHaveTextContent("General");
+    expect(within(index()).getAllByRole("button", { current: "page" })).toHaveLength(1);
+
+    // Only one section at a time.
+    expect(screen.queryByRole("radiogroup", { name: "Modo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Diagnóstico" })).not.toBeInTheDocument();
+  });
+
+  it("goes to each section from its index", async () => {
+    const { user } = renderAt("#settings");
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    const go = async (name: string) => user.click(within(index()).getByRole("button", { name }));
+
+    await go("Avanzado");
+    expect(await screen.findByRole("heading", { level: 1, name: "Avanzado" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#settings/advanced");
+    expect(current()).toHaveTextContent("Avanzado");
+
+    await go("Cuentas");
+    expect(await screen.findByRole("heading", { level: 1, name: "Tus cuentas y modelos" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#accounts");
+    expect(current()).toHaveTextContent("Cuentas");
+
+    await go("Sincronización");
+    expect(await screen.findByRole("heading", { level: 1, name: "Sincronización" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#sync");
+
+    await go("General");
+    expect(await screen.findByRole("heading", { level: 1, name: "General" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#settings");
+  });
+
+  it.each([
+    ["#settings", "General", "General"],
+    ["#settings/general", "General", "General"],
+    ["#settings/appearance", "Apariencia", "Apariencia"],
+    ["#settings/saving", "Ahorro", "Ahorro"],
+    ["#settings/templates", "Plantillas", "Plantillas"],
+    ["#settings/advanced", "Avanzado", "Avanzado"],
+    ["#sync", "Sincronización", "Sincronización"],
+    ["#teams", "Equipos", "Equipos"],
+    ["#accounts", "Cuentas", "Tus cuentas y modelos"],
+    ["#a=claude-trabajo", "Cuentas", "Tus cuentas y modelos"],
+    ["#settings/nothing-here", "General", "General"],
+  ])("lands %s on its section", async (hash, item, title) => {
+    renderAt(hash);
+    expect(await screen.findByRole("heading", { level: 1, name: title })).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(current()).toHaveTextContent(item);
+  });
+
+  it("filters the index by section names and what is inside them", async () => {
+    const { user } = renderAt("#settings");
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    const search = within(index()).getByRole("searchbox", { name: "Buscar en Ajustes" });
+
+    await user.type(search, "apar");
+    expect(indexItems()).toEqual(["Apariencia"]);
+    expect(within(index()).queryByText("Entre computadoras")).not.toBeInTheDocument();
+
+    // Words of what a section holds find it too.
+    await user.clear(search);
+    await user.type(search, "mascota");
+    expect(indexItems()).toEqual(["Apariencia"]);
+    await user.clear(search);
+    await user.type(search, "diagnóstico");
+    expect(indexItems()).toEqual(["Avanzado"]);
+    expect(within(index()).getByText("Más")).toBeInTheDocument();
+    await user.clear(search);
+    await user.type(search, "mapa del código");
+    expect(indexItems()).toEqual(["Ahorro"]);
+    await user.clear(search);
+    await user.type(search, "IDIOMA");
+    expect(indexItems()).toEqual(["General"]);
+
+    await user.clear(search);
+    await user.type(search, "zzz");
+    expect(indexItems()).toEqual([]);
+    expect(within(index()).getByText("Nada coincide.")).toBeInTheDocument();
+    // The section on screen stays while searching.
+    expect(screen.getByRole("heading", { level: 1, name: "General" })).toBeInTheDocument();
+
+    await user.clear(search);
+    expect(indexItems()).toHaveLength(8);
+    expect(within(index()).queryByText("Nada coincide.")).not.toBeInTheDocument();
+
+    // A result opens its section.
+    await user.type(search, "plant");
+    await user.click(within(index()).getByRole("button", { name: "Plantillas" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Plantillas" })).toBeInTheDocument();
+  });
+
+  it("changes the theme", async () => {
+    const { user } = renderAt("#settings/appearance");
+    expect(await screen.findByRole("heading", { level: 1, name: "Apariencia" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Temas" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Colores de cuenta" })).toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: "Claro" }));
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
     expect(screen.getByRole("radio", { name: "Claro" })).toHaveAttribute("aria-checked", "true");
   });
 
   it("lists the CLI versions in the diagnosis, with a pointer to hedy doctor", async () => {
-    const { user } = renderApp();
-    await user.click(await screen.findByRole("button", { name: "Ajustes" }));
-    expect(screen.getByRole("heading", { name: "Diagnóstico" })).toBeInTheDocument();
+    renderAt("#settings/advanced");
+    expect(await screen.findByRole("heading", { name: "Diagnóstico" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Rutas de las CLIs" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "APIs" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Datos" })).toBeInTheDocument();
     expect(screen.getByText("hedy doctor")).toBeInTheDocument();
     const diagnosis = await screen.findByRole("list", { name: "Resultado del diagnóstico" });
     const codex = within(diagnosis).getByText("Codex").closest("li")!;
@@ -361,7 +496,9 @@ describe("Settings", () => {
   it("turns task notifications off and on", async () => {
     const { api, user } = renderApp();
     await user.click(await screen.findByRole("button", { name: "Ajustes" }));
-    expect(screen.getByRole("heading", { name: "Avisos" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "General" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Tu nombre")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ver la guía de bienvenida" })).toBeInTheDocument();
     const toggle = screen.getByRole("switch", { name: "Avisarme cuando una tarea me necesita o termina" });
     expect(toggle).toHaveAttribute("aria-checked", "true");
     await user.click(toggle);
@@ -372,9 +509,9 @@ describe("Settings", () => {
   });
 
   it("turns context saving off and explains how it works", async () => {
-    const { api, user } = renderApp();
-    await user.click(await screen.findByRole("button", { name: "Ajustes" }));
-    expect(screen.getByRole("heading", { name: "Ahorro" })).toBeInTheDocument();
+    const { api, user } = renderAt("#settings/saving");
+    expect(await screen.findByRole("heading", { level: 1, name: "Ahorro" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Mapa del código" })).toBeInTheDocument();
     const toggle = screen.getByRole("switch", { name: "Gastar menos en cada tarea" });
     expect(toggle).toHaveAttribute("aria-checked", "true");
     await user.click(toggle);
@@ -390,15 +527,20 @@ describe("Settings", () => {
   });
 
   it("leaves context saving to HEDY_EXPERIMENTS when it is set", async () => {
-    const { user } = renderApp(new MockApi({ contextSavingByEnv: true }));
-    await user.click(await screen.findByRole("button", { name: "Ajustes" }));
-    expect(screen.getByRole("switch", { name: "Gastar menos en cada tarea" })).toBeDisabled();
+    renderAt("#settings/saving", new MockApi({ contextSavingByEnv: true }));
+    expect(await screen.findByRole("switch", { name: "Gastar menos en cada tarea" })).toBeDisabled();
     expect(screen.getByText("Ahora lo decide la variable HEDY_EXPERIMENTS.")).toBeInTheDocument();
   });
 
-  it("previews the four mascot states", async () => {
-    const { user } = renderApp();
-    await user.click(await screen.findByRole("button", { name: "Ajustes" }));
+  it("previews the four mascot states behind Ver la mascota", async () => {
+    const { user } = renderAt("#settings/appearance");
+    const show = await screen.findByRole("button", { name: "Ver la mascota" });
+    expect(show).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByLabelText("Estados de la mascota")).not.toBeInTheDocument();
+    await user.click(show);
+    const hide = screen.getByRole("button", { name: "Ocultar la mascota" });
+    expect(hide).toHaveAttribute("aria-expanded", "true");
+
     const gallery = screen.getByLabelText("Estados de la mascota");
     for (const name of ["Durmiendo", "Pensando", "Trabajando", "¡Listo!"]) {
       expect(within(gallery).getByRole("img", { name })).toBeInTheDocument();
@@ -409,5 +551,9 @@ describe("Settings", () => {
       expect(within(working).getByRole("img", { name })).toBeInTheDocument();
     }
     expect(within(working).getByText("Sudando la gota · Sin rendirse · Dándolo todo")).toBeInTheDocument();
+
+    await user.click(hide);
+    expect(screen.queryByLabelText("Estados de la mascota")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ver la mascota" })).toBeInTheDocument();
   });
 });

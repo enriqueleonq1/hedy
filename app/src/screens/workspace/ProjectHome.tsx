@@ -22,12 +22,15 @@ const TABS: { id: ProjectTab; label: MessageKey }[] = [
 /** The project's name and its sections; the other tabs are their own screens. */
 export function ProjectHead({
   name,
+  title,
   path,
   current,
   tools,
   onTab,
 }: {
   name: string;
+  /** The heading when it is not just the name ("Ajustes de hedy"). */
+  title?: string;
   path: string;
   current: ProjectTab;
   /** More buttons at the end of the head (the side panel's toggle). */
@@ -39,7 +42,7 @@ export function ProjectHead({
   return (
     <header className="project-head">
       <div className="project-head__top">
-        <h1 title={path}>{name}</h1>
+        <h1 title={path}>{title ?? name}</h1>
         <div className="chat__tools">
           <button type="button" className="tool-btn" onClick={() => void api.openInEditor(path)}>
             <span className="tool-btn__label">{t("project.openEditor")}</span>

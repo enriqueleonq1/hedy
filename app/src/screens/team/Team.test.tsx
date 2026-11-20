@@ -6,6 +6,7 @@ import { App } from "../../App";
 import { ApiProvider } from "../../api/context";
 import { MockApi } from "../../api/MockApi";
 import { ToastProvider } from "../../components/ui/Toast";
+import { parseInvite } from "./TeamDialogs";
 import { WhoForDialog } from "./TeamMemory";
 
 vi.mock("../../components/Terminal/TerminalView", () => ({ TerminalView: () => null }));
@@ -17,7 +18,16 @@ function renderAt(hash: string, api = MockApi.withSampleData()) {
   return { api, user: userEvent.setup() };
 }
 
-const section = () => screen.getByRole("heading", { name: "Equipos" }).closest("section")!;
+// Ajustes draws the title; the section is named after it.
+const section = () => screen.getByRole("region", { name: "Equipos" });
+
+async function openPlataforma(api = MockApi.withSampleData()) {
+  const rendered = renderAt("#teams", api);
+  const card = await waitFor(section);
+  await rendered.user.click(await within(card).findByRole("button", { name: /Plataforma/ }));
+  await within(card).findByRole("heading", { name: "Plataforma" });
+  return { ...rendered, card };
+}
 
 describe("Teams", () => {
   afterEach(() => history.replaceState(null, "", "#"));
@@ -52,6 +62,93 @@ describe("Teams", () => {
     await user.click(within(dialog).getByRole("button", { name: "Quitar a Luis" }));
     await waitFor(() => expect(within(card).queryByText("Luis")).toBeNull());
     expect(api.teamList[0]!.people.some((p) => p.name === "Luis")).toBe(false);
+  });
+
+  it("copies one invite with the address and the code, to paste in a message", async () => {
+    const { user, card } = await openPlataforma();
+    const write = vi.spyOn(navigator.clipboard, "writeText");
+    await user.click(within(card).getByRole("button", { name: "Copiar invitación" }));
+    expect(await screen.findByText("Invitación copiada: pégala en un mensaje.")).toBeInTheDocument();
+    const text = write.mock.calls.at(-1)![0];
+    expect(text).toContain("«Plataforma»");
+    expect(text).toContain("Dirección: git@github.com:empresa/hedy-team.git");
+    expect(text).toContain("Código: 7-tigre-lima-nube-faro");
+    expect(text).toMatch(/caduca en 4[67] h/);
+    // What "Unirme con una invitación" reads back.
+    expect(parseInvite(text)).toEqual({ url: "git@github.com:empresa/hedy-team.git", code: "7-tigre-lima-nube-faro" });
+  });
+
+  it("adds another computer of the user's with its own invite", async () => {
+    const { api, user, card } = await openPlataforma();
+    const invite = vi.spyOn(api, "teamInvite");
+    await user.click(within(card).getByRole("button", { name: "Agregar otra computadora tuya" }));
+    await waitFor(() => expect(invite).toHaveBeenCalledWith("team-1", false, true));
+    expect(await within(card).findByText("Otra computadora tuya")).toBeInTheDocument();
+    const write = vi.spyOn(navigator.clipboard, "writeText");
+    const row = within(card).getByText("Otra computadora tuya").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Copiar invitación" }));
+    await waitFor(() => expect(write.mock.calls.at(-1)![0]).toMatch(/^Para sumar otra computadora tuya al equipo «Plataforma»/));
+  });
+
+  it("shows the team layer's usage as a meter", async () => {
+    const { api, card } = await openPlataforma();
+    const team = await api.teamStatus("team-1");
+    const meter = within(card).getByRole("meter", { name: "Uso de la capa del equipo" });
+    expect(meter).toHaveAttribute("aria-valuenow", String(Math.round((team.layerTokens / team.layerMax) * 100)));
+  });
+
+  it("leaves from the danger zone after a second click", async () => {
+    const api = MockApi.withSampleData();
+    // The only admin left would be Marta: Alex steps down to member first.
+    api.teamList[0]!.people.find((p) => p.me)!.role = "member";
+    api.teamList[0]!.summary.role = "member";
+    const { user, card } = await openPlataforma(api);
+    const zone = within(card).getByRole("region", { name: "Zona de peligro" });
+    const leave = within(zone).getByRole("button", { name: "Salir" });
+    expect(leave).toHaveClass("btn--danger");
+    await user.click(leave);
+    expect(api.teamList).toHaveLength(1);
+    await user.click(within(zone).getByRole("button", { name: /¿Salir\? Sus notas se borran/ }));
+    await waitFor(() => expect(api.teamList).toHaveLength(0));
+    expect(await within(section()).findByRole("button", { name: /Crear un equipo/ })).toBeInTheDocument();
+  });
+
+  it("lets an admin rename the team", async () => {
+    const { api, user, card } = await openPlataforma();
+    await user.click(within(card).getByRole("button", { name: "Renombrar" }));
+    const input = within(card).getByLabelText("Nombre del equipo");
+    await user.clear(input);
+    await user.type(input, "Plataforma web{Enter}");
+    expect(await within(card).findByRole("heading", { name: "Plataforma web" })).toBeInTheDocument();
+    expect(api.teamList[0]!.summary.name).toBe("Plataforma web");
+  });
+
+  it("says in plain words why a team's sync failed, with Reintentar", async () => {
+    const api = MockApi.withSampleData();
+    api.teamList[0]!.summary.lastError = "git fetch falló: Authentication failed for 'https://github.com/empresa/hedy-team.git'";
+    const sync = vi.spyOn(api, "teamSync");
+    const { user, card } = await openPlataforma(api);
+    const alert = within(card).getByRole("alert");
+    expect(within(alert).getByText("Sin acceso al repositorio")).toBeInTheDocument();
+    await user.click(within(alert).getByRole("button", { name: "Reintentar" }));
+    expect(sync).toHaveBeenCalledWith("team-1");
+  });
+
+  it("reads the address and the code out of a pasted invite", async () => {
+    const api = MockApi.withSampleData();
+    api.teamList = [];
+    const { user } = renderAt("#teams", api);
+    await user.click(within(await waitFor(section)).getByRole("button", { name: /Unirme con una invitación/ }));
+    const dialog = screen.getByRole("dialog", { name: "Unirme con una invitación" });
+    await user.click(within(dialog).getByLabelText("Código de invitación"));
+    await user.paste("Te invito.\n\nDirección: git@github.com:empresa/hedy-team.git\nCódigo: 7-tigre-lima-nube-faro\n\nCaduca.");
+    expect(within(dialog).getByLabelText("Dirección del repo")).toHaveValue("git@github.com:empresa/hedy-team.git");
+    expect(within(dialog).getByLabelText("Código de invitación")).toHaveValue("7-tigre-lima-nube-faro");
+    expect(parseInvite("solo 7-tigre-lima-nube-faro")).toBeNull();
+    expect(parseInvite("https://gitlab.com/g/7-a-b-c.git y 12-ñandú-río-sol.")).toEqual({
+      url: "https://gitlab.com/g/7-a-b-c.git",
+      code: "12-ñandú-río-sol",
+    });
   });
 
   it("creates a team step by step and asks for a word of its key back", async () => {

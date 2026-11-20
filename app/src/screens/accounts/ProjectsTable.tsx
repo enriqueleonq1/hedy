@@ -90,8 +90,15 @@ function ProjectRow({
   return (
     <tr>
       <th scope="row">
-        <span className="dot" style={{ background: projectColor(project, overview.accounts) }} aria-hidden />
-        {project.name}
+        {/* Its settings sheet (`#ps=`, App's route): the rest of the row is a summary. */}
+        <a
+          className="link-button"
+          href={`#ps=${encodeURIComponent(project.path)}`}
+          title={t("projectSettings.title", { name: project.name })}
+        >
+          <span className="dot" style={{ background: projectColor(project, overview.accounts) }} aria-hidden />
+          {project.name}
+        </a>
       </th>
       <td className="muted">{shortPath(project.path)}</td>
       <td>
