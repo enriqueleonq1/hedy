@@ -13,6 +13,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use hedy_core::application::Hedy;
 use hedy_core::application::ports::TaskEvents;
+use hedy_core::domain::permissions::is_write_tool;
 use hedy_core::domain::skill_check::Verdict;
 use hedy_core::domain::skill_trial::{TrialOutcome, TrialResult};
 use hedy_core::domain::{AgentEvent, Decision, Task, TaskId, TaskStatus};
@@ -167,6 +168,15 @@ pub fn try_skill(
             ))
         ),
     }
+    if !interactive() {
+        println!(
+            "  {}",
+            s.warn(tr!(
+                "Sin terminal nadie responde los permisos: cada copia puede cambiar sus archivos, pero sus comandos se rechazan.",
+                "With no terminal nobody answers permissions: each copy may change its files, but its commands are denied."
+            ))
+        );
+    }
     let runs = tasks.len() * 2;
     let question = tr!(
         "¿Empezar? Son {runs} tareas de verdad y gastan tokens de la cuenta del proyecto. [s/N] ",
@@ -312,7 +322,14 @@ pub fn try_skill(
                             ),
                         });
                     } else {
-                        let _ = hedy.answer_permission(&id, &request_id, Decision::Deny);
+                        // Hedy already denied writes outside the copy and
+                        // protected files: what is left stays in the copy.
+                        let decision = if is_write_tool(&tool) {
+                            Decision::AllowForTask
+                        } else {
+                            Decision::Deny
+                        };
+                        let _ = hedy.answer_permission(&id, &request_id, decision);
                     }
                 }
             }

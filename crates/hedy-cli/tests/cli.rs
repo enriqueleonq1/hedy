@@ -61,7 +61,15 @@ if [ "$1" = -p ] && [ "$2" = --input-format ]; then
       echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Pensando..."}]}}'
       exec sleep 30
     fi
-    if [ "$FAKE_CLAUDE_MODE" = permission ]; then
+    if [ "$FAKE_CLAUDE_MODE" = edit ]; then
+      # Asks to change a file in its folder, then to run a command.
+      echo '{"type":"control_request","request_id":"req-e","request":{"subtype":"can_use_tool","tool_name":"Edit","tool_use_id":"tu1","input":{"file_path":"'"$(pwd)"'/app.js","old_string":"1","new_string":"2"}}}'
+      IFS= read -r answer
+      printf 'Edit %s\n' "$answer" >> "$FAKE_ANSWERS"
+      echo '{"type":"control_request","request_id":"req-b","request":{"subtype":"can_use_tool","tool_name":"Bash","tool_use_id":"tu2","input":{"command":"npm test"}}}'
+      IFS= read -r answer
+      printf 'Bash %s\n' "$answer" >> "$FAKE_ANSWERS"
+    elif [ "$FAKE_CLAUDE_MODE" = permission ]; then
       echo '{"type":"control_request","request_id":"req-1","request":{"subtype":"can_use_tool","tool_name":"Bash","tool_use_id":"tu1","input":{"command":"rm -rf build"}}}'
       IFS= read -r answer
       case "$answer" in *'"deny"'*) echo '{"type":"assistant","message":{"content":[{"type":"text","text":"No pude borrar nada."}]}}' ;; esac
@@ -855,6 +863,62 @@ fn skills_try_runs_each_task_with_and_without_the_skill_and_keeps_the_result() {
         .success()
         .stdout(predicate::str::contains("descartada"));
     assert_eq!(git(&repo, &["worktree", "list"]).lines().count(), 1);
+    assert_eq!(git(&repo, &["status", "--short"]), "");
+}
+
+#[test]
+fn skills_try_without_a_terminal_lets_each_copy_change_files_but_not_run_commands() {
+    let env = Env::new();
+    let repo = commit_repo(&env);
+    env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy_in(&repo, &["use", "claude"]).assert().success();
+    seed_skills(&env, &repo);
+    let answers = env.path("answers.log");
+    env.hedy_in(
+        &repo,
+        &[
+            "skills",
+            "try",
+            "run-e2e-tests",
+            "--task",
+            "Arregla el saludo",
+            "--check",
+            "true",
+            "--yes",
+        ],
+    )
+    .env("FAKE_CLAUDE_MODE", "edit")
+    .env("FAKE_ANSWERS", &answers)
+    .timeout(std::time::Duration::from_secs(60))
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(
+        "Sin terminal nadie responde los permisos",
+    ));
+    let answers = fs::read_to_string(answers).unwrap();
+    let of = |tool: &str| -> Vec<&str> {
+        answers
+            .lines()
+            .filter(|l| l.starts_with(&format!("{tool} ")))
+            .collect()
+    };
+    // Both runs asked, each in its own copy.
+    assert_eq!(of("Edit").len(), 2, "{answers}");
+    assert!(
+        of("Edit")
+            .iter()
+            .all(|l| l.contains(r#""behavior":"allow""#)),
+        "{answers}"
+    );
+    assert_eq!(of("Bash").len(), 2, "{answers}");
+    assert!(
+        of("Bash")
+            .iter()
+            .all(|l| l.contains(r#""behavior":"deny""#)),
+        "{answers}"
+    );
     assert_eq!(git(&repo, &["status", "--short"]), "");
 }
 

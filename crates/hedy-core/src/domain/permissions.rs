@@ -225,6 +225,12 @@ fn command_program(command: &str) -> Option<&str> {
     command.split_whitespace().find(|word| !word.contains('='))
 }
 
+/// Whether `tool` changes files (writes outside the task folder are denied
+/// by [`evaluate`] before anyone is asked).
+pub fn is_write_tool(tool: &str) -> bool {
+    WRITE_TOOLS.contains(&tool)
+}
+
 /// What "Permitir en este chat" remembers for this request, if anything.
 pub fn rule_for(tool: &str, input: &Value) -> Option<AllowRule> {
     if tool == "Bash" {

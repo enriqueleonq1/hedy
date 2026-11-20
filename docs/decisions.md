@@ -853,7 +853,11 @@ lowercase letters, digits and single dashes, equal to the folder name; `descript
     made up from someone else's skill, and the command Hedy will run, are always read
     first) runs twice as an ordinary project task,
     with the project's phases and accounts, each in its own worktree: one with the skill
-    and one without it.
+    and one without it. In a terminal the CLI asks about each permission; without one
+    (`--yes` from a script) nobody can answer, so edits inside each copy are allowed as
+    "Permitir en este chat" would (writes outside it and protected files are still
+    denied) and commands are denied, as it warns before starting. Denying everything
+    left every headless trial void.
     - **The run without it gets it from nowhere:** not in its plugin, not in its
       worktree's `.agents/skills`, and `skill_list` / `skill_get` do not serve it. The
       run is marked (by skill id, so a rename does not bring it back) before its
