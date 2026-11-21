@@ -59,7 +59,9 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
   `hedy flow run <name|key> "<request>" [--model M]` (asks approvals and permissions here),
   `hedy flow new <name> [--from <flow>] [--global]`, `hedy flow edit <name>` (in `$EDITOR`, checked
   on save); the role library: `hedy roles` (`list`, `show <id>`, `new <id> [--from]`, `edit <id>`,
-  `remove <id>`). In the app, a project's Flujos tab (`#pf=`); a flow can follow a task's end
+  `remove <id>`). In the app, a project's Flujos tab (`#pf=`); a flow can follow a task's end.
+  With a team (§49, admins share): `hedy flow share|unshare <name>`, `hedy roles share|unshare <id>`,
+  `hedy flow allow "<cmd>"` (a team flow's test command runs only once allowed on this PC)
 - Evals (real tasks, spend tokens): `cargo run -p hedy-evals -- --model haiku` (`--list`,
   `--case`, `--layers plain,memory,code-map,full`, `--repeat`); results in `evals/results/`
 - Context-saving switches (`crates/hedy-core/src/experiments.rs`, docs/decisions.md §33): on by

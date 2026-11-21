@@ -4109,3 +4109,61 @@ A project's **Flujos** tab (`#pf=<path>[&<key>]`), between Tareas and Memoria:
   use it in a parallel group or before a verdict check invalid. They say so when they start; runs
   already going keep their own copy of the roles.
 - Every command that changes something is refused inside an agent's session.
+
+## 49. The orchestrator, O8: flows and roles shared with a team (Nov 21, 2026)
+
+**How they travel.** Two more kinds go in a team's encrypted repo (§35): `ItemKind::Flow` and
+`ItemKind::Role`, in the team layer, bodies `TeamFlowBody` / `TeamRoleBody`.
+- They are team-only (`ItemKind::team_only`) and never enter personal sync.
+- In a project linked to the team, the team's flows appear as "Del equipo" (`FlowScope::Team`,
+  key `team:<uid>`). They are read-only, like the templates; "Duplicar para editar" makes a copy
+  of your own.
+- The team's roles join the library, under the user's own roles with the same id.
+
+**Who may share.** Only admins share or remove flows and roles (`TeamWrite::config_allowed`).
+Unlike a note, they drive agents on every PC: a role's instructions, a flow's test command.
+Members use them.
+
+**What every PC checks** on each received version:
+- the writer's seat in the newest epoch is an admin;
+- the body reads as a flow or role;
+- no hidden character in any string or key of it, checked string by string;
+- its byline is its writer's, or the one it already had (`take_over` restating a departed
+  admin's items keeps their name);
+- a flow names no account: sharing strips each step's account, and each PC runs it with its own;
+- a role never has one of Hedy's ids.
+
+The scenario test runs two PCs on real git: a member's forged flow is refused on the admin's PC.
+
+**A team role never takes a built-in's place.** Without this, a shared `reviewer` made a writer
+would change the user's own flows and Hedy's templates in every project of the team, including
+the automatic run after a task, with nobody approving it. So:
+- sharing a role with a built-in id is refused;
+- such a version is refused on read;
+- `roles()` ignores it.
+
+A team role is something new, named by its own id, that flows use only by naming it.
+
+**Test commands are this PC's call.**
+- A team flow whose tests run its own command does not start until this PC's user allows that
+  exact string (`flows.approved_commands`; a changed command asks again).
+- Where it is asked:
+  - the app's run dialog lists the commands with a "Permito estos comandos en este PC" checkbox;
+  - `hedy flow run` asks y/N;
+  - `hedy flow allow "<cmd>"` allows one ahead.
+- None of these can be reached from an agent's session.
+- Commands always run in bubblewrap, with no network (§44).
+- A flow with no command uses the project's detected one, as the user's own flows do.
+
+**Guards around copies and names.**
+- A copy of any flow starts "by hand only", so a duplicated team flow never runs after every
+  task unless the user turns that on.
+- Names resolve with the user's flows first, then Hedy's, then the team's, so a team flow cannot
+  stand in for a template by name.
+
+**Terminal:** `hedy flow share|unshare <name>`, `hedy roles share|unshare <id>`,
+`hedy flow allow "<cmd>"`. They are listed under "Del equipo" in `hedy flow list` and `hedy roles`.
+
+**Known limits:**
+- The allowed commands are one list per PC, not per team.
+- Two admins sharing the same new name at once can leave two entries until one is unshared.
