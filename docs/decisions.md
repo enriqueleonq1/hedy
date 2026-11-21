@@ -3909,3 +3909,37 @@ session, so Hedy keeps the shared context and hands it to each role.
 - **Verified for real** (haiku, personal account): `smoke_task -- haiku flow` again, with the
   programmer's prompt built from the board.
 
+## 44. The orchestrator, O3: conditions, loops and `hedy flow run` (Nov 21, 2026)
+
+A flow now picks its path. All three templates run.
+
+- **Tests** (`check: tests`, with a `command:` or the one `briefing::test_command` finds for
+  the copy): Hedy runs it in the task's copy the way a skill trial's check runs
+  (`ProcessRunner::run_check`): with bubblewrap, no network, the system read-only, only the
+  copy writable, the project's `.git` and shared dependency folders read-only, never `.env` or
+  the rest; at most 15 minutes. Exit 0 passes. The last 40 lines of what it printed go on the
+  board (`tests`, by «Hedy», secrets masked), so the programmer sent back sees why. With no
+  command found, the run stops and says to put one in the flow.
+- **Rules** (`check: rules`): the same check as «Revisar con tus reglas» (§37) on the task's
+  changes; it passes with no break. What breaks goes on the board (`rules`). A check that
+  cannot run or reads nothing clear stops the run.
+- **Verdict** (`check: verdict`): roles that deliver a verdict are told to end with a line
+  `VEREDICTO: APRUEBA` or `VEREDICTO: CAMBIOS` (`VERDICT: APPROVE` / `CHANGES`). Hedy reads
+  only that line (`flow::parse_verdict`, the last one, any case), never free text. All the
+  verdicts since the last verdict condition must approve. One without such a line stops the
+  run: the user reads the review and decides.
+- **Each check** is an event (`FlowCheck`: what, passed) and takes the `pass` or `fail`
+  connection. A loop back counts its rounds; past its maximum the run stops and leaves the
+  changes for review, saying so.
+- **Roles at once** (`parallel`): read-only roles of a group run one after another
+  (`FlowRun.lane`), each in its own session, before the flow moves on. It is the same result
+  as running them at once, without several sessions in one copy.
+- **`hedy flow run <flow> "<request>" [--model M]`** starts a flow in the current project and
+  follows it in the terminal: each role's start, each check, the end. Approvals, plans and
+  permission requests are asked there. Without a terminal, requests are declined and an
+  approval leaves the task waiting for the app. Ctrl+C stops the task, which stays for review.
+- **Verified for real** (haiku, a scratch data folder on the personal account, Automático): in
+  a small Rust crate whose `suma` subtracted, `hedy flow run fix-loop` ran the programmer
+  (`a - b` → `a + b`, the test untouched), `cargo test` in bubblewrap (passed), the reviewer
+  (`VEREDICTO: APRUEBA`) and ended for review, with the project itself untouched.
+

@@ -4,6 +4,7 @@ mod ask;
 mod cli;
 mod commands;
 mod commit;
+mod flow_run;
 mod mascot;
 mod memory_ask;
 mod review;
@@ -260,6 +261,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Flow { command } => match command.unwrap_or(FlowCommand::List) {
             FlowCommand::List => commands::flow_list(&hedy, &dir),
             FlowCommand::Show { name } => commands::flow_show(&hedy, &dir, &name),
+            FlowCommand::Run {
+                name,
+                request,
+                model,
+            } => flow_run::run(&hedy, &dir, &name, &request, model),
         },
         Command::Template { command } => match command.unwrap_or(TemplateCommand::List) {
             TemplateCommand::List => commands::template_list(&hedy, &dir),

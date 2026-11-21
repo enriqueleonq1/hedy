@@ -1042,6 +1042,35 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             ),
         ),
         (
+            "flow run",
+            "",
+            tr!(
+                "Lanza un flujo con un pedido y lo sigue aquí: te pregunta las aprobaciones y los permisos",
+                "Start a flow with a request and follow it here: it asks you the approvals and permissions"
+            ),
+        ),
+        (
+            "flow run",
+            "name",
+            tr!(
+                "Nombre o clave del flujo (classic, fix-loop…)",
+                "Flow name or key (classic, fix-loop…)"
+            ),
+        ),
+        (
+            "flow run",
+            "model",
+            tr!(
+                "Modelo para los roles que no tienen uno propio",
+                "Model for the roles that have none of their own"
+            ),
+        ),
+        (
+            "flow run",
+            "request",
+            tr!("Qué tiene que hacer el equipo", "What the team has to do"),
+        ),
+        (
             "flow show",
             "name",
             tr!(
@@ -2014,7 +2043,16 @@ pub enum SkillsCommand {
 pub enum FlowCommand {
     List,
 
-    Show { name: String },
+    Show {
+        name: String,
+    },
+
+    Run {
+        name: String,
+        request: String,
+        #[arg(long, short)]
+        model: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug, PartialEq, Eq)]
@@ -2365,6 +2403,8 @@ mod tests {
         assert!(parse(&["hedy", "client"]).is_err());
         assert!(parse(&["hedy", "block"]).is_ok());
         assert!(parse(&["hedy", "permissions"]).is_ok());
+        assert!(parse(&["hedy", "flow", "run", "fix-loop", "Arregla el login"]).is_ok());
+        assert!(parse(&["hedy", "flow", "run", "fix-loop"]).is_err());
         assert!(parse(&["hedy", "permissions", "auto"]).is_ok());
         assert!(parse(&["hedy", "permissions", "bypass"]).is_err());
         assert!(parse(&["hedy", "block", ".env", "*.pem"]).is_ok());

@@ -55,7 +55,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
   `hedy block [patterns] [--remove|--usual|--clear]`
 - What a project's new tasks do without asking (as Claude Code's modes):
   `hedy permissions [manual|edits|auto]`
-- Orchestrator flows (docs/decisions.md §42): `hedy flow list`, `hedy flow show <name|key>`
+- Orchestrator flows (docs/decisions.md §42–§44): `hedy flow list`, `hedy flow show <name|key>`,
+  `hedy flow run <name|key> "<request>" [--model M]` (asks approvals and permissions here)
 - Evals (real tasks, spend tokens): `cargo run -p hedy-evals -- --model haiku` (`--list`,
   `--case`, `--layers plain,memory,code-map,full`, `--repeat`); results in `evals/results/`
 - Context-saving switches (`crates/hedy-core/src/experiments.rs`, docs/decisions.md §33): on by
