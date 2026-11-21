@@ -55,6 +55,7 @@ impl Hedy {
         if request.mode.changes_files() {
             return Err(AppError::ConversationChangesFiles);
         }
+        super::tasks::check_model(request.model.as_deref())?;
         let account = match request.account.as_deref().filter(|a| !a.is_empty()) {
             Some(id) => self.account(id)?,
             None => {

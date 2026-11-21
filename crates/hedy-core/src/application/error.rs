@@ -58,6 +58,8 @@ pub enum AppError {
     #[error("{}", self.message())]
     NoFlowApproval(TaskId),
     #[error("{}", self.message())]
+    InvalidModel(String),
+    #[error("{}", self.message())]
     InvalidBlockedPattern(String),
     #[error("{}", self.message())]
     OutputNotOpened(String),
@@ -411,6 +413,10 @@ impl AppError {
             Self::FlowAtApproval(id) => tr!(
                 "la tarea {id} espera tu aprobación: apruébala o pide cambios antes de pasarla a otra cuenta",
                 "task {id} is waiting for your approval: approve it or ask for changes before handing it over"
+            ),
+            Self::InvalidModel(model) => tr!(
+                "«{model}» no sirve como nombre de modelo (una palabra que no empiece por -)",
+                "«{model}» is not a valid model name (one word that does not start with -)"
             ),
             Self::NoFlowApproval(id) => tr!(
                 "la tarea {id} no espera tu aprobación",

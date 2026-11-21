@@ -12,6 +12,16 @@ use serde_json::Value;
 use super::carry::Carry;
 use super::ports::{AgentBackend, AgentRequest, AgentSession, RateLimit, Secret, UsageRecord};
 use super::{AppError, AppResult, Hedy, NewImage, Setting};
+
+/// Refuses a model name a CLI could read as one of its options.
+pub(crate) fn check_model(model: Option<&str>) -> AppResult<()> {
+    match model {
+        Some(m) if !crate::domain::flow::valid_model(&Some(m.to_owned())) => {
+            Err(AppError::InvalidModel(m.to_owned()))
+        }
+        _ => Ok(()),
+    }
+}
 use crate::domain::carry::carried_prompt;
 use crate::domain::permissions::BlockedFiles;
 use crate::domain::permissions::{self, AllowRule, Verdict};
@@ -203,6 +213,7 @@ impl Hedy {
         if request.prompt.trim().is_empty() {
             return Err(AppError::EmptyPrompt);
         }
+        check_model(request.model.as_deref())?;
         let stages = pipeline(
             &main_account,
             &project.phases,
@@ -775,6 +786,9 @@ impl Hedy {
         mut images: Vec<PromptImage>,
         resume: Option<String>,
     ) -> AppResult<()> {
+        // Whatever set it (a phase, a flow's seat, a handoff), a model never
+        // reaches a CLI as one of its options.
+        check_model(stage.model.as_deref())?;
         let (backend, launch) = self.backend(account)?;
         // An agent that takes no images (a later phase, a handoff) is told
         // they exist instead of getting them.
@@ -1583,6 +1597,7 @@ impl Hedy {
     ) -> AppResult<Task> {
         // A trial run at a limit is void anyway: no tokens elsewhere for it.
         self.refuse_trial_run(id)?;
+        check_model(model.as_deref())?;
         let mut task = self.task(id)?;
         if task.status.is_closed() {
             return Err(AppError::TaskClosed(id.clone()));

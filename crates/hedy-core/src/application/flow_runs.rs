@@ -29,6 +29,7 @@ impl Hedy {
         if request.prompt.trim().is_empty() {
             return Err(AppError::EmptyPrompt);
         }
+        super::tasks::check_model(request.model.as_deref())?;
         let main = project.account.clone().ok_or(AppError::NoAccountResolved)?;
         let entry = self.flow(Some(&project.path), which)?;
         let lookup = self.role_lookup(Some(&project.path))?;
@@ -525,56 +526,65 @@ impl Hedy {
         // not: every other task's turn waits on that lock.
         self.set_status(&mut task, TaskStatus::Running)?;
         drop(_status);
-        if approve {
-            if self.advance_flow(&mut task, Outcome::Done)? {
+        // A step that cannot start (its account was reserved meanwhile, a
+        // CLI gone) leaves the work for review with why, not Running forever.
+        let mut go = || -> AppResult<()> {
+            if approve {
+                if self.advance_flow(&mut task, Outcome::Done)? {
+                    self.flow_step(&mut task)?;
+                }
+            } else {
+                let run = task.flow.as_mut().expect("checked above");
+                let here = run.position.node.clone();
+                // Back to the role before it; an approval right after the start
+                // has no work to redo.
+                let back = run
+                    .before(&here)
+                    .filter(|b| {
+                        matches!(
+                            run.flow.node(b).map(|n| &n.kind),
+                            Some(NodeKind::Role(_) | NodeKind::Parallel { .. })
+                        )
+                    })
+                    .map(str::to_owned)
+                    .ok_or(AppError::NothingToRedo)?;
+                let text = feedback.map_or_else(
+                    || {
+                        tr!(
+                            "No lo aprobé: hazlo de otra forma.",
+                            "I did not approve it: do it another way."
+                        )
+                    },
+                    str::to_owned,
+                );
+                let round = run.position.round();
+                run.position.node = back;
+                run.lane = 0;
+                run.verdicts.clear();
+                self.post_to_board(
+                    id,
+                    BoardEntry {
+                        section: FEEDBACK.to_owned(),
+                        role: tr!("Tú", "You"),
+                        round,
+                        text: text.clone(),
+                        by_user: true,
+                    },
+                )?;
+                self.record(
+                    id,
+                    AgentEvent::UserMessage {
+                        text,
+                        images: Vec::new(),
+                    },
+                )?;
                 self.flow_step(&mut task)?;
             }
-        } else {
-            let run = task.flow.as_mut().expect("checked above");
-            let here = run.position.node.clone();
-            // Back to the role before it; an approval right after the start
-            // has no work to redo.
-            let back = run
-                .before(&here)
-                .filter(|b| {
-                    matches!(
-                        run.flow.node(b).map(|n| &n.kind),
-                        Some(NodeKind::Role(_) | NodeKind::Parallel { .. })
-                    )
-                })
-                .map(str::to_owned)
-                .ok_or(AppError::NothingToRedo)?;
-            let text = feedback.map_or_else(
-                || {
-                    tr!(
-                        "No lo aprobé: hazlo de otra forma.",
-                        "I did not approve it: do it another way."
-                    )
-                },
-                str::to_owned,
-            );
-            let round = run.position.round();
-            run.position.node = back;
-            run.lane = 0;
-            run.verdicts.clear();
-            self.post_to_board(
-                id,
-                BoardEntry {
-                    section: FEEDBACK.to_owned(),
-                    role: tr!("Tú", "You"),
-                    round,
-                    text: text.clone(),
-                    by_user: true,
-                },
-            )?;
-            self.record(
-                id,
-                AgentEvent::UserMessage {
-                    text,
-                    images: Vec::new(),
-                },
-            )?;
-            self.flow_step(&mut task)?;
+            Ok(())
+        };
+        if let Err(e) = go() {
+            let _ = self.end_flow(&mut task, Some(e.to_string()));
+            return Err(e);
         }
         self.events.task_updated(&task);
         Ok(task)
@@ -614,6 +624,67 @@ mod tests {
             .use_account(&f.dir("/code/tienda"), "personal", None)
             .unwrap();
         f
+    }
+
+    #[test]
+    fn a_model_that_reads_as_an_option_is_refused_before_anything_starts() {
+        let f = setup();
+        let mut bad = request(&f, "Cobros");
+        bad.model = Some("--yolo".into());
+        assert!(matches!(
+            f.hedy.start_flow(bad.clone(), "classic"),
+            Err(AppError::InvalidModel(_))
+        ));
+        assert!(matches!(
+            f.hedy.start_task(bad),
+            Err(AppError::InvalidModel(_))
+        ));
+        assert!(f.agents.requests().is_empty());
+    }
+
+    #[test]
+    fn a_step_that_cannot_start_after_your_approval_leaves_the_work_for_review() {
+        use crate::domain::flow::NodeKind;
+        let f = setup();
+        f.add_claude("Trabajo");
+        let dir = f.dir("/code/tienda");
+        let mut flow = f.hedy.flow(Some(&dir), "classic").unwrap().flow;
+        flow.name = "Con otra cuenta".into();
+        for node in &mut flow.nodes {
+            if let NodeKind::Role(seat) = &mut node.kind
+                && seat.role == "programmer"
+            {
+                seat.account = Some(crate::domain::AccountId::new("trabajo").unwrap());
+            }
+        }
+        let saved = f.hedy.save_flow_as(Some(&dir), None, flow).unwrap();
+        let task = f
+            .hedy
+            .start_flow(request(&f, "Cobros"), &saved.key)
+            .unwrap();
+        finish(&f, "1. Pagos.");
+        assert_eq!(
+            f.hedy.task(&task.id).unwrap().status,
+            TaskStatus::WaitingApproval
+        );
+        // Meanwhile another project takes that account for itself.
+        f.hedy
+            .use_account(&f.dir("/code/agenda"), "trabajo", Some(true))
+            .unwrap();
+        assert!(f.hedy.answer_flow_approval(&task.id, true, None).is_err());
+        let after = f.hedy.task(&task.id).unwrap();
+        assert_eq!(
+            after.status,
+            TaskStatus::Review,
+            "not Running with no agent"
+        );
+        assert!(
+            f.hedy
+                .task_events(&task.id)
+                .unwrap()
+                .iter()
+                .any(|e| matches!(e, AgentEvent::Error { .. }))
+        );
     }
 
     #[test]

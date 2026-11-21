@@ -8,8 +8,9 @@ use serde::Serialize;
 
 use super::ports::{FlowRecord, RoleRecord};
 use super::{AppError, AppResult, Hedy};
-use crate::domain::flow::{Flow, RoleDef, Template, builtin_role, builtin_roles};
+use crate::domain::flow::{Flow, NodeKind, RoleDef, Template, builtin_role, builtin_roles};
 use crate::domain::flow_text;
+use crate::domain::policy;
 use crate::tr;
 
 /// Where a flow or a role comes from.
@@ -185,15 +186,6 @@ impl Hedy {
         }
         let project = self.flow_project(project)?;
         let path = project.as_ref().map(|p| p.path.clone());
-        let roles = self.role_lookup(path.as_deref())?;
-        let problems: Vec<String> = flow
-            .problems(&|id| roles(id))
-            .iter()
-            .map(|p| p.message())
-            .collect();
-        if !problems.is_empty() {
-            return Err(AppError::InvalidFlow(problems));
-        }
         let records = self.store.flow_records()?;
         let editing = match edit.flatten() {
             Some(key) => {
@@ -206,8 +198,15 @@ impl Hedy {
             }
             None => None,
         };
-        // A saved flow stays where it was (a global one stays global).
+        // A saved flow stays where it was (a global one stays global), and is
+        // checked with the roles and accounts of that place.
         let place = editing.map_or(path, |r| r.project.clone());
+        let issues = self.flow_issues(place.as_deref(), &flow)?;
+        if !issues.is_empty() {
+            return Err(AppError::InvalidFlow(
+                issues.into_iter().map(|i| i.message).collect(),
+            ));
+        }
         let same = records
             .iter()
             .find(|r| r.project == place && same_name(&r.flow.name, &flow.name));
@@ -243,9 +242,16 @@ impl Hedy {
     /// editor to show as it changes.
     pub fn flow_problems(&self, project: Option<&Path>, flow: &Flow) -> AppResult<Vec<FlowIssue>> {
         let project = self.flow_project(project)?;
-        let roles = self.role_lookup(project.as_ref().map(|p| p.path.as_path()))?;
+        self.flow_issues(project.as_ref().map(|p| p.path.as_path()), flow)
+    }
+
+    /// The flow's problems with the roles of `place` (a project, or none for
+    /// a global flow), then each seat whose account may not work there: a
+    /// protected project's account is not offered elsewhere (rule 4).
+    fn flow_issues(&self, place: Option<&Path>, flow: &Flow) -> AppResult<Vec<FlowIssue>> {
+        let roles = self.role_lookup(place)?;
         let name = |id: &str| roles(id).map(|r| r.name);
-        Ok(flow
+        let mut issues: Vec<FlowIssue> = flow
             .problems(&|id| roles(id))
             .iter()
             .map(|p| {
@@ -257,7 +263,31 @@ impl Hedy {
                 };
                 FlowIssue { node, message }
             })
-            .collect())
+            .collect();
+        let projects = self.projects()?;
+        let project = place.and_then(|p| projects.iter().find(|x| x.path == p));
+        for node in &flow.nodes {
+            let seats: &[crate::domain::flow::Seat] = match &node.kind {
+                NodeKind::Role(seat) => std::slice::from_ref(seat),
+                NodeKind::Parallel { roles } => roles,
+                _ => &[],
+            };
+            for account in seats.iter().filter_map(|s| s.account.as_ref()) {
+                let problem = match self.account(account.as_str()) {
+                    Err(e) => Some(e.to_string()),
+                    Ok(_) => policy::check_launch(project, account, &projects)
+                        .err()
+                        .map(|e| e.to_string()),
+                };
+                if let Some(message) = problem {
+                    issues.push(FlowIssue {
+                        node: Some(node.id.clone()),
+                        message,
+                    });
+                }
+            }
+        }
+        Ok(issues)
     }
 
     /// Deletes one of the user's flows; Hedy's templates stay.
@@ -461,6 +491,36 @@ mod tests {
         assert!(matches!(
             f.hedy.save_flow_as(Some(&dir), Some("#999"), flow),
             Err(AppError::FlowNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn a_seat_on_another_protected_projects_account_is_a_problem_on_its_step() {
+        use crate::domain::flow::NodeKind;
+        let f = Fixture::new();
+        let dir = project(&f);
+        f.add_claude("Trabajo");
+        f.hedy
+            .use_account(&f.dir("/code/agenda"), "trabajo", Some(true))
+            .unwrap();
+        let mut flow = f.hedy.flow(Some(&dir), "fix-loop").unwrap().flow;
+        flow.name = "Prestada".into();
+        for node in &mut flow.nodes {
+            if let NodeKind::Role(seat) = &mut node.kind {
+                seat.account = Some(crate::domain::AccountId::new("trabajo").unwrap());
+            }
+        }
+        let issues = f.hedy.flow_problems(Some(&dir), &flow).unwrap();
+        assert_eq!(
+            issues
+                .iter()
+                .filter_map(|i| i.node.as_deref())
+                .collect::<Vec<_>>(),
+            ["n2", "n4"]
+        );
+        assert!(matches!(
+            f.hedy.save_flow_as(Some(&dir), None, flow),
+            Err(AppError::InvalidFlow(_))
         ));
     }
 

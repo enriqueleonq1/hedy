@@ -700,7 +700,9 @@ fn valid_node_id(id: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-fn valid_model(model: &Option<String>) -> bool {
+/// A model name a CLI can take as an argument's value: one word, not an
+/// option (`--yolo` would be read as a flag by some CLIs).
+pub fn valid_model(model: &Option<String>) -> bool {
     model.as_deref().is_none_or(|m| {
         !m.trim().is_empty()
             && m.len() <= 100
