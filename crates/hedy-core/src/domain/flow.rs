@@ -998,6 +998,30 @@ pub const FEEDBACK: &str = "feedback";
 pub const FRAME: &str = "frame";
 /// Longest text one entry of the board keeps.
 pub const MAX_BOARD_TEXT: usize = 16_000;
+/// Most entries one run's board keeps: a looping or misled agent cannot
+/// grow every later prompt without end.
+pub const MAX_BOARD_ENTRIES: usize = 200;
+/// Most sections one run's board has.
+pub const MAX_BOARD_SECTIONS: usize = 20;
+/// Most characters of board the prompt or `context_read` carries; the
+/// oldest entries are left out first.
+pub const MAX_BOARD_SHOWN: usize = 48_000;
+
+/// The entries that fit in [`MAX_BOARD_SHOWN`], the newest kept.
+pub fn board_within<'a>(entries: &[&'a BoardEntry]) -> Vec<&'a BoardEntry> {
+    let mut total = 0;
+    let mut kept: Vec<&BoardEntry> = entries
+        .iter()
+        .rev()
+        .take_while(|e| {
+            total += e.text.len() + e.section.len() + e.role.len();
+            total <= MAX_BOARD_SHOWN
+        })
+        .copied()
+        .collect();
+    kept.reverse();
+    kept
+}
 
 /// One entry of a run's blackboard: what a role (or the user) left for the
 /// others, in a section (`plan`, `changes`, `tests`, `review`…).

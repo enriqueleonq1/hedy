@@ -214,6 +214,7 @@ pub fn role_prompt(
     // What other agents wrote is quoted (a JSON string: no text can close
     // the block or pass for Hedy's or the user's words), as the team layer is.
     let quote = |text: &str| serde_json::to_string(text.trim()).expect("a string serializes");
+    let board = super::flow::board_within(board);
     let (asked, done): (Vec<&&super::flow::BoardEntry>, Vec<_>) =
         board.iter().partition(|e| e.by_user);
     if !done.is_empty() {

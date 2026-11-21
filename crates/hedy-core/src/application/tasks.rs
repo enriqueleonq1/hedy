@@ -908,12 +908,14 @@ impl Hedy {
 
     pub(super) fn set_status(&self, task: &mut Task, status: TaskStatus) -> AppResult<()> {
         if task.status != status {
+            task.status = status;
             // A flow's board lives as long as the task (rule 6: notes worth
-            // keeping are proposed, never kept here).
+            // keeping are proposed, never kept here). Cleared after the closed
+            // status is saved: the board server checks it before posting.
             if status.is_closed() && task.flow.is_some() {
+                self.store.save_task(task)?;
                 self.store.clear_board(&task.id)?;
             }
-            task.status = status;
             self.store.save_task(task)?;
             self.events.task_updated(task);
         }

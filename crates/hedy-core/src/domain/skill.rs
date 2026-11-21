@@ -147,6 +147,44 @@ pub fn find_secret(text: &str) -> Option<&'static str> {
     text.lines().find_map(secret_assignment)
 }
 
+/// `text` with what [`find_secret`] would flag hidden: each key-shaped word,
+/// each line that assigns a secret-looking name, a private key's whole block.
+pub fn mask_secrets(text: &str) -> String {
+    const HIDDEN: &str = "[…]";
+    let mut out: Vec<String> = Vec::new();
+    let mut in_key = false;
+    for line in text.lines() {
+        if line.contains("-----BEGIN") && line.contains("PRIVATE KEY") {
+            in_key = true;
+        }
+        if in_key {
+            if line.contains("-----END") {
+                in_key = false;
+                out.push(HIDDEN.to_owned());
+            }
+            continue;
+        }
+        if secret_assignment(line).is_some() {
+            out.push(HIDDEN.to_owned());
+            continue;
+        }
+        let mut line = line.to_owned();
+        let words: Vec<String> = line
+            .split(|c: char| c.is_whitespace() || "\"'`()[]{},;=".contains(c))
+            .filter(|w| secret_token(w).is_some())
+            .map(str::to_owned)
+            .collect();
+        for word in words {
+            line = line.replace(&word, HIDDEN);
+        }
+        out.push(line);
+    }
+    if in_key {
+        out.push(HIDDEN.to_owned());
+    }
+    out.join("\n")
+}
+
 /// Known credential shapes.
 fn secret_token(word: &str) -> Option<&'static str> {
     let word = word.trim_matches(|c: char| c == '.' || c == ':');
