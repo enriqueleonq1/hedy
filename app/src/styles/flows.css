@@ -11,6 +11,41 @@
   gap: var(--space-3);
 }
 
+/* -------------------------------------------------------------- motion
+   The canvas is alive: neon streaks run along the lines, their halo
+   breathes, steps arrive one after another and the chosen one pulses.
+   Transform (a motion path is one) and opacity only; all off with reduced
+   motion, at the end of this file. */
+
+@keyframes flow-run {
+  0% { offset-distance: 0%; opacity: 0; }
+  12% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { offset-distance: 100%; opacity: 0; }
+}
+@keyframes flow-run-back {
+  0% { offset-distance: 0%; opacity: 0; }
+  15% { opacity: 0.9; }
+  85% { opacity: 0.9; }
+  100% { offset-distance: 100%; opacity: 0; }
+}
+@keyframes flow-breathe {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.32; }
+}
+@keyframes flow-arrive {
+  from { opacity: 0; transform: translateY(6px) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes flow-ring {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.07); }
+}
+@keyframes flow-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* ------------------------------------------------------------------ bar */
 
 .flows-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); }
@@ -66,7 +101,7 @@
 }
 .flow-canvas[data-gesture="pan"] { cursor: grabbing; }
 .flow-canvas__world { position: absolute; inset: 0 auto auto 0; width: 0; height: 0; transform-origin: 0 0; }
-.flow-canvas__edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.flow-canvas__edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; animation: flow-fade-in 480ms var(--ease-out) both; }
 .flow-canvas__stop-a { stop-color: var(--accent); }
 .flow-canvas__stop-b { stop-color: var(--activity); }
 
@@ -76,6 +111,41 @@
 .flow-edge--loop { stroke: var(--danger); stroke-opacity: 0.8; stroke-dasharray: 2 6; stroke-linecap: round; }
 .flow-edge--loop[data-check="verdict"] { stroke: var(--warning); }
 .flow-edge--draft { stroke: var(--focus); stroke-dasharray: 6 6; }
+.flow-edge-glow {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 9;
+  stroke-linecap: round;
+  filter: blur(4px);
+  opacity: 0.18;
+  animation: flow-breathe 3.6s ease-in-out infinite;
+}
+.flow-edge-group[data-selected] .flow-edge-glow { opacity: 0.45; animation: none; }
+
+/* The streaks: a short capsule, bright at its head, turned along the line. */
+.flow-pulses { position: absolute; left: 0; top: 0; pointer-events: none; }
+.flow-pulse {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 26px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, transparent, var(--activity));
+  box-shadow: 0 0 10px 1px var(--activity);
+  offset-rotate: auto;
+  offset-distance: 0%;
+  opacity: 0;
+  animation: flow-run 2.6s cubic-bezier(0.45, 0, 0.35, 1) infinite;
+}
+.flow-pulse--loop {
+  width: 14px;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--danger));
+  box-shadow: 0 0 8px 1px var(--danger);
+  animation: flow-run-back 4.2s linear infinite;
+}
+.flow-pulse--loop[data-check="verdict"] { background: linear-gradient(90deg, transparent, var(--warning)); box-shadow: 0 0 8px 1px var(--warning); }
 .flow-edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
 .flow-edge-group[data-selected] .flow-edge { stroke-width: 3; }
 .flow-edge-group[data-selected] .flow-edge:not(.flow-edge--loop) { stroke: var(--focus) !important; }
@@ -133,6 +203,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* Arriving one after another when a flow opens (and a new step pops in). */
+  animation: flow-arrive 420ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
 }
 .flow-node__tile {
   position: relative;
@@ -154,6 +227,22 @@
 .flow-node[data-kind="condition"] .flow-node__tile { border-style: dashed; }
 .flow-node__tile:hover { border-color: var(--tint); }
 .flow-node[data-selected] .flow-node__tile { border-color: var(--focus); box-shadow: 0 0 0 3px var(--selection), var(--shadow-pop); }
+/* The chosen step's ring, beating softly. */
+.flow-node[data-selected] .flow-node__tile::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border: 1.5px solid var(--focus);
+  border-radius: 23px;
+  pointer-events: none;
+  animation: flow-ring 2.2s ease-in-out infinite;
+}
+.flow-node[data-kind="start"][data-selected] .flow-node__tile::after,
+.flow-node[data-kind="end"][data-selected] .flow-node__tile::after { border-radius: var(--radius-pill); }
+/* A hovered step lifts a little and its icon glows in its own tint. */
+.flow-node__tile:hover { transform: translateY(-2px); }
+.flow-node__tile svg { transition: transform 160ms var(--ease-out); }
+.flow-node__tile:hover svg { transform: scale(1.08); }
 .flow-node[data-dragging] .flow-node__tile { cursor: grabbing; transform: scale(1.04); box-shadow: var(--shadow-pop); }
 .flow-node__tile:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 .flow-node__issue {
@@ -402,6 +491,14 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .flow-pulse { display: none; }
+  .flow-edge-glow,
+  .flow-canvas__edges,
+  .flow-node,
+  .flow-node[data-selected] .flow-node__tile::after { animation: none; }
+  .flow-node__tile:hover,
+  .flow-node__tile:hover svg { transform: none; }
+  .flow-node__tile svg,
   .flow-edge-add,
   .flow-node__tile,
   .flow-node__port--out,

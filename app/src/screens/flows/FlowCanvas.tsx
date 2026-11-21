@@ -253,6 +253,35 @@ export function FlowCanvas({
           )}
         </svg>
 
+        {/* Neon streaks that run along the lines: forward from step to step,
+            and slower, backwards, along the ways back. They move on the line's
+            own path (a motion path is a transform); none with reduced motion. */}
+        <div className="flow-pulses" aria-hidden="true">
+          {forwardEdges.map((e, i) =>
+            [0, 1].map((k) => (
+              <span
+                key={`${e.from}-${e.when}-${k}`}
+                className="flow-pulse"
+                style={{
+                  offsetPath: `path("${forwardPath(nodeAt(e.from), nodeAt(e.to))}")`,
+                  animationDelay: `${-(k * 1.3 + (i % 5) * 0.37)}s`,
+                }}
+              />
+            )),
+          )}
+          {loops.map((e, i) => (
+            <span
+              key={`${e.from}-loop`}
+              className="flow-pulse flow-pulse--loop"
+              data-check={checkOf(flow, e.from)}
+              style={{
+                offsetPath: `path("${loopPath(nodeAt(e.from), nodeAt(e.to))}")`,
+                animationDelay: `${-(i % 3) * 0.9}s`,
+              }}
+            />
+          ))}
+        </div>
+
         {/* What each line means, and the "+" that inserts a step on it. */}
         {forwardEdges.map((e) => {
           const a = portPoint(nodeAt(e.from), e.when);
@@ -296,7 +325,7 @@ export function FlowCanvas({
           );
         })}
 
-        {flow.nodes.map((node) => {
+        {flow.nodes.map((node, index) => {
           const p = nodeAt(node.id);
           const text = stepText(node);
           return (
@@ -307,7 +336,7 @@ export function FlowCanvas({
               data-node-id={node.id}
               data-selected={selectedNode === node.id || undefined}
               data-dragging={(gesture?.kind === "move" && gesture.node === node.id && gesture.moved) || undefined}
-              style={{ left: p.x, top: p.y, ["--tint" as string]: stepTint(node, roles) }}
+              style={{ left: p.x, top: p.y, ["--tint" as string]: stepTint(node, roles), ["--i" as string]: Math.min(index, 12) }}
             >
               <button
                 type="button"
@@ -405,6 +434,8 @@ function EdgePath({
         onPointerDown={(e) => e.stopPropagation()}
         onClick={onSelect}
       />
+      {/* A soft halo under a way forward that breathes (opacity only). */}
+      {edge.when !== "fail" && <path className="flow-edge-glow" d={d} style={stroke ? { stroke } : undefined} />}
       <path className={`flow-edge${edge.when === "fail" ? " flow-edge--loop" : ""}`} data-check={loop} d={d} style={stroke ? { stroke } : undefined} />
     </g>
   );
