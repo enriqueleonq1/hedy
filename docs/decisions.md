@@ -3860,3 +3860,36 @@ as they are; a task runs a flow only when it is started with one.
   `hola.txt` in a session of its own, and accepting merged it.
 - **CLI:** `hedy flow list`, `hedy flow show <name|key>`.
 
+## 43. The orchestrator, O2: the blackboard (Nov 21, 2026)
+
+What the roles of a flow share. Claude Code, Codex, Gemini and Kimi each keep their own
+session, so Hedy keeps the shared context and hands it to each role.
+
+- **A table of its own** (`flow_board`, `BoardRepository`): an entry has a section (`plan`,
+  `changes`, `tests`, `review`, `feedback`, or any lowercase-with-dashes name), who wrote it,
+  the round and the text (at most 16,000 characters). It is a table, not part of the task's
+  row, because the board server writes it from another process. It goes when the task
+  closes (rule 6: what deserves to stay is proposed as a note, never kept here).
+- **Every role posts.** When a role's turn ends, Hedy posts its final answer under its
+  section (`RoleDef::section`: architect → `plan`, programmer → `changes`, tester → `tests`,
+  reviewer → `review`, any other → its id). The user's words when not approving go under
+  `feedback`.
+- **What a role sees** (`board_view`): the latest entry of each section it reads (summaries,
+  not the history), always its own section (what it did before, when sent back) and the
+  user's feedback. The frame (goal, rules, files, notes) is the `frame` section of `Sees`.
+- **In every role's prompt.** The board as the role sees it goes in its prompt, each entry
+  quoted under a header that says it is data (§42). So a role never depends on calling a tool
+  to know the plan or the failing tests.
+- **The tools.** `context_read` (the board, or one section's history) and `context_post`
+  (leave something while working) act for the role at work when they are called. They refuse
+  when no role works (an approval) or the task is over, refuse a section the role does not
+  see, and validate the section's name.
+  - CLI agents (Claude Code, Codex, ACP) get them from `hedy-board`, a second MCP server of
+    the app's binary (`board-mcp --data-dir … --task …`), started only for a flow's task.
+    Other tasks carry no extra tool definitions.
+  - The API agent gets them as native tools.
+  - The CLI (`hedy`) starts no MCP server, so its flows read the board only in the prompt.
+  - In Automático, the board's tools need no card, as the memory's do.
+- **Verified for real** (haiku, personal account): `smoke_task -- haiku flow` again, with the
+  programmer's prompt built from the board.
+
