@@ -16,6 +16,9 @@ use crate::domain::skill::{find_secret, mask_secrets};
 use crate::domain::{Task, TaskId, TaskStatus, prompts};
 use crate::tr;
 
+/// Most characters of the task's changes in the prompt of a role without a shell.
+const ROLE_DIFF_CHARS: usize = 24_000;
+
 impl Hedy {
     /// The task's board, oldest first (empty for a task without a flow).
     pub fn task_board(&self, id: &TaskId) -> AppResult<Vec<BoardEntry>> {
@@ -60,6 +63,15 @@ impl Hedy {
             .as_ref()
             .map(|w| w.base_commit.clone())
             .unwrap_or_default();
+        let changes = match (&task.workspace, role.can.run) {
+            (Some(ws), false) => self
+                .git
+                .diff(&ws.worktree, &ws.base_commit)
+                .ok()
+                .filter(|files| !files.is_empty())
+                .map(|files| crate::domain::ship::diff_for_prompt(&files, ROLE_DIFF_CHARS)),
+            _ => None,
+        };
         Ok(prompts::role_prompt(
             role,
             &task.prompt,
@@ -67,6 +79,7 @@ impl Hedy {
             &board_view(&entries, role),
             &base,
             tools,
+            changes.as_deref(),
         ))
     }
 

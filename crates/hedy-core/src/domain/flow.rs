@@ -348,8 +348,8 @@ pub fn builtin_roles() -> Vec<RoleDef> {
             "Reviews the changes and gives a verdict"
         ),
         tr!(
-            "Eres el revisor. Revisa los cambios de esta tarea (usa git diff): errores, casos sin cubrir, tests. Solo señalas; no cambias archivos.",
-            "You are the reviewer. Review this task's changes (use git diff): bugs, uncovered cases, tests. You only point things out; you do not change files."
+            "Eres el revisor. Revisa los cambios de esta tarea (vienen en este mensaje; lee los archivos que necesites): errores, casos sin cubrir, tests. Solo señalas; no cambias archivos.",
+            "You are the reviewer. Review this task's changes (they come in this message; read the files you need): bugs, uncovered cases, tests. You only point things out; you do not change files."
         ),
     );
     reviewer.delivers = Delivers::Verdict;
@@ -361,8 +361,8 @@ pub fn builtin_roles() -> Vec<RoleDef> {
             "Looks for security and privacy problems"
         ),
         tr!(
-            "Eres el revisor de seguridad. Revisa los cambios de esta tarea (usa git diff) buscando problemas de seguridad y privacidad: secretos, entradas sin validar, permisos, datos personales. Solo señalas; no cambias archivos.",
-            "You are the security reviewer. Review this task's changes (use git diff) looking for security and privacy problems: secrets, unvalidated input, permissions, personal data. You only point things out; you do not change files."
+            "Eres el revisor de seguridad. Revisa los cambios de esta tarea (vienen en este mensaje; lee los archivos que necesites) buscando problemas de seguridad y privacidad: secretos, entradas sin validar, permisos, datos personales. Solo señalas; no cambias archivos.",
+            "You are the security reviewer. Review this task's changes (they come in this message; read the files you need) looking for security and privacy problems: secrets, unvalidated input, permissions, personal data. You only point things out; you do not change files."
         ),
     );
     security.delivers = Delivers::Verdict;

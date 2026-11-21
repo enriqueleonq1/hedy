@@ -174,12 +174,24 @@ pub fn role_prompt(
     board: &[&super::flow::BoardEntry],
     base_commit: &str,
     tools: bool,
+    changes: Option<&str>,
 ) -> String {
     let mut out = String::new();
     out.push_str(&section(
         &tr!("Pedido original", "Original request"),
         request,
     ));
+    // A role without a shell cannot run `git diff`: the changes come here.
+    if let Some(changes) = changes.filter(|c| !c.trim().is_empty()) {
+        let note = tr!(
+            "Las líneas añadidas por archivo (las quitadas y los archivos protegidos no se muestran; lee un archivo entero si lo necesitas):",
+            "The added lines by file (removed lines and protected files are not shown; read a whole file if you need it):"
+        );
+        out.push_str(&section(
+            &tr!("Los cambios de esta tarea", "This task's changes"),
+            &format!("{note}\n\n{changes}"),
+        ));
+    }
     if role.sees_section(super::flow::FRAME) {
         let mut lines = Vec::new();
         if !frame.goal.trim().is_empty() {

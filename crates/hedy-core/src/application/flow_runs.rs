@@ -936,4 +936,62 @@ mod tests {
             "not stuck running"
         );
     }
+
+    #[test]
+    fn a_reviewer_without_a_shell_gets_the_changes_in_its_prompt() {
+        use crate::domain::diff::{DiffLine, FileDiff, FileStatus, Hunk, LineKind};
+        let f = setup();
+        f.git.set_files(&["Cargo.toml"]);
+        f.runner.reply_to("sh -c cargo test", "ok", 0);
+        let line = |kind, text: &str| DiffLine {
+            kind,
+            old_line: None,
+            new_line: Some(1),
+            text: text.into(),
+        };
+        f.git.set_diff(vec![
+            FileDiff {
+                path: "src/lib.rs".into(),
+                old_path: None,
+                status: FileStatus::Modified,
+                additions: 1,
+                deletions: 1,
+                binary: false,
+                hunks: vec![Hunk {
+                    header: "@@ -1 +1 @@".into(),
+                    lines: vec![
+                        line(LineKind::Removed, "    a - b"),
+                        line(LineKind::Added, "    a + b"),
+                    ],
+                }],
+            },
+            FileDiff {
+                path: ".env".into(),
+                old_path: None,
+                status: FileStatus::Added,
+                additions: 1,
+                deletions: 0,
+                binary: false,
+                hunks: vec![Hunk {
+                    header: "@@ -0,0 +1 @@".into(),
+                    lines: vec![line(LineKind::Added, "CLAVE=secreta")],
+                }],
+            },
+        ]);
+        f.hedy
+            .start_flow(request(&f, "Cobros"), "fix-loop")
+            .unwrap();
+        assert!(
+            !f.agents.last_request().prompt.contains("a + b"),
+            "the programmer runs git itself"
+        );
+        finish(&f, "Hecho.");
+        let reviewer = f.agents.last_request().prompt;
+        assert!(reviewer.contains("src/lib.rs") && reviewer.contains("a + b"));
+        assert!(!reviewer.contains("a - b"), "removed lines are never sent");
+        assert!(
+            !reviewer.contains("CLAVE=secreta"),
+            "nor a protected file's contents"
+        );
+    }
 }
