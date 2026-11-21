@@ -3965,3 +3965,26 @@ A flow now picks its path. All three templates run.
   (`a - b` → `a + b`, the test untouched), `cargo test` in bubblewrap (passed), the reviewer
   (`VEREDICTO: APRUEBA`) and ended for review, with the project itself untouched.
 
+
+## 45. The orchestrator, O4: one agent against the flows (Nov 21, 2026)
+
+`hedy-evals --flows none,classic,fix-loop` runs each case alone and through each flow; the eval
+approves a flow's approval step as it approves plans. Run on three cases (business-days,
+library-holiday-fine, bakery-inscription), layer `plain`, haiku, the personal account:
+
+| variant            | passed | tokens vs. alone | cost vs. alone |
+|--------------------|--------|------------------|----------------|
+| alone (base)       | 3/3    | —                | —              |
+| Pipeline clásico   | 3/3    | +94 %            | +101 %         |
+| Con bucle de corr. | 3/3    | +104 %           | +91 %          |
+
+- On cases one agent already solves, a flow roughly doubles the spend (more sessions, each
+  rereading the project, plus the reviewer) and solves nothing more. One agent stays the
+  default; flows are for what they add, not for saving: a review, tests that must pass, the
+  user's OK in the middle, or a second model's look.
+- The first run lost the classic flow's approvals: the `FlowApproval` event went out before the
+  task was `WaitingApproval`, so anything answering on the event (the eval, `hedy flow run`) was
+  refused. The event now follows the status. Runs that ended in a second with 0 tokens were an
+  account limit, not Hedy.
+- Small sample (one run each): it rules out "flows save money", not "flows help on hard cases";
+  harder cases with failing tests are where the fix loop should earn its cost.
