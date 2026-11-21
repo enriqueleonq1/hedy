@@ -15,6 +15,7 @@ mod detect;
 mod doctor;
 mod error;
 mod files;
+mod flow_runs;
 mod flows;
 mod graph;
 mod launch;

@@ -969,6 +969,60 @@ impl Position {
     }
 }
 
+/// What a finished role handed over, for the roles after it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Delivery {
+    pub node: String,
+    /// The role's name, for people.
+    pub role: String,
+    pub text: String,
+}
+
+/// A task run by a flow: the flow and its roles as they were when it
+/// started (editing the library meanwhile changes nothing here), where it
+/// is, and what each role handed over.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowRun {
+    pub flow: Flow,
+    pub roles: BTreeMap<String, RoleDef>,
+    pub position: Position,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub delivered: Vec<Delivery>,
+}
+
+impl FlowRun {
+    /// A run at the flow's start, with every role it names (`None` when one
+    /// is missing: the flow is not runnable).
+    pub fn new(flow: Flow, role: &dyn Fn(&str) -> Option<RoleDef>) -> Option<Self> {
+        let mut roles = BTreeMap::new();
+        for seat in flow.seats() {
+            roles.insert(seat.role.clone(), role(&seat.role)?);
+        }
+        Some(Self {
+            position: Position::at_start(&flow),
+            flow,
+            roles,
+            delivered: Vec::new(),
+        })
+    }
+
+    pub fn current(&self) -> Option<&Node> {
+        self.flow.node(&self.position.node)
+    }
+
+    /// The step that leads into `node` (the role whose work an approval
+    /// looks at).
+    pub fn before(&self, node: &str) -> Option<&str> {
+        self.flow
+            .edges
+            .iter()
+            .find(|e| e.to == node && e.when == When::After)
+            .map(|e| e.from.as_str())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

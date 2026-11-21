@@ -1360,6 +1360,7 @@ fn seed_tasks(env: &Env, repo: &Path) {
         workspace: None,
         scratch: None,
         permissions: Default::default(),
+        flow: None,
         session_id: None,
         status,
         created_at: now - ago,

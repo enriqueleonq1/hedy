@@ -164,6 +164,55 @@ pub fn stage_prompt(
     out
 }
 
+/// The prompt of a role's step in a flow (docs/decisions.md §42): the
+/// request, what the roles before it handed over, and its own part.
+pub fn role_prompt(
+    role: &super::flow::RoleDef,
+    request: &str,
+    delivered: &[super::flow::Delivery],
+    base_commit: &str,
+) -> String {
+    let mut out = String::new();
+    out.push_str(&section(
+        &tr!("Pedido original", "Original request"),
+        request,
+    ));
+    if !delivered.is_empty() {
+        let done: Vec<String> = delivered
+            .iter()
+            .map(|d| format!("### {}\n\n{}", d.role, d.text.trim()))
+            .collect();
+        out.push_str(&section(
+            &tr!(
+                "Lo que entregaron los roles anteriores",
+                "What the roles before you handed over"
+            ),
+            &done.join("\n\n"),
+        ));
+    }
+    let name = &role.name;
+    let mut part = tr!(
+        "Eres «{name}» en un equipo de IAs.",
+        "You are «{name}» in a team of AIs."
+    );
+    part.push(' ');
+    part.push_str(role.instructions.trim());
+    part.push_str("\n\n");
+    part.push_str(&if role.can.write {
+        tr!(
+            "Los cambios de los roles anteriores ya están en esta carpeta (compara con el commit {base_commit}). Al terminar, resume en pocas líneas lo que hiciste.",
+            "The changes of the roles before you are already in this folder (compare with commit {base_commit}). When done, sum up in a few lines what you did."
+        )
+    } else {
+        tr!(
+            "Los cambios de esta tarea se comparan con el commit {base_commit}. No modifiques archivos: tu respuesta final es lo que entregas al equipo.",
+            "This task's changes compare with commit {base_commit}. Do not modify files: your final answer is what you hand to the team."
+        )
+    });
+    out.push_str(&section(&tr!("Tu parte", "Your part"), &part));
+    out
+}
+
 /// The turn Hedy sends when an account's limit renews and the user had
 /// chosen to wait (same account, same session) with nothing else queued.
 pub fn continue_after_limit() -> String {

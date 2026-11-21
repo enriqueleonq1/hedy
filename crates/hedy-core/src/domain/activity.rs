@@ -266,6 +266,7 @@ mod tests {
             workspace: None,
             scratch: None,
             permissions: Default::default(),
+            flow: None,
             session_id: None,
             status,
             created_at: 0,

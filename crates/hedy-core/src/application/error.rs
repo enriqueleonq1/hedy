@@ -52,6 +52,10 @@ pub enum AppError {
     #[error("{}", self.message())]
     InvalidFlow(Vec<String>),
     #[error("{}", self.message())]
+    FlowNotYet,
+    #[error("{}", self.message())]
+    NoFlowApproval(TaskId),
+    #[error("{}", self.message())]
     InvalidBlockedPattern(String),
     #[error("{}", self.message())]
     OutputNotOpened(String),
@@ -397,6 +401,14 @@ impl AppError {
             Self::FlowNotFound(name) => tr!(
                 "no hay un flujo «{name}»; `hedy flow list` muestra los que hay",
                 "there is no flow «{name}»; `hedy flow list` shows the ones there are"
+            ),
+            Self::FlowNotYet => tr!(
+                "este flujo tiene condiciones o roles a la vez, y Hedy aún no los ejecuta",
+                "this flow has conditions or roles at once, which Hedy does not run yet"
+            ),
+            Self::NoFlowApproval(id) => tr!(
+                "la tarea {id} no espera tu aprobación",
+                "task {id} is not waiting for your approval"
             ),
             Self::InvalidFlow(problems) => {
                 let problems = problems.join("; ");

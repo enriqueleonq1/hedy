@@ -270,6 +270,7 @@ impl Hedy {
             workspace,
             scratch: None,
             permissions: request.permissions.unwrap_or(project.permission_mode),
+            flow: None,
             session_id: None,
             status: TaskStatus::Running,
             created_at: now / 1000,
@@ -321,7 +322,12 @@ impl Hedy {
         TaskId::new(format!("t{now_ms:x}{seq:02x}"))
     }
 
-    fn create_workspace(&self, repo: &Path, title: &str, id: &TaskId) -> AppResult<Workspace> {
+    pub(super) fn create_workspace(
+        &self,
+        repo: &Path,
+        title: &str,
+        id: &TaskId,
+    ) -> AppResult<Workspace> {
         let base_branch = self.git.current_branch(repo)?;
         let base_commit = self.git.head_commit(repo)?;
         let branch = branch_name(title, id);
@@ -1089,6 +1095,13 @@ impl Hedy {
                     self.hold_queue(id, reason);
                 } else if self.deliver_queue_at_turn_end(&mut task)? {
                     return Ok(());
+                }
+                // A flow decides what comes after a role (docs/decisions.md §42).
+                if *ok && !limited && task.flow.is_some() {
+                    if self.task(id)?.status.is_closed() {
+                        return Ok(());
+                    }
+                    return self.flow_role_done(&mut task, summary);
                 }
                 let next = task.stage + 1;
                 let advances =

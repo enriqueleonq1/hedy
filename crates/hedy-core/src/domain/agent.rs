@@ -94,6 +94,11 @@ pub enum AgentEvent {
         utilization: Option<f64>,
         resets_at: Option<i64>,
     },
+    /// A flow reached a step where the user approves what the roles before
+    /// it did (docs/decisions.md §42).
+    FlowApproval {
+        node: String,
+    },
     /// The agent finished its turn ("Termino").
     Finished {
         ok: bool,
