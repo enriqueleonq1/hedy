@@ -4027,3 +4027,42 @@ A project's **Flujos** tab (`#pf=<path>[&<key>]`), between Tareas and Memoria:
   flow for review with the reason, instead of leaving it Running with no agent.
 - **Known limit:** two saves of a new flow with the same name at the very same moment could both
   pass the name check. The table has no unique index; this is a single-user app.
+
+## 47. The orchestrator, O6: a flow task, live; and a canvas that moves (Nov 21, 2026)
+
+**The canvas moves** (the user's request).
+- Each way forward carries a neon streak running from step to step (a CSS motion path along
+  the line's own path). Each way back carries a slower one, red for tests, amber for a review.
+- Steps arrive one after another when a flow opens. The chosen step has a beating ring, and a
+  hovered step lifts a little.
+- **Cost:**
+  - Animating `offset-distance` repaints in WebKitGTK, so there is one streak per line and none
+    above 16 lines.
+  - The blurred halo under the lines is still: it does not breathe.
+  - Everything pauses while the window is hidden and stops with reduced motion.
+- Motion paths count as transforms here. A motion path is part of the transform stack, and only
+  transform, opacity and motion-path distance are animated.
+
+**A flow task, live** (`screens/flows/FlowLive.tsx`):
+- **Strip over the timeline:**
+  - It shows the flow's steps in run order: the ones done in their tint, the current one with a
+    live ring (amber while it waits for the user), the rest dimmed.
+  - A streak runs on the line into the step at work.
+  - It also shows "Trabaja: Programador", "Espera tu aprobación" or "Se detuvo en: …", plus the
+    round once a way back was taken.
+  - After a way back, the steps that will run again show as pending; the round says why.
+- **Pizarra:**
+  - It shows the latest entry of each section, as plain text, never markup. Sections go by name
+    (Contexto, Tests, the role's name).
+  - It refreshes on each step, every 5 s while a role works, and keeps the old entries meanwhile.
+- **Timeline:** each condition shows as a line, e.g. "npm test: no pasa".
+- **Approval card:**
+  - "Tu aprobación" with Aprobar (Enter) and Pedir cambios (E, with what to change). It takes the
+    focus as the plan card does.
+  - It waits on the task's state (`waitingApproval` at that node, the latest ask), not on the
+    history. A message written while it waits is answered by the agent and leaves the card
+    waiting; the backend already returned to `WaitingApproval` then.
+  - The answer is a new event, `FlowApprovalAnswered { node, approved }`, recorded under the
+    status change. The card shows "aprobado" or "cambios pedidos" from it, even when nothing
+    else followed (an approval right before the end).
+  - Screen readers hear "Espera tu aprobación" (the `approval` milestone).
