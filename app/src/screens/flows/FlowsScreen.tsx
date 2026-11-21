@@ -33,9 +33,30 @@ interface Draft {
   history: History;
   /** The field typed in last: typing on in it stays one undo step. */
   merge?: string;
+  /** Which opening this is: the canvas fits the view once per opening (a save keeps it). */
+  opened: number;
 }
 
-const same = (a: Flow | null, b: Flow) => a !== null && JSON.stringify(a) === JSON.stringify(b);
+/**
+ * A flow as text that means the same whatever the key order and whether an
+ * empty field is there: the backend leaves empty ones out and orders keys
+ * its own way.
+ */
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(value).sort()) {
+      const v = (value as Record<string, unknown>)[k];
+      if (v === undefined || v === "" || (Array.isArray(v) && v.length === 0)) continue;
+      out[k] = canonical(v);
+    }
+    return out;
+  }
+  return value;
+}
+const same = (a: Flow | null, b: Flow) => a !== null && JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+let openings = 0;
 
 export function FlowsScreen({
   overview,
@@ -71,14 +92,20 @@ export function FlowsScreen({
   const dirty = !!flow && !readOnly && !same(draft?.saved ?? null, flow);
 
   const open = (e: FlowEntry) => {
-    setDraft({ key: e.key, saved: e.flow, history: history.start(e.flow) });
+    setDraft({ key: e.key, saved: e.flow, history: history.start(e.flow), opened: ++openings });
     setSelection(null);
   };
-  // Opens the flow asked for (or the default) once the list is there: on
-  // first load, and when the address names another saved flow.
-  if (flows.data && (!draft || (wanted && draft.key !== null && draft.key !== wanted))) {
-    const pick = flows.data.find((e) => e.key === wanted) ?? flows.data.find((e) => e.scope !== "hedy") ?? flows.data[0];
+  // Opens a flow once the list is there (the one asked for, else the
+  // project's first, else a template), and again only when the address asks
+  // for another one: a save or a new flow never reopens what was there.
+  const [asked, setAsked] = useState(wanted);
+  if (asked !== wanted) {
+    setAsked(wanted);
+    const pick = wanted ? flows.data?.find((e) => e.key === wanted) : undefined;
     if (pick && pick.key !== draft?.key) open(pick);
+  } else if (flows.data && !draft) {
+    const pick = flows.data.find((e) => e.key === wanted) ?? flows.data.find((e) => e.scope !== "hedy") ?? flows.data[0];
+    if (pick) open(pick);
   }
 
   // Live check, a moment after the last change.
@@ -114,7 +141,8 @@ export function FlowsScreen({
     setSaving(true);
     try {
       const saved = await api.saveFlow(path, draft.key, flow);
-      setDraft((d) => (d ? { ...d, key: saved.key, saved: saved.flow } : d));
+      // What was sent is what is saved now (the backend's copy only orders it differently).
+      setDraft((d) => (d ? { ...d, key: saved.key, saved: flow } : d));
       // Saved: the address may change now without asking about it.
       unsaved.set("flows", null);
       await client.invalidateQueries({ queryKey: ["flows", path] });
@@ -155,18 +183,23 @@ export function FlowsScreen({
   const startNew = async (from?: Flow) => {
     if (!(await unsaved.confirmLeave())) return;
     const flow = from ? { ...structuredClone(from), name: t("flows.copyName", { name: from.name }) } : blankFlow(t("flows.newName"));
-    setDraft({ key: null, saved: null, history: history.start(flow) });
+    setDraft({ key: null, saved: null, history: history.start(flow), opened: ++openings });
     setSelection(null);
+    // The address no longer names the flow that was open.
+    onNavigate({ screen: "flows", project: path }, { replace: true });
   };
 
   const remove = async () => {
     if (!draft?.key) return;
     try {
-      await api.deleteFlow(path, draft.key);
+      const gone = draft.key;
+      await api.deleteFlow(path, gone);
       unsaved.set("flows", null);
+      // Out of the list before anything opens again: never the deleted one.
+      client.setQueryData<FlowEntry[]>(["flows", path], (list) => list?.filter((e) => e.key !== gone));
       setDraft(null);
-      await client.invalidateQueries({ queryKey: ["flows", path] });
       onNavigate({ screen: "flows", project: path }, { replace: true });
+      await client.invalidateQueries({ queryKey: ["flows", path] });
     } catch (error) {
       toast.error(errorMessage(error, t));
     }
@@ -234,6 +267,8 @@ export function FlowsScreen({
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target?.closest("input, textarea, [contenteditable], [role=dialog], [role=menu], [role=listbox]")) return;
+      // Deleting acts on the canvas only, never from a control of the panel.
+      const onCanvas = !target || target === document.body || !!target.closest(".flow-canvas");
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
@@ -241,7 +276,7 @@ export function FlowsScreen({
       } else if (mod && e.key.toLowerCase() === "y") {
         e.preventDefault();
         step(history.redo);
-      } else if ((e.key === "Delete" || e.key === "Backspace") && flow && !readOnly && selection) {
+      } else if ((e.key === "Delete" || e.key === "Backspace") && onCanvas && flow && !readOnly && selection) {
         e.preventDefault();
         if ("node" in selection) change(removeStep(flow, selection.node));
         else change({ ...flow, edges: flow.edges.filter((x) => !(x.from === selection.edge.from && x.when === selection.edge.when)) });
@@ -356,7 +391,7 @@ export function FlowsScreen({
             readOnly={readOnly}
             selection={selection}
             issues={issueNodes}
-            focus={`${draft?.key ?? "new"}`}
+            focus={String(draft?.opened ?? 0)}
             onSelect={setSelection}
             onMove={(node, at) => change(moveStep(flow, node, at))}
             onConnect={(from, when, to) => change(connect(flow, from, when, to))}
@@ -387,7 +422,7 @@ export function FlowsScreen({
             flow={flow}
             selection={selection}
             roles={roles}
-            accounts={overview.accounts}
+            accounts={overview.accounts.filter((a) => project.offerableAccounts.includes(a.id) || a.id === project.account)}
             issues={issues}
             readOnly={readOnly}
             onChange={change}

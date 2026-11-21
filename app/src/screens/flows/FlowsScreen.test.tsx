@@ -101,6 +101,55 @@ describe("A project's flows", () => {
     expect(screen.getByRole("button", { name: "Guardar" })).toBeEnabled();
   });
 
+  it("a saved flow is saved, in whatever order and shape the backend gives it back", async () => {
+    const { api, user } = await setup();
+    const save = api.saveFlow.bind(api);
+    // The backend orders keys its own way and leaves empty fields out.
+    const reorder = (v: unknown): unknown =>
+      Array.isArray(v)
+        ? v.map(reorder)
+        : v && typeof v === "object"
+          ? Object.fromEntries(
+              Object.entries(v)
+                .filter(([, x]) => x !== "" && !(Array.isArray(x) && x.length === 0))
+                .reverse()
+                .map(([k, x]) => [k, reorder(x)]),
+            )
+          : v;
+    vi.spyOn(api, "saveFlow").mockImplementation(async (p, k, f) => {
+      const entry = await save(p, k, f);
+      return { ...entry, flow: reorder(entry.flow) as typeof entry.flow };
+    });
+    await user.click(await step("Programador"));
+    await user.type(within(panel()).getByRole("textbox", { name: "Modelo" }), "-x");
+    await user.clear(within(panel()).getByRole("textbox", { name: "Modelo" }));
+    await user.type(within(panel()).getByRole("textbox", { name: "Modelo" }), "haiku");
+    await user.click(screen.getByRole("button", { name: "Guardar" }));
+    await waitFor(() => expect(saveState()).toHaveTextContent("Guardado"));
+    expect(screen.getByRole("button", { name: "Ejecutar" })).toBeEnabled();
+  });
+
+  it("deleting a flow never leaves it open", async () => {
+    const { api, user } = await setup();
+    await step("Arquitecto");
+    await user.click(screen.getByRole("button", { name: "Borrar" }));
+    await user.click(screen.getByRole("button", { name: "¿Borrar el flujo?" }));
+    await waitFor(() => expect(picker()).toHaveTextContent("Pipeline clásico"));
+    expect((await api.flows(TIENDA)).some((f) => f.scope === "project")).toBe(false);
+    expect(window.location.hash).toBe(flowsOf(TIENDA));
+  });
+
+  it("a new flow saves without the one before coming back", async () => {
+    const { user } = await setup();
+    await step("Arquitecto");
+    await user.click(screen.getByRole("button", { name: "Nuevo flujo" }));
+    expect(picker()).toHaveTextContent("Mi flujo");
+    await user.click(screen.getByRole("button", { name: "Guardar" }));
+    await waitFor(() => expect(saveState()).toHaveTextContent("Guardado"));
+    expect(picker()).toHaveTextContent("Mi flujo");
+    expect(screen.queryByRole("button", { name: "Arquitecto" })).not.toBeInTheDocument();
+  });
+
   it("reads as a numbered list, with the ways back", async () => {
     const { user } = await setup();
     await step("Arquitecto");

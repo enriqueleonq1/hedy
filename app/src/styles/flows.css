@@ -72,13 +72,13 @@
 
 /* -------------------------------------------------------------- lines */
 
-.flow-edge { fill: none; stroke: url(#flow-edge); stroke-width: 2; }
+.flow-edge { fill: none; stroke: var(--accent); stroke-width: 2; }
 .flow-edge--loop { stroke: var(--danger); stroke-opacity: 0.8; stroke-dasharray: 2 6; stroke-linecap: round; }
 .flow-edge--loop[data-check="verdict"] { stroke: var(--warning); }
 .flow-edge--draft { stroke: var(--focus); stroke-dasharray: 6 6; }
 .flow-edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
 .flow-edge-group[data-selected] .flow-edge { stroke-width: 3; }
-.flow-edge-group[data-selected] .flow-edge:not(.flow-edge--loop) { stroke: var(--focus); }
+.flow-edge-group[data-selected] .flow-edge:not(.flow-edge--loop) { stroke: var(--focus) !important; }
 
 .flow-edge-mid {
   position: absolute;

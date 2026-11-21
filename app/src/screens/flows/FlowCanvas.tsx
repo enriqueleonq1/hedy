@@ -3,7 +3,7 @@
 // mouse wheel (or a trackpad) to move, Ctrl/⌘ + wheel to zoom; drag a step to
 // move it, and a step's dot onto another step to connect them.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 import type { Flow, FlowEdge, FlowNode, FlowNodeKind, FlowWhen, RoleDef } from "../../api/types";
 import { MenuButton, type MenuItem } from "../../components/ui/Menu";
@@ -60,6 +60,8 @@ export function FlowCanvas({
   const t = useT();
   const stepText = useStepText(roles);
   const box = useRef<HTMLDivElement>(null);
+  // Gradient ids are document-wide: unique per canvas (no colons, they are in url()).
+  const uid = `flow${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const [camera, setCamera] = useState<Camera>({ x: 48, y: 120, z: 1 });
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const placedAt = useMemo(() => layout(flow), [flow]);
@@ -204,16 +206,33 @@ export function FlowCanvas({
     >
       <div className="flow-canvas__world" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.z})` }}>
         <svg className="flow-canvas__edges" aria-hidden="true" overflow="visible" width="1" height="1">
+          {/* One gradient per line, in canvas units: a box-relative one paints
+              nothing on a perfectly flat line. */}
           <defs>
-            <linearGradient id="flow-edge" x1="0" x2="1" y1="0" y2="0">
-              <stop offset="0" className="flow-canvas__stop-a" />
-              <stop offset="1" className="flow-canvas__stop-b" />
-            </linearGradient>
+            {forwardEdges.map((e) => {
+              const a = portPoint(nodeAt(e.from), e.when);
+              const b = nodeAt(e.to);
+              return (
+                <linearGradient
+                  key={`${e.from}-${e.when}`}
+                  id={`${uid}-${e.from}-${e.when}`}
+                  gradientUnits="userSpaceOnUse"
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y + TILE / 2}
+                >
+                  <stop offset="0" className="flow-canvas__stop-a" />
+                  <stop offset="1" className="flow-canvas__stop-b" />
+                </linearGradient>
+              );
+            })}
           </defs>
           {forwardEdges.map((e) => (
             <EdgePath
               key={`${e.from}-${e.when}`}
               edge={e}
+              stroke={`url(#${uid}-${e.from}-${e.when})`}
               d={forwardPath(nodeAt(e.from), nodeAt(e.to))}
               selected={selectedEdge?.from === e.from && selectedEdge.when === e.when}
               onSelect={() => onSelect({ edge: { from: e.from, when: e.when } })}
@@ -364,12 +383,15 @@ function PlusGlyph() {
 function EdgePath({
   edge,
   d,
+  stroke,
   loop,
   selected,
   onSelect,
 }: {
   edge: FlowEdge;
   d: string;
+  /** A forward line's gradient. */
+  stroke?: string;
   loop?: string;
   selected: boolean;
   onSelect: () => void;
@@ -383,7 +405,7 @@ function EdgePath({
         onPointerDown={(e) => e.stopPropagation()}
         onClick={onSelect}
       />
-      <path className={`flow-edge${edge.when === "fail" ? " flow-edge--loop" : ""}`} data-check={loop} d={d} />
+      <path className={`flow-edge${edge.when === "fail" ? " flow-edge--loop" : ""}`} data-check={loop} d={d} style={stroke ? { stroke } : undefined} />
     </g>
   );
 }

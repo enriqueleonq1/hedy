@@ -87,8 +87,8 @@ function Issues({ issues }: { issues: FlowIssue[] }) {
   if (!issues.length) return null;
   return (
     <ul className="flow-issues" role="list">
-      {issues.map((i) => (
-        <li key={i.message}>{i.message}</li>
+      {issues.map((i, n) => (
+        <li key={`${i.node ?? ""}-${n}`}>{i.message}</li>
       ))}
     </ul>
   );
@@ -160,8 +160,8 @@ function FlowPanel({
         <section className="flow-inspector__section">
           <h3>{t("flows.issues.title", { count: String(issues.length) })}</h3>
           <ul className="flow-issues" role="list">
-            {issues.map((i) => (
-              <li key={i.message}>
+            {issues.map((i, n) => (
+              <li key={`${i.node ?? ""}-${n}`}>
                 {i.node ? (
                   <button type="button" className="link-button" onClick={() => i.node && onSelect({ node: i.node })}>
                     {i.message}
