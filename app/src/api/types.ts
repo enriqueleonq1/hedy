@@ -762,8 +762,8 @@ export interface Flow {
   triggers: FlowTrigger[];
 }
 
-/** Hedy's own (never changes), one project's, or every project's. */
-export type FlowScope = "hedy" | "project" | "global";
+/** Hedy's own (never changes), one project's, every project's, or shared by the project's team. */
+export type FlowScope = "hedy" | "project" | "global" | "team";
 
 export interface FlowEntry {
   /** `classic`, `fix-loop`… for a template; `#<id>` for a saved one. */
@@ -772,6 +772,17 @@ export interface FlowEntry {
   /** One line of what it does (templates). */
   summary: string;
   flow: Flow;
+  /** Who shared it (a team's flow). */
+  by?: string;
+  /** Its test commands this PC has not allowed yet (a team's flow): it does not start until they are. */
+  unapproved?: string[];
+}
+
+/** The team a project's flows can be shared with; only an admin shares them. */
+export interface TeamShare {
+  team: string;
+  name: string;
+  admin: boolean;
 }
 
 /** Something that keeps a flow from running, on its step when it is about one. */

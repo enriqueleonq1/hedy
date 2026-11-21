@@ -93,6 +93,17 @@ export function mockProjectFlow(): Flow {
   return flow;
 }
 
+/** A flow the sample team shares: a security review with its own audit command. */
+export function mockTeamFlow(): Flow {
+  const flow = straight(
+    "Revisión de seguridad",
+    [{ kind: "role", ...seat("programmer") }, { kind: "condition", check: "tests", command: "npm run audit" }, { kind: "role", ...seat("security") }, { kind: "condition", check: "verdict" }],
+    { 3: 2, 5: 2 },
+  );
+  flow.frame = { goal: "Nada sale sin revisar la seguridad" };
+  return flow;
+}
+
 /** What the user calls a step (the backend's `Node::label`). */
 export function stepLabel(node: FlowNode, roles: RoleDef[]): string {
   const name = (s: Seat) => roles.find((r) => r.id === s.role)?.name ?? s.role;

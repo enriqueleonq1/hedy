@@ -87,6 +87,7 @@ import type {
   FlowEntry,
   FlowIssue,
   RoleEntry,
+  TeamShare,
   OpenTaskRequest,
   PromptTemplate,
   AccountCommands,
@@ -203,6 +204,14 @@ export interface HedyApi {
   answerFlowApproval(id: string, approve: boolean, feedback: string | null): Promise<void>;
   /** A flow task's board, oldest first. */
   taskBoard(id: string): Promise<BoardEntry[]>;
+  /** The team the project's flows can be shared with (null: none). */
+  flowSharing(project: string): Promise<TeamShare | null>;
+  /** Shares one of the user's flows with the project's team (admins only); returns its name. */
+  shareFlow(project: string, key: string): Promise<string>;
+  /** Stops sharing the team's flow named `name`. */
+  unshareFlow(project: string, name: string): Promise<void>;
+  /** Allows a team flow's test command on this PC. */
+  approveFlowCommand(command: string): Promise<void>;
   /** Newest first. */
   tasks(project: string): Promise<Task[]>;
   taskEvents(id: string): Promise<AgentEvent[]>;

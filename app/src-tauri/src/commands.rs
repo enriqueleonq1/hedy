@@ -340,6 +340,43 @@ pub async fn answer_flow_approval(
     .await
 }
 
+/// The team the project's flows can be shared with, and whether this PC may.
+#[tauri::command]
+pub async fn flow_sharing(
+    state: State<'_, AppState>,
+    project: PathBuf,
+) -> CommandResult<Option<hedy_core::application::TeamShare>> {
+    blocking(&state, move |h| h.flow_sharing(&project)).await
+}
+
+/// Shares one of the user's flows with the project's team (admins only).
+#[tauri::command]
+pub async fn share_flow(
+    state: State<'_, AppState>,
+    project: PathBuf,
+    key: String,
+) -> CommandResult<String> {
+    blocking(&state, move |h| h.team_share_flow(&project, &key)).await
+}
+
+#[tauri::command]
+pub async fn unshare_flow(
+    state: State<'_, AppState>,
+    project: PathBuf,
+    name: String,
+) -> CommandResult<()> {
+    blocking(&state, move |h| h.team_unshare_flow(&project, &name)).await
+}
+
+/// The user allows a team flow's test command on this PC.
+#[tauri::command]
+pub async fn approve_flow_command(
+    state: State<'_, AppState>,
+    command: String,
+) -> CommandResult<()> {
+    blocking(&state, move |h| h.approve_flow_command(&command)).await
+}
+
 /// A flow task's board, oldest first.
 #[tauri::command]
 pub async fn task_board(

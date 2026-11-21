@@ -599,6 +599,11 @@
 .flow-approval__text { font-size: var(--text-callout); color: var(--muted); line-height: 1.5; }
 .flow-check .activity__mark { font-weight: 600; }
 
+/* A team flow's commands, allowed in the run dialog. */
+.flow-allow { display: grid; gap: var(--space-2); margin-top: var(--space-3); padding: var(--space-3); border: 1px solid var(--warn-line); border-radius: var(--radius-md); background: var(--warn-bg); color: var(--warn-ink); font-size: var(--text-callout); }
+.flow-allow ul { margin: 0; padding-left: var(--space-4); }
+.flow-allow code { font-family: var(--font-mono); font-size: var(--text-mono); color: var(--ink); }
+
 /* ------------------------------------------------------- narrow windows */
 
 @media (max-width: 900px) {

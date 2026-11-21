@@ -87,7 +87,10 @@ export function FlowsScreen({
 
   const entries = flows.data ?? [];
   const entry = draft?.key ? entries.find((e) => e.key === draft.key) : undefined;
-  const readOnly = entry?.scope === "hedy";
+  // Hedy's templates and the team's flows are read-only here: duplicate to change.
+  const readOnly = entry?.scope === "hedy" || entry?.scope === "team";
+  const sharing = useQuery({ queryKey: ["flowSharing", path], queryFn: () => api.flowSharing(path) });
+  const share = sharing.data;
   const flow = draft?.history.now ?? null;
   const dirty = !!flow && !readOnly && !same(draft?.saved ?? null, flow);
 
@@ -104,7 +107,7 @@ export function FlowsScreen({
     const pick = wanted ? flows.data?.find((e) => e.key === wanted) : undefined;
     if (pick && pick.key !== draft?.key) open(pick);
   } else if (flows.data && !draft) {
-    const pick = flows.data.find((e) => e.key === wanted) ?? flows.data.find((e) => e.scope !== "hedy") ?? flows.data[0];
+    const pick = flows.data.find((e) => e.key === wanted) ?? flows.data.find((e) => e.scope === "project" || e.scope === "global") ?? flows.data[0];
     if (pick) open(pick);
   }
 
@@ -205,6 +208,28 @@ export function FlowsScreen({
     }
   };
 
+  const shareIt = async (key: string) => {
+    try {
+      const name = await api.shareFlow(path, key);
+      await client.invalidateQueries({ queryKey: ["flows", path] });
+      toast.info(t("flows.team.shared", { name, team: share?.name ?? "" }));
+    } catch (error) {
+      toast.error(errorMessage(error, t));
+    }
+  };
+
+  const unshareIt = async (name: string) => {
+    try {
+      await api.unshareFlow(path, name);
+      unsaved.set("flows", null);
+      setDraft(null);
+      onNavigate({ screen: "flows", project: path }, { replace: true });
+      await client.invalidateQueries({ queryKey: ["flows", path] });
+    } catch (error) {
+      toast.error(errorMessage(error, t));
+    }
+  };
+
   const insertAfter = (after: string, kind: FlowNodeKind) => {
     if (!flow) return;
     const { flow: next, id } = insertStep(flow, after, kind);
@@ -295,6 +320,12 @@ export function FlowsScreen({
     { title: t("flows.picker.templates"), options: entries.filter((e) => e.scope === "hedy").map((e) => ({ value: e.key, label: e.flow.name, detail: e.summary })) },
     { title: t("flows.picker.project"), options: entries.filter((e) => e.scope === "project").map((e) => ({ value: e.key, label: e.flow.name })) },
     { title: t("flows.picker.global"), options: entries.filter((e) => e.scope === "global").map((e) => ({ value: e.key, label: e.flow.name })) },
+    {
+      title: share ? t("flows.picker.teamNamed", { team: share.name }) : t("flows.picker.team"),
+      options: entries
+        .filter((e) => e.scope === "team")
+        .map((e) => ({ value: e.key, label: e.flow.name, detail: e.by ? t("flows.team.by", { name: e.by }) : undefined })),
+    },
   ].filter((s) => s.options.length > 0);
   if (draft && draft.key === null && flow) sections.unshift({ title: t("flows.picker.unsaved"), options: [{ value: "", label: flow.name || t("flows.untitled") }] });
 
@@ -346,6 +377,17 @@ export function FlowsScreen({
           {!readOnly && draft?.key && (
             <ConfirmButton small variant="ghost" confirmLabel={t("flows.delete.confirm")} onConfirm={() => void remove()}>
               {t("flows.delete")}
+            </ConfirmButton>
+          )}
+          {/* An admin shares a saved flow of theirs with the project's team. */}
+          {share?.admin && !readOnly && draft?.key && !dirty && issues.length === 0 && flow && (
+            <Button small variant="ghost" onClick={() => void shareIt(draft.key ?? "")}>
+              {t("flows.team.share", { team: share.name })}
+            </Button>
+          )}
+          {share?.admin && entry?.scope === "team" && flow && (
+            <ConfirmButton small variant="ghost" confirmLabel={t("flows.team.unshareConfirm")} onConfirm={() => void unshareIt(flow.name)}>
+              {t("flows.team.unshare")}
             </ConfirmButton>
           )}
           {readOnly ? (
@@ -401,7 +443,7 @@ export function FlowsScreen({
                 <FrameStrip flow={flow} onOpen={() => setSelection(null)} />
                 {readOnly && (
                   <div className="flow-banner" onPointerDown={(e) => e.stopPropagation()}>
-                    <span>{t("flows.template.banner")}</span>
+                    <span>{entry?.scope === "team" ? t("flows.team.banner", { name: entry.by ?? "" }) : t("flows.template.banner")}</span>
                     <Button small variant="primary" onClick={() => void startNew(flow)}>
                       {t("flows.duplicate")}
                     </Button>
@@ -440,9 +482,12 @@ export function FlowsScreen({
         <RunDialog
           flowName={flow.name}
           flowKey={draft.key}
+          commands={entry?.unapproved ?? []}
           onClose={() => setRunning(false)}
-          onRun={async (prompt, key) => {
+          onRun={async (prompt, key, allow) => {
             try {
+              // The user allowed the team's commands in the dialog: this PC remembers them.
+              for (const command of allow) await api.approveFlowCommand(command);
               const task = await api.startTask({ project: path, prompt, mode: "project", model: null, planFirst: false, flow: key });
               setRunning(false);
               onNavigate({ screen: "workspace", project: path, task: task.id });
@@ -477,21 +522,26 @@ function FrameStrip({ flow, onOpen }: { flow: Flow; onOpen: () => void }) {
 function RunDialog({
   flowName,
   flowKey,
+  commands,
   onClose,
   onRun,
 }: {
   flowName: string;
   flowKey: string;
+  /** A team flow's test commands this PC has not allowed yet. */
+  commands: string[];
   onClose: () => void;
-  onRun: (prompt: string, key: string) => Promise<void>;
+  onRun: (prompt: string, key: string, allow: string[]) => Promise<void>;
 }) {
   const t = useT();
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
+  const [allowed, setAllowed] = useState(false);
+  const ready = !!prompt.trim() && !busy && (commands.length === 0 || allowed);
   const go = async () => {
-    if (!prompt.trim() || busy) return;
+    if (!ready) return;
     setBusy(true);
-    await onRun(prompt.trim(), flowKey).finally(() => setBusy(false));
+    await onRun(prompt.trim(), flowKey, commands).finally(() => setBusy(false));
   };
   return (
     <Dialog
@@ -499,7 +549,7 @@ function RunDialog({
       onClose={onClose}
       footer={
         <>
-          <Button variant="primary" disabled={!prompt.trim() || busy} onClick={() => void go()}>
+          <Button variant="primary" disabled={!ready} onClick={() => void go()}>
             {t("flows.run.start")}
           </Button>
           <Button variant="ghost" onClick={onClose}>
@@ -521,6 +571,22 @@ function RunDialog({
         />
       </label>
       <p className="hint">{t("flows.run.hint")}</p>
+      {commands.length > 0 && (
+        <div className="flow-allow">
+          <p>{t("flows.run.commandsIntro")}</p>
+          <ul>
+            {commands.map((c) => (
+              <li key={c}>
+                <code>{c}</code>
+              </li>
+            ))}
+          </ul>
+          <label className="check">
+            <input type="checkbox" checked={allowed} onChange={(e) => setAllowed(e.target.checked)} />
+            {t("flows.run.commandsAllow")}
+          </label>
+        </div>
+      )}
     </Dialog>
   );
 }

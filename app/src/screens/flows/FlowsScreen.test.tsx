@@ -163,6 +163,35 @@ describe("A project's flows", () => {
     expect(saved?.flow.triggers).toEqual(["manual"]);
   });
 
+  it("a team's flow runs only once this PC allows its command", async () => {
+    const { api, user } = await setup();
+    await step("Arquitecto");
+    await chooseOption(user, picker(), /Revisión de seguridad/);
+    expect(screen.getByText("Lo comparte Marta con el equipo. Duplícalo para cambiarlo.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Guardar" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ejecutar" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("npm run audit")).toBeInTheDocument();
+    await user.type(within(dialog).getByRole("textbox"), "Revisa el cobro");
+    const start = within(dialog).getByRole("button", { name: "Empezar" });
+    expect(start).toBeDisabled();
+    await user.click(within(dialog).getByRole("checkbox", { name: "Permito estos comandos en este PC" }));
+    const approve = vi.spyOn(api, "approveFlowCommand");
+    await user.click(start);
+    await waitFor(() => expect(approve).toHaveBeenCalledWith("npm run audit"));
+    await waitFor(() => expect(window.location.hash).toMatch(/^#p=.*&t=/));
+  });
+
+  it("an admin shares a flow of theirs with the project's team", async () => {
+    const { api, user } = await setup();
+    await step("Arquitecto");
+    await user.click(screen.getByRole("button", { name: "Compartir con Café Aurora" }));
+    await waitFor(async () => expect((await api.flows(TIENDA)).some((f) => f.scope === "team" && f.flow.name === "Pago con revisión")).toBe(true));
+    // Shared without anyone's account on its steps.
+    const shared = (await api.flows(TIENDA)).find((f) => f.scope === "team" && f.flow.name === "Pago con revisión");
+    expect(shared?.flow.nodes.every((n) => n.kind !== "role" || !n.account)).toBe(true);
+  });
+
   it("reads as a numbered list, with the ways back", async () => {
     const { user } = await setup();
     await step("Arquitecto");

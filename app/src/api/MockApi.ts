@@ -16,7 +16,7 @@ import type {
   WriteResult,
 } from "./codeTypes";
 import { MockCode, SUGGESTED_BLOCKED } from "./mockCode";
-import { MOCK_ROLES, mockProblems, mockProjectFlow, mockTemplates } from "./mockFlows";
+import { MOCK_ROLES, mockProblems, mockProjectFlow, mockTeamFlow, mockTemplates } from "./mockFlows";
 import { MOCK_THEME_SEEDS } from "./mockThemes";
 import { resolveLanguage } from "../i18n";
 import { placeholders } from "../templates/placeholders";
@@ -27,6 +27,7 @@ import type {
   FlowEntry,
   FlowIssue,
   RoleEntry,
+  TeamShare,
   ImportPick,
   TrialResult,
   TrialOutcome,
@@ -372,6 +373,8 @@ export class MockApi implements HedyApi {
     api.repoOwners.set("/code/hedy", "github.com/alex");
     api.repoOwners.set("/code/tienda", "github.com/cafe-aurora");
     api.flowRecords.push({ id: api.nextFlow++, project: "/code/tienda", flow: mockProjectFlow() });
+    api.teamProjects.add("/code/tienda");
+    api.teamFlows.push({ uid: "u1", flow: mockTeamFlow(), by: "Marta" });
     api.owners.mine.add("github.com/alex");
     api.sync = {
       url: "git@github.com:alex/hedy-memory.git",
@@ -1884,7 +1887,54 @@ export class MockApi implements HedyApi {
       this.flowRecords
         .filter((r) => r.project === place)
         .map((r) => ({ key: `#${r.id}`, scope: place ? "project" : "global", summary: "", flow: structuredClone(r.flow) }));
-    return [...mockTemplates(), ...(project ? mine(project) : []), ...mine(null)];
+    const team: FlowEntry[] =
+      project && this.teamProjects.has(project)
+        ? this.teamFlows.map((f) => ({
+            key: `team:${f.uid}`,
+            scope: "team",
+            summary: "",
+            flow: structuredClone(f.flow),
+            by: f.by,
+            unapproved: this.unapproved(f.flow),
+          }))
+        : [];
+    return [...mockTemplates(), ...(project ? mine(project) : []), ...mine(null), ...team];
+  }
+
+  /** The sample team ("Café Aurora", tienda's): its shared flows, and the commands this PC allowed. */
+  private teamProjects = new Set<string>();
+  private teamFlows: { uid: string; flow: Flow; by: string }[] = [];
+  private approvedCommands = new Set<string>();
+
+  private unapproved(flow: Flow): string[] {
+    return flow.nodes.flatMap((n) => (n.kind === "condition" && n.check === "tests" && n.command && !this.approvedCommands.has(n.command) ? [n.command] : []));
+  }
+
+  async flowSharing(project: string): Promise<TeamShare | null> {
+    return this.teamProjects.has(project) ? { team: "aurora", name: "Café Aurora", admin: true } : null;
+  }
+
+  async shareFlow(project: string, key: string): Promise<string> {
+    if (!this.teamProjects.has(project)) throw "este proyecto no está en un equipo";
+    const record = this.flowRecords.find((r) => `#${r.id}` === key);
+    if (!record) throw `no hay un flujo «${key}»`;
+    const flow = structuredClone(record.flow);
+    for (const n of flow.nodes) {
+      if (n.kind === "role") delete n.account;
+      if (n.kind === "parallel") n.roles.forEach((s) => delete s.account);
+    }
+    const same = this.teamFlows.find((f) => f.flow.name.toLowerCase() === flow.name.toLowerCase());
+    if (same) same.flow = flow;
+    else this.teamFlows.push({ uid: `u${this.teamFlows.length + 1}`, flow, by: "Alex" });
+    return flow.name;
+  }
+
+  async unshareFlow(_project: string, name: string): Promise<void> {
+    this.teamFlows = this.teamFlows.filter((f) => f.flow.name !== name);
+  }
+
+  async approveFlowCommand(command: string): Promise<void> {
+    this.approvedCommands.add(command);
   }
 
   async flowProblems(_project: string | null, flow: Flow): Promise<FlowIssue[]> {
@@ -1954,6 +2004,7 @@ export class MockApi implements HedyApi {
     const prompt = carried ? `${carried.origin.context}\n\n${input.prompt.trim()}` : input.prompt;
     const planFirst = input.planFirst && input.mode === "project";
     const flowEntry = input.flow ? (await this.flows(project.path)).find((f) => f.key === input.flow) : undefined;
+    if (flowEntry?.unapproved?.length) throw `este flujo del equipo corre «${flowEntry.unapproved[0]}» en tu PC: permítelo antes de ejecutarlo`;
     const stage = (phase: "plan" | "implement") => ({ phase, account: project.account ?? "", model: input.model });
     const task: Task = {
       id,
