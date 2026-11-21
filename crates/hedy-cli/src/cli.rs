@@ -1110,6 +1110,63 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             tr!("Nombre o clave del flujo", "Flow name or key"),
         ),
         (
+            "flow share",
+            "",
+            tr!(
+                "Comparte un flujo tuyo con el equipo del proyecto (solo admins); llega en la próxima sincronización",
+                "Share one of your flows with the project's team (admins only); it arrives on the next sync"
+            ),
+        ),
+        (
+            "flow share",
+            "name",
+            tr!("Nombre o clave del flujo", "Flow name or key"),
+        ),
+        (
+            "flow unshare",
+            "",
+            tr!(
+                "Deja de compartir un flujo del equipo (solo admins)",
+                "Stop sharing one of the team's flows (admins only)"
+            ),
+        ),
+        (
+            "flow unshare",
+            "name",
+            tr!("Nombre del flujo del equipo", "The team flow's name"),
+        ),
+        (
+            "flow allow",
+            "",
+            tr!(
+                "Permite en este PC el comando de tests de un flujo del equipo",
+                "Allow on this PC the test command of one of the team's flows"
+            ),
+        ),
+        (
+            "flow allow",
+            "command",
+            tr!("El comando, tal cual", "The command, exactly"),
+        ),
+        (
+            "roles share",
+            "",
+            tr!(
+                "Comparte un rol tuyo con el equipo del proyecto (solo admins)",
+                "Share one of your roles with the project's team (admins only)"
+            ),
+        ),
+        ("roles share", "id", tr!("Id del rol", "Role id")),
+        (
+            "roles unshare",
+            "",
+            tr!(
+                "Deja de compartir un rol del equipo (solo admins)",
+                "Stop sharing one of the team's roles (admins only)"
+            ),
+        ),
+        ("roles unshare", "id", tr!("Id del rol", "Role id")),
+        (
             "roles",
             "",
             tr!(
@@ -1809,6 +1866,7 @@ fn value_names() -> Vec<(&'static str, String)> {
         ("shared", tr!("DUEÑO", "OWNER")),
         ("from", tr!("ORIGEN", "SOURCE")),
         ("id", tr!("ID", "ID")),
+        ("command", tr!("COMANDO", "COMMAND")),
     ]
 }
 
@@ -2189,6 +2247,18 @@ pub enum FlowCommand {
     Edit {
         name: String,
     },
+
+    Share {
+        name: String,
+    },
+
+    Unshare {
+        name: String,
+    },
+
+    Allow {
+        command: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -2214,6 +2284,14 @@ pub enum RolesCommand {
     },
 
     Remove {
+        id: String,
+    },
+
+    Share {
+        id: String,
+    },
+
+    Unshare {
         id: String,
     },
 }

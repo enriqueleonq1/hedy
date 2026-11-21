@@ -1898,6 +1898,7 @@ pub fn flow_list(hedy: &Hedy, dir: &Path) -> Result<()> {
             FlowScope::Global,
             tr!("Para todos los proyectos", "For every project"),
         ),
+        (FlowScope::Team, tr!("Del equipo", "The team's")),
     ] {
         let here: Vec<_> = flows.iter().filter(|f| f.scope == scope).collect();
         if here.is_empty() {

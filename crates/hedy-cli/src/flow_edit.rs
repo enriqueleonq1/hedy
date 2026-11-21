@@ -196,6 +196,7 @@ pub fn roles_list(hedy: &Hedy, dir: &Path) -> Result<()> {
             FlowScope::Global,
             tr!("Para todos los proyectos", "For every project"),
         ),
+        (FlowScope::Team, tr!("Del equipo", "The team's")),
     ] {
         let here: Vec<_> = roles.iter().filter(|r| r.scope == scope).collect();
         if here.is_empty() {
@@ -344,6 +345,88 @@ pub fn role_remove(hedy: &Hedy, dir: &Path, id: &str) -> Result<()> {
         "{} {}",
         s.ok("✓"),
         tr!("Rol quitado: {id}", "Role removed: {id}")
+    );
+    Ok(())
+}
+
+pub fn share_flow(hedy: &Hedy, dir: &Path, name: &str) -> Result<()> {
+    refuse_in_agent_session()?;
+    let project = crate::commands::project_here(hedy, dir)?;
+    let shared = hedy.team_share_flow(&project.path, name)?;
+    say_shared(hedy, &project.path, &shared)
+}
+
+pub fn unshare_flow(hedy: &Hedy, dir: &Path, name: &str) -> Result<()> {
+    refuse_in_agent_session()?;
+    let project = crate::commands::project_here(hedy, dir)?;
+    hedy.team_unshare_flow(&project.path, name)?;
+    let s = Style::for_stdout();
+    let name = clean(name);
+    println!(
+        "{} {}",
+        s.ok("✓"),
+        tr!(
+            "«{name}» ya no se comparte.",
+            "«{name}» is no longer shared."
+        )
+    );
+    Ok(())
+}
+
+pub fn share_role(hedy: &Hedy, dir: &Path, id: &str) -> Result<()> {
+    refuse_in_agent_session()?;
+    let project = crate::commands::project_here(hedy, dir)?;
+    let shared = hedy.team_share_role(&project.path, id)?;
+    say_shared(hedy, &project.path, &shared)
+}
+
+pub fn unshare_role(hedy: &Hedy, dir: &Path, id: &str) -> Result<()> {
+    refuse_in_agent_session()?;
+    let project = crate::commands::project_here(hedy, dir)?;
+    hedy.team_unshare_role(&project.path, id)?;
+    let s = Style::for_stdout();
+    println!(
+        "{} {}",
+        s.ok("✓"),
+        tr!(
+            "El rol {id} ya no se comparte.",
+            "Role {id} is no longer shared."
+        )
+    );
+    Ok(())
+}
+
+fn say_shared(hedy: &Hedy, project: &Path, name: &str) -> Result<()> {
+    let s = Style::for_stdout();
+    let team = hedy
+        .flow_sharing(project)?
+        .map(|t| clean(&t.name))
+        .unwrap_or_default();
+    let name = clean(name);
+    println!(
+        "{} {}",
+        s.ok("✓"),
+        tr!(
+            "«{name}» queda compartido con {team}: llega a los demás con `hedy team now`.",
+            "«{name}» is shared with {team}: it reaches the others with `hedy team now`."
+        )
+    );
+    Ok(())
+}
+
+/// The user allows a team flow's test command on this PC (never an agent).
+pub fn allow_command(hedy: &Hedy, command: &str) -> Result<()> {
+    refuse_in_agent_session()?;
+    hedy.approve_flow_command(command)?;
+    let s = Style::for_stdout();
+    let command = clean(command);
+    println!(
+        "{} {}",
+        s.ok("✓"),
+        tr!(
+            "Permitido en este PC: {command}",
+            "Allowed on this PC: {command}"
+        )
     );
     Ok(())
 }

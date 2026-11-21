@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use hedy_core::application::ports::TaskEvents;
 use hedy_core::application::{Hedy, NewTask};
 use hedy_core::domain::{AgentEvent, Decision, Task, TaskId, TaskMode, TaskStatus};
@@ -78,6 +78,28 @@ pub fn run(
         let _ = interrupt.send(Signal::Interrupt);
     })
     .context("Ctrl+C")?;
+    // A team's test command runs here only once the user allows it.
+    let entry = hedy.flow(Some(&project.path), flow)?;
+    for command in &entry.unapproved {
+        let shown = clean(command);
+        if !ask {
+            bail!(
+                "{}",
+                tr!(
+                    "este flujo del equipo corre «{shown}»: permítelo con `hedy flow allow \"{shown}\"`",
+                    "this team flow runs «{shown}»: allow it with `hedy flow allow \"{shown}\"`"
+                )
+            );
+        }
+        let answer = crate::sync::read_line(&tr!(
+            "Este flujo del equipo corre en tu PC, aislado y sin red: {shown}\n¿Lo permites? [s/N] ",
+            "This team flow runs on your PC, isolated and offline: {shown}\nDo you allow it? [y/N] "
+        ))?;
+        if !yes(&answer) {
+            bail!("{}", tr!("no se ejecutó nada", "nothing was run"));
+        }
+        hedy.approve_flow_command(command)?;
+    }
     let task = hedy.start_flow(
         NewTask {
             images: Vec::new(),

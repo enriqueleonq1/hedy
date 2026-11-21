@@ -2652,4 +2652,10 @@ fn flows_and_roles_are_made_from_the_terminal() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("no hay un rol"));
+    // Sharing needs a project in a team; allowing a command is this PC's.
+    env.hedy_in(&repo, &["flow", "share", "Pagos"]).assert().failure();
+    env.hedy_in(&repo, &["flow", "allow", "npm run audit"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Permitido en este PC: npm run audit"));
 }

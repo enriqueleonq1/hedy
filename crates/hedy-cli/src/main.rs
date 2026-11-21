@@ -271,6 +271,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 flow_edit::new_flow(&hedy, &dir, &name, from.as_deref(), global)
             }
             FlowCommand::Edit { name } => flow_edit::edit_flow(&hedy, &dir, &name),
+            FlowCommand::Share { name } => flow_edit::share_flow(&hedy, &dir, &name),
+            FlowCommand::Unshare { name } => flow_edit::unshare_flow(&hedy, &dir, &name),
+            FlowCommand::Allow { command } => flow_edit::allow_command(&hedy, &command),
         },
         Command::Roles { command } => match command.unwrap_or(RolesCommand::List) {
             RolesCommand::List => flow_edit::roles_list(&hedy, &dir),
@@ -280,6 +283,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
             }
             RolesCommand::Edit { id, global } => flow_edit::role_edit(&hedy, &dir, &id, global),
             RolesCommand::Remove { id } => flow_edit::role_remove(&hedy, &dir, &id),
+            RolesCommand::Share { id } => flow_edit::share_role(&hedy, &dir, &id),
+            RolesCommand::Unshare { id } => flow_edit::unshare_role(&hedy, &dir, &id),
         },
         Command::Template { command } => match command.unwrap_or(TemplateCommand::List) {
             TemplateCommand::List => commands::template_list(&hedy, &dir),
