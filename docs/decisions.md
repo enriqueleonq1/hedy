@@ -3938,6 +3938,28 @@ A flow now picks its path. All three templates run.
   follows it in the terminal: each role's start, each check, the end. Approvals, plans and
   permission requests are asked there. Without a terminal, requests are declined and an
   approval leaves the task waiting for the app. Ctrl+C stops the task, which stays for review.
+- **Hardened after the reviews.**
+  - **Isolation.** The tests run code an AI wrote, so where bubblewrap is missing (or user
+    namespaces are off), a flow's tests never run: the run stops and says to install it.
+    Inside the sandbox the copy is what the agent itself sees, `.env` files copied into it
+    included (§40), so the test output goes on the board masked and cut to its end.
+  - **Output.** `run_check` now hands back the last 64 KB of what the check printed (both
+    streams, through a private temporary file, so nothing blocks while it runs); the last 40
+    lines go on the board.
+  - **Stopping.** «Detener» and «Descartar» stop a running check (`stop_checks` by the task's
+    id). A check that ends after its task stopped, or was discarded or accepted, moves the
+    flow no further and saves nothing over it.
+  - **Locks and status.** An approval is taken under the status lock, but the steps after it
+    (which may run tests for minutes) are not: every other task's turn waits on that lock. A
+    turn that ends while the run sits stopped at a check or at its end puts the task back in
+    review instead of leaving it «running».
+  - **Verdicts.** Only the answer's own last non-empty line counts; a quoted line, or two
+    verdict lines that disagree, count as none. A writer starting a new attempt, or the user
+    not approving, clears the verdicts of the last one.
+  - **Approvals.** Not approving can send a group at once back too.
+  - **`hedy flow run`.** It asks one question at a time, in order; it forgets a question
+    answered in the app; it ends whenever the task goes to review or fails; and it says when
+    the run stopped before its end.
 - **Verified for real** (haiku, a scratch data folder on the personal account, Automático): in
   a small Rust crate whose `suma` subtracted, `hedy flow run fix-loop` ran the programmer
   (`a - b` → `a + b`, the test untouched), `cargo test` in bubblewrap (passed), the reviewer

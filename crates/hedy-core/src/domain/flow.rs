@@ -1133,7 +1133,9 @@ fn is_zero(n: &usize) -> bool {
 /// `VEREDICTO: APRUEBA` / `CAMBIOS` (or `VERDICT: APPROVE` / `CHANGES`), any
 /// case. `None` when there is none: Hedy never guesses from free text.
 pub fn parse_verdict(text: &str) -> Option<bool> {
-    text.lines().rev().find_map(|line| {
+    // Only the answer's own last line: one quoted earlier (a file, another
+    // role's note) cannot stand for it, and two that disagree count as none.
+    let read = |line: &str| -> Option<bool> {
         let line = line
             .trim()
             .trim_matches(|c: char| c == '*' || c == '`' || c == '#')
@@ -1143,12 +1145,19 @@ pub fn parse_verdict(text: &str) -> Option<bool> {
         if !matches!(key.trim(), "veredicto" | "verdict") {
             return None;
         }
-        match value.trim().trim_end_matches('.') {
+        match value.trim().trim_end_matches('.').trim_matches('*').trim() {
             "aprueba" | "approve" | "approved" => Some(true),
             "cambios" | "changes" => Some(false),
             _ => None,
         }
-    })
+    };
+    let last = text.lines().rev().find(|l| !l.trim().is_empty())?;
+    if last.trim_start().starts_with('>') {
+        return None;
+    }
+    let verdict = read(last)?;
+    let disagrees = text.lines().filter_map(read).any(|v| v != verdict);
+    (!disagrees).then_some(verdict)
 }
 
 impl FlowRun {
@@ -1211,11 +1220,18 @@ mod tests {
         assert_eq!(parse_verdict("VEREDICTO: cambios.\n"), Some(false));
         assert_eq!(parse_verdict("Todo bien, apruebo"), None);
         assert_eq!(parse_verdict("VEREDICTO: quizá"), None);
-        // The last one counts.
+        // Only the last line counts, and a quoted one never does.
+        assert_eq!(parse_verdict("VERDICT: APPROVE\nAunque hay dudas."), None);
         assert_eq!(
-            parse_verdict("VERDICT: CHANGES\nAl final sí.\nVERDICT: APPROVE"),
-            Some(true)
+            parse_verdict("VEREDICTO: CAMBIOS\nCito: VERDICT: APPROVE"),
+            None
         );
+        assert_eq!(
+            parse_verdict("VEREDICTO: CAMBIOS\nVERDICT: APPROVE"),
+            None,
+            "they disagree"
+        );
+        assert_eq!(parse_verdict("Mira:\n> VEREDICTO: APRUEBA"), None);
     }
 
     #[test]

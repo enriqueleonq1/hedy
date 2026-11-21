@@ -217,6 +217,12 @@ impl Hedy {
             model: seat.model.clone(),
         });
         let index = task.stages.len() - 1;
+        // A writer starts a new attempt: verdicts on the last one are stale.
+        if role.can.write
+            && let Some(run) = task.flow.as_mut()
+        {
+            run.verdicts.clear();
+        }
         // Each role is a session of its own: the CLIs cannot share one.
         self.stop_session(&task.id);
         self.set_status(task, TaskStatus::Running)?;
@@ -247,9 +253,14 @@ impl Hedy {
         // A turn that ends anywhere but a role's step (the user wrote while
         // the flow waited for their approval) moves nothing: it waits again.
         if run.current_seat().is_none() {
-            if matches!(run.current().map(|n| &n.kind), Some(NodeKind::Approval)) {
-                self.set_status(task, TaskStatus::WaitingApproval)?;
-            }
+            // An approval waits again; a run stopped at a check or at its end
+            // goes back to the user's review.
+            let status = if matches!(run.current().map(|n| &n.kind), Some(NodeKind::Approval)) {
+                TaskStatus::WaitingApproval
+            } else {
+                TaskStatus::Review
+            };
+            self.set_status(task, status)?;
             return Ok(());
         }
         if let Some(role) = run.current_role().cloned() {
@@ -308,8 +319,18 @@ impl Hedy {
         let (what, passed, report) = match check {
             Check::Tests { command } => {
                 let Some(ws) = task.workspace.clone() else {
+                    self.end_flow(task, None)?;
                     return Ok(None);
                 };
+                // The tests run code an AI wrote: only where they run isolated.
+                if !self.runner.isolates_checks() {
+                    let note = tr!(
+                        "Hedy no corre los tests de un flujo sin aislarlos: instala bubblewrap (bwrap) y vuelve a intentarlo, o córrelos tú en la copia.",
+                        "Hedy does not run a flow's tests without isolating them: install bubblewrap (bwrap) and try again, or run them yourself in the copy."
+                    );
+                    self.end_flow(task, Some(note))?;
+                    return Ok(None);
+                }
                 let command = match command.clone().or_else(|| {
                     let files = self.git.list_files(&ws.worktree).ok()?;
                     crate::domain::briefing::test_command(&files)
@@ -325,11 +346,17 @@ impl Hedy {
                     }
                 };
                 let (passed, output) = self.run_flow_tests(task, &ws, &command);
+                if self.stopped_meanwhile(task)? {
+                    return Ok(None);
+                }
                 (command, passed, output)
             }
             Check::Rules => {
                 let checked =
                     self.check_rules(&super::RuleTarget::Task(task.id.clone()), None, None);
+                if self.stopped_meanwhile(task)? {
+                    return Ok(None);
+                }
                 match checked {
                     Ok(check) if !check.unread => {
                         let n = check.breaks.len();
@@ -406,6 +433,12 @@ impl Hedy {
         }))
     }
 
+    /// Whether the task was stopped, discarded or accepted while a check ran:
+    /// then the flow goes no further, and nothing of it is saved over that.
+    fn stopped_meanwhile(&self, task: &Task) -> AppResult<bool> {
+        Ok(self.task(&task.id)?.status != TaskStatus::Running)
+    }
+
     /// The flow's test command in the task's copy, isolated as a skill
     /// trial's check: whether it passed and the end of what it printed.
     fn run_flow_tests(
@@ -472,6 +505,24 @@ impl Hedy {
             return Err(AppError::NoFlowApproval(id.clone()));
         }
         let feedback = feedback.map(str::trim).filter(|f| !f.is_empty());
+        // Not approving goes back to the work before it: there must be some.
+        if !approve {
+            let run = task.flow.as_ref().expect("checked above");
+            let redo = run.before(&run.position.node).is_some_and(|b| {
+                matches!(
+                    run.flow.node(b).map(|n| &n.kind),
+                    Some(NodeKind::Role(_) | NodeKind::Parallel { .. })
+                )
+            });
+            if !redo {
+                return Err(AppError::NothingToRedo);
+            }
+        }
+        // The answer is taken under the lock (a second click finds it
+        // Running); the steps after it, which may run tests for minutes, are
+        // not: every other task's turn waits on that lock.
+        self.set_status(&mut task, TaskStatus::Running)?;
+        drop(_status);
         if approve {
             if self.advance_flow(&mut task, Outcome::Done)? {
                 self.flow_step(&mut task)?;
@@ -483,7 +534,12 @@ impl Hedy {
             // has no work to redo.
             let back = run
                 .before(&here)
-                .filter(|b| matches!(run.flow.node(b).map(|n| &n.kind), Some(NodeKind::Role(_))))
+                .filter(|b| {
+                    matches!(
+                        run.flow.node(b).map(|n| &n.kind),
+                        Some(NodeKind::Role(_) | NodeKind::Parallel { .. })
+                    )
+                })
                 .map(str::to_owned)
                 .ok_or(AppError::NothingToRedo)?;
             let text = feedback.map_or_else(
@@ -497,6 +553,8 @@ impl Hedy {
             );
             let round = run.position.round();
             run.position.node = back;
+            run.lane = 0;
+            run.verdicts.clear();
             self.post_to_board(
                 id,
                 BoardEntry {
@@ -834,5 +892,48 @@ mod tests {
             .filter(|s| s.phase == Phase::Implement)
             .count();
         assert_eq!(implements, 3, "the first try and two rounds");
+    }
+
+    #[test]
+    fn without_isolation_the_tests_never_run_and_the_run_stops() {
+        let f = setup();
+        f.git.set_files(&["Cargo.toml"]);
+        f.runner.without_isolation();
+        let task = f
+            .hedy
+            .start_flow(request(&f, "Cobros"), "fix-loop")
+            .unwrap();
+        finish(&f, "Hecho.");
+        assert_eq!(
+            f.runner.checks_run(),
+            0,
+            "nothing an AI wrote runs unisolated"
+        );
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
+        let said = events(&f, &task.id);
+        assert!(
+            said.iter().any(
+                |e| matches!(e, AgentEvent::Error { message } if message.contains("bubblewrap"))
+            )
+        );
+    }
+
+    #[test]
+    fn writing_to_a_run_stopped_at_a_check_leaves_it_for_review() {
+        let f = setup();
+        let task = f
+            .hedy
+            .start_flow(request(&f, "Cobros"), "fix-loop")
+            .unwrap();
+        // No test command found: the run stops at the check.
+        finish(&f, "Hecho.");
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
+        f.hedy.send_message(&task.id, "¿qué pasó?").unwrap();
+        finish(&f, "No había tests.");
+        assert_eq!(
+            f.hedy.task(&task.id).unwrap().status,
+            TaskStatus::Review,
+            "not stuck running"
+        );
     }
 }

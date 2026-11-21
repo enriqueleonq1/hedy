@@ -4,6 +4,7 @@
 //! one at a time. Without a terminal, permission requests are declined and an
 //! approval leaves the task waiting for the app.
 
+use std::collections::VecDeque;
 use std::io::{BufRead, Write};
 use std::path::Path;
 use std::sync::{Arc, mpsc};
@@ -105,14 +106,62 @@ pub fn run(
         .as_ref()
         .map(|r| r.flow.name.clone())
         .unwrap_or_default();
-    println!("{} {}", s.bold(&name), s.muted(format!("· {}", task.title)));
+    println!(
+        "{} {}",
+        s.bold(clean(&name)),
+        s.muted(format!("· {}", clean(&task.title)))
+    );
     let id = task.id.clone();
+    // One question at a time, in the order they came.
+    let mut waiting: VecDeque<(Question, String)> = VecDeque::new();
     let mut asking: Option<Question> = None;
-    let question = |text: String| {
-        print!("{text} ");
-        let _ = std::io::stdout().flush();
+    // Whether the run stopped on something to read (no verdict, out of rounds…).
+    let mut trouble = false;
+    let still_open = |question: &Question| match question {
+        Question::Permission(request_id) | Question::Plan(request_id) => {
+            hedy.is_permission_pending(&id, request_id) || matches!(question, Question::Plan(_))
+        }
+        Question::Approval => hedy
+            .task(&id)
+            .is_ok_and(|t| t.status == TaskStatus::WaitingApproval),
+    };
+    let finish = |status: TaskStatus, trouble: bool| {
+        let (mark, done) = match (status, trouble) {
+            (TaskStatus::Review, false) => (
+                s.ok("■"),
+                tr!(
+                    "Listo: revisa los cambios en la app, o con `hedy tasks`.",
+                    "Done: review the changes in the app, or with `hedy tasks`."
+                ),
+            ),
+            (TaskStatus::Review, true) => (
+                s.warn("■"),
+                tr!(
+                    "Se detuvo antes de terminar: lee el aviso y revisa los cambios en la app.",
+                    "It stopped before the end: read the notice and review the changes in the app."
+                ),
+            ),
+            _ => (
+                s.warn("■"),
+                tr!(
+                    "Se detuvo con un error: míralo en la app.",
+                    "It stopped with an error: see it in the app."
+                ),
+            ),
+        };
+        println!("{mark} {done}");
     };
     loop {
+        if asking.is_none() {
+            while let Some((question, text)) = waiting.pop_front() {
+                if still_open(&question) {
+                    print!("{text} ");
+                    let _ = std::io::stdout().flush();
+                    asking = Some(question);
+                    break;
+                }
+            }
+        }
         match rx.recv_timeout(POLL) {
             Ok(Signal::Interrupt) => {
                 let _ = hedy.stop_task(&id);
@@ -150,7 +199,6 @@ pub fn run(
                                 .then_some(feedback);
                         if let Err(e) = hedy.answer_flow_approval(&id, yes(&line), feedback) {
                             println!("{} {e}", s.warn("!"));
-                            asking = Some(Question::Approval);
                         }
                     }
                     None => {}
@@ -163,7 +211,12 @@ pub fn run(
                         .ok()
                         .and_then(|t| Some(t.flow?.current_role()?.name.clone()))
                         .unwrap_or_default();
-                    println!("{} {} {}", s.ok("▶"), s.bold(&role), s.muted(agent));
+                    println!(
+                        "{} {} {}",
+                        s.ok("▶"),
+                        s.bold(clean(&role)),
+                        s.muted(clean(&agent))
+                    );
                 }
                 AgentEvent::FlowCheck { what, passed, .. } => {
                     let (mark, word) = if passed {
@@ -188,11 +241,13 @@ pub fn run(
                         );
                         return Ok(());
                     }
-                    question(tr!(
-                        "¿Lo apruebas? [s / escribe qué cambiar]",
-                        "Do you approve it? [y / write what to change]"
+                    waiting.push_back((
+                        Question::Approval,
+                        tr!(
+                            "¿Lo apruebas? [s / escribe qué cambiar]",
+                            "Do you approve it? [y / write what to change]"
+                        ),
                     ));
-                    asking = Some(Question::Approval);
                 }
                 AgentEvent::Plan {
                     text,
@@ -200,11 +255,13 @@ pub fn run(
                 } => {
                     println!("\n{}\n", clean(&text));
                     if ask {
-                        question(tr!(
-                            "¿Apruebas el plan? [s / escribe qué cambiar]",
-                            "Approve the plan? [y / write what to change]"
+                        waiting.push_back((
+                            Question::Plan(request_id),
+                            tr!(
+                                "¿Apruebas el plan? [s / escribe qué cambiar]",
+                                "Approve the plan? [y / write what to change]"
+                            ),
                         ));
-                        asking = Some(Question::Plan(request_id));
                     } else {
                         let _ = hedy.answer_plan(&id, &request_id, false, None);
                     }
@@ -216,39 +273,53 @@ pub fn run(
                 } if hedy.is_permission_pending(&id, &request_id) => {
                     if ask {
                         let what = clean(&summary);
-                        question(tr!(
-                            "  Pide: {what} ¿Permitir? [s/N]",
-                            "  Asks: {what} Allow? [y/N]"
+                        waiting.push_back((
+                            Question::Permission(request_id),
+                            tr!(
+                                "  Pide: {what} ¿Permitir? [s/N]",
+                                "  Asks: {what} Allow? [y/N]"
+                            ),
                         ));
-                        asking = Some(Question::Permission(request_id));
                     } else {
                         let _ = hedy.answer_permission(&id, &request_id, Decision::Deny);
                     }
                 }
+                // Answered elsewhere (the app, a rule): no longer asked here.
+                AgentEvent::PermissionResolved { request_id, .. } => {
+                    if matches!(&asking, Some(Question::Permission(r) | Question::Plan(r)) if *r == request_id)
+                    {
+                        asking = None;
+                        println!();
+                    }
+                }
                 AgentEvent::Error { message } => {
+                    trouble = true;
                     println!("{} {}", s.warn("!"), clean(&message));
                 }
                 _ => {}
             },
-            Ok(Signal::Updated(updated, status)) if updated == id => {
-                if matches!(status, TaskStatus::Review | TaskStatus::Failed) && asking.is_none() {
-                    let done = match status {
-                        TaskStatus::Review => tr!(
-                            "Listo: revisa los cambios en la app, o con `hedy tasks`.",
-                            "Done: review the changes in the app, or with `hedy tasks`."
-                        ),
-                        _ => tr!(
-                            "Se detuvo con un error: míralo en la app.",
-                            "It stopped with an error: see it in the app."
-                        ),
-                    };
-                    println!("{} {done}", s.ok("■"));
+            Ok(Signal::Updated(updated, status)) if updated == id => match status {
+                TaskStatus::Review | TaskStatus::Failed => {
+                    finish(status, trouble);
                     return Ok(());
                 }
-            }
+                // An approval answered in the app.
+                TaskStatus::Running if matches!(asking, Some(Question::Approval)) => {
+                    asking = None;
+                    println!();
+                }
+                _ => {}
+            },
             Ok(_) => {}
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                if hedy.task(&id).is_ok_and(|t| t.status.is_closed()) {
+                let Ok(now) = hedy.task(&id) else {
+                    return Ok(());
+                };
+                if now.status.is_closed() {
+                    return Ok(());
+                }
+                if matches!(now.status, TaskStatus::Review | TaskStatus::Failed) {
+                    finish(now.status, trouble);
                     return Ok(());
                 }
             }

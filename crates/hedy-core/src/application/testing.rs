@@ -1057,6 +1057,8 @@ pub struct FakeRunner {
     env: Mutex<Vec<String>>,
     /// Checks run through `run_check`, with their group.
     checks: Mutex<Vec<(String, LaunchSpec)>>,
+    /// Checks would run without isolation (no bubblewrap).
+    unisolated: Mutex<bool>,
     stopped_checks: Mutex<Vec<String>>,
     /// Processes [`FakeRunner::kill_process`] ended.
     dead: Mutex<HashSet<String>>,
@@ -1079,6 +1081,13 @@ impl FakeRunner {
         self.installed.lock().unwrap().insert(program.to_owned());
     }
 
+    /// From now on, checks cannot run isolated here.
+    pub fn without_isolation(&self) {
+        *self.unisolated.lock().unwrap() = true;
+    }
+    pub fn checks_run(&self) -> usize {
+        self.checks.lock().unwrap().len()
+    }
     pub fn reply(&self, stdout: &str, exit_code: i32) {
         *self.reply.lock().unwrap() = Some(CapturedOutput {
             exit_code: Some(exit_code),
@@ -1164,7 +1173,7 @@ impl ProcessRunner for FakeRunner {
         self.stopped_checks.lock().unwrap().push(group.to_owned());
     }
     fn isolates_checks(&self) -> bool {
-        true
+        !*self.unisolated.lock().unwrap()
     }
     fn this_process(&self) -> Option<String> {
         Some(FAKE_PROCESS.into())
