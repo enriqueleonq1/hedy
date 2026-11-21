@@ -79,6 +79,7 @@ impl Hedy {
                 plugins: Vec::new(),
                 output: None,
                 blocked,
+                board: None,
             },
             sink,
         )?;

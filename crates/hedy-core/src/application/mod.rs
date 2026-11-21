@@ -4,6 +4,7 @@ mod accounts;
 mod activity;
 mod ask;
 mod attachments;
+mod board;
 mod briefing;
 mod carry;
 mod code;

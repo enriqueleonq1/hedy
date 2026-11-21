@@ -57,6 +57,9 @@ pub struct MemoryView {
 pub struct MemoryServerCommand {
     pub program: String,
     pub args: Vec<String>,
+    /// What serves a flow task's board instead (`board-mcp --data-dir …`;
+    /// Hedy adds `--task`). Empty: no board server.
+    pub board_args: Vec<String>,
 }
 
 /// The approved note a proposal would change: the one with its topic in its
@@ -1198,6 +1201,7 @@ mod tests {
         let f2 = f.hedy.clone().with_memory_server(MemoryServerCommand {
             program: "/opt/hedy".into(),
             args: vec!["memory-mcp".into(), "--data-dir".into(), "/data".into()],
+            board_args: Vec::new(),
         });
         let account = f2.account("personal").unwrap();
         let link = f2

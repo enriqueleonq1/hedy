@@ -47,6 +47,7 @@ pub struct MemoryStore {
     queue: Mutex<Vec<QueuedMessage>>,
     templates: Mutex<Vec<TemplateRecord>>,
     flows: Mutex<Vec<FlowRecord>>,
+    board: Mutex<Vec<(TaskId, crate::domain::flow::BoardEntry)>>,
     roles: Mutex<Vec<RoleRecord>>,
     commands: Mutex<Vec<(AccountId, Option<PathBuf>, KnownCommands)>>,
     sync: Mutex<sync::SyncTables>,
@@ -1771,6 +1772,28 @@ impl CommandRepository for MemoryStore {
             .collect();
         found.sort_by_key(|(_, k)| std::cmp::Reverse(k.seen_at));
         Ok(found)
+    }
+}
+
+impl super::ports::BoardRepository for MemoryStore {
+    fn board(&self, task: &TaskId) -> PortResult<Vec<crate::domain::flow::BoardEntry>> {
+        let board = self.board.lock().unwrap();
+        Ok(board
+            .iter()
+            .filter(|(t, _)| t == task)
+            .map(|(_, e)| e.clone())
+            .collect())
+    }
+    fn post_board(&self, task: &TaskId, entry: &crate::domain::flow::BoardEntry) -> PortResult<()> {
+        self.board
+            .lock()
+            .unwrap()
+            .push((task.clone(), entry.clone()));
+        Ok(())
+    }
+    fn clear_board(&self, task: &TaskId) -> PortResult<()> {
+        self.board.lock().unwrap().retain(|(t, _)| t != task);
+        Ok(())
     }
 }
 

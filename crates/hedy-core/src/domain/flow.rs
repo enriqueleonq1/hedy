@@ -263,6 +263,29 @@ impl RoleDef {
     pub fn read_only(&self) -> bool {
         !self.can.write
     }
+
+    /// The board section its result goes to.
+    pub fn section(&self) -> String {
+        match self.id.as_str() {
+            "architect" => "plan",
+            "programmer" => "changes",
+            "tester" => "tests",
+            "reviewer" => "review",
+            other => other,
+        }
+        .to_owned()
+    }
+
+    /// Whether it reads a board section: always its own (what it did
+    /// before, when it is sent back) and the user's feedback.
+    pub fn sees_section(&self, section: &str) -> bool {
+        section == FEEDBACK
+            || section == self.section()
+            || match &self.sees {
+                Sees::All => true,
+                Sees::Sections(list) => list.iter().any(|s| s == section),
+            }
+    }
 }
 
 /// The roles that ship with Hedy, in the current language.
@@ -969,30 +992,99 @@ impl Position {
     }
 }
 
-/// What a finished role handed over, for the roles after it.
+/// The board section where the user's feedback goes (what to change).
+pub const FEEDBACK: &str = "feedback";
+/// The pseudo-section of the frame (goal, rules, files, notes) in `Sees`.
+pub const FRAME: &str = "frame";
+/// Longest text one entry of the board keeps.
+pub const MAX_BOARD_TEXT: usize = 16_000;
+
+/// One entry of a run's blackboard: what a role (or the user) left for the
+/// others, in a section (`plan`, `changes`, `tests`, `review`…).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Delivery {
-    pub node: String,
-    /// The role's name, for people.
+pub struct BoardEntry {
+    pub section: String,
+    /// Who wrote it, for people (the role's name, or the user).
     pub role: String,
+    /// The run's round when it was written (1 before any loop back).
+    pub round: u32,
     pub text: String,
-    /// The user's own words (what to change at an approval), not a role's.
+    /// The user's own words, not a role's.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub by_user: bool,
 }
 
+/// The board's two tools, as the model sees them (the board server and the
+/// API agent): their description and input schema.
+pub fn board_tools() -> Vec<serde_json::Value> {
+    vec![
+        serde_json::json!({
+            "name": "context_read",
+            "description": tr!(
+                "Lee la pizarra del equipo: lo último de cada sección que ves, o el historial de una sección.",
+                "Reads the team's board: the latest of each section you see, or the history of one section."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "section": {"type": "string", "description": "plan, changes, tests, review, feedback… (optional)"}
+                }
+            }
+        }),
+        serde_json::json!({
+            "name": "context_post",
+            "description": tr!(
+                "Deja algo en la pizarra para los demás roles: un hallazgo, una decisión, un resultado. Nunca secretos.",
+                "Leaves something on the board for the other roles: a finding, a decision, a result. Never secrets."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "section": {"type": "string", "description": "lowercase-with-dashes"},
+                    "text": {"type": "string"}
+                },
+                "required": ["section", "text"]
+            }
+        }),
+    ]
+}
+
+/// A board section name: lowercase letters, digits and dashes.
+pub fn valid_section(section: &str) -> bool {
+    (1..=40).contains(&section.len())
+        && section
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// What a role sees of the board: the latest entry of each section it
+/// reads, in the order the sections first appeared (summaries, not the
+/// history). The user's feedback is always seen.
+pub fn board_view<'a>(entries: &'a [BoardEntry], role: &RoleDef) -> Vec<&'a BoardEntry> {
+    let mut order: Vec<&str> = Vec::new();
+    for e in entries {
+        if !order.contains(&e.section.as_str()) {
+            order.push(&e.section);
+        }
+    }
+    order
+        .into_iter()
+        .filter(|s| role.sees_section(s))
+        .filter_map(|s| entries.iter().rev().find(|e| e.section == s))
+        .collect()
+}
+
 /// A task run by a flow: the flow and its roles as they were when it
-/// started (editing the library meanwhile changes nothing here), where it
-/// is, and what each role handed over.
+/// started (editing the library meanwhile changes nothing here) and where it
+/// is. What the roles hand over lives on the run's board (a store table: the
+/// board server writes it from another process).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FlowRun {
     pub flow: Flow,
     pub roles: BTreeMap<String, RoleDef>,
     pub position: Position,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub delivered: Vec<Delivery>,
     /// What the current role said before its account's limit cut it: it
     /// opens its delivery when it finishes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1011,7 +1103,6 @@ impl FlowRun {
             position: Position::at_start(&flow),
             flow,
             roles,
-            delivered: Vec::new(),
             partial: None,
         })
     }
@@ -1043,6 +1134,42 @@ impl FlowRun {
 mod tests {
     use super::*;
     use crate::domain::Assignment;
+
+    #[test]
+    fn a_role_sees_the_latest_of_its_sections_its_own_and_your_feedback() {
+        let entry = |section: &str, text: &str, round: u32| BoardEntry {
+            section: section.into(),
+            role: "x".into(),
+            round,
+            text: text.into(),
+            by_user: false,
+        };
+        let board = vec![
+            entry("plan", "plan 1", 1),
+            entry("tests", "2 fallan", 1),
+            entry("changes", "arreglo", 2),
+            entry("tests", "pasan", 2),
+            entry(FEEDBACK, "en el servidor", 1),
+        ];
+        let reviewer = builtin_role("reviewer").unwrap();
+        let seen: Vec<&str> = board_view(&board, &reviewer)
+            .iter()
+            .map(|e| e.text.as_str())
+            .collect();
+        assert_eq!(seen, ["plan 1", "pasan", "arreglo", "en el servidor"]);
+        let architect = builtin_role("architect").unwrap();
+        let seen: Vec<&str> = board_view(&board, &architect)
+            .iter()
+            .map(|e| e.text.as_str())
+            .collect();
+        assert_eq!(
+            seen,
+            ["plan 1", "en el servidor"],
+            "its own plan and your feedback"
+        );
+        assert!(valid_section("riesgos-2") && !valid_section("Plan") && !valid_section(""));
+        assert_eq!(builtin_role("tester").unwrap().section(), "tests");
+    }
 
     fn lib(id: &str) -> Option<RoleDef> {
         builtin_role(id)

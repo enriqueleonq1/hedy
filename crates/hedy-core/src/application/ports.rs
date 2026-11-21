@@ -266,6 +266,43 @@ pub struct RoleRecord {
     pub updated_at: i64,
 }
 
+/// A flow run's blackboard (docs/decisions.md §42): a table of its own,
+/// since the board server writes it from another process.
+pub trait BoardRepository: Send + Sync {
+    /// The task's entries, oldest first.
+    fn board(&self, task: &TaskId) -> PortResult<Vec<crate::domain::flow::BoardEntry>>;
+    fn post_board(&self, task: &TaskId, entry: &crate::domain::flow::BoardEntry) -> PortResult<()>;
+    /// Deletes the task's board (the run is over).
+    fn clear_board(&self, task: &TaskId) -> PortResult<()>;
+}
+
+/// The board an agent of a flow reads and writes: through Hedy (the API
+/// agent) or the board MCP server (CLI agents). Every answer is text.
+pub trait BoardTools: Send + Sync {
+    /// The latest of each section the current role sees, or one section's history.
+    fn read(&self, section: Option<&str>) -> String;
+    fn post(&self, section: &str, text: &str) -> String;
+}
+
+/// A flow's board for one agent run (the API agent's native tools).
+#[derive(Clone)]
+pub struct BoardLink(pub Arc<dyn BoardTools>);
+
+impl std::fmt::Debug for BoardLink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("BoardLink")
+    }
+}
+
+/// Two links are the same board when they share its tools.
+impl PartialEq for BoardLink {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for BoardLink {}
+
 /// The orchestrator's flows and roles (docs/decisions.md §42).
 pub trait FlowRepository: Send + Sync {
     /// Every saved flow, oldest first.
@@ -411,6 +448,7 @@ pub trait Store:
     + QueueRepository
     + TemplateRepository
     + FlowRepository
+    + BoardRepository
     + CommandRepository
     + SyncRepository
     + StoreHealth
@@ -427,6 +465,7 @@ impl<T> Store for T where
         + QueueRepository
         + TemplateRepository
         + FlowRepository
+        + BoardRepository
         + CommandRepository
         + SyncRepository
         + StoreHealth
@@ -773,6 +812,9 @@ pub struct AgentRequest {
     pub output: Option<PathBuf>,
     /// The project's files the agent may not read or touch.
     pub blocked: crate::domain::permissions::BlockedFiles,
+    /// A flow's board, for the API agent's native tools (CLI agents get the
+    /// board server among `mcp`).
+    pub board: Option<BoardLink>,
 }
 
 impl AgentRequest {

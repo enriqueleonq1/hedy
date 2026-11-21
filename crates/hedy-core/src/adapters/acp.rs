@@ -964,6 +964,7 @@ for line in sys.stdin:
             plugins: Vec::new(),
             output: None,
             blocked: Default::default(),
+            board: None,
         };
         let session = AcpLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
@@ -1162,6 +1163,7 @@ for line in sys.stdin:
             plugins: Vec::new(),
             output: None,
             blocked: Default::default(),
+            board: None,
         };
         let mut session = AcpLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))

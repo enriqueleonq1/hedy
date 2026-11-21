@@ -318,6 +318,20 @@ const MIGRATIONS: &[&str] = &[
         updated_at  INTEGER NOT NULL
     );
 "#,
+    r#"
+    -- A flow run's blackboard: what each role (or the user) left for the
+    -- others. Deleted when the task closes.
+    CREATE TABLE flow_board (
+        id       INTEGER PRIMARY KEY,
+        task     TEXT NOT NULL,
+        section  TEXT NOT NULL,
+        role     TEXT NOT NULL,
+        round    INTEGER NOT NULL,
+        text     TEXT NOT NULL,
+        by_user  INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX flow_board_task ON flow_board(task);
+"#,
 ];
 
 mod commands;

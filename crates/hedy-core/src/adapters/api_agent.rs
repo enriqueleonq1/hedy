@@ -122,6 +122,7 @@ impl AgentLauncher for ApiAgentLauncher {
             memory: request.memory.as_ref().map(|m| Arc::clone(&m.tools)),
             skills: request.memory.as_ref().and_then(|m| m.skills.clone()),
             team: request.memory.as_ref().and_then(|m| m.team.clone()),
+            board: request.board.as_ref().map(|b| Arc::clone(&b.0)),
         };
         let prompt = request.prompt.clone();
         let images = request.images.clone();
@@ -201,6 +202,8 @@ struct Agent {
     skills: Option<Arc<dyn SkillTools>>,
     /// The team layer, for a project of a team.
     team: Option<String>,
+    /// A flow's board (`context_read`, `context_post`).
+    board: Option<Arc<dyn crate::application::ports::BoardTools>>,
 }
 
 fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> Value {
@@ -209,6 +212,20 @@ fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> 
         "description": description,
         "parameters": {"type": "object", "properties": properties, "required": required},
     }})
+}
+
+/// The flow board's tools in the chat-completions shape.
+fn board_tools() -> Vec<Value> {
+    crate::domain::flow::board_tools()
+        .into_iter()
+        .map(|t| {
+            json!({"type": "function", "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": t["input_schema"],
+            }})
+        })
+        .collect()
 }
 
 fn memory_tools() -> [Value; 4] {
@@ -408,6 +425,11 @@ impl Agent {
             && let Value::Array(list) = &mut list
         {
             list.extend(experimental_tools(skill_tools(), SKILL_TOOL_NAMES));
+        }
+        if self.board.is_some()
+            && let Value::Array(list) = &mut list
+        {
+            list.extend(board_tools());
         }
         list
     }
@@ -755,6 +777,18 @@ impl Agent {
                     "memory_get" => memory.get(args["id"].as_i64(), topic),
                     "memory_topics" => memory.topics(),
                     _ => memory.propose(&arg("text"), &arg("category"), topic),
+                }
+            }
+            "context_read" | "context_post" => {
+                let Some(board) = &self.board else {
+                    return Ok(tr!(
+                        "Herramienta desconocida: {name}",
+                        "Unknown tool: {name}"
+                    ));
+                };
+                match name {
+                    "context_read" => board.read(args["section"].as_str()),
+                    _ => board.post(&arg("section"), &arg("text")),
                 }
             }
             "skill_list" | "skill_get" | "skill_propose" => {
@@ -1148,6 +1182,7 @@ mod tests {
             plugins: Vec::new(),
             output,
             blocked: BlockedFiles::suggested(),
+            board: None,
         };
         let session = ApiAgentLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
@@ -1253,6 +1288,7 @@ mod tests {
             stopped: Arc::new(AtomicBool::new(false)),
             memory: None,
             team: None,
+            board: None,
             skills: None,
         }
     }
@@ -1518,6 +1554,7 @@ mod tests {
             plugins: Vec::new(),
             output: None,
             blocked: BlockedFiles::suggested(),
+            board: None,
         };
         let mut session = ApiAgentLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))

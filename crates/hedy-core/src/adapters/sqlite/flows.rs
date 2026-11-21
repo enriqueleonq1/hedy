@@ -5,7 +5,11 @@ use std::path::PathBuf;
 use rusqlite::params;
 
 use super::{SqliteStore, json_error};
-use crate::application::ports::{FlowRecord, FlowRepository, PortResult, RoleRecord};
+use crate::application::ports::{
+    BoardRepository, FlowRecord, FlowRepository, PortResult, RoleRecord,
+};
+use crate::domain::TaskId;
+use crate::domain::flow::BoardEntry;
 
 impl FlowRepository for SqliteStore {
     fn flow_records(&self) -> PortResult<Vec<FlowRecord>> {
@@ -118,6 +122,44 @@ impl FlowRepository for SqliteStore {
     }
 }
 
+impl BoardRepository for SqliteStore {
+    fn board(&self, task: &TaskId) -> PortResult<Vec<BoardEntry>> {
+        self.with(|c| {
+            c.prepare(
+                "SELECT section, role, round, text, by_user FROM flow_board WHERE task = ?1 ORDER BY id",
+            )?
+            .query_map([task.as_str()], |r| {
+                Ok(BoardEntry {
+                    section: r.get(0)?,
+                    role: r.get(1)?,
+                    round: r.get(2)?,
+                    text: r.get(3)?,
+                    by_user: r.get(4)?,
+                })
+            })?
+            .collect()
+        })
+    }
+
+    fn post_board(&self, task: &TaskId, e: &BoardEntry) -> PortResult<()> {
+        self.with(|c| {
+            c.execute(
+                "INSERT INTO flow_board (task, section, role, round, text, by_user)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![task.as_str(), e.section, e.role, e.round, e.text, e.by_user],
+            )
+            .map(drop)
+        })
+    }
+
+    fn clear_board(&self, task: &TaskId) -> PortResult<()> {
+        self.with(|c| {
+            c.execute("DELETE FROM flow_board WHERE task = ?1", [task.as_str()])
+                .map(drop)
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,5 +235,32 @@ mod tests {
             store.flow_records().unwrap(),
             vec![FlowRecord { id, ..good }]
         );
+    }
+
+    #[test]
+    fn a_runs_board_is_kept_per_task_in_order_and_cleared() {
+        let store = SqliteStore::in_memory().unwrap();
+        let (a, b) = (TaskId::new("t1"), TaskId::new("t2"));
+        let entry = |section: &str, text: &str| BoardEntry {
+            section: section.into(),
+            role: "Arquitecto".into(),
+            round: 1,
+            text: text.into(),
+            by_user: false,
+        };
+        store.post_board(&a, &entry("plan", "1. Pagos")).unwrap();
+        store.post_board(&b, &entry("plan", "otra tarea")).unwrap();
+        let feedback = BoardEntry {
+            by_user: true,
+            ..entry("feedback", "en el servidor")
+        };
+        store.post_board(&a, &feedback).unwrap();
+        assert_eq!(
+            store.board(&a).unwrap(),
+            vec![entry("plan", "1. Pagos"), feedback]
+        );
+        store.clear_board(&a).unwrap();
+        assert!(store.board(&a).unwrap().is_empty());
+        assert_eq!(store.board(&b).unwrap().len(), 1);
     }
 }

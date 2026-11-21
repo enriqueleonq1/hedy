@@ -5,11 +5,9 @@
 
 use super::tasks::NewTask;
 use super::{AppError, AppResult, Hedy};
-use crate::domain::flow::{Delivery, FlowRun, Next, NodeKind, Outcome, Seat};
+use crate::domain::flow::{BoardEntry, FEEDBACK, FlowRun, Next, NodeKind, Outcome, Seat};
 use crate::domain::task::title_from_prompt;
-use crate::domain::{
-    AgentEvent, NoticeKind, Stage, Task, TaskId, TaskMode, TaskStatus, policy, prompts,
-};
+use crate::domain::{AgentEvent, NoticeKind, Stage, Task, TaskId, TaskMode, TaskStatus, policy};
 use crate::tr;
 
 impl Hedy {
@@ -196,12 +194,8 @@ impl Hedy {
             None => project.account.clone().ok_or(AppError::NoAccountResolved)?,
         };
         policy::check_launch(Some(&project), &account, &self.projects()?)?;
-        let base = task
-            .workspace
-            .as_ref()
-            .map(|w| w.base_commit.clone())
-            .unwrap_or_default();
-        let prompt = prompts::role_prompt(&role, &task.prompt, &run.delivered, &base);
+        let tools = self.board_reaches(&self.account(account.as_str())?);
+        let prompt = self.flow_role_prompt(task, &role, tools)?;
         task.stages.push(Stage {
             phase: role.phase(),
             account,
@@ -243,11 +237,7 @@ impl Hedy {
             }
             return Ok(());
         }
-        if let Some(NodeKind::Role(seat)) = run.current().map(|n| n.kind.clone()) {
-            let role = run
-                .roles
-                .get(&seat.role)
-                .map_or_else(|| seat.role.clone(), |r| r.name.clone());
+        if let Some(role) = run.current_role().cloned() {
             // What it said before a limit cut it comes first.
             let said = [
                 run.partial.take().unwrap_or_default(),
@@ -262,12 +252,15 @@ impl Hedy {
             } else {
                 said
             };
-            run.delivered.push(Delivery {
-                node: run.position.node.clone(),
-                role,
+            let entry = BoardEntry {
+                section: role.section(),
+                role: role.name.clone(),
+                round: run.position.round(),
                 text,
                 by_user: false,
-            });
+            };
+            self.store.save_task(task)?;
+            self.post_to_board(&task.id, entry)?;
         }
         if self.advance_flow(task)? {
             self.flow_step(task)?;
@@ -319,13 +312,18 @@ impl Hedy {
                 },
                 str::to_owned,
             );
-            run.delivered.push(Delivery {
-                node: here,
-                role: tr!("Tú", "You"),
-                text: text.clone(),
-                by_user: true,
-            });
+            let round = run.position.round();
             run.position.node = back;
+            self.post_to_board(
+                id,
+                BoardEntry {
+                    section: FEEDBACK.to_owned(),
+                    role: tr!("Tú", "You"),
+                    round,
+                    text: text.clone(),
+                    by_user: true,
+                },
+            )?;
             self.record(
                 id,
                 AgentEvent::UserMessage {
@@ -419,7 +417,7 @@ mod tests {
         let done = f.hedy.task(&task.id).unwrap();
         assert_eq!(done.status, TaskStatus::Review, "your review, as any task");
         assert_eq!(done.stages.len(), 2);
-        assert_eq!(done.flow.unwrap().delivered.len(), 2);
+        assert_eq!(f.hedy.task_board(&task.id).unwrap().len(), 2);
     }
 
     #[test]

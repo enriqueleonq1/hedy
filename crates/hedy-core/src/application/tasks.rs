@@ -46,7 +46,11 @@ const AUTO_TOOLS: &[&str] = &[
 ];
 /// Hedy's own MCP servers (memory and code map): they read the project and
 /// only propose notes.
-const HEDY_MCP_PREFIXES: &[&str] = &["mcp__hedy-memory__", "mcp__codebase-memory__"];
+const HEDY_MCP_PREFIXES: &[&str] = &[
+    "mcp__hedy-memory__",
+    "mcp__hedy-board__",
+    "mcp__codebase-memory__",
+];
 
 /// A `.env` bigger than this is not copied into a task's copy: not settings.
 const MAX_SHARED_ENV_BYTES: usize = 1024 * 1024;
@@ -800,11 +804,33 @@ impl Hedy {
         let memory = project
             .as_ref()
             .and_then(|p| self.memory_link(p, &task.id, account));
-        let mcp = if task.conversation {
+        let mut mcp = if task.conversation {
             Vec::new()
         } else {
             self.code_map_servers(&task.project)?
         };
+        // A flow's board: a server for the CLIs, native tools for the API
+        // agent (docs/decisions.md §42).
+        let api = matches!(backend, AgentBackend::OpenAiCompatible { .. });
+        let board = match (&task.flow, api) {
+            (Some(_), true) => Some(super::ports::BoardLink(self.board_tools(&task.id)?)),
+            _ => None,
+        };
+        if let (Some(_), false, Some(command)) = (&task.flow, api, &self.memory_server)
+            && !command.board_args.is_empty()
+        {
+            mcp.push(super::ports::McpServer {
+                name: "hedy-board".into(),
+                command: command.program.clone(),
+                args: command
+                    .board_args
+                    .iter()
+                    .cloned()
+                    .chain(["--task".into(), task.id.to_string()])
+                    .collect(),
+                env: Vec::new(),
+            });
+        }
         let number = self.sessions.fetch_add(1, Ordering::Relaxed) + 1;
         let hedy = self.clone();
         let id = task.id.clone();
@@ -854,6 +880,7 @@ impl Hedy {
                 plugins,
                 output,
                 blocked: blocked.clone(),
+                board,
             },
             sink,
         )?;
@@ -881,6 +908,11 @@ impl Hedy {
 
     pub(super) fn set_status(&self, task: &mut Task, status: TaskStatus) -> AppResult<()> {
         if task.status != status {
+            // A flow's board lives as long as the task (rule 6: notes worth
+            // keeping are proposed, never kept here).
+            if status.is_closed() && task.flow.is_some() {
+                self.store.clear_board(&task.id)?;
+            }
             task.status = status;
             self.store.save_task(task)?;
             self.events.task_updated(task);
@@ -1597,16 +1629,13 @@ impl Hedy {
             .and_then(|r| Some((r, r.current_role()?)))
         {
             // A flow's role keeps its part and what the roles before it said.
-            Some((run, role)) => {
-                let base = task
-                    .workspace
-                    .as_ref()
-                    .map(|w| w.base_commit.clone())
-                    .unwrap_or_default();
+            Some((_, role)) => {
                 let handed = prompts::handoff_prompt(&task.prompt, None, &previous_label, &changed);
+                let role = role.clone();
+                let tools = self.board_reaches(&target);
                 format!(
                     "{}\n\n{handed}",
-                    prompts::role_prompt(role, &task.prompt, &run.delivered, &base)
+                    self.flow_role_prompt(&task, &role, tools)?
                 )
             }
             None => prompts::handoff_prompt(
