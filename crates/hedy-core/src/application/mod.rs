@@ -97,8 +97,8 @@ pub use skills::{
 };
 pub use status::{AccountStatus, AccountUsage, Status};
 pub use sync::{
-    SyncDevice, SyncReport, SyncStatus, TeamInvite, TeamJoin, TeamNote, TeamPerson, TeamStatus,
-    TeamSuggestion, TeamSummary, TeamWriteOutcome,
+    SyncDevice, SyncReport, SyncStatus, TeamInvite, TeamJoin, TeamNote, TeamPerson, TeamShare,
+    TeamStatus, TeamSuggestion, TeamSummary, TeamWriteOutcome,
 };
 pub use tasks::NewTask;
 pub use templates::{NewTemplate, TemplateScope};

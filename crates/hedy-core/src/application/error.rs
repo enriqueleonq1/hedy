@@ -62,6 +62,8 @@ pub enum AppError {
     #[error("{}", self.message())]
     RoleNotFound(String),
     #[error("{}", self.message())]
+    CommandNotApproved(String),
+    #[error("{}", self.message())]
     InvalidRole(String),
     #[error("{}", self.message())]
     InvalidBlockedPattern(String),
@@ -405,6 +407,10 @@ impl AppError {
             Self::InvalidBlockedPattern(pattern) => tr!(
                 "«{pattern}» no sirve: pon nombres de archivo o patrones de nombre (.env, .env.*, *.pem), sin carpetas y sin que abarquen todo",
                 "«{pattern}» does not work: use file names or name patterns (.env, .env.*, *.pem), without folders and not matching everything"
+            ),
+            Self::CommandNotApproved(command) => tr!(
+                "este flujo del equipo corre «{command}» en tu PC: permítelo antes de ejecutarlo",
+                "this team flow runs «{command}» on your PC: allow it before running it"
             ),
             Self::RoleNotFound(id) => tr!(
                 "no hay un rol «{id}»; `hedy roles` muestra los que hay",

@@ -36,6 +36,10 @@ impl Hedy {
         super::tasks::check_model(request.model.as_deref())?;
         let main = project.account.clone().ok_or(AppError::NoAccountResolved)?;
         let entry = self.flow(Some(&project.path), which)?;
+        // A team's test command runs here only once this PC allowed it.
+        if let Some(command) = entry.unapproved.first() {
+            return Err(AppError::CommandNotApproved(command.clone()));
+        }
         let run = self.ready_run(&project, entry.flow, request.model.as_deref())?;
         // The images go to the first role.
         if let Some(seat) = run.flow.seats().next() {

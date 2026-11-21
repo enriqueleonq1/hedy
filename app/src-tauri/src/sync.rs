@@ -134,6 +134,8 @@ fn kind_name(kind: ItemKind) -> &'static str {
         ItemKind::Template => "template",
         ItemKind::Theme => "theme",
         ItemKind::Suggestion => "suggestion",
+        ItemKind::Flow => "flow",
+        ItemKind::Role => "role",
     }
 }
 

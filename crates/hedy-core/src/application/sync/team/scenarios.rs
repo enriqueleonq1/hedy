@@ -1224,6 +1224,140 @@ fn both_personal_sync_and_two_teams(env: &Env) {
     );
 }
 
+/// Flows and roles shared with the team (docs/decisions.md §49): an admin
+/// shares them, a member uses them but cannot share or forge one, and a
+/// shared test command waits for each PC's OK.
+fn team_flows_and_roles_are_shared_by_admins(env: &Env) {
+    use crate::application::FlowScope;
+    use crate::domain::flow::{Check, NodeKind, Template};
+    use crate::domain::team::TeamFlowBody;
+
+    let url = env.repo("t9-team");
+    let ana = env.pc("ana");
+    let luis = env.pc("luis");
+    let a = ana.create(&url, "Tienda", "Ana");
+    let l = ana.admit(&a, &url, &luis, "Luis", Role::Member);
+
+    // Ana's own flow, with its own test command and her account on a step.
+    let mut flow = Template::FixLoop.flow(&Default::default());
+    flow.name = "Pagos".into();
+    for node in &mut flow.nodes {
+        match &mut node.kind {
+            NodeKind::Condition(Check::Tests { command }) => *command = Some("npm test".into()),
+            NodeKind::Role(seat) => {
+                seat.account = Some(crate::domain::AccountId::new("claude").unwrap())
+            }
+            _ => {}
+        }
+    }
+    ana.hedy.save_flow_as(Some(&tienda()), None, flow).unwrap();
+    ana.hedy
+        .save_role_text(
+            Some(&tienda()),
+            "id: accesibilidad\nname: Accesibilidad\ndelivers: verdict\ncan: []\nsees: all\ninstructions: |\n  Revisa el teclado.\n",
+            false,
+        )
+        .unwrap();
+    ana.hedy.team_share_flow(&tienda(), "Pagos").unwrap();
+    ana.hedy
+        .team_share_role(&tienda(), "accesibilidad")
+        .unwrap();
+    assert!(ana.hedy.flow_sharing(&tienda()).unwrap().unwrap().admin);
+    tsync_all(&[(&ana, &*a), (&luis, &*l)]);
+
+    // Luis gets both, read-only, with no one's account on its steps.
+    let shared = luis
+        .hedy
+        .flows(Some(&tienda()))
+        .unwrap()
+        .into_iter()
+        .find(|e| e.scope == FlowScope::Team)
+        .expect("the team's flow");
+    assert_eq!(shared.flow.name, "Pagos");
+    assert_eq!(shared.by.as_deref(), Some("Ana"));
+    assert!(shared.flow.seats().all(|s| s.account.is_none()));
+    assert_eq!(shared.unapproved, ["npm test"]);
+    let role = luis.hedy.roles(Some(&tienda())).unwrap();
+    assert!(
+        role.iter()
+            .any(|r| r.role.id == "accesibilidad" && r.scope == FlowScope::Team)
+    );
+    assert!(matches!(
+        luis.hedy.delete_flow(Some(&tienda()), &shared.key),
+        Err(AppError::FlowNotFound(_))
+    ));
+
+    // Its command does not run on Luis's PC until he allows it.
+    let request = crate::application::NewTask {
+        images: Vec::new(),
+        project: tienda(),
+        prompt: "Cobros".into(),
+        mode: crate::domain::TaskMode::Project,
+        model: None,
+        plan_first: false,
+        permissions: None,
+    };
+    assert!(matches!(
+        luis.hedy.start_flow(request, &shared.key),
+        Err(AppError::CommandNotApproved(c)) if c == "npm test"
+    ));
+    luis.hedy.approve_flow_command("npm test").unwrap();
+    let again = luis.hedy.flow(Some(&tienda()), &shared.key).unwrap();
+    assert!(again.unapproved.is_empty());
+
+    // A member shares nothing, and what one forges is refused everywhere.
+    assert!(matches!(
+        luis.hedy.flow_sharing(&tienda()).unwrap(),
+        Some(TeamShare { admin: false, .. })
+    ));
+    assert!(
+        luis.hedy
+            .team_share_role(&tienda(), "accesibilidad")
+            .is_err()
+    );
+    let space = luis.hedy.team_space(&l).unwrap();
+    let me = luis.hedy.team_me(&space).unwrap();
+    let mut forged = again.flow.clone();
+    forged.name = "Atajo".into();
+    let body = serde_json::to_string(&TeamFlowBody {
+        flow: forged,
+        person: me.seat.person.clone(),
+        author: "Luis".into(),
+        created_at: 1,
+    })
+    .unwrap();
+    let uid = item_uid(
+        &me.seat.person,
+        &luis.hedy.sync_crypto.random_hex(8).unwrap(),
+    );
+    luis.hedy
+        .team_write(&me, ItemKind::Flow, &uid, Scope::Global, Some(body))
+        .unwrap();
+    luis.tsync(&l);
+    assert_eq!(ana.tsync(&a).refused, 1);
+    let names: Vec<String> = ana
+        .hedy
+        .flows(Some(&tienda()))
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.scope == FlowScope::Team)
+        .map(|e| e.flow.name)
+        .collect();
+    assert_eq!(names, ["Pagos"]);
+
+    // Stopping sharing takes it off every PC.
+    ana.hedy.team_unshare_flow(&tienda(), "Pagos").unwrap();
+    tsync_all(&[(&ana, &*a), (&luis, &*l)]);
+    // (Luis's forgery stays only on his own PC.)
+    assert!(
+        luis.hedy
+            .flows(Some(&tienda()))
+            .unwrap()
+            .iter()
+            .all(|e| e.flow.name != "Pagos")
+    );
+}
+
 macro_rules! scenarios {
     ($($name:ident),* $(,)?) => {
         /// Each scenario on local bare repos.
@@ -1260,4 +1394,5 @@ scenarios!(
     team_an_agents_proposal_reaches_the_team,
     both_personal_sync_and_two_teams,
     both_a_project_moves_to_a_team_and_back,
+    team_flows_and_roles_are_shared_by_admins,
 );

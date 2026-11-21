@@ -145,6 +145,10 @@ pub enum ItemKind {
     /// A suggested change to a team note (docs/decisions.md §35); only in a
     /// team's repo.
     Suggestion,
+    /// An orchestrator flow shared with a team (§49); only in a team's repo.
+    Flow,
+    /// A role of the flows' library shared with a team (§49); likewise.
+    Role,
 }
 
 impl ItemKind {
@@ -152,6 +156,11 @@ impl ItemKind {
     /// (notes and skills); otherwise the newer simply wins.
     pub fn asks_on_conflict(self) -> bool {
         matches!(self, Self::Note | Self::Skill)
+    }
+
+    /// Kept only in a team's repo, never in personal sync.
+    pub fn team_only(self) -> bool {
+        matches!(self, Self::Suggestion | Self::Flow | Self::Role)
     }
 }
 
@@ -559,6 +568,12 @@ pub fn item_preview(kind: ItemKind, body: Option<&str>) -> Option<String> {
         ItemKind::Suggestion => serde_json::from_str::<super::team::SuggestionBody>(body)
             .ok()
             .and_then(|s| s.text),
+        ItemKind::Flow => serde_json::from_str::<super::team::TeamFlowBody>(body)
+            .ok()
+            .map(|f| f.flow.name),
+        ItemKind::Role => serde_json::from_str::<super::team::TeamRoleBody>(body)
+            .ok()
+            .map(|r| r.role.name),
     }
 }
 

@@ -1099,7 +1099,7 @@ impl Hedy {
                 .iter()
                 .any(|r| Some(r.id) == row),
             ItemKind::Theme => !matches!(self.themes.get(local_id), Ok(None)),
-            ItemKind::Suggestion => false,
+            ItemKind::Suggestion | ItemKind::Flow | ItemKind::Role => false,
         })
     }
 
@@ -1636,7 +1636,7 @@ impl Hedy {
             .sync_item(&space.id(), change.kind, &change.uid)?;
         // Checked here, by every PC that reads it.
         let allowed = match space {
-            Space::Personal => change.kind != ItemKind::Suggestion,
+            Space::Personal => !change.kind.team_only(),
             Space::Team(_) => {
                 self.team_allows(session, change, known.as_ref().map(|(s, v)| (s, v)))?
             }
@@ -1900,7 +1900,7 @@ impl Hedy {
                 theme.id
             }
             // A team's only: never a row here.
-            ItemKind::Suggestion => return Ok(false),
+            ItemKind::Suggestion | ItemKind::Flow | ItemKind::Role => return Ok(false),
         };
         if link.is_none() && !session.twins.borrow().is_empty() {
             session
@@ -1924,7 +1924,7 @@ impl Hedy {
             }
             ItemKind::Template => self.store.delete_template(row)?,
             ItemKind::Theme => self.themes.delete(local_id)?,
-            ItemKind::Suggestion => {}
+            ItemKind::Suggestion | ItemKind::Flow | ItemKind::Role => {}
         }
         Ok(())
     }
@@ -2234,7 +2234,11 @@ fn birth(kind: ItemKind, body: &str) -> Option<i64> {
         ItemKind::Skill => serde_json::from_str::<SkillBody>(body)
             .ok()
             .map(|b| b.created_at),
-        ItemKind::Template | ItemKind::Theme | ItemKind::Suggestion => None,
+        ItemKind::Template
+        | ItemKind::Theme
+        | ItemKind::Suggestion
+        | ItemKind::Flow
+        | ItemKind::Role => None,
     }
 }
 
@@ -2249,7 +2253,7 @@ fn readme() -> String {
 mod team;
 
 pub use team::{
-    TeamInvite, TeamJoin, TeamNote, TeamPerson, TeamStatus, TeamSuggestion, TeamSummary,
+    TeamInvite, TeamJoin, TeamNote, TeamPerson, TeamShare, TeamStatus, TeamSuggestion, TeamSummary,
     TeamWriteOutcome,
 };
 

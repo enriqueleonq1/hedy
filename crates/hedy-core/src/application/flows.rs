@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use super::ports::{FlowRecord, RoleRecord};
 use super::{AppError, AppResult, Hedy};
-use crate::domain::flow::{Flow, NodeKind, RoleDef, Template, builtin_role, builtin_roles};
+use crate::domain::flow::{Check, Flow, NodeKind, RoleDef, Template, builtin_role, builtin_roles};
 use crate::domain::policy;
 use crate::domain::{flow_text, role_text};
 use crate::tr;
@@ -23,6 +23,8 @@ pub enum FlowScope {
     Project,
     /// Saved for every project.
     Global,
+    /// Shared by the project's team (docs/decisions.md §49): read-only here.
+    Team,
 }
 
 /// A flow the user can pick.
@@ -35,6 +37,13 @@ pub struct FlowEntry {
     /// One line of what it does (templates; empty for the user's).
     pub summary: String,
     pub flow: Flow,
+    /// Who shared it (a team's flow).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    /// Its test commands this PC has not allowed yet (a team's flow): it
+    /// does not start until they are (docs/decisions.md §49).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unapproved: Vec<String>,
 }
 
 /// Something that keeps a flow from running, for the editor.
@@ -45,6 +54,13 @@ pub struct FlowIssue {
     pub node: Option<String>,
     pub message: String,
 }
+
+/// A team flow's key: this, then its uid in the team.
+pub const TEAM_KEY: &str = "team:";
+
+/// Where the test commands this PC allowed for flows shared by a team are
+/// kept (exact strings: a changed command asks again).
+const APPROVED_COMMANDS: &str = "flows.approved_commands";
 
 /// A role of the library.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -88,6 +104,8 @@ impl Hedy {
                 scope: FlowScope::Hedy,
                 summary: t.summary(),
                 flow: t.flow(&phases),
+                by: None,
+                unapproved: Vec::new(),
             })
             .collect();
         let records = self.store.flow_records()?;
@@ -108,8 +126,24 @@ impl Hedy {
                         scope,
                         summary: String::new(),
                         flow: r.flow.clone(),
+                        by: None,
+                        unapproved: Vec::new(),
                     }),
             );
+        }
+        // Then the team's, as shared (the user's own come first by name).
+        if let Some(path) = &path {
+            for shared in self.team_flows_for(path)? {
+                let unapproved = self.unapproved_commands(&shared.body.flow)?;
+                entries.push(FlowEntry {
+                    key: format!("{TEAM_KEY}{}", shared.uid),
+                    scope: FlowScope::Team,
+                    summary: String::new(),
+                    flow: shared.body.flow,
+                    by: Some(shared.author),
+                    unapproved,
+                });
+            }
         }
         Ok(entries)
     }
@@ -235,6 +269,8 @@ impl Hedy {
             },
             summary: String::new(),
             flow: record.flow,
+            by: None,
+            unapproved: Vec::new(),
         })
     }
 
@@ -297,7 +333,9 @@ impl Hedy {
             entry.scope,
             entry.key.trim_start_matches('#').parse::<i64>(),
         ) {
-            (FlowScope::Hedy, _) | (_, Err(_)) => Err(AppError::FlowNotFound(which.to_owned())),
+            (FlowScope::Hedy | FlowScope::Team, _) | (_, Err(_)) => {
+                Err(AppError::FlowNotFound(which.to_owned()))
+            }
             (_, Ok(id)) => Ok(self.store.delete_flow(id)?),
         }
     }
@@ -328,6 +366,17 @@ impl Hedy {
                 user.push(global);
             }
         }
+        // The team's roles, under the user's own with the same id.
+        if let Some(path) = &path {
+            for shared in self.team_roles_for(path)? {
+                if !user.iter().any(|u| u.role.id == shared.body.role.id) {
+                    user.push(RoleEntry {
+                        scope: FlowScope::Team,
+                        role: shared.body.role,
+                    });
+                }
+            }
+        }
         let mut entries: Vec<RoleEntry> = builtin_roles()
             .into_iter()
             .filter(|b| !user.iter().any(|u| u.role.id == b.id))
@@ -338,6 +387,41 @@ impl Hedy {
             .collect();
         entries.extend(user);
         Ok(entries)
+    }
+
+    /// The flow's own test commands this PC has not allowed.
+    pub(crate) fn unapproved_commands(&self, flow: &Flow) -> AppResult<Vec<String>> {
+        let approved = self.approved_commands()?;
+        let mut pending: Vec<String> = flow
+            .nodes
+            .iter()
+            .filter_map(|n| match &n.kind {
+                NodeKind::Condition(Check::Tests { command: Some(c) }) => Some(c.clone()),
+                _ => None,
+            })
+            .filter(|c| !approved.contains(c))
+            .collect();
+        pending.dedup();
+        Ok(pending)
+    }
+
+    fn approved_commands(&self) -> AppResult<Vec<String>> {
+        Ok(self
+            .store
+            .get_setting(APPROVED_COMMANDS)?
+            .and_then(|v| serde_json::from_str(&v).ok())
+            .unwrap_or_default())
+    }
+
+    /// Allows a test command of a team's flow on this PC (the user's
+    /// decision, never an agent's).
+    pub fn approve_flow_command(&self, command: &str) -> AppResult<()> {
+        let mut approved = self.approved_commands()?;
+        if !approved.iter().any(|c| c == command) {
+            approved.push(command.to_owned());
+        }
+        let text = serde_json::to_string(&approved).unwrap_or_default();
+        Ok(self.store.set_setting(APPROVED_COMMANDS, Some(&text))?)
     }
 
     /// A role of the library as text (`hedy roles show`).
