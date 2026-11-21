@@ -560,6 +560,45 @@ pub enum FlowProblem {
 }
 
 impl FlowProblem {
+    /// The step it is about, when it is about one.
+    pub fn node(&self) -> Option<&str> {
+        match self {
+            Self::DuplicateNode(id)
+            | Self::BadNodeId(id)
+            | Self::Connections(id)
+            | Self::Unreachable(id)
+            | Self::DeadEnd(id)
+            | Self::BadSeat(id)
+            | Self::SmallParallel(id)
+            | Self::NoVerdict(id)
+            | Self::EmptyCommand(id)
+            | Self::UnboundedLoop(id)
+            | Self::BadRounds(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// The same problem naming its step by `label` instead of its id (what
+    /// the editor shows: ids are internal).
+    pub fn naming(&self, label: &str) -> Self {
+        let mut named = self.clone();
+        match &mut named {
+            Self::DuplicateNode(id)
+            | Self::BadNodeId(id)
+            | Self::Connections(id)
+            | Self::Unreachable(id)
+            | Self::DeadEnd(id)
+            | Self::BadSeat(id)
+            | Self::SmallParallel(id)
+            | Self::NoVerdict(id)
+            | Self::EmptyCommand(id)
+            | Self::UnboundedLoop(id)
+            | Self::BadRounds(id) => label.clone_into(id),
+            _ => {}
+        }
+        named
+    }
+
     pub fn message(&self) -> String {
         match self {
             Self::BadName => tr!(
@@ -668,6 +707,27 @@ fn valid_model(model: &Option<String>) -> bool {
             && !m.starts_with('-')
             && m.chars().all(|c| !c.is_whitespace() && !c.is_control())
     })
+}
+
+impl Node {
+    /// What the user calls this step; `role` finds a role's name by id.
+    pub fn label(&self, role: &dyn Fn(&str) -> Option<String>) -> String {
+        let named = |seat: &Seat| role(&seat.role).unwrap_or_else(|| seat.role.clone());
+        match &self.kind {
+            NodeKind::Start => tr!("Inicio", "Start"),
+            NodeKind::End => tr!("Final", "End"),
+            NodeKind::Approval => tr!("Tu aprobación", "Your approval"),
+            NodeKind::Role(seat) => named(seat),
+            NodeKind::Parallel { roles } => roles.iter().map(named).collect::<Vec<_>>().join(" + "),
+            NodeKind::Condition(Check::Tests { .. }) => {
+                tr!("¿Pasan los tests?", "Do the tests pass?")
+            }
+            NodeKind::Condition(Check::Rules) => {
+                tr!("¿Sigue las reglas?", "Does it follow the rules?")
+            }
+            NodeKind::Condition(Check::Verdict) => tr!("¿Lo aprueban?", "Do they approve it?"),
+        }
+    }
 }
 
 impl Flow {

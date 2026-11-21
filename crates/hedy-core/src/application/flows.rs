@@ -36,6 +36,15 @@ pub struct FlowEntry {
     pub flow: Flow,
 }
 
+/// Something that keeps a flow from running, for the editor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowIssue {
+    /// The step to mark, when it is about one.
+    pub node: Option<String>,
+    pub message: String,
+}
+
 /// A role of the library.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -180,13 +189,22 @@ impl Hedy {
 
     /// Why a flow being edited could not run yet (empty: it can), for the
     /// editor to show as it changes.
-    pub fn flow_problems(&self, project: Option<&Path>, flow: &Flow) -> AppResult<Vec<String>> {
+    pub fn flow_problems(&self, project: Option<&Path>, flow: &Flow) -> AppResult<Vec<FlowIssue>> {
         let project = self.flow_project(project)?;
         let roles = self.role_lookup(project.as_ref().map(|p| p.path.as_path()))?;
+        let name = |id: &str| roles(id).map(|r| r.name);
         Ok(flow
             .problems(&|id| roles(id))
             .iter()
-            .map(|p| p.message())
+            .map(|p| {
+                let node = p.node().map(str::to_owned);
+                let step = node.as_deref().and_then(|id| flow.node(id));
+                let message = match step {
+                    Some(step) => p.naming(&step.label(&name)).message(),
+                    None => p.message(),
+                };
+                FlowIssue { node, message }
+            })
             .collect())
     }
 
@@ -263,7 +281,7 @@ impl Hedy {
 mod tests {
     use super::*;
     use crate::application::testing::Fixture;
-    use crate::domain::flow::{Delivers, builtin_role};
+    use crate::domain::flow::{Delivers, When, builtin_role};
 
     fn project(f: &Fixture) -> PathBuf {
         f.add_claude("Personal");
@@ -349,6 +367,26 @@ mod tests {
             Err(AppError::InvalidFlow(_))
         ));
         assert_eq!(f.hedy.flows(Some(&dir)).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn the_editor_gets_each_problem_on_its_step_by_name() {
+        let f = Fixture::new();
+        let dir = project(&f);
+        let mut flow = f.hedy.flow(Some(&dir), "fix-loop").unwrap().flow;
+        assert!(f.hedy.flow_problems(Some(&dir), &flow).unwrap().is_empty());
+        // The review's verdict loses its way back to the programmer.
+        flow.edges
+            .retain(|e| !(e.from == "n5" && e.when == When::Fail));
+        let issues = f.hedy.flow_problems(Some(&dir), &flow).unwrap();
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].node.as_deref(), Some("n5"));
+        assert!(
+            issues[0].message.contains("«¿Lo aprueban?»"),
+            "{}",
+            issues[0].message
+        );
+        assert!(!issues[0].message.contains("n5"));
     }
 
     #[test]

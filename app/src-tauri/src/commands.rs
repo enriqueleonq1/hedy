@@ -289,7 +289,7 @@ pub async fn flow_problems(
     state: State<'_, AppState>,
     project: Option<PathBuf>,
     flow: hedy_core::domain::flow::Flow,
-) -> CommandResult<Vec<String>> {
+) -> CommandResult<Vec<hedy_core::application::FlowIssue>> {
     blocking(&state, move |h| h.flow_problems(project.as_deref(), &flow)).await
 }
 
