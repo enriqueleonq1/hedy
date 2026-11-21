@@ -5,7 +5,7 @@ import { useState, type ReactNode } from "react";
 
 import type { Account, Flow, FlowCheck, FlowIssue, FlowNode, FlowWhen, RoleDef, Seat } from "../../api/types";
 import { Button } from "../../components/ui/Button";
-import { Field } from "../../components/ui/controls";
+import { Field, Switch } from "../../components/ui/controls";
 import { Select, type SelectOption } from "../../components/ui/Select";
 import { useT, type MessageKey } from "../../i18n";
 import { connect, disconnect, edgeFrom, forward, MAX_NAME, MAX_ROUNDS, nodeById, setRounds, setStep } from "./flowModel";
@@ -187,6 +187,23 @@ function FlowPanel({
           )}
         </Field>
       </div>
+      <section className="flow-inspector__section">
+        <h3>{t("flows.trigger.title")}</h3>
+        <div className="flow-inspector__switch">
+          <span>
+            <span className="flow-inspector__switch-label">{t("flows.trigger.taskEnd")}</span>
+            <span className="hint">{t("flows.trigger.taskEndHint")}</span>
+          </span>
+          <Switch
+            label={t("flows.trigger.taskEnd")}
+            checked={flow.triggers.includes("taskEnd")}
+            disabled={readOnly}
+            onChange={(on) =>
+              onChange({ ...flow, triggers: on ? [...flow.triggers.filter((x) => x !== "taskEnd"), "taskEnd"] : flow.triggers.filter((x) => x !== "taskEnd") })
+            }
+          />
+        </div>
+      </section>
       <section className="flow-inspector__section">
         <h3>{t("flows.frame.title")}</h3>
         <p className="hint">{t("flows.frame.hint")}</p>

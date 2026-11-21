@@ -3,13 +3,17 @@
 //! agent session, its account's usage and limits, handoffs, permission cards
 //! and modes. The flow decides which step comes next.
 
+use super::flows::FlowScope;
 use super::tasks::NewTask;
 use super::{AppError, AppResult, Hedy};
 use crate::domain::flow::{
-    BoardEntry, Check, Delivers, FEEDBACK, FlowRun, Next, NodeKind, Outcome, Seat, parse_verdict,
+    BoardEntry, Check, Delivers, FEEDBACK, Flow, FlowRun, Next, NodeKind, Outcome, Seat, Trigger,
+    parse_verdict,
 };
 use crate::domain::task::title_from_prompt;
-use crate::domain::{AgentEvent, NoticeKind, Stage, Task, TaskId, TaskMode, TaskStatus, policy};
+use crate::domain::{
+    AgentEvent, NoticeKind, Project, Stage, Task, TaskId, TaskMode, TaskStatus, policy,
+};
 use crate::tr;
 
 /// How long a flow's tests may run.
@@ -32,44 +36,11 @@ impl Hedy {
         super::tasks::check_model(request.model.as_deref())?;
         let main = project.account.clone().ok_or(AppError::NoAccountResolved)?;
         let entry = self.flow(Some(&project.path), which)?;
-        let lookup = self.role_lookup(Some(&project.path))?;
-        let problems: Vec<String> = entry
-            .flow
-            .problems(&|id| lookup(id))
-            .iter()
-            .map(|p| p.message())
-            .collect();
-        if !problems.is_empty() {
-            return Err(AppError::InvalidFlow(problems));
-        }
-        let mut run = FlowRun::new(entry.flow, &|id| lookup(id))
-            .ok_or_else(|| AppError::InvalidFlow(Vec::new()))?;
-        // A model picked in the composer goes to the roles on the project's
-        // account that have none of their own.
-        if let Some(model) = request.model.as_deref().filter(|m| !m.trim().is_empty()) {
-            for node in &mut run.flow.nodes {
-                let seats: Vec<&mut Seat> = match &mut node.kind {
-                    NodeKind::Role(seat) => vec![seat],
-                    NodeKind::Parallel { roles } => roles.iter_mut().collect(),
-                    _ => Vec::new(),
-                };
-                for seat in seats {
-                    if seat.account.is_none() && seat.model.is_none() {
-                        seat.model = Some(model.to_owned());
-                    }
-                }
-            }
-        }
-        // Every role's account may work here and is ready, before anything is created.
-        let projects = self.projects()?;
-        for (index, seat) in run.flow.seats().enumerate() {
+        let run = self.ready_run(&project, entry.flow, request.model.as_deref())?;
+        // The images go to the first role.
+        if let Some(seat) = run.flow.seats().next() {
             let id = seat.account.clone().unwrap_or_else(|| main.clone());
-            policy::check_launch(Some(&project), &id, &projects)?;
-            let account = self.account(id.as_str())?;
-            self.backend(&account)?;
-            if index == 0 {
-                self.check_images(&request.images, &account)?;
-            }
+            self.check_images(&request.images, &self.account(id.as_str())?)?;
         }
 
         let now = self.clock.now_ms();
@@ -115,6 +86,92 @@ impl Hedy {
         self.flow_step(&mut task)?;
         self.events.task_updated(&task);
         Ok(task)
+    }
+
+    /// `flow` checked and ready to run in `project`: valid with its roles,
+    /// the composer's `model` on the roles that have none, and every role's
+    /// account allowed here and ready (rule 4), before anything is created.
+    fn ready_run(&self, project: &Project, flow: Flow, model: Option<&str>) -> AppResult<FlowRun> {
+        let main = project.account.clone().ok_or(AppError::NoAccountResolved)?;
+        let lookup = self.role_lookup(Some(&project.path))?;
+        let problems: Vec<String> = flow
+            .problems(&|id| lookup(id))
+            .iter()
+            .map(|p| p.message())
+            .collect();
+        if !problems.is_empty() {
+            return Err(AppError::InvalidFlow(problems));
+        }
+        let mut run = FlowRun::new(flow, &|id| lookup(id))
+            .ok_or_else(|| AppError::InvalidFlow(Vec::new()))?;
+        if let Some(model) = model.filter(|m| !m.trim().is_empty()) {
+            for node in &mut run.flow.nodes {
+                let seats: Vec<&mut Seat> = match &mut node.kind {
+                    NodeKind::Role(seat) => vec![seat],
+                    NodeKind::Parallel { roles } => roles.iter_mut().collect(),
+                    _ => Vec::new(),
+                };
+                for seat in seats {
+                    if seat.account.is_none() && seat.model.is_none() {
+                        seat.model = Some(model.to_owned());
+                    }
+                }
+            }
+        }
+        let projects = self.projects()?;
+        for seat in run.flow.seats() {
+            let id = seat.account.clone().unwrap_or_else(|| main.clone());
+            policy::check_launch(Some(project), &id, &projects)?;
+            let account = self.account(id.as_str())?;
+            self.backend(&account)?;
+        }
+        Ok(run)
+    }
+
+    /// A task of the project that just ended well goes on through the flow
+    /// set to follow a task's end (docs/decisions.md §48), in its own copy:
+    /// its reviewers see its changes, its programmer can fix them. `false`:
+    /// no such flow, or it cannot run (the task is left as it was, with why).
+    pub(super) fn flow_after_task(&self, task: &mut Task) -> AppResult<bool> {
+        if task.flow.is_some()
+            || task.mode != TaskMode::Project
+            || task.workspace.is_none()
+            || task.scratch.is_some()
+        {
+            return Ok(false);
+        }
+        let Ok(project) = self.project_at(&task.project) else {
+            return Ok(false);
+        };
+        let Some(entry) = self
+            .flows(Some(&project.path))?
+            .into_iter()
+            .find(|e| e.scope != FlowScope::Hedy && e.flow.triggers.contains(&Trigger::TaskEnd))
+        else {
+            return Ok(false);
+        };
+        let name = entry.flow.name.clone();
+        let run = match self.ready_run(&project, entry.flow, task.model.as_deref()) {
+            Ok(run) => run,
+            Err(e) => {
+                self.record(
+                    &task.id,
+                    AgentEvent::Error {
+                        message: tr!(
+                            "No pasó por el flujo «{name}»: {e}",
+                            "It did not go through the flow «{name}»: {e}"
+                        ),
+                    },
+                )?;
+                return Ok(false);
+            }
+        };
+        self.stop_session(&task.id);
+        task.flow = Some(run);
+        self.store.save_task(task)?;
+        self.flow_step(task)?;
+        self.events.task_updated(task);
+        Ok(true)
     }
 
     /// Runs the flow from where it is until a step that takes time: a role
@@ -636,6 +693,74 @@ mod tests {
             .use_account(&f.dir("/code/tienda"), "personal", None)
             .unwrap();
         f
+    }
+
+    /// A saved flow of the project: a review after whatever came before.
+    fn review_after(f: &Fixture, triggers: Vec<crate::domain::flow::Trigger>) {
+        use crate::domain::flow::{Edge, Flow, Frame, Node, NodeKind, Seat, When};
+        let node = |id: &str, kind| Node {
+            id: id.into(),
+            kind,
+            at: None,
+        };
+        let edge = |from: &str, to: &str| Edge {
+            from: from.into(),
+            to: to.into(),
+            when: When::After,
+            max_rounds: None,
+        };
+        let flow = Flow {
+            name: "Revisión al terminar".into(),
+            frame: Frame::default(),
+            nodes: vec![
+                node("n1", NodeKind::Start),
+                node("n2", NodeKind::Role(Seat::new("reviewer"))),
+                node("n3", NodeKind::End),
+            ],
+            edges: vec![edge("n1", "n2"), edge("n2", "n3")],
+            triggers,
+        };
+        f.hedy
+            .save_flow_as(Some(&f.dir("/code/tienda")), None, flow)
+            .unwrap();
+    }
+
+    #[test]
+    fn a_flow_set_to_follow_a_tasks_end_takes_the_task_on_in_its_copy() {
+        use crate::domain::flow::Trigger;
+        let f = setup();
+        review_after(&f, vec![Trigger::Manual, Trigger::TaskEnd]);
+        let task = f
+            .hedy
+            .start_task(request(&f, "Cobros con tarjeta"))
+            .unwrap();
+        assert!(task.flow.is_none());
+        finish(&f, "Listo el cobro.");
+        // The reviewer starts on the same task, in the same copy.
+        let after = f.hedy.task(&task.id).unwrap();
+        assert!(after.flow.is_some());
+        assert_eq!(after.workspace, task.workspace);
+        let reviewer = f.agents.last_request();
+        assert_eq!(reviewer.phase, Phase::Review);
+        assert!(reviewer.prompt.contains("Cobros con tarjeta"));
+        finish(&f, "Bien.\nVEREDICTO: APRUEBA");
+        let done = f.hedy.task(&task.id).unwrap();
+        assert_eq!(done.status, TaskStatus::Review);
+        // Once: the flow's own end does not start it again.
+        assert_eq!(f.agents.requests().len(), 2);
+    }
+
+    #[test]
+    fn without_the_trigger_a_task_ends_as_always() {
+        use crate::domain::flow::Trigger;
+        let f = setup();
+        review_after(&f, vec![Trigger::Manual]);
+        let task = f.hedy.start_task(request(&f, "Cobros")).unwrap();
+        finish(&f, "Listo.");
+        let after = f.hedy.task(&task.id).unwrap();
+        assert!(after.flow.is_none());
+        assert_eq!(after.status, TaskStatus::Review);
+        assert_eq!(f.agents.requests().len(), 1);
     }
 
     #[test]

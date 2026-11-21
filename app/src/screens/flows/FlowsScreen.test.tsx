@@ -150,6 +150,19 @@ describe("A project's flows", () => {
     expect(screen.queryByRole("button", { name: "Arquitecto" })).not.toBeInTheDocument();
   });
 
+  it("turns on following a task's end, and saves it", async () => {
+    const { api, user } = await setup();
+    await step("Arquitecto");
+    // The sample flow already follows a task's end: turn it off and save.
+    const toggle = within(panel()).getByRole("switch", { name: "Al terminar una tarea del proyecto" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    await user.click(toggle);
+    await user.click(screen.getByRole("button", { name: "Guardar" }));
+    await waitFor(() => expect(saveState()).toHaveTextContent("Guardado"));
+    const saved = (await api.flows(TIENDA)).find((f) => f.scope === "project");
+    expect(saved?.flow.triggers).toEqual(["manual"]);
+  });
+
   it("reads as a numbered list, with the ways back", async () => {
     const { user } = await setup();
     await step("Arquitecto");

@@ -416,6 +416,10 @@
 .flow-inspector__section { display: grid; gap: var(--space-3); padding: var(--space-4); border-bottom: 1px solid var(--line); }
 .flow-inspector__section h3 { font: 600 var(--text-eyebrow) var(--font-ui); letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--muted); }
 .flow-inspector__section .hint { margin-top: -6px; }
+.flow-inspector__switch { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.flow-inspector__switch > span { display: grid; gap: 4px; }
+.flow-inspector__switch-label { font-size: var(--text-callout); font-weight: 500; }
+.flow-inspector__switch .hint { margin-top: 0; }
 .flow-inspector__pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
 .flow-inspector__explain { font-size: var(--text-callout); color: var(--muted); line-height: 1.5; }
 .flow-inspector__number { width: 88px; }

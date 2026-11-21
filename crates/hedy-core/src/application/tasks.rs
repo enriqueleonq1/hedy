@@ -1195,6 +1195,14 @@ impl Hedy {
                     );
                     return self.run_stage(&mut task, next, prompt, None);
                 }
+                // A flow set to follow a task's end takes it on from here.
+                if *ok
+                    && current_stage(&task).phase != Phase::Plan
+                    && self.trial_of(id).is_none()
+                    && self.flow_after_task(&mut task)?
+                {
+                    return Ok(());
+                }
                 // The copy goes with the turn, and so does its agent: a
                 // process left in a deleted folder breaks on the next turn,
                 // which resumes the session in a new copy instead.
