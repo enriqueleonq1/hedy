@@ -1,0 +1,409 @@
+/* A project's flows: the bar, the canvas (n8n-like: tiles, gradient lines,
+   dashed ways back), the floating panel and the list. Theme colors only;
+   moves are transform and opacity, and none with reduced motion. */
+
+.screen.flows {
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  padding-bottom: var(--space-5);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+/* ------------------------------------------------------------------ bar */
+
+.flows-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); }
+.flows-bar__group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.flows-bar__picker { min-width: 220px; }
+.flows-bar__status { font-size: var(--text-caption); color: var(--muted); }
+.flows-bar__status[data-dirty] { color: var(--ink); }
+.flows-bar__status[data-dirty]::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--warning);
+  vertical-align: 1px;
+}
+.flows-bar__issues {
+  height: var(--control-sm);
+  padding: 0 10px;
+  border: 1px solid var(--warn-line);
+  border-radius: var(--radius-pill);
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font: 500 var(--text-caption) var(--font-ui);
+  cursor: pointer;
+}
+.flows-loading { min-height: 320px; border-radius: var(--radius-card); background: var(--panel); }
+
+/* ---------------------------------------------------------------- stage */
+
+.flows-stage {
+  position: relative;
+  min-height: 420px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.flow-canvas {
+  position: relative;
+  overflow: hidden;
+  min-height: 420px;
+  cursor: default;
+  touch-action: none;
+  user-select: none;
+  /* The dot grid moves and scales with the camera. */
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, var(--line-strong) 1px, transparent 1.2px);
+}
+.flow-canvas[data-gesture="pan"] { cursor: grabbing; }
+.flow-canvas__world { position: absolute; inset: 0 auto auto 0; width: 0; height: 0; transform-origin: 0 0; }
+.flow-canvas__edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.flow-canvas__stop-a { stop-color: var(--accent); }
+.flow-canvas__stop-b { stop-color: var(--activity); }
+
+/* -------------------------------------------------------------- lines */
+
+.flow-edge { fill: none; stroke: url(#flow-edge); stroke-width: 2; }
+.flow-edge--loop { stroke: var(--danger); stroke-opacity: 0.8; stroke-dasharray: 2 6; stroke-linecap: round; }
+.flow-edge--loop[data-check="verdict"] { stroke: var(--warning); }
+.flow-edge--draft { stroke: var(--focus); stroke-dasharray: 6 6; }
+.flow-edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
+.flow-edge-group[data-selected] .flow-edge { stroke-width: 3; }
+.flow-edge-group[data-selected] .flow-edge:not(.flow-edge--loop) { stroke: var(--focus); }
+
+.flow-edge-mid {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transform: translate(-50%, -50%);
+}
+.flow-edge-label {
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--panel-2);
+  color: var(--muted);
+  font: 500 var(--text-eyebrow) var(--font-ui);
+  white-space: nowrap;
+}
+.flow-edge-mid .flow-edge-label { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); }
+.flow-edge-label--loop {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--ink);
+  cursor: pointer;
+}
+.flow-edge-label--loop[aria-pressed="true"] { border-color: var(--focus); }
+.flow-edge-add {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out);
+}
+.flow-edge-mid:hover .flow-edge-add,
+.flow-edge-add:focus-visible,
+.flow-edge-add[aria-expanded="true"] { opacity: 1; transform: scale(1); }
+.flow-edge-add:hover { color: var(--ink); border-color: var(--focus); }
+
+/* --------------------------------------------------------------- steps */
+
+.flow-node {
+  position: absolute;
+  width: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.flow-node__tile {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 18px;
+  background: var(--panel);
+  color: var(--tint);
+  box-shadow: var(--shadow-card);
+  cursor: grab;
+  transition: transform 120ms var(--ease-out);
+}
+.flow-node[data-kind="start"] .flow-node__tile,
+.flow-node[data-kind="end"] .flow-node__tile { border-radius: var(--radius-pill); }
+.flow-node[data-kind="condition"] .flow-node__tile { border-style: dashed; }
+.flow-node__tile:hover { border-color: var(--tint); }
+.flow-node[data-selected] .flow-node__tile { border-color: var(--focus); box-shadow: 0 0 0 3px var(--selection), var(--shadow-pop); }
+.flow-node[data-dragging] .flow-node__tile { cursor: grabbing; transform: scale(1.04); box-shadow: var(--shadow-pop); }
+.flow-node__tile:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.flow-node__issue {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--bg);
+  border-radius: var(--radius-pill);
+  background: var(--warning);
+}
+.flow-node__name {
+  margin-top: 8px;
+  width: 140px;
+  text-align: center;
+  font: 500 var(--text-callout) var(--font-ui);
+  color: var(--ink);
+  line-height: 1.3;
+}
+.flow-node__detail {
+  width: 140px;
+  text-align: center;
+  font: var(--text-caption) var(--font-mono);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The dots a line starts from (out, and a check's way back) or ends at. */
+.flow-node__port {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--bg);
+  border-radius: var(--radius-pill);
+  background: var(--line-strong);
+}
+.flow-node__port--in { left: -5px; top: 27px; }
+.flow-node__port--out { right: -5px; top: 27px; cursor: crosshair; }
+.flow-node__port--fail { left: 27px; top: 59px; cursor: crosshair; background: var(--danger); }
+.flow-node__port--out,
+.flow-node__port--fail { transition: transform 120ms var(--ease-out); }
+.flow-node__port--out:hover,
+.flow-node__port--fail:hover { transform: scale(1.5); background: var(--focus); }
+
+/* ------------------------------------------------------- floating parts */
+
+.flow-frame {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  max-width: calc(100% - 2 * var(--space-3));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  color: var(--ink);
+  font: 500 var(--text-caption) var(--font-ui);
+  cursor: pointer;
+}
+.flow-frame:hover { border-color: var(--accent); }
+.flow-frame__title { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flow-frame__chip { padding: 1px 8px; border-radius: var(--radius-pill); background: var(--panel-2); color: var(--muted); }
+.flow-frame__chip--mono { font-family: var(--font-mono); }
+
+.flow-banner {
+  position: absolute;
+  top: var(--space-3);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 6px 6px 6px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--panel);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--text-callout);
+  white-space: nowrap;
+}
+
+.flow-dock {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.flow-dock__add { box-shadow: var(--shadow-pop); }
+.flow-dock__hint { font-size: var(--text-caption); color: var(--muted); }
+
+.flow-zoom {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-pop);
+}
+.flow-zoom__btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.flow-zoom__btn:hover { background: var(--panel-2); color: var(--ink); }
+.flow-zoom__value { min-width: 44px; text-align: center; font: var(--text-caption) var(--font-mono); color: var(--muted); }
+
+/* ------------------------------------------------------------ the panel */
+
+.flow-inspector {
+  min-height: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+}
+.flow-inspector__head { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); border-bottom: 1px solid var(--line); }
+.flow-inspector__icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: var(--bg);
+  color: var(--tint);
+}
+.flow-inspector__titles { flex: 1; min-width: 0; }
+.flow-inspector__titles h2 { font: 600 var(--text-headline) var(--font-title); letter-spacing: var(--tracking-title); overflow-wrap: anywhere; }
+.flow-inspector__titles p { margin-top: 2px; font-size: var(--text-caption); color: var(--muted); }
+.flow-inspector__close {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.flow-inspector__close:hover { background: var(--panel-2); color: var(--ink); }
+.flow-inspector__section { display: grid; gap: var(--space-3); padding: var(--space-4); border-bottom: 1px solid var(--line); }
+.flow-inspector__section h3 { font: 600 var(--text-eyebrow) var(--font-ui); letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--muted); }
+.flow-inspector__section .hint { margin-top: -6px; }
+.flow-inspector__pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+.flow-inspector__explain { font-size: var(--text-callout); color: var(--muted); line-height: 1.5; }
+.flow-inspector__number { width: 88px; }
+.flow-inspector__details summary { cursor: pointer; font-size: var(--text-callout); color: var(--muted); }
+.flow-inspector__details p { margin-top: var(--space-2); font-size: var(--text-callout); line-height: 1.5; white-space: pre-wrap; }
+.flow-inspector__footer { padding: var(--space-3) var(--space-4); }
+.flow-inspector .input--mono { font-family: var(--font-mono); font-size: var(--text-mono); }
+.btn--danger-text { color: var(--danger); }
+
+.flow-issues { display: grid; gap: 6px; margin: 0; padding: var(--space-3) var(--space-4); list-style: none; background: var(--warn-bg); color: var(--warn-ink); font-size: var(--text-callout); line-height: 1.45; }
+.flow-inspector__section .flow-issues { padding: var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--warn-line); }
+.flow-issues .link-button { color: inherit; text-align: left; }
+.flow-facts { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--text-callout); }
+.flow-facts li::before { content: "·"; margin-right: 8px; color: var(--muted); }
+.flow-seats { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.flow-seats li { display: flex; align-items: center; gap: var(--space-2); }
+.flow-seats li > :first-child { flex: 1; }
+.flow-seats__remove {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.flow-seats__remove:hover { background: var(--panel-2); color: var(--ink); }
+
+/* ------------------------------------------------------------- the list */
+
+.flow-list { overflow-y: auto; min-height: 0; }
+.flow-list__steps { display: grid; gap: var(--space-2); width: min(720px, 100%); margin: var(--space-2) auto 0; padding: 0; list-style: none; }
+.flow-list__step {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.flow-list__step:hover { border-color: var(--line-strong); background: var(--panel-2); }
+.flow-list__step[data-issue] { border-color: var(--warn-line); }
+.flow-list__icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: var(--bg);
+  color: var(--tint);
+}
+.flow-list__body { display: grid; gap: 2px; min-width: 0; }
+.flow-list__name { font-weight: 500; }
+.flow-list__n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.flow-list__what { font-size: var(--text-callout); color: var(--muted); }
+.flow-list__back { font-size: var(--text-callout); color: var(--ink); }
+.flow-list__back::before { content: "↺ "; color: var(--danger); }
+.flow-list__back[data-check="verdict"]::before { color: var(--warning); }
+.flow-list__detail { font: var(--text-caption) var(--font-mono); color: var(--muted); }
+
+/* ------------------------------------------------------- narrow windows */
+
+@media (max-width: 900px) {
+  .flows-stage { grid-template-columns: 1fr; grid-template-rows: minmax(420px, 1fr) auto; }
+  .flow-inspector { border-left: 0; border-top: 1px solid var(--line); }
+  .flow-dock__hint { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-edge-add,
+  .flow-node__tile,
+  .flow-node__port--out,
+  .flow-node__port--fail { transition: none; }
+}

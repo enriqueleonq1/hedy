@@ -86,7 +86,7 @@ import { Timeline } from "./Timeline";
 import { ClosingBar } from "./ClosingBar";
 import { EndCard } from "./EndCard";
 import { OutputsCard } from "./OutputsCard";
-import { ProjectHead, ProjectTasks } from "./ProjectHome";
+import { ProjectHead, ProjectTasks, projectTabView } from "./ProjectHome";
 import { TaskDetails } from "./TaskDetails";
 
 /** A card waits for the user's answer (which one, when the events say). */
@@ -310,11 +310,7 @@ export function Workspace({
             current="tasks"
             tools={panelToggle}
             onTab={(tab) =>
-              tab === "memory"
-                ? onOpenMemory?.()
-                : tab === "summary"
-                  ? onOpenStatus?.()
-                  : onNavigate?.({ screen: "projectSettings", project })
+              tab === "memory" ? onOpenMemory?.() : tab === "summary" ? onOpenStatus?.() : onNavigate?.(projectTabView(tab, project))
             }
           />
         ) : (

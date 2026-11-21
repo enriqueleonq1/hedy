@@ -41,7 +41,7 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
   repo: `scripts/team-e2e.sh <url>` (real binary and keyring; three people)
 - App (from `app/`): `npm install`, then `npm run tauri dev`; UI only with sample data:
   `npm run dev` (`?theme=light|dark`, `?lang=es|en`, `?onboarding=1`, `?data=empty|noprojects|fail`, `#accounts`, `#settings`,
-  `#memory` (Memoria; `#m=<path>[&skills|pending|map]` for a project), `#ps=<path>` (a project's settings),
+  `#memory` (Memoria; `#m=<path>[&skills|pending|map]` for a project), `#ps=<path>` (a project's settings), `#pf=<path>[&<key>]` (its flows),
   `#settings/<section>`, `#sync`, `#teams`; Inicio is `#`)
 - App checks (from `app/`): `npm run typecheck`, `npm run lint`, `npm test`
 - Icons: edit `app/src-tauri/icons/logo.svg`, render it to `logo.png` (1024 px), then

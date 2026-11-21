@@ -82,6 +82,11 @@ import type {
   NewProjectInput,
   NewTaskInput,
   NewTemplateInput,
+  BoardEntry,
+  Flow,
+  FlowEntry,
+  FlowIssue,
+  RoleEntry,
   OpenTaskRequest,
   PromptTemplate,
   AccountCommands,
@@ -184,6 +189,20 @@ export interface HedyApi {
   terminalClose(id: number): Promise<void>;
 
   startTask(input: NewTaskInput): Promise<Task>;
+
+  /** Hedy's templates, then the project's flows and the global ones. */
+  flows(project: string | null): Promise<FlowEntry[]>;
+  /** Why a flow being edited could not run yet (empty: it can). */
+  flowProblems(project: string | null, flow: Flow): Promise<FlowIssue[]>;
+  /** Updates flow `key` (renamed or not, where it was saved); null: a new one for `project`. */
+  saveFlow(project: string | null, key: string | null, flow: Flow): Promise<FlowEntry>;
+  deleteFlow(project: string | null, key: string): Promise<void>;
+  /** The roles a flow can place: Hedy's and the user's. */
+  flowRoles(project: string | null): Promise<RoleEntry[]>;
+  /** The user's answer at a flow's approval step: no goes back with `feedback`. */
+  answerFlowApproval(id: string, approve: boolean, feedback: string | null): Promise<void>;
+  /** A flow task's board, oldest first. */
+  taskBoard(id: string): Promise<BoardEntry[]>;
   /** Newest first. */
   tasks(project: string): Promise<Task[]>;
   taskEvents(id: string): Promise<AgentEvent[]>;

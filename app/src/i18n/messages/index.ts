@@ -30,6 +30,7 @@ import team from "./team";
 import status from "./status";
 import templates from "./templates";
 import themes from "./themes";
+import flows from "./flows";
 import projectSettings from "./projectSettings";
 import task from "./task";
 import waits from "./waits";
@@ -56,6 +57,7 @@ const es = {
   ...templates.es,
   ...review.es,
   ...reviewer.es,
+  ...flows.es,
   ...projectSettings.es,
   ...task.es,
   ...waits.es,
@@ -91,6 +93,7 @@ const en: Record<keyof typeof es, string> = {
   ...templates.en,
   ...review.en,
   ...reviewer.en,
+  ...flows.en,
   ...projectSettings.en,
   ...task.en,
   ...waits.en,

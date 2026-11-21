@@ -15,7 +15,7 @@ import { ColorPicker, Switch } from "../../components/ui/controls";
 import { Select, type SelectOption } from "../../components/ui/Select";
 import { useT, type MessageKey } from "../../i18n";
 import { MemoryHomeCard } from "../sync/ProjectSync";
-import { ProjectHead } from "../workspace/ProjectHome";
+import { ProjectHead, projectTabView } from "../workspace/ProjectHome";
 
 const STEPS: { phase: Phase; label: MessageKey; optional: boolean }[] = [
   { phase: "plan", label: "projectSettings.step.plan", optional: false },
@@ -59,15 +59,7 @@ export function ProjectSettings({
           title={t("projectSettings.title", { name: project.name })}
           path={path}
           current="settings"
-          onTab={(tab) =>
-            onNavigate?.(
-              tab === "memory"
-                ? { screen: "memory", project: path }
-                : tab === "summary"
-                  ? { screen: "status", project: path }
-                  : { screen: "workspace", project: path },
-            )
-          }
+          onTab={(tab) => onNavigate?.(projectTabView(tab, path))}
         />
       </div>
       <AccountCard project={project} overview={overview} />

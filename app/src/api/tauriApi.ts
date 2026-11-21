@@ -97,6 +97,13 @@ export const tauriApi: HedyApi = {
   terminalClose: (id) => invoke("terminal_close", { id }),
 
   startTask: (input) => invoke("start_task", { input }),
+  flows: (project) => invoke("flows", { project }),
+  flowProblems: (project, flow) => invoke("flow_problems", { project, flow }),
+  saveFlow: (project, key, flow) => invoke("save_flow", { project, key, flow }),
+  deleteFlow: (project, key) => invoke("delete_flow", { project, key }),
+  flowRoles: (project) => invoke("flow_roles", { project }),
+  answerFlowApproval: (id, approve, feedback) => invoke("answer_flow_approval", { id, approve, feedback }),
+  taskBoard: (id) => invoke("task_board", { id }),
   tasks: (project) => invoke("tasks", { project }),
   taskEvents: (id) => invoke("task_events", { id }),
   startConversation: (input) => invoke("start_conversation", { input }),

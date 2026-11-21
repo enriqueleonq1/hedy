@@ -16,11 +16,17 @@ import type {
   WriteResult,
 } from "./codeTypes";
 import { MockCode, SUGGESTED_BLOCKED } from "./mockCode";
+import { MOCK_ROLES, mockProblems, mockProjectFlow, mockTemplates } from "./mockFlows";
 import { MOCK_THEME_SEEDS } from "./mockThemes";
 import { resolveLanguage } from "../i18n";
 import { placeholders } from "../templates/placeholders";
 import { buildTheme } from "../theme/derive";
 import type {
+  BoardEntry,
+  Flow,
+  FlowEntry,
+  FlowIssue,
+  RoleEntry,
   ImportPick,
   TrialResult,
   TrialOutcome,
@@ -365,6 +371,7 @@ export class MockApi implements HedyApi {
     // Personal sync between two PCs, with one note edited on both.
     api.repoOwners.set("/code/hedy", "github.com/alex");
     api.repoOwners.set("/code/tienda", "github.com/cafe-aurora");
+    api.flowRecords.push({ id: api.nextFlow++, project: "/code/tienda", flow: mockProjectFlow() });
     api.owners.mine.add("github.com/alex");
     api.sync = {
       url: "git@github.com:alex/hedy-memory.git",
@@ -1866,6 +1873,62 @@ export class MockApi implements HedyApi {
   /** Delay between scripted events (0 in tests). */
   delayMs = 250;
   private tasksById = new Map<string, Task>();
+
+  // ---------------------------------------------------------------- flows
+
+  private flowRecords: { id: number; project: string | null; flow: Flow }[] = [];
+  private nextFlow = 1;
+
+  async flows(project: string | null): Promise<FlowEntry[]> {
+    const mine = (place: string | null): FlowEntry[] =>
+      this.flowRecords
+        .filter((r) => r.project === place)
+        .map((r) => ({ key: `#${r.id}`, scope: place ? "project" : "global", summary: "", flow: structuredClone(r.flow) }));
+    return [...mockTemplates(), ...(project ? mine(project) : []), ...mine(null)];
+  }
+
+  async flowProblems(_project: string | null, flow: Flow): Promise<FlowIssue[]> {
+    return mockProblems(flow, MOCK_ROLES);
+  }
+
+  async saveFlow(project: string | null, key: string | null, flow: Flow): Promise<FlowEntry> {
+    const problems = mockProblems(flow, MOCK_ROLES);
+    if (problems.length) throw problems.map((p) => p.message).join("; ");
+    if (mockTemplates().some((t) => t.flow.name.toLowerCase() === flow.name.trim().toLowerCase())) {
+      throw `«${flow.name}» es el nombre de una plantilla de Hedy: elige otro`;
+    }
+    const editing = key ? this.flowRecords.find((r) => `#${r.id}` === key) : undefined;
+    if (key && !editing) throw `no hay un flujo «${key}»`;
+    const place = editing ? editing.project : project;
+    const same = this.flowRecords.find((r) => r.project === place && r.flow.name.toLowerCase() === flow.name.trim().toLowerCase());
+    if (same && same !== editing) throw `ya hay un flujo «${flow.name}»: elige otro nombre`;
+    const record = editing ?? { id: this.nextFlow++, project: place, flow };
+    record.flow = structuredClone(flow);
+    if (!editing) this.flowRecords.push(record);
+    return { key: `#${record.id}`, scope: place ? "project" : "global", summary: "", flow: structuredClone(flow) };
+  }
+
+  async deleteFlow(_project: string | null, key: string): Promise<void> {
+    this.flowRecords = this.flowRecords.filter((r) => `#${r.id}` !== key);
+  }
+
+  async flowRoles(): Promise<RoleEntry[]> {
+    return MOCK_ROLES.map((role) => ({ scope: "hedy", role }));
+  }
+
+  async answerFlowApproval(id: string, approve: boolean, feedback: string | null): Promise<void> {
+    const task = this.tasksById.get(id);
+    if (!task || task.status !== "waitingApproval") throw "esta tarea no espera tu aprobación";
+    if (!approve && feedback) this.boards.set(id, [...(this.boards.get(id) ?? []), { section: "feedback", role: "", round: 0, text: feedback, byUser: true }]);
+    task.status = approve ? "review" : "running";
+    this.notifyTask(task);
+  }
+
+  async taskBoard(id: string): Promise<BoardEntry[]> {
+    return structuredClone(this.boards.get(id) ?? []);
+  }
+
+  private boards = new Map<string, BoardEntry[]>();
   /** What questions wrote in their own folder. */
   private outputs = new Map<string, OutputFile[]>();
   private eventsById = new Map<string, AgentEvent[]>();
