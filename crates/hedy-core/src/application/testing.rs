@@ -7,11 +7,12 @@ use std::sync::{Arc, Mutex};
 
 use super::ports::{
     AccountRepository, AgentBackend, AgentLauncher, AgentRequest, AgentSession, CapturedOutput,
-    Clock, CommandRepository, EventSink, FileSystem, Git, MemoryRepository, MergeOutcome, NewNote,
-    NewSkill, NoteRevision, PlanUsageRecord, PortError, PortResult, ProcessRunner,
-    ProjectRepository, QueueRepository, RateLimit, SecretStore, SettingsRepository,
-    SkillRepository, SkillRevision, StoreHealth, TaskEvents, TaskRepository, TemplateRecord,
-    TemplateRepository, ThemeStore, UsageProbe, UsageRecord, UsageRepository,
+    Clock, CommandRepository, EventSink, FileSystem, FlowRecord, FlowRepository, Git,
+    MemoryRepository, MergeOutcome, NewNote, NewSkill, NoteRevision, PlanUsageRecord, PortError,
+    PortResult, ProcessRunner, ProjectRepository, QueueRepository, RateLimit, RoleRecord,
+    SecretStore, SettingsRepository, SkillRepository, SkillRevision, StoreHealth, TaskEvents,
+    TaskRepository, TemplateRecord, TemplateRepository, ThemeStore, UsageProbe, UsageRecord,
+    UsageRepository,
 };
 use super::{Hedy, NewAccount, Ports};
 use crate::domain::recall::NoteUse;
@@ -45,6 +46,8 @@ pub struct MemoryStore {
     integrity: Mutex<Vec<String>>,
     queue: Mutex<Vec<QueuedMessage>>,
     templates: Mutex<Vec<TemplateRecord>>,
+    flows: Mutex<Vec<FlowRecord>>,
+    roles: Mutex<Vec<RoleRecord>>,
     commands: Mutex<Vec<(AccountId, Option<PathBuf>, KnownCommands)>>,
     sync: Mutex<sync::SyncTables>,
 }
@@ -1768,6 +1771,49 @@ impl CommandRepository for MemoryStore {
             .collect();
         found.sort_by_key(|(_, k)| std::cmp::Reverse(k.seen_at));
         Ok(found)
+    }
+}
+
+impl FlowRepository for MemoryStore {
+    fn flow_records(&self) -> PortResult<Vec<FlowRecord>> {
+        Ok(self.flows.lock().unwrap().clone())
+    }
+    fn save_flow(&self, record: &FlowRecord) -> PortResult<i64> {
+        let mut flows = self.flows.lock().unwrap();
+        if let Some(f) = flows.iter_mut().find(|f| f.id == record.id) {
+            *f = record.clone();
+            return Ok(record.id);
+        }
+        let id = flows.iter().map(|f| f.id).max().unwrap_or(0) + 1;
+        flows.push(FlowRecord {
+            id,
+            ..record.clone()
+        });
+        Ok(id)
+    }
+    fn delete_flow(&self, id: i64) -> PortResult<()> {
+        self.flows.lock().unwrap().retain(|f| f.id != id);
+        Ok(())
+    }
+    fn role_records(&self) -> PortResult<Vec<RoleRecord>> {
+        Ok(self.roles.lock().unwrap().clone())
+    }
+    fn save_role(&self, record: &RoleRecord) -> PortResult<i64> {
+        let mut roles = self.roles.lock().unwrap();
+        if let Some(r) = roles.iter_mut().find(|r| r.id == record.id) {
+            *r = record.clone();
+            return Ok(record.id);
+        }
+        let id = roles.iter().map(|r| r.id).max().unwrap_or(0) + 1;
+        roles.push(RoleRecord {
+            id,
+            ..record.clone()
+        });
+        Ok(id)
+    }
+    fn delete_role(&self, id: i64) -> PortResult<()> {
+        self.roles.lock().unwrap().retain(|r| r.id != id);
+        Ok(())
     }
 }
 

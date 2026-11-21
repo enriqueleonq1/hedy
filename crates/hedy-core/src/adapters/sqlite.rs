@@ -300,9 +300,28 @@ const MIGRATIONS: &[&str] = &[
     -- The permission mode new tasks start with (NULL: manual).
     ALTER TABLE projects ADD COLUMN permission_mode TEXT;
 "#,
+    r#"
+    -- The orchestrator (docs/decisions.md §42): flows and roles, global
+    -- (project NULL) or for one project, each as JSON.
+    CREATE TABLE flows (
+        id          INTEGER PRIMARY KEY,
+        project     TEXT,
+        name        TEXT NOT NULL,
+        data        TEXT NOT NULL,
+        updated_at  INTEGER NOT NULL
+    );
+    CREATE TABLE flow_roles (
+        id          INTEGER PRIMARY KEY,
+        project     TEXT,
+        role        TEXT NOT NULL,
+        data        TEXT NOT NULL,
+        updated_at  INTEGER NOT NULL
+    );
+"#,
 ];
 
 mod commands;
+mod flows;
 mod queue;
 mod sync;
 mod templates;
@@ -375,7 +394,7 @@ fn migrate(conn: &mut Connection) -> PortResult<()> {
 }
 
 /// Turns a stored value that fails domain validation into a row error.
-fn invalid<E: std::fmt::Display>(column: usize) -> impl Fn(E) -> rusqlite::Error {
+pub(super) fn invalid<E: std::fmt::Display>(column: usize) -> impl Fn(E) -> rusqlite::Error {
     move |e| {
         rusqlite::Error::FromSqlConversionFailure(
             column,
@@ -561,7 +580,7 @@ impl ProjectRepository for SqliteStore {
     }
 }
 
-fn json_error(err: serde_json::Error) -> PortError {
+pub(super) fn json_error(err: serde_json::Error) -> PortError {
     PortError::new(format!("error de la base de datos (JSON): {err}"))
 }
 
