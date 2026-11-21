@@ -43,6 +43,11 @@ struct Args {
     /// recortes). Las demás se comparan con base.
     #[arg(long, value_delimiter = ',', default_value = "base")]
     variants: Vec<Variant>,
+    /// Flujos a comparar (docs/decisions.md §45), separados por comas: none
+    /// (un solo agente, como siempre) o la clave de una plantilla (classic,
+    /// fix-loop, double-review). Cada flujo se compara con none.
+    #[arg(long, value_delimiter = ',', default_value = "none")]
+    flows: Vec<String>,
     /// Corridas por caso, capa y variante.
     #[arg(long, default_value_t = 1)]
     repeat: u32,
@@ -56,6 +61,9 @@ struct Args {
     #[arg(long, value_name = "ARCHIVO", num_args = 1..)]
     report: Vec<PathBuf>,
 }
+
+/// A run without a flow: one agent, as Hedy works without the orchestrator.
+const NO_FLOW: &str = "none";
 
 fn main() -> Result<()> {
     // Claude Code runs this binary as its PreToolUse hook and as the memory
@@ -145,7 +153,16 @@ fn run(args: Args) -> Result<()> {
             work_dir: work.clone(),
         },
     );
-    let total = cases.len() * args.layers.len() * args.variants.len() * args.repeat as usize;
+    for flow in &args.flows {
+        if flow != NO_FLOW && hedy_core::domain::flow::Template::from_key(flow).is_none() {
+            anyhow::bail!("flujo desconocido: {flow} (none, classic, fix-loop, double-review)");
+        }
+    }
+    let total = cases.len()
+        * args.layers.len()
+        * args.variants.len()
+        * args.flows.len()
+        * args.repeat as usize;
     eprintln!(
         "{total} corridas con {} ({}). Resultados en {}",
         account.name,
@@ -172,9 +189,16 @@ fn run_all(
     for attempt in 1..=args.repeat {
         for case in cases {
             for &layer in &args.layers {
-                for variant in &args.variants {
-                    eprint!("· {} [{layer}] {} #{attempt}… ", case.name, variant.name);
-                    let result = runner.run(case, layer, variant, attempt);
+                for (variant, flow) in args
+                    .variants
+                    .iter()
+                    .flat_map(|v| args.flows.iter().map(move |f| (v, f)))
+                {
+                    eprint!(
+                        "· {} [{layer}] {} {flow} #{attempt}… ",
+                        case.name, variant.name
+                    );
+                    let result = runner.run(case, layer, variant, flow, attempt);
                     eprintln!(
                         "{} · {} tokens · {} lecturas · {:.0} s{}",
                         if result.passed { "pasó" } else { "falló" },

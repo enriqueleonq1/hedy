@@ -149,12 +149,26 @@ impl Runner {
     /// One run with `variant`'s experiments. Whatever goes wrong (copying
     /// the repo, launching the agent, running the check) fails this run only:
     /// it is recorded in [`RunResult::error`] and the suite goes on.
-    pub fn run(&self, case: &Case, layer: Layer, variant: &Variant, attempt: u32) -> RunResult {
+    /// `flow`: `none` (one agent) or a template's key; a flow shows in the
+    /// result's variant (`base+flow:fix-loop`), so the report compares it
+    /// with the same variant without a flow.
+    pub fn run(
+        &self,
+        case: &Case,
+        layer: Layer,
+        variant: &Variant,
+        flow: &str,
+        attempt: u32,
+    ) -> RunResult {
         let started_at = now();
+        let name = match flow {
+            "none" => variant.name.clone(),
+            key => format!("{}+flow:{key}", variant.name),
+        };
         let mut result = RunResult {
             case: case.name.clone(),
             layer,
-            variant: variant.name.clone(),
+            variant: name.clone(),
             attempt,
             account: self.options.account.as_str().to_owned(),
             model: self.options.model.clone(),
@@ -182,12 +196,12 @@ impl Runner {
         let repo = self.options.work_dir.join(format!(
             "{}-{layer}-{}-{attempt}-{started_at}",
             case.name,
-            variant.name.replace('+', "_")
+            name.replace(['+', ':'], "_")
         ));
         let _repo = RemoveOnDrop(repo.clone());
         // Its team's repo too, however the run ends.
         let _team = RemoveOnDrop(team_repo(&repo));
-        if let Err(e) = self.run_in(case, layer, &repo, &mut result) {
+        if let Err(e) = self.run_in(case, layer, flow, &repo, &mut result) {
             result.passed = false;
             result.error.get_or_insert_with(|| format!("{e:#}"));
         }
@@ -195,20 +209,34 @@ impl Runner {
     }
 
     /// Prepares the repo and runs the task in it; always forgets the project.
-    fn run_in(&self, case: &Case, layer: Layer, repo: &Path, out: &mut RunResult) -> Result<()> {
+    fn run_in(
+        &self,
+        case: &Case,
+        layer: Layer,
+        flow: &str,
+        repo: &Path,
+        out: &mut RunResult,
+    ) -> Result<()> {
         copy_dir(&case.repo(), repo)?;
         git(repo, &["init", "-q", "-b", "main"])?;
         git(repo, &["add", "-A"])?;
         git(repo, &["commit", "-q", "-m", "Estado inicial del caso"])?;
         let repo = repo.canonicalize()?;
-        let result = self.run_task(case, layer, &repo, out);
+        let result = self.run_task(case, layer, flow, &repo, out);
         self.leave_teams();
         let _ = std::fs::remove_dir_all(team_repo(&repo));
         let _ = self.hedy.remove_project(&repo);
         result
     }
 
-    fn run_task(&self, case: &Case, layer: Layer, repo: &Path, out: &mut RunResult) -> Result<()> {
+    fn run_task(
+        &self,
+        case: &Case,
+        layer: Layer,
+        flow: &str,
+        repo: &Path,
+        out: &mut RunResult,
+    ) -> Result<()> {
         let hedy = &self.hedy;
         let account = self.options.account.as_str();
         hedy.use_account(repo, account, None)?;
@@ -231,7 +259,7 @@ impl Runner {
         hedy.set_setting(Setting::CodeMap, code_map)?;
 
         let clock = Instant::now();
-        let task = hedy.start_task(NewTask {
+        let request = NewTask {
             images: Vec::new(),
             project: repo.to_owned(),
             prompt: case.spec.prompt.clone(),
@@ -239,7 +267,11 @@ impl Runner {
             model: self.options.model.clone(),
             plan_first: false,
             permissions: None,
-        });
+        };
+        let task = match flow {
+            "none" => hedy.start_task(request),
+            key => hedy.start_flow(request, key),
+        };
         let task = match task {
             Ok(task) => task,
             Err(e) => {
@@ -358,6 +390,10 @@ impl Runner {
                     request_id: Some(request_id),
                     ..
                 } => self.hedy.answer_plan(id, request_id, true, None),
+                // A flow's approval: the eval approves, as it approves plans.
+                AgentEvent::FlowApproval { .. } => {
+                    self.hedy.answer_flow_approval(id, true, None).map(drop)
+                }
                 AgentEvent::Usage(sample) => {
                     seen.usage.add(sample);
                     Ok(())
