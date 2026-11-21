@@ -151,9 +151,11 @@ impl Hedy {
                     // Nothing works while the user decides.
                     self.stop_session(&task.id);
                     self.store.save_task(task)?;
-                    self.record(&task.id, AgentEvent::FlowApproval { node: node.id })?;
                     let waiting = task.status == TaskStatus::WaitingApproval;
                     self.set_status(task, TaskStatus::WaitingApproval)?;
+                    // Announced once it waits: whoever answers it on the event
+                    // (the evals, `hedy flow run`) finds it waiting.
+                    self.record(&task.id, AgentEvent::FlowApproval { node: node.id })?;
                     if !waiting {
                         self.notify(task, NoticeKind::PlanReady);
                     }
