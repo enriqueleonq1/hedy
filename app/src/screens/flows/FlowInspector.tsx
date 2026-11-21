@@ -3,12 +3,32 @@
 
 import { useState, type ReactNode } from "react";
 
-import type { Account, Flow, FlowCheck, FlowIssue, FlowNode, FlowWhen, RoleDef, Seat } from "../../api/types";
+import type {
+  Account,
+  Flow,
+  FlowCheck,
+  FlowIssue,
+  FlowNode,
+  FlowScope,
+  FlowWhen,
+  RoleDef,
+  Seat,
+} from "../../api/types";
 import { Button } from "../../components/ui/Button";
 import { Field, Switch } from "../../components/ui/controls";
 import { Select, type SelectOption } from "../../components/ui/Select";
 import { useT, type MessageKey } from "../../i18n";
-import { connect, disconnect, edgeFrom, forward, MAX_NAME, MAX_ROUNDS, nodeById, setRounds, setStep } from "./flowModel";
+import {
+  connect,
+  disconnect,
+  edgeFrom,
+  forward,
+  MAX_NAME,
+  MAX_ROUNDS,
+  nodeById,
+  setRounds,
+  setStep,
+} from "./flowModel";
 import type { Selection } from "./FlowCanvas";
 import { StepIcon, stepTint } from "./StepIcon";
 import { useStepText } from "./stepText";
@@ -23,11 +43,13 @@ export function FlowInspector({
   accounts,
   issues,
   readOnly,
+  scope,
   onChange,
   onSelect,
   onRemove,
 }: {
   flow: Flow;
+  scope?: FlowScope;
   selection: Selection;
   roles: RoleDef[];
   accounts: Account[];
@@ -37,10 +59,20 @@ export function FlowInspector({
   onSelect: (selection: Selection) => void;
   onRemove: (node: string) => void;
 }) {
-  const node = selection && "node" in selection ? nodeById(flow, selection.node) : undefined;
-  const edge = selection && "edge" in selection ? edgeFrom(flow, selection.edge.from, selection.edge.when) : undefined;
+  const node =
+    selection && "node" in selection
+      ? nodeById(flow, selection.node)
+      : undefined;
+  const edge =
+    selection && "edge" in selection
+      ? edgeFrom(flow, selection.edge.from, selection.edge.when)
+      : undefined;
   return (
-    <aside className="flow-inspector" aria-label={useT()("flows.inspector")} onPointerDown={(e) => e.stopPropagation()}>
+    <aside
+      className="flow-inspector"
+      aria-label={useT()("flows.inspector")}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
       {node ? (
         <StepPanel
           key={node.id}
@@ -55,15 +87,40 @@ export function FlowInspector({
           onRemove={() => onRemove(node.id)}
         />
       ) : edge ? (
-        <EdgePanel flow={flow} from={edge.from} when={edge.when} roles={roles} readOnly={readOnly} onChange={onChange} onClose={() => onSelect(null)} />
+        <EdgePanel
+          flow={flow}
+          from={edge.from}
+          when={edge.when}
+          roles={roles}
+          readOnly={readOnly}
+          onChange={onChange}
+          onClose={() => onSelect(null)}
+        />
       ) : (
-        <FlowPanel flow={flow} issues={issues} readOnly={readOnly} onChange={onChange} onSelect={onSelect} />
+        <FlowPanel
+          flow={flow}
+          scope={scope}
+          issues={issues}
+          readOnly={readOnly}
+          onChange={onChange}
+          onSelect={onSelect}
+        />
       )}
     </aside>
   );
 }
 
-function PanelHead({ icon, title, subtitle, onClose }: { icon?: ReactNode; title: string; subtitle?: string; onClose?: () => void }) {
+function PanelHead({
+  icon,
+  title,
+  subtitle,
+  onClose,
+}: {
+  icon?: ReactNode;
+  title: string;
+  subtitle?: string;
+  onClose?: () => void;
+}) {
   const t = useT();
   return (
     <header className="flow-inspector__head">
@@ -73,8 +130,22 @@ function PanelHead({ icon, title, subtitle, onClose }: { icon?: ReactNode; title
         {subtitle && <p>{subtitle}</p>}
       </div>
       {onClose && (
-        <button type="button" className="flow-inspector__close" aria-label={t("flows.inspector.close")} onClick={onClose}>
-          <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+        <button
+          type="button"
+          className="flow-inspector__close"
+          aria-label={t("flows.inspector.close")}
+          onClick={onClose}
+        >
+          <svg
+            aria-hidden="true"
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          >
             <path d="M3 3l6 6M9 3l-6 6" />
           </svg>
         </button>
@@ -95,7 +166,11 @@ function Issues({ issues }: { issues: FlowIssue[] }) {
 }
 
 /** Lines of a textarea as a list (empty lines dropped). */
-const lines = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boolean);
+const lines = (text: string) =>
+  text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
 
 /** A list edited as lines: the text stays as typed while it means the same list. */
 function LinesField({
@@ -139,12 +214,15 @@ function LinesField({
 
 function FlowPanel({
   flow,
+  scope,
   issues,
   readOnly,
   onChange,
   onSelect,
 }: {
   flow: Flow;
+  /** Where it is saved; a global flow never follows a task's end. */
+  scope?: FlowScope;
   issues: FlowIssue[];
   readOnly: boolean;
   onChange: Change;
@@ -152,10 +230,14 @@ function FlowPanel({
 }) {
   const t = useT();
   const frame = flow.frame;
-  const setFrame = (patch: Partial<Flow["frame"]>, merge: string) => onChange({ ...flow, frame: { ...frame, ...patch } }, merge);
+  const setFrame = (patch: Partial<Flow["frame"]>, merge: string) =>
+    onChange({ ...flow, frame: { ...frame, ...patch } }, merge);
   return (
     <>
-      <PanelHead title={t("flows.inspector.flow")} subtitle={t("flows.inspector.flowHint")} />
+      <PanelHead
+        title={t("flows.inspector.flow")}
+        subtitle={t("flows.inspector.flowHint")}
+      />
       {issues.length > 0 && (
         <section className="flow-inspector__section">
           <h3>{t("flows.issues.title", { count: String(issues.length) })}</h3>
@@ -163,7 +245,11 @@ function FlowPanel({
             {issues.map((i, n) => (
               <li key={`${i.node ?? ""}-${n}`}>
                 {i.node ? (
-                  <button type="button" className="link-button" onClick={() => i.node && onSelect({ node: i.node })}>
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => i.node && onSelect({ node: i.node })}
+                  >
                     {i.message}
                   </button>
                 ) : (
@@ -182,28 +268,45 @@ function FlowPanel({
               value={flow.name}
               maxLength={MAX_NAME}
               readOnly={readOnly}
-              onChange={(e) => onChange({ ...flow, name: e.target.value.replace(/[\r\n]/g, "") }, "name")}
+              onChange={(e) =>
+                onChange(
+                  { ...flow, name: e.target.value.replace(/[\r\n]/g, "") },
+                  "name",
+                )
+              }
             />
           )}
         </Field>
       </div>
-      <section className="flow-inspector__section">
-        <h3>{t("flows.trigger.title")}</h3>
-        <div className="flow-inspector__switch">
-          <span>
-            <span className="flow-inspector__switch-label">{t("flows.trigger.taskEnd")}</span>
-            <span className="hint">{t("flows.trigger.taskEndHint")}</span>
-          </span>
-          <Switch
-            label={t("flows.trigger.taskEnd")}
-            checked={flow.triggers.includes("taskEnd")}
-            disabled={readOnly}
-            onChange={(on) =>
-              onChange({ ...flow, triggers: on ? [...flow.triggers.filter((x) => x !== "taskEnd"), "taskEnd"] : flow.triggers.filter((x) => x !== "taskEnd") })
-            }
-          />
-        </div>
-      </section>
+      {scope !== "global" && (
+        <section className="flow-inspector__section">
+          <h3>{t("flows.trigger.title")}</h3>
+          <div className="flow-inspector__switch">
+            <span>
+              <span className="flow-inspector__switch-label">
+                {t("flows.trigger.taskEnd")}
+              </span>
+              <span className="hint">{t("flows.trigger.taskEndHint")}</span>
+            </span>
+            <Switch
+              label={t("flows.trigger.taskEnd")}
+              checked={flow.triggers.includes("taskEnd")}
+              disabled={readOnly}
+              onChange={(on) =>
+                onChange({
+                  ...flow,
+                  triggers: on
+                    ? [
+                        ...flow.triggers.filter((x) => x !== "taskEnd"),
+                        "taskEnd",
+                      ]
+                    : flow.triggers.filter((x) => x !== "taskEnd"),
+                })
+              }
+            />
+          </div>
+        </section>
+      )}
       <section className="flow-inspector__section">
         <h3>{t("flows.frame.title")}</h3>
         <p className="hint">{t("flows.frame.hint")}</p>
@@ -262,7 +365,8 @@ function StepPanel({
 }) {
   const t = useT();
   const text = useStepText(roles)(node);
-  const role = node.kind === "role" ? roles.find((r) => r.id === node.role) : undefined;
+  const role =
+    node.kind === "role" ? roles.find((r) => r.id === node.role) : undefined;
   const kind: MessageKey =
     node.kind === "role"
       ? "flows.kind.role"
@@ -279,7 +383,10 @@ function StepPanel({
     <>
       <PanelHead
         icon={
-          <span className="flow-inspector__icon" style={{ ["--tint" as string]: stepTint(node, roles) }}>
+          <span
+            className="flow-inspector__icon"
+            style={{ ["--tint" as string]: stepTint(node, roles) }}
+          >
             <StepIcon node={node} roles={roles} size={20} />
           </span>
         }
@@ -295,20 +402,46 @@ function StepPanel({
             roles={roles}
             accounts={accounts}
             readOnly={readOnly}
-            onChange={(seat, merge) => onChange(setStep(flow, node.id, { kind: "role", ...seat }), merge && `${node.id}-${merge}`)}
+            onChange={(seat, merge) =>
+              onChange(
+                setStep(flow, node.id, { kind: "role", ...seat }),
+                merge && `${node.id}-${merge}`,
+              )
+            }
           />
         )}
-        {node.kind === "condition" && <CheckFields flow={flow} node={node} readOnly={readOnly} onChange={onChange} />}
-        {node.kind === "parallel" && <ParallelFields flow={flow} node={node} roles={roles} readOnly={readOnly} onChange={onChange} />}
-        {(node.kind === "approval" || node.kind === "start" || node.kind === "end") && (
-          <p className="flow-inspector__explain">{t(`flows.explain.${node.kind}` as MessageKey)}</p>
+        {node.kind === "condition" && (
+          <CheckFields
+            flow={flow}
+            node={node}
+            readOnly={readOnly}
+            onChange={onChange}
+          />
+        )}
+        {node.kind === "parallel" && (
+          <ParallelFields
+            flow={flow}
+            node={node}
+            roles={roles}
+            readOnly={readOnly}
+            onChange={onChange}
+          />
+        )}
+        {(node.kind === "approval" ||
+          node.kind === "start" ||
+          node.kind === "end") && (
+          <p className="flow-inspector__explain">
+            {t(`flows.explain.${node.kind}` as MessageKey)}
+          </p>
         )}
       </div>
       {role && (
         <section className="flow-inspector__section">
           <h3>{t("flows.role.does")}</h3>
           <ul className="flow-facts" role="list">
-            <li>{t(role.can.write ? "flows.role.writes" : "flows.role.reads")}</li>
+            <li>
+              {t(role.can.write ? "flows.role.writes" : "flows.role.reads")}
+            </li>
             {role.can.run && <li>{t("flows.role.runs")}</li>}
             {role.delivers === "verdict" && <li>{t("flows.role.verdict")}</li>}
           </ul>
@@ -318,10 +451,23 @@ function StepPanel({
           </details>
         </section>
       )}
-      {node.kind !== "end" && <Ways flow={flow} node={node} roles={roles} readOnly={readOnly} onChange={onChange} />}
+      {node.kind !== "end" && (
+        <Ways
+          flow={flow}
+          node={node}
+          roles={roles}
+          readOnly={readOnly}
+          onChange={onChange}
+        />
+      )}
       {!readOnly && node.kind !== "start" && node.kind !== "end" && (
         <div className="flow-inspector__footer">
-          <Button variant="ghost" small className="btn--danger-text" onClick={onRemove}>
+          <Button
+            variant="ghost"
+            small
+            className="btn--danger-text"
+            onClick={onRemove}
+          >
             {t("flows.step.remove")}
           </Button>
         </div>
@@ -353,7 +499,16 @@ function SeatFields({
   return (
     <>
       <Field label={t("flows.field.role")}>
-        {(id) => <Select id={id} variant="field" value={seat.role} options={options} disabled={readOnly} onChange={(role) => onChange({ ...seat, role })} />}
+        {(id) => (
+          <Select
+            id={id}
+            variant="field"
+            value={seat.role}
+            options={options}
+            disabled={readOnly}
+            onChange={(role) => onChange({ ...seat, role })}
+          />
+        )}
       </Field>
       <div className="flow-inspector__pair">
         <Field label={t("flows.field.model")}>
@@ -380,7 +535,14 @@ function SeatFields({
               variant="field"
               value={seat.account ?? ""}
               disabled={readOnly}
-              options={[{ value: "", label: t("flows.field.projectDefault") }, ...accounts.map((a) => ({ value: a.id, label: a.name, detail: a.providerName }))]}
+              options={[
+                { value: "", label: t("flows.field.projectDefault") },
+                ...accounts.map((a) => ({
+                  value: a.id,
+                  label: a.name,
+                  detail: a.providerName,
+                })),
+              ]}
               onChange={(account) => {
                 const rest = { ...seat };
                 delete rest.account;
@@ -394,9 +556,20 @@ function SeatFields({
   );
 }
 
-function CheckFields({ flow, node, readOnly, onChange }: { flow: Flow; node: FlowNode & { kind: "condition" }; readOnly: boolean; onChange: Change }) {
+function CheckFields({
+  flow,
+  node,
+  readOnly,
+  onChange,
+}: {
+  flow: Flow;
+  node: FlowNode & { kind: "condition" };
+  readOnly: boolean;
+  onChange: Change;
+}) {
   const t = useT();
-  const set = (check: FlowCheck, merge?: string) => onChange(setStep(flow, node.id, { kind: "condition", ...check }), merge);
+  const set = (check: FlowCheck, merge?: string) =>
+    onChange(setStep(flow, node.id, { kind: "condition", ...check }), merge);
   return (
     <>
       <Field label={t("flows.field.check")}>
@@ -407,16 +580,31 @@ function CheckFields({ flow, node, readOnly, onChange }: { flow: Flow; node: Flo
             value={node.check}
             disabled={readOnly}
             options={[
-              { value: "tests", label: t("flows.step.tests"), detail: t("flows.check.testsDetail") },
-              { value: "rules", label: t("flows.step.rules"), detail: t("flows.check.rulesDetail") },
-              { value: "verdict", label: t("flows.step.verdict"), detail: t("flows.check.verdictDetail") },
+              {
+                value: "tests",
+                label: t("flows.step.tests"),
+                detail: t("flows.check.testsDetail"),
+              },
+              {
+                value: "rules",
+                label: t("flows.step.rules"),
+                detail: t("flows.check.rulesDetail"),
+              },
+              {
+                value: "verdict",
+                label: t("flows.step.verdict"),
+                detail: t("flows.check.verdictDetail"),
+              },
             ]}
             onChange={(check) => set(check === "tests" ? { check } : { check })}
           />
         )}
       </Field>
       {node.check === "tests" && (
-        <Field label={t("flows.field.command")} hint={t("flows.field.commandHint")}>
+        <Field
+          label={t("flows.field.command")}
+          hint={t("flows.field.commandHint")}
+        >
           {(id) => (
             <input
               id={id}
@@ -427,7 +615,12 @@ function CheckFields({ flow, node, readOnly, onChange }: { flow: Flow; node: Flo
               spellCheck={false}
               onChange={(e) => {
                 const command = e.target.value.replace(/[\r\n]/g, "");
-                set(command.trim() ? { check: "tests", command } : { check: "tests" }, `${node.id}-command`);
+                set(
+                  command.trim()
+                    ? { check: "tests", command }
+                    : { check: "tests" },
+                  `${node.id}-command`,
+                );
               }}
             />
           )}
@@ -451,7 +644,8 @@ function ParallelFields({
   onChange: Change;
 }) {
   const t = useT();
-  const set = (seats: Seat[]) => onChange(setStep(flow, node.id, { kind: "parallel", roles: seats }));
+  const set = (seats: Seat[]) =>
+    onChange(setStep(flow, node.id, { kind: "parallel", roles: seats }));
   const readers = roles.filter((r) => !r.can.write);
   return (
     <>
@@ -464,17 +658,35 @@ function ParallelFields({
               label={t("flows.parallel.role", { n: String(i + 1) })}
               value={seat.role}
               disabled={readOnly}
-              options={readers.map((r) => ({ value: r.id, label: r.name, detail: r.summary }))}
-              onChange={(role) => set(node.roles.map((s, j) => (j === i ? { ...s, role } : s)))}
+              options={readers.map((r) => ({
+                value: r.id,
+                label: r.name,
+                detail: r.summary,
+              }))}
+              onChange={(role) =>
+                set(node.roles.map((s, j) => (j === i ? { ...s, role } : s)))
+              }
             />
             {!readOnly && node.roles.length > 2 && (
               <button
                 type="button"
                 className="flow-seats__remove"
-                aria-label={t("flows.parallel.remove", { name: roles.find((r) => r.id === seat.role)?.name ?? seat.role })}
+                aria-label={t("flows.parallel.remove", {
+                  name:
+                    roles.find((r) => r.id === seat.role)?.name ?? seat.role,
+                })}
                 onClick={() => set(node.roles.filter((_, j) => j !== i))}
               >
-                <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <svg
+                  aria-hidden="true"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                >
                   <path d="M3 3l6 6M9 3l-6 6" />
                 </svg>
               </button>
@@ -483,7 +695,13 @@ function ParallelFields({
         ))}
       </ul>
       {!readOnly && readers[0] && (
-        <Button small variant="ghost" onClick={() => readers[0] && set([...node.roles, { role: readers[0].id }])}>
+        <Button
+          small
+          variant="ghost"
+          onClick={() =>
+            readers[0] && set([...node.roles, { role: readers[0].id }])
+          }
+        >
           {t("flows.parallel.add")}
         </Button>
       )}
@@ -492,15 +710,36 @@ function ParallelFields({
 }
 
 /** Where the step goes next and, for a check, where a failure goes back to. */
-function Ways({ flow, node, roles, readOnly, onChange }: { flow: Flow; node: FlowNode; roles: RoleDef[]; readOnly: boolean; onChange: Change }) {
+function Ways({
+  flow,
+  node,
+  roles,
+  readOnly,
+  onChange,
+}: {
+  flow: Flow;
+  node: FlowNode;
+  roles: RoleDef[];
+  readOnly: boolean;
+  onChange: Change;
+}) {
   const t = useT();
   const text = useStepText(roles);
   const NONE = "";
   const targets = (when: FlowWhen): SelectOption[] => [
     { value: NONE, label: t("flows.ways.nowhere") },
     ...flow.nodes
-      .filter((n) => n.id !== node.id && n.kind !== "start" && (when === "fail" ? n.kind !== "end" : true))
-      .map((n) => ({ value: n.id, label: text(n).name, detail: text(n).detail || undefined })),
+      .filter(
+        (n) =>
+          n.id !== node.id &&
+          n.kind !== "start" &&
+          (when === "fail" ? n.kind !== "end" : true),
+      )
+      .map((n) => ({
+        value: n.id,
+        label: text(n).name,
+        detail: text(n).detail || undefined,
+      })),
   ];
   const way = (when: FlowWhen, label: MessageKey) => {
     const edge = edgeFrom(flow, node.id, when);
@@ -513,7 +752,13 @@ function Ways({ flow, node, roles, readOnly, onChange }: { flow: Flow; node: Flo
             value={edge?.to ?? NONE}
             disabled={readOnly}
             options={targets(when)}
-            onChange={(to) => onChange(to ? connect(flow, node.id, when, to) : disconnect(flow, node.id, when))}
+            onChange={(to) =>
+              onChange(
+                to
+                  ? connect(flow, node.id, when, to)
+                  : disconnect(flow, node.id, when),
+              )
+            }
           />
         )}
       </Field>
@@ -523,14 +768,41 @@ function Ways({ flow, node, roles, readOnly, onChange }: { flow: Flow; node: Flo
   return (
     <section className="flow-inspector__section">
       <h3>{t("flows.ways.title")}</h3>
-      {way(forward(node), node.kind === "condition" ? "flows.ways.pass" : "flows.ways.next")}
-      {node.kind === "condition" && way("fail", node.check === "verdict" ? "flows.ways.changes" : "flows.ways.fail")}
-      {fail && <Rounds flow={flow} from={node.id} rounds={fail.maxRounds} readOnly={readOnly} onChange={onChange} />}
+      {way(
+        forward(node),
+        node.kind === "condition" ? "flows.ways.pass" : "flows.ways.next",
+      )}
+      {node.kind === "condition" &&
+        way(
+          "fail",
+          node.check === "verdict" ? "flows.ways.changes" : "flows.ways.fail",
+        )}
+      {fail && (
+        <Rounds
+          flow={flow}
+          from={node.id}
+          rounds={fail.maxRounds}
+          readOnly={readOnly}
+          onChange={onChange}
+        />
+      )}
     </section>
   );
 }
 
-function Rounds({ flow, from, rounds, readOnly, onChange }: { flow: Flow; from: string; rounds?: number; readOnly: boolean; onChange: Change }) {
+function Rounds({
+  flow,
+  from,
+  rounds,
+  readOnly,
+  onChange,
+}: {
+  flow: Flow;
+  from: string;
+  rounds?: number;
+  readOnly: boolean;
+  onChange: Change;
+}) {
   const t = useT();
   return (
     <Field label={t("flows.ways.rounds")} hint={t("flows.ways.roundsHint")}>
@@ -543,7 +815,12 @@ function Rounds({ flow, from, rounds, readOnly, onChange }: { flow: Flow; from: 
           max={MAX_ROUNDS}
           value={rounds ?? ""}
           readOnly={readOnly}
-          onChange={(e) => onChange(setRounds(flow, from, "fail", Number(e.target.value)), `${from}-rounds`)}
+          onChange={(e) =>
+            onChange(
+              setRounds(flow, from, "fail", Number(e.target.value)),
+              `${from}-rounds`,
+            )
+          }
         />
       )}
     </Field>
@@ -573,17 +850,31 @@ function EdgePanel({
   if (!edge) return null;
   const a = nodeById(flow, from);
   const b = nodeById(flow, edge.to);
-  const label: MessageKey = when === "fail" ? "flows.edge.titleBack" : when === "pass" ? "flows.edge.titlePass" : "flows.edge.titleNext";
+  const label: MessageKey =
+    when === "fail"
+      ? "flows.edge.titleBack"
+      : when === "pass"
+        ? "flows.edge.titlePass"
+        : "flows.edge.titleNext";
   return (
     <>
       <PanelHead
         title={t(label)}
-        subtitle={t("flows.edge.fromTo", { from: a ? text(a).name : from, to: b ? text(b).name : edge.to })}
+        subtitle={t("flows.edge.fromTo", {
+          from: a ? text(a).name : from,
+          to: b ? text(b).name : edge.to,
+        })}
         onClose={onClose}
       />
       <div className="flow-inspector__section">
         {when === "fail" ? (
-          <Rounds flow={flow} from={from} rounds={edge.maxRounds} readOnly={readOnly} onChange={onChange} />
+          <Rounds
+            flow={flow}
+            from={from}
+            rounds={edge.maxRounds}
+            readOnly={readOnly}
+            onChange={onChange}
+          />
         ) : (
           <p className="flow-inspector__explain">{t("flows.edge.explain")}</p>
         )}

@@ -1197,6 +1197,7 @@ impl Hedy {
                 }
                 // A flow set to follow a task's end takes it on from here.
                 if *ok
+                    && !limited
                     && current_stage(&task).phase != Phase::Plan
                     && self.trial_of(id).is_none()
                     && self.flow_after_task(&mut task)?

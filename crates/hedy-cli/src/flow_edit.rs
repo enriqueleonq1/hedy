@@ -69,15 +69,15 @@ fn edit_in_editor(text: &str) -> Result<String> {
         .ok()
         .filter(|e| !e.trim().is_empty())
         .unwrap_or_else(|| "vi".to_owned());
-    // `code --wait`: the editor and its own arguments.
-    let mut words = editor.split_whitespace();
-    let program = words.next().unwrap_or("vi");
+    // As git does: the shell reads `$EDITOR` (`code --wait`, a quoted path).
     let draft = Draft::new(text)?;
-    let status = Command::new(program)
-        .args(words)
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg(format!("{editor} \"$@\""))
+        .arg("editor")
         .arg(&draft.0)
         .status()
-        .with_context(|| tr!("no se pudo abrir {program}", "could not open {program}"))?;
+        .with_context(|| tr!("no se pudo abrir {editor}", "could not open {editor}"))?;
     if !status.success() {
         bail!(
             "{}",
@@ -142,13 +142,14 @@ pub fn new_flow(
     let source = hedy.flow(path.as_deref(), from.unwrap_or(DEFAULT_FROM))?;
     let mut flow = source.flow;
     flow.name = name.trim().to_owned();
-    let place = if global { None } else { path.as_deref() };
-    let saved = hedy.save_flow_as(place, None, flow)?;
+    let target = if global { None } else { path.as_deref() };
+    let saved = hedy.save_flow_as(target, None, flow)?;
     println!(
-        "{} {} {}",
+        "{} {} {} {}",
         s.ok("✓"),
         tr!("Flujo creado:", "Flow created:"),
-        s.bold(clean(&saved.flow.name))
+        s.bold(clean(&saved.flow.name)),
+        s.muted(format!("· {}", place(global, &path)))
     );
     let name = clean(&saved.flow.name);
     println!(
@@ -231,13 +232,41 @@ pub fn roles_list(hedy: &Hedy, dir: &Path) -> Result<()> {
 
 pub fn role_show(hedy: &Hedy, dir: &Path, id: &str) -> Result<()> {
     let path = project_path(hedy, dir)?;
-    print!("{}", hedy.role_text(path.as_deref(), id)?);
+    for line in hedy.role_text(path.as_deref(), id)?.lines() {
+        println!("{}", clean(line));
+    }
     Ok(())
+}
+
+/// Where a role or flow is saved, said after saving it.
+fn place(global: bool, path: &Option<PathBuf>) -> String {
+    if global || path.is_none() {
+        tr!("para todos los proyectos", "for every project")
+    } else {
+        tr!("para este proyecto", "for this project")
+    }
+}
+
+/// The id a role's text names, as written.
+fn id_in(text: &str) -> Option<&str> {
+    text.lines()
+        .find_map(|l| l.trim().strip_prefix("id:"))
+        .map(str::trim)
 }
 
 pub fn role_new(hedy: &Hedy, dir: &Path, id: &str, from: Option<&str>, global: bool) -> Result<()> {
     refuse_in_agent_session()?;
     let path = project_path(hedy, dir)?;
+    // A new role never replaces one there is (Hedy's included): that is `edit`.
+    if hedy.roles(path.as_deref())?.iter().any(|r| r.role.id == id) {
+        bail!(
+            "{}",
+            tr!(
+                "ya hay un rol «{id}»: cámbialo con `hedy roles edit {id}`",
+                "there is already a role «{id}»: change it with `hedy roles edit {id}`"
+            )
+        );
+    }
     let base = hedy.role_text(path.as_deref(), from.unwrap_or(DEFAULT_ROLE))?;
     // The copy under its new id; the rest is the user's to change.
     let text: String = base
@@ -253,10 +282,28 @@ pub fn role_new(hedy: &Hedy, dir: &Path, id: &str, from: Option<&str>, global: b
         .join("\n")
         + "\n";
     // A new role is saved even when the copy is kept as it was.
+    let taken: Vec<String> = hedy
+        .roles(path.as_deref())?
+        .into_iter()
+        .map(|r| r.role.id)
+        .collect();
+    let here = place(global, &path);
     edit_until_saved(text, true, |edited| {
+        if let Some(other) = id_in(edited).filter(|i| taken.iter().any(|t| t == i)) {
+            bail!(
+                "{}",
+                tr!(
+                    "ya hay un rol «{other}»",
+                    "there is already a role «{other}»"
+                )
+            );
+        }
         let saved = hedy.save_role_text(path.as_deref(), edited, global)?;
         let name = clean(&saved.role.name);
-        Ok(tr!("Rol creado: «{name}».", "Role created: «{name}»."))
+        Ok(tr!(
+            "Rol creado: «{name}», {here}.",
+            "Role created: «{name}», {here}."
+        ))
     })
 }
 
@@ -264,10 +311,27 @@ pub fn role_edit(hedy: &Hedy, dir: &Path, id: &str, global: bool) -> Result<()> 
     refuse_in_agent_session()?;
     let path = project_path(hedy, dir)?;
     let text = hedy.role_text(path.as_deref(), id)?;
+    let others: Vec<String> = hedy
+        .roles(path.as_deref())?
+        .into_iter()
+        .map(|r| r.role.id)
+        .filter(|other| other != id)
+        .collect();
+    let here = place(global, &path);
     edit_until_saved(text, false, |edited| {
+        // Changing the id onto another role would replace it unseen.
+        if let Some(other) = id_in(edited).filter(|i| others.iter().any(|o| o == i)) {
+            bail!(
+                "{}",
+                tr!(
+                    "ya hay un rol «{other}»",
+                    "there is already a role «{other}»"
+                )
+            );
+        }
         let saved = hedy.save_role_text(path.as_deref(), edited, global)?;
         let name = clean(&saved.role.name);
-        Ok(tr!("Guardado «{name}».", "Saved «{name}»."))
+        Ok(tr!("Guardado «{name}», {here}.", "Saved «{name}», {here}."))
     })
 }
 

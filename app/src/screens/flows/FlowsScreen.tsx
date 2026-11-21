@@ -425,6 +425,7 @@ export function FlowsScreen({
             accounts={overview.accounts.filter((a) => project.offerableAccounts.includes(a.id) || a.id === project.account)}
             issues={issues}
             readOnly={readOnly}
+            scope={entry?.scope}
             onChange={change}
             onSelect={setSelection}
             onRemove={(node) => {

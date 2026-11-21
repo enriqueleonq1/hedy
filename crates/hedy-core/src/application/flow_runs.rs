@@ -135,41 +135,69 @@ impl Hedy {
     pub(super) fn flow_after_task(&self, task: &mut Task) -> AppResult<bool> {
         if task.flow.is_some()
             || task.mode != TaskMode::Project
-            || task.workspace.is_none()
             || task.scratch.is_some()
+            || task.wait.is_some()
         {
+            return Ok(false);
+        }
+        let Some(ws) = task.workspace.clone() else {
+            return Ok(false);
+        };
+        // Only the end of the task's request: a follow-up later (or a task
+        // left in review before the flow was set) does not start it, and
+        // neither does a turn that changed nothing.
+        let requests = self
+            .task_events(&task.id)?
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::UserMessage { .. }))
+            .count();
+        if requests != 1 || self.git.diff(&ws.worktree, &ws.base_commit)?.is_empty() {
             return Ok(false);
         }
         let Ok(project) = self.project_at(&task.project) else {
             return Ok(false);
         };
+        // The project's own flows only: a global one would fire everywhere.
         let Some(entry) = self
             .flows(Some(&project.path))?
             .into_iter()
-            .find(|e| e.scope != FlowScope::Hedy && e.flow.triggers.contains(&Trigger::TaskEnd))
+            .find(|e| e.scope == FlowScope::Project && e.flow.triggers.contains(&Trigger::TaskEnd))
         else {
             return Ok(false);
         };
         let name = entry.flow.name.clone();
+        let not_run = |e: &dyn std::fmt::Display| AgentEvent::Error {
+            message: tr!(
+                "No pasó por el flujo «{name}»: {e}",
+                "It did not go through the flow «{name}»: {e}"
+            ),
+        };
         let run = match self.ready_run(&project, entry.flow, task.model.as_deref()) {
             Ok(run) => run,
             Err(e) => {
-                self.record(
-                    &task.id,
-                    AgentEvent::Error {
-                        message: tr!(
-                            "No pasó por el flujo «{name}»: {e}",
-                            "It did not go through the flow «{name}»: {e}"
-                        ),
-                    },
-                )?;
+                self.record(&task.id, not_run(&e))?;
                 return Ok(false);
             }
         };
-        self.stop_session(&task.id);
-        task.flow = Some(run);
-        self.store.save_task(task)?;
-        self.flow_step(task)?;
+        {
+            // As the normal end does: a task closed meanwhile (discarded
+            // while its last turn ended) stays closed and runs nothing.
+            let _status = self.status_lock.lock().unwrap_or_else(|e| e.into_inner());
+            if self.task(&task.id)?.status.is_closed() {
+                return Ok(true);
+            }
+            self.stop_session(&task.id);
+            task.flow = Some(run);
+            self.store.save_task(task)?;
+        }
+        // A first step that cannot start leaves the work as it ended, for
+        // review, with why: never Failed for a turn that went well.
+        if let Err(e) = self.flow_step(task) {
+            task.flow = None;
+            self.store.save_task(task)?;
+            self.record(&task.id, not_run(&e))?;
+            return Ok(false);
+        }
         self.events.task_updated(task);
         Ok(true)
     }
@@ -735,6 +763,7 @@ mod tests {
             .start_task(request(&f, "Cobros con tarjeta"))
             .unwrap();
         assert!(task.flow.is_none());
+        f.git.set_diff(vec![changed("src/cobro.rs")]);
         finish(&f, "Listo el cobro.");
         // The reviewer starts on the same task, in the same copy.
         let after = f.hedy.task(&task.id).unwrap();
@@ -748,6 +777,54 @@ mod tests {
         assert_eq!(done.status, TaskStatus::Review);
         // Once: the flow's own end does not start it again.
         assert_eq!(f.agents.requests().len(), 2);
+    }
+
+    /// One file changed, as a diff.
+    fn changed(path: &str) -> crate::domain::FileDiff {
+        crate::domain::FileDiff {
+            path: path.into(),
+            old_path: None,
+            status: crate::domain::diff::FileStatus::Modified,
+            additions: 1,
+            deletions: 0,
+            binary: false,
+            hunks: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_trigger_skips_a_task_that_changed_nothing_and_its_follow_ups() {
+        use crate::domain::flow::Trigger;
+        let f = setup();
+        review_after(&f, vec![Trigger::TaskEnd]);
+        let task = f.hedy.start_task(request(&f, "¿Dónde se cobra?")).unwrap();
+        finish(&f, "En src/caja.");
+        assert!(
+            f.hedy.task(&task.id).unwrap().flow.is_none(),
+            "nothing changed"
+        );
+        // A follow-up that does change something is not the task's end either.
+        f.hedy.send_message(&task.id, "Ahora cámbialo").unwrap();
+        f.git.set_diff(vec![changed("src/caja.rs")]);
+        finish(&f, "Cambiado.");
+        assert!(f.hedy.task(&task.id).unwrap().flow.is_none());
+    }
+
+    #[test]
+    fn a_task_discarded_as_its_turn_ends_runs_no_flow() {
+        use crate::application::ports::TaskRepository;
+        use crate::domain::flow::Trigger;
+        let f = setup();
+        review_after(&f, vec![Trigger::TaskEnd]);
+        let task = f.hedy.start_task(request(&f, "Cobros")).unwrap();
+        f.git.set_diff(vec![changed("src/cobro.rs")]);
+        // Closed while it worked: its end must not open it again.
+        let mut closed = f.hedy.task(&task.id).unwrap();
+        closed.status = TaskStatus::Discarded;
+        f.store.save_task(&closed).unwrap();
+        finish(&f, "Listo.");
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Discarded);
+        assert_eq!(f.agents.requests().len(), 1);
     }
 
     #[test]
