@@ -238,6 +238,7 @@ impl Runner {
             mode: TaskMode::Project,
             model: self.options.model.clone(),
             plan_first: false,
+            permissions: None,
         });
         let task = match task {
             Ok(task) => task,

@@ -200,6 +200,7 @@ mod tests {
                 mode: TaskMode::Ask,
                 model: None,
                 plan_first: false,
+                permissions: None,
                 images: Vec::new(),
             })
             .unwrap();

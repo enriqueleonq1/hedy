@@ -40,6 +40,8 @@ const es = {
   "projectSettings.blocked.remove": "Quitar {pattern}",
 
   "projectSettings.general.title": "General",
+  "projectSettings.permissions": "Permisos de las tareas nuevas",
+  "projectSettings.permissionsHint": "Cada tarea puede cambiarlo en el compositor. Nunca escribe fuera de su copia ni en .git, y los ajustes de la IA y los archivos que no lee siguen protegidos.",
   "projectSettings.client": "Cliente",
   "projectSettings.clientHint": "Agrupa los proyectos de un mismo cliente para ver cuánto uso lleva cada uno.",
   "projectSettings.color": "Color",
@@ -94,6 +96,8 @@ const en: Record<keyof typeof es, string> = {
   "projectSettings.blocked.remove": "Remove {pattern}",
 
   "projectSettings.general.title": "General",
+  "projectSettings.permissions": "Permissions of new tasks",
+  "projectSettings.permissionsHint": "Each task can change it in the composer. It never writes outside its copy or in .git, and the AI's settings and the files it does not read stay protected.",
   "projectSettings.client": "Client",
   "projectSettings.clientHint": "Groups the projects of one client to see how much usage each one has.",
   "projectSettings.color": "Color",

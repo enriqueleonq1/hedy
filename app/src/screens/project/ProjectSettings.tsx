@@ -5,7 +5,7 @@ import { useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { OVERVIEW_KEY, useAction, useApi } from "../../api/context";
-import type { Account, Assignment, Overview, Phase, PhasePlan, Project } from "../../api/types";
+import type { Account, Assignment, Overview, PermissionMode, Phase, PhasePlan, Project } from "../../api/types";
 import { accountOption } from "../../components/accounts";
 import type { View } from "../../components/Layout";
 import { MODEL_HINTS, MODEL_SUGGESTIONS, modelLabel } from "../../components/models";
@@ -235,6 +235,12 @@ function StepsCard({ project, overview }: { project: Project; overview: Overview
   );
 }
 
+const PERMISSION_OPTION: Record<PermissionMode, { label: MessageKey; detail: MessageKey }> = {
+  manual: { label: "workspace.permissions.manual", detail: "workspace.permissions.manualDetail" },
+  acceptEdits: { label: "workspace.permissions.acceptEdits", detail: "workspace.permissions.acceptEditsDetail" },
+  auto: { label: "workspace.permissions.auto", detail: "workspace.permissions.autoDetail" },
+};
+
 function GeneralCard({ project }: { project: Project }) {
   const t = useT();
   const titleId = useId();
@@ -244,10 +250,28 @@ function GeneralCard({ project }: { project: Project }) {
     invalidate: [OVERVIEW_KEY, ["usageSummary"]],
   });
   const setColor = useAction((api, color: string | null) => api.setProjectColor(project.path, color));
+  const setPermissions = useAction((api, mode: PermissionMode) => api.setProjectPermissionMode(project.path, mode));
+  const permissionsHintId = useId();
 
   return (
     <section className="card" aria-labelledby={titleId}>
       <h2 id={titleId}>{t("projectSettings.general.title")}</h2>
+      <div className="field">
+        <span className="field__label">{t("projectSettings.permissions")}</span>
+        <Select<PermissionMode>
+          label={t("projectSettings.permissions")}
+          value={project.permissionMode}
+          options={(["manual", "acceptEdits", "auto"] as const).map((value) => ({
+            value,
+            label: t(PERMISSION_OPTION[value].label),
+            detail: t(PERMISSION_OPTION[value].detail),
+          }))}
+          onChange={(mode) => setPermissions.mutate(mode)}
+        />
+        <p id={permissionsHintId} className="hint">
+          {t("projectSettings.permissionsHint")}
+        </p>
+      </div>
       <div className="field">
         <label htmlFor={clientId}>{t("projectSettings.client")}</label>
         <input

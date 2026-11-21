@@ -91,6 +91,7 @@ import type {
   DoctorReport,
   FileDiff,
   OutputFile,
+  PermissionMode,
   MemoryView,
   NewAccountInput,
   NewConversationInput,
@@ -565,6 +566,18 @@ export class MockApi implements HedyApi {
 
   async suggestedBlockedFiles(): Promise<string[]> {
     return [...SUGGESTED_BLOCKED];
+  }
+
+  async setProjectPermissionMode(path: string, mode: PermissionMode): Promise<void> {
+    this.project(path).permissionMode = mode;
+  }
+
+  async setTaskPermissions(id: string, mode: PermissionMode): Promise<void> {
+    const task = this.tasksById.get(id);
+    if (!task) throw `no existe la tarea ${id}`;
+    if (task.status === "accepted" || task.status === "discarded") throw `la tarea ${id} ya está cerrada`;
+    task.permissions = mode;
+    this.notifyTask(task);
   }
 
   async projectStatus(path: string): Promise<ProjectStatus> {
@@ -1885,6 +1898,7 @@ export class MockApi implements HedyApi {
       prompt,
       account: project.account,
       model: input.model,
+      permissions: input.permissions ?? project.permissionMode,
       workspace:
         input.mode === "project"
           ? {
@@ -3711,6 +3725,7 @@ function emptyProject(path: string): Project {
     phases: {},
     client: null,
     blockedFiles: [],
+    permissionMode: "manual",
   };
 }
 

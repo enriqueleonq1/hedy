@@ -41,6 +41,13 @@ afterEach(() => {
 });
 
 describe("A project's settings", () => {
+  it("sets the permission mode its new tasks start with", async () => {
+    const { api, user } = await setup();
+    const general = await card("General");
+    await chooseOption(user, within(general).getByRole("combobox", { name: "Permisos de las tareas nuevas" }), "Aceptar ediciones");
+    await waitFor(async () => expect((await projectOf(api, HEDY)).permissionMode).toBe("acceptEdits"));
+  });
+
   it("lists the files the AI does not read: emptied, filled again with the usual ones, one added", async () => {
     const { api, user } = await setup();
     const blocked = await card("Archivos que la IA no lee");

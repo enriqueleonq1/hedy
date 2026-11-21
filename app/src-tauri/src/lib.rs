@@ -165,6 +165,8 @@ pub fn run() {
             commands::set_project_client,
             commands::set_project_blocked_files,
             commands::suggested_blocked_files,
+            commands::set_task_permissions,
+            commands::set_project_permission_mode,
             commands::detect_clis,
             commands::doctor,
             commands::open_link,

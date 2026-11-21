@@ -226,6 +226,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: None,
                 plan_first,
+                permissions: None,
             })
             .unwrap()
     }
@@ -438,6 +439,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
             .unwrap();
         f.hedy.queue_message(&task.id, "también el README").unwrap();

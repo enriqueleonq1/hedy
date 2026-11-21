@@ -77,6 +77,42 @@ pub struct Workspace {
     pub base_commit: String,
 }
 
+/// How much an agent does without asking in a task that changes files, as
+/// Claude Code's modes. Whatever it is, Hedy keeps its floor: nothing outside
+/// the task's copy, nothing in `.git`, the agents' own settings always ask, and
+/// the project's blocked files stay blocked.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PermissionMode {
+    /// Every edit and command asks (as before).
+    #[default]
+    Manual,
+    /// Edits inside the copy go through; commands ask.
+    AcceptEdits,
+    /// Edits and commands go through; a command that names a path outside
+    /// the copy or does something risky (`sudo`, `git push`) still asks.
+    Auto,
+}
+
+impl PermissionMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::AcceptEdits => "acceptEdits",
+            Self::Auto => "auto",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "manual" => Some(Self::Manual),
+            "acceptEdits" => Some(Self::AcceptEdits),
+            "auto" => Some(Self::Auto),
+            _ => None,
+        }
+    }
+}
+
 /// A file a read-only task wrote in its own folder, outside the project (a
 /// document, a page): `path` is relative to that folder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,6 +158,9 @@ pub struct Task {
     /// when the turn ends. Never set with `workspace`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scratch: Option<PathBuf>,
+    /// What the agent does without asking (tasks that change files).
+    #[serde(default)]
+    pub permissions: PermissionMode,
     /// The CLI's session, to resume it after a restart.
     pub session_id: Option<String>,
     pub status: TaskStatus,

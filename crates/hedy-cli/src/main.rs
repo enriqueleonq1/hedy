@@ -116,6 +116,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Client { name, clear } => {
             commands::set_client(&hedy, &dir, if clear { None } else { name.as_deref() })
         }
+        Command::Permissions { mode } => commands::permissions(&hedy, &dir, mode.as_deref()),
         Command::Block {
             patterns,
             remove,

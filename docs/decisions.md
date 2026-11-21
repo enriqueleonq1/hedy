@@ -3747,3 +3747,54 @@ read (a busy store), the checks fall back to the usual list, never to none.
   never see it (Claude's deny rule and the hook); `doc` writes a question's document in its
   own folder and leaves `git status` clean (§39).
 
+## 41. Permission modes, as in Claude Code (Nov 20, 2026)
+
+Every edit and command used to ask. Now a task that changes files has a mode
+(`PermissionMode`), picked in the composer's «Permisos» chip, changed there while the task is
+open, shown next to its status when it is not manual, and defaulting to the project's
+(Ajustes → General, `hedy permissions [manual|edits|auto]`):
+
+| Mode | Without a card |
+|---|---|
+| Manual (default) | nothing |
+| Aceptar ediciones | edits inside the task's copy |
+| Automático | edits, commands that are not risky nor reach outside the copy, and tools that stay in the copy or in Hedy |
+
+- **The floor answers first and no mode moves it.** Blocked files (§40), `.git`, anything
+  outside the copy, also through a link, are denied before the mode is looked at; the agents'
+  own settings (`.claude`, `.mcp.json`…) and an ACP move or delete always keep their card
+  (`unattended_writes`). Rule 3 is untouched.
+- **Only with a copy of its own.** The mode acts in tasks with a worktree («Cambiar código»).
+  A Claude question works in the real folder: its commands keep their cards whatever the mode
+  (its documents already go to its own folder, §39).
+- **Commands in Automático** (`permissions::command_needs_card`, best effort like every shell
+  check) keep their card when they:
+  - name a path outside the copy (`~`, `$HOME`/`${HOME}`, `..` out of it, a home folder
+    anywhere in a word; the system's folders, `/tmp` and the standard streams are fine), or
+    leave it with a bare `cd`;
+  - name `.git` (in a worktree it is a pointer to the real repository), the agents' own
+    settings (a `.claude/settings.json` written by the shell would make Claude stop asking
+    Hedy), or a dependency folder shared with the real checkout (`node_modules` is a link);
+  - run something that reaches past the copy: the network or other machines (`curl`, `ssh`,
+    `gh`, `docker`…), a `publish`, or a `git` subcommand on what worktrees share with the real
+    repository (`push`, `remote`, `config`, `stash`, `update-ref`, `reflog`, `gc`, and
+    `branch`/`tag` with `-d`/`-D`/`-f`/`-m`). Only the subcommand counts (`git add config` is
+    fine).
+
+  A variable or a script can still reach further: the copy and the review before accepting are
+  the safety net, so there is no "bypass" mode. `npm install` still writes into the shared
+  `node_modules` (as in manual mode once approved).
+- **Other tools in Automático** go only when they stay in the copy or in Hedy: reading and
+  searching, `TodoWrite`, subagents (`Task`, whose own tools ask again) and Hedy's own MCP
+  servers (memory, code map). An MCP tool of the account (mail, chat, GitHub), the web or an
+  ACP agent's "other" tool keeps its card.
+- **Changing the mode** answers the cards already waiting that the new mode lets through.
+- **Plans still wait.** «Enséñame el plan primero» is a separate switch; a plan always waits
+  for the user, in any mode (as Claude Code's plan mode). To go straight to the work, turn it
+  off. (The plan said Automático would approve plans; that would make the switch pointless.)
+- **How it answers.** Claude stays in its `default` permission mode, so every edit and command
+  still reaches Hedy, which answers at once (`PermissionResolved` with `automatic` and the
+  mode's name). Codex and the ACP agents and the API agent ask Hedy the same way.
+- **Verified for real** (Claude Code, haiku, personal account): `smoke_task -- haiku auto` ran
+  a whole task, a file and `ls`, with no card, and accepted it.
+

@@ -82,6 +82,18 @@ impl Hedy {
         Ok(project)
     }
 
+    /// The permission mode the project's new tasks start with.
+    pub fn set_project_permission_mode(
+        &self,
+        path: &Path,
+        mode: crate::domain::PermissionMode,
+    ) -> AppResult<Project> {
+        let mut project = self.project_at(path)?;
+        project.permission_mode = mode;
+        self.store.save_project(&project)?;
+        Ok(project)
+    }
+
     /// The project registered exactly at `path`.
     pub fn project_at(&self, path: &Path) -> AppResult<Project> {
         let path = self.fs.canonicalize(path)?;
@@ -316,6 +328,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: None,
                 plan_first: true,
+                permissions: None,
             })
             .unwrap();
         assert_eq!(f.git.worktrees().len(), 1);

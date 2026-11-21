@@ -1359,6 +1359,7 @@ fn seed_tasks(env: &Env, repo: &Path) {
         model: Some("opus".into()),
         workspace: None,
         scratch: None,
+        permissions: Default::default(),
         session_id: None,
         status,
         created_at: now - ago,

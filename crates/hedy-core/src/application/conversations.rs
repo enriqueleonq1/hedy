@@ -94,6 +94,7 @@ impl Hedy {
             model: first.model,
             workspace: None,
             scratch: None,
+            permissions: Default::default(),
             session_id: None,
             status: TaskStatus::Running,
             created_at: now / 1000,
@@ -416,6 +417,7 @@ mod tests {
                 mode: TaskMode::Ask,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
             .unwrap();
         assert!(matches!(

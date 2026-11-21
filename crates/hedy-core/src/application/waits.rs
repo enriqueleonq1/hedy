@@ -251,6 +251,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
             .unwrap();
         f.agents.emit(AgentEvent::SessionStarted {

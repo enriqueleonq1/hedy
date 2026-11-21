@@ -698,6 +698,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: Some("sonnet".into()),
                 plan_first: false,
+                permissions: None,
             })
             .unwrap()
     }
@@ -1038,6 +1039,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
             .unwrap();
         assert_eq!(

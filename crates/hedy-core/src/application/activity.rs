@@ -104,6 +104,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: Some("opus".into()),
                 plan_first,
+                permissions: None,
             })
             .unwrap()
     }

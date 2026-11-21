@@ -1743,6 +1743,7 @@ fn start_task(member: &Member) -> crate::application::ports::AgentRequest {
             mode: crate::domain::TaskMode::Project,
             model: None,
             plan_first: false,
+            permissions: None,
         })
         .unwrap();
     member.f.agents.last_request()

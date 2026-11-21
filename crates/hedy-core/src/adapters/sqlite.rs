@@ -11,7 +11,8 @@ use crate::application::ports::{
 use crate::domain::recall::NoteUse;
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Color, ConfigFolder, Credentials, Note, NoteStatus,
-    PlanUsage, Project, Skill, SkillStatus, Task, TaskId, UsageProblem, UsageSample,
+    PermissionMode, PlanUsage, Project, Skill, SkillStatus, Task, TaskId, UsageProblem,
+    UsageSample,
 };
 use crate::tr;
 
@@ -295,6 +296,10 @@ const MIGRATIONS: &[&str] = &[
     -- Files the AI does not read in the project (JSON list; NULL: none).
     ALTER TABLE projects ADD COLUMN blocked_files TEXT;
 "#,
+    r#"
+    -- The permission mode new tasks start with (NULL: manual).
+    ALTER TABLE projects ADD COLUMN permission_mode TEXT;
+"#,
 ];
 
 mod commands;
@@ -472,9 +477,15 @@ fn project_from_row(row: &Row) -> rusqlite::Result<Project> {
         .transpose()
         .map_err(invalid(8))?
         .unwrap_or_default();
+    let permission_mode = row
+        .get::<_, Option<String>>(9)?
+        .as_deref()
+        .and_then(PermissionMode::parse)
+        .unwrap_or_default();
     Ok(Project {
         client: row.get(7)?,
         blocked_files,
+        permission_mode,
         path: PathBuf::from(row.get::<_, String>(0)?),
         name: row.get(1)?,
         account,
@@ -489,7 +500,8 @@ impl ProjectRepository for SqliteStore {
     fn list_projects(&self) -> PortResult<Vec<Project>> {
         self.with(|c| {
             c.prepare(
-                "SELECT path, name, account_id, protected, color, phases, memory_off, client, blocked_files
+                "SELECT path, name, account_id, protected, color, phases, memory_off, client, blocked_files,
+                    permission_mode
                  FROM projects ORDER BY name",
             )?
             .query_map([], project_from_row)?
@@ -512,13 +524,15 @@ impl ProjectRepository for SqliteStore {
             .map_err(json_error)?;
         self.with(|c| {
             c.execute(
-                "INSERT INTO projects (path, name, account_id, protected, color, phases, memory_off, client, blocked_files)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                "INSERT INTO projects (path, name, account_id, protected, color, phases, memory_off, client, blocked_files,
+                    permission_mode)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                  ON CONFLICT (path) DO UPDATE SET
                     name = excluded.name, account_id = excluded.account_id,
                     protected = excluded.protected, color = excluded.color,
                     phases = excluded.phases, memory_off = excluded.memory_off,
-                    client = excluded.client, blocked_files = excluded.blocked_files",
+                    client = excluded.client, blocked_files = excluded.blocked_files,
+                    permission_mode = excluded.permission_mode",
                 params![
                     project.path.to_string_lossy(),
                     project.name,
@@ -529,6 +543,8 @@ impl ProjectRepository for SqliteStore {
                     memory_off,
                     project.client,
                     blocked_files,
+                    (project.permission_mode != PermissionMode::Manual)
+                        .then(|| project.permission_mode.as_str()),
                 ],
             )
             .map(drop)
@@ -1307,6 +1323,7 @@ mod tests {
                 },
             )]),
             blocked_files: crate::domain::permissions::BlockedFiles::new([".env", "*.pem"]),
+            permission_mode: PermissionMode::AcceptEdits,
             ..Project::new("/code/tienda".into())
         };
         store.save_project(&project).unwrap();
@@ -1354,6 +1371,7 @@ mod tests {
             model: None,
             workspace: None,
             scratch: None,
+            permissions: Default::default(),
             session_id: None,
             status,
             created_at: at,
@@ -1402,6 +1420,7 @@ mod tests {
             model: None,
             workspace: None,
             scratch: None,
+            permissions: Default::default(),
             session_id: None,
             status: TaskStatus::Failed,
             created_at: 10,
@@ -1463,6 +1482,7 @@ mod tests {
             model: None,
             workspace: None,
             scratch: None,
+            permissions: Default::default(),
             session_id: None,
             status: crate::domain::TaskStatus::Review,
             created_at: 10,
@@ -1511,6 +1531,7 @@ mod tests {
             model: None,
             workspace: None,
             scratch: None,
+            permissions: Default::default(),
             session_id: None,
             status: crate::domain::TaskStatus::Review,
             created_at,
@@ -1570,6 +1591,7 @@ mod tests {
                 base_commit: "abc".into(),
             }),
             scratch: None,
+            permissions: Default::default(),
             session_id: None,
             status: TaskStatus::Running,
             created_at: at,

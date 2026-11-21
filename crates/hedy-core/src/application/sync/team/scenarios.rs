@@ -152,6 +152,7 @@ impl RealPc {
                 mode: crate::domain::TaskMode::Project,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
             .unwrap();
         self.f

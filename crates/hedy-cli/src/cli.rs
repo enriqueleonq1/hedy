@@ -243,6 +243,22 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             tr!("Quita el cliente", "Remove the client"),
         ),
         (
+            "permissions",
+            "",
+            tr!(
+                "Qué hacen sin preguntar las tareas nuevas del proyecto actual (sin nada: el modo de ahora)",
+                "What the current project's new tasks do without asking (with nothing: the current mode)"
+            ),
+        ),
+        (
+            "permissions",
+            "mode",
+            tr!(
+                "manual: todo pregunta · edits: las ediciones van solas · auto: también los comandos, salvo los arriesgados",
+                "manual: everything asks · edits: edits go through · auto: commands too, except risky ones"
+            ),
+        ),
+        (
             "block",
             "",
             tr!(
@@ -1739,6 +1755,11 @@ pub enum Command {
         clear: bool,
     },
 
+    Permissions {
+        #[arg(value_parser = ["manual", "edits", "auto"])]
+        mode: Option<String>,
+    },
+
     Block {
         patterns: Vec<String>,
         #[arg(long, requires = "patterns", conflicts_with_all = ["usual", "clear"])]
@@ -2299,6 +2320,9 @@ mod tests {
         assert!(parse(&["hedy", "client", "--clear"]).is_ok());
         assert!(parse(&["hedy", "client"]).is_err());
         assert!(parse(&["hedy", "block"]).is_ok());
+        assert!(parse(&["hedy", "permissions"]).is_ok());
+        assert!(parse(&["hedy", "permissions", "auto"]).is_ok());
+        assert!(parse(&["hedy", "permissions", "bypass"]).is_err());
         assert!(parse(&["hedy", "block", ".env", "*.pem"]).is_ok());
         assert!(parse(&["hedy", "block", "--usual"]).is_ok());
         assert!(parse(&["hedy", "block", "--remove"]).is_err());

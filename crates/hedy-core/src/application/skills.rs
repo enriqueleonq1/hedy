@@ -885,6 +885,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
             .unwrap()
             .workspace
@@ -1175,6 +1176,7 @@ mod tests {
                 mode: TaskMode::Ask,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
             .unwrap();
         let asked = plugin_of(&f);

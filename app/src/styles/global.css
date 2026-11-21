@@ -2507,6 +2507,15 @@ a.link-button { display: inline-flex; align-items: center; text-decoration: none
 .end-card .actions { margin-top: 6px; }
 .outputs { display: grid; gap: 2px; margin-top: 4px; }
 .blocked-files { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* The task's permission mode when it is not manual, next to its status. */
+.mode-tag {
+  flex: none;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
 .blocked-files__row {
   display: inline-flex;
   align-items: center;

@@ -39,6 +39,8 @@ export interface Project {
   client: string | null;
   /** Files the AI does not read here (patterns on a name); empty: none, as in Claude Code. */
   blockedFiles: string[];
+  /** The permission mode its new tasks start with. */
+  permissionMode: PermissionMode;
 }
 
 /**
@@ -451,6 +453,13 @@ export interface PlanState {
 // ---------------------------------------------------------------- tasks
 
 export type TaskMode = "project" | "ask" | "research";
+
+/**
+ * What the agent does without asking in a task that changes files, as in
+ * Claude Code: everything asks, edits go through, or commands too (except
+ * risky ones or ones outside the copy).
+ */
+export type PermissionMode = "manual" | "acceptEdits" | "auto";
 export type TaskStatus = "running" | "waitingApproval" | "review" | "accepted" | "discarded" | "failed";
 
 export interface Workspace {
@@ -492,6 +501,8 @@ export interface Task {
   ship?: Shipment | null;
   /** The conversation this task continues: its prompt opens with `origin.context`. */
   origin?: TaskOrigin | null;
+  /** What the agent does without asking ("manual" when missing). */
+  permissions?: PermissionMode;
 }
 
 // ------------------------------------------------- carrying a conversation
@@ -684,6 +695,8 @@ export interface NewTaskInput {
   mode: TaskMode;
   model: string | null;
   planFirst: boolean;
+  /** What the agent does without asking; missing: the project's default. */
+  permissions?: PermissionMode;
   images?: ImageInput[];
   /** A conversation carried into the task: its context opens the prompt. */
   carry?: CarryInput;

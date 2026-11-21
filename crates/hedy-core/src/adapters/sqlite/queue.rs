@@ -119,6 +119,7 @@ mod tests {
                 model: None,
                 workspace: None,
                 scratch: None,
+                permissions: Default::default(),
                 session_id: None,
                 status: TaskStatus::Running,
                 created_at: 1,

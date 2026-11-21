@@ -194,6 +194,7 @@ impl Hedy {
                     mode: TaskMode::Project,
                     model: model.map(str::to_owned),
                     plan_first: false,
+                    permissions: None,
                 };
                 match self.start_task_for_trial(request, run) {
                     Ok(task) => started.push(task),

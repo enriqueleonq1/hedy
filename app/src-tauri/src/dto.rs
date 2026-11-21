@@ -344,6 +344,9 @@ pub struct NewTaskInput {
     pub mode: TaskMode,
     pub model: Option<String>,
     pub plan_first: bool,
+    /// What the agent does without asking; missing: the project's default.
+    #[serde(default)]
+    pub permissions: Option<hedy_core::domain::PermissionMode>,
     #[serde(default)]
     pub images: Vec<ImageInput>,
     /// A conversation carried into the task ("Llevar a un proyecto").
@@ -477,6 +480,8 @@ pub struct ProjectDto {
     pub client: Option<String>,
     /// Files the AI does not read here (empty: none, as in Claude Code).
     pub blocked_files: Vec<String>,
+    /// The permission mode its new tasks start with.
+    pub permission_mode: hedy_core::domain::PermissionMode,
 }
 
 /// Tokens and estimated cost.
@@ -787,6 +792,7 @@ impl ProjectDto {
             phases: project.phases.clone(),
             client: project.client.clone(),
             blocked_files: project.blocked_files.patterns().to_vec(),
+            permission_mode: project.permission_mode,
         }
     }
 }

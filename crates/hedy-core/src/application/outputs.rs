@@ -125,6 +125,7 @@ mod tests {
                 mode: TaskMode::Research,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
             .unwrap()
             .id
@@ -190,6 +191,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
             .unwrap();
         assert_eq!(f.agents.last_request().output, None);

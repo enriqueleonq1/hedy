@@ -23,6 +23,8 @@ pub struct Project {
     /// Files the AI does not read here ("Archivos que la IA no lee"); empty
     /// by default, as in Claude Code.
     pub blocked_files: super::permissions::BlockedFiles,
+    /// The permission mode its new tasks start with.
+    pub permission_mode: super::task::PermissionMode,
 }
 
 impl Project {
@@ -41,6 +43,7 @@ impl Project {
             memory_off: BTreeSet::new(),
             client: None,
             blocked_files: Default::default(),
+            permission_mode: Default::default(),
         }
     }
 

@@ -129,6 +129,7 @@ mod tests {
                     mode: TaskMode::Project,
                     model: None,
                     plan_first: false,
+                    permissions: None,
                 })
                 .unwrap()
         };

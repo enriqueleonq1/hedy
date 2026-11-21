@@ -652,7 +652,32 @@ describe("Composer", () => {
       mode: "project",
       model: "sonnet",
       planFirst: false,
+      permissions: "manual",
     });
+  });
+
+  it("starts a task with the permission mode picked, and changes an open task's", async () => {
+    const { api, user } = setup();
+    const start = vi.spyOn(api, "startTask");
+    const change = vi.spyOn(api, "setTaskPermissions");
+    await openProject(user, /^hedy/);
+    const composer = await screen.findByLabelText("Pídele algo a hedy");
+    const permissions = screen.getByRole("combobox", { name: "Permisos" });
+    expect(permissions).toHaveTextContent("Manual");
+    await user.click(permissions);
+    expect(optionLabels()).toEqual(["Manual", "Aceptar ediciones", "Automático"]);
+    expect(screen.getByRole("option", { name: "Automático" })).toHaveAccessibleDescription(
+      /dentro de su copia; pregunta por lo arriesgado o lo de fuera/,
+    );
+    await user.click(screen.getByRole("option", { name: "Automático" }));
+    await user.type(composer, "Arregla el login{Enter}");
+    await waitFor(() => expect(start).toHaveBeenCalledWith(expect.objectContaining({ permissions: "auto" })));
+    const created = await start.mock.results[0]!.value;
+    expect(created.permissions).toBe("auto");
+    // The open task says so next to its status, and changes it from the same chip.
+    expect(await screen.findByText("Automático", { selector: ".mode-tag" })).toBeInTheDocument();
+    await chooseOption(user, screen.getByRole("combobox", { name: "Permisos" }), "Aceptar ediciones");
+    expect(change).toHaveBeenCalledWith(created.id, "acceptEdits");
   });
 
   it("asks with Enter in a conversation, on the account and model of its chips", async () => {

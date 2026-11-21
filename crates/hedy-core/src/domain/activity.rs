@@ -265,6 +265,7 @@ mod tests {
             model: None,
             workspace: None,
             scratch: None,
+            permissions: Default::default(),
             session_id: None,
             status,
             created_at: 0,

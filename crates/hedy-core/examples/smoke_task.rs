@@ -10,6 +10,7 @@
 //! cargo run -p hedy-core --example smoke_task -- haiku bash  # not even via `cat .env`
 //! cargo run -p hedy-core --example smoke_task -- haiku free  # an empty list: .env is read
 //! cargo run -p hedy-core --example smoke_task -- haiku doc   # a question's document, outside
+//! cargo run -p hedy-core --example smoke_task -- haiku auto  # automatic mode: no card at all
 //! ```
 //!
 //! `HEDY_SMOKE_ACCOUNT=<folder>` uses that Claude account folder (one already
@@ -22,7 +23,7 @@ use std::time::Duration;
 use hedy_core::adapters::{self, HedyPaths, hook};
 use hedy_core::application::ports::TaskEvents;
 use hedy_core::application::{NewAccount, NewTask};
-use hedy_core::domain::{AgentEvent, Decision, Provider, Task, TaskId, TaskMode};
+use hedy_core::domain::{AgentEvent, Decision, PermissionMode, Provider, Task, TaskId, TaskMode};
 
 struct Forward(Mutex<mpsc::Sender<AgentEvent>>);
 
@@ -56,6 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let env_check = matches!(check.as_deref(), Some("env" | "bash" | "free"));
     let env_free = check.as_deref() == Some("free");
     let doc_check = check.as_deref() == Some("doc");
+    let auto_check = check.as_deref() == Some("auto");
     let tmp = std::env::temp_dir().join(format!("hedy-smoke-{}", std::process::id()));
     let repo = tmp.join("demo");
     std::fs::create_dir_all(&repo)?;
@@ -113,6 +115,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mode: TaskMode::Ask,
             model: Some(model),
             plan_first: false,
+            permissions: None,
+            images: Vec::new(),
+        }
+    } else if auto_check {
+        NewTask {
+            project: repo.clone(),
+            prompt: "Crea un archivo hola.txt cuyo contenido sea exactamente: hola. Luego ejecuta `ls` con la herramienta Bash. No hagas nada más."
+                .into(),
+            mode: TaskMode::Project,
+            model: Some(model),
+            plan_first: false,
+            permissions: Some(PermissionMode::Auto),
             images: Vec::new(),
         }
     } else if env_check {
@@ -127,6 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mode: TaskMode::Ask,
             model: Some(model),
             plan_first: false,
+            permissions: None,
             images: Vec::new(),
         }
     } else {
@@ -138,6 +153,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mode: TaskMode::Project,
             model: Some(model),
             plan_first: true,
+            permissions: None,
             images: Vec::new(),
         }
     })?;
@@ -154,6 +170,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 request_id: Some(id),
                 ..
             } => hedy.answer_plan(&task.id, &id, true, None)?,
+            AgentEvent::PermissionRequest {
+                request_id,
+                summary,
+                ..
+            } if auto_check => {
+                assert!(
+                    !hedy.is_permission_pending(&task.id, &request_id),
+                    "automatic mode showed a card: {summary}"
+                );
+            }
             AgentEvent::PermissionRequest { request_id, .. } => {
                 // Rules may have answered already; only open requests need us.
                 let _ = hedy.answer_permission(&task.id, &request_id, Decision::Allow);

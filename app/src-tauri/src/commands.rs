@@ -256,6 +256,7 @@ pub async fn start_task(state: State<'_, AppState>, input: NewTaskInput) -> Comm
             mode: input.mode,
             model: input.model.filter(|m| !m.is_empty()),
             plan_first: input.plan_first,
+            permissions: input.permissions,
             images,
         };
         let task = match input.carry {
@@ -843,6 +844,32 @@ pub async fn set_project_blocked_files(
 ) -> CommandResult<()> {
     blocking(&state, move |h| {
         h.set_project_blocked_files(&path, &patterns).map(drop)
+    })
+    .await
+}
+
+/// A task's permission mode, from the composer.
+#[tauri::command]
+pub async fn set_task_permissions(
+    state: State<'_, AppState>,
+    id: String,
+    mode: hedy_core::domain::PermissionMode,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.set_task_permissions(&task_id(id), mode).map(drop)
+    })
+    .await
+}
+
+/// The permission mode a project's new tasks start with.
+#[tauri::command]
+pub async fn set_project_permission_mode(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    mode: hedy_core::domain::PermissionMode,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.set_project_permission_mode(&path, mode).map(drop)
     })
     .await
 }

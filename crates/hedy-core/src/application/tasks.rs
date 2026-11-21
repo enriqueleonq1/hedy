@@ -21,15 +21,33 @@ use crate::domain::skill_trial::TrialRef;
 use crate::domain::task::{SHARED_DEPENDENCY_DIRS, branch_name, title_from_prompt};
 use crate::domain::{
     Account, AccountId, AgentEvent, Attachment, Commit, Credentials, Decision, FileDiff,
-    HoldReason, LaunchPurpose, LaunchSpec, LimitLevel, Notice, NoticeKind, Phase, Project,
-    PromptImage, Provider, Stage, Task, TaskId, TaskMode, TaskStatus, UsageSample, Workspace,
-    policy,
+    HoldReason, LaunchPurpose, LaunchSpec, LimitLevel, Notice, NoticeKind, PermissionMode, Phase,
+    Project, PromptImage, Provider, Stage, Task, TaskId, TaskMode, TaskStatus, UsageSample,
+    Workspace, policy,
 };
 use crate::experiments::{self, Experiment};
 use crate::tr;
 
 /// Worktrees live inside the repository, excluded locally from git.
 const WORKTREES_DIR: &str = ".hedy/worktrees";
+/// Tools the automatic mode lets through besides edits and commands: they
+/// read, plan or start a subagent whose own tools ask again.
+const AUTO_TOOLS: &[&str] = &[
+    "Read",
+    "Glob",
+    "Grep",
+    "LS",
+    "NotebookRead",
+    "TodoWrite",
+    "Task",
+    "BashOutput",
+    "KillShell",
+    "ToolSearch",
+];
+/// Hedy's own MCP servers (memory and code map): they read the project and
+/// only propose notes.
+const HEDY_MCP_PREFIXES: &[&str] = &["mcp__hedy-memory__", "mcp__codebase-memory__"];
+
 /// A `.env` bigger than this is not copied into a task's copy: not settings.
 const MAX_SHARED_ENV_BYTES: usize = 1024 * 1024;
 
@@ -43,6 +61,8 @@ pub struct NewTask {
     pub model: Option<String>,
     /// Propose a plan and wait for approval before changing anything.
     pub plan_first: bool,
+    /// What the agent does without asking; `None`: the project's default.
+    pub permissions: Option<PermissionMode>,
     /// Images attached to the request.
     pub images: Vec<NewImage>,
 }
@@ -249,6 +269,7 @@ impl Hedy {
             model: first.model,
             workspace,
             scratch: None,
+            permissions: request.permissions.unwrap_or(project.permission_mode),
             session_id: None,
             status: TaskStatus::Running,
             created_at: now / 1000,
@@ -364,6 +385,86 @@ impl Hedy {
         task.scratch = None;
         self.store.save_task(task)?;
         Ok(())
+    }
+
+    /// Why the task's permission mode lets a request through with no card
+    /// (its name, for the history), when it does. Only in a task with a copy
+    /// of its own, after Hedy's floor (protected files, `.git`, outside the
+    /// copy) already answered: a write must land in the copy, also after
+    /// links, and never in the agents' own settings; a command must not name
+    /// a path outside the copy nor do something risky.
+    fn allowed_by_mode(
+        &self,
+        task: &Task,
+        tool: &str,
+        input: &Value,
+        dir: &Path,
+    ) -> Option<String> {
+        let mode = task.permissions;
+        if mode == PermissionMode::Manual || task.workspace.is_none() {
+            return None;
+        }
+        let label = match mode {
+            PermissionMode::Auto => tr!("Modo automático", "Automatic mode"),
+            _ => tr!("Aceptar ediciones", "Accept edits"),
+        };
+        if permissions::is_write_tool(tool) {
+            let paths = permissions::unattended_writes(tool, input, dir)?;
+            return paths
+                .iter()
+                .all(|p| self.really_inside(p, dir))
+                .then_some(label);
+        }
+        if mode != PermissionMode::Auto {
+            return None;
+        }
+        match tool {
+            "Bash" => {
+                let command = input["command"].as_str()?;
+                (!permissions::command_needs_card(command, dir)).then_some(label)
+            }
+            // Only what stays in the copy or in Hedy: an MCP tool of the
+            // account (mail, chat, GitHub), the web or an ACP agent's "other"
+            // tool keeps its card.
+            _ if AUTO_TOOLS.contains(&tool)
+                || HEDY_MCP_PREFIXES.iter().any(|p| tool.starts_with(p)) =>
+            {
+                Some(label)
+            }
+            _ => None,
+        }
+    }
+
+    /// Hedy's own answer to a task's change of mode (from the composer).
+    pub fn set_task_permissions(&self, id: &TaskId, mode: PermissionMode) -> AppResult<Task> {
+        let mut task = self.task(id)?;
+        if task.status.is_closed() {
+            return Err(AppError::TaskClosed(id.clone()));
+        }
+        task.permissions = mode;
+        self.store.save_task(&task)?;
+        self.events.task_updated(&task);
+        // Cards already waiting that the new mode lets through are answered.
+        let pending: Vec<(String, String, Value)> = self
+            .live
+            .lock()
+            .unwrap()
+            .get(id)
+            .map(|running| {
+                running
+                    .pending
+                    .iter()
+                    .map(|(request, (tool, input))| (request.clone(), tool.clone(), input.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let dir = task.work_dir();
+        for (request, tool, input) in pending {
+            if self.allowed_by_mode(&task, &tool, &input, &dir).is_some() {
+                self.answer_permission(id, &request, Decision::Allow)?;
+            }
+        }
+        Ok(task)
     }
 
     /// A read-only task's write: allowed with no card when every path (as
@@ -909,6 +1010,16 @@ impl Hedy {
                     }
                     verdict => verdict,
                 };
+                // What the task's mode lets through without a card.
+                let by_mode = match verdict {
+                    Verdict::Ask => self.allowed_by_mode(&task, tool, input, &dir),
+                    _ => None,
+                };
+                let verdict = if by_mode.is_some() {
+                    Verdict::Allow
+                } else {
+                    verdict
+                };
                 let resolved = |decision, reason| AgentEvent::PermissionResolved {
                     request_id: request_id.clone(),
                     decision,
@@ -922,6 +1033,8 @@ impl Hedy {
                         self.record(id, event.clone())?;
                         let reason = if output_write {
                             tr!("En la carpeta de la tarea", "In the task's folder")
+                        } else if let Some(mode) = by_mode {
+                            mode
                         } else {
                             "Permitido en este chat".into()
                         };
@@ -1531,6 +1644,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: Some("opus".into()),
                 plan_first,
+                permissions: None,
             })
             .unwrap()
     }
@@ -1856,6 +1970,7 @@ mod tests {
                 mode: TaskMode::Ask,
                 model: None,
                 plan_first: true,
+                permissions: None,
             })
             .unwrap();
         assert!(task.workspace.is_none());
@@ -1901,6 +2016,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: None,
                 plan_first: true,
+                permissions: None,
             })
             .unwrap()
     }
@@ -2252,6 +2368,7 @@ mod tests {
                 mode: TaskMode::Ask,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
             .unwrap();
         f.agents.emit(AgentEvent::Usage(UsageSample {
@@ -2276,6 +2393,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
         };
         assert!(matches!(start(), Err(AppError::MissingApiKey(_))));
@@ -2335,6 +2453,7 @@ mod tests {
                     mode: TaskMode::Ask,
                     model: None,
                     plan_first: false,
+                    permissions: None,
                 })
                 .unwrap();
             let copy = dir.join(".hedy/worktrees").join(task.id.as_str());
@@ -2374,6 +2493,7 @@ mod tests {
                 mode: TaskMode::Ask,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
             .unwrap();
         let copy = dir.join(".hedy/worktrees").join(task.id.as_str());
@@ -2589,6 +2709,160 @@ mod tests {
         assert_eq!(
             f.agents.calls().last(),
             Some(&AgentCall::Send("y más".into()))
+        );
+    }
+
+    #[test]
+    fn permission_modes_let_through_what_they_say_and_never_the_floor() {
+        let f = Fixture::new();
+        let task = new_task(&f, "Hola", false);
+        assert_eq!(
+            task.permissions,
+            PermissionMode::Manual,
+            "the project's default"
+        );
+        let ws = task.workspace.clone().unwrap().worktree;
+        f.fs.add_existing(ws.to_str().unwrap());
+        let file = |name: &str| ws.join(name).to_string_lossy().into_owned();
+        let ask = |mode: PermissionMode| {
+            f.hedy.set_task_permissions(&task.id, mode).unwrap();
+            let before = f.agents.calls().len();
+            let requests = [
+                ("w1", "Write", json!({"file_path": file("src/app.py")})),
+                ("w2", "Edit", json!({"file_path": file(".git/config")})),
+                (
+                    "w3",
+                    "Write",
+                    json!({"file_path": file(".claude/settings.json")}),
+                ),
+                ("w4", "Write", json!({"file_path": "/home/e/fuera.txt"})),
+                ("b1", "Bash", json!({"command": "npm test"})),
+                ("b2", "Bash", json!({"command": "git push origin main"})),
+                ("b3", "Bash", json!({"command": "rm -rf ~/proyectos"})),
+            ];
+            for (id, tool, input) in requests {
+                f.agents.emit(permission(id, tool, input));
+            }
+            f.agents.calls()[before..].to_vec()
+        };
+        let answered = |calls: &[AgentCall], id: &str| {
+            calls.iter().find_map(|c| match c {
+                AgentCall::Answer(r, allow) if r == id => Some(*allow),
+                _ => None,
+            })
+        };
+        // Manual: only the floor answers (denied), everything else waits.
+        let calls = ask(PermissionMode::Manual);
+        assert_eq!(answered(&calls, "w1"), None);
+        assert_eq!(answered(&calls, "w2"), Some(false));
+        assert_eq!(answered(&calls, "w4"), Some(false));
+        assert_eq!(answered(&calls, "b1"), None);
+        // Accept edits: the edit in the copy goes; settings and commands wait.
+        let calls = ask(PermissionMode::AcceptEdits);
+        assert_eq!(answered(&calls, "w1"), Some(true));
+        assert_eq!(
+            answered(&calls, "w3"),
+            None,
+            "the agents' settings always ask"
+        );
+        assert_eq!(answered(&calls, "b1"), None);
+        // Automatic: commands too, but not a risky one or one outside.
+        let calls = ask(PermissionMode::Auto);
+        assert_eq!(answered(&calls, "w1"), Some(true));
+        assert_eq!(answered(&calls, "w2"), Some(false), ".git stays denied");
+        assert_eq!(answered(&calls, "w3"), None);
+        assert_eq!(answered(&calls, "w4"), Some(false));
+        assert_eq!(answered(&calls, "b1"), Some(true));
+        assert_eq!(answered(&calls, "b2"), None);
+        assert_eq!(answered(&calls, "b3"), None);
+        let events = f.hedy.task_events(&task.id).unwrap();
+        assert!(events.iter().any(|e| matches!(e,
+            AgentEvent::PermissionResolved { automatic: true, reason: Some(r), .. }
+                if r == "Modo automático" || r == "Automatic mode")));
+    }
+
+    #[test]
+    fn a_question_in_the_real_folder_keeps_its_cards_whatever_the_mode() {
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        let dir = f.dir("/code/agenda");
+        f.hedy.use_account(&dir, "personal", None).unwrap();
+        f.hedy
+            .set_project_permission_mode(&dir, PermissionMode::Auto)
+            .unwrap();
+        let task = f
+            .hedy
+            .start_task(NewTask {
+                images: Vec::new(),
+                project: dir.clone(),
+                prompt: "¿Qué hace esto?".into(),
+                mode: TaskMode::Ask,
+                model: None,
+                plan_first: false,
+                permissions: None,
+            })
+            .unwrap();
+        assert_eq!(
+            task.permissions,
+            PermissionMode::Auto,
+            "the project's default"
+        );
+        f.agents
+            .emit(permission("b1", "Bash", json!({"command": "npm test"})));
+        assert!(f.agents.calls().is_empty(), "no copy: the card stays");
+        // A task can start with another mode than the project's.
+        let other = f
+            .hedy
+            .start_task(NewTask {
+                images: Vec::new(),
+                project: dir,
+                prompt: "Cambia algo".into(),
+                mode: TaskMode::Project,
+                model: None,
+                plan_first: false,
+                permissions: Some(PermissionMode::Manual),
+            })
+            .unwrap();
+        assert_eq!(other.permissions, PermissionMode::Manual);
+    }
+
+    #[test]
+    fn automatic_mode_keeps_cards_for_outside_tools_and_answers_waiting_ones() {
+        let f = Fixture::new();
+        let task = new_task(&f, "Hola", false);
+        let ws = task.workspace.clone().unwrap().worktree;
+        f.fs.add_existing(ws.to_str().unwrap());
+        // Waiting in manual mode.
+        let edit = ws.join("src/app.py").to_string_lossy().into_owned();
+        f.agents
+            .emit(permission("w1", "Write", json!({"file_path": edit})));
+        f.agents
+            .emit(permission("x1", "mcp__gmail__send", json!({"to": "a@b.c"})));
+        assert!(f.agents.calls().is_empty());
+        // Switching answers the edit, not the mail.
+        f.hedy
+            .set_task_permissions(&task.id, PermissionMode::Auto)
+            .unwrap();
+        assert_eq!(f.agents.calls(), vec![AgentCall::Answer("w1".into(), true)]);
+        for (id, tool) in [
+            ("x2", "WebFetch"),
+            ("x3", "Tool"),
+            ("x4", "mcp__slack__post"),
+        ] {
+            f.agents.emit(permission(id, tool, json!({})));
+        }
+        f.agents.emit(permission(
+            "m1",
+            "mcp__hedy-memory__memory_search",
+            json!({}),
+        ));
+        f.agents.emit(permission("t1", "TodoWrite", json!({})));
+        assert_eq!(
+            f.agents.calls()[1..],
+            [
+                AgentCall::Answer("m1".into(), true),
+                AgentCall::Answer("t1".into(), true)
+            ]
         );
     }
 }

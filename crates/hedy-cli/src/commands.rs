@@ -10,6 +10,7 @@ use hedy_core::application::{
     PlanUsageState, Proposal, RECENT_HOURS, Setting, SkillFiles, TaskActivity, TemplateScope,
     UsageSummary,
 };
+use hedy_core::domain::PermissionMode;
 use hedy_core::domain::memory::USER_AUTHOR;
 use hedy_core::domain::permissions::BlockedFiles;
 use hedy_core::domain::{
@@ -271,6 +272,51 @@ pub fn status(hedy: &Hedy, dir: &Path) -> Result<()> {
             )
         );
     }
+    Ok(())
+}
+
+/// `hedy permissions`: what the current project's new tasks do without asking.
+pub fn permissions(hedy: &Hedy, dir: &Path, mode: Option<&str>) -> Result<()> {
+    let s = Style::for_stdout();
+    let Some(mut project) = hedy.project_for(dir)? else {
+        bail!(
+            "{}",
+            tr!(
+                "esta carpeta no es un proyecto de Hedy; usa `hedy use <cuenta>` primero",
+                "this folder is not a Hedy project; use `hedy use <account>` first"
+            )
+        );
+    };
+    if let Some(mode) = mode {
+        let mode = match mode {
+            "auto" => PermissionMode::Auto,
+            "edits" => PermissionMode::AcceptEdits,
+            _ => PermissionMode::Manual,
+        };
+        project = hedy.set_project_permission_mode(&project.path, mode)?;
+    }
+    let name = s.bold(&project.name);
+    let what = match project.permission_mode {
+        PermissionMode::Manual => tr!(
+            "manual: cada edición y cada comando piden permiso",
+            "manual: every edit and command asks"
+        ),
+        PermissionMode::AcceptEdits => tr!(
+            "aceptar ediciones: las ediciones van solas, los comandos preguntan",
+            "accept edits: edits go through, commands ask"
+        ),
+        PermissionMode::Auto => tr!(
+            "automático: ediciones y comandos van solos, salvo los arriesgados o los de fuera de la copia",
+            "automatic: edits and commands go through, except risky ones or ones outside the copy"
+        ),
+    };
+    println!(
+        "{}",
+        tr!(
+            "Tareas nuevas de {name}: {what}",
+            "New tasks of {name}: {what}"
+        )
+    );
     Ok(())
 }
 
