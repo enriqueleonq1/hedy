@@ -6,6 +6,39 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-21
+
+### Added
+
+- The orchestrator: a team of AIs on one task, step by step. A project's new **Flujos** tab
+  shows a flow on a canvas, as in n8n, with moving neon lines. Its steps can be roles
+  (architect, programmer, tester, reviewer, security, or your own), your approval, checks
+  (the tests pass, the changes follow your rules, the reviewers approve) and reviews at once.
+  A failed check goes back to an earlier step, at most a few rounds. Hedy's templates (Pipeline
+  clásico, Con bucle de corrección, Doble revisión) are a click away; duplicate one to change
+  it. Problems are shown on their step as you edit, with undo and a list view.
+- Roles share a board (the plan, the test output, the reviewers' verdict) and each gets what
+  it needs: read-only roles get the task's changes in their prompt. Tests run isolated, with
+  no network. A reviewer's verdict is a strict last line, never guessed from free text.
+- A flow task, live: its steps over the timeline (the one at work alive), the round when it
+  went back, each check's result, the board, and a "Tu aprobación" card (Enter approves, E
+  says what to change).
+- A flow can follow a task's end: switch it on in the flow and a project task that ends with
+  changes goes on through it, in its same copy (it spends the roles' tokens).
+- From the terminal: `hedy flow list|show|run|new|edit` (edit in `$EDITOR`, checked on save)
+  and the role library, `hedy roles list|show|new|edit|remove`.
+- With a team: admins share flows and roles (`hedy flow share`, `hedy roles share`, or
+  "Compartir con …" in the app), encrypted like team notes and checked on every PC. A team
+  flow's own test command runs on a PC only once its user allows it there.
+
+### Security
+
+- A model name that would read as one of a CLI's options (`--yolo`) is refused everywhere a
+  task, conversation, flow or handoff starts.
+- A team role can never take the place of one of Hedy's roles, and nothing shared with a team
+  may hide characters.
+- A flow's seat only offers accounts the project may use (protected projects keep theirs).
+
 ## [1.4.0] - 2026-11-20
 
 ### Changed
@@ -223,7 +256,8 @@ The first public release. Linux only for now.
 - `hedy account`, `hedy use`, `hedy run`, `hedy status`, `hedy tasks`, `hedy doctor`,
   `hedy skills` and `hedy template`.
 
-[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/enriqueleonq1/hedy/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/enriqueleonq1/hedy/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/enriqueleonq1/hedy/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/enriqueleonq1/hedy/compare/v1.1.0...v1.2.0
