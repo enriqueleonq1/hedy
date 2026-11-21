@@ -6,6 +6,41 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-20
+
+### Changed
+
+- `.env` works like in Claude Code: the AI reads it unless you say otherwise. Each project has
+  "Archivos que la IA no lee" in its settings (or `hedy block`), empty at first, with
+  "Agregar los de siempre (.env, claves, credenciales)". The list covers every way an agent
+  reads (Claude's own deny rules and Hedy's hook, permission cards, the API agent, `@`
+  mentions, the code views). Task copies get your ignored `.env` files, unless listed, so tests
+  and dev servers work. Hedy still never puts a secret's contents in what it sends an AI on
+  its own (commit messages, rule checks).
+- Asking and researching never create a branch. With Codex, Gemini CLI, Kimi Code or
+  Antigravity a question works in a copy without a branch that is deleted when each turn ends;
+  the branches and copies older questions left behind are cleaned up when the app starts.
+- The whole app was redesigned, simpler and calmer: Inicio as one inbox, a home for each
+  project, one state pill per task, a card at the end of a turn, one Memoria, settings with an
+  index and a sheet per project, Hedy's own neutral themes and the Geist type.
+
+### Added
+
+- Permission modes, as in Claude Code: Manual, Aceptar ediciones and Automático, in the
+  composer's «Permisos» chip, per project in its settings, or with `hedy permissions`. In a
+  task that changes code, Automático runs edits and commands without asking inside the task's
+  copy; risky commands (`sudo`, `curl`, `git push`, a `publish`…), anything outside the copy,
+  `.git`, the agents' own settings and the files the AI does not read keep their card.
+- A question asked for a document or a page writes it in the task's own folder, outside the
+  project, and the chat lists it with «Abrir» and «Guardar en…». Only documents, pages, images
+  and data open from Hedy.
+
+### Security
+
+- A question's writes are kept in its folder by Claude's hook, whatever allow rules the
+  account or the repository's Claude settings have.
+- A project whose settings cannot be read falls back to the usual blocked files, never to none.
+
 ## [1.3.0] - 2026-11-20
 
 ### Security
@@ -188,7 +223,8 @@ The first public release. Linux only for now.
 - `hedy account`, `hedy use`, `hedy run`, `hedy status`, `hedy tasks`, `hedy doctor`,
   `hedy skills` and `hedy template`.
 
-[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/enriqueleonq1/hedy/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/enriqueleonq1/hedy/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/enriqueleonq1/hedy/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/enriqueleonq1/hedy/compare/v1.0.1...v1.1.0
