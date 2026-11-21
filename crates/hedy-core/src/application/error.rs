@@ -48,6 +48,10 @@ pub enum AppError {
     #[error("{}", self.message())]
     NotAnOutput(String),
     #[error("{}", self.message())]
+    FlowNotFound(String),
+    #[error("{}", self.message())]
+    InvalidFlow(Vec<String>),
+    #[error("{}", self.message())]
     InvalidBlockedPattern(String),
     #[error("{}", self.message())]
     OutputNotOpened(String),
@@ -390,6 +394,17 @@ impl AppError {
                 "«{pattern}» no sirve: pon nombres de archivo o patrones de nombre (.env, .env.*, *.pem), sin carpetas y sin que abarquen todo",
                 "«{pattern}» does not work: use file names or name patterns (.env, .env.*, *.pem), without folders and not matching everything"
             ),
+            Self::FlowNotFound(name) => tr!(
+                "no hay un flujo «{name}»; `hedy flow list` muestra los que hay",
+                "there is no flow «{name}»; `hedy flow list` shows the ones there are"
+            ),
+            Self::InvalidFlow(problems) => {
+                let problems = problems.join("; ");
+                tr!(
+                    "el flujo no se puede ejecutar: {problems}",
+                    "the flow cannot run: {problems}"
+                )
+            }
             Self::NotAnOutput(path) => tr!(
                 "«{path}» no es un archivo que escribió la tarea",
                 "«{path}» is not a file the task wrote"

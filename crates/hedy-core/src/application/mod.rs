@@ -15,6 +15,7 @@ mod detect;
 mod doctor;
 mod error;
 mod files;
+mod flows;
 mod graph;
 mod launch;
 mod memory;
@@ -66,6 +67,7 @@ pub use detect::DetectedCli;
 pub use doctor::{Check, CheckArea, CheckLevel, DoctorReport};
 pub use error::{AppError, AppResult, UndoBlocked};
 pub use files::MAX_PROJECT_FILES;
+pub use flows::{FlowEntry, FlowScope, RoleEntry};
 pub use graph::{GraphKind, GraphLink, GraphNode, MemoryGraph};
 pub use launch::{Resolved, RunLimitWarning};
 pub use memory::{

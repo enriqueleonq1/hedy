@@ -1018,6 +1018,38 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             ),
         ),
         (
+            "flow",
+            "",
+            tr!(
+                "Flujos: un equipo de IAs que trabaja en una tarea, paso a paso",
+                "Flows: a team of AIs working on one task, step by step"
+            ),
+        ),
+        (
+            "flow list",
+            "",
+            tr!(
+                "Lista las plantillas de Hedy y los flujos del proyecto actual y globales (por defecto)",
+                "List Hedy's templates and the current project's and global flows (default)"
+            ),
+        ),
+        (
+            "flow show",
+            "",
+            tr!(
+                "Muestra un flujo como texto, por su nombre o su clave",
+                "Show a flow as text, by its name or its key"
+            ),
+        ),
+        (
+            "flow show",
+            "name",
+            tr!(
+                "Nombre o clave del flujo (classic, fix-loop…)",
+                "Flow name or key (classic, fix-loop…)"
+            ),
+        ),
+        (
             "template",
             "",
             tr!(
@@ -1845,6 +1877,11 @@ pub enum Command {
         command: Option<TemplateCommand>,
     },
 
+    Flow {
+        #[command(subcommand)]
+        command: Option<FlowCommand>,
+    },
+
     Sync {
         #[command(subcommand)]
         command: Option<SyncCommand>,
@@ -1974,6 +2011,13 @@ pub enum SkillsCommand {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum FlowCommand {
+    List,
+
+    Show { name: String },
+}
+
+#[derive(Subcommand, Debug, PartialEq, Eq)]
 pub enum TemplateCommand {
     List,
 

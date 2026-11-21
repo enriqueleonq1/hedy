@@ -6,9 +6,9 @@ use std::path::Path;
 use anyhow::{Result, bail};
 use chrono::Timelike;
 use hedy_core::application::{
-    AccountStatus, CheckArea, CheckLevel, DoctorReport, Hedy, NewAccount, NewProject, NewTemplate,
-    PlanUsageState, Proposal, RECENT_HOURS, Setting, SkillFiles, TaskActivity, TemplateScope,
-    UsageSummary,
+    AccountStatus, CheckArea, CheckLevel, DoctorReport, FlowScope, Hedy, NewAccount, NewProject,
+    NewTemplate, PlanUsageState, Proposal, RECENT_HOURS, Setting, SkillFiles, TaskActivity,
+    TemplateScope, UsageSummary,
 };
 use hedy_core::domain::PermissionMode;
 use hedy_core::domain::memory::USER_AUTHOR;
@@ -1873,6 +1873,82 @@ pub fn doctor(hedy: &Hedy) -> Result<bool> {
 }
 
 /// The project of `dir`, or why templates for it cannot be used.
+/// `hedy flow list`: Hedy's templates, then the project's flows and the global ones.
+pub fn flow_list(hedy: &Hedy, dir: &Path) -> Result<()> {
+    let s = Style::for_stdout();
+    let project = hedy.project_for(dir)?;
+    let path = project.as_ref().map(|p| p.path.as_path());
+    let flows = hedy.flows(path)?;
+    println!();
+    for (scope, title) in [
+        (
+            FlowScope::Hedy,
+            tr!("Plantillas de Hedy", "Hedy's templates"),
+        ),
+        (
+            FlowScope::Project,
+            match &project {
+                Some(p) => {
+                    let name = &p.name;
+                    tr!("Del proyecto {name}", "For project {name}")
+                }
+                None => String::new(),
+            },
+        ),
+        (
+            FlowScope::Global,
+            tr!("Para todos los proyectos", "For every project"),
+        ),
+    ] {
+        let here: Vec<_> = flows.iter().filter(|f| f.scope == scope).collect();
+        if here.is_empty() {
+            continue;
+        }
+        println!("{}", s.section(&title));
+        for entry in here {
+            let steps = entry.flow.seats().count();
+            let steps = if steps == 1 {
+                tr!("1 rol", "1 role")
+            } else {
+                tr!("{steps} roles", "{steps} roles")
+            };
+            let key = if scope == FlowScope::Hedy {
+                format!("{} · ", entry.key)
+            } else {
+                String::new()
+            };
+            println!(
+                "  {}  {}",
+                s.bold(&entry.flow.name),
+                s.muted(format!("{key}{steps}"))
+            );
+            if !entry.summary.is_empty() {
+                for line in wrap(&entry.summary, TEMPLATE_WIDTH) {
+                    println!("    {}", s.muted(line));
+                }
+            }
+        }
+        println!();
+    }
+    let line = tr!(
+        "`hedy flow show <nombre>` muestra uno como texto.",
+        "`hedy flow show <name>` shows one as text."
+    );
+    println!("  {}\n", hint(&s, &line));
+    Ok(())
+}
+
+/// `hedy flow show <name>`: the flow as text.
+pub fn flow_show(hedy: &Hedy, dir: &Path, name: &str) -> Result<()> {
+    let project = hedy.project_for(dir)?;
+    let text = hedy.flow_text(project.as_ref().map(|p| p.path.as_path()), name)?;
+    print!("{text}");
+    if !text.ends_with('\n') {
+        println!();
+    }
+    Ok(())
+}
+
 fn template_project(hedy: &Hedy, dir: &Path) -> Result<hedy_core::domain::Project> {
     match hedy.project_for(dir)? {
         Some(project) => Ok(project),

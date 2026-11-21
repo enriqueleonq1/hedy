@@ -22,8 +22,8 @@ use anyhow::Result;
 use hedy_core::adapters::{self, HedyPaths};
 
 use cli::{
-    AccountCommand, Cli, Command, ConfigCommand, MemoryCommand, SkillsCommand, SyncCommand,
-    TeamCommand, TemplateCommand,
+    AccountCommand, Cli, Command, ConfigCommand, FlowCommand, MemoryCommand, SkillsCommand,
+    SyncCommand, TeamCommand, TemplateCommand,
 };
 use style::Style;
 
@@ -256,6 +256,10 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 skill_transfer::check(&hedy, &dir, &name, &reviewer)
             }
             SkillsCommand::Export { names, to } => skill_transfer::export(&hedy, &dir, &names, &to),
+        },
+        Command::Flow { command } => match command.unwrap_or(FlowCommand::List) {
+            FlowCommand::List => commands::flow_list(&hedy, &dir),
+            FlowCommand::Show { name } => commands::flow_show(&hedy, &dir, &name),
         },
         Command::Template { command } => match command.unwrap_or(TemplateCommand::List) {
             TemplateCommand::List => commands::template_list(&hedy, &dir),
