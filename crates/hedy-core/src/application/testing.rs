@@ -680,8 +680,34 @@ impl Git for FakeGit {
             .push(format!("{branch} at {base}"));
         Ok(())
     }
+    fn add_detached_worktree(&self, _: &Path, path: &Path, base: &str) -> PortResult<()> {
+        self.worktrees
+            .lock()
+            .unwrap()
+            .push(format!("detached {} at {base}", path.display()));
+        Ok(())
+    }
+    fn remove_detached_worktree(&self, _: &Path, path: &Path) -> PortResult<()> {
+        let path = path.display();
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("remove detached {path}"));
+        Ok(())
+    }
     fn is_ignored(&self, _: &Path, path: &str) -> bool {
         self.ignored.lock().unwrap().iter().any(|p| p == path)
+    }
+    fn ignored_env_files(&self, _: &Path) -> PortResult<Vec<String>> {
+        let ignored = self.ignored.lock().unwrap();
+        Ok(ignored
+            .iter()
+            .filter(|p| {
+                let name = p.rsplit('/').next().unwrap_or(p);
+                name == ".env" || name.starts_with(".env.")
+            })
+            .cloned()
+            .collect())
     }
     fn diff(&self, _: &Path, _: &str) -> PortResult<Vec<FileDiff>> {
         Ok(self.diff.lock().unwrap().clone())
@@ -1253,6 +1279,9 @@ impl FileSystem for FakeFs {
     fn attachments_dir(&self) -> PathBuf {
         PathBuf::from("/data/attachments")
     }
+    fn outputs_dir(&self) -> PathBuf {
+        PathBuf::from("/data/outputs")
+    }
     fn home_dir(&self) -> Option<PathBuf> {
         Some(PathBuf::from("/home/e"))
     }
@@ -1276,6 +1305,10 @@ impl FileSystem for FakeFs {
             .lock()
             .unwrap()
             .retain(|(p, _)| !p.starts_with(path));
+        self.blobs
+            .lock()
+            .unwrap()
+            .retain(|(p, _)| !p.starts_with(path));
         self.deleted_trees.lock().unwrap().push(path.to_owned());
         Ok(())
     }
@@ -1287,6 +1320,7 @@ impl FileSystem for FakeFs {
         self.existing.lock().unwrap().contains(path)
             // A file's folders exist too.
             || self.files.lock().unwrap().iter().any(|(p, _)| p.starts_with(path))
+            || self.blobs.lock().unwrap().iter().any(|(p, _)| p.starts_with(path))
     }
     fn is_symlink(&self, path: &Path) -> bool {
         self.symlinked.lock().unwrap().contains(path)
@@ -1387,7 +1421,26 @@ impl FileSystem for FakeFs {
     }
     fn remove_file(&self, path: &Path) -> PortResult<()> {
         self.files.lock().unwrap().retain(|(p, _)| p != path);
+        self.blobs.lock().unwrap().retain(|(p, _)| p != path);
         Ok(())
+    }
+    fn files_beneath(&self, dir: &Path) -> PortResult<Vec<(String, u64)>> {
+        let blobs = self.blobs.lock().unwrap();
+        let mut found: Vec<(String, u64)> = blobs
+            .iter()
+            .filter_map(|(p, bytes)| {
+                let rel = p.strip_prefix(dir).ok()?;
+                Some((rel.to_string_lossy().into_owned(), bytes.len() as u64))
+            })
+            .collect();
+        found.sort();
+        Ok(found)
+    }
+    fn copy_to_new(&self, from: &Path, to: &Path) -> PortResult<()> {
+        let bytes = self
+            .read_bytes(from)?
+            .ok_or_else(|| PortError::new("No such file"))?;
+        self.write_private_file(to, &bytes)
     }
     fn write_text_beneath(&self, root: &Path, rel: &Path, contents: &str) -> PortResult<()> {
         self.no_link_beneath(root, rel)?;

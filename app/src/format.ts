@@ -24,6 +24,14 @@ export function formatDuration(ms: number | null): string {
   return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
 }
 
+/** "820 B", "4,8 KB" in Spanish, "4.8 KB" in English, "1,2 MB". */
+export function formatBytes(bytes: number, language: Language): string {
+  const decimal = (n: number) => (language === "es" ? n.toFixed(1).replace(".", ",") : n.toFixed(1));
+  if (bytes < 1000) return `${bytes} B`;
+  if (bytes < 1_000_000) return `${decimal(bytes / 1000)} KB`;
+  return `${decimal(bytes / 1_000_000)} MB`;
+}
+
 /** How long something has been going on: "42 s", "6 min", "2 h 5 min", "3 d". */
 export function formatElapsed(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));

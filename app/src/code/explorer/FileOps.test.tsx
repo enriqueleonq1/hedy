@@ -115,7 +115,8 @@ describe("Explorer file operations", () => {
     expect(nameProblem("", taken)).toBe("edit.name.empty");
     expect(nameProblem("app.py", taken)).toBe("edit.name.exists");
     expect(nameProblem("x.", taken)).toBe("edit.name.invalid");
-    expect(nameProblem(".env", taken)).toBe("edit.name.protected");
+    // The project's own list decides, in the backend.
+    expect(nameProblem(".env", taken)).toBeNull();
     expect(nameProblem("ok.py", taken)).toBeNull();
     expect(draftProblem("api/v2/x.py", "src", () => false)).toBeNull();
     expect(draftProblem("api/x?.py", "src", () => false)).toBe("edit.name.invalid");

@@ -77,6 +77,70 @@ pub struct Workspace {
     pub base_commit: String,
 }
 
+/// How much an agent does without asking in a task that changes files, as
+/// Claude Code's modes. Whatever it is, Hedy keeps its floor: nothing outside
+/// the task's copy, nothing in `.git`, the agents' own settings always ask, and
+/// the project's blocked files stay blocked.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PermissionMode {
+    /// Every edit and command asks (as before).
+    #[default]
+    Manual,
+    /// Edits inside the copy go through; commands ask.
+    AcceptEdits,
+    /// Edits and commands go through; a command that names a path outside
+    /// the copy or does something risky (`sudo`, `git push`) still asks.
+    Auto,
+}
+
+impl PermissionMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::AcceptEdits => "acceptEdits",
+            Self::Auto => "auto",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "manual" => Some(Self::Manual),
+            "acceptEdits" => Some(Self::AcceptEdits),
+            "auto" => Some(Self::Auto),
+            _ => None,
+        }
+    }
+}
+
+/// A file a read-only task wrote in its own folder, outside the project (a
+/// document, a page): `path` is relative to that folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputFile {
+    pub path: String,
+    pub bytes: u64,
+    /// Whether Hedy opens it with the system's app: only documents, pages,
+    /// images and data, never something that could run (`.desktop`, `.jar`).
+    pub opens: bool,
+}
+
+/// Types a question's file may be opened as, from its name.
+const OPENABLE: &[&str] = &[
+    "md", "markdown", "txt", "html", "htm", "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg",
+    "csv", "tsv", "json",
+];
+
+impl OutputFile {
+    pub fn new(path: String, bytes: u64) -> Self {
+        let opens = path
+            .rsplit_once('.')
+            .filter(|(stem, _)| !stem.ends_with('/') && !stem.is_empty())
+            .is_some_and(|(_, ext)| OPENABLE.contains(&ext.to_lowercase().as_str()));
+        Self { path, bytes, opens }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Task {
@@ -89,6 +153,14 @@ pub struct Task {
     pub account: AccountId,
     pub model: Option<String>,
     pub workspace: Option<Workspace>,
+    /// A read-only task's throwaway copy, without a branch: there while an
+    /// agent that reads without asking (Codex, ACP) works on a turn, deleted
+    /// when the turn ends. Never set with `workspace`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scratch: Option<PathBuf>,
+    /// What the agent does without asking (tasks that change files).
+    #[serde(default)]
+    pub permissions: PermissionMode,
     /// The CLI's session, to resume it after a restart.
     pub session_id: Option<String>,
     pub status: TaskStatus,
@@ -198,7 +270,9 @@ impl Task {
     pub fn work_dir(&self) -> PathBuf {
         self.workspace
             .as_ref()
-            .map_or_else(|| self.project.clone(), |w| w.worktree.clone())
+            .map(|w| w.worktree.clone())
+            .or_else(|| self.scratch.clone())
+            .unwrap_or_else(|| self.project.clone())
     }
 
     /// What the user asked, without the context a carried conversation put
@@ -261,6 +335,30 @@ pub fn branch_name(title: &str, id: &TaskId) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_documents_pages_images_and_data_open() {
+        for path in [
+            "informe.md",
+            "sitio/index.HTML",
+            "a.pdf",
+            "datos.csv",
+            "logo.svg",
+        ] {
+            assert!(OutputFile::new(path.into(), 1).opens, "{path}");
+        }
+        for path in [
+            "x.desktop",
+            "a.jar",
+            "run.command",
+            "sin-tipo",
+            ".md",
+            "dir/.html",
+            "a.sh",
+        ] {
+            assert!(!OutputFile::new(path.into(), 1).opens, "{path}");
+        }
+    }
+
     use super::*;
 
     #[test]

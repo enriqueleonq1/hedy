@@ -10,7 +10,7 @@ use std::time::Duration;
 use super::one_shot::{OneShot, OneShotFailure};
 use super::ship::{SUGGESTION_DIFF_MAX, SUGGESTION_TIMEOUT, ShipError};
 use super::{AppResult, Hedy};
-use crate::domain::permissions::is_protected_path;
+use crate::domain::permissions::is_secret_path;
 use crate::domain::ship::{clean_suggestion, diff_for_prompt, staged_commit_prompt};
 use crate::domain::{Account, FileDiff, Phase, Stage};
 use crate::tr;
@@ -66,7 +66,7 @@ impl Hedy {
             .into());
         }
         let (secret, shown): (Vec<FileDiff>, Vec<FileDiff>) = staged.into_iter().partition(|f| {
-            is_protected_path(&f.path) || f.old_path.as_deref().is_some_and(is_protected_path)
+            is_secret_path(&f.path) || f.old_path.as_deref().is_some_and(is_secret_path)
         });
         let skipped: Vec<String> = secret.into_iter().map(|f| f.path).collect();
         let truncated = diff_for_prompt(&shown, usize::MAX).chars().count() > SUGGESTION_DIFF_MAX;

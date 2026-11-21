@@ -55,6 +55,8 @@ import type {
   DetectedCli,
   DoctorReport,
   FileDiff,
+  OutputFile,
+  PermissionMode,
   MemoryView,
   ExportReport,
   ImportPick,
@@ -121,6 +123,14 @@ export interface HedyApi {
   setProjectPhases(path: string, phases: PhasePlan): Promise<void>;
   /** Empty or null clears it. */
   setProjectClient(path: string, client: string | null): Promise<void>;
+  /** "Archivos que la IA no lee": the project's whole list. */
+  setProjectBlockedFiles(path: string, patterns: string[]): Promise<void>;
+  /** What "Agregar los de siempre" adds (.env, keys, credentials). */
+  suggestedBlockedFiles(): Promise<string[]>;
+  /** The permission mode a project's new tasks start with. */
+  setProjectPermissionMode(path: string, mode: PermissionMode): Promise<void>;
+  /** A task's permission mode, changed from the composer. */
+  setTaskPermissions(id: string, mode: PermissionMode): Promise<void>;
   projectStatus(path: string): Promise<ProjectStatus>;
   /** Usage records of the last `days` days, oldest first. */
   projectUsage(path: string, days: number): Promise<UsagePoint[]>;
@@ -238,6 +248,12 @@ export interface HedyApi {
   restoreBuiltinTemplates(): Promise<void>;
   stopTask(id: string): Promise<void>;
   taskDiff(id: string): Promise<FileDiff[]>;
+  /** What a question wrote in its own folder, outside the project. */
+  taskOutputs(id: string): Promise<OutputFile[]>;
+  /** Opens one of those files with the system's app (a page in the browser). */
+  openOutput(id: string, path: string): Promise<void>;
+  /** Copies one into `folder` without overwriting anything; where it went. */
+  saveOutput(id: string, path: string, folder: string): Promise<string>;
   /** What accepting would do (branch, files, lines, message, tests); changes nothing. */
   acceptPreview(id: string): Promise<AcceptPreview>;
   /**

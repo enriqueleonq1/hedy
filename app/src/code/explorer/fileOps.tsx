@@ -18,16 +18,17 @@ import { useUnsavedChanges } from "../editor/unsaved";
 /** The draft row's path: never a real one (paths have no NUL). */
 export const DRAFT_PATH = "\u0000draft";
 
-const PROTECTED = [/^\.env$/, /^\.env\..*/, /\.pem$/, /\.key$/, /^id_rsa/, /^id_ed25519/, /^\.npmrc$/, /^\.pypirc$/, /^credentials/];
-
-/** Why a name cannot be used (`null`: it can), like the backend's checks. */
+/**
+ * Why a name cannot be used (`null`: it can), like the backend's checks. A
+ * file the project keeps from the AI is refused by the backend, which knows
+ * the project's list.
+ */
 export function nameProblem(name: string, taken: (name: string) => boolean): MessageKey | null {
   if (!name.trim()) return "edit.name.empty";
   // eslint-disable-next-line no-control-regex
   if (name === "." || name === ".." || /[. ]$/.test(name) || name.startsWith(" ") || /[\u0000-\u001f/\\:*?"<>|]/.test(name)) {
     return "edit.name.invalid";
   }
-  if (PROTECTED.some((re) => re.test(name))) return "edit.name.protected";
   if (taken(name)) return "edit.name.exists";
   return null;
 }

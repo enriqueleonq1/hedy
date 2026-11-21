@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::diff::{FileDiff, LineKind};
-use super::permissions::is_protected_path;
+use super::permissions::is_secret_path;
 use super::rule_check::shown_path;
 use crate::tr;
 
@@ -382,8 +382,7 @@ pub fn diff_for_prompt(files: &[FileDiff], max_chars: usize) -> String {
             file.additions,
             file.deletions
         ));
-        if is_protected_path(&file.path) || file.old_path.as_deref().is_some_and(is_protected_path)
-        {
+        if is_secret_path(&file.path) || file.old_path.as_deref().is_some_and(is_secret_path) {
             out.push_str("(protected file, contents not sent)\n");
             continue;
         }

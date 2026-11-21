@@ -93,6 +93,8 @@ impl Hedy {
             account: first.account,
             model: first.model,
             workspace: None,
+            scratch: None,
+            permissions: Default::default(),
             session_id: None,
             status: TaskStatus::Running,
             created_at: now / 1000,
@@ -135,6 +137,7 @@ impl Hedy {
         self.store.delete_task(id)?;
         self.fs.remove_dir_all(&folder)?;
         self.remove_attachments(id)?;
+        self.remove_outputs(id)?;
         Ok(())
     }
 
@@ -414,6 +417,7 @@ mod tests {
                 mode: TaskMode::Ask,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
             .unwrap();
         assert!(matches!(
@@ -431,7 +435,8 @@ mod tests {
             f.fs.deleted_trees(),
             vec![
                 chat.project.clone(),
-                PathBuf::from("/data/attachments").join(chat.id.as_str())
+                PathBuf::from("/data/attachments").join(chat.id.as_str()),
+                PathBuf::from("/data/outputs").join(chat.id.as_str())
             ]
         );
         assert!(f.hedy.conversations().unwrap().is_empty());

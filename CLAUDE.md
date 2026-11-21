@@ -47,8 +47,14 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Icons: edit `app/src-tauri/icons/logo.svg`, render it to `logo.png` (1024 px), then
   `npx tauri icon src-tauri/icons/logo.png`. Dev window icon on Wayland:
   `app/scripts/install-dev-icon.sh`
-- Real end-to-end check (spends a few tokens of the `~/.claude` account):
-  `cargo run -p hedy-core --example smoke_task -- haiku` (`env` / `bash` check `.env` stays unread)
+- Real end-to-end check (spends a few tokens; `HEDY_SMOKE_ACCOUNT=<folder>` picks the account,
+  else `~/.claude`): `cargo run -p hedy-core --example smoke_task -- haiku` (`env` / `bash`: a
+  listed `.env` stays unread; `free`: an empty list reads it; `doc`: a question's document lands
+  outside the project; `auto`: a task in automatic mode shows no card)
+- Files the AI does not read in a project (empty by default, as in Claude Code):
+  `hedy block [patterns] [--remove|--usual|--clear]`
+- What a project's new tasks do without asking (as Claude Code's modes):
+  `hedy permissions [manual|edits|auto]`
 - Evals (real tasks, spend tokens): `cargo run -p hedy-evals -- --model haiku` (`--list`,
   `--case`, `--layers plain,memory,code-map,full`, `--repeat`); results in `evals/results/`
 - Context-saving switches (`crates/hedy-core/src/experiments.rs`, docs/decisions.md §33): on by

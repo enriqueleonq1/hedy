@@ -19,7 +19,6 @@ use crate::domain::code::{
     MAX_TEXT_BYTES, MAX_TREE_ENTRIES, MISSING_VERSION, content_version, is_valid_file_name,
     looks_binary, text_for_disk,
 };
-use crate::domain::permissions::is_protected_path;
 use crate::tr;
 
 /// A file written: its new version and size.
@@ -73,12 +72,12 @@ impl Hedy {
 
     /// A path Hedy may write: inside the copy, not `.git`, `.hedy` or a
     /// protected file.
-    fn writable_path(path: &str) -> AppResult<String> {
+    fn writable_path(copy: &Resolved, path: &str) -> AppResult<String> {
         let path = checked_path(path)?;
         if hidden(&path) {
             return Err(AppError::InvalidCodePath(path));
         }
-        if is_protected_path(&path) {
+        if copy.blocked.blocks_path(&path) {
             return Err(AppError::FileLocked(path));
         }
         Ok(path)
@@ -86,7 +85,7 @@ impl Hedy {
 
     /// A path for something new: a valid name, and nothing there yet.
     fn new_path(&self, copy: &Resolved, path: &str) -> AppResult<String> {
-        let path = Self::writable_path(path)?;
+        let path = Self::writable_path(copy, path)?;
         if !is_valid_file_name(file_name(&path)) {
             return Err(AppError::InvalidFileName(file_name(&path).to_owned()));
         }
@@ -118,7 +117,7 @@ impl Hedy {
                 {
                     return Err(AppError::InvalidCodePath(entry));
                 }
-                if is_protected_path(&entry) {
+                if copy.blocked.blocks_path(&entry) {
                     return Err(AppError::FileLocked(entry));
                 }
             }
@@ -138,7 +137,7 @@ impl Hedy {
         expected: &str,
     ) -> AppResult<WriteOutcome> {
         let copy = self.writable_copy(copy)?;
-        let path = Self::writable_path(path)?;
+        let path = Self::writable_path(&copy, path)?;
         let current = self
             .code
             .read_file(&copy.dir, None, &path, MAX_TEXT_BYTES + 1)?;
@@ -157,7 +156,7 @@ impl Hedy {
             }));
         };
         // Through a symbolic link, the target decides.
-        if is_protected_path(&file.resolved) {
+        if copy.blocked.blocks_path(&file.resolved) {
             return Err(AppError::FileLocked(path));
         }
         let not_text = file.size > MAX_TEXT_BYTES
@@ -212,8 +211,8 @@ impl Hedy {
     /// Renames (or moves) a file or folder inside the copy.
     pub fn rename_code_path(&self, copy: &CodeCopy, from: &str, to: &str) -> AppResult<()> {
         let copy = self.writable_copy(copy)?;
-        let from = Self::writable_path(from)?;
-        let to = Self::writable_path(to)?;
+        let from = Self::writable_path(&copy, from)?;
+        let to = Self::writable_path(&copy, to)?;
         if from == to {
             return Ok(());
         }
@@ -232,7 +231,7 @@ impl Hedy {
     /// it from there).
     pub fn delete_code_path(&self, copy: &CodeCopy, path: &str) -> AppResult<()> {
         let copy = self.writable_copy(copy)?;
-        let path = Self::writable_path(path)?;
+        let path = Self::writable_path(&copy, path)?;
         self.movable(&copy, &path)?;
         Ok(self.writer.trash(&copy.dir, &path)?)
     }
@@ -241,7 +240,7 @@ impl Hedy {
     /// `impuestos copia 2.py`...); returns the new path.
     pub fn duplicate_code_file(&self, copy: &CodeCopy, path: &str) -> AppResult<String> {
         let copy = self.writable_copy(copy)?;
-        let path = Self::writable_path(path)?;
+        let path = Self::writable_path(&copy, path)?;
         match self.writer.kind(&copy.dir, &path)? {
             Some(PathKind::File) => {}
             Some(_) => return Err(AppError::FileNotEditable(path)),
@@ -275,10 +274,18 @@ mod tests {
 
     const ROOT: &str = "/code/agenda";
 
+    /// A project that keeps the usual files (`.env`, keys) from the AI.
     fn project(f: &Fixture) {
         f.add_claude("Personal");
         f.fs.add_git_root(ROOT);
         f.hedy.use_account(&f.dir(ROOT), "personal", None).unwrap();
+        let usual: Vec<String> = crate::domain::permissions::SUGGESTED_BLOCKED
+            .iter()
+            .map(|p| p.to_string())
+            .collect();
+        f.hedy
+            .set_project_blocked_files(&f.dir(ROOT), &usual)
+            .unwrap();
     }
 
     fn folder() -> CodeCopy {
@@ -296,6 +303,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
             .unwrap();
         let wt = task.workspace.clone().unwrap().worktree;

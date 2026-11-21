@@ -841,7 +841,7 @@ mod tests {
             query: "guardar".into(),
             ..TextQuery::default()
         };
-        let blocked = crate::domain::permissions::DEFAULT_BLOCKED;
+        let blocked = crate::domain::permissions::SUGGESTED_BLOCKED;
         let (lines, truncated) = g
             .grep(&repo, None, &query, blocked, &[".hedy"], 10)
             .unwrap();

@@ -15,7 +15,7 @@ import type {
   SearchResults,
   WriteResult,
 } from "./codeTypes";
-import { MockCode } from "./mockCode";
+import { MockCode, SUGGESTED_BLOCKED } from "./mockCode";
 import { MOCK_THEME_SEEDS } from "./mockThemes";
 import { resolveLanguage } from "../i18n";
 import { placeholders } from "../templates/placeholders";
@@ -90,6 +90,8 @@ import type {
   DetectedCli,
   DoctorReport,
   FileDiff,
+  OutputFile,
+  PermissionMode,
   MemoryView,
   NewAccountInput,
   NewConversationInput,
@@ -555,6 +557,27 @@ export class MockApi implements HedyApi {
 
   async setProjectClient(path: string, client: string | null): Promise<void> {
     this.project(path).client = client?.trim() || null;
+  }
+
+  async setProjectBlockedFiles(path: string, patterns: string[]): Promise<void> {
+    const clean = patterns.map((p) => (p.trim().split(/[\\/]/).pop() ?? "").toLowerCase()).filter(Boolean);
+    this.project(path).blockedFiles = [...new Set(clean)];
+  }
+
+  async suggestedBlockedFiles(): Promise<string[]> {
+    return [...SUGGESTED_BLOCKED];
+  }
+
+  async setProjectPermissionMode(path: string, mode: PermissionMode): Promise<void> {
+    this.project(path).permissionMode = mode;
+  }
+
+  async setTaskPermissions(id: string, mode: PermissionMode): Promise<void> {
+    const task = this.tasksById.get(id);
+    if (!task) throw `no existe la tarea ${id}`;
+    if (task.status === "accepted" || task.status === "discarded") throw `la tarea ${id} ya está cerrada`;
+    task.permissions = mode;
+    this.notifyTask(task);
   }
 
   async projectStatus(path: string): Promise<ProjectStatus> {
@@ -1843,6 +1866,8 @@ export class MockApi implements HedyApi {
   /** Delay between scripted events (0 in tests). */
   delayMs = 250;
   private tasksById = new Map<string, Task>();
+  /** What questions wrote in their own folder. */
+  private outputs = new Map<string, OutputFile[]>();
   private eventsById = new Map<string, AgentEvent[]>();
   private diffs = new Map<string, FileDiff[]>();
   private eventListeners = new Set<(taskId: string, event: AgentEvent) => void>();
@@ -1873,6 +1898,7 @@ export class MockApi implements HedyApi {
       prompt,
       account: project.account,
       model: input.model,
+      permissions: input.permissions ?? project.permissionMode,
       workspace:
         input.mode === "project"
           ? {
@@ -2402,6 +2428,12 @@ export class MockApi implements HedyApi {
     );
     // The same changes the code views read from the sample repository.
     this.diffs.set("s5", this.code.taskDiff("/code/hedy", "s5"));
+    // A question that left a document and a page, outside the project.
+    this.outputs.set("c1", [
+      { path: "oauth-vs-oidc.md", bytes: 4_812, opens: true },
+      { path: "diagrama/index.html", bytes: 12_340, opens: true },
+      { path: "instalar.sh", bytes: 640, opens: false },
+    ]);
     // A question outside any project, already answered.
     add(
       "c1",
@@ -2500,6 +2532,22 @@ export class MockApi implements HedyApi {
 
   async taskDiff(id: string): Promise<FileDiff[]> {
     return [...(this.diffs.get(id) ?? [])];
+  }
+
+  async taskOutputs(id: string): Promise<OutputFile[]> {
+    if (!this.tasksById.has(id)) throw `no existe la tarea ${id}`;
+    return [...(this.outputs.get(id) ?? [])];
+  }
+
+  async openOutput(id: string, path: string): Promise<void> {
+    const file = (this.outputs.get(id) ?? []).find((f) => f.path === path);
+    if (!file) throw `«${path}» no es un archivo que escribió la tarea`;
+    if (!file.opens) throw `Hedy no abre «${path}»: es un tipo de archivo que podría ejecutar algo.`;
+  }
+
+  async saveOutput(id: string, path: string, folder: string): Promise<string> {
+    if (!(this.outputs.get(id) ?? []).some((f) => f.path === path)) throw `«${path}» no es un archivo que escribió la tarea`;
+    return `${folder}/${path.split("/").pop()}`;
   }
 
   async acceptPreview(id: string): Promise<AcceptPreview> {
@@ -3676,11 +3724,14 @@ function emptyProject(path: string): Project {
     offerableAccounts: [],
     phases: {},
     client: null,
+    blockedFiles: [],
+    permissionMode: "manual",
   };
 }
 
+/** A sample project: like the sample code's locked files, it keeps the usual ones from the AI. */
 function project(path: string, account: string, extra: Partial<Project>): Project {
-  return { ...emptyProject(path), account, ...extra };
+  return { ...emptyProject(path), account, blockedFiles: [...SUGGESTED_BLOCKED], ...extra };
 }
 
 function sampleDiff(path: string): FileDiff {

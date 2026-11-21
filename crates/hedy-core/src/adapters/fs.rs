@@ -9,14 +9,17 @@ pub struct LocalFileSystem {
     accounts_dir: PathBuf,
     chats_dir: PathBuf,
     attachments_dir: PathBuf,
+    outputs_dir: PathBuf,
 }
 
 impl LocalFileSystem {
-    /// Attachments live next to the chats folder (both in Hedy's data folder).
+    /// Attachments and outputs live next to the chats folder (all in Hedy's
+    /// data folder).
     pub fn new(accounts_dir: PathBuf, chats_dir: PathBuf) -> Self {
         Self {
             accounts_dir,
             attachments_dir: chats_dir.with_file_name("attachments"),
+            outputs_dir: chats_dir.with_file_name("outputs"),
             chats_dir,
         }
     }
@@ -50,6 +53,10 @@ impl FileSystem for LocalFileSystem {
 
     fn attachments_dir(&self) -> PathBuf {
         self.attachments_dir.clone()
+    }
+
+    fn outputs_dir(&self) -> PathBuf {
+        self.outputs_dir.clone()
     }
 
     fn home_dir(&self) -> Option<PathBuf> {
@@ -223,6 +230,78 @@ impl FileSystem for LocalFileSystem {
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
             Err(e) => Err(io_error("leer", path, e)),
         }
+    }
+
+    fn files_beneath(&self, dir: &Path) -> PortResult<Vec<(String, u64)>> {
+        // Enough for any document or page; a runaway folder is cut here
+        // (files listed, and everything looked at, empty folders too).
+        const MAX: usize = 2_000;
+        const VISITED: usize = 20_000;
+        let mut found = Vec::new();
+        let mut visited = 0;
+        let mut pending = vec![dir.to_owned()];
+        while let Some(folder) = pending.pop() {
+            let entries = match fs::read_dir(&folder) {
+                Ok(entries) => entries,
+                Err(e) if e.kind() == ErrorKind::NotFound => continue,
+                Err(e) => return Err(io_error("leer", &folder, e)),
+            };
+            for entry in entries.flatten() {
+                visited += 1;
+                if visited > VISITED {
+                    pending.clear();
+                    break;
+                }
+                let path = entry.path();
+                // Not followed: a link could lead anywhere on the disk.
+                let Ok(meta) = fs::symlink_metadata(&path) else {
+                    continue;
+                };
+                if meta.is_dir() {
+                    pending.push(path);
+                } else if meta.is_file() && found.len() < MAX {
+                    let rel = path.strip_prefix(dir).unwrap_or(&path);
+                    let rel: Vec<String> = rel
+                        .components()
+                        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                        .collect();
+                    found.push((rel.join("/"), meta.len()));
+                }
+            }
+        }
+        found.sort();
+        Ok(found)
+    }
+
+    fn copy_to_new(&self, from: &Path, to: &Path) -> PortResult<()> {
+        let meta = fs::symlink_metadata(from).map_err(|e| io_error("leer", from, e))?;
+        if !meta.is_file() {
+            return Err(PortError::new(format!(
+                "{} no es un archivo normal",
+                from.display()
+            )));
+        }
+        let mut source = fs::File::open(from).map_err(|e| io_error("leer", from, e))?;
+        // Swapped for a link between the check and the open: not the file
+        // that was checked.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let opened = source.metadata().map_err(|e| io_error("leer", from, e))?;
+            if (opened.dev(), opened.ino()) != (meta.dev(), meta.ino()) {
+                return Err(PortError::new(format!(
+                    "{} cambió mientras se copiaba",
+                    from.display()
+                )));
+            }
+        }
+        let mut target = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(to)
+            .map_err(|e| io_error("crear", to, e))?;
+        std::io::copy(&mut source, &mut target).map_err(|e| io_error("copiar", to, e))?;
+        Ok(())
     }
 
     fn remove_file(&self, path: &Path) -> PortResult<()> {
@@ -506,6 +585,43 @@ mod tests {
         fs_.write_text(&plain, "one").unwrap();
         fs_.write_text(&plain, "two").unwrap();
         assert_eq!(std::fs::read_to_string(&plain).unwrap(), "two");
+    }
+
+    #[test]
+    fn outputs_are_listed_without_links_and_copied_without_overwriting() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fs_ = LocalFileSystem::new(tmp.path().join("accounts"), tmp.path().join("chats"));
+        let dir = fs_.outputs_dir().join("t1");
+        assert_eq!(dir, tmp.path().join("outputs/t1"));
+        assert!(
+            fs_.files_beneath(&dir).unwrap().is_empty(),
+            "missing: empty"
+        );
+        fs::create_dir_all(dir.join("sitio/css")).unwrap();
+        fs::write(dir.join("informe.md"), "# Hola\n").unwrap();
+        fs::write(dir.join("sitio/css/a.css"), "a{}").unwrap();
+        let secret = tmp.path().join("secreto.txt");
+        fs::write(&secret, "no").unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&secret, dir.join("enlace.txt")).unwrap();
+            std::os::unix::fs::symlink(tmp.path(), dir.join("todo")).unwrap();
+        }
+        assert_eq!(
+            fs_.files_beneath(&dir).unwrap(),
+            vec![("informe.md".into(), 7), ("sitio/css/a.css".into(), 3)]
+        );
+
+        let saved = tmp.path().join("informe.md");
+        fs_.copy_to_new(&dir.join("informe.md"), &saved).unwrap();
+        assert_eq!(fs::read_to_string(&saved).unwrap(), "# Hola\n");
+        assert!(fs_.copy_to_new(&dir.join("informe.md"), &saved).is_err());
+        #[cfg(unix)]
+        assert!(
+            fs_.copy_to_new(&dir.join("enlace.txt"), &tmp.path().join("x.txt"))
+                .is_err(),
+            "a link is not copied"
+        );
     }
 
     #[test]

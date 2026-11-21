@@ -21,7 +21,7 @@ use crate::application::ports::{
     PortResult, Secret, SkillTools,
 };
 use crate::domain::agent::looks_like_tests;
-use crate::domain::permissions::{normalize, protected_file_reason};
+use crate::domain::permissions::{BlockedFiles, normalize, protected_file_reason};
 use crate::domain::recall::PageRequest;
 use crate::domain::task::SHARED_DEPENDENCY_DIRS;
 use crate::domain::{
@@ -107,6 +107,12 @@ impl AgentLauncher for ApiAgentLauncher {
             shared,
             events,
             read_only,
+            output: request
+                .output
+                .as_ref()
+                .filter(|_| read_only)
+                .and_then(|dir| dir.canonicalize().ok()),
+            blocked: request.blocked.clone(),
             phase: request.phase,
             planning: request.plan_first,
             plans: 0,
@@ -178,6 +184,10 @@ struct Agent {
     shared: Vec<PathBuf>,
     events: EventSink,
     read_only: bool,
+    /// A question's own folder, canonical: where its writes go.
+    output: Option<PathBuf>,
+    /// The project's files the model may not read or touch.
+    blocked: BlockedFiles,
     phase: Phase,
     planning: bool,
     plans: u32,
@@ -303,7 +313,9 @@ fn experimental_tools<const N: usize>(today: [Value; N], names: &[&str]) -> Vec<
         .collect()
 }
 
-fn tools(read_only: bool) -> Value {
+/// The tools for the model. `writes`: the file tools a question with a
+/// folder of its own gets (no shell), when `read_only`.
+fn tools(read_only: bool, writes: bool) -> Value {
     let path = json!({"type": "string", "description": "Ruta relativa a la carpeta de trabajo"});
     let mut list = vec![
         tool(
@@ -325,27 +337,30 @@ fn tools(read_only: bool) -> Value {
             &["pattern"],
         ),
     ];
+    let write_tools = [
+        tool(
+            "write_file",
+            "Crea o reemplaza un archivo completo.",
+            json!({"path": path, "content": {"type": "string"}}),
+            &["path", "content"],
+        ),
+        tool(
+            "edit_file",
+            "Reemplaza un fragmento exacto (que aparezca una sola vez) por otro.",
+            json!({"path": path, "old_string": {"type": "string"}, "new_string": {"type": "string"}}),
+            &["path", "old_string", "new_string"],
+        ),
+    ];
+    if !read_only || writes {
+        list.extend(write_tools);
+    }
     if !read_only {
-        list.extend([
-            tool(
-                "write_file",
-                "Crea o reemplaza un archivo completo.",
-                json!({"path": path, "content": {"type": "string"}}),
-                &["path", "content"],
-            ),
-            tool(
-                "edit_file",
-                "Reemplaza un fragmento exacto (que aparezca una sola vez) por otro.",
-                json!({"path": path, "old_string": {"type": "string"}, "new_string": {"type": "string"}}),
-                &["path", "old_string", "new_string"],
-            ),
-            tool(
-                "run_command",
-                "Ejecuta un comando de shell en la carpeta de trabajo (por ejemplo, los tests).",
-                json!({"command": {"type": "string"}}),
-                &["command"],
-            ),
-        ]);
+        list.push(tool(
+            "run_command",
+            "Ejecuta un comando de shell en la carpeta de trabajo (por ejemplo, los tests).",
+            json!({"command": {"type": "string"}}),
+            &["command"],
+        ));
     }
     Value::Array(list)
 }
@@ -380,7 +395,10 @@ impl Agent {
     }
 
     fn tools(&self) -> Value {
-        let mut list = tools(self.read_only || self.planning);
+        let mut list = tools(
+            self.read_only || self.planning,
+            self.output.is_some() && !self.planning,
+        );
         if self.memory.is_some()
             && let Value::Array(list) = &mut list
         {
@@ -402,14 +420,21 @@ impl Agent {
         );
         match mode {
             TaskMode::Ask => prompt.push_str(&tr!(
-                " Modo Pregunta: responde y explica; no modifiques archivos.",
-                " Ask mode: answer and explain; do not modify files."
+                " Modo Pregunta: responde y explica; no modifiques el proyecto.",
+                " Ask mode: answer and explain; do not modify the project."
             )),
             TaskMode::Research => prompt.push_str(&tr!(
                 " Modo Research: investiga en el código y cita dónde está cada cosa.",
                 " Research mode: investigate the code and cite where each thing is."
             )),
             TaskMode::Project => {}
+        }
+        if let Some(output) = &self.output {
+            let output = output.display();
+            prompt.push_str(&tr!(
+                " Si te piden un documento, una página u otro archivo, créalo con write_file: va a {output}, fuera del proyecto, y el usuario lo verá al terminar.",
+                " If you are asked for a document, a page or another file, create it with write_file: it goes to {output}, outside the project, and the user will see it at the end."
+            ));
         }
         if self.memory.is_some() {
             prompt.push(' ');
@@ -652,15 +677,17 @@ impl Agent {
                 "I can only work inside the task folder."
             )
         };
-        let lexical = normalize(&self.cwd, Path::new(path));
-        if !lexical.starts_with(&self.cwd) {
+        // A question's writes go to its own folder, never the project.
+        let root = match (&self.output, write) {
+            (Some(output), true) => output,
+            _ => &self.cwd,
+        };
+        let lexical = normalize(root, Path::new(path));
+        if !lexical.starts_with(root) {
             return Err(outside());
         }
         // New files: resolve the closest folder that exists.
-        let existing = lexical
-            .ancestors()
-            .find(|p| p.exists())
-            .unwrap_or(&self.cwd);
+        let existing = lexical.ancestors().find(|p| p.exists()).unwrap_or(root);
         let real = existing
             .canonicalize()
             .map_err(|e| {
@@ -670,7 +697,7 @@ impl Agent {
                 )
             })?
             .join(lexical.strip_prefix(existing).unwrap_or(Path::new("")));
-        let inside = real.starts_with(&self.cwd)
+        let inside = real.starts_with(root)
             || (!write && self.shared.iter().any(|dir| real.starts_with(dir)));
         if !inside {
             return Err(outside());
@@ -688,7 +715,7 @@ impl Agent {
     }
 
     fn protected(&self, tool: &str, input: &Value) -> Option<String> {
-        protected_file_reason(tool, input, &self.cwd)
+        protected_file_reason(tool, input, &self.cwd, &self.blocked)
     }
 
     fn run_tool(&mut self, call: &Value, rx: &mpsc::Receiver<Command>) -> Result<String, End> {
@@ -703,7 +730,9 @@ impl Agent {
             offset: args["offset"].as_i64(),
         };
         let writes = matches!(name, "write_file" | "edit_file" | "run_command");
-        if writes && (self.read_only || self.planning) {
+        // A question writes files only in its own folder, and runs nothing.
+        let in_output = self.output.is_some() && name != "run_command";
+        if writes && (self.planning || (self.read_only && !in_output)) {
             return Ok(tr!(
                 "Ahora no puedes cambiar archivos ni correr comandos.",
                 "You cannot change files or run commands now."
@@ -1086,6 +1115,16 @@ mod tests {
         mode: TaskMode,
         phase: Phase,
     ) -> (Box<dyn AgentSession>, mpsc::Receiver<AgentEvent>) {
+        start_with(url, dir, mode, phase, None)
+    }
+
+    fn start_with(
+        url: String,
+        dir: &Path,
+        mode: TaskMode,
+        phase: Phase,
+        output: Option<PathBuf>,
+    ) -> (Box<dyn AgentSession>, mpsc::Receiver<AgentEvent>) {
         let (tx, rx) = mpsc::channel();
         let tx = Mutex::new(tx);
         let request = AgentRequest {
@@ -1107,6 +1146,8 @@ mod tests {
             no_shell: false,
             no_tools: false,
             plugins: Vec::new(),
+            output,
+            blocked: BlockedFiles::suggested(),
         };
         let session = ApiAgentLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))
@@ -1202,6 +1243,8 @@ mod tests {
             shared: Vec::new(),
             events: Arc::new(|_| {}),
             read_only: false,
+            output: None,
+            blocked: BlockedFiles::suggested(),
             phase: Phase::Implement,
             planning: false,
             plans: 0,
@@ -1371,6 +1414,82 @@ mod tests {
     }
 
     #[test]
+    fn a_question_writes_only_in_its_own_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("proyecto");
+        let output = tmp.path().join("salida");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(&output).unwrap();
+        let (dir, output) = (dir.canonicalize().unwrap(), output.canonicalize().unwrap());
+        let (url, seen) = serve(vec![
+            reply(
+                "",
+                json!([
+                    call(
+                        "w1",
+                        "write_file",
+                        json!({"path": "../proyecto/x.py", "content": "x"})
+                    ),
+                    call("w2", "run_command", json!({"command": "touch y"})),
+                    call(
+                        "w3",
+                        "write_file",
+                        json!({"path": "informe.md", "content": "# Hola"})
+                    ),
+                ]),
+            ),
+            reply("Te dejé informe.md.", json!(null)),
+        ]);
+        let (mut session, rx) = start_with(
+            url,
+            &dir,
+            TaskMode::Ask,
+            Phase::Implement,
+            Some(output.clone()),
+        );
+        let events = until(&rx, |e| matches!(e, AgentEvent::PermissionRequest { .. }));
+        let asked = events.iter().find_map(|e| match e {
+            AgentEvent::PermissionRequest { input, .. } => Some(input["file_path"].clone()),
+            _ => None,
+        });
+        assert_eq!(asked, Some(json!(output.join("informe.md"))));
+        session.answer("w3", true, None).unwrap();
+        until(&rx, |e| matches!(e, AgentEvent::Finished { .. }));
+
+        let requests = seen.lock().unwrap();
+        let tool_names: Vec<_> = requests[0].1["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["function"]["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            tool_names,
+            vec![
+                "list_files",
+                "read_file",
+                "search",
+                "write_file",
+                "edit_file"
+            ]
+        );
+        let results: Vec<String> = requests[1].1["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|m| m["role"] == "tool")
+            .map(|m| m["content"].as_str().unwrap().to_owned())
+            .collect();
+        assert!(results[0].contains("dentro de la carpeta"), "{results:?}");
+        assert!(results[1].contains("no puedes"), "{results:?}");
+        assert_eq!(
+            std::fs::read_to_string(output.join("informe.md")).unwrap(),
+            "# Hola"
+        );
+        assert!(!dir.join("x.py").exists() && !dir.join("y").exists());
+    }
+
+    #[test]
     fn images_go_as_image_url_parts() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().canonicalize().unwrap();
@@ -1397,6 +1516,8 @@ mod tests {
             no_shell: false,
             no_tools: false,
             plugins: Vec::new(),
+            output: None,
+            blocked: BlockedFiles::suggested(),
         };
         let mut session = ApiAgentLauncher
             .start(request, Arc::new(move |e| drop(tx.lock().unwrap().send(e))))

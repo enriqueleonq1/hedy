@@ -21,6 +21,7 @@ mod memory;
 mod memory_home;
 mod metrics;
 mod one_shot;
+mod outputs;
 mod plan_usage;
 pub mod ports;
 mod projects;

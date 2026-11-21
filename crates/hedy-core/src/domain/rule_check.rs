@@ -11,7 +11,7 @@ use super::ask::{ALL_NOTES_TOKENS, NOTE_CHARS, Source, SourceLayer, quoted, same
 use super::context::estimate_tokens;
 use super::diff::{FileDiff, FileStatus, LineKind};
 use super::memory::{Category, key_words};
-use super::permissions::is_protected_path;
+use super::permissions::is_secret_path;
 use super::team::reveal_hidden;
 use crate::tr;
 
@@ -319,7 +319,7 @@ fn left_out(file: &FileDiff) -> Option<LeftOut> {
         .next()
         .unwrap_or(&file.path)
         .to_lowercase();
-    if is_protected_path(&file.path) || file.old_path.as_deref().is_some_and(is_protected_path) {
+    if is_secret_path(&file.path) || file.old_path.as_deref().is_some_and(is_secret_path) {
         Some(LeftOut::Protected)
     } else if file.binary {
         Some(LeftOut::Binary)

@@ -46,6 +46,14 @@ pub enum AppError {
     #[error("{}", self.message())]
     TaskWithoutChanges(TaskId),
     #[error("{}", self.message())]
+    NotAnOutput(String),
+    #[error("{}", self.message())]
+    InvalidBlockedPattern(String),
+    #[error("{}", self.message())]
+    OutputNotOpened(String),
+    #[error("{}", self.message())]
+    OutputNotSaved(String),
+    #[error("{}", self.message())]
     MissingApiKey(AccountId),
     #[error("{}", self.message())]
     NotAHandoffCandidate(String),
@@ -377,6 +385,22 @@ impl AppError {
             Self::TaskWithoutChanges(id) => tr!(
                 "la tarea {id} no cambia archivos (es una pregunta)",
                 "task {id} changes no files (it is a question)"
+            ),
+            Self::InvalidBlockedPattern(pattern) => tr!(
+                "«{pattern}» no sirve: pon nombres de archivo o patrones de nombre (.env, .env.*, *.pem), sin carpetas y sin que abarquen todo",
+                "«{pattern}» does not work: use file names or name patterns (.env, .env.*, *.pem), without folders and not matching everything"
+            ),
+            Self::NotAnOutput(path) => tr!(
+                "«{path}» no es un archivo que escribió la tarea",
+                "«{path}» is not a file the task wrote"
+            ),
+            Self::OutputNotOpened(path) => tr!(
+                "Hedy no abre «{path}»: es un tipo de archivo que podría ejecutar algo. Guárdalo y ábrelo tú si confías en él.",
+                "Hedy does not open «{path}»: that type of file could run something. Save it and open it yourself if you trust it."
+            ),
+            Self::OutputNotSaved(name) => tr!(
+                "No se pudo guardar «{name}»: ese nombre ya existe muchas veces en la carpeta",
+                "Could not save «{name}»: that name is already taken many times in the folder"
             ),
             Self::MissingApiKey(id) => tr!(
                 "la cuenta «{id}» no tiene API key guardada",

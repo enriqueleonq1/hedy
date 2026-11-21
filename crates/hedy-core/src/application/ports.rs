@@ -525,8 +525,15 @@ pub trait Git: Send + Sync {
     /// Adds `pattern` to `.git/info/exclude` (never to the team's `.gitignore`).
     fn ensure_excluded(&self, repo: &Path, pattern: &str) -> PortResult<()>;
     fn add_worktree(&self, repo: &Path, path: &Path, branch: &str, base: &str) -> PortResult<()>;
+    /// A worktree at `base` without a branch (`--detach`), for a read-only task.
+    fn add_detached_worktree(&self, repo: &Path, path: &Path, base: &str) -> PortResult<()>;
+    /// Removes a worktree added with [`Git::add_detached_worktree`].
+    fn remove_detached_worktree(&self, repo: &Path, path: &Path) -> PortResult<()>;
     /// Whether git ignores `path` (relative to `repo`).
     fn is_ignored(&self, repo: &Path, path: &str) -> bool;
+    /// The `.env` files git ignores in `repo` (`.env`, `.env.local`,
+    /// `apps/web/.env`), relative to it; not inside ignored folders.
+    fn ignored_env_files(&self, repo: &Path) -> PortResult<Vec<String>>;
     /// Every change in the worktree (committed or not) since `base`.
     fn diff(&self, worktree: &Path, base: &str) -> PortResult<Vec<FileDiff>>;
     /// Commits everything; `false` when there was nothing to commit.
@@ -723,6 +730,11 @@ pub struct AgentRequest {
     /// Claude Code plugins for this session only (`--plugin-dir`): Hedy's
     /// approved skills, never written where the user's own `claude` reads.
     pub plugins: Vec<PathBuf>,
+    /// A read-only task's own folder outside the project: the only place it
+    /// may write (a document or a page it was asked for).
+    pub output: Option<PathBuf>,
+    /// The project's files the agent may not read or touch.
+    pub blocked: crate::domain::permissions::BlockedFiles,
 }
 
 impl AgentRequest {
@@ -798,6 +810,9 @@ pub trait FileSystem: Send + Sync {
     /// Where images attached to messages are kept, one folder per task.
     /// Never inside a repository.
     fn attachments_dir(&self) -> PathBuf;
+    /// Where read-only tasks write what they are asked for (documents,
+    /// pages), one folder per task. Never inside a repository.
+    fn outputs_dir(&self) -> PathBuf;
     /// The user's home folder, if known.
     fn home_dir(&self) -> Option<PathBuf>;
     /// Creates `path` (and missing parents). Fails when `path` already
@@ -835,6 +850,12 @@ pub trait FileSystem: Send + Sync {
     fn write_private_file(&self, path: &Path, contents: &[u8]) -> PortResult<()>;
     /// A file's bytes; `None` when it does not exist.
     fn read_bytes(&self, path: &Path) -> PortResult<Option<Vec<u8>>>;
+    /// The regular files under `dir` (links and what they lead to left out),
+    /// relative to it with `/`, and their sizes. Empty when `dir` is missing.
+    fn files_beneath(&self, dir: &Path) -> PortResult<Vec<(String, u64)>>;
+    /// Copies a regular file to `to`, which must not exist yet: nothing is
+    /// ever overwritten.
+    fn copy_to_new(&self, from: &Path, to: &Path) -> PortResult<()>;
     /// Deletes a file; nothing happens when it does not exist.
     fn remove_file(&self, path: &Path) -> PortResult<()>;
     /// Creates or replaces `rel` inside `root` (making its folders), never

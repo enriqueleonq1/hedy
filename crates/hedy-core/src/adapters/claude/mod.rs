@@ -16,7 +16,7 @@ use super::process::{headless_command, launch_error, wait_unlocked};
 use crate::application::ports::{
     AgentLauncher, AgentRequest, AgentSession, EventSink, PortError, PortResult,
 };
-use crate::domain::permissions::DEFAULT_BLOCKED;
+use crate::domain::permissions::BlockedFiles;
 use crate::domain::version::{CLAUDE_SHARED_CACHE_SINCE, parse_version, version_at_least};
 use crate::domain::{AgentEvent, Phase, PromptImage, TaskMode, prompts};
 use crate::experiments::{self, Experiment};
@@ -66,12 +66,44 @@ const READ_ONLY_TOOLS_DENIED: &str = "Edit,Write,MultiEdit,NotebookEdit";
 /// subagents that would have one.
 const SHELL_TOOLS_DENIED: &str = "Bash,Task";
 
+/// With a folder of its own (`output`), a question may write there: Hedy
+/// answers each write and refuses any outside it.
+const OUTPUT_TOOLS_DENIED: &str = "NotebookEdit";
+
+/// Where a question may write, when the hook is there to keep its writes in
+/// that folder (Claude's own allow rules would skip Hedy's answer).
+fn writable_output<'a>(
+    request: &'a AgentRequest,
+    hook: Option<&str>,
+) -> Option<&'a std::path::PathBuf> {
+    request.output.as_ref().filter(|_| hook.is_some())
+}
+
 /// The tools a read-only request may not use.
-fn denied(request: &AgentRequest) -> String {
-    if request.no_shell {
-        format!("{READ_ONLY_TOOLS_DENIED},{SHELL_TOOLS_DENIED}")
+fn denied(request: &AgentRequest, hook: Option<&str>) -> String {
+    let edits = if writable_output(request, hook).is_some() {
+        OUTPUT_TOOLS_DENIED
     } else {
-        READ_ONLY_TOOLS_DENIED.to_owned()
+        READ_ONLY_TOOLS_DENIED
+    };
+    if request.no_shell {
+        format!("{edits},{SHELL_TOOLS_DENIED}")
+    } else {
+        edits.to_owned()
+    }
+}
+
+/// Where a question may write what it is asked for, said to the agent.
+fn output_note(request: &AgentRequest, hook: Option<&str>) -> String {
+    match writable_output(request, hook) {
+        Some(folder) => {
+            let folder = folder.display();
+            tr!(
+                " Si te piden un documento, una página u otro archivo, escríbelo en {folder} (fuera del proyecto); el usuario lo verá al terminar.",
+                " If you are asked for a document, a page or another file, write it in {folder} (outside the project); the user will see it at the end."
+            )
+        }
+        None => String::new(),
     }
 }
 
@@ -131,11 +163,13 @@ fn lean_tools(request: &AgentRequest, mode: TaskMode) -> String {
     tools.join(",")
 }
 
-/// Protected files as Claude Code's own `deny` rules. Claude runs some tools
-/// without asking (Read, read-only shell commands, plan files), so Hedy's
-/// permission rules alone would not see them; these the CLI enforces itself.
-pub fn settings(hook: Option<&str>) -> String {
-    let rules: Vec<String> = DEFAULT_BLOCKED
+/// The project's blocked files as Claude Code's own `deny` rules. Claude runs
+/// some tools without asking (Read, read-only shell commands, plan files), so
+/// Hedy's permission rules alone would not see them; these the CLI enforces
+/// itself. None when the project keeps nothing from the AI.
+pub fn settings(hook: Option<&str>, blocked: &BlockedFiles) -> String {
+    let rules: Vec<String> = blocked
+        .patterns()
         .iter()
         .flat_map(|pattern| [format!("Read(**/{pattern})"), format!("Edit(**/{pattern})")])
         .collect();
@@ -169,7 +203,7 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     ]
     .map(String::from)
     .to_vec();
-    args.extend(["--settings".into(), settings(hook)]);
+    args.extend(["--settings".into(), settings(hook, &request.blocked)]);
     // Hedy's skills, for this session only: the user's own `claude` in the
     // same repository never sees them.
     for plugin in &request.plugins {
@@ -196,20 +230,25 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     match mode {
         TaskMode::Project => {}
         TaskMode::Ask => {
-            args.extend(["--disallowedTools".into(), denied(request)]);
+            args.extend(["--disallowedTools".into(), denied(request, hook)]);
+            let note = output_note(request, hook);
             system.push(tr!(
-                "Modo Pregunta de Hedy: responde y explica; no modifiques archivos.",
-                "Hedy's Ask mode: answer and explain; do not modify files."
+                "Modo Pregunta de Hedy: responde y explica; no modifiques el proyecto.{note}",
+                "Hedy's Ask mode: answer and explain; do not modify the project.{note}"
             ));
         }
         TaskMode::Research => {
-            args.extend(["--disallowedTools".into(), denied(request)]);
+            args.extend(["--disallowedTools".into(), denied(request, hook)]);
             allowed.extend(["WebSearch".into(), "WebFetch".into()]);
+            let note = output_note(request, hook);
             system.push(tr!(
-                "Modo Research de Hedy: investiga (también en la web), cita tus fuentes y no modifiques archivos.",
-                "Hedy's Research mode: investigate (on the web too), cite your sources and do not modify files."
+                "Modo Research de Hedy: investiga (también en la web), cita tus fuentes y no modifiques el proyecto.{note}",
+                "Hedy's Research mode: investigate (on the web too), cite your sources and do not modify the project.{note}"
             ));
         }
+    }
+    if let Some(folder) = writable_output(request, hook) {
+        args.extend(["--add-dir".into(), folder.to_string_lossy().into_owned()]);
     }
     let servers = request.mcp_servers();
     if !servers.is_empty() {
@@ -311,6 +350,13 @@ impl AgentLauncher for ClaudeCodeLauncher {
                 .into_iter()
                 .map(|(name, value)| (name.to_owned(), value.into())),
         );
+        if let Some(folder) = writable_output(&request, self.hook.as_deref()) {
+            spec.env.push((hook::OUTPUT_ENV.to_owned(), folder.clone()));
+        }
+        if !request.blocked.is_empty() {
+            let list = serde_json::to_string(request.blocked.patterns()).unwrap_or_default();
+            spec.env.push((hook::BLOCKED_ENV.to_owned(), list.into()));
+        }
         let mut child = headless_command(&spec)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -496,6 +542,8 @@ pub(crate) mod tests {
             no_shell: false,
             no_tools: false,
             plugins: Vec::new(),
+            output: None,
+            blocked: BlockedFiles::suggested(),
         }
     }
 
@@ -616,11 +664,40 @@ pub(crate) mod tests {
         assert!(project.contains("--permission-mode plan"));
         assert!(project.ends_with("--model opus --resume s-1"));
         assert!(!project.contains("disallowedTools"));
+        // A project that keeps nothing from the AI gives Claude no deny rule.
+        let open = args(
+            &AgentRequest {
+                blocked: BlockedFiles::default(),
+                ..request(TaskMode::Project, true)
+            },
+            None,
+        )
+        .join(" ");
+        assert!(open.contains(r#"{"permissions":{"deny":[]}}"#), "{open}");
 
         let ask = args(&request(TaskMode::Ask, false), None).join(" ");
         assert!(ask.contains("--permission-mode default"));
         assert!(ask.contains("--disallowedTools Edit,Write,MultiEdit,NotebookEdit"));
         assert!(!ask.contains("Bash,Task"));
+        assert!(!ask.contains("--add-dir"));
+        // With a folder of its own, a question may write there only, and
+        // only with the hook to keep it there.
+        let with_output = AgentRequest {
+            output: Some("/data/outputs/t1".into()),
+            ..request(TaskMode::Ask, false)
+        };
+        let unguarded = args(&with_output, None).join(" ");
+        assert!(unguarded.contains("--disallowedTools Edit,Write,MultiEdit,NotebookEdit"));
+        assert!(!unguarded.contains("--add-dir"));
+        let writing = args(&with_output, Some("'/bin/hedy' hook pre-tool-use"));
+        let at = writing
+            .iter()
+            .position(|a| a == "--disallowedTools")
+            .unwrap();
+        assert_eq!(writing[at + 1], "NotebookEdit");
+        let at = writing.iter().position(|a| a == "--add-dir").unwrap();
+        assert_eq!(writing[at + 1], "/data/outputs/t1");
+        assert!(writing.join(" ").contains("/data/outputs/t1 ("));
         let reading = args(
             &AgentRequest {
                 no_shell: true,

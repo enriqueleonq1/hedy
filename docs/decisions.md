@@ -373,9 +373,9 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
   with `control_response` (`allow` + `updatedInput`, or `deny` + `message`). Confirmed.
 - **Claude does not ask for everything.** In real runs it read files, ran read-only shell
   commands (`wc`, `cat`) and wrote its plan to `~/.claude/plans/` without a request. So:
-  - Protected files are also passed as Claude Code's own `permissions.deny` rules
-    (`--settings`, `Read(**/.env)`, `Edit(**/.env)`...), which the CLI enforces itself.
-    Verified: the `.env` read was blocked by the CLI.
+  - The project's blocked files (§40) are also passed as Claude Code's own
+    `permissions.deny` rules (`--settings`, `Read(**/.env)`, `Edit(**/.env)`...), which the
+    CLI enforces itself. Verified: the `.env` read was blocked by the CLI.
   - A **`PreToolUse` hook** (also in `--settings`) runs the same protected-file rules on
     every Bash/Read/Edit/Write call, including the ones Claude Code runs without asking.
     The app binary serves it (`hedy-app hook pre-tool-use`). Verified: `cat .env` through
@@ -383,7 +383,8 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
 - **Dependencies in the worktree:** git-ignored `node_modules`, `.venv`, `venv` and
   `vendor` are symlinked from the main checkout (and excluded locally, since git does not
   treat a symlink as an ignored directory), so builds and tests work without reinstalling.
-  `.env` files are deliberately not shared: a task never has the secrets at hand.
+  Since §40 the ignored `.env` files are copied in too, unless the project keeps them from
+  the AI.
 - **Preview:** the "Vista previa" tab embeds a local dev server (localhost / 127.0.0.1
   only, enforced in the UI and in the CSP `frame-src`).
 - **Pregunta / Research:** no worktree; edit tools disabled with `--disallowedTools`;
@@ -408,7 +409,8 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
   `sandboxPolicy: readOnly` that only proposes a plan, then a `workspaceWrite` turn once
   approved. Approvals map to `accept` / `decline`. Multi-file patches are checked file by
   file. Codex has no equivalent of Claude's deny rules or hook, so a task with Codex
-  **always runs in a worktree** (also for questions), where `.env` does not exist.
+  **always runs in a worktree**, where `.env` does not exist. For a question or research
+  it is a copy without a branch, made for each turn and deleted when it ends (§38).
 - **Kimi and Gemini by API key** run on an OpenAI-compatible agent. Hedy gives the model
   six tools (list, read, search, write, edit, run) and runs them itself, so every rule is
   enforced natively: reads stay inside the task folder and never touch protected files;
@@ -559,8 +561,8 @@ schemas):
   - `session/load` resumes a session when the agent supports it; its replayed history is
     not shown again.
 - **Always in a worktree.** These CLIs read files without asking, like Codex, so their
-  tasks (questions too) run in a worktree, where `.env` does not exist. Their edits and
-  commands still go through Hedy's checks.
+  tasks run in a worktree, where `.env` does not exist: for questions, a copy without a
+  branch, one per turn (§38). Their edits and commands still go through Hedy's checks.
 - **Antigravity: one account per machine.** Its login lives in the OS keyring and there is
   no documented way to choose a folder. Community tools change `HOME` or use an
   undocumented `--gemini_dir`; Hedy does not, under rule 1. Hedy always uses its default
@@ -1320,8 +1322,8 @@ claude -p /usage --output-format json --no-session-persistence --safe-mode
 - Typing `@` in a project's composer lists the project's files (`Hedy::project_files`, the
   `Git::list_files` port): `git ls-files -z --cached --others --exclude-standard` in the
   main checkout, so tracked files plus untracked ones git does not ignore, never
-  `.hedy/`. Protected names (`permissions::DEFAULT_BLOCKED`: `.env`, `.env.*`, keys,
-  credentials…) are never offered, the same rule that keeps agents away from them.
+  `.hedy/`. Names the project keeps from the AI (its "Archivos que la IA no lee", §40) are
+  never offered, the same rule that keeps agents away from them.
   Sorted and cut at 5,000 paths (`MAX_PROJECT_FILES`).
 - The picker ranks file names that start with the query, then names that contain it, then
   paths that contain it (no case), shorter paths first; ↑/↓, Enter or Tab insert
@@ -3629,3 +3631,170 @@ rule instead of ignoring it.
 - In a shallow clone, the oldest commit shows as all new. Uncommitted work reads at most 200 new
   files; past that, the check says only part was checked. "Ya no aplica" compares the note without its hidden characters; a note whose only
   difference is one of them is taken as unchanged.
+
+## 38. Questions without branches (Nov 20, 2026)
+
+Asking and researching never create a branch, with any agent. Only "Cambiar código" gets a
+worktree on a `hedy/…` branch (§10), since only its work can be accepted, shipped or undone.
+
+- **Who needs a copy.** Claude Code and the API agent answer in the project itself: Claude's
+  deny rules and hook, and Hedy's own tools for the API agent, keep protected files unread.
+  Codex and the ACP CLIs read without asking Hedy, so a question with them works in a copy
+  where `.env` does not exist (`Hedy::open_copy`).
+- **The copy.** `git worktree add --detach` at the current commit, in
+  `.hedy/worktrees/<task id>` (excluded through `.git/info/exclude`), with the shared
+  dependency folders and the project's skills, as a task's worktree. It is made when a turn
+  starts (the first prompt, a follow-up, a resumed or handed-over agent) and deleted when the
+  turn ends, the task is stopped, fails or is discarded, or its agent cannot start. Its agent
+  stops with the turn: a process left in a deleted folder (and the MCP servers it started
+  there) breaks, so the next turn resumes the session in a new copy at the same path. `Task.scratch` holds it while it exists; `Task::work_dir`
+  prefers a worktree, then the copy, then the project.
+- **Handoff.** The agent that takes over decides: a question handed from Claude to Codex
+  gets a copy, and one handed from Codex to Claude drops it.
+- **Older tasks.** Questions started before this kept a worktree and a `hedy/…` branch
+  forever. When the app starts, `Hedy::tidy_read_only_copies` deletes them, and any copy a
+  turn left behind. It never touches a task that is running or waiting for a card (perhaps in
+  the `hedy` CLI), a closed one, or a task that changes files; each task is read again just
+  before. A worktree that is gone stops being the task's folder even when git keeps its branch
+  (checked out elsewhere). A task the app left "running" when it closed keeps its copy, and
+  its next turn reuses it.
+- **Known gap.** A skill approved during a turn reaches the next turn's copy, not the open one.
+- **Not covered here.** A copy does not stop Codex or an ACP agent from reading
+  outside it by an absolute path: Hedy only sees what they ask permission for.
+
+## 39. What a question writes goes outside the project (Nov 20, 2026)
+
+A question or research asked for a document, a page or another file writes it in the task's
+own folder in Hedy's data folder (`outputs/<task id>/`, private to the user), never in the
+project. Putting something in the project is a «Cambiar código» task the user starts.
+
+- **Who may write there.** Claude Code and the API agent, where Hedy answers every write.
+  Codex and the ACP agents stay read-only (their sandbox or Hedy refuses the change).
+- **Claude Code.** Its Ask/Research tools no longer deny `Edit`, `Write` and `MultiEdit`
+  (only `NotebookEdit`); `--add-dir` gives it the folder and the mode's system text names it.
+  A write usually reaches Hedy as `can_use_tool`, but an allow rule in the account's or the
+  repository's Claude settings (`"Edit"`, `"Write(*)"`) skips that, and a Claude question
+  works in the real project. So the `PreToolUse` hook gets the folder (`HEDY_OUTPUT_DIR`) and
+  denies any write whose path, from the agent's folder and after links, is not inside it: the
+  hook's deny beats any allow rule. Without the hook (no host binary), the tools stay denied.
+- **Hedy's answer** (`Hedy::output_write`). Every path is read as the agent meant it (relative
+  to its own folder, the project for Claude) and must land in the task's folder, also after
+  links: then it is allowed with no card ("En la carpeta de la tarea"). Anywhere else it is
+  refused with the folder to use. Protected files are refused as always. The shell keeps its
+  cards, as before.
+- **The API agent** gets `write_file` and `edit_file` (no shell) in a question, and resolves
+  their paths inside that folder.
+- **After the turn.** The chat shows "Archivos que escribió" with each file's size, «Abrir»
+  (the system's app: a page opens in the browser) and «Guardar en…» (a folder the user picks;
+  a taken name becomes «name (2).ext», nothing is overwritten). Only paths from the folder's
+  listing are opened or saved; links in it are left out. «Abrir» only for documents, pages,
+  images and data (`OutputFile::opens`): an agent steered by something it read could write a
+  `.desktop` or a `.jar`, which only «Guardar en…» offers. The folder goes when the task is
+  discarded or the conversation deleted; an empty one (nothing written) when the app starts.
+- **Changed from the plan.** A page opens in the browser, not in «Vista previa»: that tab only
+  embeds local dev servers (its CSP allows nothing else), and a page with scripts from a CDN
+  would not work there.
+
+## 40. `.env` like in Claude Code: a list per project, empty by default (Nov 20, 2026)
+
+Until now `.env`, keys and credentials (`DEFAULT_BLOCKED`) were kept from every AI in every
+project. Claude Code reads them unless told not to, and the user found Hedy too blocking. Now
+each project has "Archivos que la IA no lee" (`Project::blocked_files`, a
+`permissions::BlockedFiles`), **empty in every project**, existing ones too (no data is
+migrated: a new `projects.blocked_files` column, `NULL` = none). When the project cannot be
+read (a busy store), the checks fall back to the usual list, never to none.
+
+- **One list for everything the AI reads.** Every check takes the project's list: Claude's
+  `deny` rules and its hook (through `HEDY_BLOCKED_FILES`, as `HEDY_EXPERIMENTS` reaches it),
+  Hedy's permission cards (`evaluate`), the API agent's tools, one-shot requests that read the
+  project, the briefing's search, `@` mentions and the code views (locked, search, blame, the
+  editor). With an empty list each check lets everything through at once, and the hook skips
+  walking a whole search.
+- **Hedy's own messages keep a fixed list.** What Hedy itself sends an AI (a commit message,
+  a rule check, a pull request text) and shows in a diff never carries the contents of a
+  usual secret (`is_secret_path`, the old list now `SUGGESTED_BLOCKED`), whatever the project
+  lets its agents read: the risk there is a secret reaching git or a prompt Hedy writes.
+- **Task copies get the `.env` files.** `Git::ignored_env_files` lists the ignored `.env`,
+  `.env.*` files outside ignored folders; Hedy copies them (not links: the agent's changes
+  stay in the copy, and links out of the copy are refused) into each worktree and each
+  question copy, unless listed. Tests and dev servers then work as in the project. Each copy
+  is private to the user, at most 1 MB, and never written through a link in the copy.
+- **Changing the list.** A `.env` listed now leaves the copies of the project's open tasks
+  (only one still as Hedy copied it). An agent started with the old list (its deny rules and
+  hook come at launch) resumes its session with the new one on its next turn.
+- **Setting it.** Ajustes of the project ("Archivos que la IA no lee", with «Agregar los de
+  siempre (.env, claves, credenciales)»), `hedy block [patterns] [--remove|--usual|--clear]`
+  (with nothing, the list). Patterns are names or name patterns; case and invisible
+  characters do not count, a leading `**/` is dropped, and one with a folder (`config/`,
+  `secrets/*`) or that matches everything (`*`) is refused: it would keep nothing, or every
+  file. The UI's own copy of the list is gone: the backend decides. Known gap: Claude's own
+  deny rules are written in lower case and match case-sensitively on Linux; the hook, which
+  ignores case, covers the rest.
+- **Other agents.** Investigated on Nov 20, 2026 in their source and docs, not live:
+  - Codex's sandbox reads the whole disk, but with `approvalPolicy: untrusted` every command
+    not allowed by an exec-policy rule asks (`core/src/exec_policy.rs` on Nov 20, 2026; older
+    versions let known read-only commands such as `cat` through), so Hedy sees
+    `cat ../../../.env` and denies it by name. An exec-policy rule in the
+    user's Codex folder could skip that card. A permission profile passed in `thread/start`'s
+    `config` (`"<pattern>" = "none"`) would make bubblewrap hide listed files; it is
+    experimental and left until it can be checked with Codex installed.
+  - Gemini CLI's tools read only inside the workspace and skip git-ignored files, so it does
+    not read `.env` with them even with an empty list. Kimi Code always blocks `.env`,
+    `id_rsa*` and `credentials` itself, and reads other absolute paths outside its copy
+    without asking. Antigravity does not document it. For them the list is best effort.
+- **Verified for real** (Claude Code, haiku, a scratch data folder on the personal account):
+  `smoke_task -- haiku free` reads an unlisted `.env`; `env` and `bash` with `.env` listed
+  never see it (Claude's deny rule and the hook); `doc` writes a question's document in its
+  own folder and leaves `git status` clean (§39).
+
+## 41. Permission modes, as in Claude Code (Nov 20, 2026)
+
+Every edit and command used to ask. Now a task that changes files has a mode
+(`PermissionMode`), picked in the composer's «Permisos» chip, changed there while the task is
+open, shown next to its status when it is not manual, and defaulting to the project's
+(Ajustes → General, `hedy permissions [manual|edits|auto]`):
+
+| Mode | Without a card |
+|---|---|
+| Manual (default) | nothing |
+| Aceptar ediciones | edits inside the task's copy |
+| Automático | edits, commands that are not risky nor reach outside the copy, and tools that stay in the copy or in Hedy |
+
+- **The floor answers first and no mode moves it.** Blocked files (§40), `.git`, anything
+  outside the copy, also through a link, are denied before the mode is looked at; the agents'
+  own settings (`.claude`, `.mcp.json`…) and an ACP move or delete always keep their card
+  (`unattended_writes`). Rule 3 is untouched.
+- **Only with a copy of its own.** The mode acts in tasks with a worktree («Cambiar código»).
+  A Claude question works in the real folder: its commands keep their cards whatever the mode
+  (its documents already go to its own folder, §39).
+- **Commands in Automático** (`permissions::command_needs_card`, best effort like every shell
+  check) keep their card when they:
+  - name a path outside the copy (`~`, `$HOME`/`${HOME}`, `..` out of it, a home folder
+    anywhere in a word; the system's folders, `/tmp` and the standard streams are fine), or
+    leave it with a bare `cd`;
+  - name `.git` (in a worktree it is a pointer to the real repository), the agents' own
+    settings (a `.claude/settings.json` written by the shell would make Claude stop asking
+    Hedy), or a dependency folder shared with the real checkout (`node_modules` is a link);
+  - run something that reaches past the copy: the network or other machines (`curl`, `ssh`,
+    `gh`, `docker`…), a `publish`, or a `git` subcommand on what worktrees share with the real
+    repository (`push`, `remote`, `config`, `stash`, `update-ref`, `reflog`, `gc`, and
+    `branch`/`tag` with `-d`/`-D`/`-f`/`-m`). Only the subcommand counts (`git add config` is
+    fine).
+
+  A variable or a script can still reach further: the copy and the review before accepting are
+  the safety net, so there is no "bypass" mode. `npm install` still writes into the shared
+  `node_modules` (as in manual mode once approved).
+- **Other tools in Automático** go only when they stay in the copy or in Hedy: reading and
+  searching, `TodoWrite`, subagents (`Task`, whose own tools ask again) and Hedy's own MCP
+  servers (memory, code map). An MCP tool of the account (mail, chat, GitHub), the web or an
+  ACP agent's "other" tool keeps its card.
+- **Changing the mode** answers the cards already waiting that the new mode lets through.
+- **Plans still wait.** «Enséñame el plan primero» is a separate switch; a plan always waits
+  for the user, in any mode (as Claude Code's plan mode). To go straight to the work, turn it
+  off. (The plan said Automático would approve plans; that would make the switch pointless.)
+- **How it answers.** Claude stays in its `default` permission mode, so every edit and command
+  still reaches Hedy, which answers at once (`PermissionResolved` with `automatic` and the
+  mode's name). Codex and the ACP agents and the API agent ask Hedy the same way.
+- **Verified for real** (Claude Code, haiku, personal account): `smoke_task -- haiku auto` ran
+  a whole task, a file and `ls`, with no card, and accepted it.
+

@@ -41,6 +41,31 @@ afterEach(() => {
 });
 
 describe("A project's settings", () => {
+  it("sets the permission mode its new tasks start with", async () => {
+    const { api, user } = await setup();
+    const general = await card("General");
+    await chooseOption(user, within(general).getByRole("combobox", { name: "Permisos de las tareas nuevas" }), "Aceptar ediciones");
+    await waitFor(async () => expect((await projectOf(api, HEDY)).permissionMode).toBe("acceptEdits"));
+  });
+
+  it("lists the files the AI does not read: emptied, filled again with the usual ones, one added", async () => {
+    const { api, user } = await setup();
+    const blocked = await card("Archivos que la IA no lee");
+    expect(within(blocked).getByText(".env")).toBeInTheDocument();
+    expect(within(blocked).queryByRole("button", { name: /Agregar los de siempre/ })).not.toBeInTheDocument();
+
+    for (const pattern of (await projectOf(api, HEDY)).blockedFiles) {
+      await user.click(within(blocked).getByRole("button", { name: `Quitar ${pattern}` }));
+    }
+    await waitFor(() => expect(within(blocked).getByText(/la IA lee todos los archivos del proyecto, también \.env/)).toBeInTheDocument());
+    expect((await projectOf(api, HEDY)).blockedFiles).toEqual([]);
+
+    await user.click(within(blocked).getByRole("button", { name: "Agregar los de siempre (.env, claves, credenciales)" }));
+    await waitFor(async () => expect((await projectOf(api, HEDY)).blockedFiles).toContain(".env"));
+    await user.type(within(blocked).getByLabelText("Nombre o patrón"), "config/Secretos.yml{Enter}");
+    await waitFor(async () => expect((await projectOf(api, HEDY)).blockedFiles).toContain("secretos.yml"));
+  });
+
   it("has the project's tabs and a way back to it", async () => {
     const { api, user } = await setup();
     const editor = vi.spyOn(api, "openInEditor");

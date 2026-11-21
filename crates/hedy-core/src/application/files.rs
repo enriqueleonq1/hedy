@@ -5,7 +5,6 @@
 use std::path::Path;
 
 use super::{AppResult, Hedy};
-use crate::domain::permissions::is_protected_path;
 
 /// Paths offered at most; a bigger repository is cut, in path order.
 pub const MAX_PROJECT_FILES: usize = 5_000;
@@ -18,7 +17,7 @@ impl Hedy {
             .git
             .list_files(&project.path)?
             .into_iter()
-            .filter(|path| !is_protected_path(path) && !path.starts_with(".hedy/"))
+            .filter(|path| !project.blocked_files.blocks_path(path) && !path.starts_with(".hedy/"))
             .collect();
         files.sort();
         files.dedup();
@@ -40,6 +39,13 @@ mod tests {
         f.fs.add_git_root("/code/agenda");
         f.hedy
             .use_account(&f.dir("/code/agenda"), "personal", None)
+            .unwrap();
+        let usual: Vec<String> = crate::domain::permissions::SUGGESTED_BLOCKED
+            .iter()
+            .map(|p| p.to_string())
+            .collect();
+        f.hedy
+            .set_project_blocked_files(&f.dir("/code/agenda"), &usual)
             .unwrap();
         f.git.set_files(&[
             "src/app.py",

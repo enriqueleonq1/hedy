@@ -379,6 +379,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: Some("sonnet".into()),
                 plan_first: false,
+                permissions: None,
             })
             .unwrap()
             .id
@@ -748,6 +749,7 @@ mod tests {
                 mode: TaskMode::Project,
                 model: None,
                 plan_first: false,
+                permissions: None,
             })
             .unwrap()
             .id;

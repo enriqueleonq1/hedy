@@ -44,11 +44,12 @@ pub fn run() {
             let hedy = hedy.with_task_events(events);
             waits::start(&hedy);
             sync::start(app.handle().clone(), &hedy);
-            // Trials whose driver died, and session plugins of tasks closed
-            // while the app was away.
+            // Trials whose driver died, session plugins of tasks closed
+            // while the app was away, and copies read-only tasks left.
             let tidy = hedy.clone();
             std::thread::spawn(move || {
                 tidy.tidy_orphan_trials();
+                tidy.tidy_read_only_copies();
                 tidy.refresh_skills_plugins();
             });
             app.manage(AppState {
@@ -111,6 +112,9 @@ pub fn run() {
             commands::restore_builtin_templates,
             commands::stop_task,
             commands::task_diff,
+            commands::task_outputs,
+            commands::open_output,
+            commands::save_output,
             commands::accept_preview,
             commands::accept_task,
             commands::undo_accept,
@@ -159,6 +163,10 @@ pub fn run() {
             commands::usage_summary,
             commands::refresh_plan_usage,
             commands::set_project_client,
+            commands::set_project_blocked_files,
+            commands::suggested_blocked_files,
+            commands::set_task_permissions,
+            commands::set_project_permission_mode,
             commands::detect_clis,
             commands::doctor,
             commands::open_link,

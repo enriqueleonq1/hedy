@@ -124,12 +124,21 @@ impl Hedy {
                 value: url.to_owned(),
             });
         }
+        self.system_open(url)
+    }
+
+    /// Opens a file with the system's app for its type.
+    pub(super) fn open_with_system(&self, path: &Path) -> AppResult<()> {
+        self.system_open(&path.to_string_lossy())
+    }
+
+    fn system_open(&self, target: &str) -> AppResult<()> {
         let opener = if cfg!(target_os = "macos") {
             "open"
         } else {
             "xdg-open"
         };
-        let spec = LaunchSpec::program(opener, vec![url.to_owned()]);
+        let spec = LaunchSpec::program(opener, vec![target.to_owned()]);
         Ok(self.runner.spawn_detached(&spec)?)
     }
 

@@ -11,8 +11,8 @@ use hedy_core::application::{
 use hedy_core::domain::ImageSupport;
 use hedy_core::domain::command::reports_commands;
 use hedy_core::domain::{
-    AgentEvent, Category, Color, Commit, Decision, FileDiff, Note, PhasePlan, QueuedMessage,
-    TaskId, TemplateId,
+    AgentEvent, Category, Color, Commit, Decision, FileDiff, Note, OutputFile, PhasePlan,
+    QueuedMessage, TaskId, TemplateId,
 };
 use tauri::State;
 use tauri::ipc::Channel;
@@ -256,6 +256,7 @@ pub async fn start_task(state: State<'_, AppState>, input: NewTaskInput) -> Comm
             mode: input.mode,
             model: input.model.filter(|m| !m.is_empty()),
             plan_first: input.plan_first,
+            permissions: input.permissions,
             images,
         };
         let task = match input.carry {
@@ -518,6 +519,35 @@ pub async fn stop_task(state: State<'_, AppState>, id: String) -> CommandResult<
 #[tauri::command]
 pub async fn task_diff(state: State<'_, AppState>, id: String) -> CommandResult<Vec<FileDiff>> {
     blocking(&state, move |h| h.task_diff(&task_id(id))).await
+}
+
+/// What a question wrote in its own folder (documents, pages).
+#[tauri::command]
+pub async fn task_outputs(
+    state: State<'_, AppState>,
+    id: String,
+) -> CommandResult<Vec<OutputFile>> {
+    blocking(&state, move |h| h.task_outputs(&task_id(id))).await
+}
+
+#[tauri::command]
+pub async fn open_output(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+) -> CommandResult<()> {
+    blocking(&state, move |h| h.open_output(&task_id(id), &path)).await
+}
+
+/// Copies one of a question's files into `folder`; where it went.
+#[tauri::command]
+pub async fn save_output(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+    folder: PathBuf,
+) -> CommandResult<PathBuf> {
+    blocking(&state, move |h| h.save_output(&task_id(id), &path, &folder)).await
 }
 
 /// What accepting would do: shown in the review sheet before anything changes.
@@ -803,6 +833,54 @@ pub async fn set_project_client(
         h.set_project_client(&path, client.as_deref()).map(drop)
     })
     .await
+}
+
+/// "Archivos que la IA no lee" of a project.
+#[tauri::command]
+pub async fn set_project_blocked_files(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    patterns: Vec<String>,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.set_project_blocked_files(&path, &patterns).map(drop)
+    })
+    .await
+}
+
+/// A task's permission mode, from the composer.
+#[tauri::command]
+pub async fn set_task_permissions(
+    state: State<'_, AppState>,
+    id: String,
+    mode: hedy_core::domain::PermissionMode,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.set_task_permissions(&task_id(id), mode).map(drop)
+    })
+    .await
+}
+
+/// The permission mode a project's new tasks start with.
+#[tauri::command]
+pub async fn set_project_permission_mode(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    mode: hedy_core::domain::PermissionMode,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.set_project_permission_mode(&path, mode).map(drop)
+    })
+    .await
+}
+
+/// What "Agregar los de siempre" adds.
+#[tauri::command]
+pub fn suggested_blocked_files() -> Vec<String> {
+    hedy_core::domain::permissions::SUGGESTED_BLOCKED
+        .iter()
+        .map(|p| p.to_string())
+        .collect()
 }
 
 /// The official CLIs on this computer and their default logins (onboarding).

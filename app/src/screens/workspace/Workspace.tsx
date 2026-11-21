@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 
-import { errorMessage, useAction, useApi } from "../../api/context";
+import { errorMessage, useAction, useApi, useOverview } from "../../api/context";
 import type { HedyApi } from "../../api/HedyApi";
 import type {
   Account,
@@ -9,6 +9,7 @@ import type {
   CommandSource,
   ImageInput,
   Overview,
+  PermissionMode,
   PromptTemplate,
   Task,
   TaskMode,
@@ -84,6 +85,7 @@ import { jumpDigit, TaskSwitcher } from "./TaskSwitcher";
 import { Timeline } from "./Timeline";
 import { ClosingBar } from "./ClosingBar";
 import { EndCard } from "./EndCard";
+import { OutputsCard } from "./OutputsCard";
 import { ProjectHead, ProjectTasks } from "./ProjectHome";
 import { TaskDetails } from "./TaskDetails";
 
@@ -326,6 +328,9 @@ export function Workspace({
             <div className="chat__title-row">
               <h1 title={title}>{title}</h1>
               {task && state && <StatusPill state={state} task={task} />}
+              {task && task.mode === "project" && isOpen(task) && task.permissions && task.permissions !== "manual" && (
+                <span className="mode-tag">{t(PERMISSION_LABEL[task.permissions])}</span>
+              )}
             </div>
             {solo && (
               <p className="muted">
@@ -421,18 +426,21 @@ export function Workspace({
             mascot={mascot}
             scrollKey={queue.length}
             footer={
-              carryable && task?.status === "review" ? (
-                <CarrySuggestion onCarry={startCarry} onNote={startNote} />
-              ) : !solo ? (
-                <EndCard
-                  task={task}
-                  events={history}
-                  onReview={() => {
-                    openPanel();
-                    pressPanelShortcut("G");
-                  }}
-                />
-              ) : undefined
+              <>
+                <OutputsCard task={task} events={history} />
+                {carryable && task?.status === "review" ? (
+                  <CarrySuggestion onCarry={startCarry} onNote={startNote} />
+                ) : !solo ? (
+                  <EndCard
+                    task={task}
+                    events={history}
+                    onReview={() => {
+                      openPanel();
+                      pressPanelShortcut("G");
+                    }}
+                  />
+                ) : undefined}
+              </>
             }
           />
         ) : (
@@ -644,8 +652,27 @@ const MODE_DETAIL: Record<TaskMode, MessageKey> = {
 /** What starts a new task from the composer: in a project, or as a conversation. */
 type StartTask = (
   api: HedyApi,
-  input: { prompt: string; mode: TaskMode; model: string | null; planFirst: boolean; images?: ImageInput[] },
+  input: {
+    prompt: string;
+    mode: TaskMode;
+    model: string | null;
+    planFirst: boolean;
+    permissions?: PermissionMode;
+    images?: ImageInput[];
+  },
 ) => Promise<Task>;
+
+const PERMISSION_MODES: PermissionMode[] = ["manual", "acceptEdits", "auto"];
+const PERMISSION_LABEL: Record<PermissionMode, MessageKey> = {
+  manual: "workspace.permissions.manual",
+  acceptEdits: "workspace.permissions.acceptEdits",
+  auto: "workspace.permissions.auto",
+};
+const PERMISSION_DETAIL: Record<PermissionMode, MessageKey> = {
+  manual: "workspace.permissions.manualDetail",
+  acceptEdits: "workspace.permissions.acceptEditsDetail",
+  auto: "workspace.permissions.autoDetail",
+};
 
 const CARD_LABEL: Record<NonNullable<CardWaiting>, MessageKey> = {
   plan: "workspace.composer.cardPlan",
@@ -752,6 +779,16 @@ function Composer({
   const [newMode, setNewMode] = useProjectMode(scope, solo ? CONVERSATION_MODES : MODES);
   // A follow-up stays in its task's mode; the selector is only for new tasks.
   const mode = followUp && task ? task.mode : newMode;
+  // What the agent does without asking: a new task starts with the project's
+  // default (or what was picked here); an open one changes its own.
+  const overview = useOverview();
+  const projectPermissions = overview.data?.projects.find((p) => p.path === scope)?.permissionMode ?? "manual";
+  const [pickedPermissions, setPickedPermissions] = useState<PermissionMode | null>(null);
+  const newPermissions = pickedPermissions ?? projectPermissions;
+  const permissions: PermissionMode = followUp && task ? (task.permissions ?? "manual") : newPermissions;
+  const setTaskPermissions = useAction((api, value: PermissionMode) => api.setTaskPermissions(task?.id ?? "", value), {
+    invalidate: [listKey],
+  });
   const keys = keyLabels();
   const templates = useTemplates(scope);
   const images = useComposerImages({ account: disabled ? null : imageAccount, queueing });
@@ -848,6 +885,7 @@ function Composer({
         mode,
         model: model || null,
         planFirst,
+        ...(mode === "project" ? { permissions: newPermissions } : {}),
         ...(message.images.length ? { images: message.images } : {}),
       }),
     {
@@ -1129,6 +1167,20 @@ function Composer({
       </p>
       <div className="composer__bar">
         <div className="composer__chips">
+          {!solo && mode === "project" && (
+            <Select<PermissionMode>
+              variant="chip"
+              label={t("workspace.permissions.label")}
+              title={t("workspace.permissions.label")}
+              value={permissions}
+              options={PERMISSION_MODES.map((value) => ({
+                value,
+                label: t(PERMISSION_LABEL[value]),
+                detail: t(PERMISSION_DETAIL[value]),
+              }))}
+              onChange={(value) => (followUp && task ? setTaskPermissions.mutate(value) : setPickedPermissions(value))}
+            />
+          )}
           {!followUp && (
             <>
               <Select<TaskMode | typeof PLAN_FIRST>

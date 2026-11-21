@@ -11,7 +11,8 @@ use crate::application::ports::{
 use crate::domain::recall::NoteUse;
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Color, ConfigFolder, Credentials, Note, NoteStatus,
-    PlanUsage, Project, Skill, SkillStatus, Task, TaskId, UsageProblem, UsageSample,
+    PermissionMode, PlanUsage, Project, Skill, SkillStatus, Task, TaskId, UsageProblem,
+    UsageSample,
 };
 use crate::tr;
 
@@ -291,6 +292,14 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE sync_cursors_spaced RENAME TO sync_cursors;
     ALTER TABLE sync_conflicts ADD COLUMN space TEXT NOT NULL DEFAULT '';
 "#,
+    r#"
+    -- Files the AI does not read in the project (JSON list; NULL: none).
+    ALTER TABLE projects ADD COLUMN blocked_files TEXT;
+"#,
+    r#"
+    -- The permission mode new tasks start with (NULL: manual).
+    ALTER TABLE projects ADD COLUMN permission_mode TEXT;
+"#,
 ];
 
 mod commands;
@@ -462,8 +471,21 @@ fn project_from_row(row: &Row) -> rusqlite::Result<Project> {
         .transpose()
         .map_err(invalid(6))?
         .unwrap_or_default();
+    let blocked_files = row
+        .get::<_, Option<String>>(8)?
+        .map(|p| serde_json::from_str(&p))
+        .transpose()
+        .map_err(invalid(8))?
+        .unwrap_or_default();
+    let permission_mode = row
+        .get::<_, Option<String>>(9)?
+        .as_deref()
+        .and_then(PermissionMode::parse)
+        .unwrap_or_default();
     Ok(Project {
         client: row.get(7)?,
+        blocked_files,
+        permission_mode,
         path: PathBuf::from(row.get::<_, String>(0)?),
         name: row.get(1)?,
         account,
@@ -478,7 +500,9 @@ impl ProjectRepository for SqliteStore {
     fn list_projects(&self) -> PortResult<Vec<Project>> {
         self.with(|c| {
             c.prepare(
-                "SELECT path, name, account_id, protected, color, phases, memory_off, client FROM projects ORDER BY name",
+                "SELECT path, name, account_id, protected, color, phases, memory_off, client, blocked_files,
+                    permission_mode
+                 FROM projects ORDER BY name",
             )?
             .query_map([], project_from_row)?
             .collect()
@@ -494,15 +518,21 @@ impl ProjectRepository for SqliteStore {
             .then(|| serde_json::to_string(&project.memory_off))
             .transpose()
             .map_err(json_error)?;
+        let blocked_files = (!project.blocked_files.is_empty())
+            .then(|| serde_json::to_string(&project.blocked_files))
+            .transpose()
+            .map_err(json_error)?;
         self.with(|c| {
             c.execute(
-                "INSERT INTO projects (path, name, account_id, protected, color, phases, memory_off, client)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                "INSERT INTO projects (path, name, account_id, protected, color, phases, memory_off, client, blocked_files,
+                    permission_mode)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                  ON CONFLICT (path) DO UPDATE SET
                     name = excluded.name, account_id = excluded.account_id,
                     protected = excluded.protected, color = excluded.color,
                     phases = excluded.phases, memory_off = excluded.memory_off,
-                    client = excluded.client",
+                    client = excluded.client, blocked_files = excluded.blocked_files,
+                    permission_mode = excluded.permission_mode",
                 params![
                     project.path.to_string_lossy(),
                     project.name,
@@ -512,6 +542,9 @@ impl ProjectRepository for SqliteStore {
                     phases,
                     memory_off,
                     project.client,
+                    blocked_files,
+                    (project.permission_mode != PermissionMode::Manual)
+                        .then(|| project.permission_mode.as_str()),
                 ],
             )
             .map(drop)
@@ -1289,11 +1322,21 @@ mod tests {
                     model: Some("kimi-k3".into()),
                 },
             )]),
+            blocked_files: crate::domain::permissions::BlockedFiles::new([".env", "*.pem"]),
+            permission_mode: PermissionMode::AcceptEdits,
             ..Project::new("/code/tienda".into())
         };
         store.save_project(&project).unwrap();
         store.save_project(&project).unwrap();
         assert_eq!(store.list_projects().unwrap(), vec![project.clone()]);
+        // An empty list is stored as nothing, and reads back empty.
+        let open = Project {
+            blocked_files: Default::default(),
+            ..project.clone()
+        };
+        store.save_project(&open).unwrap();
+        assert!(store.list_projects().unwrap()[0].blocked_files.is_empty());
+        store.save_project(&project).unwrap();
 
         // An account in use cannot be deleted behind the application's back.
         assert!(store.delete_account(&acc.id).is_err());
@@ -1327,6 +1370,8 @@ mod tests {
             account: AccountId::new("personal").unwrap(),
             model: None,
             workspace: None,
+            scratch: None,
+            permissions: Default::default(),
             session_id: None,
             status,
             created_at: at,
@@ -1374,6 +1419,8 @@ mod tests {
             account: AccountId::new("personal").unwrap(),
             model: None,
             workspace: None,
+            scratch: None,
+            permissions: Default::default(),
             session_id: None,
             status: TaskStatus::Failed,
             created_at: 10,
@@ -1434,6 +1481,8 @@ mod tests {
             account: AccountId::new("personal").unwrap(),
             model: None,
             workspace: None,
+            scratch: None,
+            permissions: Default::default(),
             session_id: None,
             status: crate::domain::TaskStatus::Review,
             created_at: 10,
@@ -1481,6 +1530,8 @@ mod tests {
             account: AccountId::new("personal").unwrap(),
             model: None,
             workspace: None,
+            scratch: None,
+            permissions: Default::default(),
             session_id: None,
             status: crate::domain::TaskStatus::Review,
             created_at,
@@ -1539,6 +1590,8 @@ mod tests {
                 base_branch: "main".into(),
                 base_commit: "abc".into(),
             }),
+            scratch: None,
+            permissions: Default::default(),
             session_id: None,
             status: TaskStatus::Running,
             created_at: at,
