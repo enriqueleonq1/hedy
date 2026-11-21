@@ -53,6 +53,14 @@ pub struct RoleEntry {
     pub role: RoleDef,
 }
 
+fn taken(name: &str) -> AppError {
+    let name = name.trim();
+    AppError::InvalidFlow(vec![tr!(
+        "ya hay un flujo «{name}»: elige otro nombre",
+        "there is already a flow «{name}»: choose another name"
+    )])
+}
+
 /// Names match whatever their case, accents included («REVISIÓN»).
 fn same_name(a: &str, b: &str) -> bool {
     a.trim().to_lowercase() == b.trim().to_lowercase()
@@ -139,8 +147,31 @@ impl Hedy {
         self.save_flow(project, flow)
     }
 
-    /// [`Hedy::save_flow_text`] for a flow already parsed (the canvas).
+    /// [`Hedy::save_flow_text`] for a flow already parsed: one with the same
+    /// name in the same place is replaced.
     pub fn save_flow(&self, project: Option<&Path>, flow: Flow) -> AppResult<FlowEntry> {
+        self.store_flow(project, None, flow)
+    }
+
+    /// The editor's save: `key` (`#<id>`) updates that flow, renamed or not,
+    /// where it was saved; `None` saves a new one for `project`. Either way a
+    /// name another flow of the same place has is refused.
+    pub fn save_flow_as(
+        &self,
+        project: Option<&Path>,
+        key: Option<&str>,
+        flow: Flow,
+    ) -> AppResult<FlowEntry> {
+        self.store_flow(project, Some(key), flow)
+    }
+
+    /// `edit`: `None` replaces by name; `Some(key)` as in [`Hedy::save_flow_as`].
+    fn store_flow(
+        &self,
+        project: Option<&Path>,
+        edit: Option<Option<&str>>,
+        flow: Flow,
+    ) -> AppResult<FlowEntry> {
         // Hedy's templates keep their names: a flow of the user would hide one.
         if Template::ALL
             .into_iter()
@@ -163,21 +194,42 @@ impl Hedy {
         if !problems.is_empty() {
             return Err(AppError::InvalidFlow(problems));
         }
-        let same = self
-            .store
-            .flow_records()?
-            .into_iter()
-            .find(|r| r.project == path && same_name(&r.flow.name, &flow.name));
+        let records = self.store.flow_records()?;
+        let editing = match edit.flatten() {
+            Some(key) => {
+                let id = key.strip_prefix('#').and_then(|id| id.parse::<i64>().ok());
+                // Only a flow this project can see: its own or a global one.
+                let record = records
+                    .iter()
+                    .find(|r| Some(r.id) == id && (r.project.is_none() || r.project == path));
+                Some(record.ok_or_else(|| AppError::FlowNotFound(key.to_owned()))?)
+            }
+            None => None,
+        };
+        // A saved flow stays where it was (a global one stays global).
+        let place = editing.map_or(path, |r| r.project.clone());
+        let same = records
+            .iter()
+            .find(|r| r.project == place && same_name(&r.flow.name, &flow.name));
+        let id = match (edit, editing, same) {
+            // By name: the one with that name.
+            (None, _, same) => same.map_or(0, |r| r.id),
+            (Some(_), Some(mine), Some(other)) if other.id != mine.id => {
+                return Err(taken(&flow.name));
+            }
+            (Some(_), None, Some(_)) => return Err(taken(&flow.name)),
+            (Some(_), editing, _) => editing.map_or(0, |r| r.id),
+        };
         let record = FlowRecord {
-            id: same.map_or(0, |r| r.id),
-            project: path.clone(),
+            id,
+            project: place,
             flow,
             updated_at: self.now_secs(),
         };
         let id = self.store.save_flow(&record)?;
         Ok(FlowEntry {
             key: format!("#{id}"),
-            scope: if path.is_some() {
+            scope: if record.project.is_some() {
                 FlowScope::Project
             } else {
                 FlowScope::Global
@@ -367,6 +419,49 @@ mod tests {
             Err(AppError::InvalidFlow(_))
         ));
         assert_eq!(f.hedy.flows(Some(&dir)).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn the_editor_saves_by_key_renames_in_place_and_refuses_a_taken_name() {
+        let f = Fixture::new();
+        let dir = project(&f);
+        let mut flow = f.hedy.flow(Some(&dir), "fix-loop").unwrap().flow;
+        flow.name = "Pagos".into();
+        let first = f.hedy.save_flow_as(Some(&dir), None, flow.clone()).unwrap();
+        // A new one with the same name is refused, not replaced.
+        assert!(matches!(
+            f.hedy.save_flow_as(Some(&dir), None, flow.clone()),
+            Err(AppError::InvalidFlow(_))
+        ));
+        flow.name = "Cobros".into();
+        let renamed = f
+            .hedy
+            .save_flow_as(Some(&dir), Some(&first.key), flow.clone())
+            .unwrap();
+        assert_eq!(renamed.key, first.key);
+        let names: Vec<String> = f
+            .hedy
+            .flows(Some(&dir))
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.scope != FlowScope::Hedy)
+            .map(|e| e.flow.name)
+            .collect();
+        assert_eq!(names, ["Cobros"]);
+        // Renaming onto another flow's name is refused.
+        flow.name = "Otro".into();
+        let other = f.hedy.save_flow_as(Some(&dir), None, flow.clone()).unwrap();
+        flow.name = "cobros".into();
+        assert!(matches!(
+            f.hedy
+                .save_flow_as(Some(&dir), Some(&other.key), flow.clone()),
+            Err(AppError::InvalidFlow(_))
+        ));
+        // A key that is not one of its flows.
+        assert!(matches!(
+            f.hedy.save_flow_as(Some(&dir), Some("#999"), flow),
+            Err(AppError::FlowNotFound(_))
+        ));
     }
 
     #[test]

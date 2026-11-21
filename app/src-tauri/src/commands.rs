@@ -293,14 +293,18 @@ pub async fn flow_problems(
     blocking(&state, move |h| h.flow_problems(project.as_deref(), &flow)).await
 }
 
-/// Saves a flow for the project (`project`) or for every project.
+/// Saves the flow `key` (`None`: a new one, for the project).
 #[tauri::command]
 pub async fn save_flow(
     state: State<'_, AppState>,
     project: Option<PathBuf>,
+    key: Option<String>,
     flow: hedy_core::domain::flow::Flow,
 ) -> CommandResult<hedy_core::application::FlowEntry> {
-    blocking(&state, move |h| h.save_flow(project.as_deref(), flow)).await
+    blocking(&state, move |h| {
+        h.save_flow_as(project.as_deref(), key.as_deref(), flow)
+    })
+    .await
 }
 
 #[tauri::command]
