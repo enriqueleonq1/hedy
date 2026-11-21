@@ -648,6 +648,9 @@ pub fn valid_role_id(id: &str) -> bool {
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
         && !id.starts_with('-')
+        // Its board section would be the user's feedback or the frame.
+        && id != FEEDBACK
+        && id != FRAME
 }
 
 fn valid_node_id(id: &str) -> bool {
@@ -1076,7 +1079,7 @@ pub fn board_tools() -> Vec<serde_json::Value> {
 
 /// A board section name: lowercase letters, digits and dashes.
 pub fn valid_section(section: &str) -> bool {
-    (1..=40).contains(&section.len())
+    (1..=MAX_NAME).contains(&section.len())
         && section
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')

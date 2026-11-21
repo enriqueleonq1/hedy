@@ -3890,6 +3890,22 @@ session, so Hedy keeps the shared context and hands it to each role.
   - The API agent gets them as native tools.
   - The CLI (`hedy`) starts no MCP server, so its flows read the board only in the prompt.
   - In Automático, the board's tools need no card, as the memory's do.
+- **Hardened after the reviews.**
+  - A role posts only in its own section or a new one: never `feedback`, the `frame`, or
+    another role's section, so an approved plan stays as approved and the user's words stay
+    the user's.
+  - A post that looks like it carries a secret (`skill::find_secret`) is refused, and the
+    engine masks secrets in a role's final answer before posting it: another provider may
+    read the board.
+  - A run's board is bounded: 200 entries, 20 sections, 16,000 characters an entry, and at
+    most 48,000 characters in a prompt or a `context_read`, the oldest left out first.
+  - The board is cleared after the closed status is saved, since the board server checks it
+    before posting.
+  - A role id cannot be `feedback` or `frame`, and sections take up to 60 characters, as role
+    ids do.
+- **Known gap.** Undoing an accepted flow task brings it back with its board gone; nothing in
+  the engine reads it after the end, so only the record is lost. A failed task keeps its board
+  until it is discarded, since a follow-up can resume it.
 - **Verified for real** (haiku, personal account): `smoke_task -- haiku flow` again, with the
   programmer's prompt built from the board.
 

@@ -422,4 +422,54 @@ mod tests {
             .collect();
         assert_eq!(sections.len(), crate::domain::flow::MAX_BOARD_SECTIONS);
     }
+
+    #[test]
+    fn a_task_without_a_flow_gets_no_board() {
+        let f = setup();
+        let f2 = f.hedy.clone().with_memory_server(MemoryServerCommand {
+            program: "/bin/hedy".into(),
+            args: vec!["memory-mcp".into()],
+            board_args: vec!["board-mcp".into()],
+        });
+        f2.start_task(NewTask {
+            images: Vec::new(),
+            project: f.dir("/code/tienda"),
+            prompt: "Hola".into(),
+            mode: TaskMode::Project,
+            model: None,
+            plan_first: false,
+            permissions: None,
+        })
+        .unwrap();
+        let request = f.agents.last_request();
+        assert!(request.mcp.iter().all(|s| s.name != "hedy-board"));
+        assert!(request.board.is_none());
+        assert!(!request.prompt.contains("context_read"));
+    }
+
+    #[test]
+    fn what_a_role_said_before_a_limit_opens_its_entry() {
+        let f = setup();
+        let task = start(&f);
+        f.agents.emit(AgentEvent::RateLimit {
+            status: "rejected".into(),
+            utilization: None,
+            resets_at: None,
+        });
+        finish(&f, "1. Mitad del plan");
+        assert!(
+            f.hedy.task_board(&task.id).unwrap().is_empty(),
+            "paused, not delivered"
+        );
+        // Later, with the limit renewed, the role goes on in a new session.
+        f.hedy.stop_task(&task.id).unwrap();
+        f.hedy.send_message(&task.id, "sigue").unwrap();
+        finish(&f, "2. El resto");
+        let entries = f.hedy.task_board(&task.id).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(
+            entries[0].text.contains("1. Mitad del plan")
+                && entries[0].text.contains("2. El resto")
+        );
+    }
 }
