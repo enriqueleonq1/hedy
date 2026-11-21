@@ -95,6 +95,7 @@ type CardWaiting = PendingCard | "other" | null;
 const MILESTONE: Record<Milestone, MessageKey> = {
   plan: "workspace.announce.plan",
   permission: "workspace.announce.permission",
+  approval: "workspace.announce.approval",
   finished: "workspace.announce.finished",
   failed: "workspace.announce.failed",
   limit: "workspace.announce.limit",

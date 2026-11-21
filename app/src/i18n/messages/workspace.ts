@@ -89,6 +89,7 @@ const es = {
 
   "workspace.announce.plan": "Plan listo",
   "workspace.announce.permission": "Pide permiso",
+  "workspace.announce.approval": "Espera tu aprobación",
   "workspace.announce.finished": "Terminó",
   "workspace.announce.failed": "Falló",
   "workspace.announce.limit": "Llegó al límite",
@@ -271,6 +272,7 @@ const en: Record<keyof typeof es, string> = {
 
   "workspace.announce.plan": "Plan ready",
   "workspace.announce.permission": "Asks for permission",
+  "workspace.announce.approval": "Waits for your approval",
   "workspace.announce.finished": "Finished",
   "workspace.announce.failed": "Failed",
   "workspace.announce.limit": "Hit the limit",

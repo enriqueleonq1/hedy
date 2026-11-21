@@ -482,6 +482,114 @@
 .flow-list__back[data-check="verdict"]::before { color: var(--warning); }
 .flow-list__detail { font: var(--text-caption) var(--font-mono); color: var(--muted); }
 
+
+/* ------------------------------------------------- a flow task, live */
+
+.flow-progress {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-card);
+  animation: flow-fade-in 320ms var(--ease-out) both;
+}
+.flow-progress__head { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.flow-progress__name { font: 600 var(--text-callout) var(--font-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-progress__now { display: inline-flex; align-items: center; gap: 8px; font-size: var(--text-caption); color: var(--muted); }
+.flow-progress__now::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--activity);
+  animation: flow-breathe 1.6s ease-in-out infinite;
+}
+.flow-progress__now[data-waiting] { color: var(--ink); }
+.flow-progress__now[data-waiting]::before { background: var(--warning); }
+.flow-progress__round { padding: 0 7px; border-radius: var(--radius-pill); background: var(--panel-2); color: var(--ink); }
+.flow-progress__toggle {
+  margin-left: auto;
+  height: var(--control-sm);
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--muted);
+  font: 500 var(--text-caption) var(--font-ui);
+  cursor: pointer;
+}
+.flow-progress__toggle:hover,
+.flow-progress__toggle[aria-expanded="true"] { color: var(--ink); border-color: var(--accent); }
+
+.flow-progress__steps { display: flex; align-items: center; margin: 0; padding: 0; list-style: none; overflow-x: auto; }
+.flow-progress__step { display: flex; align-items: center; flex: none; }
+.flow-progress__line {
+  position: relative;
+  width: 22px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--line-strong);
+}
+.flow-progress__line[data-lit] { background: var(--accent); }
+/* The line into the step at work carries a streak, like the canvas. */
+.flow-progress__step[data-live] .flow-progress__line::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 10px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--activity));
+  box-shadow: 0 0 6px var(--activity);
+  animation: flow-streak 1.4s linear infinite;
+}
+@keyframes flow-streak {
+  from { transform: translateX(-10px); }
+  to { transform: translateX(22px); }
+}
+.flow-progress__tile {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--tint);
+}
+.flow-progress__step[data-state="pending"] .flow-progress__tile { opacity: 0.45; }
+.flow-progress__step[data-state="done"] .flow-progress__tile { border-color: var(--tint); }
+.flow-progress__step[data-state="current"] .flow-progress__tile { border-color: var(--focus); box-shadow: 0 0 0 3px var(--selection); }
+.flow-progress__step[data-live] .flow-progress__tile::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 1.5px solid var(--activity);
+  border-radius: 13px;
+  animation: flow-ring 1.8s ease-in-out infinite;
+}
+.flow-progress__step[data-waiting] .flow-progress__tile::after { border-color: var(--warning); }
+
+.flow-board { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; max-height: 340px; overflow-y: auto; }
+.flow-board__entry { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--panel-2); }
+.flow-board__meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: var(--text-caption); color: var(--muted); }
+.flow-board__section { font-weight: 600; color: var(--ink); }
+.flow-board__text { margin-top: 4px; font-size: var(--text-callout); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.flow-board__text[data-folded] { max-height: 9.5em; overflow: hidden; mask-image: linear-gradient(to bottom, black 70%, transparent); }
+.flow-board__more { margin-top: 4px; font-size: var(--text-caption); }
+.flow-board__empty { font-size: var(--text-callout); color: var(--muted); }
+
+.flow-approval__text { font-size: var(--text-callout); color: var(--muted); line-height: 1.5; }
+.flow-check .activity__mark { font-weight: 600; }
+
 /* ------------------------------------------------------- narrow windows */
 
 @media (max-width: 900px) {
@@ -491,7 +599,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .flow-pulse { display: none; }
+  .flow-pulse,
+  .flow-progress__step[data-live] .flow-progress__line::after { display: none; }
+  .flow-progress,
+  .flow-progress__now::before,
+  .flow-progress__step[data-live] .flow-progress__tile::after { animation: none; }
   .flow-edge-glow,
   .flow-canvas__edges,
   .flow-node,

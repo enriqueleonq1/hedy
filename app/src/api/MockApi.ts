@@ -1952,6 +1952,7 @@ export class MockApi implements HedyApi {
     const title = (input.prompt.split("\n")[0] ?? "").slice(0, 60);
     const prompt = carried ? `${carried.origin.context}\n\n${input.prompt.trim()}` : input.prompt;
     const planFirst = input.planFirst && input.mode === "project";
+    const flowEntry = input.flow ? (await this.flows(project.path)).find((f) => f.key === input.flow) : undefined;
     const stage = (phase: "plan" | "implement") => ({ phase, account: project.account ?? "", model: input.model });
     const task: Task = {
       id,
@@ -1979,6 +1980,15 @@ export class MockApi implements HedyApi {
       live: true,
       ...(images.length ? { images } : {}),
       ...(carried ? { origin: carried.origin } : {}),
+      ...(flowEntry
+        ? {
+            flow: {
+              flow: flowEntry.flow,
+              roles: Object.fromEntries(MOCK_ROLES.map((r) => [r.id, r])),
+              position: { node: flowEntry.flow.edges.find((e) => e.from === flowEntry.flow.nodes.find((n) => n.kind === "start")?.id)?.to ?? "" },
+            },
+          }
+        : {}),
     };
     this.tasksById.set(id, task);
     this.eventsById.set(id, []);
@@ -2370,6 +2380,69 @@ export class MockApi implements HedyApi {
    * Sample tasks for the task board, in both projects: two waiting for an
    * answer, one at its limit, one working and a few that already finished.
    */
+  /**
+   * A task of tienda following «Pago con revisión», at its approval: the
+   * tests failed once and passed, the review approved, the board is full.
+   */
+  withSampleFlowRun(): this {
+    const now = Math.floor(Date.now() / 1000);
+    const flow = mockProjectFlow();
+    const id = "f1";
+    const roles = Object.fromEntries(MOCK_ROLES.map((r) => [r.id, r]));
+    this.tasksById.set(id, {
+      id,
+      project: "/code/tienda",
+      mode: "project",
+      title: "Agrega el pago con tarjeta en la caja",
+      prompt: "Agrega el pago con tarjeta en la caja",
+      account: "claude-trabajo",
+      model: "sonnet",
+      workspace: { worktree: "/code/tienda/.hedy/worktrees/f1", branch: "hedy/pago-tarjeta-f1", baseBranch: "main", baseCommit: "abc1234" },
+      sessionId: "s-f1",
+      status: "waitingApproval",
+      createdAt: now - 25 * 60,
+      stages: [
+        { phase: "review", account: "claude-trabajo", model: "opus" },
+        { phase: "implement", account: "claude-trabajo", model: "sonnet" },
+        { phase: "review", account: "claude-trabajo", model: null },
+      ],
+      stage: 2,
+      live: true,
+      flow: { flow, roles, position: { node: "n7", rounds: { n4: 1 } } },
+    });
+    const phase = (p: "review" | "implement", agent: string): AgentEvent => ({ kind: "phaseStarted", phase: p, agent, account: "Claude trabajo" });
+    this.eventsById.set(id, [
+      { kind: "userMessage", text: "Agrega el pago con tarjeta en la caja" },
+      phase("review", "Claude Opus"),
+      { kind: "message", text: "Plan: 1. Cliente de pagos en `src/pagos/`. 2. Botón en la caja. 3. Tests del cobro." },
+      { kind: "finished", ok: true, summary: "", durationMs: 41000 },
+      phase("implement", "Claude Sonnet"),
+      { kind: "fileEdited", path: "src/pagos/cliente.ts" },
+      { kind: "fileEdited", path: "src/caja/Cobro.tsx" },
+      { kind: "finished", ok: true, summary: "", durationMs: 96000 },
+      { kind: "flowCheck", node: "n4", what: "npm test", passed: false },
+      phase("implement", "Claude Sonnet"),
+      { kind: "fileEdited", path: "src/pagos/cliente.ts" },
+      { kind: "finished", ok: true, summary: "", durationMs: 30000 },
+      { kind: "flowCheck", node: "n4", what: "npm test", passed: true },
+      phase("review", "Claude Sonnet"),
+      { kind: "message", text: "Los cambios siguen el plan y los tests cubren el cobro rechazado.\n\nVEREDICTO: APRUEBA" },
+      { kind: "finished", ok: true, summary: "", durationMs: 28000 },
+      { kind: "flowCheck", node: "n6", what: "el veredicto de la revisión", passed: true },
+      { kind: "flowApproval", node: "n7" },
+    ]);
+    this.boards.set(id, [
+      { section: "frame", role: "", round: 1, text: "Objetivo: pasarela de pagos. Reglas: nada de claves en el código." },
+      { section: "architect", role: "Arquitecto", round: 1, text: "1. Cliente de pagos en src/pagos/.\n2. Botón «Pagar con tarjeta» en la caja.\n3. Tests del cobro aceptado y rechazado." },
+      { section: "programmer", role: "Programador", round: 2, text: "Cliente y botón listos; arreglé el test del cobro rechazado." },
+      { section: "tests", role: "Hedy", round: 2, text: "npm test: 18 pasan." },
+      { section: "reviewer", role: "Revisor", round: 2, text: "Los cambios siguen el plan.\n\nVEREDICTO: APRUEBA" },
+    ]);
+    this.diffs.set(id, []);
+    this.updatedAt.set(id, now - 60);
+    return this;
+  }
+
   withSampleActivity(): this {
     const now = Math.floor(Date.now() / 1000);
     const min = 60;

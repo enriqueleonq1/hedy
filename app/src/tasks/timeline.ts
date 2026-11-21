@@ -52,6 +52,12 @@ export type TimelineItem =
       text: string;
     }
   | { type: "finished"; key: string; ok: boolean; durationMs: number | null }
+  | { type: "flowCheck"; key: string; node: string; what: string; passed: boolean }
+  /**
+   * A flow's approval step. `answer`: what the user said, once known (a
+   * message of theirs after it asked for changes; anything else, approved).
+   */
+  | { type: "flowApproval"; key: string; node: string; answer: "approved" | "changes" | null }
   | { type: "error"; key: string; message: string };
 
 /** "claude-opus-5-5" → "Claude Opus". */
@@ -115,6 +121,17 @@ export function buildTimeline(events: AgentEvent[], t: Translate): TimelineItem[
       case "message":
         items.push({ type: "agent", key, text: e.text });
         break;
+      case "flowCheck":
+        items.push({ type: "flowCheck", key, node: e.node, what: e.what, passed: e.passed });
+        break;
+      case "flowApproval": {
+        const after = events.slice(i + 1);
+        const changes = after.findIndex((x) => x.kind === "userMessage");
+        const next = after.findIndex((x) => x.kind === "phaseStarted" || x.kind === "flowCheck" || x.kind === "flowApproval");
+        const answer = changes >= 0 && (next < 0 || changes < next) ? "changes" : next >= 0 ? "approved" : null;
+        items.push({ type: "flowApproval", key, node: e.node, answer });
+        break;
+      }
       case "phaseStarted":
         agent = e.agent;
         items.push({ type: "phase", key, phase: e.phase, agent: e.agent, account: e.account });
@@ -298,7 +315,7 @@ export function pendingCard(events: AgentEvent[]): PendingCard | null {
 }
 
 /** What a screen reader hears about a task: only when it needs the user or ends. */
-export type Milestone = "plan" | "permission" | "finished" | "failed" | "limit";
+export type Milestone = "plan" | "permission" | "approval" | "finished" | "failed" | "limit";
 
 /**
  * The latest milestone of a timeline and its position, to announce each one
@@ -310,6 +327,7 @@ export function latestMilestone(items: TimelineItem[]): { index: number; milesto
     if (!item) continue;
     if (item.type === "plan" && item.requestId !== null && item.resolution === null) return { index, milestone: "plan" };
     if (item.type === "permission" && item.resolution === null) return { index, milestone: "permission" };
+    if (item.type === "flowApproval" && item.answer === null) return { index, milestone: "approval" };
     if (item.type === "finished") return { index, milestone: item.ok ? "finished" : "failed" };
     if (item.type === "limit" && item.level === "reached") return { index, milestone: "limit" };
   }

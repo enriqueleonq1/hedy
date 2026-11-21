@@ -980,6 +980,10 @@ export type AgentEvent =
     }
   | { kind: "rateLimit"; status: string; utilization: number | null; resetsAt: number | null }
   | { kind: "phaseStarted"; phase: Phase; agent: string; account: string }
+  /** A flow reached a step where the user approves what came before. */
+  | { kind: "flowApproval"; node: string }
+  /** A flow's condition was checked (`what`: "npm test", "las reglas"…). */
+  | { kind: "flowCheck"; node: string; what: string; passed: boolean }
   | {
       kind: "limitWarning";
       account: string;
