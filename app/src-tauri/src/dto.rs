@@ -347,6 +347,9 @@ pub struct NewTaskInput {
     /// What the agent does without asking; missing: the project's default.
     #[serde(default)]
     pub permissions: Option<hedy_core::domain::PermissionMode>,
+    /// A flow to run instead of the project's phases (its key or name).
+    #[serde(default)]
+    pub flow: Option<String>,
     #[serde(default)]
     pub images: Vec<ImageInput>,
     /// A conversation carried into the task ("Llevar a un proyecto").

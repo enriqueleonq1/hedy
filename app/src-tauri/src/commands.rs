@@ -259,9 +259,10 @@ pub async fn start_task(state: State<'_, AppState>, input: NewTaskInput) -> Comm
             permissions: input.permissions,
             images,
         };
-        let task = match input.carry {
-            Some(carry) => h.start_carried_task(request, carry.into())?,
-            None => h.start_task(request)?,
+        let task = match (input.flow, input.carry) {
+            (Some(flow), _) => h.start_flow(request, &flow)?,
+            (None, Some(carry)) => h.start_carried_task(request, carry.into())?,
+            (None, None) => h.start_task(request)?,
         };
         Ok(TaskDto {
             live: h.is_running(&task.id),
@@ -269,6 +270,79 @@ pub async fn start_task(state: State<'_, AppState>, input: NewTaskInput) -> Comm
         })
     })
     .await
+}
+
+// ---------------------------------------------------------------- flows
+
+/// Hedy's templates, then the project's flows and the global ones.
+#[tauri::command]
+pub async fn flows(
+    state: State<'_, AppState>,
+    project: Option<PathBuf>,
+) -> CommandResult<Vec<hedy_core::application::FlowEntry>> {
+    blocking(&state, move |h| h.flows(project.as_deref())).await
+}
+
+/// Why a flow being edited could not run yet (empty: it can).
+#[tauri::command]
+pub async fn flow_problems(
+    state: State<'_, AppState>,
+    project: Option<PathBuf>,
+    flow: hedy_core::domain::flow::Flow,
+) -> CommandResult<Vec<String>> {
+    blocking(&state, move |h| h.flow_problems(project.as_deref(), &flow)).await
+}
+
+/// Saves a flow for the project (`project`) or for every project.
+#[tauri::command]
+pub async fn save_flow(
+    state: State<'_, AppState>,
+    project: Option<PathBuf>,
+    flow: hedy_core::domain::flow::Flow,
+) -> CommandResult<hedy_core::application::FlowEntry> {
+    blocking(&state, move |h| h.save_flow(project.as_deref(), flow)).await
+}
+
+#[tauri::command]
+pub async fn delete_flow(
+    state: State<'_, AppState>,
+    project: Option<PathBuf>,
+    key: String,
+) -> CommandResult<()> {
+    blocking(&state, move |h| h.delete_flow(project.as_deref(), &key)).await
+}
+
+/// Hedy's roles and the user's, for the project.
+#[tauri::command]
+pub async fn flow_roles(
+    state: State<'_, AppState>,
+    project: Option<PathBuf>,
+) -> CommandResult<Vec<hedy_core::application::RoleEntry>> {
+    blocking(&state, move |h| h.roles(project.as_deref())).await
+}
+
+/// The user's answer at a flow's approval step.
+#[tauri::command]
+pub async fn answer_flow_approval(
+    state: State<'_, AppState>,
+    id: String,
+    approve: bool,
+    feedback: Option<String>,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.answer_flow_approval(&task_id(id), approve, feedback.as_deref())
+            .map(drop)
+    })
+    .await
+}
+
+/// A flow task's board, oldest first.
+#[tauri::command]
+pub async fn task_board(
+    state: State<'_, AppState>,
+    id: String,
+) -> CommandResult<Vec<hedy_core::domain::flow::BoardEntry>> {
+    blocking(&state, move |h| h.task_board(&task_id(id))).await
 }
 
 /// Where "Nuevo proyecto" proposes to create it.

@@ -178,6 +178,18 @@ impl Hedy {
         })
     }
 
+    /// Why a flow being edited could not run yet (empty: it can), for the
+    /// editor to show as it changes.
+    pub fn flow_problems(&self, project: Option<&Path>, flow: &Flow) -> AppResult<Vec<String>> {
+        let project = self.flow_project(project)?;
+        let roles = self.role_lookup(project.as_ref().map(|p| p.path.as_path()))?;
+        Ok(flow
+            .problems(&|id| roles(id))
+            .iter()
+            .map(|p| p.message())
+            .collect())
+    }
+
     /// Deletes one of the user's flows; Hedy's templates stay.
     pub fn delete_flow(&self, project: Option<&Path>, which: &str) -> AppResult<()> {
         let entry = self.flow(project, which)?;
