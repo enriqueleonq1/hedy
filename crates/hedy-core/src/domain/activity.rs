@@ -82,7 +82,13 @@ impl TaskState {
 pub fn task_state(task: &Task, events: &[AgentEvent]) -> TaskState {
     match task.status {
         TaskStatus::WaitingApproval => {
-            if open_plan(events) {
+            // A flow at its approval step waits for an OK, like a plan.
+            let flow_ok = task
+                .flow
+                .as_ref()
+                .and_then(|r| r.current())
+                .is_some_and(|n| matches!(n.kind, crate::domain::flow::NodeKind::Approval));
+            if flow_ok || open_plan(events) {
                 TaskState::Plan
             } else {
                 TaskState::Permission

@@ -17,6 +17,8 @@ export type Selection = { node: string } | { edge: { from: string; when: FlowWhe
 /** How far a pointer moves before a press becomes a drag. */
 const DRAG = 4;
 const ZOOM_MIN = 0.35;
+/** The smallest zoom a fit picks: below it, labels are not readable. */
+const FIT_MIN = 0.6;
 const ZOOM_MAX = 1.6;
 /** How far under its row a way back runs. */
 const LOOP_DROP = 62;
@@ -82,17 +84,34 @@ export function FlowCanvas({
     return next;
   }, [placedAt, gesture]);
 
+  // Whether the user moved the camera since the last fit: until then, a
+  // resize (the window, the panel settling) fits again.
+  const touched = useRef(false);
   const fit = useCallback(() => {
     const el = box.current;
     if (!el) return;
     const b = bounds(placedAt);
     // Room for the labels under the tiles and the loops under the rows.
-    const pad = { x: 96, top: 120, bottom: 150 };
-    const w = el.clientWidth || 960;
-    const h = el.clientHeight || 600;
-    const z = Math.min(1, Math.max(ZOOM_MIN, Math.min((w - 2 * pad.x) / b.w, (h - pad.top - pad.bottom) / (b.h + LOOP_DROP))));
-    setCamera({ z, x: (w - b.w * z) / 2 - b.x * z, y: pad.top + (h - pad.top - pad.bottom - (b.h + LOOP_DROP) * z) / 2 - b.y * z });
+    const pad = { x: 72, top: 96, bottom: 120 };
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    if (!w || !h) return;
+    // Never smaller than readable: a long flow starts at its beginning and
+    // the rest is a drag away.
+    const z = Math.min(1, Math.max(FIT_MIN, Math.min((w - 2 * pad.x) / b.w, (h - pad.top - pad.bottom) / (b.h + LOOP_DROP))));
+    const x = b.w * z <= w - 2 * pad.x ? (w - b.w * z) / 2 - b.x * z : pad.x - b.x * z;
+    setCamera({ z, x, y: pad.top + Math.max(0, (h - pad.top - pad.bottom - (b.h + LOOP_DROP) * z) / 2) - b.y * z });
+    touched.current = false;
   }, [placedAt]);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (!touched.current) fit();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fit]);
 
   // A new flow opens fitted in view; edits never move the camera.
   const fitted = useRef<string | null>(null);
@@ -108,6 +127,7 @@ export function FlowCanvas({
   };
 
   const zoomBy = (factor: number, around?: Point) => {
+    touched.current = true;
     setCamera((c) => {
       const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, c.z * factor));
       const el = box.current;
@@ -126,6 +146,7 @@ export function FlowCanvas({
         const r = el.getBoundingClientRect();
         zoomBy(Math.exp(-e.deltaY * 0.0025), { x: e.clientX - r.left, y: e.clientY - r.top });
       } else {
+        touched.current = true;
         setCamera((c) => ({ ...c, x: c.x - e.deltaX, y: c.y - e.deltaY }));
       }
     };
@@ -160,6 +181,7 @@ export function FlowCanvas({
       const dx = e.clientX - gesture.start.x;
       const dy = e.clientY - gesture.start.y;
       if (!gesture.moved && Math.hypot(dx, dy) < DRAG) return;
+      touched.current = true;
       setCamera({ ...gesture.camera, x: gesture.camera.x + dx, y: gesture.camera.y + dy });
       if (!gesture.moved) setGesture({ ...gesture, moved: true });
     } else if (gesture.kind === "move") {

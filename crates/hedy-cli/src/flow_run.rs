@@ -53,6 +53,11 @@ enum Question {
     Approval,
 }
 
+/// Text shown as it was written, line by line, each line cleaned.
+fn clean_lines(text: &str) -> String {
+    text.lines().map(clean).collect::<Vec<_>>().join("\n")
+}
+
 fn yes(line: &str) -> bool {
     matches!(
         line.trim().to_lowercase().as_str(),
@@ -251,7 +256,7 @@ pub fn run(
                 AgentEvent::FlowApproval { .. } => {
                     if let Some(last) = hedy.task_board(&id).ok().and_then(|b| b.last().cloned()) {
                         let text: String = last.text.chars().take(SHOWN).collect();
-                        println!("\n{}\n{}\n", s.bold(clean(&last.role)), clean(&text));
+                        println!("\n{}\n{}\n", s.bold(clean(&last.role)), clean_lines(&text));
                     }
                     if !ask {
                         println!(
@@ -275,7 +280,7 @@ pub fn run(
                     text,
                     request_id: Some(request_id),
                 } => {
-                    println!("\n{}\n", clean(&text));
+                    println!("\n{}\n", clean_lines(&text));
                     if ask {
                         waiting.push_back((
                             Question::Plan(request_id),

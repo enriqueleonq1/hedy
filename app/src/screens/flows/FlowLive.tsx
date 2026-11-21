@@ -39,10 +39,12 @@ export function FlowProgress({ task, run }: { task: Task; run: FlowRun }) {
   const state = useMemo(() => states(run), [run]);
   const current = order.find((n) => state.get(n.id) === "current");
   const round = Math.max(0, ...Object.values(run.position.rounds ?? {})) + 1;
-  const waiting = task.status === "waitingApproval";
+  // Waiting at an approval step, or a role at work asking for a permission.
+  const waiting = task.status === "waitingApproval" && current?.kind === "approval";
+  const asking = task.status === "waitingApproval" && !waiting;
   const working = task.live && task.status === "running";
   // Ended before its end (out of rounds, a failure, stopped): not alive anymore.
-  const stopped = !waiting && task.status !== "running";
+  const stopped = task.status !== "running" && task.status !== "waitingApproval";
   const lane = current?.kind === "parallel" ? current.roles[run.lane ?? 0] : undefined;
   const now = current ? (lane ? (roles.find((r) => r.id === lane.role)?.name ?? lane.role) : text(current).name) : "";
   return (
@@ -50,8 +52,11 @@ export function FlowProgress({ task, run }: { task: Task; run: FlowRun }) {
       <header className="flow-progress__head">
         <span className="flow-progress__name">{run.flow.name}</span>
         {current && current.kind !== "end" && (
-          <span className="flow-progress__now" data-waiting={waiting || undefined} data-stopped={stopped || undefined}>
-            {t(waiting ? "flows.live.waiting" : stopped ? "flows.live.stopped" : working ? "flows.live.working" : "flows.live.at", { step: now })}
+          <span className="flow-progress__now" data-waiting={waiting || asking || undefined} data-stopped={stopped || undefined}>
+            {t(
+              waiting ? "flows.live.waiting" : asking ? "flows.live.asking" : stopped ? "flows.live.stopped" : working ? "flows.live.working" : "flows.live.at",
+              { step: now },
+            )}
             {round > 1 && <span className="flow-progress__round">{t("flows.live.round", { n: String(round) })}</span>}
           </span>
         )}
@@ -61,7 +66,7 @@ export function FlowProgress({ task, run }: { task: Task; run: FlowRun }) {
       </header>
       <ol className="flow-progress__steps">
         {order.map((node, i) => (
-          <li key={node.id} className="flow-progress__step" data-state={state.get(node.id)} data-live={(state.get(node.id) === "current" && (working || waiting)) || undefined} data-waiting={(state.get(node.id) === "current" && waiting) || undefined}>
+          <li key={node.id} className="flow-progress__step" data-state={state.get(node.id)} data-live={(state.get(node.id) === "current" && (working || waiting || asking)) || undefined} data-waiting={(state.get(node.id) === "current" && (waiting || asking)) || undefined}>
             {i > 0 && <span className="flow-progress__line" aria-hidden="true" data-lit={state.get(node.id) !== "pending" || undefined} />}
             <span className="flow-progress__tile" style={{ ["--tint" as string]: stepTint(node, roles) }} title={text(node).name}>
               <StepIcon node={node} roles={roles} size={16} />
@@ -104,7 +109,11 @@ function Board({ task, roles }: { task: Task; roles: RoleDef[] }) {
     return [...by.values()];
   }, [data]);
   if (entries.isLoading) return null;
-  if (latest.length === 0) return <p className="flow-board__empty">{t("flows.live.boardEmpty")}</p>;
+  if (latest.length === 0) {
+    // A closed task's board is cleared on purpose (§43): say so.
+    const closed = task.status === "accepted" || task.status === "discarded";
+    return <p className="flow-board__empty">{t(closed ? "flows.live.boardCleared" : "flows.live.boardEmpty")}</p>;
+  }
   return (
     <ul className="flow-board" aria-label={t("flows.live.board")}>
       {latest.map((e) => (
