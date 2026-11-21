@@ -117,10 +117,14 @@
   stroke-width: 9;
   stroke-linecap: round;
   filter: blur(4px);
-  opacity: 0.18;
-  animation: flow-breathe 3.6s ease-in-out infinite;
+  /* Still: a blurred path that changes every frame costs a repaint each time. */
+  opacity: 0.2;
 }
-.flow-edge-group[data-selected] .flow-edge-glow { opacity: 0.45; animation: none; }
+.flow-edge-group[data-selected] .flow-edge-glow { opacity: 0.45; }
+/* Nothing moves while the window is hidden. */
+.flow-canvas[data-paused] .flow-pulse,
+.flow-canvas[data-paused] .flow-node,
+.flow-canvas[data-paused] .flow-node__tile::after { animation-play-state: paused; }
 
 /* The streaks: a short capsule, bright at its head, turned along the line. */
 .flow-pulses { position: absolute; left: 0; top: 0; pointer-events: none; }
@@ -512,6 +516,7 @@
 }
 .flow-progress__now[data-waiting] { color: var(--ink); }
 .flow-progress__now[data-waiting]::before { background: var(--warning); }
+.flow-progress__now[data-stopped]::before { background: var(--muted); animation: none; }
 .flow-progress__round { padding: 0 7px; border-radius: var(--radius-pill); background: var(--panel-2); color: var(--ink); }
 .flow-progress__toggle {
   margin-left: auto;

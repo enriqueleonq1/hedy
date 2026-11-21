@@ -2,14 +2,15 @@
 // of its steps over the timeline, the board the roles share) and the card
 // that asks for the user's approval at an approval step.
 
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { useAction, useApi } from "../../api/context";
 import type { BoardEntry, FlowNode, FlowRun, RoleDef, Task } from "../../api/types";
 import { Button } from "../../components/ui/Button";
 import { useT } from "../../i18n";
 import { keyLabels } from "../../platform";
+import { isTextField, useClaimFocus } from "../workspace/Timeline";
 import { edgeFrom, forward, runOrder } from "./flowModel";
 import { StepIcon, stepTint } from "./StepIcon";
 import { useStepText } from "./stepText";
@@ -33,12 +34,15 @@ export function FlowProgress({ task, run }: { task: Task; run: FlowRun }) {
   const roles = useMemo(() => rolesOf(run), [run]);
   const text = useStepText(roles);
   const [board, setBoard] = useState(false);
+  const boardId = useId();
   const order = useMemo(() => runOrder(run.flow), [run.flow]);
-  const state = states(run);
+  const state = useMemo(() => states(run), [run]);
   const current = order.find((n) => state.get(n.id) === "current");
   const round = Math.max(0, ...Object.values(run.position.rounds ?? {})) + 1;
   const waiting = task.status === "waitingApproval";
   const working = task.live && task.status === "running";
+  // Ended before its end (out of rounds, a failure, stopped): not alive anymore.
+  const stopped = !waiting && task.status !== "running";
   const lane = current?.kind === "parallel" ? current.roles[run.lane ?? 0] : undefined;
   const now = current ? (lane ? (roles.find((r) => r.id === lane.role)?.name ?? lane.role) : text(current).name) : "";
   return (
@@ -46,12 +50,12 @@ export function FlowProgress({ task, run }: { task: Task; run: FlowRun }) {
       <header className="flow-progress__head">
         <span className="flow-progress__name">{run.flow.name}</span>
         {current && current.kind !== "end" && (
-          <span className="flow-progress__now" data-waiting={waiting || undefined}>
-            {t(waiting ? "flows.live.waiting" : working ? "flows.live.working" : "flows.live.at", { step: now })}
+          <span className="flow-progress__now" data-waiting={waiting || undefined} data-stopped={stopped || undefined}>
+            {t(waiting ? "flows.live.waiting" : stopped ? "flows.live.stopped" : working ? "flows.live.working" : "flows.live.at", { step: now })}
             {round > 1 && <span className="flow-progress__round">{t("flows.live.round", { n: String(round) })}</span>}
           </span>
         )}
-        <button type="button" className="flow-progress__toggle" aria-expanded={board} onClick={() => setBoard((b) => !b)}>
+        <button type="button" className="flow-progress__toggle" aria-expanded={board} aria-controls={boardId} onClick={() => setBoard((b) => !b)}>
           {t("flows.live.board")}
         </button>
       </header>
@@ -68,16 +72,31 @@ export function FlowProgress({ task, run }: { task: Task; run: FlowRun }) {
           </li>
         ))}
       </ol>
-      {board && <Board task={task} />}
+      <div id={boardId}>{board && <Board task={task} roles={roles} />}</div>
     </section>
   );
 }
 
 /** What the roles left on the board: the latest of each section, as plain text. */
-function Board({ task }: { task: Task }) {
+function Board({ task, roles }: { task: Task; roles: RoleDef[] }) {
   const t = useT();
   const api = useApi();
-  const entries = useQuery({ queryKey: ["taskBoard", task.id, task.status, task.stage], queryFn: () => api.taskBoard(task.id) });
+  // Fresh on each step and while a role works (it can post mid-turn); the
+  // old entries stay shown meanwhile, no blink.
+  const entries = useQuery({
+    queryKey: ["taskBoard", task.id, task.status, task.stage],
+    queryFn: () => api.taskBoard(task.id),
+    placeholderData: keepPreviousData,
+    refetchInterval: task.status === "running" ? 5000 : false,
+  });
+  const sectionName = (section: string): string =>
+    section === "frame"
+      ? t("flows.live.section.frame")
+      : section === "tests"
+        ? t("flows.live.section.tests")
+        : section === "rules"
+          ? t("flows.live.section.rules")
+          : (roles.find((r) => r.id === section)?.name ?? section);
   const data = entries.data;
   const latest = useMemo(() => {
     const by = new Map<string, BoardEntry>();
@@ -91,7 +110,7 @@ function Board({ task }: { task: Task }) {
       {latest.map((e) => (
         <li key={e.section} className="flow-board__entry">
           <p className="flow-board__meta">
-            <span className="flow-board__section">{e.byUser ? t("flows.live.feedback") : e.section}</span>
+            <span className="flow-board__section">{e.byUser ? t("flows.live.feedback") : sectionName(e.section)}</span>
             {!e.byUser && e.role && <span>{e.role}</span>}
             {e.round > 1 && <span>{t("flows.live.round", { n: String(e.round) })}</span>}
           </p>
@@ -122,7 +141,17 @@ function BoardText({ text }: { text: string }) {
 }
 
 /** The flow waits for the user: approve, or say what to change (back to the step before). */
-export function FlowApprovalCard({ task, node, answer }: { task: Task; node: string; answer: "approved" | "changes" | null }) {
+export function FlowApprovalCard({
+  task,
+  node,
+  answer,
+  latest,
+}: {
+  task: Task;
+  node: string;
+  answer: "approved" | "changes" | null;
+  latest: boolean;
+}) {
   const t = useT();
   const run = task.flow;
   const roles = useMemo(() => (run ? rolesOf(run) : []), [run]);
@@ -134,7 +163,10 @@ export function FlowApprovalCard({ task, node, answer }: { task: Task; node: str
   const reply = useAction((api, vars: { approve: boolean; feedback: string | null }) =>
     api.answerFlowApproval(task.id, vars.approve, vars.feedback),
   );
-  const pending = answer === null && task.status === "waitingApproval" && run?.position.node === node;
+  // Waiting is the task's state, not the history's: a message written while
+  // it waits leaves the buttons; an answer sent hides them at once.
+  const pending = latest && answer === null && !reply.isSuccess && task.status === "waitingApproval" && run?.position.node === node;
+  useClaimFocus(card, pending);
   const next: FlowNode | undefined = (() => {
     const here = run?.flow.nodes.find((n) => n.id === node);
     const to = run && here ? edgeFrom(run.flow, node, forward(here))?.to : undefined;
@@ -145,7 +177,7 @@ export function FlowApprovalCard({ task, node, answer }: { task: Task; node: str
   };
   const shortcut = (e: KeyboardEvent<HTMLElement>) => {
     if (!pending || changing || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+    if (isTextField(e.target)) return;
     if (e.key === "Enter" && e.target === e.currentTarget) {
       e.preventDefault();
       approve();

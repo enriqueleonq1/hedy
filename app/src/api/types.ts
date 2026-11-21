@@ -982,6 +982,8 @@ export type AgentEvent =
   | { kind: "phaseStarted"; phase: Phase; agent: string; account: string }
   /** A flow reached a step where the user approves what came before. */
   | { kind: "flowApproval"; node: string }
+  /** The user's answer there (a message written while it waits is not one). */
+  | { kind: "flowApprovalAnswered"; node: string; approved: boolean }
   /** A flow's condition was checked (`what`: "npm test", "las reglas"…). */
   | { kind: "flowCheck"; node: string; what: string; passed: boolean }
   | {

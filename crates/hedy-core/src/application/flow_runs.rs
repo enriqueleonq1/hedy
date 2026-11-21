@@ -526,6 +526,18 @@ impl Hedy {
         // not: every other task's turn waits on that lock.
         self.set_status(&mut task, TaskStatus::Running)?;
         drop(_status);
+        let node = task
+            .flow
+            .as_ref()
+            .map(|r| r.position.node.clone())
+            .unwrap_or_default();
+        self.record(
+            id,
+            AgentEvent::FlowApprovalAnswered {
+                node,
+                approved: approve,
+            },
+        )?;
         // A step that cannot start (its account was reserved meanwhile, a
         // CLI gone) leaves the work for review with why, not Running forever.
         let mut go = || -> AppResult<()> {
@@ -713,6 +725,14 @@ mod tests {
         );
         let before = f.agents.requests().len();
         f.hedy.answer_flow_approval(&task.id, true, None).unwrap();
+        // The answer is in the history, for the card to show it.
+        assert!(
+            f.hedy
+                .task_events(&task.id)
+                .unwrap()
+                .iter()
+                .any(|e| matches!(e, AgentEvent::FlowApprovalAnswered { approved: true, .. }))
+        );
 
         // The programmer gets the plan, in a session of its own.
         let requests = f.agents.requests();

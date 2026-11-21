@@ -1920,6 +1920,7 @@ export class MockApi implements HedyApi {
     const task = this.tasksById.get(id);
     if (!task || task.status !== "waitingApproval") throw "esta tarea no espera tu aprobación";
     if (!approve && feedback) this.boards.set(id, [...(this.boards.get(id) ?? []), { section: "feedback", role: "", round: 0, text: feedback, byUser: true }]);
+    this.push(id, { kind: "flowApprovalAnswered", node: task.flow?.position.node ?? "", approved: approve });
     task.status = approve ? "review" : "running";
     this.notifyTask(task);
   }
@@ -2377,10 +2378,6 @@ export class MockApi implements HedyApi {
   }
 
   /**
-   * Sample tasks for the task board, in both projects: two waiting for an
-   * answer, one at its limit, one working and a few that already finished.
-   */
-  /**
    * A task of tienda following «Pago con revisión», at its approval: the
    * tests failed once and passed, the review approved, the board is full.
    */
@@ -2443,6 +2440,10 @@ export class MockApi implements HedyApi {
     return this;
   }
 
+  /**
+   * Sample tasks for the task board, in both projects: two waiting for an
+   * answer, one at its limit, one working and a few that already finished.
+   */
   withSampleActivity(): this {
     const now = Math.floor(Date.now() / 1000);
     const min = 60;
@@ -2643,6 +2644,14 @@ export class MockApi implements HedyApi {
     const task = this.tasksById.get(id);
     if (!task || task.status === "accepted" || task.status === "discarded") throw "la tarea ya está cerrada";
     const attached = await this.storeImages(id, task.account, images);
+    // A flow at its approval answers and goes on waiting, like the backend.
+    if (task.flow && task.status === "waitingApproval") {
+      this.push(id, { kind: "userMessage", text });
+      this.push(id, { kind: "message", text: "Porque ahí viven los demás clientes externos." });
+      task.status = "waitingApproval";
+      this.notifyTask(task);
+      return;
+    }
     task.live = true;
     // Writing to the agent ends a wait for its limit, like the backend.
     if (task.wait) {

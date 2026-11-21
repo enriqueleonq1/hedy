@@ -167,7 +167,7 @@ function Item({ task, item }: { task: Task; item: TimelineItem }) {
     case "permission":
       return <PermissionCard task={task} item={item} />;
     case "flowApproval":
-      return <FlowApprovalCard task={task} node={item.node} answer={item.answer} />;
+      return <FlowApprovalCard task={task} node={item.node} answer={item.answer} latest={item.latest} />;
     case "flowCheck":
       return (
         <p className={`activity activity--${item.passed ? "done" : "failed"} flow-check`}>
@@ -311,7 +311,7 @@ function resolutionText(r: Resolution, t: Translate): string {
 }
 
 /** Typing in a field: card shortcuts stay out of the way. */
-function isTextField(target: EventTarget | null): boolean {
+export function isTextField(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLElement &&
     (target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")
@@ -323,7 +323,7 @@ function isTextField(target: EventTarget | null): boolean {
  * user is somewhere else: only from the page itself or the chat, and never
  * from a field they are typing in.
  */
-function useClaimFocus(ref: RefObject<HTMLElement | null>, active: boolean) {
+export function useClaimFocus(ref: RefObject<HTMLElement | null>, active: boolean) {
   useEffect(() => {
     if (!active) return;
     const current = document.activeElement;

@@ -20,6 +20,8 @@ const ZOOM_MIN = 0.35;
 const ZOOM_MAX = 1.6;
 /** How far under its row a way back runs. */
 const LOOP_DROP = 62;
+/** Above this many lines the streaks stay off (they repaint every frame). */
+const MAX_STREAKS = 16;
 
 type Camera = { x: number; y: number; z: number };
 
@@ -64,6 +66,13 @@ export function FlowCanvas({
   const uid = `flow${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const [camera, setCamera] = useState<Camera>({ x: 48, y: 120, z: 1 });
   const [gesture, setGesture] = useState<Gesture | null>(null);
+  // Nothing animates while the window is hidden.
+  const [hidden, setHidden] = useState(() => document.visibilityState === "hidden");
+  useEffect(() => {
+    const onChange = () => setHidden(document.visibilityState === "hidden");
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  }, []);
   const placedAt = useMemo(() => layout(flow), [flow]);
   // A step being dragged is drawn where the pointer is, before it is saved.
   const at = useMemo(() => {
@@ -195,6 +204,7 @@ export function FlowCanvas({
       ref={box}
       className="flow-canvas"
       data-gesture={gesture?.kind === "pan" && gesture.moved ? "pan" : undefined}
+      data-paused={hidden || undefined}
       style={{
         backgroundSize: `${20 * camera.z}px ${20 * camera.z}px`,
         backgroundPosition: `${camera.x}px ${camera.y}px`,
@@ -257,19 +267,19 @@ export function FlowCanvas({
             and slower, backwards, along the ways back. They move on the line's
             own path (a motion path is a transform); none with reduced motion. */}
         <div className="flow-pulses" aria-hidden="true">
-          {forwardEdges.map((e, i) =>
-            [0, 1].map((k) => (
+          {/* One streak per line, and none on a large flow: each is a repaint. */}
+          {forwardEdges.length <= MAX_STREAKS &&
+            forwardEdges.map((e, i) => (
               <span
-                key={`${e.from}-${e.when}-${k}`}
+                key={`${e.from}-${e.when}`}
                 className="flow-pulse"
                 style={{
                   offsetPath: `path("${forwardPath(nodeAt(e.from), nodeAt(e.to))}")`,
-                  animationDelay: `${-(k * 1.3 + (i % 5) * 0.37)}s`,
+                  animationDelay: `${-((i % 5) * 0.52)}s`,
                 }}
               />
-            )),
-          )}
-          {loops.map((e, i) => (
+            ))}
+          {forwardEdges.length <= MAX_STREAKS && loops.map((e, i) => (
             <span
               key={`${e.from}-loop`}
               className="flow-pulse flow-pulse--loop"

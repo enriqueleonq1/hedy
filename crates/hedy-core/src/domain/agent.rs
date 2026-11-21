@@ -99,6 +99,12 @@ pub enum AgentEvent {
     FlowApproval {
         node: String,
     },
+    /// The user's answer at that step: what the app shows on its card (a
+    /// message written while it waits is not an answer).
+    FlowApprovalAnswered {
+        node: String,
+        approved: bool,
+    },
     /// A flow's condition was checked: the tests, the rules or the
     /// reviewers' verdict (docs/decisions.md §44).
     FlowCheck {

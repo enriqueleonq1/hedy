@@ -47,7 +47,10 @@ describe("A flow task, live", () => {
     const { user } = await setup();
     await user.click(within(await progress()).getByRole("button", { name: "Pizarra" }));
     const board = await screen.findByRole("list", { name: "Pizarra" });
-    expect(within(board).getByText("architect")).toBeInTheDocument();
+    // Sections by the names people know, not their ids.
+    expect(within(board).getByText("Contexto")).toBeInTheDocument();
+    expect(within(board).queryByText("architect")).not.toBeInTheDocument();
+    expect(within(board).getAllByText("Arquitecto").length).toBeGreaterThan(0);
     expect(within(board).getByText(/VEREDICTO: APRUEBA/)).toBeInTheDocument();
   });
 
@@ -71,14 +74,29 @@ describe("A flow task, live", () => {
     await waitFor(() => expect(answer).toHaveBeenCalledWith("f1", false, "El cobro va en el servidor"));
   });
 
-  it("knows how each approval was answered", () => {
+  it("a message written while it waits leaves the approval waiting", async () => {
+    const { api, user } = await setup();
+    await card();
+    await api.sendMessage("f1", "¿Por qué el cliente va en src/pagos?");
+    const approval = await card();
+    await waitFor(() => expect(screen.getByText("¿Por qué el cliente va en src/pagos?")).toBeInTheDocument());
+    expect(within(approval).getByRole("button", { name: /Aprobar/ })).toBeEnabled();
+    await user.click(within(approval).getByRole("button", { name: /Aprobar/ }));
+    await waitFor(() => expect(within(approval).getByText(/aprobado/)).toBeInTheDocument());
+  });
+
+  it("knows how each approval was answered, and which ask is the latest", () => {
     const t = ((key: string) => key) as Parameters<typeof buildTimeline>[1];
     const ask: AgentEvent = { kind: "flowApproval", node: "n3" };
-    const phase: AgentEvent = { kind: "phaseStarted", phase: "implement", agent: "A", account: "B" };
+    const said = (approved: boolean): AgentEvent => ({ kind: "flowApprovalAnswered", node: "n3", approved });
     const answers = (events: AgentEvent[]) =>
-      buildTimeline(events, t).flatMap((i) => (i.type === "flowApproval" ? [i.answer] : []));
-    expect(answers([ask])).toEqual([null]);
-    expect(answers([ask, phase])).toEqual(["approved"]);
-    expect(answers([ask, { kind: "userMessage", text: "otra cosa" }, phase])).toEqual(["changes"]);
+      buildTimeline(events, t).flatMap((i) => (i.type === "flowApproval" ? [[i.answer, i.latest]] : []));
+    expect(answers([ask])).toEqual([[null, true]]);
+    // A message is not an answer.
+    expect(answers([ask, { kind: "userMessage", text: "¿por qué?" }])).toEqual([[null, true]]);
+    expect(answers([ask, said(false), ask, said(true)])).toEqual([
+      ["changes", false],
+      ["approved", true],
+    ]);
   });
 });
