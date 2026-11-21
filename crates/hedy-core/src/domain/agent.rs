@@ -99,6 +99,14 @@ pub enum AgentEvent {
     FlowApproval {
         node: String,
     },
+    /// A flow's condition was checked: the tests, the rules or the
+    /// reviewers' verdict (docs/decisions.md §44).
+    FlowCheck {
+        node: String,
+        /// What was checked, for people ("cargo test", "las reglas"…).
+        what: String,
+        passed: bool,
+    },
     /// The agent finished its turn ("Termino").
     Finished {
         ok: bool,

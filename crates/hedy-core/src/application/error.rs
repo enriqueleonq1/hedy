@@ -52,8 +52,6 @@ pub enum AppError {
     #[error("{}", self.message())]
     InvalidFlow(Vec<String>),
     #[error("{}", self.message())]
-    FlowNotYet,
-    #[error("{}", self.message())]
     NothingToRedo,
     #[error("{}", self.message())]
     FlowAtApproval(TaskId),
@@ -413,10 +411,6 @@ impl AppError {
             Self::FlowAtApproval(id) => tr!(
                 "la tarea {id} espera tu aprobación: apruébala o pide cambios antes de pasarla a otra cuenta",
                 "task {id} is waiting for your approval: approve it or ask for changes before handing it over"
-            ),
-            Self::FlowNotYet => tr!(
-                "este flujo tiene condiciones o roles a la vez, y Hedy aún no los ejecuta",
-                "this flow has conditions or roles at once, which Hedy does not run yet"
             ),
             Self::NoFlowApproval(id) => tr!(
                 "la tarea {id} no espera tu aprobación",

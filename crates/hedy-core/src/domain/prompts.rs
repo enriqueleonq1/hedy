@@ -268,6 +268,13 @@ pub fn role_prompt(
             "Your final answer goes on the board, section «{mine}». With context_read you read the whole board or one section (its history); with context_post you leave something for the others while you work."
         ));
     }
+    if role.delivers == super::flow::Delivers::Verdict {
+        part.push_str("\n\n");
+        part.push_str(&tr!(
+            "Termina tu respuesta con una línea que diga exactamente «VEREDICTO: APRUEBA» si los cambios están bien, o «VEREDICTO: CAMBIOS» si hay que corregir algo, y antes los motivos.",
+            "End your answer with a line that says exactly «VERDICT: APPROVE» if the changes are fine, or «VERDICT: CHANGES» if something must be fixed, with the reasons before it."
+        ));
+    }
     out.push_str(&section(&tr!("Tu parte", "Your part"), &part));
     out
 }

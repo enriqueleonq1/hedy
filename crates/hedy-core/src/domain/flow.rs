@@ -1116,6 +1116,39 @@ pub struct FlowRun {
     /// opens its delivery when it finishes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub partial: Option<String>,
+    /// Which role of a group at once works now (they run one after another).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub lane: usize,
+    /// The verdicts given since the last verdict condition: `None` for a
+    /// role that gave none Hedy could read.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub verdicts: Vec<Option<bool>>,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
+/// A reviewer's verdict from its final answer: the last line that says
+/// `VEREDICTO: APRUEBA` / `CAMBIOS` (or `VERDICT: APPROVE` / `CHANGES`), any
+/// case. `None` when there is none: Hedy never guesses from free text.
+pub fn parse_verdict(text: &str) -> Option<bool> {
+    text.lines().rev().find_map(|line| {
+        let line = line
+            .trim()
+            .trim_matches(|c: char| c == '*' || c == '`' || c == '#')
+            .trim()
+            .to_lowercase();
+        let (key, value) = line.split_once(':')?;
+        if !matches!(key.trim(), "veredicto" | "verdict") {
+            return None;
+        }
+        match value.trim().trim_end_matches('.') {
+            "aprueba" | "approve" | "approved" => Some(true),
+            "cambios" | "changes" => Some(false),
+            _ => None,
+        }
+    })
 }
 
 impl FlowRun {
@@ -1131,6 +1164,8 @@ impl FlowRun {
             flow,
             roles,
             partial: None,
+            lane: 0,
+            verdicts: Vec::new(),
         })
     }
 
@@ -1138,10 +1173,17 @@ impl FlowRun {
         self.flow.node(&self.position.node)
     }
 
-    /// The role of the current step, when it is one.
+    /// The role of the current step, when it is one (in a group at once,
+    /// the one working now).
     pub fn current_role(&self) -> Option<&RoleDef> {
+        self.roles.get(&self.current_seat()?.role)
+    }
+
+    /// Who works on the current step, when a role does.
+    pub fn current_seat(&self) -> Option<&Seat> {
         match &self.current()?.kind {
-            NodeKind::Role(seat) => self.roles.get(&seat.role),
+            NodeKind::Role(seat) => Some(seat),
+            NodeKind::Parallel { roles } => roles.get(self.lane),
             _ => None,
         }
     }
@@ -1161,6 +1203,20 @@ impl FlowRun {
 mod tests {
     use super::*;
     use crate::domain::Assignment;
+
+    #[test]
+    fn a_verdict_is_read_from_its_own_line_never_guessed() {
+        assert_eq!(parse_verdict("Bien.\nVEREDICTO: APRUEBA"), Some(true));
+        assert_eq!(parse_verdict("**Verdict: changes**"), Some(false));
+        assert_eq!(parse_verdict("VEREDICTO: cambios.\n"), Some(false));
+        assert_eq!(parse_verdict("Todo bien, apruebo"), None);
+        assert_eq!(parse_verdict("VEREDICTO: quizá"), None);
+        // The last one counts.
+        assert_eq!(
+            parse_verdict("VERDICT: CHANGES\nAl final sí.\nVERDICT: APPROVE"),
+            Some(true)
+        );
+    }
 
     #[test]
     fn a_role_sees_the_latest_of_its_sections_its_own_and_your_feedback() {

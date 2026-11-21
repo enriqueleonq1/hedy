@@ -5,10 +5,15 @@
 
 use super::tasks::NewTask;
 use super::{AppError, AppResult, Hedy};
-use crate::domain::flow::{BoardEntry, FEEDBACK, FlowRun, Next, NodeKind, Outcome, Seat};
+use crate::domain::flow::{
+    BoardEntry, Check, Delivers, FEEDBACK, FlowRun, Next, NodeKind, Outcome, Seat, parse_verdict,
+};
 use crate::domain::task::title_from_prompt;
 use crate::domain::{AgentEvent, NoticeKind, Stage, Task, TaskId, TaskMode, TaskStatus, policy};
 use crate::tr;
+
+/// How long a flow's tests may run.
+const FLOW_TESTS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(900);
 
 impl Hedy {
     /// Starts a task that runs `which` (a template key or a flow's name) of
@@ -42,21 +47,17 @@ impl Hedy {
         // account that have none of their own.
         if let Some(model) = request.model.as_deref().filter(|m| !m.trim().is_empty()) {
             for node in &mut run.flow.nodes {
-                if let NodeKind::Role(seat) = &mut node.kind
-                    && seat.account.is_none()
-                    && seat.model.is_none()
-                {
-                    seat.model = Some(model.to_owned());
+                let seats: Vec<&mut Seat> = match &mut node.kind {
+                    NodeKind::Role(seat) => vec![seat],
+                    NodeKind::Parallel { roles } => roles.iter_mut().collect(),
+                    _ => Vec::new(),
+                };
+                for seat in seats {
+                    if seat.account.is_none() && seat.model.is_none() {
+                        seat.model = Some(model.to_owned());
+                    }
                 }
             }
-        }
-        if run
-            .flow
-            .nodes
-            .iter()
-            .any(|n| matches!(n.kind, NodeKind::Condition(_) | NodeKind::Parallel { .. }))
-        {
-            return Err(AppError::FlowNotYet);
         }
         // Every role's account may work here and is ready, before anything is created.
         let projects = self.projects()?;
@@ -124,11 +125,28 @@ impl Hedy {
             };
             match node.kind {
                 NodeKind::Start => {
-                    if !self.advance_flow(task)? {
+                    if !self.advance_flow(task, Outcome::Done)? {
                         return Ok(());
                     }
                 }
                 NodeKind::Role(seat) => return self.start_role(task, &seat),
+                // Read-only roles on the same state: one after another (the
+                // same result, without several sessions in one copy).
+                NodeKind::Parallel { roles } => {
+                    let lane = task.flow.as_ref().map_or(0, |r| r.lane);
+                    let Some(seat) = roles.get(lane) else {
+                        return self.end_flow(task, None);
+                    };
+                    return self.start_role(task, seat);
+                }
+                NodeKind::Condition(check) => {
+                    let Some(outcome) = self.check_condition(task, &node.id, &check)? else {
+                        return Ok(());
+                    };
+                    if !self.advance_flow(task, outcome)? {
+                        return Ok(());
+                    }
+                }
                 NodeKind::Approval => {
                     // Nothing works while the user decides.
                     self.stop_session(&task.id);
@@ -142,20 +160,17 @@ impl Hedy {
                     return Ok(());
                 }
                 NodeKind::End => return self.end_flow(task, None),
-                NodeKind::Condition(_) | NodeKind::Parallel { .. } => {
-                    return Err(AppError::FlowNotYet);
-                }
             }
         }
     }
 
     /// Moves past the current step. `false` when the run stopped there (no
     /// way on, or a loop out of rounds).
-    fn advance_flow(&self, task: &mut Task) -> AppResult<bool> {
+    fn advance_flow(&self, task: &mut Task, outcome: Outcome) -> AppResult<bool> {
         let Some(run) = task.flow.as_mut() else {
             return Ok(false);
         };
-        match run.position.advance(&run.flow, Outcome::Done) {
+        match run.position.advance(&run.flow, outcome) {
             Some(Next::Go(_)) => {
                 self.store.save_task(task)?;
                 Ok(true)
@@ -231,7 +246,7 @@ impl Hedy {
         };
         // A turn that ends anywhere but a role's step (the user wrote while
         // the flow waited for their approval) moves nothing: it waits again.
-        if !matches!(run.current().map(|n| &n.kind), Some(NodeKind::Role(_))) {
+        if run.current_seat().is_none() {
             if matches!(run.current().map(|n| &n.kind), Some(NodeKind::Approval)) {
                 self.set_status(task, TaskStatus::WaitingApproval)?;
             }
@@ -252,6 +267,10 @@ impl Hedy {
             } else {
                 said
             };
+            // A verdict is read from its own line, never guessed.
+            if role.delivers == Delivers::Verdict {
+                run.verdicts.push(parse_verdict(&text));
+            }
             let entry = BoardEntry {
                 section: role.section(),
                 role: role.name.clone(),
@@ -262,10 +281,174 @@ impl Hedy {
             self.store.save_task(task)?;
             self.post_to_board(&task.id, entry)?;
         }
-        if self.advance_flow(task)? {
+        // The next role of a group at once, or past the step.
+        let run = task.flow.as_mut().expect("a flow task");
+        if let Some(NodeKind::Parallel { roles }) = run.current().map(|n| n.kind.clone()) {
+            if run.lane + 1 < roles.len() {
+                run.lane += 1;
+                self.store.save_task(task)?;
+                return self.flow_step(task);
+            }
+            run.lane = 0;
+        }
+        if self.advance_flow(task, Outcome::Done)? {
             self.flow_step(task)?;
         }
         Ok(())
+    }
+
+    /// Checks a condition and says which way the flow goes. `None` when the
+    /// run stopped there (nothing to judge: the user decides).
+    fn check_condition(
+        &self,
+        task: &mut Task,
+        node: &str,
+        check: &Check,
+    ) -> AppResult<Option<Outcome>> {
+        let (what, passed, report) = match check {
+            Check::Tests { command } => {
+                let Some(ws) = task.workspace.clone() else {
+                    return Ok(None);
+                };
+                let command = match command.clone().or_else(|| {
+                    let files = self.git.list_files(&ws.worktree).ok()?;
+                    crate::domain::briefing::test_command(&files)
+                }) {
+                    Some(command) => command,
+                    None => {
+                        let note = tr!(
+                            "No sé cómo correr los tests de este proyecto: pon el comando en el paso «tests» del flujo.",
+                            "I do not know how to run this project's tests: put the command in the flow's «tests» step."
+                        );
+                        self.end_flow(task, Some(note))?;
+                        return Ok(None);
+                    }
+                };
+                let (passed, output) = self.run_flow_tests(task, &ws, &command);
+                (command, passed, output)
+            }
+            Check::Rules => {
+                let checked =
+                    self.check_rules(&super::RuleTarget::Task(task.id.clone()), None, None);
+                match checked {
+                    Ok(check) if !check.unread => {
+                        let n = check.breaks.len();
+                        let report = if n == 0 {
+                            tr!("Sigue todas las reglas.", "It follows every rule.")
+                        } else {
+                            let lines = check
+                                .breaks
+                                .iter()
+                                .map(|b| format!("- {}:{}: {}", b.path, b.line, b.message))
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            tr!(
+                                "Rompe {n} regla(s):\n{lines}",
+                                "It breaks {n} rule(s):\n{lines}"
+                            )
+                        };
+                        (tr!("las reglas", "the rules"), n == 0, report)
+                    }
+                    _ => {
+                        let note = tr!(
+                            "No se pudo comprobar las reglas: revisa los cambios y decide.",
+                            "The rules could not be checked: look at the changes and decide."
+                        );
+                        self.end_flow(task, Some(note))?;
+                        return Ok(None);
+                    }
+                }
+            }
+            Check::Verdict => {
+                let run = task.flow.as_mut().expect("a flow task");
+                let verdicts = std::mem::take(&mut run.verdicts);
+                if verdicts.is_empty() || verdicts.iter().any(Option::is_none) {
+                    let note = tr!(
+                        "La revisión no dio un veredicto claro (APRUEBA o CAMBIOS): léela y decide.",
+                        "The review gave no clear verdict (APPROVE or CHANGES): read it and decide."
+                    );
+                    self.end_flow(task, Some(note))?;
+                    return Ok(None);
+                }
+                let passed = verdicts.iter().all(|v| *v == Some(true));
+                (tr!("el veredicto", "the verdict"), passed, String::new())
+            }
+        };
+        self.record(
+            &task.id,
+            AgentEvent::FlowCheck {
+                node: node.to_owned(),
+                what: what.clone(),
+                passed,
+            },
+        )?;
+        if !report.trim().is_empty() {
+            let round = task.flow.as_ref().map_or(1, |r| r.position.round());
+            let section = match check {
+                Check::Tests { .. } => "tests",
+                _ => "rules",
+            };
+            self.post_to_board(
+                &task.id,
+                BoardEntry {
+                    section: section.to_owned(),
+                    role: "Hedy".to_owned(),
+                    round,
+                    text: report,
+                    by_user: false,
+                },
+            )?;
+        }
+        Ok(Some(if passed {
+            Outcome::Passed
+        } else {
+            Outcome::Failed
+        }))
+    }
+
+    /// The flow's test command in the task's copy, isolated as a skill
+    /// trial's check: whether it passed and the end of what it printed.
+    fn run_flow_tests(
+        &self,
+        task: &Task,
+        ws: &crate::domain::Workspace,
+        command: &str,
+    ) -> (bool, String) {
+        let reads: Vec<_> = std::iter::once(".git")
+            .chain(crate::domain::task::SHARED_DEPENDENCY_DIRS.iter().copied())
+            .map(|name| task.project.join(name))
+            .filter(|path| self.fs.exists(path))
+            .collect();
+        let spec = crate::domain::LaunchSpec {
+            program: "sh".into(),
+            args: vec!["-c".into(), command.to_owned()],
+            env: Vec::new(),
+            cwd: Some(ws.worktree.clone()),
+        };
+        match self
+            .runner
+            .run_check(&spec, FLOW_TESTS_TIMEOUT, task.id.as_str(), &reads)
+        {
+            Ok(out) => {
+                let passed = out.exit_code == Some(0);
+                let text = out.stdout;
+                let tail: Vec<&str> = text.lines().rev().take(40).collect();
+                let tail: Vec<&str> = tail.into_iter().rev().collect();
+                let head = if passed {
+                    tr!("`{command}`: pasan.", "`{command}`: they pass.")
+                } else {
+                    tr!("`{command}`: fallan.", "`{command}`: they fail.")
+                };
+                (passed, format!("{head}\n\n{}", tail.join("\n")))
+            }
+            Err(e) => (
+                false,
+                tr!(
+                    "`{command}` no arrancó: {e}",
+                    "`{command}` did not start: {e}"
+                ),
+            ),
+        }
     }
 
     /// The user's answer at an approval step: on, or back to the role before
@@ -290,7 +473,7 @@ impl Hedy {
         }
         let feedback = feedback.map(str::trim).filter(|f| !f.is_empty());
         if approve {
-            if self.advance_flow(&mut task)? {
+            if self.advance_flow(&mut task, Outcome::Done)? {
                 self.flow_step(&mut task)?;
             }
         } else {
@@ -452,11 +635,6 @@ mod tests {
             f.hedy.start_flow(ask, "classic"),
             Err(AppError::InvalidFlow(_))
         ));
-        // Conditions and loops come next (O3).
-        assert!(matches!(
-            f.hedy.start_flow(request(&f, "Hola"), "fix-loop"),
-            Err(AppError::FlowNotYet)
-        ));
         assert!(matches!(
             f.hedy.start_flow(request(&f, "Hola"), "nada"),
             Err(AppError::FlowNotFound(_))
@@ -550,5 +728,111 @@ mod tests {
                 .answer_flow_approval(&task.id, false, Some("otra cosa")),
             Err(AppError::NothingToRedo)
         ));
+    }
+
+    fn events(f: &Fixture, task: &crate::domain::TaskId) -> Vec<AgentEvent> {
+        f.hedy.task_events(task).unwrap()
+    }
+
+    #[test]
+    fn the_fix_loop_runs_the_tests_sends_failures_back_and_ends_on_an_approval() {
+        let f = setup();
+        f.git.set_files(&["Cargo.toml", "src/lib.rs"]);
+        f.runner
+            .reply_to("sh -c cargo test", "test pagos ... FAILED\n1 failed", 1);
+        let task = f
+            .hedy
+            .start_flow(request(&f, "Cobros"), "fix-loop")
+            .unwrap();
+        assert_eq!(f.agents.last_request().phase, Phase::Implement);
+        finish(&f, "Hecho.");
+        // The tests ran isolated in the copy, failed, and went back.
+        let ran = events(&f, &task.id);
+        assert!(
+            ran.iter()
+                .any(|e| matches!(e, AgentEvent::FlowCheck { passed: false, .. }))
+        );
+        let again = f.agents.last_request();
+        assert_eq!(again.phase, Phase::Implement);
+        assert!(
+            again.prompt.contains("1 failed"),
+            "the failure is on the board"
+        );
+
+        f.runner.reply_to("sh -c cargo test", "ok", 0);
+        finish(&f, "Arreglado.");
+        let reviewer = f.agents.last_request();
+        assert_eq!(reviewer.phase, Phase::Review);
+        assert!(reviewer.prompt.contains("VEREDICTO") || reviewer.prompt.contains("VERDICT"));
+        finish(&f, "Bien hecho.\n**VEREDICTO: APRUEBA**");
+        let done = f.hedy.task(&task.id).unwrap();
+        assert_eq!(done.status, TaskStatus::Review);
+        let passed = events(&f, &task.id)
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::FlowCheck { passed: true, .. }))
+            .count();
+        assert_eq!(passed, 2, "tests, then the verdict");
+    }
+
+    #[test]
+    fn no_clear_verdict_stops_and_asks_you() {
+        let f = setup();
+        f.git.set_files(&["Cargo.toml"]);
+        f.runner.reply_to("sh -c cargo test", "ok", 0);
+        let task = f
+            .hedy
+            .start_flow(request(&f, "Cobros"), "fix-loop")
+            .unwrap();
+        finish(&f, "Hecho.");
+        finish(&f, "Parece bien, pero no estoy seguro.");
+        let done = f.hedy.task(&task.id).unwrap();
+        assert_eq!(done.status, TaskStatus::Review);
+        assert!(
+            events(&f, &task.id)
+                .iter()
+                .any(|e| matches!(e, AgentEvent::Error { .. }))
+        );
+    }
+
+    #[test]
+    fn roles_at_once_run_one_after_another_and_all_must_approve() {
+        let f = setup();
+        let task = f
+            .hedy
+            .start_flow(request(&f, "Cobros"), "double-review")
+            .unwrap();
+        finish(&f, "Hecho.");
+        assert_eq!(f.agents.last_request().phase, Phase::Review, "the reviewer");
+        finish(&f, "VEREDICTO: APRUEBA");
+        let security = f.agents.last_request();
+        assert!(security.prompt.contains("seguridad") || security.prompt.contains("security"));
+        finish(&f, "Falta validar la firma.\nVEREDICTO: CAMBIOS");
+        // One asked for changes: back to the programmer, with both reviews.
+        let programmer = f.agents.last_request();
+        assert_eq!(programmer.phase, Phase::Implement);
+        assert!(programmer.prompt.contains("Falta validar la firma."));
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Running);
+    }
+
+    #[test]
+    fn a_loop_stops_after_its_rounds_and_leaves_it_to_you() {
+        let f = setup();
+        f.git.set_files(&["Cargo.toml"]);
+        f.runner.reply_to("sh -c cargo test", "1 failed", 1);
+        let task = f
+            .hedy
+            .start_flow(request(&f, "Cobros"), "fix-loop")
+            .unwrap();
+        for _ in 0..3 {
+            finish(&f, "Intento.");
+        }
+        let done = f.hedy.task(&task.id).unwrap();
+        assert_eq!(done.status, TaskStatus::Review);
+        let implements = done
+            .stages
+            .iter()
+            .filter(|s| s.phase == Phase::Implement)
+            .count();
+        assert_eq!(implements, 3, "the first try and two rounds");
     }
 }
