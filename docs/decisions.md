@@ -4066,3 +4066,46 @@ A project's **Flujos** tab (`#pf=<path>[&<key>]`), between Tareas and Memoria:
     status change. The card shows "aprobado" or "cambios pedidos" from it, even when nothing
     else followed (an approval right before the end).
   - Screen readers hear "Espera tu aprobación" (the `approval` milestone).
+
+## 48. The orchestrator, O7: a flow after a task, and flows and roles from the terminal (Nov 21, 2026)
+
+**"Al terminar una tarea del proyecto"** (`Trigger::TaskEnd`, a switch in the editor's flow panel):
+- **What it does:** when a normal task of the project ends its request well with changes, the
+  first project flow with the switch on takes the same task on, in its same copy. Its reviewers
+  see the task's changes and its programmer can fix them (`flow_after_task`, on `Finished`).
+- **It does not fire for:**
+  - a plan stage, a skill trial, a conversation or scratch task;
+  - a turn at the account's limit, or one waiting for it (rule 3);
+  - a task with no changes;
+  - follow-ups after the first request, or tasks left in review before the switch was turned on;
+  - global flows, which would fire in every project.
+- **Checks before it runs:** the flow is checked and every role's account is checked against the
+  project (rule 4) first. If they fail, the task ends as always, with a note saying why.
+- **Status lock:** the flow is attached under the status lock, after reading the task again, so
+  a task discarded as its turn ends stays discarded. If the flow's first step cannot start, the
+  flow is taken off and the work is left for review with the reason, never marked Failed.
+- **Before a commit (deferred):** a flow needs a working copy holding the changes, which staged
+  changes are not, and agents inside a git hook would block the commit for minutes. For that
+  moment `hedy review --staged` already checks the rules, fast. The trigger stays in the domain;
+  the editor does not offer it.
+- **Known limit:** after a flow ends, a follow-up message goes to the flow's last role (as for any
+  flow task), so with a reviewer last, a follow-up runs read-only.
+
+**Terminal:**
+- `hedy flow new <name> [--from <flow>] [--global]` copies a template or flow.
+- `hedy flow edit <name>` opens its text (the YAML-like form of §42) in `$EDITOR`. The editor runs
+  through `sh -c` as git does, and the file is a private temp file (`O_EXCL`, 0600, removed
+  after). On save the flow is checked. If it does not hold, the error says the line and offers to
+  reopen with the changes. A rename keeps the flow (`save_flow_text_as`), and templates are
+  copied, never edited.
+- **`hedy roles`:** `list`, `show`, `new <id> [--from]`, `edit <id> [--global]`, `remove <id>`.
+  - Roles are text too (`domain/role_text.rs`: id, name, summary, delivers, can, sees,
+    plan_first, skills, notes, `instructions: |`).
+  - A user role with a built-in id replaces Hedy's in that place, and removing it brings Hedy's
+    back.
+  - `new` refuses an id that exists, and `edit` refuses changing the id onto another role.
+  - Each save says where it went.
+- **Known limit:** making a built-in role a writer (or no longer a verdict) can make flows that
+  use it in a parallel group or before a verdict check invalid. They say so when they start; runs
+  already going keep their own copy of the roles.
+- Every command that changes something is refused inside an agent's session.
