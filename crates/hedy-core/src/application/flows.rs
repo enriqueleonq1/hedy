@@ -156,12 +156,14 @@ impl Hedy {
         entries
             .iter()
             .find(|e| e.key == wanted)
-            // Then a name, the user's flows before Hedy's.
+            // Then a name: the user's flows, Hedy's, then the team's (a team
+            // flow never takes a template's name).
             .or_else(|| {
-                entries
-                    .iter()
-                    .filter(|e| e.scope != FlowScope::Hedy)
-                    .chain(entries.iter().filter(|e| e.scope == FlowScope::Hedy))
+                let of = |scope: FlowScope| entries.iter().filter(move |e| e.scope == scope);
+                of(FlowScope::Project)
+                    .chain(of(FlowScope::Global))
+                    .chain(of(FlowScope::Hedy))
+                    .chain(of(FlowScope::Team))
                     .find(|e| same_name(&e.flow.name, wanted))
             })
             .cloned()
@@ -369,7 +371,9 @@ impl Hedy {
         // The team's roles, under the user's own with the same id.
         if let Some(path) = &path {
             for shared in self.team_roles_for(path)? {
-                if !user.iter().any(|u| u.role.id == shared.body.role.id) {
+                if !user.iter().any(|u| u.role.id == shared.body.role.id)
+                    && builtin_role(&shared.body.role.id).is_none()
+                {
                     user.push(RoleEntry {
                         scope: FlowScope::Team,
                         role: shared.body.role,

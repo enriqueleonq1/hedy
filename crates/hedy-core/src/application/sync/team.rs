@@ -764,6 +764,18 @@ impl Hedy {
                 {
                     return Ok(false);
                 }
+                // Its byline is its writer's, or the one it already had (an
+                // admin restating someone's items when they leave).
+                let byline = |v: &Version| -> Option<PersonId> {
+                    let value: serde_json::Value = serde_json::from_str(v.body.as_deref()?).ok()?;
+                    Some(PersonId(value.get("person")?.as_str()?.to_owned()))
+                };
+                if let Some(person) = byline(&change.version)
+                    && person != writer.person
+                    && known.and_then(byline).as_ref() != Some(&person)
+                {
+                    return Ok(false);
+                }
                 TeamWrite {
                     writer,
                     team_layer,

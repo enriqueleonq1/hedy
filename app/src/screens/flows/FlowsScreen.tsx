@@ -185,7 +185,10 @@ export function FlowsScreen({
 
   const startNew = async (from?: Flow) => {
     if (!(await unsaved.confirmLeave())) return;
-    const flow = from ? { ...structuredClone(from), name: t("flows.copyName", { name: from.name }) } : blankFlow(t("flows.newName"));
+    // A copy starts by hand only: a team's flow never runs by itself here unseen.
+    const flow = from
+      ? { ...structuredClone(from), name: t("flows.copyName", { name: from.name }), triggers: ["manual" as const] }
+      : blankFlow(t("flows.newName"));
     setDraft({ key: null, saved: null, history: history.start(flow), opened: ++openings });
     setSelection(null);
     // The address no longer names the flow that was open.

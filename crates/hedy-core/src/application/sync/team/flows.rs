@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::application::FlowScope;
-use crate::domain::flow::{MAX_NODES, valid_name, valid_role_id};
+use crate::domain::flow::{MAX_NODES, builtin_role, valid_name, valid_role_id};
 use crate::domain::team::{TeamFlowBody, TeamRoleBody};
 
 /// The team a project's flows can be shared with, and whether this PC may.
@@ -30,40 +30,57 @@ pub(crate) struct Shared<T> {
 }
 
 /// Whether a shared flow or role reads as one, with nothing hidden in it.
-/// Checked on what it parses to, written back: an escaped `​` in the
-/// JSON is a hidden character all the same.
+/// Every string of what it parses to is checked, keys too: an escaped
+/// zero-width space or escape character in the JSON is hidden all the same.
 pub(super) fn shared_config_ok(kind: ItemKind, version: &Version) -> bool {
     let Some(body) = version.body.as_deref() else {
         return true;
     };
-    let clean =
-        |value: &dyn erased::Json| value.text().is_some_and(|t| hidden_chars(&t).is_empty());
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
+        return false;
+    };
+    if !all_clean(&value) {
+        return false;
+    }
     match kind {
         ItemKind::Flow => serde_json::from_str::<TeamFlowBody>(body).is_ok_and(|b| {
             b.person.is_valid()
                 && valid_name(&b.flow.name)
                 && b.flow.nodes.len() <= MAX_NODES
-                && clean(&b)
+                // Each PC runs a shared flow with its own accounts.
+                && b.flow.seats().all(|s| s.account.is_none())
         }),
         ItemKind::Role => serde_json::from_str::<TeamRoleBody>(body).is_ok_and(|b| {
             b.person.is_valid()
                 && valid_role_id(&b.role.id)
                 && valid_name(&b.role.name)
-                && clean(&b)
+                // Never in place of one of Hedy's: it would change the
+                // user's own flows and the templates unseen.
+                && builtin_role(&b.role.id).is_none()
         }),
         _ => false,
     }
 }
 
-/// Serializing a body back, whatever its type.
-mod erased {
-    pub trait Json {
-        fn text(&self) -> Option<String>;
+/// No hidden character in any string or key of `value`.
+pub(super) fn all_clean(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::String(s) => hidden_chars(s).is_empty(),
+        serde_json::Value::Array(items) => items.iter().all(all_clean),
+        serde_json::Value::Object(map) => map
+            .iter()
+            .all(|(k, v)| hidden_chars(k).is_empty() && all_clean(v)),
+        _ => true,
     }
-    impl<T: serde::Serialize> Json for T {
-        fn text(&self) -> Option<String> {
-            serde_json::to_string(self).ok()
-        }
+}
+
+/// [`all_clean`] on something about to be shared: refused, showing where.
+fn check_shareable<T: Serialize>(item: &T) -> AppResult<()> {
+    let value = serde_json::to_value(item).unwrap_or(serde_json::Value::Null);
+    if all_clean(&value) {
+        Ok(())
+    } else {
+        Err(AppError::TeamHiddenText(reveal_hidden(&json(item))))
     }
 }
 
@@ -125,7 +142,7 @@ impl Hedy {
                 _ => {}
             }
         }
-        check_clean(&json(&flow))?;
+        check_shareable(&flow)?;
         let (space, me) = self.sharing_admin(project)?;
         let _guard = self.sync_guard(&space)?;
         let uid = match self
@@ -172,7 +189,14 @@ impl Hedy {
             .find(|r| r.role.id == id && matches!(r.scope, FlowScope::Project | FlowScope::Global))
             .ok_or_else(|| AppError::RoleNotFound(id.to_owned()))?
             .role;
-        check_clean(&json(&role))?;
+        if builtin_role(&role.id).is_some() {
+            let id = &role.id;
+            return Err(AppError::InvalidRole(tr!(
+                "«{id}» es un rol de Hedy: compártelo con otro id (`hedy roles new <id> --from {id}`)",
+                "«{id}» is one of Hedy's roles: share it under another id (`hedy roles new <id> --from {id}`)"
+            )));
+        }
+        check_shareable(&role)?;
         let (space, me) = self.sharing_admin(project)?;
         let _guard = self.sync_guard(&space)?;
         let uid = match self
