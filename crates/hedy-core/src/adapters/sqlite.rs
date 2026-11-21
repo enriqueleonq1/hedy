@@ -300,9 +300,42 @@ const MIGRATIONS: &[&str] = &[
     -- The permission mode new tasks start with (NULL: manual).
     ALTER TABLE projects ADD COLUMN permission_mode TEXT;
 "#,
+    r#"
+    -- The orchestrator (docs/decisions.md §42): flows and roles, global
+    -- (project NULL) or for one project, each as JSON.
+    CREATE TABLE flows (
+        id          INTEGER PRIMARY KEY,
+        project     TEXT,
+        name        TEXT NOT NULL,
+        data        TEXT NOT NULL,
+        updated_at  INTEGER NOT NULL
+    );
+    CREATE TABLE flow_roles (
+        id          INTEGER PRIMARY KEY,
+        project     TEXT,
+        role        TEXT NOT NULL,
+        data        TEXT NOT NULL,
+        updated_at  INTEGER NOT NULL
+    );
+"#,
+    r#"
+    -- A flow run's blackboard: what each role (or the user) left for the
+    -- others. Deleted when the task closes.
+    CREATE TABLE flow_board (
+        id       INTEGER PRIMARY KEY,
+        task     TEXT NOT NULL,
+        section  TEXT NOT NULL,
+        role     TEXT NOT NULL,
+        round    INTEGER NOT NULL,
+        text     TEXT NOT NULL,
+        by_user  INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX flow_board_task ON flow_board(task);
+"#,
 ];
 
 mod commands;
+mod flows;
 mod queue;
 mod sync;
 mod templates;
@@ -375,7 +408,7 @@ fn migrate(conn: &mut Connection) -> PortResult<()> {
 }
 
 /// Turns a stored value that fails domain validation into a row error.
-fn invalid<E: std::fmt::Display>(column: usize) -> impl Fn(E) -> rusqlite::Error {
+pub(super) fn invalid<E: std::fmt::Display>(column: usize) -> impl Fn(E) -> rusqlite::Error {
     move |e| {
         rusqlite::Error::FromSqlConversionFailure(
             column,
@@ -561,7 +594,7 @@ impl ProjectRepository for SqliteStore {
     }
 }
 
-fn json_error(err: serde_json::Error) -> PortError {
+pub(super) fn json_error(err: serde_json::Error) -> PortError {
     PortError::new(format!("error de la base de datos (JSON): {err}"))
 }
 
@@ -1372,6 +1405,7 @@ mod tests {
             workspace: None,
             scratch: None,
             permissions: Default::default(),
+            flow: None,
             session_id: None,
             status,
             created_at: at,
@@ -1421,6 +1455,7 @@ mod tests {
             workspace: None,
             scratch: None,
             permissions: Default::default(),
+            flow: None,
             session_id: None,
             status: TaskStatus::Failed,
             created_at: 10,
@@ -1483,6 +1518,7 @@ mod tests {
             workspace: None,
             scratch: None,
             permissions: Default::default(),
+            flow: None,
             session_id: None,
             status: crate::domain::TaskStatus::Review,
             created_at: 10,
@@ -1532,6 +1568,7 @@ mod tests {
             workspace: None,
             scratch: None,
             permissions: Default::default(),
+            flow: None,
             session_id: None,
             status: crate::domain::TaskStatus::Review,
             created_at,
@@ -1592,6 +1629,7 @@ mod tests {
             }),
             scratch: None,
             permissions: Default::default(),
+            flow: None,
             session_id: None,
             status: TaskStatus::Running,
             created_at: at,

@@ -31,7 +31,7 @@ async function browserApi(): Promise<HedyApi> {
   }
   // The running sample task (tienda) changes tools over time, so its mascot cycles.
   if (new URLSearchParams(window.location.search).get("activity") !== "none" && data === null) {
-    api.withSampleActivity().withLiveTools();
+    api.withSampleActivity().withLiveTools().withSampleFlowRun();
   }
   const theme = new URLSearchParams(window.location.search).get("theme");
   if (theme === "light" || theme === "dark") void api.setSetting("ui.theme", theme);

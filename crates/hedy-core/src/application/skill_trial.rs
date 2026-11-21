@@ -923,10 +923,14 @@ mod tests {
         let (f, skill) = setup();
         let trial = start(&f, &skill);
         f.hedy.cancel_skill_trial(&f.dir("/code/agenda"), &trial.id);
-        assert_eq!(
-            f.runner.stopped_checks(),
-            std::slice::from_ref(&trial.id),
-            "only its checks"
+        // Its checks, and those of its own tasks (discarding a task stops a
+        // flow's check by the task's id): nobody else's.
+        let stopped = f.runner.stopped_checks();
+        assert!(stopped.contains(&trial.id), "{stopped:?}");
+        let tasks: Vec<String> = trial.tasks.iter().map(|t| t.id.to_string()).collect();
+        assert!(
+            stopped.iter().all(|g| *g == trial.id || tasks.contains(g)),
+            "only its checks: {stopped:?}"
         );
         assert!(all_discarded(&f, &trial));
         assert_eq!(f.hedy.take_trial_outcome(&trial.id).unwrap(), None);

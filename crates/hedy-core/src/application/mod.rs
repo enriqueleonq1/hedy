@@ -4,6 +4,7 @@ mod accounts;
 mod activity;
 mod ask;
 mod attachments;
+mod board;
 mod briefing;
 mod carry;
 mod code;
@@ -15,6 +16,8 @@ mod detect;
 mod doctor;
 mod error;
 mod files;
+mod flow_runs;
+mod flows;
 mod graph;
 mod launch;
 mod memory;
@@ -66,6 +69,7 @@ pub use detect::DetectedCli;
 pub use doctor::{Check, CheckArea, CheckLevel, DoctorReport};
 pub use error::{AppError, AppResult, UndoBlocked};
 pub use files::MAX_PROJECT_FILES;
+pub use flows::{FlowEntry, FlowIssue, FlowScope, RoleEntry};
 pub use graph::{GraphKind, GraphLink, GraphNode, MemoryGraph};
 pub use launch::{Resolved, RunLimitWarning};
 pub use memory::{
@@ -93,8 +97,8 @@ pub use skills::{
 };
 pub use status::{AccountStatus, AccountUsage, Status};
 pub use sync::{
-    SyncDevice, SyncReport, SyncStatus, TeamInvite, TeamJoin, TeamNote, TeamPerson, TeamStatus,
-    TeamSuggestion, TeamSummary, TeamWriteOutcome,
+    SyncDevice, SyncReport, SyncStatus, TeamInvite, TeamJoin, TeamNote, TeamPerson, TeamShare,
+    TeamStatus, TeamSuggestion, TeamSummary, TeamWriteOutcome,
 };
 pub use tasks::NewTask;
 pub use templates::{NewTemplate, TemplateScope};

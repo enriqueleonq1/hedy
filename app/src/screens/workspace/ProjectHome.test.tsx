@@ -55,7 +55,7 @@ describe("A project's home", () => {
     expect(screen.getByLabelText("Pídele algo a hedy")).toHaveValue("");
 
     const tabs = within(head).getByRole("navigation", { name: "Secciones del proyecto" });
-    expect(within(tabs).getAllByRole("button").map((tab) => tab.textContent)).toEqual(["Tareas", "Memoria", "Resumen", "Ajustes"]);
+    expect(within(tabs).getAllByRole("button").map((tab) => tab.textContent)).toEqual(["Tareas", "Flujos", "Memoria", "Resumen", "Ajustes"]);
     expect(within(tabs).getByRole("button", { name: "Tareas" })).toHaveAttribute("aria-current", "page");
     await user.click(within(head).getByRole("button", { name: "Abrir en VS Code" }));
     expect(editor).toHaveBeenCalledWith(HEDY);

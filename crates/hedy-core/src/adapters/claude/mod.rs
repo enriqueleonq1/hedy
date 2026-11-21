@@ -544,6 +544,7 @@ pub(crate) mod tests {
             plugins: Vec::new(),
             output: None,
             blocked: BlockedFiles::suggested(),
+            board: None,
         }
     }
 

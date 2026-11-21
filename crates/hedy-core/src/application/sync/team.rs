@@ -756,7 +756,37 @@ impl Hedy {
                 }
                 .suggestion_allowed()
             }
-            // A team holds notes and suggestions only.
+            // A shared flow or role (§49): admins only, and only one that
+            // reads as one with no hidden characters anywhere in it.
+            ItemKind::Flow | ItemKind::Role => {
+                if change.version.body.is_some()
+                    && !flows::shared_config_ok(change.kind, &change.version)
+                {
+                    return Ok(false);
+                }
+                // Its byline is its writer's, or the one it already had (an
+                // admin restating someone's items when they leave).
+                let byline = |v: &Version| -> Option<PersonId> {
+                    let value: serde_json::Value = serde_json::from_str(v.body.as_deref()?).ok()?;
+                    Some(PersonId(value.get("person")?.as_str()?.to_owned()))
+                };
+                if let Some(person) = byline(&change.version)
+                    && person != writer.person
+                    && known.and_then(byline).as_ref() != Some(&person)
+                {
+                    return Ok(false);
+                }
+                TeamWrite {
+                    writer,
+                    team_layer,
+                    owner: None,
+                    replaced_owner: None,
+                    note_owner: None,
+                    uid_owner: uid_owner.as_ref(),
+                }
+                .config_allowed()
+            }
+            // A team holds notes, suggestions, flows and roles only.
             _ => false,
         })
     }
@@ -2929,6 +2959,8 @@ fn project_here(projects: &HashMap<String, Vec<PathBuf>>, scope: &Scope) -> Opti
     }
 }
 
+mod flows;
+pub use flows::TeamShare;
 #[cfg(test)]
 mod scenarios;
 #[cfg(test)]

@@ -18,7 +18,7 @@ import { agentName, isOpen, PHASE_VERB } from "../../tasks/timeline";
 import { useMascot } from "../../tasks/useMascot";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { OwnerBanner } from "../sync/ProjectSync";
-import { ProjectHead, type ProjectTab } from "../workspace/ProjectHome";
+import { ProjectHead, projectTabView, type ProjectTab } from "../workspace/ProjectHome";
 import "./status.css";
 
 const NEXT_PHASE: Record<Phase, MessageKey> = {
@@ -131,10 +131,10 @@ export function StatusScreen({
   const onTab = (tab: ProjectTab) => {
     if (tab === "tasks") onOpenChat();
     else if (tab === "memory") onOpenMemory();
-    else if (tab === "settings") {
-      if (onNavigate) onNavigate({ screen: "projectSettings", project });
-      // App's route for the sheet (`#ps=`), when no navigation is handed in.
-      else window.location.hash = `#ps=${encodeURIComponent(project)}`;
+    else if (tab === "settings" || tab === "flows") {
+      if (onNavigate) onNavigate(projectTabView(tab, project));
+      // App's routes (`#ps=`, `#pf=`), when no navigation is handed in.
+      else window.location.hash = `#${tab === "settings" ? "ps" : "pf"}=${encodeURIComponent(project)}`;
     }
   };
 

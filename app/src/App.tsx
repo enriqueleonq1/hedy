@@ -19,6 +19,7 @@ import { Button } from "./components/ui/Button";
 import { ToastProvider } from "./components/ui/Toast";
 import { CreateProvider } from "./screens/create/CreateProvider";
 import { MemoryHub } from "./screens/memory/MemoryHub";
+import { FlowsScreen } from "./screens/flows/FlowsScreen";
 import { ProjectSettings } from "./screens/project/ProjectSettings";
 import { BackgroundTrialsProvider } from "./screens/skills/backgroundTrials";
 import { Onboarding } from "./screens/onboarding/Onboarding";
@@ -75,7 +76,7 @@ function Localized({ children }: { children: ReactNode }) {
  * theme gallery), `#sync` (its sync card), `#activity`, `#p=<path>` (workspace; `&t=<id>`
  * that task, `&new` a new one, `&new&from=<id>` a new one continuing that conversation), `#memory` (Memoria, for everything;
  * `#memory=<tab>` that section), `#m=<path>` (Memoria for that project; `&<tab>` that section), `#s=<path>` (status),
- * `#c` (a new quick question), `#c=<id>` (that conversation). The old `#k=<path>`, `#skills`, `#ask` and `#ask=<path>` land in Memoria.
+ * `#pf=<path>` (that project's flows; `&<key>` that flow), `#c` (a new quick question), `#c=<id>` (that conversation). The old `#k=<path>`, `#skills`, `#ask` and `#ask=<path>` land in Memoria.
  */
 const MEMORY_TABS: MemoryTab[] = ["notes", "skills", "pending", "map"];
 const SETTINGS_SECTIONS: SettingsSection[] = ["general", "accounts", "appearance", "saving", "templates", "sync", "teams", "advanced"];
@@ -94,6 +95,10 @@ function viewFromHash(): View {
     if (extra === "new") return { screen: "workspace", project, task: null };
     if (extra?.startsWith("t=")) return { screen: "workspace", project, task: decodeURIComponent(extra.slice(2)) };
     return { screen: "workspace", project };
+  }
+  if (raw.startsWith("pf=")) {
+    const [path = "", flow] = raw.slice(3).split("&");
+    return { screen: "flows", project: decodeURIComponent(path), ...(flow ? { flow: decodeURIComponent(flow) } : {}) };
   }
   if (raw.startsWith("m=")) {
     const [path = "", tab] = raw.slice(2).split("&");
@@ -140,6 +145,7 @@ function hashFor(view: View): string {
   }
   if (view.screen === "status") return `#s=${encodeURIComponent(view.project)}`;
   if (view.screen === "projectSettings") return `#ps=${encodeURIComponent(view.project)}`;
+  if (view.screen === "flows") return `#pf=${encodeURIComponent(view.project)}${view.flow ? `&${encodeURIComponent(view.flow)}` : ""}`;
   if (view.screen === "accounts" && view.account) return `#a=${encodeURIComponent(view.account)}`;
   if (view.screen === "conversation") return view.task ? `#c=${encodeURIComponent(view.task)}` : "#c";
   if (view.screen === "settings" && view.section === "sync") return "#sync";
@@ -328,6 +334,9 @@ function Root() {
               onOpenSettings={() => navigate({ screen: "settings", section: "saving" })}
               onNavigate={navigate}
             />
+          )}
+          {current.screen === "flows" && (
+            <FlowsScreen key={current.project} overview={data} project={current.project} flow={current.flow} onNavigate={navigate} />
           )}
           {current.screen === "projectSettings" && (
             <ProjectSettings key={current.project} overview={data} project={current.project} onNavigate={navigate} />

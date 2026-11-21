@@ -3798,3 +3798,372 @@ open, shown next to its status when it is not manual, and defaulting to the proj
 - **Verified for real** (Claude Code, haiku, personal account): `smoke_task -- haiku auto` ran
   a whole task, a file and `ls`, with no card, and accepted it.
 
+## 42. The orchestrator, O1: flows, roles and the engine (Nov 21, 2026)
+
+The plan (stages O1–O8) is kept outside the repository; this section records what is built.
+A flow is a team of AI roles working on one task: a start, roles, approvals, conditions,
+groups of read-only roles at once, and an end (`domain::flow`). Hedy's current phases stay
+as they are; a task runs a flow only when it is started with one.
+
+- **The domain.** `Flow` (nodes, connections with `after`/`pass`/`fail` and the rounds a loop
+  may take, triggers, the shared frame), `RoleDef` (instructions, what it may do, what it
+  hands over: text or a verdict, what it sees, what it always carries), five built-in roles
+  (architect, programmer, tester, reviewer, security) and three templates: «Pipeline clásico»
+  (today's phases as a flow, with the project's accounts and models), «Con bucle de
+  corrección» and «Doble revisión». `Flow::problems` lists everything that makes a flow
+  unrunnable (one start, an end, reachable steps, known roles, read-only roles at once, a
+  verdict after a role that gives one, every loop bounded by its rounds, at most 10).
+- **The text form** (`domain::flow_text`): a small YAML subset, numbered steps, `next:`,
+  `on_fail:`, `max_rounds:`, parsed by Hedy itself. `hedy flow show` prints it.
+- **Kept** in `flows` and `flow_roles` (JSON per row), for a project or for every project.
+  `Hedy::flows` lists Hedy's templates, then the project's flows, then the global ones; a
+  user's role with a built-in id takes its place. Saving refuses an unrunnable flow with every
+  reason, and a flow with the name of one in the same place replaces it.
+- **The engine** (`application::flow_runs`). `Hedy::start_flow` starts a «Cambiar código» task
+  with a snapshot of the flow and its roles (`Task.flow`, a `FlowRun`): editing the library
+  meanwhile changes nothing in a running task. Each role's step is one more stage of the task
+  (`role.phase()`: read-only roles run as a review, so their adapters get no write tools), so
+  it gets what a phase has: its own agent session (the CLIs cannot share one), the account's
+  usage and limits (rule 3: a limit pauses, never switches), handoffs, permission cards and the
+  task's permission mode. Every account is checked before anything is created. Its prompt
+  (`prompts::role_prompt`) carries the request, what each role before it handed over (its
+  final summary) and its own instructions. An approval step waits (`FlowApproval`, the same
+  notice as a plan); approving moves on, and not approving goes back to the role before it
+  with what to change. The end leaves the changes for review, as any task.
+- **Hardened after the reviews.**
+  - An approval is never skipped: a turn that ends anywhere but a role's step (the user
+    wrote while the flow waited) moves nothing, the session stops when the flow reaches an
+    approval, a handoff is refused there, and one answer only is taken (a double click finds
+    the flow already moved on).
+  - A role that may not run commands gets no shell (`no_shell`). A read-only step never
+    writes or runs anything without a card, whatever the permission mode.
+  - What a role hands over reaches the next ones quoted (a JSON string) under a header that
+    says it is data, as the team layer does: no summary can pass for Hedy's or the user's
+    words. The user's own feedback goes in a section of its own.
+  - Every role's account is checked again when it starts (rule 4).
+  - A turn cut by a limit pauses the flow (a limit notice, never «finished»), and what it said
+    opens the role's delivery when it ends.
+  - A handoff keeps the role's part and the deliveries.
+  - A model picked in the composer goes to the roles on the project's account without one.
+  - Saved flows have keys `#<id>`; a name finds the user's flows before Hedy's templates,
+    whose names cannot be reused. A row that no longer reads is left out, never taking the
+    templates with it.
+- **Known gaps.**
+  - Phase labels follow the tools a role gets: the architect shows as «review», a tester as
+    «implement».
+  - A goal's trailing line breaks do not survive the text form.
+- **Not yet.** Conditions and groups at once are refused at start (`FlowNotYet`) until O3, so
+  only «Pipeline clásico» runs today. The blackboard (O2) will replace the summaries in the
+  prompt.
+- **Verified for real** (Claude Code, haiku, personal account): `smoke_task -- haiku flow` ran
+  the classic flow: the architect planned read-only, the approval waited, the programmer wrote
+  `hola.txt` in a session of its own, and accepting merged it.
+- **CLI:** `hedy flow list`, `hedy flow show <name|key>`.
+
+## 43. The orchestrator, O2: the blackboard (Nov 21, 2026)
+
+What the roles of a flow share. Claude Code, Codex, Gemini and Kimi each keep their own
+session, so Hedy keeps the shared context and hands it to each role.
+
+- **A table of its own** (`flow_board`, `BoardRepository`): an entry has a section (`plan`,
+  `changes`, `tests`, `review`, `feedback`, or any lowercase-with-dashes name), who wrote it,
+  the round and the text (at most 16,000 characters). It is a table, not part of the task's
+  row, because the board server writes it from another process. It goes when the task
+  closes (rule 6: what deserves to stay is proposed as a note, never kept here).
+- **Every role posts.** When a role's turn ends, Hedy posts its final answer under its
+  section (`RoleDef::section`: architect → `plan`, programmer → `changes`, tester → `tests`,
+  reviewer → `review`, any other → its id). The user's words when not approving go under
+  `feedback`.
+- **What a role sees** (`board_view`): the latest entry of each section it reads (summaries,
+  not the history), always its own section (what it did before, when sent back) and the
+  user's feedback. The frame (goal, rules, files, notes) is the `frame` section of `Sees`.
+- **In every role's prompt.** The board as the role sees it goes in its prompt, each entry
+  quoted under a header that says it is data (§42). So a role never depends on calling a tool
+  to know the plan or the failing tests.
+- **The tools.** `context_read` (the board, or one section's history) and `context_post`
+  (leave something while working) act for the role at work when they are called. They refuse
+  when no role works (an approval) or the task is over, refuse a section the role does not
+  see, and validate the section's name.
+  - CLI agents (Claude Code, Codex, ACP) get them from `hedy-board`, a second MCP server of
+    the app's binary (`board-mcp --data-dir … --task …`), started only for a flow's task.
+    Other tasks carry no extra tool definitions.
+  - The API agent gets them as native tools.
+  - The CLI (`hedy`) starts no MCP server, so its flows read the board only in the prompt.
+  - In Automático, the board's tools need no card, as the memory's do.
+- **Hardened after the reviews.**
+  - A role posts only in its own section or a new one: never `feedback`, the `frame`, or
+    another role's section, so an approved plan stays as approved and the user's words stay
+    the user's.
+  - A post that looks like it carries a secret (`skill::find_secret`) is refused, and the
+    engine masks secrets in a role's final answer before posting it: another provider may
+    read the board.
+  - A run's board is bounded: 200 entries, 20 sections, 16,000 characters an entry, and at
+    most 48,000 characters in a prompt or a `context_read`, the oldest left out first.
+  - The board is cleared after the closed status is saved, since the board server checks it
+    before posting.
+  - A role id cannot be `feedback` or `frame`, and sections take up to 60 characters, as role
+    ids do.
+- **Known gap.** Undoing an accepted flow task brings it back with its board gone; nothing in
+  the engine reads it after the end, so only the record is lost. A failed task keeps its board
+  until it is discarded, since a follow-up can resume it.
+- **Verified for real** (haiku, personal account): `smoke_task -- haiku flow` again, with the
+  programmer's prompt built from the board.
+
+## 44. The orchestrator, O3: conditions, loops and `hedy flow run` (Nov 21, 2026)
+
+A flow now picks its path. All three templates run.
+
+- **Tests** (`check: tests`, with a `command:` or the one `briefing::test_command` finds for
+  the copy): Hedy runs it in the task's copy the way a skill trial's check runs
+  (`ProcessRunner::run_check`): with bubblewrap, no network, the system read-only, only the
+  copy writable, the project's `.git` and shared dependency folders read-only, never `.env` or
+  the rest; at most 15 minutes. Exit 0 passes. The last 40 lines of what it printed go on the
+  board (`tests`, by «Hedy», secrets masked), so the programmer sent back sees why. With no
+  command found, the run stops and says to put one in the flow.
+- **Rules** (`check: rules`): the same check as «Revisar con tus reglas» (§37) on the task's
+  changes; it passes with no break. What breaks goes on the board (`rules`). A check that
+  cannot run or reads nothing clear stops the run.
+- **Verdict** (`check: verdict`): roles that deliver a verdict are told to end with a line
+  `VEREDICTO: APRUEBA` or `VEREDICTO: CAMBIOS` (`VERDICT: APPROVE` / `CHANGES`). Hedy reads
+  only that line (`flow::parse_verdict`, the last one, any case), never free text. All the
+  verdicts since the last verdict condition must approve. One without such a line stops the
+  run: the user reads the review and decides.
+- **Each check** is an event (`FlowCheck`: what, passed) and takes the `pass` or `fail`
+  connection. A loop back counts its rounds; past its maximum the run stops and leaves the
+  changes for review, saying so.
+- **Roles at once** (`parallel`): read-only roles of a group run one after another
+  (`FlowRun.lane`), each in its own session, before the flow moves on. It is the same result
+  as running them at once, without several sessions in one copy.
+- **`hedy flow run <flow> "<request>" [--model M]`** starts a flow in the current project and
+  follows it in the terminal: each role's start, each check, the end. Approvals, plans and
+  permission requests are asked there. Without a terminal, requests are declined and an
+  approval leaves the task waiting for the app. Ctrl+C stops the task, which stays for review.
+- **Hardened after the reviews.**
+  - **Isolation.** The tests run code an AI wrote, so where bubblewrap is missing (or user
+    namespaces are off), a flow's tests never run: the run stops and says to install it.
+    Inside the sandbox the copy is what the agent itself sees, `.env` files copied into it
+    included (§40), so the test output goes on the board masked and cut to its end.
+  - **Output.** `run_check` now hands back the last 64 KB of what the check printed (both
+    streams, through a private temporary file, so nothing blocks while it runs); the last 40
+    lines go on the board.
+  - **Stopping.** «Detener» and «Descartar» stop a running check (`stop_checks` by the task's
+    id). A check that ends after its task stopped, or was discarded or accepted, moves the
+    flow no further and saves nothing over it.
+  - **Locks and status.** An approval is taken under the status lock, but the steps after it
+    (which may run tests for minutes) are not: every other task's turn waits on that lock. A
+    turn that ends while the run sits stopped at a check or at its end puts the task back in
+    review instead of leaving it «running».
+  - **Verdicts.** Only the answer's own last non-empty line counts; a quoted line, or two
+    verdict lines that disagree, count as none. A writer starting a new attempt, or the user
+    not approving, clears the verdicts of the last one.
+  - **Approvals.** Not approving can send a group at once back too.
+  - **`hedy flow run`.** It asks one question at a time, in order; it forgets a question
+    answered in the app; it ends whenever the task goes to review or fails; and it says when
+    the run stopped before its end.
+- **Verified for real** (haiku, a scratch data folder on the personal account, Automático): in
+  a small Rust crate whose `suma` subtracted, `hedy flow run fix-loop` ran the programmer
+  (`a - b` → `a + b`, the test untouched), `cargo test` in bubblewrap (passed), the reviewer
+  (`VEREDICTO: APRUEBA`) and ended for review, with the project itself untouched.
+
+
+## 45. The orchestrator, O4: one agent against the flows (Nov 21, 2026)
+
+`hedy-evals --flows none,classic,fix-loop` runs each case alone and through each flow; the eval
+approves a flow's approval step as it approves plans. Run on three cases (business-days,
+library-holiday-fine, bakery-inscription), layer `plain`, haiku, the personal account:
+
+| variant            | passed | tokens vs. alone | cost vs. alone |
+|--------------------|--------|------------------|----------------|
+| alone (base)       | 3/3    | —                | —              |
+| Pipeline clásico   | 3/3    | +94 %            | +101 %         |
+| Con bucle de corr. | 3/3    | +104 %           | +91 %          |
+
+- On cases one agent already solves, a flow roughly doubles the spend (more sessions, each
+  rereading the project, plus the reviewer) and solves nothing more. One agent stays the
+  default; flows are for what they add, not for saving: a review, tests that must pass, the
+  user's OK in the middle, or a second model's look.
+- The first run lost the classic flow's approvals: the `FlowApproval` event went out before the
+  task was `WaitingApproval`, so anything answering on the event (the eval, `hedy flow run`) was
+  refused. The event now follows the status. Runs that ended in a second with 0 tokens were an
+  account limit, not Hedy.
+- Small sample (one run each): it rules out "flows save money", not "flows help on hard cases";
+  harder cases with failing tests are where the fix loop should earn its cost.
+
+## 46. The orchestrator, O5: the flows editor (Nov 21, 2026)
+
+A project's **Flujos** tab (`#pf=<path>[&<key>]`), between Tareas and Memoria:
+
+- **Picker:** Hedy's templates (read-only; "Duplicar para editar" makes a copy), the project's flows
+  and the global ones. **Lienzo** and **Lista** show the same flow.
+- **Canvas** (DOM tiles and SVG lines under one camera; no graph library, and it tests in jsdom):
+  - Ways forward are drawn as gradient lines, ways back as dashed loops under the row, labelled
+    "fallan · máx. N". Each line has its own gradient in canvas units, because a box-relative one
+    paints nothing on a flat line.
+  - Drag the background to pan, use the wheel to move, Ctrl/⌘ + wheel to zoom.
+  - Steps can be dragged and snap to an 8 px grid. Dragging a step's dot onto another step
+    connects them; a check also has a bottom dot for its way back.
+  - The "+" on a line and "Agregar paso" insert after the selected step. A new check gets its way
+    back to the closest role before it, with 2 rounds.
+- **Panel:** the step's role, model, account, where it goes next and where a failure goes back,
+  with rounds. With nothing selected, the flow's name and its frame.
+- **Model** (`screens/flows/flowModel.ts`): pure functions over a `Flow`, so undo is a history of
+  values. Typing on in one field is one undo step.
+- **Live check:** `flow_problems` returns `FlowIssue { node, message }`. Its messages name the
+  step the way the user sees it (`Node::label`, `FlowProblem::naming`), never by its id. The
+  editor marks that step, lists the issues, and keeps Guardar and Ejecutar off until none are
+  left.
+- **Save** is by key (`save_flow_as`): renaming keeps the flow, a taken name in the same place is
+  refused, and a global flow stays global and is checked with the global roles.
+- **Dirty check:** "saved" is compared in a canonical form, since the backend orders keys its own
+  way and drops empty fields.
+- **Seat accounts** are checked with `check_launch` against the flow's place, both live and on
+  save. The panel offers only accounts the project may use (rule 4), and launch still checks
+  each seat.
+- **Model names:** any model that reaches a CLI must be one word that does not start with `-`
+  (`valid_model`, `AppError::InvalidModel`). This is checked when a task, conversation, flow or
+  handoff starts, and again in `start_agent` and one-shot runs. Otherwise `-m --yolo` could reach
+  an ACP CLI as a flag.
+- **Approval:** an approval whose next step cannot start (its account reserved meanwhile) ends the
+  flow for review with the reason, instead of leaving it Running with no agent.
+- **Known limit:** two saves of a new flow with the same name at the very same moment could both
+  pass the name check. The table has no unique index; this is a single-user app.
+
+## 47. The orchestrator, O6: a flow task, live; and a canvas that moves (Nov 21, 2026)
+
+**The canvas moves** (the user's request).
+- Each way forward carries a neon streak running from step to step (a CSS motion path along
+  the line's own path). Each way back carries a slower one, red for tests, amber for a review.
+- Steps arrive one after another when a flow opens. The chosen step has a beating ring, and a
+  hovered step lifts a little.
+- **Cost:**
+  - Animating `offset-distance` repaints in WebKitGTK, so there is one streak per line and none
+    above 16 lines.
+  - The blurred halo under the lines is still: it does not breathe.
+  - Everything pauses while the window is hidden and stops with reduced motion.
+- Motion paths count as transforms here. A motion path is part of the transform stack, and only
+  transform, opacity and motion-path distance are animated.
+
+**A flow task, live** (`screens/flows/FlowLive.tsx`):
+- **Strip over the timeline:**
+  - It shows the flow's steps in run order: the ones done in their tint, the current one with a
+    live ring (amber while it waits for the user), the rest dimmed.
+  - A streak runs on the line into the step at work.
+  - It also shows "Trabaja: Programador", "Espera tu aprobación" or "Se detuvo en: …", plus the
+    round once a way back was taken.
+  - After a way back, the steps that will run again show as pending; the round says why.
+- **Pizarra:**
+  - It shows the latest entry of each section, as plain text, never markup. Sections go by name
+    (Contexto, Tests, the role's name).
+  - It refreshes on each step, every 5 s while a role works, and keeps the old entries meanwhile.
+- **Timeline:** each condition shows as a line, e.g. "npm test: no pasa".
+- **Approval card:**
+  - "Tu aprobación" with Aprobar (Enter) and Pedir cambios (E, with what to change). It takes the
+    focus as the plan card does.
+  - It waits on the task's state (`waitingApproval` at that node, the latest ask), not on the
+    history. A message written while it waits is answered by the agent and leaves the card
+    waiting; the backend already returned to `WaitingApproval` then.
+  - The answer is a new event, `FlowApprovalAnswered { node, approved }`, recorded under the
+    status change. The card shows "aprobado" or "cambios pedidos" from it, even when nothing
+    else followed (an approval right before the end).
+  - Screen readers hear "Espera tu aprobación" (the `approval` milestone).
+
+## 48. The orchestrator, O7: a flow after a task, and flows and roles from the terminal (Nov 21, 2026)
+
+**"Al terminar una tarea del proyecto"** (`Trigger::TaskEnd`, a switch in the editor's flow panel):
+- **What it does:** when a normal task of the project ends its request well with changes, the
+  first project flow with the switch on takes the same task on, in its same copy. Its reviewers
+  see the task's changes and its programmer can fix them (`flow_after_task`, on `Finished`).
+- **It does not fire for:**
+  - a plan stage, a skill trial, a conversation or scratch task;
+  - a turn at the account's limit, or one waiting for it (rule 3);
+  - a task with no changes;
+  - follow-ups after the first request, or tasks left in review before the switch was turned on;
+  - global flows, which would fire in every project.
+- **Checks before it runs:** the flow is checked and every role's account is checked against the
+  project (rule 4) first. If they fail, the task ends as always, with a note saying why.
+- **Status lock:** the flow is attached under the status lock, after reading the task again, so
+  a task discarded as its turn ends stays discarded. If the flow's first step cannot start, the
+  flow is taken off and the work is left for review with the reason, never marked Failed.
+- **Before a commit (deferred):** a flow needs a working copy holding the changes, which staged
+  changes are not, and agents inside a git hook would block the commit for minutes. For that
+  moment `hedy review --staged` already checks the rules, fast. The trigger stays in the domain;
+  the editor does not offer it.
+- **Known limit:** after a flow ends, a follow-up message goes to the flow's last role (as for any
+  flow task), so with a reviewer last, a follow-up runs read-only.
+
+**Terminal:**
+- `hedy flow new <name> [--from <flow>] [--global]` copies a template or flow.
+- `hedy flow edit <name>` opens its text (the YAML-like form of §42) in `$EDITOR`. The editor runs
+  through `sh -c` as git does, and the file is a private temp file (`O_EXCL`, 0600, removed
+  after). On save the flow is checked. If it does not hold, the error says the line and offers to
+  reopen with the changes. A rename keeps the flow (`save_flow_text_as`), and templates are
+  copied, never edited.
+- **`hedy roles`:** `list`, `show`, `new <id> [--from]`, `edit <id> [--global]`, `remove <id>`.
+  - Roles are text too (`domain/role_text.rs`: id, name, summary, delivers, can, sees,
+    plan_first, skills, notes, `instructions: |`).
+  - A user role with a built-in id replaces Hedy's in that place, and removing it brings Hedy's
+    back.
+  - `new` refuses an id that exists, and `edit` refuses changing the id onto another role.
+  - Each save says where it went.
+- **Known limit:** making a built-in role a writer (or no longer a verdict) can make flows that
+  use it in a parallel group or before a verdict check invalid. They say so when they start; runs
+  already going keep their own copy of the roles.
+- Every command that changes something is refused inside an agent's session.
+
+## 49. The orchestrator, O8: flows and roles shared with a team (Nov 21, 2026)
+
+**How they travel.** Two more kinds go in a team's encrypted repo (§35): `ItemKind::Flow` and
+`ItemKind::Role`, in the team layer, bodies `TeamFlowBody` / `TeamRoleBody`.
+- They are team-only (`ItemKind::team_only`) and never enter personal sync.
+- In a project linked to the team, the team's flows appear as "Del equipo" (`FlowScope::Team`,
+  key `team:<uid>`). They are read-only, like the templates; "Duplicar para editar" makes a copy
+  of your own.
+- The team's roles join the library, under the user's own roles with the same id.
+
+**Who may share.** Only admins share or remove flows and roles (`TeamWrite::config_allowed`).
+Unlike a note, they drive agents on every PC: a role's instructions, a flow's test command.
+Members use them.
+
+**What every PC checks** on each received version:
+- the writer's seat in the newest epoch is an admin;
+- the body reads as a flow or role;
+- no hidden character in any string or key of it, checked string by string;
+- its byline is its writer's, or the one it already had (`take_over` restating a departed
+  admin's items keeps their name);
+- a flow names no account: sharing strips each step's account, and each PC runs it with its own;
+- a role never has one of Hedy's ids.
+
+The scenario test runs two PCs on real git: a member's forged flow is refused on the admin's PC.
+
+**A team role never takes a built-in's place.** Without this, a shared `reviewer` made a writer
+would change the user's own flows and Hedy's templates in every project of the team, including
+the automatic run after a task, with nobody approving it. So:
+- sharing a role with a built-in id is refused;
+- such a version is refused on read;
+- `roles()` ignores it.
+
+A team role is something new, named by its own id, that flows use only by naming it.
+
+**Test commands are this PC's call.**
+- A team flow whose tests run its own command does not start until this PC's user allows that
+  exact string (`flows.approved_commands`; a changed command asks again).
+- Where it is asked:
+  - the app's run dialog lists the commands with a "Permito estos comandos en este PC" checkbox;
+  - `hedy flow run` asks y/N;
+  - `hedy flow allow "<cmd>"` allows one ahead.
+- None of these can be reached from an agent's session.
+- Commands always run in bubblewrap, with no network (§44).
+- A flow with no command uses the project's detected one, as the user's own flows do.
+
+**Guards around copies and names.**
+- A copy of any flow starts "by hand only", so a duplicated team flow never runs after every
+  task unless the user turns that on.
+- Names resolve with the user's flows first, then Hedy's, then the team's, so a team flow cannot
+  stand in for a template by name.
+
+**Terminal:** `hedy flow share|unshare <name>`, `hedy roles share|unshare <id>`,
+`hedy flow allow "<cmd>"`. They are listed under "Del equipo" in `hedy flow list` and `hedy roles`.
+
+**Known limits:**
+- The allowed commands are one list per PC, not per team.
+- Two admins sharing the same new name at once can leave two entries until one is unshared.

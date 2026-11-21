@@ -264,6 +264,27 @@ pub struct TeamNoteBody {
     pub updated_at: Option<i64>,
 }
 
+/// An orchestrator flow shared with the team (docs/decisions.md §49). Only
+/// admins share them: unlike a note, it drives agents (its roles, its test
+/// command), so it is configuration, not something to read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamFlowBody {
+    pub flow: super::flow::Flow,
+    /// Who shared it, and their name then.
+    pub person: PersonId,
+    pub author: String,
+    pub created_at: i64,
+}
+
+/// A role of the flows' library shared with the team; as a flow, admins only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamRoleBody {
+    pub role: super::flow::RoleDef,
+    pub person: PersonId,
+    pub author: String,
+    pub created_at: i64,
+}
+
 /// A suggested change to someone else's team note, or a new note for the
 /// team layer from a member: the note's owner or an admin takes it or
 /// turns it down.
@@ -338,6 +359,12 @@ impl TeamWrite<'_> {
                 && self.is(self.uid_owner)
                 && self.own(self.owner)
                 && self.own(self.replaced_owner))
+    }
+
+    /// A shared flow or role: an admin writes or removes it, in the team
+    /// layer; nobody else (it drives agents on every PC of the team).
+    pub fn config_allowed(&self) -> bool {
+        self.writer.role == Role::Admin && self.team_layer
     }
 
     /// A suggestion: its author writes it (in their own uids); its author,

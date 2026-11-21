@@ -4,6 +4,8 @@ mod ask;
 mod cli;
 mod commands;
 mod commit;
+mod flow_edit;
+mod flow_run;
 mod mascot;
 mod memory_ask;
 mod review;
@@ -22,8 +24,8 @@ use anyhow::Result;
 use hedy_core::adapters::{self, HedyPaths};
 
 use cli::{
-    AccountCommand, Cli, Command, ConfigCommand, MemoryCommand, SkillsCommand, SyncCommand,
-    TeamCommand, TemplateCommand,
+    AccountCommand, Cli, Command, ConfigCommand, FlowCommand, MemoryCommand, RolesCommand,
+    SkillsCommand, SyncCommand, TeamCommand, TemplateCommand,
 };
 use style::Style;
 
@@ -256,6 +258,33 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 skill_transfer::check(&hedy, &dir, &name, &reviewer)
             }
             SkillsCommand::Export { names, to } => skill_transfer::export(&hedy, &dir, &names, &to),
+        },
+        Command::Flow { command } => match command.unwrap_or(FlowCommand::List) {
+            FlowCommand::List => commands::flow_list(&hedy, &dir),
+            FlowCommand::Show { name } => commands::flow_show(&hedy, &dir, &name),
+            FlowCommand::Run {
+                name,
+                request,
+                model,
+            } => flow_run::run(&hedy, &dir, &name, &request, model),
+            FlowCommand::New { name, from, global } => {
+                flow_edit::new_flow(&hedy, &dir, &name, from.as_deref(), global)
+            }
+            FlowCommand::Edit { name } => flow_edit::edit_flow(&hedy, &dir, &name),
+            FlowCommand::Share { name } => flow_edit::share_flow(&hedy, &dir, &name),
+            FlowCommand::Unshare { name } => flow_edit::unshare_flow(&hedy, &dir, &name),
+            FlowCommand::Allow { command } => flow_edit::allow_command(&hedy, &command),
+        },
+        Command::Roles { command } => match command.unwrap_or(RolesCommand::List) {
+            RolesCommand::List => flow_edit::roles_list(&hedy, &dir),
+            RolesCommand::Show { id } => flow_edit::role_show(&hedy, &dir, &id),
+            RolesCommand::New { id, from, global } => {
+                flow_edit::role_new(&hedy, &dir, &id, from.as_deref(), global)
+            }
+            RolesCommand::Edit { id, global } => flow_edit::role_edit(&hedy, &dir, &id, global),
+            RolesCommand::Remove { id } => flow_edit::role_remove(&hedy, &dir, &id),
+            RolesCommand::Share { id } => flow_edit::share_role(&hedy, &dir, &id),
+            RolesCommand::Unshare { id } => flow_edit::unshare_role(&hedy, &dir, &id),
         },
         Command::Template { command } => match command.unwrap_or(TemplateCommand::List) {
             TemplateCommand::List => commands::template_list(&hedy, &dir),

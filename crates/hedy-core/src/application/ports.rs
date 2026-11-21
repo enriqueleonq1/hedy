@@ -14,7 +14,9 @@ use crate::domain::{
     Account, AccountId, AgentEvent, Category, Commit, FileDiff, HoldReason, ImageSupport,
     KnownCommands, LaunchSpec, Note, NoteStatus, Notice, Phase, PlanUsage, Project, PromptImage,
     QueuedMessage, Skill, SkillStatus, Task, TaskId, TaskMode, UsageProblem, UsageSample,
-    plan_usage::WallTime, theme::CustomTheme,
+    flow::{Flow, RoleDef},
+    plan_usage::WallTime,
+    theme::CustomTheme,
 };
 
 /// Failure in an adapter. The message is user-facing (Spanish).
@@ -244,6 +246,77 @@ pub trait TemplateRepository: Send + Sync {
     fn reset_builtin_templates(&self) -> PortResult<()>;
 }
 
+/// A saved flow of the user: global (`project: None`) or for one project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlowRecord {
+    /// 0 for a new row.
+    pub id: i64,
+    pub project: Option<PathBuf>,
+    pub flow: Flow,
+    pub updated_at: i64,
+}
+
+/// A role of the user's library: global or for one project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoleRecord {
+    /// 0 for a new row.
+    pub id: i64,
+    pub project: Option<PathBuf>,
+    pub role: RoleDef,
+    pub updated_at: i64,
+}
+
+/// A flow run's blackboard (docs/decisions.md §42): a table of its own,
+/// since the board server writes it from another process.
+pub trait BoardRepository: Send + Sync {
+    /// The task's entries, oldest first.
+    fn board(&self, task: &TaskId) -> PortResult<Vec<crate::domain::flow::BoardEntry>>;
+    fn post_board(&self, task: &TaskId, entry: &crate::domain::flow::BoardEntry) -> PortResult<()>;
+    /// Deletes the task's board (the run is over).
+    fn clear_board(&self, task: &TaskId) -> PortResult<()>;
+}
+
+/// The board an agent of a flow reads and writes: through Hedy (the API
+/// agent) or the board MCP server (CLI agents). Every answer is text.
+pub trait BoardTools: Send + Sync {
+    /// The latest of each section the current role sees, or one section's history.
+    fn read(&self, section: Option<&str>) -> String;
+    fn post(&self, section: &str, text: &str) -> String;
+}
+
+/// A flow's board for one agent run (the API agent's native tools).
+#[derive(Clone)]
+pub struct BoardLink(pub Arc<dyn BoardTools>);
+
+impl std::fmt::Debug for BoardLink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("BoardLink")
+    }
+}
+
+/// Two links are the same board when they share its tools.
+impl PartialEq for BoardLink {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for BoardLink {}
+
+/// The orchestrator's flows and roles (docs/decisions.md §42).
+pub trait FlowRepository: Send + Sync {
+    /// Every saved flow, oldest first.
+    fn flow_records(&self) -> PortResult<Vec<FlowRecord>>;
+    /// Inserts (id 0) or updates the row. Returns its id.
+    fn save_flow(&self, record: &FlowRecord) -> PortResult<i64>;
+    fn delete_flow(&self, id: i64) -> PortResult<()>;
+    /// Every saved role, oldest first.
+    fn role_records(&self) -> PortResult<Vec<RoleRecord>>;
+    /// Inserts (id 0) or updates the row. Returns its id.
+    fn save_role(&self, record: &RoleRecord) -> PortResult<i64>;
+    fn delete_role(&self, id: i64) -> PortResult<()>;
+}
+
 /// The slash commands each account's CLI last reported (docs/decisions.md §32).
 pub trait CommandRepository: Send + Sync {
     /// Replaces the list of `account` for `project` (`None`: outside any
@@ -374,6 +447,8 @@ pub trait Store:
     + SkillRepository
     + QueueRepository
     + TemplateRepository
+    + FlowRepository
+    + BoardRepository
     + CommandRepository
     + SyncRepository
     + StoreHealth
@@ -389,6 +464,8 @@ impl<T> Store for T where
         + SkillRepository
         + QueueRepository
         + TemplateRepository
+        + FlowRepository
+        + BoardRepository
         + CommandRepository
         + SyncRepository
         + StoreHealth
@@ -735,6 +812,9 @@ pub struct AgentRequest {
     pub output: Option<PathBuf>,
     /// The project's files the agent may not read or touch.
     pub blocked: crate::domain::permissions::BlockedFiles,
+    /// A flow's board, for the API agent's native tools (CLI agents get the
+    /// board server among `mcp`).
+    pub board: Option<BoardLink>,
 }
 
 impl AgentRequest {

@@ -48,6 +48,24 @@ pub enum AppError {
     #[error("{}", self.message())]
     NotAnOutput(String),
     #[error("{}", self.message())]
+    FlowNotFound(String),
+    #[error("{}", self.message())]
+    InvalidFlow(Vec<String>),
+    #[error("{}", self.message())]
+    NothingToRedo,
+    #[error("{}", self.message())]
+    FlowAtApproval(TaskId),
+    #[error("{}", self.message())]
+    NoFlowApproval(TaskId),
+    #[error("{}", self.message())]
+    InvalidModel(String),
+    #[error("{}", self.message())]
+    RoleNotFound(String),
+    #[error("{}", self.message())]
+    CommandNotApproved(String),
+    #[error("{}", self.message())]
+    InvalidRole(String),
+    #[error("{}", self.message())]
     InvalidBlockedPattern(String),
     #[error("{}", self.message())]
     OutputNotOpened(String),
@@ -390,6 +408,42 @@ impl AppError {
                 "«{pattern}» no sirve: pon nombres de archivo o patrones de nombre (.env, .env.*, *.pem), sin carpetas y sin que abarquen todo",
                 "«{pattern}» does not work: use file names or name patterns (.env, .env.*, *.pem), without folders and not matching everything"
             ),
+            Self::CommandNotApproved(command) => tr!(
+                "este flujo del equipo corre «{command}» en tu PC: permítelo antes de ejecutarlo",
+                "this team flow runs «{command}» on your PC: allow it before running it"
+            ),
+            Self::RoleNotFound(id) => tr!(
+                "no hay un rol «{id}»; `hedy roles` muestra los que hay",
+                "there is no role «{id}»; `hedy roles` shows the ones there are"
+            ),
+            Self::InvalidRole(why) => tr!("el rol no sirve: {why}", "the role is not valid: {why}"),
+            Self::FlowNotFound(name) => tr!(
+                "no hay un flujo «{name}»; `hedy flow list` muestra los que hay",
+                "there is no flow «{name}»; `hedy flow list` shows the ones there are"
+            ),
+            Self::NothingToRedo => tr!(
+                "no hay un rol antes de esta aprobación al que pedirle cambios",
+                "there is no role before this approval to ask for changes"
+            ),
+            Self::FlowAtApproval(id) => tr!(
+                "la tarea {id} espera tu aprobación: apruébala o pide cambios antes de pasarla a otra cuenta",
+                "task {id} is waiting for your approval: approve it or ask for changes before handing it over"
+            ),
+            Self::InvalidModel(model) => tr!(
+                "«{model}» no sirve como nombre de modelo (una palabra que no empiece por -)",
+                "«{model}» is not a valid model name (one word that does not start with -)"
+            ),
+            Self::NoFlowApproval(id) => tr!(
+                "la tarea {id} no espera tu aprobación",
+                "task {id} is not waiting for your approval"
+            ),
+            Self::InvalidFlow(problems) => {
+                let problems = problems.join("; ");
+                tr!(
+                    "el flujo no se puede ejecutar: {problems}",
+                    "the flow cannot run: {problems}"
+                )
+            }
             Self::NotAnOutput(path) => tr!(
                 "«{path}» no es un archivo que escribió la tarea",
                 "«{path}» is not a file the task wrote"

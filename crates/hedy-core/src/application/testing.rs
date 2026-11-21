@@ -7,11 +7,12 @@ use std::sync::{Arc, Mutex};
 
 use super::ports::{
     AccountRepository, AgentBackend, AgentLauncher, AgentRequest, AgentSession, CapturedOutput,
-    Clock, CommandRepository, EventSink, FileSystem, Git, MemoryRepository, MergeOutcome, NewNote,
-    NewSkill, NoteRevision, PlanUsageRecord, PortError, PortResult, ProcessRunner,
-    ProjectRepository, QueueRepository, RateLimit, SecretStore, SettingsRepository,
-    SkillRepository, SkillRevision, StoreHealth, TaskEvents, TaskRepository, TemplateRecord,
-    TemplateRepository, ThemeStore, UsageProbe, UsageRecord, UsageRepository,
+    Clock, CommandRepository, EventSink, FileSystem, FlowRecord, FlowRepository, Git,
+    MemoryRepository, MergeOutcome, NewNote, NewSkill, NoteRevision, PlanUsageRecord, PortError,
+    PortResult, ProcessRunner, ProjectRepository, QueueRepository, RateLimit, RoleRecord,
+    SecretStore, SettingsRepository, SkillRepository, SkillRevision, StoreHealth, TaskEvents,
+    TaskRepository, TemplateRecord, TemplateRepository, ThemeStore, UsageProbe, UsageRecord,
+    UsageRepository,
 };
 use super::{Hedy, NewAccount, Ports};
 use crate::domain::recall::NoteUse;
@@ -45,6 +46,9 @@ pub struct MemoryStore {
     integrity: Mutex<Vec<String>>,
     queue: Mutex<Vec<QueuedMessage>>,
     templates: Mutex<Vec<TemplateRecord>>,
+    flows: Mutex<Vec<FlowRecord>>,
+    board: Mutex<Vec<(TaskId, crate::domain::flow::BoardEntry)>>,
+    roles: Mutex<Vec<RoleRecord>>,
     commands: Mutex<Vec<(AccountId, Option<PathBuf>, KnownCommands)>>,
     sync: Mutex<sync::SyncTables>,
 }
@@ -1053,6 +1057,8 @@ pub struct FakeRunner {
     env: Mutex<Vec<String>>,
     /// Checks run through `run_check`, with their group.
     checks: Mutex<Vec<(String, LaunchSpec)>>,
+    /// Checks would run without isolation (no bubblewrap).
+    unisolated: Mutex<bool>,
     stopped_checks: Mutex<Vec<String>>,
     /// Processes [`FakeRunner::kill_process`] ended.
     dead: Mutex<HashSet<String>>,
@@ -1075,6 +1081,13 @@ impl FakeRunner {
         self.installed.lock().unwrap().insert(program.to_owned());
     }
 
+    /// From now on, checks cannot run isolated here.
+    pub fn without_isolation(&self) {
+        *self.unisolated.lock().unwrap() = true;
+    }
+    pub fn checks_run(&self) -> usize {
+        self.checks.lock().unwrap().len()
+    }
     pub fn reply(&self, stdout: &str, exit_code: i32) {
         *self.reply.lock().unwrap() = Some(CapturedOutput {
             exit_code: Some(exit_code),
@@ -1160,7 +1173,7 @@ impl ProcessRunner for FakeRunner {
         self.stopped_checks.lock().unwrap().push(group.to_owned());
     }
     fn isolates_checks(&self) -> bool {
-        true
+        !*self.unisolated.lock().unwrap()
     }
     fn this_process(&self) -> Option<String> {
         Some(FAKE_PROCESS.into())
@@ -1768,6 +1781,71 @@ impl CommandRepository for MemoryStore {
             .collect();
         found.sort_by_key(|(_, k)| std::cmp::Reverse(k.seen_at));
         Ok(found)
+    }
+}
+
+impl super::ports::BoardRepository for MemoryStore {
+    fn board(&self, task: &TaskId) -> PortResult<Vec<crate::domain::flow::BoardEntry>> {
+        let board = self.board.lock().unwrap();
+        Ok(board
+            .iter()
+            .filter(|(t, _)| t == task)
+            .map(|(_, e)| e.clone())
+            .collect())
+    }
+    fn post_board(&self, task: &TaskId, entry: &crate::domain::flow::BoardEntry) -> PortResult<()> {
+        self.board
+            .lock()
+            .unwrap()
+            .push((task.clone(), entry.clone()));
+        Ok(())
+    }
+    fn clear_board(&self, task: &TaskId) -> PortResult<()> {
+        self.board.lock().unwrap().retain(|(t, _)| t != task);
+        Ok(())
+    }
+}
+
+impl FlowRepository for MemoryStore {
+    fn flow_records(&self) -> PortResult<Vec<FlowRecord>> {
+        Ok(self.flows.lock().unwrap().clone())
+    }
+    fn save_flow(&self, record: &FlowRecord) -> PortResult<i64> {
+        let mut flows = self.flows.lock().unwrap();
+        if let Some(f) = flows.iter_mut().find(|f| f.id == record.id) {
+            *f = record.clone();
+            return Ok(record.id);
+        }
+        let id = flows.iter().map(|f| f.id).max().unwrap_or(0) + 1;
+        flows.push(FlowRecord {
+            id,
+            ..record.clone()
+        });
+        Ok(id)
+    }
+    fn delete_flow(&self, id: i64) -> PortResult<()> {
+        self.flows.lock().unwrap().retain(|f| f.id != id);
+        Ok(())
+    }
+    fn role_records(&self) -> PortResult<Vec<RoleRecord>> {
+        Ok(self.roles.lock().unwrap().clone())
+    }
+    fn save_role(&self, record: &RoleRecord) -> PortResult<i64> {
+        let mut roles = self.roles.lock().unwrap();
+        if let Some(r) = roles.iter_mut().find(|r| r.id == record.id) {
+            *r = record.clone();
+            return Ok(record.id);
+        }
+        let id = roles.iter().map(|r| r.id).max().unwrap_or(0) + 1;
+        roles.push(RoleRecord {
+            id,
+            ..record.clone()
+        });
+        Ok(id)
+    }
+    fn delete_role(&self, id: i64) -> PortResult<()> {
+        self.roles.lock().unwrap().retain(|r| r.id != id);
+        Ok(())
     }
 }
 

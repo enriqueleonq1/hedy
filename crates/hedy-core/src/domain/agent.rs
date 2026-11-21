@@ -94,6 +94,25 @@ pub enum AgentEvent {
         utilization: Option<f64>,
         resets_at: Option<i64>,
     },
+    /// A flow reached a step where the user approves what the roles before
+    /// it did (docs/decisions.md §42).
+    FlowApproval {
+        node: String,
+    },
+    /// The user's answer at that step: what the app shows on its card (a
+    /// message written while it waits is not an answer).
+    FlowApprovalAnswered {
+        node: String,
+        approved: bool,
+    },
+    /// A flow's condition was checked: the tests, the rules or the
+    /// reviewers' verdict (docs/decisions.md §44).
+    FlowCheck {
+        node: String,
+        /// What was checked, for people ("cargo test", "las reglas"…).
+        what: String,
+        passed: bool,
+    },
     /// The agent finished its turn ("Termino").
     Finished {
         ok: bool,

@@ -16,11 +16,18 @@ import type {
   WriteResult,
 } from "./codeTypes";
 import { MockCode, SUGGESTED_BLOCKED } from "./mockCode";
+import { MOCK_ROLES, mockProblems, mockProjectFlow, mockTeamFlow, mockTemplates } from "./mockFlows";
 import { MOCK_THEME_SEEDS } from "./mockThemes";
 import { resolveLanguage } from "../i18n";
 import { placeholders } from "../templates/placeholders";
 import { buildTheme } from "../theme/derive";
 import type {
+  BoardEntry,
+  Flow,
+  FlowEntry,
+  FlowIssue,
+  RoleEntry,
+  TeamShare,
   ImportPick,
   TrialResult,
   TrialOutcome,
@@ -365,6 +372,9 @@ export class MockApi implements HedyApi {
     // Personal sync between two PCs, with one note edited on both.
     api.repoOwners.set("/code/hedy", "github.com/alex");
     api.repoOwners.set("/code/tienda", "github.com/cafe-aurora");
+    api.flowRecords.push({ id: api.nextFlow++, project: "/code/tienda", flow: mockProjectFlow() });
+    api.teamProjects.add("/code/tienda");
+    api.teamFlows.push({ uid: "u1", flow: mockTeamFlow(), by: "Marta" });
     api.owners.mine.add("github.com/alex");
     api.sync = {
       url: "git@github.com:alex/hedy-memory.git",
@@ -1866,6 +1876,110 @@ export class MockApi implements HedyApi {
   /** Delay between scripted events (0 in tests). */
   delayMs = 250;
   private tasksById = new Map<string, Task>();
+
+  // ---------------------------------------------------------------- flows
+
+  private flowRecords: { id: number; project: string | null; flow: Flow }[] = [];
+  private nextFlow = 1;
+
+  async flows(project: string | null): Promise<FlowEntry[]> {
+    const mine = (place: string | null): FlowEntry[] =>
+      this.flowRecords
+        .filter((r) => r.project === place)
+        .map((r) => ({ key: `#${r.id}`, scope: place ? "project" : "global", summary: "", flow: structuredClone(r.flow) }));
+    const team: FlowEntry[] =
+      project && this.teamProjects.has(project)
+        ? this.teamFlows.map((f) => ({
+            key: `team:${f.uid}`,
+            scope: "team",
+            summary: "",
+            flow: structuredClone(f.flow),
+            by: f.by,
+            unapproved: this.unapproved(f.flow),
+          }))
+        : [];
+    return [...mockTemplates(), ...(project ? mine(project) : []), ...mine(null), ...team];
+  }
+
+  /** The sample team ("Café Aurora", tienda's): its shared flows, and the commands this PC allowed. */
+  private teamProjects = new Set<string>();
+  private teamFlows: { uid: string; flow: Flow; by: string }[] = [];
+  private approvedCommands = new Set<string>();
+
+  private unapproved(flow: Flow): string[] {
+    return flow.nodes.flatMap((n) => (n.kind === "condition" && n.check === "tests" && n.command && !this.approvedCommands.has(n.command) ? [n.command] : []));
+  }
+
+  async flowSharing(project: string): Promise<TeamShare | null> {
+    return this.teamProjects.has(project) ? { team: "aurora", name: "Café Aurora", admin: true } : null;
+  }
+
+  async shareFlow(project: string, key: string): Promise<string> {
+    if (!this.teamProjects.has(project)) throw "este proyecto no está en un equipo";
+    const record = this.flowRecords.find((r) => `#${r.id}` === key);
+    if (!record) throw `no hay un flujo «${key}»`;
+    const flow = structuredClone(record.flow);
+    for (const n of flow.nodes) {
+      if (n.kind === "role") delete n.account;
+      if (n.kind === "parallel") n.roles.forEach((s) => delete s.account);
+    }
+    const same = this.teamFlows.find((f) => f.flow.name.toLowerCase() === flow.name.toLowerCase());
+    if (same) same.flow = flow;
+    else this.teamFlows.push({ uid: `u${this.teamFlows.length + 1}`, flow, by: "Alex" });
+    return flow.name;
+  }
+
+  async unshareFlow(_project: string, name: string): Promise<void> {
+    this.teamFlows = this.teamFlows.filter((f) => f.flow.name !== name);
+  }
+
+  async approveFlowCommand(command: string): Promise<void> {
+    this.approvedCommands.add(command);
+  }
+
+  async flowProblems(_project: string | null, flow: Flow): Promise<FlowIssue[]> {
+    return mockProblems(flow, MOCK_ROLES);
+  }
+
+  async saveFlow(project: string | null, key: string | null, flow: Flow): Promise<FlowEntry> {
+    const problems = mockProblems(flow, MOCK_ROLES);
+    if (problems.length) throw problems.map((p) => p.message).join("; ");
+    if (mockTemplates().some((t) => t.flow.name.toLowerCase() === flow.name.trim().toLowerCase())) {
+      throw `«${flow.name}» es el nombre de una plantilla de Hedy: elige otro`;
+    }
+    const editing = key ? this.flowRecords.find((r) => `#${r.id}` === key) : undefined;
+    if (key && !editing) throw `no hay un flujo «${key}»`;
+    const place = editing ? editing.project : project;
+    const same = this.flowRecords.find((r) => r.project === place && r.flow.name.toLowerCase() === flow.name.trim().toLowerCase());
+    if (same && same !== editing) throw `ya hay un flujo «${flow.name}»: elige otro nombre`;
+    const record = editing ?? { id: this.nextFlow++, project: place, flow };
+    record.flow = structuredClone(flow);
+    if (!editing) this.flowRecords.push(record);
+    return { key: `#${record.id}`, scope: place ? "project" : "global", summary: "", flow: structuredClone(flow) };
+  }
+
+  async deleteFlow(_project: string | null, key: string): Promise<void> {
+    this.flowRecords = this.flowRecords.filter((r) => `#${r.id}` !== key);
+  }
+
+  async flowRoles(): Promise<RoleEntry[]> {
+    return MOCK_ROLES.map((role) => ({ scope: "hedy", role }));
+  }
+
+  async answerFlowApproval(id: string, approve: boolean, feedback: string | null): Promise<void> {
+    const task = this.tasksById.get(id);
+    if (!task || task.status !== "waitingApproval") throw "esta tarea no espera tu aprobación";
+    if (!approve && feedback) this.boards.set(id, [...(this.boards.get(id) ?? []), { section: "feedback", role: "", round: 0, text: feedback, byUser: true }]);
+    this.push(id, { kind: "flowApprovalAnswered", node: task.flow?.position.node ?? "", approved: approve });
+    task.status = approve ? "review" : "running";
+    this.notifyTask(task);
+  }
+
+  async taskBoard(id: string): Promise<BoardEntry[]> {
+    return structuredClone(this.boards.get(id) ?? []);
+  }
+
+  private boards = new Map<string, BoardEntry[]>();
   /** What questions wrote in their own folder. */
   private outputs = new Map<string, OutputFile[]>();
   private eventsById = new Map<string, AgentEvent[]>();
@@ -1889,6 +2003,8 @@ export class MockApi implements HedyApi {
     const title = (input.prompt.split("\n")[0] ?? "").slice(0, 60);
     const prompt = carried ? `${carried.origin.context}\n\n${input.prompt.trim()}` : input.prompt;
     const planFirst = input.planFirst && input.mode === "project";
+    const flowEntry = input.flow ? (await this.flows(project.path)).find((f) => f.key === input.flow) : undefined;
+    if (flowEntry?.unapproved?.length) throw `este flujo del equipo corre «${flowEntry.unapproved[0]}» en tu PC: permítelo antes de ejecutarlo`;
     const stage = (phase: "plan" | "implement") => ({ phase, account: project.account ?? "", model: input.model });
     const task: Task = {
       id,
@@ -1916,6 +2032,15 @@ export class MockApi implements HedyApi {
       live: true,
       ...(images.length ? { images } : {}),
       ...(carried ? { origin: carried.origin } : {}),
+      ...(flowEntry
+        ? {
+            flow: {
+              flow: flowEntry.flow,
+              roles: Object.fromEntries(MOCK_ROLES.map((r) => [r.id, r])),
+              position: { node: flowEntry.flow.edges.find((e) => e.from === flowEntry.flow.nodes.find((n) => n.kind === "start")?.id)?.to ?? "" },
+            },
+          }
+        : {}),
     };
     this.tasksById.set(id, task);
     this.eventsById.set(id, []);
@@ -2304,6 +2429,69 @@ export class MockApi implements HedyApi {
   }
 
   /**
+   * A task of tienda following «Pago con revisión», at its approval: the
+   * tests failed once and passed, the review approved, the board is full.
+   */
+  withSampleFlowRun(): this {
+    const now = Math.floor(Date.now() / 1000);
+    const flow = mockProjectFlow();
+    const id = "f1";
+    const roles = Object.fromEntries(MOCK_ROLES.map((r) => [r.id, r]));
+    this.tasksById.set(id, {
+      id,
+      project: "/code/tienda",
+      mode: "project",
+      title: "Agrega el pago con tarjeta en la caja",
+      prompt: "Agrega el pago con tarjeta en la caja",
+      account: "claude-trabajo",
+      model: "sonnet",
+      workspace: { worktree: "/code/tienda/.hedy/worktrees/f1", branch: "hedy/pago-tarjeta-f1", baseBranch: "main", baseCommit: "abc1234" },
+      sessionId: "s-f1",
+      status: "waitingApproval",
+      createdAt: now - 25 * 60,
+      stages: [
+        { phase: "review", account: "claude-trabajo", model: "opus" },
+        { phase: "implement", account: "claude-trabajo", model: "sonnet" },
+        { phase: "review", account: "claude-trabajo", model: null },
+      ],
+      stage: 2,
+      live: true,
+      flow: { flow, roles, position: { node: "n7", rounds: { n4: 1 } } },
+    });
+    const phase = (p: "review" | "implement", agent: string): AgentEvent => ({ kind: "phaseStarted", phase: p, agent, account: "Claude trabajo" });
+    this.eventsById.set(id, [
+      { kind: "userMessage", text: "Agrega el pago con tarjeta en la caja" },
+      phase("review", "Claude Opus"),
+      { kind: "message", text: "Plan: 1. Cliente de pagos en `src/pagos/`. 2. Botón en la caja. 3. Tests del cobro." },
+      { kind: "finished", ok: true, summary: "", durationMs: 41000 },
+      phase("implement", "Claude Sonnet"),
+      { kind: "fileEdited", path: "src/pagos/cliente.ts" },
+      { kind: "fileEdited", path: "src/caja/Cobro.tsx" },
+      { kind: "finished", ok: true, summary: "", durationMs: 96000 },
+      { kind: "flowCheck", node: "n4", what: "npm test", passed: false },
+      phase("implement", "Claude Sonnet"),
+      { kind: "fileEdited", path: "src/pagos/cliente.ts" },
+      { kind: "finished", ok: true, summary: "", durationMs: 30000 },
+      { kind: "flowCheck", node: "n4", what: "npm test", passed: true },
+      phase("review", "Claude Sonnet"),
+      { kind: "message", text: "Los cambios siguen el plan y los tests cubren el cobro rechazado.\n\nVEREDICTO: APRUEBA" },
+      { kind: "finished", ok: true, summary: "", durationMs: 28000 },
+      { kind: "flowCheck", node: "n6", what: "el veredicto de la revisión", passed: true },
+      { kind: "flowApproval", node: "n7" },
+    ]);
+    this.boards.set(id, [
+      { section: "frame", role: "", round: 1, text: "Objetivo: pasarela de pagos. Reglas: nada de claves en el código." },
+      { section: "architect", role: "Arquitecto", round: 1, text: "1. Cliente de pagos en src/pagos/.\n2. Botón «Pagar con tarjeta» en la caja.\n3. Tests del cobro aceptado y rechazado." },
+      { section: "programmer", role: "Programador", round: 2, text: "Cliente y botón listos; arreglé el test del cobro rechazado." },
+      { section: "tests", role: "Hedy", round: 2, text: "npm test: 18 pasan." },
+      { section: "reviewer", role: "Revisor", round: 2, text: "Los cambios siguen el plan.\n\nVEREDICTO: APRUEBA" },
+    ]);
+    this.diffs.set(id, []);
+    this.updatedAt.set(id, now - 60);
+    return this;
+  }
+
+  /**
    * Sample tasks for the task board, in both projects: two waiting for an
    * answer, one at its limit, one working and a few that already finished.
    */
@@ -2507,6 +2695,14 @@ export class MockApi implements HedyApi {
     const task = this.tasksById.get(id);
     if (!task || task.status === "accepted" || task.status === "discarded") throw "la tarea ya está cerrada";
     const attached = await this.storeImages(id, task.account, images);
+    // A flow at its approval answers and goes on waiting, like the backend.
+    if (task.flow && task.status === "waitingApproval") {
+      this.push(id, { kind: "userMessage", text });
+      this.push(id, { kind: "message", text: "Porque ahí viven los demás clientes externos." });
+      task.status = "waitingApproval";
+      this.notifyTask(task);
+      return;
+    }
     task.live = true;
     // Writing to the agent ends a wait for its limit, like the backend.
     if (task.wait) {

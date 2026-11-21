@@ -5,19 +5,37 @@ import { useState, type ReactNode } from "react";
 
 import { useApi } from "../../api/context";
 import type { BoardState, Task } from "../../api/types";
+import type { View } from "../../components/Layout";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { useT, type MessageKey } from "../../i18n";
 import { useActivity } from "../../tasks/hooks";
 import { taskState } from "../../tasks/state";
 
-export type ProjectTab = "tasks" | "memory" | "summary" | "settings";
+export type ProjectTab = "tasks" | "flows" | "memory" | "summary" | "settings";
 
 const TABS: { id: ProjectTab; label: MessageKey }[] = [
   { id: "tasks", label: "project.tab.tasks" },
+  { id: "flows", label: "project.tab.flows" },
   { id: "memory", label: "project.tab.memory" },
   { id: "summary", label: "project.tab.summary" },
   { id: "settings", label: "project.tab.settings" },
 ];
+
+/** Where a project's tab leads: Tareas is its home, the others their own screens. */
+export function projectTabView(tab: ProjectTab, project: string): View {
+  switch (tab) {
+    case "tasks":
+      return { screen: "workspace", project };
+    case "flows":
+      return { screen: "flows", project };
+    case "memory":
+      return { screen: "memory", project };
+    case "summary":
+      return { screen: "status", project };
+    case "settings":
+      return { screen: "projectSettings", project };
+  }
+}
 
 /** The project's name and its sections; the other tabs are their own screens. */
 export function ProjectHead({

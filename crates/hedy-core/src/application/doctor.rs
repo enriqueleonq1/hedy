@@ -979,6 +979,7 @@ mod tests {
             .with_memory_server(crate::application::MemoryServerCommand {
                 program: "/usr/bin/hedy-app".into(),
                 args: vec!["memory-mcp".into()],
+                board_args: Vec::new(),
             });
         let report = app.doctor().unwrap();
         assert_eq!(

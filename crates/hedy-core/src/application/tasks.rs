@@ -12,6 +12,16 @@ use serde_json::Value;
 use super::carry::Carry;
 use super::ports::{AgentBackend, AgentRequest, AgentSession, RateLimit, Secret, UsageRecord};
 use super::{AppError, AppResult, Hedy, NewImage, Setting};
+
+/// Refuses a model name a CLI could read as one of its options.
+pub(crate) fn check_model(model: Option<&str>) -> AppResult<()> {
+    match model {
+        Some(m) if !crate::domain::flow::valid_model(&Some(m.to_owned())) => {
+            Err(AppError::InvalidModel(m.to_owned()))
+        }
+        _ => Ok(()),
+    }
+}
 use crate::domain::carry::carried_prompt;
 use crate::domain::permissions::BlockedFiles;
 use crate::domain::permissions::{self, AllowRule, Verdict};
@@ -46,7 +56,11 @@ const AUTO_TOOLS: &[&str] = &[
 ];
 /// Hedy's own MCP servers (memory and code map): they read the project and
 /// only propose notes.
-const HEDY_MCP_PREFIXES: &[&str] = &["mcp__hedy-memory__", "mcp__codebase-memory__"];
+const HEDY_MCP_PREFIXES: &[&str] = &[
+    "mcp__hedy-memory__",
+    "mcp__hedy-board__",
+    "mcp__codebase-memory__",
+];
 
 /// A `.env` bigger than this is not copied into a task's copy: not settings.
 const MAX_SHARED_ENV_BYTES: usize = 1024 * 1024;
@@ -199,6 +213,7 @@ impl Hedy {
         if request.prompt.trim().is_empty() {
             return Err(AppError::EmptyPrompt);
         }
+        check_model(request.model.as_deref())?;
         let stages = pipeline(
             &main_account,
             &project.phases,
@@ -270,6 +285,7 @@ impl Hedy {
             workspace,
             scratch: None,
             permissions: request.permissions.unwrap_or(project.permission_mode),
+            flow: None,
             session_id: None,
             status: TaskStatus::Running,
             created_at: now / 1000,
@@ -321,7 +337,12 @@ impl Hedy {
         TaskId::new(format!("t{now_ms:x}{seq:02x}"))
     }
 
-    fn create_workspace(&self, repo: &Path, title: &str, id: &TaskId) -> AppResult<Workspace> {
+    pub(super) fn create_workspace(
+        &self,
+        repo: &Path,
+        title: &str,
+        id: &TaskId,
+    ) -> AppResult<Workspace> {
         let base_branch = self.git.current_branch(repo)?;
         let base_commit = self.git.head_commit(repo)?;
         let branch = branch_name(title, id);
@@ -401,7 +422,12 @@ impl Hedy {
         dir: &Path,
     ) -> Option<String> {
         let mode = task.permissions;
-        if mode == PermissionMode::Manual || task.workspace.is_none() {
+        // A read-only step (a review, a flow's reader) never writes or runs
+        // anything without a card, whatever the mode.
+        if mode == PermissionMode::Manual
+            || task.workspace.is_none()
+            || current_stage(task).phase.read_only_in(task.mode)
+        {
             return None;
         }
         let label = match mode {
@@ -760,6 +786,9 @@ impl Hedy {
         mut images: Vec<PromptImage>,
         resume: Option<String>,
     ) -> AppResult<()> {
+        // Whatever set it (a phase, a flow's seat, a handoff), a model never
+        // reaches a CLI as one of its options.
+        check_model(stage.model.as_deref())?;
         let (backend, launch) = self.backend(account)?;
         // An agent that takes no images (a later phase, a handoff) is told
         // they exist instead of getting them.
@@ -789,11 +818,33 @@ impl Hedy {
         let memory = project
             .as_ref()
             .and_then(|p| self.memory_link(p, &task.id, account));
-        let mcp = if task.conversation {
+        let mut mcp = if task.conversation {
             Vec::new()
         } else {
             self.code_map_servers(&task.project)?
         };
+        // A flow's board: a server for the CLIs, native tools for the API
+        // agent (docs/decisions.md §42).
+        let api = matches!(backend, AgentBackend::OpenAiCompatible { .. });
+        let board = match (&task.flow, api) {
+            (Some(_), true) => Some(super::ports::BoardLink(self.board_tools(&task.id)?)),
+            _ => None,
+        };
+        if let (Some(_), false, Some(command)) = (&task.flow, api, &self.memory_server)
+            && !command.board_args.is_empty()
+        {
+            mcp.push(super::ports::McpServer {
+                name: "hedy-board".into(),
+                command: command.program.clone(),
+                args: command
+                    .board_args
+                    .iter()
+                    .cloned()
+                    .chain(["--task".into(), task.id.to_string()])
+                    .collect(),
+                env: Vec::new(),
+            });
+        }
         let number = self.sessions.fetch_add(1, Ordering::Relaxed) + 1;
         let hedy = self.clone();
         let id = task.id.clone();
@@ -833,11 +884,17 @@ impl Hedy {
                 memory,
                 mcp,
                 conversation: task.conversation,
-                no_shell: false,
+                // A flow's role that may not run commands gets no shell.
+                no_shell: task
+                    .flow
+                    .as_ref()
+                    .and_then(|run| run.current_role())
+                    .is_some_and(|role| !role.can.run),
                 no_tools: false,
                 plugins,
                 output,
                 blocked: blocked.clone(),
+                board,
             },
             sink,
         )?;
@@ -866,6 +923,13 @@ impl Hedy {
     pub(super) fn set_status(&self, task: &mut Task, status: TaskStatus) -> AppResult<()> {
         if task.status != status {
             task.status = status;
+            // A flow's board lives as long as the task (rule 6: notes worth
+            // keeping are proposed, never kept here). Cleared after the closed
+            // status is saved: the board server checks it before posting.
+            if status.is_closed() && task.flow.is_some() {
+                self.store.save_task(task)?;
+                self.store.clear_board(&task.id)?;
+            }
             self.store.save_task(task)?;
             self.events.task_updated(task);
         }
@@ -1090,6 +1154,27 @@ impl Hedy {
                 } else if self.deliver_queue_at_turn_end(&mut task)? {
                     return Ok(());
                 }
+                // A flow decides what comes after a role (docs/decisions.md §42).
+                if task.flow.is_some() && (*ok || limited) {
+                    if self.task(id)?.status.is_closed() {
+                        return Ok(());
+                    }
+                    if limited {
+                        // Paused by the account's limit (rule 3: never another
+                        // account): what it said waits for the role's end.
+                        if let Some(run) = task.flow.as_mut() {
+                            let said = summary.trim();
+                            if !said.is_empty() {
+                                run.partial = Some(said.to_owned());
+                            }
+                        }
+                        self.store.save_task(&task)?;
+                        self.set_status(&mut task, TaskStatus::Review)?;
+                        self.notify(&task, NoticeKind::LimitReached);
+                        return Ok(());
+                    }
+                    return self.flow_role_done(&mut task, summary);
+                }
                 let next = task.stage + 1;
                 let advances =
                     *ok && current_stage(&task).phase != Phase::Plan && next < task.stages.len();
@@ -1109,6 +1194,15 @@ impl Hedy {
                         Some(summary),
                     );
                     return self.run_stage(&mut task, next, prompt, None);
+                }
+                // A flow set to follow a task's end takes it on from here.
+                if *ok
+                    && !limited
+                    && current_stage(&task).phase != Phase::Plan
+                    && self.trial_of(id).is_none()
+                    && self.flow_after_task(&mut task)?
+                {
+                    return Ok(());
                 }
                 // The copy goes with the turn, and so does its agent: a
                 // process left in a deleted folder breaks on the next turn,
@@ -1512,9 +1606,19 @@ impl Hedy {
     ) -> AppResult<Task> {
         // A trial run at a limit is void anyway: no tokens elsewhere for it.
         self.refuse_trial_run(id)?;
+        check_model(model.as_deref())?;
         let mut task = self.task(id)?;
         if task.status.is_closed() {
             return Err(AppError::TaskClosed(id.clone()));
+        }
+        // A flow waiting for the user has no role at work to hand over.
+        if task
+            .flow
+            .as_ref()
+            .and_then(|r| r.current())
+            .is_some_and(|n| matches!(n.kind, crate::domain::flow::NodeKind::Approval))
+        {
+            return Err(AppError::FlowAtApproval(id.clone()));
         }
         let target = self
             .handoff_options(id)?
@@ -1545,12 +1649,28 @@ impl Hedy {
                 stage.model = model.clone();
             }
         }
-        let prompt = prompts::handoff_prompt(
-            &task.prompt,
-            task.plan.as_deref(),
-            &previous_label,
-            &changed,
-        );
+        let prompt = match task
+            .flow
+            .as_ref()
+            .and_then(|r| Some((r, r.current_role()?)))
+        {
+            // A flow's role keeps its part and what the roles before it said.
+            Some((_, role)) => {
+                let handed = prompts::handoff_prompt(&task.prompt, None, &previous_label, &changed);
+                let role = role.clone();
+                let tools = self.board_reaches(&target);
+                format!(
+                    "{}\n\n{handed}",
+                    self.flow_role_prompt(&task, &role, tools)?
+                )
+            }
+            None => prompts::handoff_prompt(
+                &task.prompt,
+                task.plan.as_deref(),
+                &previous_label,
+                &changed,
+            ),
+        };
         let index = task.stage;
         // Waiting for the old account's limit makes no sense any more.
         task.wait = None;
@@ -1563,6 +1683,8 @@ impl Hedy {
     pub fn stop_task(&self, id: &TaskId) -> AppResult<()> {
         self.trial_run_stopped(id);
         self.stop_session(id);
+        // A flow's check (its tests) stops too.
+        self.runner.stop_checks(id.as_str());
         self.hold_queue(id, HoldReason::Stopped);
         let mut task = self.task(id)?;
         let _ = self.close_copy(&mut task);
@@ -1602,6 +1724,7 @@ impl Hedy {
             return Err(AppError::TaskClosed(id.clone()));
         }
         self.stop_session(id);
+        self.runner.stop_checks(id.as_str());
         if let Some(ws) = &task.workspace {
             self.git
                 .remove_worktree(&task.project, &ws.worktree, &ws.branch)?;

@@ -17,6 +17,7 @@ import { useT, type MessageKey, type Translate } from "../../i18n";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { LimitCard } from "./LimitCard";
 import { MessageImages } from "./MessageImages";
+import { FlowApprovalCard, FlowProgress } from "../flows/FlowLive";
 import { CarriedContext } from "./carry/links";
 import { splitCarried } from "./carry/queries";
 import { groupSteps, summarize, summaryFacts, type StepItem } from "./stepGroups";
@@ -80,6 +81,7 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
     // Not a live region: the workspace announces only what needs the user or ends the task.
     <OpenFileContext.Provider value={openFile}>
     <div className="timeline">
+      {task.flow && <FlowProgress task={task} run={task.flow} />}
       {entries.map((entry) => {
         if (entry.type === "group") {
           // The run still going on shows its latest step without opening it.
@@ -164,6 +166,17 @@ function Item({ task, item }: { task: Task; item: TimelineItem }) {
       );
     case "permission":
       return <PermissionCard task={task} item={item} />;
+    case "flowApproval":
+      return <FlowApprovalCard task={task} node={item.node} answer={item.answer} latest={item.latest} />;
+    case "flowCheck":
+      return (
+        <p className={`activity activity--${item.passed ? "done" : "failed"} flow-check`}>
+          <span className="activity__mark" aria-hidden>
+            {item.passed ? "✓" : "✗"}
+          </span>
+          {t(item.passed ? "flows.live.checkPassed" : "flows.live.checkFailed", { what: item.what })}
+        </p>
+      );
     case "activity":
       return <StepRow step={item} />;
     case "finished":
@@ -298,7 +311,7 @@ function resolutionText(r: Resolution, t: Translate): string {
 }
 
 /** Typing in a field: card shortcuts stay out of the way. */
-function isTextField(target: EventTarget | null): boolean {
+export function isTextField(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLElement &&
     (target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")
@@ -310,7 +323,7 @@ function isTextField(target: EventTarget | null): boolean {
  * user is somewhere else: only from the page itself or the chat, and never
  * from a field they are typing in.
  */
-function useClaimFocus(ref: RefObject<HTMLElement | null>, active: boolean) {
+export function useClaimFocus(ref: RefObject<HTMLElement | null>, active: boolean) {
   useEffect(() => {
     if (!active) return;
     const current = document.activeElement;

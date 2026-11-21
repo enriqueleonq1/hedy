@@ -82,6 +82,12 @@ import type {
   NewProjectInput,
   NewTaskInput,
   NewTemplateInput,
+  BoardEntry,
+  Flow,
+  FlowEntry,
+  FlowIssue,
+  RoleEntry,
+  TeamShare,
   OpenTaskRequest,
   PromptTemplate,
   AccountCommands,
@@ -184,6 +190,28 @@ export interface HedyApi {
   terminalClose(id: number): Promise<void>;
 
   startTask(input: NewTaskInput): Promise<Task>;
+
+  /** Hedy's templates, then the project's flows and the global ones. */
+  flows(project: string | null): Promise<FlowEntry[]>;
+  /** Why a flow being edited could not run yet (empty: it can). */
+  flowProblems(project: string | null, flow: Flow): Promise<FlowIssue[]>;
+  /** Updates flow `key` (renamed or not, where it was saved); null: a new one for `project`. */
+  saveFlow(project: string | null, key: string | null, flow: Flow): Promise<FlowEntry>;
+  deleteFlow(project: string | null, key: string): Promise<void>;
+  /** The roles a flow can place: Hedy's and the user's. */
+  flowRoles(project: string | null): Promise<RoleEntry[]>;
+  /** The user's answer at a flow's approval step: no goes back with `feedback`. */
+  answerFlowApproval(id: string, approve: boolean, feedback: string | null): Promise<void>;
+  /** A flow task's board, oldest first. */
+  taskBoard(id: string): Promise<BoardEntry[]>;
+  /** The team the project's flows can be shared with (null: none). */
+  flowSharing(project: string): Promise<TeamShare | null>;
+  /** Shares one of the user's flows with the project's team (admins only); returns its name. */
+  shareFlow(project: string, key: string): Promise<string>;
+  /** Stops sharing the team's flow named `name`. */
+  unshareFlow(project: string, name: string): Promise<void>;
+  /** Allows a team flow's test command on this PC. */
+  approveFlowCommand(command: string): Promise<void>;
   /** Newest first. */
   tasks(project: string): Promise<Task[]>;
   taskEvents(id: string): Promise<AgentEvent[]>;

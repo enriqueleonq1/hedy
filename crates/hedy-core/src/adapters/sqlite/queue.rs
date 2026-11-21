@@ -120,6 +120,7 @@ mod tests {
                 workspace: None,
                 scratch: None,
                 permissions: Default::default(),
+                flow: None,
                 session_id: None,
                 status: TaskStatus::Running,
                 created_at: 1,

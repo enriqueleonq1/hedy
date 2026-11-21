@@ -86,7 +86,7 @@ import { Timeline } from "./Timeline";
 import { ClosingBar } from "./ClosingBar";
 import { EndCard } from "./EndCard";
 import { OutputsCard } from "./OutputsCard";
-import { ProjectHead, ProjectTasks } from "./ProjectHome";
+import { ProjectHead, ProjectTasks, projectTabView } from "./ProjectHome";
 import { TaskDetails } from "./TaskDetails";
 
 /** A card waits for the user's answer (which one, when the events say). */
@@ -95,6 +95,7 @@ type CardWaiting = PendingCard | "other" | null;
 const MILESTONE: Record<Milestone, MessageKey> = {
   plan: "workspace.announce.plan",
   permission: "workspace.announce.permission",
+  approval: "workspace.announce.approval",
   finished: "workspace.announce.finished",
   failed: "workspace.announce.failed",
   limit: "workspace.announce.limit",
@@ -310,11 +311,7 @@ export function Workspace({
             current="tasks"
             tools={panelToggle}
             onTab={(tab) =>
-              tab === "memory"
-                ? onOpenMemory?.()
-                : tab === "summary"
-                  ? onOpenStatus?.()
-                  : onNavigate?.({ screen: "projectSettings", project })
+              tab === "memory" ? onOpenMemory?.() : tab === "summary" ? onOpenStatus?.() : onNavigate?.(projectTabView(tab, project))
             }
           />
         ) : (

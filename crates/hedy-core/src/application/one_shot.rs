@@ -58,6 +58,7 @@ impl Hedy {
         let sink: EventSink = Arc::new(move |event| {
             let _ = tx.send(event);
         });
+        super::tasks::check_model(model.as_deref())?;
         // One that reads the project keeps away from what its AI may not read.
         let blocked = self.blocked_files_at(&shot.cwd);
         let mut session = self.agents.start(
@@ -79,6 +80,7 @@ impl Hedy {
                 plugins: Vec::new(),
                 output: None,
                 blocked,
+                board: None,
             },
             sink,
         )?;

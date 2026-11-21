@@ -11,6 +11,7 @@
 //! cargo run -p hedy-core --example smoke_task -- haiku free  # an empty list: .env is read
 //! cargo run -p hedy-core --example smoke_task -- haiku doc   # a question's document, outside
 //! cargo run -p hedy-core --example smoke_task -- haiku auto  # automatic mode: no card at all
+//! cargo run -p hedy-core --example smoke_task -- haiku flow  # the classic flow, role by role
 //! ```
 //!
 //! `HEDY_SMOKE_ACCOUNT=<folder>` uses that Claude account folder (one already
@@ -23,7 +24,9 @@ use std::time::Duration;
 use hedy_core::adapters::{self, HedyPaths, hook};
 use hedy_core::application::ports::TaskEvents;
 use hedy_core::application::{NewAccount, NewTask};
-use hedy_core::domain::{AgentEvent, Decision, PermissionMode, Provider, Task, TaskId, TaskMode};
+use hedy_core::domain::{
+    AgentEvent, Decision, PermissionMode, Provider, Task, TaskId, TaskMode, TaskStatus,
+};
 
 struct Forward(Mutex<mpsc::Sender<AgentEvent>>);
 
@@ -58,6 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let env_free = check.as_deref() == Some("free");
     let doc_check = check.as_deref() == Some("doc");
     let auto_check = check.as_deref() == Some("auto");
+    let flow_check = check.as_deref() == Some("flow");
     let tmp = std::env::temp_dir().join(format!("hedy-smoke-{}", std::process::id()));
     let repo = tmp.join("demo");
     std::fs::create_dir_all(&repo)?;
@@ -107,7 +111,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         hedy.set_project_blocked_files(&repo, &[".env".into()])?;
     }
 
-    let task = hedy.start_task(if doc_check {
+    let task = if flow_check {
+        hedy.start_flow(
+            NewTask {
+                project: repo.clone(),
+                prompt: "Crea un archivo hola.txt cuyo contenido sea exactamente: hola. No hagas nada más."
+                    .into(),
+                mode: TaskMode::Project,
+                model: Some(model),
+                plan_first: false,
+                permissions: Some(PermissionMode::AcceptEdits),
+                images: Vec::new(),
+            },
+            "classic",
+        )?
+    } else {
+        hedy.start_task(if doc_check {
         NewTask {
             project: repo.clone(),
             prompt: "Escribe un archivo informe.md cuyo contenido sea exactamente: hola. Créalo donde te indicaron para los documentos, no en el proyecto. No hagas nada más."
@@ -156,7 +175,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             permissions: None,
             images: Vec::new(),
         }
-    })?;
+    })?
+    };
     println!("Tarea {} en {}", task.id, task.work_dir().display());
 
     let mut transcript = String::new();
@@ -183,6 +203,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             AgentEvent::PermissionRequest { request_id, .. } => {
                 // Rules may have answered already; only open requests need us.
                 let _ = hedy.answer_permission(&task.id, &request_id, Decision::Allow);
+            }
+            // A flow: you approve the architect's plan, as the user would.
+            AgentEvent::FlowApproval { .. } => {
+                hedy.answer_flow_approval(&task.id, true, None)?;
+            }
+            // A flow ends after its last role; each role's turn ends on its own.
+            AgentEvent::Finished { .. } if flow_check => {
+                std::thread::sleep(Duration::from_millis(500));
+                if hedy.task(&task.id)?.status == TaskStatus::Review {
+                    break;
+                }
             }
             AgentEvent::Finished { .. } | AgentEvent::Error { .. } => break,
             _ => {}

@@ -44,6 +44,8 @@ export type View =
   | { screen: "status"; project: string }
   /** A project's settings ("Ajustes" on its home). */
   | { screen: "projectSettings"; project: string }
+  /** A project's flows (the orchestrator); `flow`: the one open, by key. */
+  | { screen: "flows"; project: string; flow?: string }
   /**
    * A question outside any project: `task` opens that conversation, none a
    * new one (its composer starting with `draft`, if given).
@@ -62,7 +64,7 @@ const SIDEBAR_CONVERSATIONS = 5;
 
 /** The project a view belongs to (its workspace, memory or status). */
 export function viewProject(view: View): string | null {
-  return view.screen === "workspace" || view.screen === "memory" || view.screen === "status" || view.screen === "projectSettings"
+  return view.screen === "workspace" || view.screen === "memory" || view.screen === "status" || view.screen === "projectSettings" || view.screen === "flows"
     ? (view.project ?? null)
     : null;
 }

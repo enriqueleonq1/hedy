@@ -21,7 +21,7 @@ import { revealHidden } from "../ask/citations";
 import { MemoryGraphView } from "../ask/MemoryGraphView";
 import { useCreate } from "../create/CreateProvider";
 import { SkillsScreen } from "../skills/SkillsScreen";
-import { ProjectHead, type ProjectTab } from "../workspace/ProjectHome";
+import { ProjectHead, projectTabView, type ProjectTab } from "../workspace/ProjectHome";
 import { NewNoteDialog } from "./NewNoteDialog";
 import { NoteCard } from "./NoteCard";
 import { NotesPanel } from "./NotesPanel";
@@ -148,9 +148,7 @@ export function MemoryHub({
   // A project's memory is one of its tabs: the others are their own screens.
   const onTab = (next: ProjectTab) => {
     if (!projectPath) return;
-    if (next === "tasks") onNavigate({ screen: "workspace", project: projectPath });
-    else if (next === "summary") onNavigate({ screen: "status", project: projectPath });
-    else if (next === "settings") onNavigate({ screen: "projectSettings", project: projectPath });
+    if (next !== "memory") onNavigate(projectTabView(next, projectPath));
   };
 
   return (

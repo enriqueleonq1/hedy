@@ -161,6 +161,10 @@ pub struct Task {
     /// What the agent does without asking (tasks that change files).
     #[serde(default)]
     pub permissions: PermissionMode,
+    /// The orchestrator's flow this task runs, and where it is
+    /// (docs/decisions.md §42). `None`: the project's phases, as always.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flow: Option<super::flow::FlowRun>,
     /// The CLI's session, to resume it after a restart.
     pub session_id: Option<String>,
     pub status: TaskStatus,

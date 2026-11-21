@@ -209,6 +209,19 @@ pub(crate) fn launch_error(spec: &LaunchSpec, err: std::io::Error) -> PortError 
     }
 }
 
+/// How much of a check's output is read back: its end.
+const CHECK_OUTPUT_KEPT: u64 = 64 * 1024;
+
+/// The last `max` bytes of a file, as text.
+fn tail_of(mut file: std::fs::File, max: u64) -> String {
+    use std::io::{Read, Seek, SeekFrom};
+    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let _ = file.seek(SeekFrom::Start(len.saturating_sub(max)));
+    let mut bytes = Vec::new();
+    let _ = file.read_to_end(&mut bytes);
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 impl ProcessRunner for SystemProcessRunner {
     fn run_interactive(&self, spec: &LaunchSpec) -> PortResult<Option<i32>> {
         let status = command(spec).status().map_err(|e| launch_error(spec, e))?;
@@ -310,10 +323,17 @@ impl ProcessRunner for SystemProcessRunner {
         }
         #[cfg(unix)]
         std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        // What it prints goes to a private file, not a pipe: nothing blocks
+        // while it runs, and only the end is read back.
+        let log = tempfile::tempfile().map_err(|e| PortError::new(e.to_string()))?;
+        let (out, err) = (
+            log.try_clone().map_err(|e| PortError::new(e.to_string()))?,
+            log.try_clone().map_err(|e| PortError::new(e.to_string()))?,
+        );
         let mut child = cmd
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(Stdio::from(out))
+            .stderr(Stdio::from(err))
             .spawn()
             .map_err(|e| launch_error(spec, e))?;
         let pid = child.id();
@@ -348,7 +368,7 @@ impl ProcessRunner for SystemProcessRunner {
         kill_check_group(pid);
         Ok(CapturedOutput {
             exit_code: status?.code(),
-            stdout: String::new(),
+            stdout: tail_of(log, CHECK_OUTPUT_KEPT),
         })
     }
 
@@ -463,6 +483,30 @@ pub fn wait_unlocked(child: &std::sync::Mutex<std::process::Child>) -> Option<i3
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_check_hands_back_the_end_of_what_it_printed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let spec = LaunchSpec {
+            program: "sh".into(),
+            args: vec![
+                "-c".into(),
+                "echo empieza; i=0; while [ $i -lt 12000 ]; do echo linea $i; i=$((i+1)); done; echo falla >&2; exit 3".into(),
+            ],
+            env: Vec::new(),
+            cwd: Some(tmp.path().to_owned()),
+        };
+        let out = SystemProcessRunner
+            .run_check(&spec, Duration::from_secs(60), "t-out", &[])
+            .unwrap();
+        assert_eq!(out.exit_code, Some(3));
+        assert!(
+            out.stdout.contains("linea 11999") && out.stdout.contains("falla"),
+            "the end, both streams"
+        );
+        assert!(out.stdout.len() as u64 <= CHECK_OUTPUT_KEPT);
+        assert!(!out.stdout.contains("empieza"), "only the end is kept");
+    }
 
     #[cfg(unix)]
     fn check(dir: &std::path::Path, script: &str, group: &str) -> Option<i32> {

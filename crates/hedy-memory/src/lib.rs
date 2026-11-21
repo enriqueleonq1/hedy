@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
-use hedy_core::adapters::{self, HedyPaths, MEMORY_SERVER_ARG, hook};
-use hedy_core::application::ports::{MemoryTools, SkillTools};
+use hedy_core::adapters::{self, BOARD_SERVER_ARG, HedyPaths, MEMORY_SERVER_ARG, hook};
+use hedy_core::application::ports::{BoardTools, MemoryTools, SkillTools};
 use hedy_core::domain::TaskId;
 use hedy_core::domain::context;
 use hedy_core::domain::recall::PageRequest;
@@ -208,6 +208,109 @@ impl MemoryServer {
     }
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ReadParams {
+    #[serde(default)]
+    pub section: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct PostParams {
+    pub section: String,
+    pub text: String,
+}
+
+/// One of the board's tools, as `domain::flow::board_tools` defines it.
+fn board_tool(name: &str) -> serde_json::Value {
+    hedy_core::domain::flow::board_tools()
+        .into_iter()
+        .find(|t| t["name"] == name)
+        .unwrap_or_else(|| panic!("unknown board tool {name}"))
+}
+
+fn board_description(name: &str) -> String {
+    board_tool(name)["description"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+fn board_schema(name: &str) -> Arc<JsonObject> {
+    Arc::new(rmcp::model::object(
+        board_tool(name)["input_schema"].clone(),
+    ))
+}
+
+/// A flow task's blackboard (docs/decisions.md §42) over MCP, for the role
+/// at work: `context_read` and `context_post`.
+pub struct BoardServer {
+    board: Arc<dyn BoardTools>,
+}
+
+#[tool_router(server_handler)]
+impl BoardServer {
+    #[tool(
+        name = "context_read",
+        description = board_description("context_read"),
+        input_schema = board_schema("context_read")
+    )]
+    fn context_read(&self, Parameters(params): Parameters<ReadParams>) -> String {
+        self.board.read(params.section.as_deref())
+    }
+
+    #[tool(
+        name = "context_post",
+        description = board_description("context_post"),
+        input_schema = board_schema("context_post")
+    )]
+    fn context_post(&self, Parameters(params): Parameters<PostParams>) -> String {
+        self.board.post(&params.section, &params.text)
+    }
+}
+
+impl BoardServer {
+    pub fn new(board: Arc<dyn BoardTools>) -> Self {
+        Self { board }
+    }
+}
+
+/// `--data-dir D --task T`: the board server's command line.
+fn board_options(args: impl IntoIterator<Item = String>) -> Result<(PathBuf, TaskId)> {
+    let (mut data_dir, mut task) = (None, None);
+    let mut args = args.into_iter();
+    while let Some(flag) = args.next() {
+        let value = args
+            .next()
+            .with_context(|| format!("falta el valor de {flag}"))?;
+        match flag.as_str() {
+            "--data-dir" => data_dir = Some(PathBuf::from(value)),
+            "--task" => task = Some(TaskId::new(value)),
+            other => bail!("opción desconocida: {other}"),
+        }
+    }
+    Ok((
+        data_dir.context("falta --data-dir")?,
+        task.context("falta --task")?,
+    ))
+}
+
+/// Serves a task's board over stdin/stdout until the agent closes it.
+fn serve_board(data_dir: PathBuf, task: TaskId) -> Result<()> {
+    let hedy = adapters::system(&HedyPaths::at(data_dir))?;
+    let server = BoardServer::new(hedy.board_tools(&task)?);
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(async {
+            server
+                .serve(rmcp::transport::stdio())
+                .await?
+                .waiting()
+                .await?;
+            Ok(())
+        })
+}
+
 /// Serves the memory over stdin/stdout until the agent closes it.
 pub fn serve(options: Options) -> Result<()> {
     let hedy = adapters::system(&HedyPaths::at(options.data_dir.clone()))?;
@@ -234,6 +337,17 @@ pub fn serve(options: Options) -> Result<()> {
 pub fn serve_helper_mode() -> Option<i32> {
     if std::env::args().skip(1).eq(hook::HOOK_ARGS) {
         return Some(hook::run());
+    }
+    if std::env::args().nth(1).as_deref() == Some(BOARD_SERVER_ARG) {
+        return Some(
+            match board_options(std::env::args().skip(2)).and_then(|(d, t)| serve_board(d, t)) {
+                Ok(()) => 0,
+                Err(e) => {
+                    eprintln!("hedy-board: {e:#}");
+                    1
+                }
+            },
+        );
     }
     if std::env::args().nth(1).as_deref() != Some(MEMORY_SERVER_ARG) {
         return None;
@@ -410,6 +524,56 @@ mod tests {
             "{two}"
         );
         experiments::set(Experiments::NONE);
+    }
+
+    /// Records what the board server asks the board for.
+    #[derive(Default)]
+    struct Board(Mutex<Vec<String>>);
+
+    impl BoardTools for Board {
+        fn read(&self, section: Option<&str>) -> String {
+            self.0.lock().unwrap().push(format!("read {section:?}"));
+            "plan".into()
+        }
+        fn post(&self, section: &str, text: &str) -> String {
+            self.0
+                .lock()
+                .unwrap()
+                .push(format!("post {section} {text}"));
+            "ok".into()
+        }
+    }
+
+    #[test]
+    fn serves_the_board_tools_and_they_reach_the_board() {
+        let names: Vec<String> = BoardServer::tool_router()
+            .list_all()
+            .into_iter()
+            .map(|t| t.name.to_string())
+            .collect();
+        assert_eq!(names.len(), 2, "{names:?}");
+        assert!(
+            names.contains(&"context_read".to_owned())
+                && names.contains(&"context_post".to_owned())
+        );
+        let board = Arc::new(Board::default());
+        let server = BoardServer::new(board.clone());
+        assert_eq!(
+            server.context_read(parameters(serde_json::json!({"section": "plan"}))),
+            "plan"
+        );
+        server.context_post(parameters(
+            serde_json::json!({"section": "riesgos", "text": "firma"}),
+        ));
+        assert_eq!(
+            *board.0.lock().unwrap(),
+            ["read Some(\"plan\")", "post riesgos firma"]
+        );
+        assert!(board_options(args(&["--data-dir", "/d", "--task", "t1"])).is_ok());
+        assert!(
+            board_options(args(&["--data-dir", "/d"])).is_err(),
+            "a task is required"
+        );
     }
 
     #[test]

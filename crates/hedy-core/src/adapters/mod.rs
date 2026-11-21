@@ -140,6 +140,9 @@ pub fn system_with_hook(paths: &HedyPaths, program: &std::path::Path) -> PortRes
 /// First argument that makes the app binary serve the memory MCP server.
 pub const MEMORY_SERVER_ARG: &str = "memory-mcp";
 
+/// First argument that makes the app binary serve a flow task's board.
+pub const BOARD_SERVER_ARG: &str = "board-mcp";
+
 /// The code-map MCP server's program (codebase-memory-mcp), looked up on `PATH`.
 pub const CODE_MAP_PROGRAM: &str = "codebase-memory-mcp";
 
@@ -151,6 +154,11 @@ pub fn system_for_app(paths: &HedyPaths, program: &std::path::Path) -> PortResul
             program: program.to_string_lossy().into_owned(),
             args: vec![
                 MEMORY_SERVER_ARG.into(),
+                "--data-dir".into(),
+                paths.data_dir().to_string_lossy().into_owned(),
+            ],
+            board_args: vec![
+                BOARD_SERVER_ARG.into(),
                 "--data-dir".into(),
                 paths.data_dir().to_string_lossy().into_owned(),
             ],

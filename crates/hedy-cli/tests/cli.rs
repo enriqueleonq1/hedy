@@ -1360,6 +1360,7 @@ fn seed_tasks(env: &Env, repo: &Path) {
         workspace: None,
         scratch: None,
         permissions: Default::default(),
+        flow: None,
         session_id: None,
         status,
         created_at: now - ago,
@@ -2607,4 +2608,58 @@ fn team_without_a_team_explains_how_and_refuses_the_rest() {
     env.hedy(&["team", "role", "Ana", "--admin", "--member"])
         .assert()
         .failure();
+}
+
+#[test]
+fn flows_and_roles_are_made_from_the_terminal() {
+    let env = Env::new();
+    let repo = env.repo("code/agenda");
+    env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy_in(&repo, &["use", "claude"]).assert().success();
+
+    env.hedy_in(&repo, &["flow", "new", "Pagos", "--from", "classic"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Flujo creado: Pagos"));
+    env.hedy_in(&repo, &["flow", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Pagos"));
+    // A template is copied, never edited.
+    env.hedy_in(&repo, &["flow", "edit", "classic"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("hedy flow new"));
+    // Editing needs a terminal.
+    env.hedy_in(&repo, &["flow", "edit", "Pagos"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("terminal"));
+
+    env.hedy_in(&repo, &["roles"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Roles de Hedy"))
+        .stdout(predicate::str::contains("reviewer"));
+    env.hedy_in(&repo, &["roles", "show", "reviewer"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("delivers: verdict"))
+        .stdout(predicate::str::contains("instructions: |"));
+    env.hedy_in(&repo, &["roles", "remove", "reviewer"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no hay un rol"));
+    // Sharing needs a project in a team; allowing a command is this PC's.
+    env.hedy_in(&repo, &["flow", "share", "Pagos"])
+        .assert()
+        .failure();
+    env.hedy_in(&repo, &["flow", "allow", "npm run audit"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Permitido en este PC: npm run audit",
+        ));
 }

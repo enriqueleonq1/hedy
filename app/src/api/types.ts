@@ -503,6 +503,8 @@ export interface Task {
   origin?: TaskOrigin | null;
   /** What the agent does without asking ("manual" when missing). */
   permissions?: PermissionMode;
+  /** The flow it follows, and where it is in it. */
+  flow?: FlowRun | null;
 }
 
 // ------------------------------------------------- carrying a conversation
@@ -700,6 +702,129 @@ export interface NewTaskInput {
   images?: ImageInput[];
   /** A conversation carried into the task: its context opens the prompt. */
   carry?: CarryInput;
+  /** A flow to follow instead of the project's phases (its key). */
+  flow?: string;
+}
+
+// ------------------------------------------------------------------ flows
+// The orchestrator (docs/decisions.md §38–§44): a flow is a graph of steps.
+
+/** Who works a role step: the role, and optionally the account and model. */
+export interface Seat {
+  role: string;
+  account?: string;
+  model?: string;
+}
+
+/** What decides the path after a condition step. */
+export type FlowCheck = { check: "tests"; command?: string } | { check: "rules" } | { check: "verdict" };
+
+export type FlowNodeKind =
+  | { kind: "start" }
+  | ({ kind: "role" } & Seat)
+  | { kind: "approval" }
+  | ({ kind: "condition" } & FlowCheck)
+  | { kind: "parallel"; roles: Seat[] }
+  | { kind: "end" };
+
+export type FlowNode = FlowNodeKind & {
+  id: string;
+  /** Where the editor drew it; missing: laid out automatically. */
+  at?: { x: number; y: number };
+};
+
+/** `after`: the only way out of a step; `pass` / `fail`: a condition's two. */
+export type FlowWhen = "after" | "pass" | "fail";
+
+export interface FlowEdge {
+  from: string;
+  to: string;
+  when: FlowWhen;
+  /** For a way back: how many times it may be taken. */
+  maxRounds?: number;
+}
+
+export type FlowTrigger = "manual" | "taskEnd" | "beforeCommit";
+
+/** What every role of the flow shares. */
+export interface FlowFrame {
+  goal?: string;
+  rules?: string[];
+  files?: string[];
+  notes?: string[];
+}
+
+export interface Flow {
+  name: string;
+  frame: FlowFrame;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  triggers: FlowTrigger[];
+}
+
+/** Hedy's own (never changes), one project's, every project's, or shared by the project's team. */
+export type FlowScope = "hedy" | "project" | "global" | "team";
+
+export interface FlowEntry {
+  /** `classic`, `fix-loop`… for a template; `#<id>` for a saved one. */
+  key: string;
+  scope: FlowScope;
+  /** One line of what it does (templates). */
+  summary: string;
+  flow: Flow;
+  /** Who shared it (a team's flow). */
+  by?: string;
+  /** Its test commands this PC has not allowed yet (a team's flow): it does not start until they are. */
+  unapproved?: string[];
+}
+
+/** The team a project's flows can be shared with; only an admin shares them. */
+export interface TeamShare {
+  team: string;
+  name: string;
+  admin: boolean;
+}
+
+/** Something that keeps a flow from running, on its step when it is about one. */
+export interface FlowIssue {
+  node: string | null;
+  message: string;
+}
+
+export interface RoleDef {
+  id: string;
+  name: string;
+  summary: string;
+  instructions: string;
+  carries: { skills?: string[]; notes?: string[] };
+  delivers: "text" | "verdict";
+  can: { write: boolean; run: boolean };
+  sees: { sees: "all" } | { sees: "sections"; sections: string[] };
+  planFirst: boolean;
+}
+
+export interface RoleEntry {
+  scope: FlowScope;
+  role: RoleDef;
+}
+
+/** A task's flow: a copy taken at its start, and where it is. */
+export interface FlowRun {
+  flow: Flow;
+  roles: Record<string, RoleDef>;
+  /** The current step, and the times each way back was taken. */
+  position: { node: string; rounds?: Record<string, number> };
+  /** Which role of a group at once works now. */
+  lane?: number;
+}
+
+/** One entry of a flow task's board. */
+export interface BoardEntry {
+  section: string;
+  role: string;
+  round: number;
+  text: string;
+  byUser?: boolean;
 }
 
 /** The image formats every supported CLI takes. */
@@ -866,6 +991,12 @@ export type AgentEvent =
     }
   | { kind: "rateLimit"; status: string; utilization: number | null; resetsAt: number | null }
   | { kind: "phaseStarted"; phase: Phase; agent: string; account: string }
+  /** A flow reached a step where the user approves what came before. */
+  | { kind: "flowApproval"; node: string }
+  /** The user's answer there (a message written while it waits is not one). */
+  | { kind: "flowApprovalAnswered"; node: string; approved: boolean }
+  /** A flow's condition was checked (`what`: "npm test", "las reglas"…). */
+  | { kind: "flowCheck"; node: string; what: string; passed: boolean }
   | {
       kind: "limitWarning";
       account: string;

@@ -19,6 +19,8 @@ fn kind_str(kind: ItemKind) -> &'static str {
         ItemKind::Template => "template",
         ItemKind::Theme => "theme",
         ItemKind::Suggestion => "suggestion",
+        ItemKind::Flow => "flow",
+        ItemKind::Role => "role",
     }
 }
 
@@ -29,6 +31,8 @@ fn kind_from(text: &str) -> Option<ItemKind> {
         ItemKind::Template,
         ItemKind::Theme,
         ItemKind::Suggestion,
+        ItemKind::Flow,
+        ItemKind::Role,
     ]
     .into_iter()
     .find(|k| kind_str(*k) == text)
