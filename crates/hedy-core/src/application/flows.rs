@@ -10,6 +10,7 @@ use super::ports::{FlowRecord, RoleRecord};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::flow::{Flow, RoleDef, Template, builtin_role, builtin_roles};
 use crate::domain::flow_text;
+use crate::tr;
 
 /// Where a flow or a role comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -85,7 +86,7 @@ impl Hedy {
                     .iter()
                     .filter(|r| r.project == wanted)
                     .map(|r| FlowEntry {
-                        key: r.id.to_string(),
+                        key: format!("#{}", r.id),
                         scope,
                         summary: String::new(),
                         flow: r.flow.clone(),
@@ -103,7 +104,14 @@ impl Hedy {
         entries
             .iter()
             .find(|e| e.key == wanted)
-            .or_else(|| entries.iter().find(|e| same_name(&e.flow.name, wanted)))
+            // Then a name, the user's flows before Hedy's.
+            .or_else(|| {
+                entries
+                    .iter()
+                    .filter(|e| e.scope != FlowScope::Hedy)
+                    .chain(entries.iter().filter(|e| e.scope == FlowScope::Hedy))
+                    .find(|e| same_name(&e.flow.name, wanted))
+            })
             .cloned()
             .ok_or_else(|| AppError::FlowNotFound(wanted.to_owned()))
     }
@@ -124,6 +132,17 @@ impl Hedy {
 
     /// [`Hedy::save_flow_text`] for a flow already parsed (the canvas).
     pub fn save_flow(&self, project: Option<&Path>, flow: Flow) -> AppResult<FlowEntry> {
+        // Hedy's templates keep their names: a flow of the user would hide one.
+        if Template::ALL
+            .into_iter()
+            .any(|t| same_name(&t.name(), &flow.name) || same_name(t.key(), &flow.name))
+        {
+            let name = flow.name.trim();
+            return Err(AppError::InvalidFlow(vec![tr!(
+                "«{name}» es el nombre de una plantilla de Hedy: elige otro",
+                "«{name}» is the name of one of Hedy's templates: choose another"
+            )]));
+        }
         let project = self.flow_project(project)?;
         let path = project.as_ref().map(|p| p.path.clone());
         let roles = self.role_lookup(path.as_deref())?;
@@ -148,7 +167,7 @@ impl Hedy {
         };
         let id = self.store.save_flow(&record)?;
         Ok(FlowEntry {
-            key: id.to_string(),
+            key: format!("#{id}"),
             scope: if path.is_some() {
                 FlowScope::Project
             } else {
@@ -162,7 +181,10 @@ impl Hedy {
     /// Deletes one of the user's flows; Hedy's templates stay.
     pub fn delete_flow(&self, project: Option<&Path>, which: &str) -> AppResult<()> {
         let entry = self.flow(project, which)?;
-        match (entry.scope, entry.key.parse::<i64>()) {
+        match (
+            entry.scope,
+            entry.key.trim_start_matches('#').parse::<i64>(),
+        ) {
             (FlowScope::Hedy, _) | (_, Err(_)) => Err(AppError::FlowNotFound(which.to_owned())),
             (_, Ok(id)) => Ok(self.store.delete_flow(id)?),
         }
@@ -297,7 +319,14 @@ mod tests {
         let f = Fixture::new();
         let dir = project(&f);
         let text = f.hedy.flow_text(Some(&dir), "fix-loop").unwrap();
-        let broken = text.replace("programmer", "nadie");
+        let broken =
+            text.replace("programmer", "nadie")
+                .replacen(&Template::FixLoop.name(), "Mi flujo", 1);
+        // Hedy's templates keep their names.
+        assert!(matches!(
+            f.hedy.save_flow_text(Some(&dir), &text),
+            Err(AppError::InvalidFlow(_))
+        ));
         let Err(AppError::InvalidFlow(problems)) = f.hedy.save_flow_text(Some(&dir), &broken)
         else {
             panic!("a flow with an unknown role was saved");

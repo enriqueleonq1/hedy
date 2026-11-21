@@ -977,6 +977,9 @@ pub struct Delivery {
     /// The role's name, for people.
     pub role: String,
     pub text: String,
+    /// The user's own words (what to change at an approval), not a role's.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub by_user: bool,
 }
 
 /// A task run by a flow: the flow and its roles as they were when it
@@ -990,6 +993,10 @@ pub struct FlowRun {
     pub position: Position,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub delivered: Vec<Delivery>,
+    /// What the current role said before its account's limit cut it: it
+    /// opens its delivery when it finishes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partial: Option<String>,
 }
 
 impl FlowRun {
@@ -1005,11 +1012,20 @@ impl FlowRun {
             flow,
             roles,
             delivered: Vec::new(),
+            partial: None,
         })
     }
 
     pub fn current(&self) -> Option<&Node> {
         self.flow.node(&self.position.node)
+    }
+
+    /// The role of the current step, when it is one.
+    pub fn current_role(&self) -> Option<&RoleDef> {
+        match &self.current()?.kind {
+            NodeKind::Role(seat) => self.roles.get(&seat.role),
+            _ => None,
+        }
     }
 
     /// The step that leads into `node` (the role whose work an approval

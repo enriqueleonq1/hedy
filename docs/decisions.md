@@ -3830,6 +3830,28 @@ as they are; a task runs a flow only when it is started with one.
   final summary) and its own instructions. An approval step waits (`FlowApproval`, the same
   notice as a plan); approving moves on, and not approving goes back to the role before it
   with what to change. The end leaves the changes for review, as any task.
+- **Hardened after the reviews.**
+  - An approval is never skipped: a turn that ends anywhere but a role's step (the user
+    wrote while the flow waited) moves nothing, the session stops when the flow reaches an
+    approval, a handoff is refused there, and one answer only is taken (a double click finds
+    the flow already moved on).
+  - A role that may not run commands gets no shell (`no_shell`). A read-only step never
+    writes or runs anything without a card, whatever the permission mode.
+  - What a role hands over reaches the next ones quoted (a JSON string) under a header that
+    says it is data, as the team layer does: no summary can pass for Hedy's or the user's
+    words. The user's own feedback goes in a section of its own.
+  - Every role's account is checked again when it starts (rule 4).
+  - A turn cut by a limit pauses the flow (a limit notice, never «finished»), and what it said
+    opens the role's delivery when it ends.
+  - A handoff keeps the role's part and the deliveries.
+  - A model picked in the composer goes to the roles on the project's account without one.
+  - Saved flows have keys `#<id>`; a name finds the user's flows before Hedy's templates,
+    whose names cannot be reused. A row that no longer reads is left out, never taking the
+    templates with it.
+- **Known gaps.**
+  - Phase labels follow the tools a role gets: the architect shows as «review», a tester as
+    «implement».
+  - A goal's trailing line breaks do not survive the text form.
 - **Not yet.** Conditions and groups at once are refused at start (`FlowNotYet`) until O3, so
   only «Pipeline clásico» runs today. The blackboard (O2) will replace the summaries in the
   prompt.

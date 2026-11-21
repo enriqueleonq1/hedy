@@ -407,7 +407,12 @@ impl Hedy {
         dir: &Path,
     ) -> Option<String> {
         let mode = task.permissions;
-        if mode == PermissionMode::Manual || task.workspace.is_none() {
+        // A read-only step (a review, a flow's reader) never writes or runs
+        // anything without a card, whatever the mode.
+        if mode == PermissionMode::Manual
+            || task.workspace.is_none()
+            || current_stage(task).phase.read_only_in(task.mode)
+        {
             return None;
         }
         let label = match mode {
@@ -839,7 +844,12 @@ impl Hedy {
                 memory,
                 mcp,
                 conversation: task.conversation,
-                no_shell: false,
+                // A flow's role that may not run commands gets no shell.
+                no_shell: task
+                    .flow
+                    .as_ref()
+                    .and_then(|run| run.current_role())
+                    .is_some_and(|role| !role.can.run),
                 no_tools: false,
                 plugins,
                 output,
@@ -1097,8 +1107,22 @@ impl Hedy {
                     return Ok(());
                 }
                 // A flow decides what comes after a role (docs/decisions.md §42).
-                if *ok && !limited && task.flow.is_some() {
+                if task.flow.is_some() && (*ok || limited) {
                     if self.task(id)?.status.is_closed() {
+                        return Ok(());
+                    }
+                    if limited {
+                        // Paused by the account's limit (rule 3: never another
+                        // account): what it said waits for the role's end.
+                        if let Some(run) = task.flow.as_mut() {
+                            let said = summary.trim();
+                            if !said.is_empty() {
+                                run.partial = Some(said.to_owned());
+                            }
+                        }
+                        self.store.save_task(&task)?;
+                        self.set_status(&mut task, TaskStatus::Review)?;
+                        self.notify(&task, NoticeKind::LimitReached);
                         return Ok(());
                     }
                     return self.flow_role_done(&mut task, summary);
@@ -1529,6 +1553,15 @@ impl Hedy {
         if task.status.is_closed() {
             return Err(AppError::TaskClosed(id.clone()));
         }
+        // A flow waiting for the user has no role at work to hand over.
+        if task
+            .flow
+            .as_ref()
+            .and_then(|r| r.current())
+            .is_some_and(|n| matches!(n.kind, crate::domain::flow::NodeKind::Approval))
+        {
+            return Err(AppError::FlowAtApproval(id.clone()));
+        }
         let target = self
             .handoff_options(id)?
             .into_iter()
@@ -1558,12 +1591,31 @@ impl Hedy {
                 stage.model = model.clone();
             }
         }
-        let prompt = prompts::handoff_prompt(
-            &task.prompt,
-            task.plan.as_deref(),
-            &previous_label,
-            &changed,
-        );
+        let prompt = match task
+            .flow
+            .as_ref()
+            .and_then(|r| Some((r, r.current_role()?)))
+        {
+            // A flow's role keeps its part and what the roles before it said.
+            Some((run, role)) => {
+                let base = task
+                    .workspace
+                    .as_ref()
+                    .map(|w| w.base_commit.clone())
+                    .unwrap_or_default();
+                let handed = prompts::handoff_prompt(&task.prompt, None, &previous_label, &changed);
+                format!(
+                    "{}\n\n{handed}",
+                    prompts::role_prompt(role, &task.prompt, &run.delivered, &base)
+                )
+            }
+            None => prompts::handoff_prompt(
+                &task.prompt,
+                task.plan.as_deref(),
+                &previous_label,
+                &changed,
+            ),
+        };
         let index = task.stage;
         // Waiting for the old account's limit makes no sense any more.
         task.wait = None;

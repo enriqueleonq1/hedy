@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use rusqlite::params;
 
-use super::{SqliteStore, invalid, json_error};
+use super::{SqliteStore, json_error};
 use crate::application::ports::{FlowRecord, FlowRepository, PortResult, RoleRecord};
 
 impl FlowRepository for SqliteStore {
@@ -12,13 +12,20 @@ impl FlowRepository for SqliteStore {
         self.with(|c| {
             c.prepare("SELECT id, project, data, updated_at FROM flows ORDER BY id")?
                 .query_map([], |r| {
-                    Ok(FlowRecord {
+                    // A row that no longer reads (edited by hand) is left
+                    // out: it must not take the templates and the rest with it.
+                    let data: String = r.get(2)?;
+                    let Ok(flow) = serde_json::from_str(&data) else {
+                        return Ok(None);
+                    };
+                    Ok(Some(FlowRecord {
                         id: r.get(0)?,
                         project: r.get::<_, Option<String>>(1)?.map(PathBuf::from),
-                        flow: serde_json::from_str(&r.get::<_, String>(2)?).map_err(invalid(2))?,
+                        flow,
                         updated_at: r.get(3)?,
-                    })
+                    }))
                 })?
+                .filter_map(Result::transpose)
                 .collect()
         })
     }
@@ -61,13 +68,20 @@ impl FlowRepository for SqliteStore {
         self.with(|c| {
             c.prepare("SELECT id, project, data, updated_at FROM flow_roles ORDER BY id")?
                 .query_map([], |r| {
-                    Ok(RoleRecord {
+                    // A row that no longer reads (edited by hand) is left
+                    // out: it must not take the templates and the rest with it.
+                    let data: String = r.get(2)?;
+                    let Ok(role) = serde_json::from_str(&data) else {
+                        return Ok(None);
+                    };
+                    Ok(Some(RoleRecord {
                         id: r.get(0)?,
                         project: r.get::<_, Option<String>>(1)?.map(PathBuf::from),
-                        role: serde_json::from_str(&r.get::<_, String>(2)?).map_err(invalid(2))?,
+                        role,
                         updated_at: r.get(3)?,
-                    })
+                    }))
                 })?
+                .filter_map(Result::transpose)
                 .collect()
         })
     }
@@ -154,5 +168,30 @@ mod tests {
         assert_eq!(store.role_records().unwrap(), vec![role.clone()]);
         store.delete_role(role.id).unwrap();
         assert!(store.role_records().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_row_that_no_longer_reads_is_left_out() {
+        let store = SqliteStore::in_memory().unwrap();
+        let good = FlowRecord {
+            id: 0,
+            project: None,
+            flow: Template::Classic.flow(&PhasePlan::new()),
+            updated_at: 1,
+        };
+        let id = store.save_flow(&good).unwrap();
+        store
+            .with(|c| {
+                c.execute(
+                    "INSERT INTO flows (project, name, data, updated_at) VALUES (NULL, 'x', '{roto', 2)",
+                    [],
+                )
+                .map(drop)
+            })
+            .unwrap();
+        assert_eq!(
+            store.flow_records().unwrap(),
+            vec![FlowRecord { id, ..good }]
+        );
     }
 }

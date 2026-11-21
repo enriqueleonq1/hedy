@@ -1872,7 +1872,6 @@ pub fn doctor(hedy: &Hedy) -> Result<bool> {
     Ok(!report.has_errors())
 }
 
-/// The project of `dir`, or why templates for it cannot be used.
 /// `hedy flow list`: Hedy's templates, then the project's flows and the global ones.
 pub fn flow_list(hedy: &Hedy, dir: &Path) -> Result<()> {
     let s = Style::for_stdout();
@@ -1912,11 +1911,7 @@ pub fn flow_list(hedy: &Hedy, dir: &Path) -> Result<()> {
             } else {
                 tr!("{steps} roles", "{steps} roles")
             };
-            let key = if scope == FlowScope::Hedy {
-                format!("{} · ", entry.key)
-            } else {
-                String::new()
-            };
+            let key = format!("{} · ", entry.key);
             println!(
                 "  {}  {}",
                 s.bold(&entry.flow.name),
@@ -1949,6 +1944,7 @@ pub fn flow_show(hedy: &Hedy, dir: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// The project of `dir`, or why templates for it cannot be used.
 fn template_project(hedy: &Hedy, dir: &Path) -> Result<hedy_core::domain::Project> {
     match hedy.project_for(dir)? {
         Some(project) => Ok(project),

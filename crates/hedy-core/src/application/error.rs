@@ -54,6 +54,10 @@ pub enum AppError {
     #[error("{}", self.message())]
     FlowNotYet,
     #[error("{}", self.message())]
+    NothingToRedo,
+    #[error("{}", self.message())]
+    FlowAtApproval(TaskId),
+    #[error("{}", self.message())]
     NoFlowApproval(TaskId),
     #[error("{}", self.message())]
     InvalidBlockedPattern(String),
@@ -401,6 +405,14 @@ impl AppError {
             Self::FlowNotFound(name) => tr!(
                 "no hay un flujo «{name}»; `hedy flow list` muestra los que hay",
                 "there is no flow «{name}»; `hedy flow list` shows the ones there are"
+            ),
+            Self::NothingToRedo => tr!(
+                "no hay un rol antes de esta aprobación al que pedirle cambios",
+                "there is no role before this approval to ask for changes"
+            ),
+            Self::FlowAtApproval(id) => tr!(
+                "la tarea {id} espera tu aprobación: apruébala o pide cambios antes de pasarla a otra cuenta",
+                "task {id} is waiting for your approval: approve it or ask for changes before handing it over"
             ),
             Self::FlowNotYet => tr!(
                 "este flujo tiene condiciones o roles a la vez, y Hedy aún no los ejecuta",
