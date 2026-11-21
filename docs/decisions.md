@@ -3988,3 +3988,42 @@ library-holiday-fine, bakery-inscription), layer `plain`, haiku, the personal ac
   account limit, not Hedy.
 - Small sample (one run each): it rules out "flows save money", not "flows help on hard cases";
   harder cases with failing tests are where the fix loop should earn its cost.
+
+## 46. The orchestrator, O5: the flows editor (Nov 21, 2026)
+
+A project's **Flujos** tab (`#pf=<path>[&<key>]`), between Tareas and Memoria:
+
+- **Picker:** Hedy's templates (read-only; "Duplicar para editar" makes a copy), the project's flows
+  and the global ones. **Lienzo** and **Lista** show the same flow.
+- **Canvas** (DOM tiles and SVG lines under one camera; no graph library, and it tests in jsdom):
+  - Ways forward are drawn as gradient lines, ways back as dashed loops under the row, labelled
+    "fallan · máx. N". Each line has its own gradient in canvas units, because a box-relative one
+    paints nothing on a flat line.
+  - Drag the background to pan, use the wheel to move, Ctrl/⌘ + wheel to zoom.
+  - Steps can be dragged and snap to an 8 px grid. Dragging a step's dot onto another step
+    connects them; a check also has a bottom dot for its way back.
+  - The "+" on a line and "Agregar paso" insert after the selected step. A new check gets its way
+    back to the closest role before it, with 2 rounds.
+- **Panel:** the step's role, model, account, where it goes next and where a failure goes back,
+  with rounds. With nothing selected, the flow's name and its frame.
+- **Model** (`screens/flows/flowModel.ts`): pure functions over a `Flow`, so undo is a history of
+  values. Typing on in one field is one undo step.
+- **Live check:** `flow_problems` returns `FlowIssue { node, message }`. Its messages name the
+  step the way the user sees it (`Node::label`, `FlowProblem::naming`), never by its id. The
+  editor marks that step, lists the issues, and keeps Guardar and Ejecutar off until none are
+  left.
+- **Save** is by key (`save_flow_as`): renaming keeps the flow, a taken name in the same place is
+  refused, and a global flow stays global and is checked with the global roles.
+- **Dirty check:** "saved" is compared in a canonical form, since the backend orders keys its own
+  way and drops empty fields.
+- **Seat accounts** are checked with `check_launch` against the flow's place, both live and on
+  save. The panel offers only accounts the project may use (rule 4), and launch still checks
+  each seat.
+- **Model names:** any model that reaches a CLI must be one word that does not start with `-`
+  (`valid_model`, `AppError::InvalidModel`). This is checked when a task, conversation, flow or
+  handoff starts, and again in `start_agent` and one-shot runs. Otherwise `-m --yolo` could reach
+  an ACP CLI as a flag.
+- **Approval:** an approval whose next step cannot start (its account reserved meanwhile) ends the
+  flow for review with the reason, instead of leaving it Running with no agent.
+- **Known limit:** two saves of a new flow with the same name at the very same moment could both
+  pass the name check. The table has no unique index; this is a single-user app.
