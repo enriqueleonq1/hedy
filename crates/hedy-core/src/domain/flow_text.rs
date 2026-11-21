@@ -44,7 +44,7 @@ pub struct TextError {
 }
 
 impl TextError {
-    fn at(line: usize, message: String) -> Self {
+    pub(crate) fn at(line: usize, message: String) -> Self {
         Self { line, message }
     }
 }

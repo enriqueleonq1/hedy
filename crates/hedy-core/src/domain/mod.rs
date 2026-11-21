@@ -30,6 +30,7 @@ pub mod provider;
 pub mod queue;
 pub mod read_guard;
 pub mod recall;
+pub mod role_text;
 pub mod rule_check;
 pub mod ship;
 pub mod skill;

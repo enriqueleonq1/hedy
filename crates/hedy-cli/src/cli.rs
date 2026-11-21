@@ -1071,6 +1071,123 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             tr!("Qué tiene que hacer el equipo", "What the team has to do"),
         ),
         (
+            "flow new",
+            "",
+            tr!(
+                "Crea un flujo del proyecto copiando otro (una plantilla por defecto); luego `hedy flow edit`",
+                "Create a project flow by copying another one (a template by default); then `hedy flow edit`"
+            ),
+        ),
+        (
+            "flow new",
+            "name",
+            tr!("Nombre del flujo nuevo", "The new flow's name"),
+        ),
+        (
+            "flow new",
+            "from",
+            tr!(
+                "El flujo o plantilla que copiar (fix-loop si no lo dices)",
+                "The flow or template to copy (fix-loop when not given)"
+            ),
+        ),
+        (
+            "flow new",
+            "global",
+            tr!("Para todos los proyectos", "For every project"),
+        ),
+        (
+            "flow edit",
+            "",
+            tr!(
+                "Abre un flujo como texto en tu editor ($EDITOR) y lo guarda si sigue siendo válido",
+                "Open a flow as text in your editor ($EDITOR) and save it if it is still valid"
+            ),
+        ),
+        (
+            "flow edit",
+            "name",
+            tr!("Nombre o clave del flujo", "Flow name or key"),
+        ),
+        (
+            "roles",
+            "",
+            tr!(
+                "La biblioteca de roles de los flujos: los de Hedy y los tuyos",
+                "The flows' role library: Hedy's and yours"
+            ),
+        ),
+        (
+            "roles list",
+            "",
+            tr!("Lista los roles (por defecto)", "List the roles (default)"),
+        ),
+        (
+            "roles show",
+            "",
+            tr!("Muestra un rol como texto", "Show a role as text"),
+        ),
+        (
+            "roles show",
+            "id",
+            tr!("Id del rol (reviewer…)", "Role id (reviewer…)"),
+        ),
+        (
+            "roles new",
+            "",
+            tr!(
+                "Crea un rol copiando otro y lo abre en tu editor",
+                "Create a role by copying another one and open it in your editor"
+            ),
+        ),
+        (
+            "roles new",
+            "id",
+            tr!(
+                "Id del rol nuevo: minúsculas, números y guiones",
+                "The new role's id: lowercase letters, digits and dashes"
+            ),
+        ),
+        (
+            "roles new",
+            "from",
+            tr!(
+                "El rol que copiar (reviewer si no lo dices)",
+                "The role to copy (reviewer when not given)"
+            ),
+        ),
+        (
+            "roles new",
+            "global",
+            tr!("Para todos los proyectos", "For every project"),
+        ),
+        (
+            "roles edit",
+            "",
+            tr!(
+                "Abre un rol en tu editor; cambiar uno de Hedy lo reemplaza en este proyecto",
+                "Open a role in your editor; changing one of Hedy's replaces it in this project"
+            ),
+        ),
+        ("roles edit", "id", tr!("Id del rol", "Role id")),
+        (
+            "roles edit",
+            "global",
+            tr!(
+                "Guardarlo para todos los proyectos",
+                "Save it for every project"
+            ),
+        ),
+        (
+            "roles remove",
+            "",
+            tr!(
+                "Quita un rol tuyo; si reemplazaba uno de Hedy, ese vuelve",
+                "Remove one of your roles; if it replaced one of Hedy's, that one comes back"
+            ),
+        ),
+        ("roles remove", "id", tr!("Id del rol", "Role id")),
+        (
             "flow show",
             "name",
             tr!(
@@ -1690,6 +1807,8 @@ fn value_names() -> Vec<(&'static str, String)> {
         ("category", tr!("CATEGORÍA", "CATEGORY")),
         // `hedy sync project --shared <DUEÑO>` (a flag elsewhere, without one).
         ("shared", tr!("DUEÑO", "OWNER")),
+        ("from", tr!("ORIGEN", "SOURCE")),
+        ("id", tr!("ID", "ID")),
     ]
 }
 
@@ -1911,6 +2030,11 @@ pub enum Command {
         command: Option<FlowCommand>,
     },
 
+    Roles {
+        #[command(subcommand)]
+        command: Option<RolesCommand>,
+    },
+
     Sync {
         #[command(subcommand)]
         command: Option<SyncCommand>,
@@ -2052,6 +2176,45 @@ pub enum FlowCommand {
         request: String,
         #[arg(long, short)]
         model: Option<String>,
+    },
+
+    New {
+        name: String,
+        #[arg(long)]
+        from: Option<String>,
+        #[arg(long)]
+        global: bool,
+    },
+
+    Edit {
+        name: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RolesCommand {
+    List,
+
+    Show {
+        id: String,
+    },
+
+    New {
+        id: String,
+        #[arg(long)]
+        from: Option<String>,
+        #[arg(long)]
+        global: bool,
+    },
+
+    Edit {
+        id: String,
+        #[arg(long)]
+        global: bool,
+    },
+
+    Remove {
+        id: String,
     },
 }
 

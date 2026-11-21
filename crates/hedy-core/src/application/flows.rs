@@ -9,8 +9,8 @@ use serde::Serialize;
 use super::ports::{FlowRecord, RoleRecord};
 use super::{AppError, AppResult, Hedy};
 use crate::domain::flow::{Flow, NodeKind, RoleDef, Template, builtin_role, builtin_roles};
-use crate::domain::flow_text;
 use crate::domain::policy;
+use crate::domain::{flow_text, role_text};
 use crate::tr;
 
 /// Where a flow or a role comes from.
@@ -340,6 +340,84 @@ impl Hedy {
         Ok(entries)
     }
 
+    /// A role of the library as text (`hedy roles show`).
+    pub fn role_text(&self, project: Option<&Path>, id: &str) -> AppResult<String> {
+        let role = self
+            .roles(project)?
+            .into_iter()
+            .find(|r| r.role.id == id)
+            .ok_or_else(|| AppError::RoleNotFound(id.to_owned()))?;
+        Ok(role_text::to_text(&role.role))
+    }
+
+    /// Saves a role written as text, for the project (`global`: for every
+    /// project). One with the same id in the same place is replaced; one with
+    /// a built-in id takes Hedy's place there.
+    pub fn save_role_text(
+        &self,
+        project: Option<&Path>,
+        text: &str,
+        global: bool,
+    ) -> AppResult<RoleEntry> {
+        let role = role_text::from_text(text).map_err(|e| AppError::InvalidRole(e.to_string()))?;
+        let project = if global {
+            None
+        } else {
+            self.flow_project(project)?.map(|p| p.path)
+        };
+        let same = self
+            .store
+            .role_records()?
+            .into_iter()
+            .find(|r| r.project == project && r.role.id == role.id);
+        let record = RoleRecord {
+            id: same.map_or(0, |r| r.id),
+            project: project.clone(),
+            role,
+            updated_at: self.now_secs(),
+        };
+        self.store.save_role(&record)?;
+        Ok(RoleEntry {
+            scope: if project.is_some() {
+                FlowScope::Project
+            } else {
+                FlowScope::Global
+            },
+            role: record.role,
+        })
+    }
+
+    /// Removes a role of the user (the project's first, else the global one);
+    /// a built-in one it replaced comes back.
+    pub fn delete_role(&self, project: Option<&Path>, id: &str) -> AppResult<()> {
+        let project = self.flow_project(project)?.map(|p| p.path);
+        let records = self.store.role_records()?;
+        let record = records
+            .iter()
+            .find(|r| r.role.id == id && r.project.is_some() && r.project == project)
+            .or_else(|| {
+                records
+                    .iter()
+                    .find(|r| r.role.id == id && r.project.is_none())
+            })
+            .ok_or_else(|| AppError::RoleNotFound(id.to_owned()))?;
+        Ok(self.store.delete_role(record.id)?)
+    }
+
+    /// The editor's text save of flow `key` (`hedy flow edit`): it keeps the
+    /// flow, renamed or not.
+    pub fn save_flow_text_as(
+        &self,
+        project: Option<&Path>,
+        key: &str,
+        text: &str,
+    ) -> AppResult<FlowEntry> {
+        let flow =
+            flow_text::from_text(text).map_err(|e| AppError::InvalidFlow(vec![e.to_string()]))?;
+        // The text keeps no positions: the canvas lays it out again.
+        self.save_flow_as(project, Some(key), flow)
+    }
+
     /// How a flow of the project finds its roles by id.
     pub(super) fn role_lookup(
         &self,
@@ -521,6 +599,48 @@ mod tests {
         assert!(matches!(
             f.hedy.save_flow_as(Some(&dir), None, flow),
             Err(AppError::InvalidFlow(_))
+        ));
+    }
+
+    #[test]
+    fn a_role_written_as_text_joins_the_library_and_leaves_it() {
+        let f = Fixture::new();
+        let dir = project(&f);
+        let text = "id: accesibilidad\nname: Accesibilidad\ndelivers: verdict\ncan: []\nsees: all\ninstructions: |\n  Revisa el teclado.\n";
+        let entry = f.hedy.save_role_text(Some(&dir), text, false).unwrap();
+        assert_eq!(entry.scope, FlowScope::Project);
+        assert!(
+            f.hedy
+                .role_text(Some(&dir), "accesibilidad")
+                .unwrap()
+                .contains("Revisa el teclado.")
+        );
+        // Changing the reviewer here takes Hedy's place; removing it brings it back.
+        let reviewer = f
+            .hedy
+            .role_text(Some(&dir), "reviewer")
+            .unwrap()
+            .replace("name: Revisor", "name: Revisor estricto")
+            .replace("name: Reviewer", "name: Revisor estricto");
+        f.hedy.save_role_text(Some(&dir), &reviewer, false).unwrap();
+        let named = |id: &str| {
+            f.hedy
+                .roles(Some(&dir))
+                .unwrap()
+                .into_iter()
+                .find(|r| r.role.id == id)
+                .unwrap()
+        };
+        assert_eq!(named("reviewer").role.name, "Revisor estricto");
+        f.hedy.delete_role(Some(&dir), "reviewer").unwrap();
+        assert_eq!(named("reviewer").scope, FlowScope::Hedy);
+        assert!(matches!(
+            f.hedy.delete_role(Some(&dir), "reviewer"),
+            Err(AppError::RoleNotFound(_))
+        ));
+        assert!(matches!(
+            f.hedy.save_role_text(Some(&dir), "id: x\n", false),
+            Err(AppError::InvalidRole(_))
         ));
     }
 

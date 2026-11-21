@@ -60,6 +60,10 @@ pub enum AppError {
     #[error("{}", self.message())]
     InvalidModel(String),
     #[error("{}", self.message())]
+    RoleNotFound(String),
+    #[error("{}", self.message())]
+    InvalidRole(String),
+    #[error("{}", self.message())]
     InvalidBlockedPattern(String),
     #[error("{}", self.message())]
     OutputNotOpened(String),
@@ -402,6 +406,11 @@ impl AppError {
                 "«{pattern}» no sirve: pon nombres de archivo o patrones de nombre (.env, .env.*, *.pem), sin carpetas y sin que abarquen todo",
                 "«{pattern}» does not work: use file names or name patterns (.env, .env.*, *.pem), without folders and not matching everything"
             ),
+            Self::RoleNotFound(id) => tr!(
+                "no hay un rol «{id}»; `hedy roles` muestra los que hay",
+                "there is no role «{id}»; `hedy roles` shows the ones there are"
+            ),
+            Self::InvalidRole(why) => tr!("el rol no sirve: {why}", "the role is not valid: {why}"),
             Self::FlowNotFound(name) => tr!(
                 "no hay un flujo «{name}»; `hedy flow list` muestra los que hay",
                 "there is no flow «{name}»; `hedy flow list` shows the ones there are"
