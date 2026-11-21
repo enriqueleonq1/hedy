@@ -3798,3 +3798,43 @@ open, shown next to its status when it is not manual, and defaulting to the proj
 - **Verified for real** (Claude Code, haiku, personal account): `smoke_task -- haiku auto` ran
   a whole task, a file and `ls`, with no card, and accepted it.
 
+## 42. The orchestrator, O1: flows, roles and the engine (Nov 21, 2026)
+
+The plan (stages O1–O8) is kept outside the repository; this section records what is built.
+A flow is a team of AI roles working on one task: a start, roles, approvals, conditions,
+groups of read-only roles at once, and an end (`domain::flow`). Hedy's current phases stay
+as they are; a task runs a flow only when it is started with one.
+
+- **The domain.** `Flow` (nodes, connections with `after`/`pass`/`fail` and the rounds a loop
+  may take, triggers, the shared frame), `RoleDef` (instructions, what it may do, what it
+  hands over: text or a verdict, what it sees, what it always carries), five built-in roles
+  (architect, programmer, tester, reviewer, security) and three templates: «Pipeline clásico»
+  (today's phases as a flow, with the project's accounts and models), «Con bucle de
+  corrección» and «Doble revisión». `Flow::problems` lists everything that makes a flow
+  unrunnable (one start, an end, reachable steps, known roles, read-only roles at once, a
+  verdict after a role that gives one, every loop bounded by its rounds, at most 10).
+- **The text form** (`domain::flow_text`): a small YAML subset, numbered steps, `next:`,
+  `on_fail:`, `max_rounds:`, parsed by Hedy itself. `hedy flow show` prints it.
+- **Kept** in `flows` and `flow_roles` (JSON per row), for a project or for every project.
+  `Hedy::flows` lists Hedy's templates, then the project's flows, then the global ones; a
+  user's role with a built-in id takes its place. Saving refuses an unrunnable flow with every
+  reason, and a flow with the name of one in the same place replaces it.
+- **The engine** (`application::flow_runs`). `Hedy::start_flow` starts a «Cambiar código» task
+  with a snapshot of the flow and its roles (`Task.flow`, a `FlowRun`): editing the library
+  meanwhile changes nothing in a running task. Each role's step is one more stage of the task
+  (`role.phase()`: read-only roles run as a review, so their adapters get no write tools), so
+  it gets what a phase has: its own agent session (the CLIs cannot share one), the account's
+  usage and limits (rule 3: a limit pauses, never switches), handoffs, permission cards and the
+  task's permission mode. Every account is checked before anything is created. Its prompt
+  (`prompts::role_prompt`) carries the request, what each role before it handed over (its
+  final summary) and its own instructions. An approval step waits (`FlowApproval`, the same
+  notice as a plan); approving moves on, and not approving goes back to the role before it
+  with what to change. The end leaves the changes for review, as any task.
+- **Not yet.** Conditions and groups at once are refused at start (`FlowNotYet`) until O3, so
+  only «Pipeline clásico» runs today. The blackboard (O2) will replace the summaries in the
+  prompt.
+- **Verified for real** (Claude Code, haiku, personal account): `smoke_task -- haiku flow` ran
+  the classic flow: the architect planned read-only, the approval waited, the programmer wrote
+  `hola.txt` in a session of its own, and accepting merged it.
+- **CLI:** `hedy flow list`, `hedy flow show <name|key>`.
+
