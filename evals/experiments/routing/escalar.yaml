@@ -1,0 +1,15 @@
+name: Escalar
+steps:
+  - role: programador-tdd
+    model: haiku
+  - check: tests
+    command: python3 -m unittest discover -q -s tests -t .
+    next: end
+    on_fail: 3
+  - role: programador-tdd
+    model: sonnet
+  - check: tests
+    command: python3 -m unittest discover -q -s tests -t .
+    on_fail: 3
+    max_rounds: 1
+triggers: [manual]

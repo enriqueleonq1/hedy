@@ -1,0 +1,11 @@
+name: Plan fuerte
+steps:
+  - role: architect
+    model: sonnet
+  - role: programmer
+    model: haiku
+  - check: tests
+    command: python3 -m unittest discover -q -s tests -t .
+    on_fail: 2
+    max_rounds: 2
+triggers: [manual]
