@@ -4366,7 +4366,8 @@ A flow's fixed cost went from about 1.7× to 1.4× one agent's.
 `AgentEvent::FlowOutOfRounds { node, rounds, asked }` is recorded instead of an error, `asked`
 being the last board entry not written by the user (the failing tests' report or the review),
 up to 1 200 characters with its lines. The task waits in review as before; the app's card adds
-«Una vuelta más» and «Darle una pista…», which write in the composer (a follow-up is the round).
+«Una vuelta más», which writes in the composer (a follow-up is the round). A «hint» button was
+tried and left out: it only wrote «Pista: », as typing in the composer does.
 Running again from a chosen step was left out: no run measured needed it.
 
 **The user's own numbers.** `flow_values(project)` compares each flow's closed tasks with the

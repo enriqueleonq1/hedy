@@ -199,8 +199,8 @@ function BoardText({ text }: { text: string }) {
 
 /**
  * A way back ran out of rounds: the run ended there and the changes wait for
- * the user, with what was last asked. Another round or a hint is a message
- * to the task; the buttons write it in the composer.
+ * the user, with what was last asked. Another round is a message to the
+ * task; the button writes it in the composer.
  */
 export function FlowOutOfRounds({ task, rounds, asked }: { task: Task; rounds: number; asked: string }) {
   const t = useT();
@@ -215,7 +215,6 @@ export function FlowOutOfRounds({ task, rounds, asked }: { task: Task; rounds: n
           <p className="flow-approval__text">{t("flows.rounds.decide")}</p>
           <div className="actions">
             <Button onClick={() => insertInComposer(t("flows.rounds.againText"))}>{t("flows.rounds.again")}</Button>
-            <Button onClick={() => insertInComposer(t("flows.rounds.hintText"))}>{t("flows.rounds.hint")}</Button>
           </div>
         </>
       )}
