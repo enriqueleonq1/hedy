@@ -556,9 +556,7 @@
 .flow-progress__now[data-waiting]::before { background: var(--warning); }
 .flow-progress__now[data-stopped]::before { background: var(--muted); animation: none; }
 .flow-progress__round { padding: 0 7px; border-radius: var(--radius-pill); background: var(--panel-2); color: var(--ink); }
-/* What the run spent, beside the board's toggle; each step's under the strip. */
-.flow-progress__spent { margin-left: auto; font: var(--text-caption) var(--font-mono); color: var(--muted); }
-.flow-progress__spent + .flow-progress__toggle { margin-left: 0; }
+/* What the run spent, under the strip: in all, then each step's. */
 .flow-progress__costs { display: flex; flex-wrap: wrap; gap: 4px var(--space-3); margin: 0; padding: 0; list-style: none; font: var(--text-caption) var(--font-mono); color: var(--muted); }
 .flow-progress__cost-name { font-family: var(--font-ui); color: var(--ink); }
 .flow-progress__toggle {

@@ -84,12 +84,6 @@ export function FlowProgress({ task, run }: { task: Task; run: FlowRun }) {
             {round > 1 && <span className="flow-progress__round">{t("flows.live.round", { n: String(round) })}</span>}
           </span>
         )}
-        {spent.tokens > 0 && (
-          <span className="flow-progress__spent">
-            {t("flows.live.spent", { tokens: formatTokens(spent.tokens), time: formatElapsed(spent.secs) })}
-            {spent.cache !== null && ` · ${t("flows.live.cache", { percent: String(spent.cache) })}`}
-          </span>
-        )}
         <button type="button" className="flow-progress__toggle" aria-expanded={board} aria-controls={boardId} onClick={() => setBoard((b) => !b)}>
           {t("flows.live.board")}
         </button>
@@ -112,16 +106,23 @@ export function FlowProgress({ task, run }: { task: Task; run: FlowRun }) {
           </li>
         ))}
       </ol>
-      {order.some((n) => stepSpend(n)) && (
+      {spent.tokens > 0 && (
         <ul className="flow-progress__costs" aria-label={t("flows.live.costs")}>
-          {order.map((node) => {
-            const line = stepSpend(node);
-            return line ? (
-              <li key={node.id}>
-                <span className="flow-progress__cost-name">{text(node).name}</span> {line}
-              </li>
-            ) : null;
-          })}
+          <li>
+            <span className="flow-progress__cost-name">{t("flows.live.total")}</span>{" "}
+            {t("flows.live.spent", { tokens: formatTokens(spent.tokens), time: formatElapsed(spent.secs) })}
+            {spent.cache !== null && ` · ${t("flows.live.cache", { percent: String(spent.cache) })}`}
+          </li>
+          {/* Step by step only when more than one spent: one would repeat the total. */}
+          {order.filter((n) => stepSpend(n)).length > 1 &&
+            order.map((node) => {
+              const line = stepSpend(node);
+              return line ? (
+                <li key={node.id}>
+                  <span className="flow-progress__cost-name">{text(node).name}</span> {line}
+                </li>
+              ) : null;
+            })}
         </ul>
       )}
       <div id={boardId}>{board && <Board task={task} roles={roles} />}</div>
@@ -207,7 +208,7 @@ export function FlowOutOfRounds({ task, rounds, asked }: { task: Task; rounds: n
   return (
     <section className="card flow-rounds" aria-label={t("flows.rounds.title")}>
       <h3>{t("flows.rounds.title")}</h3>
-      <p className="flow-approval__text">{t("flows.rounds.text", { n: String(rounds) })}</p>
+      <p className="flow-approval__text">{rounds === 1 ? t("flows.rounds.textOne") : t("flows.rounds.text", { n: String(rounds) })}</p>
       {asked && <BoardText text={asked} />}
       {open && (
         <>

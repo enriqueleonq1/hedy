@@ -46,9 +46,9 @@ describe("A flow task, live", () => {
   it("says what the run and each of its steps spent", async () => {
     await setup();
     const strip = await progress();
-    expect(within(strip).getByText("227k tokens · 4 min · caché 89 %")).toBeInTheDocument();
     const costs = within(strip).getByRole("list", { name: "Lo que gastó cada paso" });
     expect(within(costs).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "En total 227k tokens · 4 min · caché 89 %",
       "Arquitecto 50k tokens · 45 s",
       "Programador 148k tokens · 2 min",
       "Revisor 30k tokens · 50 s",
