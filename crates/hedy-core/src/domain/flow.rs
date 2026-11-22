@@ -268,7 +268,7 @@ impl RoleDef {
     pub fn section(&self) -> String {
         match self.id.as_str() {
             "architect" => "plan",
-            "programmer" => "changes",
+            "programmer" | "test-first" => "changes",
             "tester" => "tests",
             "reviewer" => "review",
             other => other,
@@ -327,6 +327,22 @@ pub fn builtin_roles() -> Vec<RoleDef> {
         write: true,
         run: true,
     };
+    let mut test_first = role(
+        "test-first",
+        tr!("Programador con tests", "Programmer with tests"),
+        tr!(
+            "Escribe los tests del pedido y luego el código",
+            "Writes the request's tests, then the code"
+        ),
+        tr!(
+            "Eres el programador. Antes de cambiar el código, escribe o actualiza los tests que describen lo que pide la tarea, incluidos los casos borde del pedido o de la documentación del proyecto, y córrelos para ver que fallan. Después implementa hasta que pasen todos, sin romper los que ya existían. Si la pizarra trae fallos de tests o cambios pedidos por la revisión, arréglalos primero.",
+            "You are the programmer. Before changing the code, write or update the tests that describe what the task asks, including the edge cases in the request or the project's docs, and run them to see them fail. Then implement until they all pass, without breaking the ones that were there. If the blackboard has failing tests or changes requested by the review, fix those first."
+        ),
+    );
+    test_first.can = Abilities {
+        write: true,
+        run: true,
+    };
     let mut tester = role(
         "tester",
         tr!("Tester", "Tester"),
@@ -353,6 +369,19 @@ pub fn builtin_roles() -> Vec<RoleDef> {
         ),
     );
     reviewer.delivers = Delivers::Verdict;
+    let mut focused = role(
+        "focused-reviewer",
+        tr!("Revisor acotado", "Focused reviewer"),
+        tr!(
+            "Solo devuelve el trabajo si encuentra un error concreto",
+            "Sends the work back only for a concrete error"
+        ),
+        tr!(
+            "Eres el revisor. Revisa los cambios de esta tarea (vienen en este mensaje; lee los archivos que necesites). Pide cambios solo si encuentras un error concreto que puedas señalar: el archivo, la línea y el caso que falla. Si no lo hay, apruébalos; no pidas mejoras de estilo ni de gusto. Solo señalas; no cambias archivos.",
+            "You are the reviewer. Review this task's changes (they come in this message; read the files you need). Ask for changes only for a concrete error you can point at: the file, the line and the case that fails. If there is none, approve them; do not ask for style or taste. You only point things out; you do not change files."
+        ),
+    );
+    focused.delivers = Delivers::Verdict;
     let mut security = role(
         "security",
         tr!("Seguridad", "Security"),
@@ -366,7 +395,9 @@ pub fn builtin_roles() -> Vec<RoleDef> {
         ),
     );
     security.delivers = Delivers::Verdict;
-    vec![architect, programmer, tester, reviewer, security]
+    vec![
+        architect, programmer, test_first, tester, reviewer, focused, security,
+    ]
 }
 
 /// A built-in role by id.
@@ -374,25 +405,27 @@ pub fn builtin_role(id: &str) -> Option<RoleDef> {
     builtin_roles().into_iter().find(|r| r.id == id)
 }
 
-/// Hedy's flow templates.
+/// Hedy's flow templates: few, each with a reason (docs/decisions.md §50).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Template {
-    /// Today's pipeline: plan, your OK, implement, tests and review.
-    Classic,
-    /// Implement, then tests and a review that send it back (max 2 rounds).
-    FixLoop,
-    /// Implement, then security and style reviews at once, read-only.
-    DoubleReview,
+    /// One programmer who writes the tests first, and the tests decide: the
+    /// light one we recommend.
+    Essential,
+    /// A plan and the user's OK before any code, then as `Essential`.
+    Approval,
+    /// `Essential` plus a reviewer that sends the work back only for a
+    /// concrete error, once: for sensitive changes.
+    FocusedReview,
 }
 
 impl Template {
-    pub const ALL: [Template; 3] = [Self::Classic, Self::FixLoop, Self::DoubleReview];
+    pub const ALL: [Template; 3] = [Self::Essential, Self::Approval, Self::FocusedReview];
 
     pub fn key(self) -> &'static str {
         match self {
-            Self::Classic => "classic",
-            Self::FixLoop => "fix-loop",
-            Self::DoubleReview => "double-review",
+            Self::Essential => "essential",
+            Self::Approval => "approval",
+            Self::FocusedReview => "focused-review",
         }
     }
 
@@ -402,31 +435,31 @@ impl Template {
 
     pub fn name(self) -> String {
         match self {
-            Self::Classic => tr!("Pipeline clásico", "Classic pipeline"),
-            Self::FixLoop => tr!("Con bucle de corrección", "With a fix loop"),
-            Self::DoubleReview => tr!("Doble revisión", "Double review"),
+            Self::Essential => tr!("Esencial", "Essential"),
+            Self::Approval => tr!("Con tu aprobación", "With your OK"),
+            Self::FocusedReview => tr!("Revisión acotada", "Focused review"),
         }
     }
 
     pub fn summary(self) -> String {
         match self {
-            Self::Classic => tr!(
-                "Plan, tu OK, implementación, tests y revisión: lo de siempre",
-                "Plan, your OK, implementation, tests and review: as always"
+            Self::Essential => tr!(
+                "Recomendado · ligero: un programador y los tests como filtro",
+                "Recommended · light: one programmer, and the tests as the gate"
             ),
-            Self::FixLoop => tr!(
-                "Si los tests fallan o la revisión pide cambios, vuelve al programador (máx. 2)",
-                "If tests fail or the review asks for changes, back to the programmer (max 2)"
+            Self::Approval => tr!(
+                "Ligero: un plan y tu OK antes de tocar el código, luego como Esencial",
+                "Light: a plan and your OK before any code, then as Essential"
             ),
-            Self::DoubleReview => tr!(
-                "Revisión y seguridad a la vez, solo leen",
-                "Review and security at once, read-only"
+            Self::FocusedReview => tr!(
+                "Medio: como Esencial, más un revisor que solo devuelve si hay un error concreto",
+                "Medium: as Essential, plus a reviewer that sends back only for a concrete error"
             ),
         }
     }
 
-    /// The template as a flow. The classic one takes the project's phases
-    /// (who plans, implements, tests and reviews).
+    /// The template as a flow, with the project's account and model for
+    /// planning, implementing and reviewing.
     pub fn flow(self, phases: &PhasePlan) -> Flow {
         let seat = |role: &str, phase: Phase| {
             let mut seat = Seat::new(role);
@@ -437,34 +470,17 @@ impl Template {
             seat
         };
         let mut b = Builder::default();
-        match self {
-            Self::Classic => {
-                b.node(NodeKind::Role(seat("architect", Phase::Plan)));
-                b.node(NodeKind::Approval);
-                b.node(NodeKind::Role(seat("programmer", Phase::Implement)));
-                if phases.contains_key(&Phase::Tests) {
-                    b.node(NodeKind::Role(seat("tester", Phase::Tests)));
-                }
-                if phases.contains_key(&Phase::Review) {
-                    b.node(NodeKind::Role(seat("reviewer", Phase::Review)));
-                }
-            }
-            Self::FixLoop => {
-                let programmer = b.node(NodeKind::Role(seat("programmer", Phase::Implement)));
-                b.node(NodeKind::Condition(Check::Tests { command: None }));
-                b.back_to(&programmer);
-                b.node(NodeKind::Role(seat("reviewer", Phase::Review)));
-                b.node(NodeKind::Condition(Check::Verdict));
-                b.back_to(&programmer);
-            }
-            Self::DoubleReview => {
-                let programmer = b.node(NodeKind::Role(seat("programmer", Phase::Implement)));
-                b.node(NodeKind::Parallel {
-                    roles: vec![seat("reviewer", Phase::Review), Seat::new("security")],
-                });
-                b.node(NodeKind::Condition(Check::Verdict));
-                b.back_to(&programmer);
-            }
+        if self == Self::Approval {
+            b.node(NodeKind::Role(seat("architect", Phase::Plan)));
+            b.node(NodeKind::Approval);
+        }
+        let programmer = b.node(NodeKind::Role(seat("test-first", Phase::Implement)));
+        b.node(NodeKind::Condition(Check::Tests { command: None }));
+        b.back_to(&programmer, DEFAULT_ROUNDS);
+        if self == Self::FocusedReview {
+            b.node(NodeKind::Role(seat("focused-reviewer", Phase::Review)));
+            b.node(NodeKind::Condition(Check::Verdict));
+            b.back_to(&programmer, 1);
         }
         b.finish(self.name())
     }
@@ -475,8 +491,8 @@ impl Template {
 struct Builder {
     nodes: Vec<Node>,
     edges: Vec<Edge>,
-    /// Fail connections still waiting for their target.
-    loops: Vec<(String, String)>,
+    /// Fail connections still waiting for their target, with their rounds.
+    loops: Vec<(String, String, u32)>,
 }
 
 impl Builder {
@@ -505,20 +521,21 @@ impl Builder {
         id
     }
 
-    /// The last node (a condition) goes back to `to` when it fails.
-    fn back_to(&mut self, to: &str) {
+    /// The last node (a condition) goes back to `to` when it fails, at most
+    /// `rounds` times.
+    fn back_to(&mut self, to: &str, rounds: u32) {
         let from = self.nodes.last().expect("a condition first").id.clone();
-        self.loops.push((from, to.to_owned()));
+        self.loops.push((from, to.to_owned(), rounds));
     }
 
     fn finish(mut self, name: String) -> Flow {
         self.node(NodeKind::End);
-        for (from, to) in std::mem::take(&mut self.loops) {
+        for (from, to, rounds) in std::mem::take(&mut self.loops) {
             self.edges.push(Edge {
                 from,
                 to,
                 when: When::Fail,
-                max_rounds: Some(DEFAULT_ROUNDS),
+                max_rounds: Some(rounds),
             });
         }
         Flow {
@@ -1363,9 +1380,9 @@ mod tests {
             assert_eq!(flow.problems(&lib), vec![], "{}", template.key());
             assert_eq!(Template::from_key(template.key()), Some(template));
         }
-        let classic = Template::Classic.flow(&phases);
+        let classic = Template::Approval.flow(&phases);
         let roles: Vec<_> = classic.seats().map(|s| s.role.as_str()).collect();
-        assert_eq!(roles, vec!["architect", "programmer", "reviewer"]);
+        assert_eq!(roles, vec!["architect", "test-first"]);
         let architect = classic.seats().next().unwrap();
         assert_eq!(architect.account, Some(id("claude")));
         assert_eq!(architect.model.as_deref(), Some("opus"));
@@ -1377,7 +1394,15 @@ mod tests {
         let ids: Vec<_> = roles.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(
             ids,
-            vec!["architect", "programmer", "tester", "reviewer", "security"]
+            vec![
+                "architect",
+                "programmer",
+                "test-first",
+                "tester",
+                "reviewer",
+                "focused-reviewer",
+                "security"
+            ]
         );
         assert!(roles.iter().all(|r| valid_role_id(&r.id)));
         let reviewer = builtin_role("reviewer").unwrap();
@@ -1391,7 +1416,7 @@ mod tests {
 
     #[test]
     fn a_loop_runs_its_rounds_and_then_stops() {
-        let flow = Template::FixLoop.flow(&PhasePlan::new());
+        let flow = Template::FocusedReview.flow(&PhasePlan::new());
         let mut at = Position::at_start(&flow);
         assert_eq!(
             at.advance(&flow, Outcome::Done),
@@ -1440,7 +1465,7 @@ mod tests {
 
     #[test]
     fn a_loop_without_rounds_is_refused() {
-        let mut flow = Template::FixLoop.flow(&PhasePlan::new());
+        let mut flow = Template::FocusedReview.flow(&PhasePlan::new());
         assert!(flow.problems(&lib).is_empty());
         for edge in &mut flow.edges {
             edge.max_rounds = None;
@@ -1467,7 +1492,7 @@ mod tests {
                 builtin_role("programmer").unwrap().name
             )]
         );
-        let mut flow = Template::FixLoop.flow(&PhasePlan::new());
+        let mut flow = Template::FocusedReview.flow(&PhasePlan::new());
         // The reviewer before the verdict becomes the tester.
         flow.nodes[3].kind = NodeKind::Role(Seat::new("tester"));
         assert_eq!(
@@ -1541,7 +1566,10 @@ mod tests {
 
     #[test]
     fn a_flow_round_trips_as_json() {
-        let flow = Template::DoubleReview.flow(&PhasePlan::new());
+        let flow = crate::domain::flow_text::from_text(
+            "name: A la vez\nsteps:\n  - role: programmer\n  - parallel:\n      - role: reviewer\n      - role: security\n  - check: verdict\n    on_fail: 1\n",
+        )
+        .unwrap();
         let json = serde_json::to_string(&flow).unwrap();
         assert!(json.contains(r#""kind":"parallel""#), "{json}");
         let back: Flow = serde_json::from_str(&json).unwrap();

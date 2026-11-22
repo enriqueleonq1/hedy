@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn flows_and_roles_round_trip_per_project_or_global() {
         let store = SqliteStore::in_memory().unwrap();
-        let flow = Template::Classic.flow(&PhasePlan::new());
+        let flow = Template::Approval.flow(&PhasePlan::new());
         let mut record = FlowRecord {
             id: 0,
             project: Some("/code/tienda".into()),
@@ -218,7 +218,7 @@ mod tests {
         let good = FlowRecord {
             id: 0,
             project: None,
-            flow: Template::Classic.flow(&PhasePlan::new()),
+            flow: Template::Approval.flow(&PhasePlan::new()),
             updated_at: 1,
         };
         let id = store.save_flow(&good).unwrap();

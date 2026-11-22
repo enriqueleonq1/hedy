@@ -44,8 +44,8 @@ struct Args {
     #[arg(long, value_delimiter = ',', default_value = "base")]
     variants: Vec<Variant>,
     /// Flujos a comparar (docs/decisions.md §45), separados por comas: none
-    /// (un solo agente, como siempre), la clave de una plantilla (classic,
-    /// fix-loop, double-review) o file:<ruta> (un flujo escrito como texto).
+    /// (un solo agente, como siempre), la clave de una plantilla (essential,
+    /// approval, focused-review) o file:<ruta> (un flujo escrito como texto).
     /// Cada flujo se compara con none.
     #[arg(long, value_delimiter = ',', default_value = "none")]
     flows: Vec<String>,
@@ -170,7 +170,7 @@ fn run(args: Args) -> Result<()> {
             continue;
         }
         if flow != NO_FLOW && hedy_core::domain::flow::Template::from_key(flow).is_none() {
-            anyhow::bail!("flujo desconocido: {flow} (none, classic, fix-loop, double-review)");
+            anyhow::bail!("flujo desconocido: {flow} (none, essential, approval, focused-review)");
         }
     }
     let total = cases.len()

@@ -1239,7 +1239,7 @@ fn team_flows_and_roles_are_shared_by_admins(env: &Env) {
     let l = ana.admit(&a, &url, &luis, "Luis", Role::Member);
 
     // Ana's own flow, with its own test command and her account on a step.
-    let mut flow = Template::FixLoop.flow(&Default::default());
+    let mut flow = Template::FocusedReview.flow(&Default::default());
     flow.name = "Pagos".into();
     for node in &mut flow.nodes {
         match &mut node.kind {

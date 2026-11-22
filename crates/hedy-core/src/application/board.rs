@@ -269,7 +269,7 @@ mod tests {
                     plan_first: false,
                     permissions: None,
                 },
-                "classic",
+                "approval",
             )
             .unwrap()
     }
@@ -347,7 +347,7 @@ mod tests {
                     plan_first: false,
                     permissions: None,
                 },
-                "classic",
+                "approval",
             )
             .unwrap();
         let request = f.agents.last_request();
@@ -383,7 +383,7 @@ mod tests {
                     plan_first: false,
                     permissions: None,
                 },
-                "classic",
+                "approval",
             )
             .unwrap();
         let api = f.agents.last_request();

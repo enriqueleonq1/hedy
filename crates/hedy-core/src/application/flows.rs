@@ -549,10 +549,10 @@ mod tests {
             .into_iter()
             .map(|e| e.key)
             .collect();
-        assert_eq!(keys, ["classic", "fix-loop", "double-review"]);
+        assert_eq!(keys, ["essential", "approval", "focused-review"]);
 
-        let text = f.hedy.flow_text(Some(&dir), "fix-loop").unwrap();
-        let mine = text.replacen(&Template::FixLoop.name(), "Pago con revisión", 1);
+        let text = f.hedy.flow_text(Some(&dir), "focused-review").unwrap();
+        let mine = text.replacen(&Template::FocusedReview.name(), "Pago con revisión", 1);
         let saved = f.hedy.save_flow_text(Some(&dir), &mine).unwrap();
         assert_eq!(saved.scope, FlowScope::Project);
         let global = mine.replacen("Pago con revisión", "Para todos", 1);
@@ -587,7 +587,7 @@ mod tests {
             Err(AppError::FlowNotFound(_))
         ));
         assert!(matches!(
-            f.hedy.delete_flow(Some(&dir), "classic"),
+            f.hedy.delete_flow(Some(&dir), "approval"),
             Err(AppError::FlowNotFound(_))
         ));
     }
@@ -596,10 +596,12 @@ mod tests {
     fn an_unrunnable_flow_is_refused_with_every_reason() {
         let f = Fixture::new();
         let dir = project(&f);
-        let text = f.hedy.flow_text(Some(&dir), "fix-loop").unwrap();
-        let broken =
-            text.replace("programmer", "nadie")
-                .replacen(&Template::FixLoop.name(), "Mi flujo", 1);
+        let text = f.hedy.flow_text(Some(&dir), "focused-review").unwrap();
+        let broken = text.replace("test-first", "nadie").replacen(
+            &Template::FocusedReview.name(),
+            "Mi flujo",
+            1,
+        );
         // Hedy's templates keep their names.
         assert!(matches!(
             f.hedy.save_flow_text(Some(&dir), &text),
@@ -621,7 +623,7 @@ mod tests {
     fn the_editor_saves_by_key_renames_in_place_and_refuses_a_taken_name() {
         let f = Fixture::new();
         let dir = project(&f);
-        let mut flow = f.hedy.flow(Some(&dir), "fix-loop").unwrap().flow;
+        let mut flow = f.hedy.flow(Some(&dir), "focused-review").unwrap().flow;
         flow.name = "Pagos".into();
         let first = f.hedy.save_flow_as(Some(&dir), None, flow.clone()).unwrap();
         // A new one with the same name is refused, not replaced.
@@ -669,7 +671,7 @@ mod tests {
         f.hedy
             .use_account(&f.dir("/code/agenda"), "trabajo", Some(true))
             .unwrap();
-        let mut flow = f.hedy.flow(Some(&dir), "fix-loop").unwrap().flow;
+        let mut flow = f.hedy.flow(Some(&dir), "focused-review").unwrap().flow;
         flow.name = "Prestada".into();
         for node in &mut flow.nodes {
             if let NodeKind::Role(seat) = &mut node.kind {
@@ -736,7 +738,7 @@ mod tests {
     fn the_editor_gets_each_problem_on_its_step_by_name() {
         let f = Fixture::new();
         let dir = project(&f);
-        let mut flow = f.hedy.flow(Some(&dir), "fix-loop").unwrap().flow;
+        let mut flow = f.hedy.flow(Some(&dir), "focused-review").unwrap().flow;
         assert!(f.hedy.flow_problems(Some(&dir), &flow).unwrap().is_empty());
         // The review's verdict loses its way back to the programmer.
         flow.edges

@@ -123,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 permissions: Some(PermissionMode::AcceptEdits),
                 images: Vec::new(),
             },
-            "classic",
+            "approval",
         )?
     } else {
         hedy.start_task(if doc_check {
