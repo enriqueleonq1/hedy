@@ -984,11 +984,11 @@ triggers: [manual, task_end]
     }
 
     #[test]
-    fn the_fix_loop_reads_like_the_plan() {
-        let text = to_text(&Template::FixLoop.flow(&PhasePlan::new()));
+    fn the_focused_review_reads_like_the_plan() {
+        let text = to_text(&Template::FocusedReview.flow(&PhasePlan::new()));
         assert!(
             text.contains(
-                "steps:\n  - role: programmer\n  - check: tests\n    on_fail: 1\n    max_rounds: 2\n  - role: reviewer\n"
+                "steps:\n  - role: test-first\n  - check: tests\n    on_fail: 1\n    max_rounds: 2\n  - role: focused-reviewer\n  - check: verdict\n    on_fail: 1\n    max_rounds: 1\n"
             ),
             "{text}"
         );
@@ -1007,7 +1007,7 @@ triggers: [manual, task_end]
             "\"q\"",
             "tab\there",
         ] {
-            let mut flow = Template::Classic.flow(&PhasePlan::new());
+            let mut flow = Template::Approval.flow(&PhasePlan::new());
             flow.name = value.into();
             flow.frame.rules = vec![value.into()];
             let back = from_text(&to_text(&flow)).unwrap();

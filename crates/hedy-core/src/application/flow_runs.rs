@@ -850,7 +850,7 @@ mod tests {
         let mut bad = request(&f, "Cobros");
         bad.model = Some("--yolo".into());
         assert!(matches!(
-            f.hedy.start_flow(bad.clone(), "classic"),
+            f.hedy.start_flow(bad.clone(), "approval"),
             Err(AppError::InvalidModel(_))
         ));
         assert!(matches!(
@@ -866,11 +866,11 @@ mod tests {
         let f = setup();
         f.add_claude("Trabajo");
         let dir = f.dir("/code/tienda");
-        let mut flow = f.hedy.flow(Some(&dir), "classic").unwrap().flow;
+        let mut flow = f.hedy.flow(Some(&dir), "approval").unwrap().flow;
         flow.name = "Con otra cuenta".into();
         for node in &mut flow.nodes {
             if let NodeKind::Role(seat) = &mut node.kind
-                && seat.role == "programmer"
+                && seat.role == "test-first"
             {
                 seat.account = Some(crate::domain::AccountId::new("trabajo").unwrap());
             }
@@ -910,7 +910,7 @@ mod tests {
         let f = setup();
         let task = f
             .hedy
-            .start_flow(request(&f, "Cobros con tarjeta"), "classic")
+            .start_flow(request(&f, "Cobros con tarjeta"), "approval")
             .unwrap();
         assert!(task.workspace.is_some(), "the roles share a copy");
         // The architect reads and plans.
@@ -965,7 +965,7 @@ mod tests {
         let f = setup();
         let task = f
             .hedy
-            .start_flow(request(&f, "Cobros con tarjeta"), "classic")
+            .start_flow(request(&f, "Cobros con tarjeta"), "approval")
             .unwrap();
         finish(&f, "1. Todo en el cliente.");
         f.hedy
@@ -989,7 +989,7 @@ mod tests {
         let mut ask = request(&f, "Hola");
         ask.mode = TaskMode::Ask;
         assert!(matches!(
-            f.hedy.start_flow(ask, "classic"),
+            f.hedy.start_flow(ask, "approval"),
             Err(AppError::InvalidFlow(_))
         ));
         assert!(matches!(
@@ -1004,7 +1004,7 @@ mod tests {
         let f = setup();
         let task = f
             .hedy
-            .start_flow(request(&f, "Cobros con tarjeta"), "classic")
+            .start_flow(request(&f, "Cobros con tarjeta"), "approval")
             .unwrap();
         finish(&f, "1. Plan.");
         // The architect's session stopped at the approval; a question
@@ -1033,7 +1033,7 @@ mod tests {
         let f = setup();
         let mut req = request(&f, "Cobros con tarjeta");
         req.model = Some("haiku".into());
-        let task = f.hedy.start_flow(req, "classic").unwrap();
+        let task = f.hedy.start_flow(req, "approval").unwrap();
         let architect = f.agents.last_request();
         assert!(architect.no_shell, "the architect may not run commands");
         assert_eq!(
@@ -1054,7 +1054,7 @@ mod tests {
             .save_flow(&crate::application::ports::FlowRecord {
                 id: 0,
                 project: None,
-                flow: crate::domain::flow::Template::Classic.flow(&Default::default()),
+                flow: crate::domain::flow::Template::Approval.flow(&Default::default()),
                 updated_at: 1,
             })
             .unwrap();
@@ -1099,7 +1099,7 @@ mod tests {
             .reply_to("sh -c cargo test", "test pagos ... FAILED\n1 failed", 1);
         let task = f
             .hedy
-            .start_flow(request(&f, "Cobros"), "fix-loop")
+            .start_flow(request(&f, "Cobros"), "focused-review")
             .unwrap();
         assert_eq!(f.agents.last_request().phase, Phase::Implement);
         finish(&f, "Hecho.");
@@ -1138,7 +1138,7 @@ mod tests {
         f.runner.reply_to("sh -c cargo test", "ok", 0);
         let task = f
             .hedy
-            .start_flow(request(&f, "Cobros"), "fix-loop")
+            .start_flow(request(&f, "Cobros"), "focused-review")
             .unwrap();
         finish(&f, "Hecho.");
         finish(&f, "Parece bien, pero no estoy seguro.");
@@ -1154,9 +1154,13 @@ mod tests {
     #[test]
     fn roles_at_once_run_one_after_another_and_all_must_approve() {
         let f = setup();
+        let text = "name: Doble revisión\nsteps:\n  - role: programmer\n  - parallel:\n      - role: reviewer\n      - role: security\n  - check: verdict\n    on_fail: 1\ntriggers: [manual]\n";
+        f.hedy
+            .save_flow_text(Some(&f.dir("/code/tienda")), text)
+            .unwrap();
         let task = f
             .hedy
-            .start_flow(request(&f, "Cobros"), "double-review")
+            .start_flow(request(&f, "Cobros"), "Doble revisión")
             .unwrap();
         finish(&f, "Hecho.");
         assert_eq!(f.agents.last_request().phase, Phase::Review, "the reviewer");
@@ -1178,7 +1182,7 @@ mod tests {
         f.runner.reply_to("sh -c cargo test", "1 failed", 1);
         let task = f
             .hedy
-            .start_flow(request(&f, "Cobros"), "fix-loop")
+            .start_flow(request(&f, "Cobros"), "focused-review")
             .unwrap();
         for _ in 0..3 {
             finish(&f, "Intento.");
@@ -1200,7 +1204,7 @@ mod tests {
         f.runner.without_isolation();
         let task = f
             .hedy
-            .start_flow(request(&f, "Cobros"), "fix-loop")
+            .start_flow(request(&f, "Cobros"), "focused-review")
             .unwrap();
         finish(&f, "Hecho.");
         assert_eq!(
@@ -1222,7 +1226,7 @@ mod tests {
         let f = setup();
         let task = f
             .hedy
-            .start_flow(request(&f, "Cobros"), "fix-loop")
+            .start_flow(request(&f, "Cobros"), "focused-review")
             .unwrap();
         // No test command found: the run stops at the check.
         finish(&f, "Hecho.");
@@ -1278,7 +1282,7 @@ mod tests {
             },
         ]);
         f.hedy
-            .start_flow(request(&f, "Cobros"), "fix-loop")
+            .start_flow(request(&f, "Cobros"), "focused-review")
             .unwrap();
         assert!(
             !f.agents.last_request().prompt.contains("a + b"),

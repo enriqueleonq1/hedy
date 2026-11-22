@@ -2619,7 +2619,7 @@ fn flows_and_roles_are_made_from_the_terminal() {
         .success();
     env.hedy_in(&repo, &["use", "claude"]).assert().success();
 
-    env.hedy_in(&repo, &["flow", "new", "Pagos", "--from", "classic"])
+    env.hedy_in(&repo, &["flow", "new", "Pagos", "--from", "approval"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Flujo creado: Pagos"));
@@ -2628,7 +2628,7 @@ fn flows_and_roles_are_made_from_the_terminal() {
         .success()
         .stdout(predicate::str::contains("Pagos"));
     // A template is copied, never edited.
-    env.hedy_in(&repo, &["flow", "edit", "classic"])
+    env.hedy_in(&repo, &["flow", "edit", "approval"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("hedy flow new"));

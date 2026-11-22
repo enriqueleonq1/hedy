@@ -4311,3 +4311,26 @@ keep what Hedy adds to every session small, and measure it when it grows.
 - The pass-rate differences between flows are 1–2 runs in 12–18.
 - Hard cases ran seven to eight at once; time per run is not comparable to the earlier runs
   (tokens and cost are).
+
+## 51. Templates by reason, models with their cost (Nov 22, 2026)
+
+What §50 measured, turned into the product:
+
+- **Three templates instead of three heavy ones.**
+  - `essential` («Esencial»), first and recommended: the built-in role `test-first` writes
+    the tests before the code, and the tests decide (back up to 2 rounds).
+  - `approval` («Con tu aprobación»): the architect's plan and the user's OK first, then as
+    `essential`. Its worth is control, not quality.
+  - `focused-review` («Revisión acotada»): `essential` plus the built-in `focused-reviewer`,
+    which asks for changes only for a concrete error (file, line, failing case), one round.
+  - Gone: «Pipeline clásico», «Con bucle de corrección» and «Doble revisión». A flow copied
+    from them is the user's and keeps working; `hedy flow new` copies `essential` by default.
+- **Each template says its weight** (light, medium) in its summary, not numbers: our
+  measurements came from ten cases and two models and would not hold for every project.
+- **Models with their cost.** The model hints read «El más rápido · $», «Equilibrado · $$»,
+  «El más capaz · $$$». A role step shows its account's suggested models as buttons (the
+  project's account when the step names none), with the chosen one's hint; any other name
+  can still be typed.
+- **A note, not a rule.** With more than one AI reviewer (roles that deliver a verdict, alone
+  or in a group at once), the editor's bar says so. Saving and running stay allowed: a team
+  may want two reviews for reasons a test does not measure.

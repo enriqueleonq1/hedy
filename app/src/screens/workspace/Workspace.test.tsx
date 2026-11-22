@@ -621,7 +621,7 @@ describe("Composer", () => {
     expect(model).toHaveTextContent("Automático");
     await user.click(model);
     expect(optionLabels()).toEqual(["Automático", "Fable", "Opus", "Sonnet", "Haiku"]);
-    expect(screen.getByRole("option", { name: "Haiku" })).toHaveAccessibleDescription("El más rápido");
+    expect(screen.getByRole("option", { name: "Haiku" })).toHaveAccessibleDescription("El más rápido · $");
     await user.click(screen.getByRole("option", { name: "Sonnet" }));
     expect(model).toHaveTextContent("Sonnet");
 

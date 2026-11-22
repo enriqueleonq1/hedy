@@ -63,6 +63,8 @@
   background: var(--warning);
   vertical-align: 1px;
 }
+/* A note, not a problem: the flow still saves and runs. */
+.flows-bar__note { max-width: 46ch; font-size: var(--text-caption); color: var(--muted); }
 .flows-bar__issues {
   height: var(--control-sm);
   padding: 0 10px;
@@ -421,6 +423,23 @@
 .flow-inspector__switch-label { font-size: var(--text-callout); font-weight: 500; }
 .flow-inspector__switch .hint { margin-top: 0; }
 .flow-inspector__pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+/* The models a step suggests, as pills; the chosen one's hint (speed, cost) under them. */
+.flow-models { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.flow-models__chip {
+  min-height: 28px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--panel-2);
+  color: var(--muted);
+  font: 500 var(--text-caption) var(--font-ui);
+  cursor: pointer;
+}
+.flow-models__chip:hover:not(:disabled) { color: var(--ink); border-color: var(--line-strong); }
+.flow-models__chip[aria-pressed="true"] { background: var(--selection); border-color: var(--action); color: var(--ink); }
+.flow-models__chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.flow-models__chip:disabled { cursor: default; }
+.flow-models__hint { margin: 0; font-size: var(--text-caption); color: var(--muted); }
 .flow-inspector__explain { font-size: var(--text-callout); color: var(--muted); line-height: 1.5; }
 .flow-inspector__number { width: 88px; }
 .flow-inspector__details summary { cursor: pointer; font-size: var(--text-callout); color: var(--muted); }

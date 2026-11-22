@@ -4,7 +4,7 @@ import { mockProblems, mockProjectFlow, mockTemplates, MOCK_ROLES } from "../../
 import type { Flow } from "../../api/types";
 import { blankFlow, COL, connect, edgeFrom, history, insertStep, layout, nextId, removeStep, runOrder, setRounds } from "./flowModel";
 
-const fixLoop = (): Flow => mockTemplates().find((t) => t.key === "fix-loop")!.flow;
+const fixLoop = (): Flow => mockTemplates().find((t) => t.key === "focused-review")!.flow;
 
 describe("flow model", () => {
   it("lays a flow out by its distance from the start, ignoring ways back", () => {

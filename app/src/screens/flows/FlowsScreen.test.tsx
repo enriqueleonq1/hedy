@@ -52,8 +52,8 @@ describe("A project's flows", () => {
   it("a template is read-only until duplicated, and the copy saves as the project's", async () => {
     const { api, user } = await setup(flowsOf(HEDY));
     // No flow of its own: the first template opens.
-    await step("Arquitecto");
-    expect(picker()).toHaveTextContent("Pipeline clásico");
+    await step("Programador con tests");
+    expect(picker()).toHaveTextContent("Esencial");
     expect(screen.getByText("Es una plantilla de Hedy. Duplícala para cambiarla.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Agregar paso" })).not.toBeInTheDocument();
     await user.click(screen.getAllByRole("button", { name: "Duplicar para editar" })[0]!);
@@ -61,7 +61,7 @@ describe("A project's flows", () => {
     await user.click(screen.getByRole("button", { name: "Guardar" }));
     await waitFor(() => expect(saveState()).toHaveTextContent("Guardado"));
     const mine = (await api.flows(HEDY)).filter((f) => f.scope === "project");
-    expect(mine.map((f) => f.flow.name)).toEqual(["Pipeline clásico (copia)"]);
+    expect(mine.map((f) => f.flow.name)).toEqual(["Esencial (copia)"]);
     expect(window.location.hash).toBe(`${flowsOf(HEDY)}&${encodeURIComponent(mine[0]!.key)}`);
   });
 
@@ -82,6 +82,22 @@ describe("A project's flows", () => {
     await user.keyboard("{Control>}z{/Control}");
     await waitFor(() => expect(screen.queryByRole("button", { name: "Seguridad" })).not.toBeInTheDocument());
     expect(saveState()).toHaveTextContent("Guardado");
+  });
+
+  it("suggests a step's models with their cost, and notes a second AI reviewer without blocking", async () => {
+    const { user } = await setup();
+    await user.click(await step("Programador"));
+    const models = within(panel()).getByRole("group", { name: "Modelos sugeridos" });
+    expect(within(models).getByRole("button", { name: "Sonnet", pressed: true })).toBeInTheDocument();
+    expect(within(panel()).getByText("Equilibrado · $$")).toBeInTheDocument();
+    await user.click(within(models).getByRole("button", { name: "Haiku" }));
+    expect(within(panel()).getByRole("textbox", { name: "Modelo" })).toHaveValue("haiku");
+    expect(within(panel()).getByText("El más rápido · $")).toBeInTheDocument();
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Agregar paso" }));
+    await user.click(screen.getByRole("menuitem", { name: /Seguridad/ }));
+    expect(screen.getByRole("note")).toHaveTextContent("2 revisores de IA");
+    expect(screen.getByRole("button", { name: "Guardar" })).toBeEnabled();
   });
 
   it("shows what keeps a flow from running on its step, and only saves once it can run", async () => {
@@ -134,7 +150,7 @@ describe("A project's flows", () => {
     await step("Arquitecto");
     await user.click(screen.getByRole("button", { name: "Borrar" }));
     await user.click(screen.getByRole("button", { name: "¿Borrar el flujo?" }));
-    await waitFor(() => expect(picker()).toHaveTextContent("Pipeline clásico"));
+    await waitFor(() => expect(picker()).toHaveTextContent("Esencial"));
     expect((await api.flows(TIENDA)).some((f) => f.scope === "project")).toBe(false);
     expect(window.location.hash).toBe(flowsOf(TIENDA));
   });

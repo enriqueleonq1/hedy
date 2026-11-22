@@ -6,6 +6,21 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Fewer flow templates, each with a reason: **Esencial** (recommended: one programmer who
+  writes the tests first, and the tests as the gate), **Con tu aprobación** (a plan and your
+  OK before any code) and **Revisión acotada** (plus a reviewer that sends the work back only
+  for a concrete error, once). Each says how light or heavy it is. Flows copied from the old
+  templates keep working.
+- Picking a model says how fast and how costly it is ($, $$, $$$), and a flow step suggests
+  its account's models as buttons.
+
+### Added
+
+- The flow editor notes when a flow has more than one AI reviewer: in Hedy's measurements
+  more than one cost more without a better result. It never blocks saving or running.
+
 ## [1.5.0] - 2026-11-21
 
 ### Added
