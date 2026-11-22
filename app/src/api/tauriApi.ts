@@ -102,6 +102,7 @@ export const tauriApi: HedyApi = {
   saveFlow: (project, key, flow) => invoke("save_flow", { project, key, flow }),
   deleteFlow: (project, key) => invoke("delete_flow", { project, key }),
   flowRoles: (project) => invoke("flow_roles", { project }),
+  flowValues: (project) => invoke("flow_values", { project }),
   answerFlowApproval: (id, approve, feedback) => invoke("answer_flow_approval", { id, approve, feedback }),
   taskBoard: (id) => invoke("task_board", { id }),
   flowSharing: (project) => invoke("flow_sharing", { project }),

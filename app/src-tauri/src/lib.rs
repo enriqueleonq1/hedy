@@ -117,6 +117,7 @@ pub fn run() {
             commands::save_flow,
             commands::delete_flow,
             commands::flow_roles,
+            commands::flow_values,
             commands::answer_flow_approval,
             commands::task_board,
             commands::flow_sharing,

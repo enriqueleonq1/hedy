@@ -6,10 +6,12 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { useAction, useApi } from "../../api/context";
-import type { BoardEntry, FlowNode, FlowRun, RoleDef, Task } from "../../api/types";
+import type { BoardEntry, FlowNode, FlowRun, RoleDef, StepSpend, Task } from "../../api/types";
 import { Button } from "../../components/ui/Button";
+import { formatElapsed, formatTokens } from "../../format";
 import { useT } from "../../i18n";
 import { keyLabels } from "../../platform";
+import { insertInComposer } from "../workspace/composerBridge";
 import { isTextField, useClaimFocus } from "../workspace/Timeline";
 import { edgeFrom, forward, runOrder } from "./flowModel";
 import { StepIcon, stepTint } from "./StepIcon";
@@ -27,6 +29,23 @@ function states(run: FlowRun): Map<string, StepState> {
 }
 
 const rolesOf = (run: FlowRun): RoleDef[] => Object.values(run.roles);
+
+const tokensOf = (s: StepSpend) => s.inputTokens + s.outputTokens + s.cacheReadTokens + s.cacheWriteTokens;
+
+/** The run's whole spend: tokens, seconds and the share of the input read from the cache. */
+function totals(run: FlowRun): { tokens: number; secs: number; cache: number | null } {
+  let tokens = 0;
+  let secs = 0;
+  let read = 0;
+  let input = 0;
+  for (const s of Object.values(run.spent ?? {})) {
+    tokens += tokensOf(s);
+    secs += s.secs;
+    read += s.cacheReadTokens;
+    input += s.inputTokens + s.cacheReadTokens + s.cacheWriteTokens;
+  }
+  return { tokens, secs, cache: input > 0 ? Math.round((read / input) * 100) : null };
+}
 
 /** The flow's steps in a row, the current one alive; the board under it. */
 export function FlowProgress({ task, run }: { task: Task; run: FlowRun }) {
@@ -47,6 +66,11 @@ export function FlowProgress({ task, run }: { task: Task; run: FlowRun }) {
   const stopped = task.status !== "running" && task.status !== "waitingApproval";
   const lane = current?.kind === "parallel" ? current.roles[run.lane ?? 0] : undefined;
   const now = current ? (lane ? (roles.find((r) => r.id === lane.role)?.name ?? lane.role) : text(current).name) : "";
+  const spent = totals(run);
+  const stepSpend = (node: FlowNode) => {
+    const s = run.spent?.[node.id];
+    return s && tokensOf(s) > 0 ? t("flows.live.spent", { tokens: formatTokens(tokensOf(s)), time: formatElapsed(s.secs) }) : null;
+  };
   return (
     <section className="flow-progress" aria-label={t("flows.live.label", { name: run.flow.name })}>
       <header className="flow-progress__head">
@@ -60,6 +84,12 @@ export function FlowProgress({ task, run }: { task: Task; run: FlowRun }) {
             {round > 1 && <span className="flow-progress__round">{t("flows.live.round", { n: String(round) })}</span>}
           </span>
         )}
+        {spent.tokens > 0 && (
+          <span className="flow-progress__spent">
+            {t("flows.live.spent", { tokens: formatTokens(spent.tokens), time: formatElapsed(spent.secs) })}
+            {spent.cache !== null && ` · ${t("flows.live.cache", { percent: String(spent.cache) })}`}
+          </span>
+        )}
         <button type="button" className="flow-progress__toggle" aria-expanded={board} aria-controls={boardId} onClick={() => setBoard((b) => !b)}>
           {t("flows.live.board")}
         </button>
@@ -68,15 +98,32 @@ export function FlowProgress({ task, run }: { task: Task; run: FlowRun }) {
         {order.map((node, i) => (
           <li key={node.id} className="flow-progress__step" data-state={state.get(node.id)} data-live={(state.get(node.id) === "current" && (working || waiting || asking)) || undefined} data-waiting={(state.get(node.id) === "current" && (waiting || asking)) || undefined}>
             {i > 0 && <span className="flow-progress__line" aria-hidden="true" data-lit={state.get(node.id) !== "pending" || undefined} />}
-            <span className="flow-progress__tile" style={{ ["--tint" as string]: stepTint(node, roles) }} title={text(node).name}>
+            <span
+              className="flow-progress__tile"
+              style={{ ["--tint" as string]: stepTint(node, roles) }}
+              title={[text(node).name, stepSpend(node)].filter(Boolean).join(" · ")}
+            >
               <StepIcon node={node} roles={roles} size={16} />
             </span>
             <span className="sr-only">
               {text(node).name}: {t(state.get(node.id) === "done" ? "flows.live.done" : state.get(node.id) === "current" ? "flows.live.current" : "flows.live.pending")}
+              {stepSpend(node) && ` · ${stepSpend(node)}`}
             </span>
           </li>
         ))}
       </ol>
+      {order.some((n) => stepSpend(n)) && (
+        <ul className="flow-progress__costs" aria-label={t("flows.live.costs")}>
+          {order.map((node) => {
+            const line = stepSpend(node);
+            return line ? (
+              <li key={node.id}>
+                <span className="flow-progress__cost-name">{text(node).name}</span> {line}
+              </li>
+            ) : null;
+          })}
+        </ul>
+      )}
       <div id={boardId}>{board && <Board task={task} roles={roles} />}</div>
     </section>
   );
@@ -146,6 +193,32 @@ function BoardText({ text }: { text: string }) {
         </button>
       )}
     </>
+  );
+}
+
+/**
+ * A way back ran out of rounds: the run ended there and the changes wait for
+ * the user, with what was last asked. Another round or a hint is a message
+ * to the task; the buttons write it in the composer.
+ */
+export function FlowOutOfRounds({ task, rounds, asked }: { task: Task; rounds: number; asked: string }) {
+  const t = useT();
+  const open = task.status === "review";
+  return (
+    <section className="card flow-rounds" aria-label={t("flows.rounds.title")}>
+      <h3>{t("flows.rounds.title")}</h3>
+      <p className="flow-approval__text">{t("flows.rounds.text", { n: String(rounds) })}</p>
+      {asked && <BoardText text={asked} />}
+      {open && (
+        <>
+          <p className="flow-approval__text">{t("flows.rounds.decide")}</p>
+          <div className="actions">
+            <Button onClick={() => insertInComposer(t("flows.rounds.againText"))}>{t("flows.rounds.again")}</Button>
+            <Button onClick={() => insertInComposer(t("flows.rounds.hintText"))}>{t("flows.rounds.hint")}</Button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

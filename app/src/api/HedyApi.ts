@@ -86,6 +86,7 @@ import type {
   Flow,
   FlowEntry,
   FlowIssue,
+  FlowValue,
   RoleEntry,
   TeamShare,
   OpenTaskRequest,
@@ -200,6 +201,8 @@ export interface HedyApi {
   deleteFlow(project: string | null, key: string): Promise<void>;
   /** The roles a flow can place: Hedy's and the user's. */
   flowRoles(project: string | null): Promise<RoleEntry[]>;
+  /** The project's flows with enough closed tasks, against its tasks with one agent. */
+  flowValues(project: string): Promise<FlowValue[]>;
   /** The user's answer at a flow's approval step: no goes back with `feedback`. */
   answerFlowApproval(id: string, approve: boolean, feedback: string | null): Promise<void>;
   /** A flow task's board, oldest first. */

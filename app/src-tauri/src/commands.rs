@@ -325,6 +325,16 @@ pub async fn flow_roles(
     blocking(&state, move |h| h.roles(project.as_deref())).await
 }
 
+/// How the project's flows did against its tasks with one agent, from its
+/// own history (docs/decisions.md §52).
+#[tauri::command]
+pub async fn flow_values(
+    state: State<'_, AppState>,
+    project: PathBuf,
+) -> CommandResult<Vec<hedy_core::application::FlowValue>> {
+    blocking(&state, move |h| h.flow_values(&project)).await
+}
+
 /// The user's answer at a flow's approval step.
 #[tauri::command]
 pub async fn answer_flow_approval(

@@ -100,6 +100,24 @@ describe("A project's flows", () => {
     expect(screen.getByRole("button", { name: "Guardar" })).toBeEnabled();
   });
 
+  it("says when the open flow cost much more than one agent in this project, until told not to", async () => {
+    const api = MockApi.withSampleData();
+    api.flowValueSamples[TIENDA] = [
+      { flow: "Pago con revisión", runs: 12, accepted: 10, tokens: 480_000, aloneRuns: 20, aloneAccepted: 17, aloneTokens: 120_000 },
+    ];
+    const { user } = await setup(flowsOf(TIENDA), api);
+    await step("Arquitecto");
+    const note = await screen.findByText(/En tus últimas 12 tareas con este flujo se gastó 4,0×/);
+    expect(note).toHaveTextContent("aceptaste 10 de 12 (con un agente, 17 de 20)");
+    await user.click(screen.getByRole("button", { name: "Ver Esencial" }));
+    await waitFor(() => expect(picker()).toHaveTextContent("Esencial"));
+    expect(screen.queryByText(/se gastó 4,0×/)).not.toBeInTheDocument();
+    await chooseOption(user, picker(), "Pago con revisión");
+    await user.click(await screen.findByRole("button", { name: "No volver a avisar" }));
+    expect(screen.queryByText(/se gastó 4,0×/)).not.toBeInTheDocument();
+    expect(localStorage.getItem("hedy.flows.valueQuiet")).toContain("Pago con revisión");
+  });
+
   it("shows what keeps a flow from running on its step, and only saves once it can run", async () => {
     const { user } = await setup();
     await user.click(await step("Revisor"));

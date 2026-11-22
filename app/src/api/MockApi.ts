@@ -26,6 +26,7 @@ import type {
   Flow,
   FlowEntry,
   FlowIssue,
+  FlowValue,
   RoleEntry,
   TeamShare,
   ImportPick,
@@ -1966,6 +1967,13 @@ export class MockApi implements HedyApi {
     return MOCK_ROLES.map((role) => ({ scope: "hedy", role }));
   }
 
+  /** The sample project's own flow, after a dozen closed tasks: costly for what it solved. */
+  flowValueSamples: Record<string, FlowValue[]> = {};
+
+  async flowValues(project: string): Promise<FlowValue[]> {
+    return this.flowValueSamples[project] ?? [];
+  }
+
   async answerFlowApproval(id: string, approve: boolean, feedback: string | null): Promise<void> {
     const task = this.tasksById.get(id);
     if (!task || task.status !== "waitingApproval") throw "esta tarea no espera tu aprobación";
@@ -2456,7 +2464,16 @@ export class MockApi implements HedyApi {
       ],
       stage: 2,
       live: true,
-      flow: { flow, roles, position: { node: "n7", rounds: { n4: 1 } } },
+      flow: {
+        flow,
+        roles,
+        position: { node: "n7", rounds: { n4: 1 } },
+        spent: {
+          n2: { inputTokens: 20, outputTokens: 1500, cacheReadTokens: 40_000, cacheWriteTokens: 8000, secs: 45 },
+          n3: { inputTokens: 60, outputTokens: 6000, cacheReadTokens: 130_000, cacheWriteTokens: 12_000, secs: 160 },
+          n5: { inputTokens: 10, outputTokens: 900, cacheReadTokens: 26_000, cacheWriteTokens: 3000, secs: 50 },
+        },
+      },
     });
     const phase = (p: "review" | "implement", agent: string): AgentEvent => ({ kind: "phaseStarted", phase: p, agent, account: "Claude trabajo" });
     this.eventsById.set(id, [
@@ -2488,6 +2505,19 @@ export class MockApi implements HedyApi {
     ]);
     this.diffs.set(id, []);
     this.updatedAt.set(id, now - 60);
+    return this;
+  }
+
+  /** The sample flow task after its review loop ran out of rounds: in review, with the notice. */
+  withSampleFlowOutOfRounds(): this {
+    this.withSampleFlowRun();
+    const task = this.tasksById.get("f1");
+    if (!task) return this;
+    this.tasksById.set("f1", { ...task, status: "review", live: false, flow: task.flow && { ...task.flow, position: { node: "n6", rounds: { n6: 2 } } } });
+    this.eventsById.set("f1", [
+      ...(this.eventsById.get("f1") ?? []),
+      { kind: "flowOutOfRounds", node: "n6", rounds: 2, asked: "Falta validar la firma del webhook.\n\nVEREDICTO: CAMBIOS" },
+    ]);
     return this;
   }
 

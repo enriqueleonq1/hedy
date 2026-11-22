@@ -53,6 +53,7 @@ export type TimelineItem =
     }
   | { type: "finished"; key: string; ok: boolean; durationMs: number | null }
   | { type: "flowCheck"; key: string; node: string; what: string; passed: boolean }
+  | { type: "flowOutOfRounds"; key: string; rounds: number; asked: string }
   /**
    * A flow's approval step. `answer`: the user's, once given; `latest`: the
    * last time the flow asked (only that one can still be waiting).
@@ -123,6 +124,9 @@ export function buildTimeline(events: AgentEvent[], t: Translate): TimelineItem[
         break;
       case "flowCheck":
         items.push({ type: "flowCheck", key, node: e.node, what: e.what, passed: e.passed });
+        break;
+      case "flowOutOfRounds":
+        items.push({ type: "flowOutOfRounds", key, rounds: e.rounds, asked: e.asked });
         break;
       case "flowApproval": {
         const after = events.slice(i + 1);

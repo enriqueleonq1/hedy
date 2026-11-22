@@ -17,7 +17,7 @@ import { useT, type MessageKey, type Translate } from "../../i18n";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { LimitCard } from "./LimitCard";
 import { MessageImages } from "./MessageImages";
-import { FlowApprovalCard, FlowProgress } from "../flows/FlowLive";
+import { FlowApprovalCard, FlowOutOfRounds, FlowProgress } from "../flows/FlowLive";
 import { CarriedContext } from "./carry/links";
 import { splitCarried } from "./carry/queries";
 import { groupSteps, summarize, summaryFacts, type StepItem } from "./stepGroups";
@@ -168,6 +168,8 @@ function Item({ task, item }: { task: Task; item: TimelineItem }) {
       return <PermissionCard task={task} item={item} />;
     case "flowApproval":
       return <FlowApprovalCard task={task} node={item.node} answer={item.answer} latest={item.latest} />;
+    case "flowOutOfRounds":
+      return <FlowOutOfRounds task={task} rounds={item.rounds} asked={item.asked} />;
     case "flowCheck":
       return (
         <p className={`activity activity--${item.passed ? "done" : "failed"} flow-check`}>
