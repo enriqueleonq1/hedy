@@ -2638,6 +2638,33 @@ fn flows_and_roles_are_made_from_the_terminal() {
         .failure()
         .stderr(predicate::str::contains("terminal"));
 
+    // A flow as text comes in by hand, whatever its file says.
+    let file = repo.join("revision.yaml");
+    std::fs::write(
+        &file,
+        "name: Revisión de cobros\nsteps:\n  - role: programmer\n  - check: tests\n    on_fail: 1\ntriggers: [manual, task_end]\n",
+    )
+    .unwrap();
+    env.hedy_in(&repo, &["flow", "import", "revision.yaml"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Flujo importado: Revisión de cobros",
+        ))
+        .stdout(predicate::str::contains("Empieza a mano"));
+    env.hedy_in(&repo, &["flow", "show", "Revisión de cobros"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("triggers: [manual]"));
+    env.hedy_in(&repo, &["flow", "import", "revision.yaml"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--replace"));
+    env.hedy_in(&repo, &["flow", "import", "revision.yaml", "--replace"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Flujo cambiado"));
+
     env.hedy_in(&repo, &["roles"])
         .assert()
         .success()

@@ -253,6 +253,18 @@ pub fn run(
                     };
                     println!("{mark} {} {}", clean(&what), s.muted(word));
                 }
+                AgentEvent::FlowOutOfRounds { rounds, asked, .. } => {
+                    println!(
+                        "{} {}",
+                        s.warn("↺"),
+                        tr!(
+                            "Se acabaron las vueltas ({rounds}). Lo último que se pidió:",
+                            "Out of rounds ({rounds}). The last thing asked:"
+                        )
+                    );
+                    let text: String = asked.chars().take(SHOWN).collect();
+                    println!("{}\n", clean_lines(&text));
+                }
                 AgentEvent::FlowApproval { .. } => {
                     if let Some(last) = hedy.task_board(&id).ok().and_then(|b| b.last().cloned()) {
                         let text: String = last.text.chars().take(SHOWN).collect();

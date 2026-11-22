@@ -1,5 +1,5 @@
 //! Writing flows and roles from the terminal (docs/decisions.md §48):
-//! `hedy flow new|edit` and `hedy roles`. Editing opens the text in the
+//! `hedy flow new|edit|import` and `hedy roles`. Editing opens the text in the
 //! user's editor (`$VISUAL`, `$EDITOR`, else `vi`), checks it on save and,
 //! when it does not hold, offers to open it again with the changes kept.
 
@@ -10,6 +10,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use hedy_core::application::{FlowScope, Hedy};
+use hedy_core::domain::flow::Trigger;
 use hedy_core::tr;
 
 use crate::commands::refuse_in_agent_session;
@@ -127,6 +128,68 @@ fn edit_until_saved(
             }
         }
     }
+}
+
+/// `hedy flow import <file>`: a flow written as text (what `hedy flow show`
+/// prints) saved as the user's. It starts by hand, as any copy does: a file
+/// from elsewhere never runs agents after each task until the user says so.
+pub fn import_flow(
+    hedy: &Hedy,
+    dir: &Path,
+    file: &Path,
+    global: bool,
+    replace: bool,
+) -> Result<()> {
+    refuse_in_agent_session()?;
+    let s = Style::for_stdout();
+    // A relative path is the user's, from the folder the command speaks of.
+    let file = dir.join(file);
+    let text =
+        std::fs::read_to_string(&file).map_err(|e| anyhow::anyhow!("{}: {e}", file.display()))?;
+    let mut flow = hedy_core::domain::flow_text::from_text(&text)
+        .map_err(|e| anyhow::anyhow!("{}: {e}", file.display()))?;
+    let path = project_path(hedy, dir)?;
+    let target = if global { None } else { path.as_deref() };
+    let scope = if target.is_some() {
+        FlowScope::Project
+    } else {
+        FlowScope::Global
+    };
+    let automatic = flow.triggers.iter().any(|t| *t != Trigger::Manual);
+    flow.triggers = vec![Trigger::Manual];
+    let name = clean(&flow.name);
+    let same = hedy
+        .flows(target)?
+        .into_iter()
+        .find(|e| e.scope == scope && e.flow.name.to_lowercase() == flow.name.to_lowercase());
+    if same.is_some() && !replace {
+        bail!(tr!(
+            "Ya tienes un flujo «{name}»: usa --replace para cambiarlo",
+            "You already have a flow «{name}»: use --replace to change it"
+        ));
+    }
+    let saved = hedy.save_flow_as(target, same.as_ref().map(|e| e.key.as_str()), flow)?;
+    println!(
+        "{} {} {} {}",
+        s.ok("✓"),
+        if same.is_some() {
+            tr!("Flujo cambiado:", "Flow changed:")
+        } else {
+            tr!("Flujo importado:", "Flow imported:")
+        },
+        s.bold(clean(&saved.flow.name)),
+        s.muted(format!("· {}", place(global, &path)))
+    );
+    if automatic {
+        println!(
+            "{}",
+            s.muted(tr!(
+                "Empieza a mano: si quieres que siga al final de cada tarea, actívalo en la app o con `hedy flow edit`.",
+                "It starts by hand: to have it follow each task's end, turn that on in the app or with `hedy flow edit`."
+            ))
+        );
+    }
+    Ok(())
 }
 
 pub fn new_flow(
