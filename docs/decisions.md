@@ -4167,3 +4167,148 @@ A team role is something new, named by its own id, that flows use only by naming
 **Known limits:**
 - The allowed commands are one list per PC, not per team.
 - Two admins sharing the same new name at once can leave two entries until one is unshared.
+
+## 50. Do flows pay? The value meter, lighter flows and hard cases (Nov 22, 2026)
+
+**Question.** Can Hedy tell a user which steps of their flow add something (a "value meter"),
+and do flows beat one agent at all? Measured with `hedy-evals` on Claude haiku, `memory` layer,
+3 repeats per case and flow, 246 valid runs in all. The flows and roles are in
+`evals/experiments/value-meter/` (run with `--flows file:<path>` and `--roles <path>`), and
+each run's `steps` trace records every role's tokens and every check's result.
+
+**The measure** is the cost per solved task, on the same cases for every flow (as in
+arXiv 2608.01347, "Prompt-Induced Waste in Coding Agents"): a cheap flow that fails costs more
+than its runs suggest.
+
+**1. The value meter (126 runs, 6 cases).** A five-step flow (tests, reviewer, a redundant
+second reviewer, security, rules) and one ablation per step. The meter, computed from the full
+flow's runs only, flagged a step as "adds nothing" when it never sent work back.
+
+| | passed | $ per solved task |
+|---|---|---|
+| one agent | 83% | 0.0053 |
+| full flow | 83% | 0.0334 |
+| each step removed | 83–94% | 0.030–0.037 |
+
+- The meter was wrong 3 times out of 3 (the bar was 80% right). The steps it flagged (tests,
+  security, rules) did not change the pass rate, but cost almost nothing, so removing them
+  saved nothing.
+- Cost follows the reviewer's loops, not the steps: the programmer used 65% of the tokens and
+  the reviewer 23%, and the reviewer sent work back in 15 of 18 runs, even on the easy case.
+- **Decision:** no per-step meter. The signal worth showing is the whole flow's cost against
+  one agent, and the loops.
+
+**2. Lighter flows (72 runs, same cases).** Tests as the gate, and an AI reviewer only with a
+concrete reason.
+- `ligero`: programmer + tests.
+- `tdd`: a programmer that writes the tests first (role `programador-tdd`) + tests.
+- `acotado`: programmer + tests + a reviewer that sends back only a concrete error
+  (role `revisor-acotado`, one round).
+- `tdd-acotado`: both.
+
+| | passed | $ per solved task | × one agent |
+|---|---|---|---|
+| ligero | 78% | 0.0079 | 1.5 |
+| tdd | 89% | 0.0083 | 1.6 |
+| acotado | 94% | 0.0169 | 3.2 |
+| tdd-acotado | 89% | 0.0198 | 3.7 |
+
+They match or beat the full flow at a quarter to a half of its cost. Against one agent the
+pass-rate gain is 1–2 runs in 18: within the noise.
+
+**3. Hard cases (48 runs).** Four new cases, each validated with a reference solution:
+- `inventory-expiry`: five requirements across four files.
+- `attachment-download`: serving a file by name, with eight path-escape attempts in the
+  hidden check and none in the prompt.
+- `billing-cents`: float to integer cents across five modules, 105 combinations to the cent.
+- `rate-limit-bugs`: three bugs found from the symptoms only.
+
+| | passed | $ per solved task | × one agent |
+|---|---|---|---|
+| one agent | 100% | 0.0069 | 1 |
+| tdd | 100% | 0.0101 | 1.5 |
+| acotado | 92% | 0.0237 | 3.4 |
+| full flow | 100% | 0.0489 | 7.1 |
+
+**Conclusions.**
+- One agent is the right default. No flow beat it clearly on any kind of task measured.
+- If a flow, a light one: tests first, tests as the gate. It never did worse, at about 1.5×.
+- Chained AI reviewers are not worth their cost here (3–7×).
+- Running inside a flow has a fixed cost: `ligero` (one agent plus a test check that rarely
+  failed) used about 1.7× the tokens of one agent. Worth trimming from the role's context.
+
+**4. Sonnet (36 runs).** The four hard cases plus `parse-duration` and `shipping-refactor`,
+2 repeats each:
+
+| | passed | $ per solved task | × one agent |
+|---|---|---|---|
+| one agent | 100% | 0.060 | 1 |
+| tdd | 92% | 0.078 | 1.3 |
+| full flow | 100% | 0.272 | 4.5 |
+
+The pattern holds: one agent solved everything, and the full flow cost 4.5× for the same
+result. The one `tdd` miss had the right prices but kept three `if`s where the case asks for
+two. On these cases haiku with `tdd` (94%, $0.010) solved about as much as Sonnet alone at a
+sixth of the cost: the model matters more than the flow.
+
+**5. Model routing and delegation (84 runs, the same six cases, 2 repeats).** What the market
+shipped in Nov 2026 (a strong model plans and a cheap one builds; agents that spawn their own
+subagents), as flows in `evals/experiments/routing/`. A step's `model:` works: the architect's
+steps cost Sonnet's price per token, the programmer's haiku's.
+
+| | passed | $ per solved task |
+|---|---|---|
+| haiku alone (earlier runs) | 16/18 | 0.0069 |
+| haiku, tdd (earlier runs) | 17/18 | 0.0101 |
+| Sonnet alone (earlier runs) | 12/12 | 0.0600 |
+| `escalar`: haiku tdd, Sonnet only if the tests fail | 11/12 | 0.0098 |
+| `plan-fuerte`: Sonnet architect, haiku programmer | 7/12 | 0.1021 |
+| `revision-fuerte`: haiku tdd, Sonnet bounded reviewer | 9/12 | 0.0757 |
+
+- `escalar` never reached Sonnet: the project's tests passed every time; what failed was what
+  those tests do not cover. Escalating on tests is only as good as the tests.
+- A Sonnet plan made haiku worse (7/12) at ten times the cost: it followed the plan and missed
+  details it finds on its own.
+- The Sonnet reviewer ran 11 times and never sent work back, though three of those runs failed
+  the hidden check.
+
+Delegation: a programmer told to use subagents (`programador-delega`) against the same flow
+without that instruction (`ligero`). In 282 earlier runs no agent used a subagent unasked.
+
+| | passed | $ per solved task | subagents |
+|---|---|---|---|
+| haiku, ligero | 8/12 | 0.0107 | 0 |
+| haiku, delega | 8/12 | 0.0193 | 21 |
+| Sonnet, ligero | 11/12 | 0.0608 | 0 |
+| Sonnet, delega | 11/12 | 0.0832 | 4 |
+
+Delegating solved the same at 1.4–1.8× the cost.
+
+**Decision:** no routing or delegation by default. The model is the lever that moved results
+(Sonnet alone solved everything); a flow does not turn haiku into Sonnet. Hedy should let the
+user pick the model per task or per flow step and show what each choice cost, not route on
+its own.
+
+**6. A heavy standing context (60 runs, all ten cases, haiku, 3 repeats).** Plain Claude Code
+against the same with a third-party configuration layer installed under a throwaway `HOME`: a
+global `CLAUDE.md` of 85 KB, an output style, two MCP servers, review subagents, skills and
+hooks on every prompt. Both ran on the `plain` layer, without `sales-summary-rules` (its rules
+live in Hedy's notes).
+
+| | passed | median tokens | $ per solved task |
+|---|---|---|---|
+| Claude Code | 23/27 (85%) | 161k | 0.0062 |
+| Claude Code + that layer | 19/27 (70%) | 423k | 0.0150 |
+| Hedy (memory layer, earlier runs) | 25/28 (89%) | 168k | 0.0062 |
+| Hedy, tdd (earlier runs) | 25/27 (93%) | 284k | 0.0093 |
+
+The layer used about 2.6× the tokens and solved less; it never spawned a subagent, so the extra
+was its standing context. Hedy's own additions cost about what plain Claude Code costs. **Rule:**
+keep what Hedy adds to every session small, and measure it when it grows.
+
+**Known limits:**
+- Mostly one model (haiku; Sonnet on a subset) and small to medium cases. Where a flow might pay (a real repository,
+  ambiguous or hours-long work) is still unmeasured.
+- The pass-rate differences between flows are 1–2 runs in 12–18.
+- Hard cases ran seven to eight at once; time per run is not comparable to the earlier runs
+  (tokens and cost are).
