@@ -18,7 +18,7 @@ use crate::sync::{interactive, read_line};
 use crate::team::clean;
 
 /// The flow `hedy flow new` copies when none is given.
-const DEFAULT_FROM: &str = "fix-loop";
+const DEFAULT_FROM: &str = "essential";
 /// The role `hedy roles new` copies when none is given.
 const DEFAULT_ROLE: &str = "reviewer";
 

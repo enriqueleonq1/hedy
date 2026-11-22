@@ -1053,8 +1053,8 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             "flow run",
             "name",
             tr!(
-                "Nombre o clave del flujo (classic, fix-loop…)",
-                "Flow name or key (classic, fix-loop…)"
+                "Nombre o clave del flujo (essential, fix-loop…)",
+                "Flow name or key (essential, fix-loop…)"
             ),
         ),
         (
@@ -1087,8 +1087,8 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             "flow new",
             "from",
             tr!(
-                "El flujo o plantilla que copiar (fix-loop si no lo dices)",
-                "The flow or template to copy (fix-loop when not given)"
+                "El flujo o plantilla que copiar (essential si no lo dices)",
+                "The flow or template to copy (essential when not given)"
             ),
         ),
         (
@@ -1248,8 +1248,8 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             "flow show",
             "name",
             tr!(
-                "Nombre o clave del flujo (classic, fix-loop…)",
-                "Flow name or key (classic, fix-loop…)"
+                "Nombre o clave del flujo (essential, fix-loop…)",
+                "Flow name or key (essential, fix-loop…)"
             ),
         ),
         (
@@ -2644,8 +2644,8 @@ mod tests {
         assert!(parse(&["hedy", "client"]).is_err());
         assert!(parse(&["hedy", "block"]).is_ok());
         assert!(parse(&["hedy", "permissions"]).is_ok());
-        assert!(parse(&["hedy", "flow", "run", "fix-loop", "Arregla el login"]).is_ok());
-        assert!(parse(&["hedy", "flow", "run", "fix-loop"]).is_err());
+        assert!(parse(&["hedy", "flow", "run", "focused-review", "Arregla el login"]).is_ok());
+        assert!(parse(&["hedy", "flow", "run", "focused-review"]).is_err());
         assert!(parse(&["hedy", "permissions", "auto"]).is_ok());
         assert!(parse(&["hedy", "permissions", "bypass"]).is_err());
         assert!(parse(&["hedy", "block", ".env", "*.pem"]).is_ok());
