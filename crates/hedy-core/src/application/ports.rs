@@ -119,6 +119,8 @@ pub trait UsageRepository: Send + Sync {
     fn usage_by_project(&self, since: i64) -> PortResult<Vec<(PathBuf, AccountId, UsageSample)>>;
     /// Every record of a project since `since`, oldest first, as (time, usage).
     fn usage_points(&self, project: &Path, since: i64) -> PortResult<Vec<(i64, UsageSample)>>;
+    /// What each task of a project spent, all its records together.
+    fn usage_by_task(&self, project: &Path) -> PortResult<Vec<(TaskId, UsageSample)>>;
     fn set_rate_limit(&self, account: &AccountId, limit: &RateLimit) -> PortResult<()>;
     fn rate_limit(&self, account: &AccountId) -> PortResult<Option<RateLimit>>;
     fn set_plan_usage(&self, account: &AccountId, record: &PlanUsageRecord) -> PortResult<()>;

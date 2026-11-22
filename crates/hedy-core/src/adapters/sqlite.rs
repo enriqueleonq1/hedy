@@ -816,6 +816,20 @@ impl UsageRepository for SqliteStore {
         })
     }
 
+    fn usage_by_task(&self, project: &Path) -> PortResult<Vec<(TaskId, UsageSample)>> {
+        self.with(|c| {
+            c.prepare(
+                "SELECT task_id, SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens),
+                        SUM(cache_write_tokens), SUM(cost_usd)
+                 FROM usage WHERE project = ?1 GROUP BY task_id",
+            )?
+            .query_map(params![project.to_string_lossy()], |r| {
+                Ok((TaskId::new(r.get::<_, String>(0)?), usage_from_row(r, 1)?))
+            })?
+            .collect()
+        })
+    }
+
     fn set_rate_limit(&self, account: &AccountId, l: &RateLimit) -> PortResult<()> {
         self.with(|c| {
             c.execute(

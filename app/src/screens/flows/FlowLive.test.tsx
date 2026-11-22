@@ -35,12 +35,39 @@ describe("A flow task, live", () => {
     expect(within(strip).getByText("Espera tu aprobación")).toBeInTheDocument();
     expect(within(strip).getByText("ronda 2")).toBeInTheDocument();
     // Every step, with its state for screen readers.
-    expect(within(strip).getByText("Arquitecto: hecho")).toBeInTheDocument();
+    expect(within(strip).getByText("Arquitecto: hecho · 50k tokens · 45 s")).toBeInTheDocument();
     expect(within(strip).getByText("Tu aprobación: ahora")).toBeInTheDocument();
     expect(within(strip).getByText("Final: pendiente")).toBeInTheDocument();
     expect(screen.getByText("npm test: no pasa")).toBeInTheDocument();
     expect(screen.getByText("npm test: pasa")).toBeInTheDocument();
     expect(screen.getByText("el veredicto de la revisión: pasa")).toBeInTheDocument();
+  });
+
+  it("says what the run and each of its steps spent", async () => {
+    await setup();
+    const strip = await progress();
+    const costs = within(strip).getByRole("list", { name: "Lo que gastó cada paso" });
+    expect(within(costs).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "En total 227k tokens · 4 min · caché 89 %",
+      "Arquitecto 50k tokens · 45 s",
+      "Programador 148k tokens · 2 min",
+      "Revisor 30k tokens · 50 s",
+    ]);
+    // A check spends nothing and says nothing.
+    expect(within(strip).getByText("¿Pasan los tests?: hecho")).toBeInTheDocument();
+  });
+
+  it("a loop out of rounds pauses for you, with the last ask, and writes the next round in the composer", async () => {
+    const api = MockApi.withSampleData().withSampleFlowOutOfRounds();
+    api.delayMs = 0;
+    history.replaceState(null, "", TASK);
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    const notice = await screen.findByRole("region", { name: "Se acabaron las vueltas" }, { timeout: 5000 });
+    expect(within(notice).getByText(/las 2 veces permitidas/)).toBeInTheDocument();
+    expect(within(notice).getByText(/Falta validar la firma del webhook/)).toBeInTheDocument();
+    await user.click(within(notice).getByRole("button", { name: "Una vuelta más" }));
+    expect(screen.getByLabelText("Responde o pide algo más")).toHaveValue("Una vuelta más: corrige lo último que se pidió.");
   });
 
   it("opens the board: the latest of each section, as plain text", async () => {

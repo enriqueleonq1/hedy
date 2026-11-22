@@ -271,6 +271,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 flow_edit::new_flow(&hedy, &dir, &name, from.as_deref(), global)
             }
             FlowCommand::Edit { name } => flow_edit::edit_flow(&hedy, &dir, &name),
+            FlowCommand::Import {
+                file,
+                global,
+                replace,
+            } => flow_edit::import_flow(&hedy, &dir, &file, global, replace),
             FlowCommand::Share { name } => flow_edit::share_flow(&hedy, &dir, &name),
             FlowCommand::Unshare { name } => flow_edit::unshare_flow(&hedy, &dir, &name),
             FlowCommand::Allow { command } => flow_edit::allow_command(&hedy, &command),

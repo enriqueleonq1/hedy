@@ -72,6 +72,10 @@ pub struct RunResult {
     /// Subagents the agent started (Claude's `Task`: Explore, Plan…).
     #[serde(default)]
     pub subagents: u32,
+    /// Each action by kind (`Read`, `Edit`, `Bash:git`, an MCP tool…), to
+    /// see where a variant's extra turns go.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tools: BTreeMap<String, u32>,
     /// Memory notes the agent read.
     pub notes_read: usize,
     /// Why the run did not get to the check (timeout, launch error…).
@@ -339,6 +343,7 @@ mod tests {
             rereads: 1,
             denied: 0,
             subagents: 0,
+            tools: BTreeMap::new(),
             notes_read: 0,
             error: None,
             check_output: String::new(),

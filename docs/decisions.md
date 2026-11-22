@@ -4334,3 +4334,50 @@ What §50 measured, turned into the product:
 - **A note, not a rule.** With more than one AI reviewer (roles that deliver a verdict, alone
   or in a group at once), the editor's bar says so. Saving and running stay allowed: a team
   may want two reviews for reasons a test does not measure.
+
+## 52. What a flow spends, step by step, and less of it (Nov 22, 2026)
+
+**Each step's spend.** `FlowRun.spent` keeps, by node id, the tokens (input, output, cache read
+and written), the CLIs' cost estimate in millionths of a dollar and the seconds its roles
+worked; a group at once and every round add to the same step. Usage is added as it arrives
+(`handle_usage` saves the run); a role's time from `role_started` (in `start_role`) to
+`role_done` (when the flow moves on). The live strip shows the run's total with its cache
+share, and a line per step; the CLI and the evals read the same.
+
+**Where a flow's extra tokens went.** The evals now record each action by kind (`tools`: `Read`,
+`Edit`, `Bash:<program>`, MCP tools). A light flow (programmer + tests) against one agent, four
+cases, haiku, 2 repeats each: per run it added a board read and a board post, most of an MCP
+tool load (`ToolSearch`) and half a `git` run, each turn re-reading the whole context. With a
+single role nobody reads the board, so:
+
+- a flow whose seats hold one role gets no board server or native board tools
+  (`FlowRun::shares_board`), and its prompt does not mention them;
+- a writer with nothing on the board before it is not asked to compare with the base commit.
+
+| light flow | median tokens | board calls | `ToolSearch` | passed | $ per solved task |
+|---|---|---|---|---|---|
+| before | 257k | 2.0 | 0.9 | 6/8 | 0.0101 |
+| after | 184k | 0 | 0 | 8/8 | 0.0061 |
+| one agent (same batch) | 134k | 0 | 0.2 | 7/8 | 0.0062 |
+
+A flow's fixed cost went from about 1.7× to 1.4× one agent's.
+
+**Out of rounds is a pause, not an error.** When a way back has been taken `max_rounds` times,
+`AgentEvent::FlowOutOfRounds { node, rounds, asked }` is recorded instead of an error, `asked`
+being the last board entry not written by the user (the failing tests' report or the review),
+up to 1 200 characters with its lines. The task waits in review as before; the app's card adds
+«Una vuelta más» and «Darle una pista…», which write in the composer (a follow-up is the round).
+Running again from a chosen step was left out: no run measured needed it.
+
+**The user's own numbers.** `flow_values(project)` compares each flow's closed tasks with the
+project's closed tasks with one agent: median tokens (from `usage_by_task`) and how many the user
+accepted. Nothing until both sides have ten (`FLOW_VALUE_MIN`). The Flujos tab says so for the
+open flow when it spent at least twice as much without being accepted more often (ten points of
+slack), with «Ver Esencial» and «No volver a avisar» (kept per PC).
+
+**Smaller ones.**
+- A review comment can be saved, reworded, as a rule of the project (`addNote`, category rule):
+  the user writes it, so it needs no approval (rule 6).
+- `hedy flow import <file> [--global] [--replace]`: a flow as text, saved as the user's. Its
+  triggers become manual, as a copy's do: a file from elsewhere never runs agents after each task
+  by itself. A flow of the same name in the same place is changed only with `--replace`.

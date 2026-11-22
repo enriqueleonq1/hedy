@@ -2,7 +2,7 @@
 //! card itself: plans are approved and permissions allowed. Hedy's own rules
 //! still apply (protected files, writes only inside the worktree).
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -147,6 +147,8 @@ struct Observed {
     read: HashSet<String>,
     denied: u32,
     subagents: u32,
+    /// Each action by kind (`Read`, `Edit`, `Bash:git`, an MCP tool…).
+    tools: BTreeMap<String, u32>,
     error: Option<String>,
     /// A flow's steps, in order.
     steps: Vec<StepTrace>,
@@ -203,6 +205,7 @@ impl Runner {
             rereads: 0,
             denied: 0,
             subagents: 0,
+            tools: BTreeMap::new(),
             notes_read: 0,
             error: None,
             steps: Vec::new(),
@@ -360,6 +363,7 @@ impl Runner {
         out.rereads = observed.rereads;
         out.denied = observed.denied;
         out.subagents = observed.subagents;
+        out.tools = observed.tools;
         out.error = observed.error;
         out.steps = observed.steps;
         out.notes_read = self.hedy.memory(repo)?.used_last_task.len();
@@ -463,6 +467,7 @@ impl Runner {
                 }
                 AgentEvent::ToolUsed { tool, summary } if tool == "Read" => {
                     seen.actions += 1;
+                    *seen.tools.entry("Read".into()).or_default() += 1;
                     seen.files_read += 1;
                     if !seen.read.insert(summary.clone()) {
                         seen.rereads += 1;
@@ -471,6 +476,7 @@ impl Runner {
                 }
                 AgentEvent::ToolUsed { tool, .. } if tool == "Task" || tool == "Agent" => {
                     seen.actions += 1;
+                    *seen.tools.entry(tool.clone()).or_default() += 1;
                     seen.subagents += 1;
                     Ok(())
                 }
@@ -487,6 +493,17 @@ impl Runner {
                 | AgentEvent::TestsRun { .. }
                 | AgentEvent::ToolUsed { .. } => {
                     seen.actions += 1;
+                    let kind = match event {
+                        AgentEvent::FileEdited { .. } => "Edit".to_owned(),
+                        AgentEvent::CommandRun { command, .. }
+                        | AgentEvent::TestsRun { command, .. } => {
+                            let program = command.split_whitespace().next().unwrap_or("");
+                            format!("Bash:{program}")
+                        }
+                        AgentEvent::ToolUsed { tool, .. } => tool.clone(),
+                        _ => unreachable!(),
+                    };
+                    *seen.tools.entry(kind).or_default() += 1;
                     Ok(())
                 }
                 AgentEvent::Error { message } => {

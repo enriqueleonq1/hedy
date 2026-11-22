@@ -63,6 +63,21 @@
   background: var(--warning);
   vertical-align: 1px;
 }
+/* The open flow against the project's tasks with one agent: a line of its own under the bar. */
+.flow-value {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--radius-card);
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font-size: var(--text-caption);
+}
+.flow-value > span { flex: 1 1 32ch; }
 /* A note, not a problem: the flow still saves and runs. */
 .flows-bar__note { max-width: 46ch; font-size: var(--text-caption); color: var(--muted); }
 .flows-bar__issues {
@@ -541,6 +556,9 @@
 .flow-progress__now[data-waiting]::before { background: var(--warning); }
 .flow-progress__now[data-stopped]::before { background: var(--muted); animation: none; }
 .flow-progress__round { padding: 0 7px; border-radius: var(--radius-pill); background: var(--panel-2); color: var(--ink); }
+/* What the run spent, under the strip: in all, then each step's. */
+.flow-progress__costs { display: flex; flex-wrap: wrap; gap: 4px var(--space-3); margin: 0; padding: 0; list-style: none; font: var(--text-caption) var(--font-mono); color: var(--muted); }
+.flow-progress__cost-name { font-family: var(--font-ui); color: var(--ink); }
 .flow-progress__toggle {
   margin-left: auto;
   height: var(--control-sm);
@@ -616,6 +634,8 @@
 .flow-board__empty { font-size: var(--text-callout); color: var(--muted); }
 
 .flow-approval__text { font-size: var(--text-callout); color: var(--muted); line-height: 1.5; }
+/* Out of rounds: a pause for the user, not an error. */
+.flow-rounds { border-color: var(--warn-line); }
 .flow-check .activity__mark { font-weight: 600; }
 
 /* A team flow's commands, allowed in the run dialog. */

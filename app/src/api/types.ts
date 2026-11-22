@@ -808,6 +808,17 @@ export interface RoleEntry {
   role: RoleDef;
 }
 
+/** A flow's closed tasks in a project beside the project's tasks with one agent (median tokens per task). */
+export interface FlowValue {
+  flow: string;
+  runs: number;
+  accepted: number;
+  tokens: number;
+  aloneRuns: number;
+  aloneAccepted: number;
+  aloneTokens: number;
+}
+
 /** A task's flow: a copy taken at its start, and where it is. */
 export interface FlowRun {
   flow: Flow;
@@ -816,6 +827,20 @@ export interface FlowRun {
   position: { node: string; rounds?: Record<string, number> };
   /** Which role of a group at once works now. */
   lane?: number;
+  /** What each step spent so far, by node id (all its rounds together). */
+  spent?: Record<string, StepSpend>;
+}
+
+/** What a step of a flow run spent. */
+export interface StepSpend {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** The CLIs' estimate, in millionths of a dollar. */
+  costMicros?: number;
+  /** Seconds its roles worked. */
+  secs: number;
 }
 
 /** One entry of a flow task's board. */
@@ -997,6 +1022,7 @@ export type AgentEvent =
   | { kind: "flowApprovalAnswered"; node: string; approved: boolean }
   /** A flow's condition was checked (`what`: "npm test", "las reglas"…). */
   | { kind: "flowCheck"; node: string; what: string; passed: boolean }
+  | { kind: "flowOutOfRounds"; node: string; rounds: number; asked: string }
   | {
       kind: "limitWarning";
       account: string;

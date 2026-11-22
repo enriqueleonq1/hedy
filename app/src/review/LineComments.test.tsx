@@ -40,6 +40,25 @@ describe("Line comments in the review", () => {
     localStorage.clear();
   });
 
+  it("saves a comment, reworded, as a rule of the project", async () => {
+    const { api, user } = setup();
+    const addNote = vi.spyOn(api, "addNote");
+    const table = await openReview(user);
+    fireEvent.mouseDown(within(table).getByRole("button", { name: "Comentar la línea 16" }));
+    fireEvent.mouseUp(window);
+    await user.type(await screen.findByRole("textbox", { name: "Comentario sobre facturas/impuestos.py:16" }), "Usa Decimal");
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    await user.click(within(table).getByRole("button", { name: "Guardar como regla del proyecto" }));
+    const field = await screen.findByRole("textbox", { name: "Comentario sobre facturas/impuestos.py:16" });
+    await user.clear(field);
+    await user.type(field, "Los montos de dinero se calculan con Decimal, nunca con float.");
+    await user.click(screen.getByRole("button", { name: "Guardar regla" }));
+    expect(await screen.findByText("Guardada como regla: las IAs la verán en las próximas tareas.")).toBeInTheDocument();
+    expect(addNote).toHaveBeenCalledWith("/code/hedy", "Los montos de dinero se calculan con Decimal, nunca con float.", "rule");
+    // The comment itself stays, to send or not.
+    expect(within(table).getByText("Usa Decimal")).toBeInTheDocument();
+  });
+
   it("comments on a line from the gutter's +, and on a range by dragging", async () => {
     const { user } = setup();
     const table = await openReview(user);

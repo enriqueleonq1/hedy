@@ -1097,6 +1097,32 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             tr!("Para todos los proyectos", "For every project"),
         ),
         (
+            "flow import",
+            "",
+            tr!(
+                "Guarda como tuyo un flujo escrito como texto (lo que imprime `hedy flow show`); empieza a mano",
+                "Save as yours a flow written as text (what `hedy flow show` prints); it starts by hand"
+            ),
+        ),
+        (
+            "flow import",
+            "file",
+            tr!("El archivo con el flujo", "The file with the flow"),
+        ),
+        (
+            "flow import",
+            "global",
+            tr!("Para todos los proyectos", "For every project"),
+        ),
+        (
+            "flow import",
+            "replace",
+            tr!(
+                "Cambia tu flujo con el mismo nombre, si lo hay",
+                "Change your flow with the same name, if there is one"
+            ),
+        ),
+        (
             "flow edit",
             "",
             tr!(
@@ -2246,6 +2272,14 @@ pub enum FlowCommand {
 
     Edit {
         name: String,
+    },
+
+    Import {
+        file: PathBuf,
+        #[arg(long)]
+        global: bool,
+        #[arg(long)]
+        replace: bool,
     },
 
     Share {

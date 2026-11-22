@@ -105,6 +105,15 @@ pub enum AgentEvent {
         node: String,
         approved: bool,
     },
+    /// A flow's way back was taken as many times as allowed: the run ends
+    /// and the changes wait for the user, with what was last asked of them
+    /// (docs/decisions.md §52).
+    FlowOutOfRounds {
+        node: String,
+        rounds: u32,
+        /// The last on the board: the failing tests' report or the review.
+        asked: String,
+    },
     /// A flow's condition was checked: the tests, the rules or the
     /// reviewers' verdict (docs/decisions.md §44).
     FlowCheck {

@@ -79,6 +79,16 @@ export function TrashIcon() {
   );
 }
 
+/** A page with lines: a rule of the project's memory. */
+export function RuleIcon() {
+  return (
+    <svg {...common} width={14} height={14} className="icon">
+      <path d="M6 3.5h8.5L18 7v13.5H6z" />
+      <path d="M9 11h6M9 14.5h6M9 18h3" />
+    </svg>
+  );
+}
+
 /** A paper plane: send to the AI. */
 export function SendIcon() {
   return (

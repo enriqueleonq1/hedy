@@ -15,7 +15,7 @@ import type { View } from "../../components/Layout";
 import { MenuButton, type MenuItem } from "../../components/ui/Menu";
 import { Select, type SelectSection } from "../../components/ui/Select";
 import { useToast } from "../../components/ui/Toast";
-import { useT } from "../../i18n";
+import { useLanguage, useT } from "../../i18n";
 import { ProjectHead, projectTabView } from "../workspace/ProjectHome";
 import { FlowCanvas, type Selection } from "./FlowCanvas";
 import { FlowInspector } from "./FlowInspector";
@@ -58,6 +58,26 @@ function canonical(value: unknown): unknown {
 const same = (a: Flow | null, b: Flow) => a !== null && JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 let openings = 0;
 
+/** Flows the user asked not to hear about again (this PC only), as `path\nname`. */
+const QUIET_KEY = "hedy.flows.valueQuiet";
+
+function readQuiet(): string[] {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(QUIET_KEY) ?? "[]");
+    return Array.isArray(stored) ? stored.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeQuiet(keys: string[]) {
+  try {
+    localStorage.setItem(QUIET_KEY, JSON.stringify(keys));
+  } catch {
+    // A private window: it says so again next time.
+  }
+}
+
 export function FlowsScreen({
   overview,
   project: path,
@@ -78,6 +98,9 @@ export function FlowsScreen({
   const project = overview.projects.find((p) => p.path === path);
   const flows = useQuery({ queryKey: ["flows", path], queryFn: () => api.flows(path) });
   const rolesQuery = useQuery({ queryKey: ["flowRoles", path], queryFn: () => api.flowRoles(path) });
+  const values = useQuery({ queryKey: ["flowValues", path], queryFn: () => api.flowValues(path) });
+  const language = useLanguage();
+  const [quiet, setQuiet] = useState<string[]>(readQuiet);
   const roles: RoleDef[] = useMemo(() => (rolesQuery.data ?? []).map((r) => r.role), [rolesQuery.data]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
@@ -349,6 +372,22 @@ export function FlowsScreen({
         ? t("flows.status.unsaved")
         : t("flows.status.saved");
   const canRun = !!draft?.key && !dirty && issues.length === 0;
+  // The open flow, against this project's tasks with one agent: said when it
+  // spends at least twice as much without being accepted more often.
+  const value = flow ? values.data?.find((v) => v.flow === flow.name) : undefined;
+  const quietKey = `${path}\n${flow?.name ?? ""}`;
+  const heavy =
+    !!value &&
+    value.tokens >= 2 * value.aloneTokens &&
+    value.accepted / value.runs <= value.aloneAccepted / value.aloneRuns + 0.1 &&
+    draft?.key !== "essential" &&
+    !quiet.includes(quietKey);
+  const ratio = value ? (value.tokens / Math.max(1, value.aloneTokens)).toFixed(1) : "";
+  const quietValue = () => {
+    const next = [...quiet, quietKey];
+    setQuiet(next);
+    writeQuiet(next);
+  };
   const point = insertionPoint();
 
   return (
@@ -428,6 +467,25 @@ export function FlowsScreen({
             {t("flows.run")}
           </Button>
         </div>
+        {heavy && value && (
+          <div className="flow-value" role="note">
+            <span>
+              {t("flows.value.heavy", {
+                runs: String(value.runs),
+                ratio: language === "es" ? ratio.replace(".", ",") : ratio,
+                accepted: String(value.accepted),
+                aloneAccepted: String(value.aloneAccepted),
+                aloneRuns: String(value.aloneRuns),
+              })}
+            </span>
+            <Button small onClick={() => void switchTo("essential")}>
+              {t("flows.value.tryEssential")}
+            </Button>
+            <Button small variant="ghost" onClick={quietValue}>
+              {t("flows.value.quiet")}
+            </Button>
+          </div>
+        )}
       </div>
 
       {!flow ? (
