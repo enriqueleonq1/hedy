@@ -6,6 +6,8 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-22
+
 ### Changed
 
 - Fewer flow templates, each with a reason: **Esencial** (recommended: one programmer who
@@ -20,6 +22,9 @@ All notable changes to Hedy are listed here. The format follows
 
 - The flow editor notes when a flow has more than one AI reviewer: in Hedy's measurements
   more than one cost more without a better result. It never blocks saving or running.
+- Evals: `--flows file:<path>` runs a flow written as text, `--roles` adds custom roles, and
+  each run records every step's tokens and every check's result. Ten new cases, four of them
+  hard (several files, a hidden security risk, a migration, bugs found from symptoms).
 
 ## [1.5.0] - 2026-11-21
 
@@ -271,7 +276,8 @@ The first public release. Linux only for now.
 - `hedy account`, `hedy use`, `hedy run`, `hedy status`, `hedy tasks`, `hedy doctor`,
   `hedy skills` and `hedy template`.
 
-[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/enriqueleonq1/hedy/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/enriqueleonq1/hedy/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/enriqueleonq1/hedy/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/enriqueleonq1/hedy/compare/v1.2.0...v1.3.0
