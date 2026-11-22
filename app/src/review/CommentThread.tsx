@@ -1,10 +1,12 @@
 import { useEffect, useId, useRef, useState } from "react";
 
+import { useAction } from "../api/context";
 import { Markdown } from "../components/Markdown";
+import { useToast } from "../components/ui/Toast";
 import { modKey } from "../components/palette/keys";
 import { useT } from "../i18n";
 import { lineRef, useReviewComments, type ReviewComment } from "./comments";
-import { CheckIcon, PencilIcon, SendIcon, TrashIcon } from "./icons";
+import { CheckIcon, PencilIcon, RuleIcon, SendIcon, TrashIcon } from "./icons";
 
 /**
  * Writes (or edits) a comment under the lines it is about: Markdown text,
@@ -94,8 +96,18 @@ export function CommentThread({ comments, showWhere = false }: { comments: Revie
 function CommentItem({ comment, showWhere }: { comment: ReviewComment; showWhere: boolean }) {
   const t = useT();
   const review = useReviewComments();
+  const toast = useToast();
   const [editing, setEditing] = useState(false);
+  const [ruling, setRuling] = useState(false);
   const [open, setOpen] = useState(false);
+  // A comment the user would write again becomes a rule of the project's
+  // memory: written by the user, so it needs no approval (rule 6).
+  const saveRule = useAction((api, text: string) => api.addNote(review.project, text, "rule"), {
+    onSuccess: () => {
+      setRuling(false);
+      toast.info(t("reviewer.comment.ruleSaved"));
+    },
+  });
   const sent = comment.sentAt !== null;
   const range = comment.endLine !== null;
   const where = showWhere || range ? lineRef(comment) : null;
@@ -117,6 +129,21 @@ function CommentItem({ comment, showWhere }: { comment: ReviewComment; showWhere
     );
   }
 
+  if (ruling) {
+    return (
+      <li className="rv-comment rv-comment--editing">
+        <CommentComposer
+          where={lineRef(comment)}
+          initial={comment.text}
+          submitLabel={t("reviewer.comment.saveRule")}
+          onCancel={() => setRuling(false)}
+          onSubmit={(text) => {
+            if (!saveRule.isPending) saveRule.mutate(text.trim());
+          }}
+        />
+      </li>
+    );
+  }
   if (sent && !open) {
     return (
       <li className="rv-comment rv-comment--sent">
@@ -164,6 +191,17 @@ function CommentItem({ comment, showWhere }: { comment: ReviewComment; showWhere
               onClick={() => setEditing(true)}
             >
               <PencilIcon />
+            </button>
+          )}
+          {review.project && (
+            <button
+              type="button"
+              className="rv-icon-btn"
+              aria-label={t("reviewer.comment.asRule")}
+              title={t("reviewer.comment.asRule")}
+              onClick={() => setRuling(true)}
+            >
+              <RuleIcon />
             </button>
           )}
           <button

@@ -80,6 +80,8 @@ export interface ReviewComments {
   sending: boolean;
   /** A task that can still take a follow-up (open, with a worktree). */
   canSend: boolean;
+  /** The project of the task on screen: where a comment saved as a rule goes. */
+  project: string | null;
   /** Shows a file in the Revisión tab (and scrolls to `line` of its new side). */
   selectFile(path: string, line?: number): void;
   selectedFile: string | null;
@@ -184,6 +186,7 @@ const INERT: ReviewComments = {
   sendToAi: async () => false,
   sending: false,
   canSend: false,
+  project: null,
   selectFile: () => {},
   selectedFile: null,
   selectedLine: null,
@@ -373,12 +376,13 @@ function CommentsStore({ task, children }: { task: Task | null; children: ReactN
       sendToAi,
       sending: send.isPending,
       canSend,
+      project: task?.project ?? null,
       selectFile,
       selectedFile: own ? selection.path : null,
       selectedLine: own ? selection.line : null,
       selectSeq: own ? selection.seq : 0,
     }),
-    [comments, pending, commentsFor, add, update, remove, message, sendToAi, send.isPending, canSend, selectFile, own, selection],
+    [comments, pending, commentsFor, add, update, remove, message, sendToAi, send.isPending, canSend, task?.project, selectFile, own, selection],
   );
   return <CommentsContext.Provider value={value}>{children}</CommentsContext.Provider>;
 }
