@@ -125,6 +125,15 @@ export function FlowsScreen({
   });
   const issues = useMemo(() => (readOnly ? [] : (problems.data ?? [])), [readOnly, problems.data]);
   const issueNodes = useMemo(() => new Set(issues.flatMap((i) => (i.node ? [i.node] : []))), [issues]);
+  // AI reviewers in the flow: more than one cost more without better results
+  // in Hedy's own measurements (docs/decisions.md §50). Said, never blocked.
+  const reviewers = useMemo(() => {
+    const verdict = (id: string) => roles.find((r) => r.id === id)?.delivers === "verdict";
+    return (flow?.nodes ?? []).reduce(
+      (n, node) => n + (node.kind === "role" ? Number(verdict(node.role)) : node.kind === "parallel" ? node.roles.filter((s) => verdict(s.role)).length : 0),
+      0,
+    );
+  }, [flow, roles]);
 
   const change = useCallback(
     (next: Flow, merge?: string) => {
@@ -377,6 +386,11 @@ export function FlowsScreen({
               {t("flows.issues.count", { count: String(issues.length) })}
             </button>
           )}
+          {!readOnly && reviewers > 1 && (
+            <span className="flows-bar__note" role="note">
+              {t("flows.note.reviewers", { count: String(reviewers) })}
+            </span>
+          )}
           {!readOnly && draft?.key && (
             <ConfirmButton small variant="ghost" confirmLabel={t("flows.delete.confirm")} onConfirm={() => void remove()}>
               {t("flows.delete")}
@@ -468,6 +482,7 @@ export function FlowsScreen({
             selection={selection}
             roles={roles}
             accounts={overview.accounts.filter((a) => project.offerableAccounts.includes(a.id) || a.id === project.account)}
+            projectAccount={project.account ?? undefined}
             issues={issues}
             readOnly={readOnly}
             scope={entry?.scope}

@@ -14,6 +14,7 @@ import type {
   RoleDef,
   Seat,
 } from "../../api/types";
+import { MODEL_HINTS, MODEL_SUGGESTIONS, modelLabel } from "../../components/models";
 import { Button } from "../../components/ui/Button";
 import { Field, Switch } from "../../components/ui/controls";
 import { Select, type SelectOption } from "../../components/ui/Select";
@@ -41,6 +42,7 @@ export function FlowInspector({
   selection,
   roles,
   accounts,
+  projectAccount,
   issues,
   readOnly,
   scope,
@@ -53,6 +55,8 @@ export function FlowInspector({
   selection: Selection;
   roles: RoleDef[];
   accounts: Account[];
+  /** The project's account: whose models a step suggests when it names none. */
+  projectAccount?: string;
   issues: FlowIssue[];
   readOnly: boolean;
   onChange: Change;
@@ -80,6 +84,7 @@ export function FlowInspector({
           node={node}
           roles={roles}
           accounts={accounts}
+          projectAccount={projectAccount}
           issues={issues.filter((i) => i.node === node.id)}
           readOnly={readOnly}
           onChange={onChange}
@@ -347,6 +352,7 @@ function StepPanel({
   node,
   roles,
   accounts,
+  projectAccount,
   issues,
   readOnly,
   onChange,
@@ -357,6 +363,7 @@ function StepPanel({
   node: FlowNode;
   roles: RoleDef[];
   accounts: Account[];
+  projectAccount?: string;
   issues: FlowIssue[];
   readOnly: boolean;
   onChange: Change;
@@ -401,6 +408,7 @@ function StepPanel({
             seat={node}
             roles={roles}
             accounts={accounts}
+            projectAccount={projectAccount}
             readOnly={readOnly}
             onChange={(seat, merge) =>
               onChange(
@@ -480,6 +488,7 @@ function SeatFields({
   seat,
   roles,
   accounts,
+  projectAccount,
   readOnly,
   onlyReaders,
   onChange,
@@ -487,6 +496,7 @@ function SeatFields({
   seat: Seat;
   roles: RoleDef[];
   accounts: Account[];
+  projectAccount?: string;
   readOnly: boolean;
   /** A group at once only takes roles that read. */
   onlyReaders?: boolean;
@@ -496,6 +506,19 @@ function SeatFields({
   const options: SelectOption[] = roles
     .filter((r) => !onlyReaders || !r.can.write)
     .map((r) => ({ value: r.id, label: r.name, detail: r.summary }));
+  // The models of whoever works this step: its account, else the project's.
+  const provider = (accounts.find((a) => a.id === seat.account) ?? accounts.find((a) => a.id === projectAccount))?.provider;
+  const models = provider ? MODEL_SUGGESTIONS[provider] : [];
+  const hintOf = (model: string) => {
+    const key = MODEL_HINTS[model];
+    return key ? t(key) : undefined;
+  };
+  const hint = seat.model ? hintOf(seat.model) : undefined;
+  const setModel = (model: string) => {
+    const rest = { ...seat };
+    delete rest.model;
+    onChange(model ? { ...rest, model } : rest, "model");
+  };
   return (
     <>
       <Field label={t("flows.field.role")}>
@@ -519,12 +542,7 @@ function SeatFields({
               placeholder={t("flows.field.projectDefault")}
               readOnly={readOnly}
               spellCheck={false}
-              onChange={(e) => {
-                const model = e.target.value.trim();
-                const rest = { ...seat };
-                delete rest.model;
-                onChange(model ? { ...rest, model } : rest, "model");
-              }}
+              onChange={(e) => setModel(e.target.value.trim())}
             />
           )}
         </Field>
@@ -552,6 +570,24 @@ function SeatFields({
           )}
         </Field>
       </div>
+      {models.length > 0 && (
+        <div className="flow-models" role="group" aria-label={t("flows.field.modelSuggestions")}>
+          {models.map((m) => (
+            <button
+              key={m}
+              type="button"
+              className="flow-models__chip"
+              aria-pressed={seat.model === m}
+              disabled={readOnly}
+              title={hintOf(m)}
+              onClick={() => setModel(seat.model === m ? "" : m)}
+            >
+              {modelLabel(m)}
+            </button>
+          ))}
+        </div>
+      )}
+      {hint && <p className="flow-models__hint">{hint}</p>}
     </>
   );
 }

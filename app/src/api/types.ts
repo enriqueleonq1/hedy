@@ -766,7 +766,7 @@ export interface Flow {
 export type FlowScope = "hedy" | "project" | "global" | "team";
 
 export interface FlowEntry {
-  /** `classic`, `fix-loop`… for a template; `#<id>` for a saved one. */
+  /** `essential`, `approval`… for a template; `#<id>` for a saved one. */
   key: string;
   scope: FlowScope;
   /** One line of what it does (templates). */

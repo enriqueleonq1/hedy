@@ -19,13 +19,15 @@ const role = (id: string, name: string, summary: string, extra: Partial<RoleDef>
 export const MOCK_ROLES: RoleDef[] = [
   role("architect", "Arquitecto", "Lee el proyecto y escribe el plan", { sees: { sees: "sections", sections: ["frame"] } }),
   role("programmer", "Programador", "Implementa el plan", { can: { write: true, run: true } }),
+  role("test-first", "Programador con tests", "Escribe los tests del pedido y luego el código", { can: { write: true, run: true } }),
   role("tester", "Tester", "Escribe y corre los tests", { can: { write: true, run: true } }),
   role("reviewer", "Revisor", "Revisa los cambios y da un veredicto", { delivers: "verdict" }),
+  role("focused-reviewer", "Revisor acotado", "Solo devuelve el trabajo si encuentra un error concreto", { delivers: "verdict" }),
   role("security", "Seguridad", "Busca problemas de seguridad y privacidad", { delivers: "verdict" }),
 ];
 
-/** A straight flow from a list of steps, with ways back from conditions. */
-function straight(name: string, steps: FlowNodeKind[], back: Record<number, number>): Flow {
+/** A straight flow from a list of steps, with ways back from conditions (2 rounds, or `[to, rounds]`). */
+function straight(name: string, steps: FlowNodeKind[], back: Record<number, number | [number, number]>): Flow {
   const nodes: FlowNode[] = [{ id: "n1", kind: "start" }, ...steps.map((s, i) => ({ ...s, id: `n${i + 2}` }) as FlowNode)];
   nodes.push({ id: `n${nodes.length + 1}`, kind: "end" });
   const edges: FlowEdge[] = [];
@@ -33,7 +35,10 @@ function straight(name: string, steps: FlowNodeKind[], back: Record<number, numb
     const n = nodes[i + 1];
     if (n) edges.push({ from: from.id, to: n.id, when: from.kind === "condition" ? "pass" : "after" });
   });
-  for (const [from, to] of Object.entries(back)) edges.push({ from: `n${from}`, to: `n${to}`, when: "fail", maxRounds: 2 });
+  for (const [from, way] of Object.entries(back)) {
+    const [to, rounds] = Array.isArray(way) ? way : [way, 2];
+    edges.push({ from: `n${from}`, to: `n${to}`, when: "fail", maxRounds: rounds });
+  }
   return { name, frame: {}, nodes, edges, triggers: ["manual"] };
 }
 
@@ -42,33 +47,29 @@ const seat = (r: string): Seat => ({ role: r });
 export function mockTemplates(): FlowEntry[] {
   return [
     {
-      key: "classic",
+      key: "essential",
       scope: "hedy",
-      summary: "Plan, tu OK, implementación, tests y revisión: lo de siempre",
+      summary: "Recomendado · ligero: un programador y los tests como filtro",
+      flow: straight("Esencial", [{ kind: "role", ...seat("test-first") }, { kind: "condition", check: "tests" }], { 3: 2 }),
+    },
+    {
+      key: "approval",
+      scope: "hedy",
+      summary: "Ligero: un plan y tu OK antes de tocar el código, luego como Esencial",
       flow: straight(
-        "Pipeline clásico",
-        [{ kind: "role", ...seat("architect") }, { kind: "approval" }, { kind: "role", ...seat("programmer") }, { kind: "role", ...seat("reviewer") }],
-        {},
+        "Con tu aprobación",
+        [{ kind: "role", ...seat("architect") }, { kind: "approval" }, { kind: "role", ...seat("test-first") }, { kind: "condition", check: "tests" }],
+        { 5: 4 },
       ),
     },
     {
-      key: "fix-loop",
+      key: "focused-review",
       scope: "hedy",
-      summary: "Si los tests fallan o la revisión pide cambios, vuelve al programador (máx. 2)",
+      summary: "Medio: como Esencial, más un revisor que solo devuelve si hay un error concreto",
       flow: straight(
-        "Con bucle de corrección",
-        [{ kind: "role", ...seat("programmer") }, { kind: "condition", check: "tests" }, { kind: "role", ...seat("reviewer") }, { kind: "condition", check: "verdict" }],
-        { 3: 2, 5: 2 },
-      ),
-    },
-    {
-      key: "double-review",
-      scope: "hedy",
-      summary: "Revisión y seguridad a la vez, solo leen",
-      flow: straight(
-        "Doble revisión",
-        [{ kind: "role", ...seat("programmer") }, { kind: "parallel", roles: [seat("reviewer"), seat("security")] }, { kind: "condition", check: "verdict" }],
-        { 4: 2 },
+        "Revisión acotada",
+        [{ kind: "role", ...seat("test-first") }, { kind: "condition", check: "tests" }, { kind: "role", ...seat("focused-reviewer") }, { kind: "condition", check: "verdict" }],
+        { 3: 2, 5: [2, 1] },
       ),
     },
   ];
