@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
-use super::{AccountId, Phase, PhasePlan};
+use super::{AccountId, Phase, PhasePlan, UsageSample};
 use crate::tr;
 
 /// Rounds a loop runs when nobody says otherwise.
@@ -1202,6 +1202,46 @@ pub struct FlowRun {
     /// role that gave none Hedy could read.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub verdicts: Vec<Option<bool>>,
+    /// What each step spent so far, by node id: all its rounds and the roles
+    /// of a group at once together.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub spent: BTreeMap<String, StepSpend>,
+    /// When the role at work started (unix seconds), to add its time to its
+    /// step when it is done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<i64>,
+}
+
+/// What a step of a run spent.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StepSpend {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_tokens: u64,
+    /// The CLIs' own estimate, in millionths of a dollar, when they give one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_micros: Option<u64>,
+    /// Seconds its roles worked (waits for the user included).
+    pub secs: u64,
+}
+
+impl StepSpend {
+    pub fn add(&mut self, sample: &UsageSample) {
+        self.input_tokens += sample.input_tokens;
+        self.output_tokens += sample.output_tokens;
+        self.cache_read_tokens += sample.cache_read_tokens;
+        self.cache_write_tokens += sample.cache_write_tokens;
+        if let Some(cost) = sample.cost_usd {
+            let micros = (cost * 1_000_000.0).round().max(0.0) as u64;
+            self.cost_micros = Some(self.cost_micros.unwrap_or(0) + micros);
+        }
+    }
+
+    pub fn tokens(&self) -> u64 {
+        self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_write_tokens
+    }
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -1254,7 +1294,37 @@ impl FlowRun {
             partial: None,
             lane: 0,
             verdicts: Vec::new(),
+            spent: BTreeMap::new(),
+            started_at: None,
         })
+    }
+
+    /// Whether another role reads what this one posts: a flow with a single
+    /// role has nobody to talk to, and its board tools would only cost turns
+    /// (docs/decisions.md §52).
+    pub fn shares_board(&self) -> bool {
+        self.flow.seats().nth(1).is_some()
+    }
+
+    /// Adds what the current step's role spent.
+    pub fn spend(&mut self, sample: &UsageSample) {
+        let node = self.position.node.clone();
+        self.spent.entry(node).or_default().add(sample);
+    }
+
+    /// The role at work starts now (unix seconds); one that was working on
+    /// this same step (a group at once) is done.
+    pub fn role_started(&mut self, now: i64) {
+        self.role_done(now);
+        self.started_at = Some(now);
+    }
+
+    /// The role at work is done: its time goes to the current step.
+    pub fn role_done(&mut self, now: i64) {
+        if let Some(start) = self.started_at.take() {
+            let node = self.position.node.clone();
+            self.spent.entry(node).or_default().secs += now.saturating_sub(start).max(0) as u64;
+        }
     }
 
     pub fn current(&self) -> Option<&Node> {

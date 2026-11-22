@@ -392,6 +392,35 @@ mod tests {
     }
 
     #[test]
+    fn a_flow_with_one_role_has_no_board_to_use() {
+        let f = setup();
+        let f2 = f.hedy.clone().with_memory_server(MemoryServerCommand {
+            program: "/bin/hedy".into(),
+            args: vec!["memory-mcp".into()],
+            board_args: vec!["board-mcp".into(), "--data-dir".into(), "/data".into()],
+        });
+        f2.start_flow(
+            NewTask {
+                images: Vec::new(),
+                project: f.dir("/code/tienda"),
+                prompt: "Hola".into(),
+                mode: TaskMode::Project,
+                model: None,
+                plan_first: false,
+                permissions: None,
+            },
+            "essential",
+        )
+        .unwrap();
+        let request = f.agents.last_request();
+        // Nobody else would read it: no server, no invitation, no diff to run.
+        assert!(request.mcp.iter().all(|s| s.name != "hedy-board"));
+        assert!(request.board.is_none());
+        assert!(!request.prompt.contains("context_read"));
+        assert!(!request.prompt.contains("commit"), "{}", request.prompt);
+    }
+
+    #[test]
     fn a_role_writes_only_its_own_or_new_sections_never_secrets_and_never_past_the_caps() {
         let f = setup();
         let task = start(&f);

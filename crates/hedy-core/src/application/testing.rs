@@ -444,6 +444,22 @@ impl UsageRepository for MemoryStore {
             .map(|r| (r.at, r.sample.clone()))
             .collect())
     }
+    fn usage_by_task(&self, project: &Path) -> PortResult<Vec<(TaskId, UsageSample)>> {
+        let mut by: Vec<(TaskId, UsageSample)> = Vec::new();
+        for r in self
+            .usage
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r.project == project)
+        {
+            match by.iter_mut().find(|(id, _)| *id == r.task) {
+                Some((_, total)) => total.add(&r.sample),
+                None => by.push((r.task.clone(), r.sample.clone())),
+            }
+        }
+        Ok(by)
+    }
     fn set_rate_limit(&self, account: &AccountId, limit: &RateLimit) -> PortResult<()> {
         self.limits
             .lock()

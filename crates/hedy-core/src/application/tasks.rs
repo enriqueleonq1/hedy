@@ -826,11 +826,12 @@ impl Hedy {
         // A flow's board: a server for the CLIs, native tools for the API
         // agent (docs/decisions.md §42).
         let api = matches!(backend, AgentBackend::OpenAiCompatible { .. });
-        let board = match (&task.flow, api) {
-            (Some(_), true) => Some(super::ports::BoardLink(self.board_tools(&task.id)?)),
+        let shared = task.flow.as_ref().is_some_and(|r| r.shares_board());
+        let board = match (shared, api) {
+            (true, true) => Some(super::ports::BoardLink(self.board_tools(&task.id)?)),
             _ => None,
         };
-        if let (Some(_), false, Some(command)) = (&task.flow, api, &self.memory_server)
+        if let (true, false, Some(command)) = (shared, api, &self.memory_server)
             && !command.board_args.is_empty()
         {
             mcp.push(super::ports::McpServer {
@@ -985,14 +986,20 @@ impl Hedy {
         spender: &AccountId,
         sample: &UsageSample,
     ) -> AppResult<()> {
-        let task = self.task(id)?;
+        let mut task = self.task(id)?;
+        let sample = self.priced(spender, sample)?;
         self.store.record_usage(&UsageRecord {
             at: self.now_secs(),
             account: spender.clone(),
             project: task.project.clone(),
             task: task.id.clone(),
-            sample: self.priced(spender, sample)?,
+            sample: sample.clone(),
         })?;
+        // A flow keeps what each of its steps spent (docs/decisions.md §52).
+        if let Some(run) = task.flow.as_mut() {
+            run.spend(&sample);
+            self.store.save_task(&task)?;
+        }
         Ok(())
     }
 
@@ -1655,10 +1662,10 @@ impl Hedy {
             .and_then(|r| Some((r, r.current_role()?)))
         {
             // A flow's role keeps its part and what the roles before it said.
-            Some((_, role)) => {
+            Some((run, role)) => {
                 let handed = prompts::handoff_prompt(&task.prompt, None, &previous_label, &changed);
+                let tools = run.shares_board() && self.board_reaches(&target);
                 let role = role.clone();
-                let tools = self.board_reaches(&target);
                 format!(
                     "{}\n\n{handed}",
                     self.flow_role_prompt(&task, &role, tools)?

@@ -18,6 +18,16 @@ use crate::tr;
 
 /// How long a flow's tests may run.
 const FLOW_TESTS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(900);
+/// How much of the last request an out-of-rounds notice carries.
+const ASKED_MAX: usize = 1200;
+
+/// `text` up to `max` characters, its lines kept, with "…" when cut.
+fn clip(text: &str, max: usize) -> String {
+    match text.char_indices().nth(max) {
+        Some((end, _)) => format!("{}…", &text[..end]),
+        None => text.to_owned(),
+    }
+}
 
 impl Hedy {
     /// Starts a task that runs `which` (a template key or a flow's name) of
@@ -259,20 +269,36 @@ impl Hedy {
     /// Moves past the current step. `false` when the run stopped there (no
     /// way on, or a loop out of rounds).
     fn advance_flow(&self, task: &mut Task, outcome: Outcome) -> AppResult<bool> {
+        let now = self.now_secs();
         let Some(run) = task.flow.as_mut() else {
             return Ok(false);
         };
+        run.role_done(now);
+        let node = run.position.node.clone();
         match run.position.advance(&run.flow, outcome) {
             Some(Next::Go(_)) => {
                 self.store.save_task(task)?;
                 Ok(true)
             }
             Some(Next::OutOfRounds { max, .. }) => {
-                let note = tr!(
-                    "El flujo ya dio las {max} vueltas permitidas: revisa lo que hay y decide.",
-                    "The flow already went round the {max} times allowed: look at what there is and decide."
-                );
-                self.end_flow(task, Some(note))?;
+                // What the user needs to decide: the last thing asked.
+                let asked = self
+                    .store
+                    .board(&task.id)?
+                    .into_iter()
+                    .rev()
+                    .find(|e| !e.by_user)
+                    .map(|e| clip(e.text.trim(), ASKED_MAX))
+                    .unwrap_or_default();
+                self.record(
+                    &task.id,
+                    AgentEvent::FlowOutOfRounds {
+                        node,
+                        rounds: max,
+                        asked,
+                    },
+                )?;
+                self.end_flow(task, None)?;
                 Ok(false)
             }
             None => {
@@ -301,7 +327,7 @@ impl Hedy {
             None => project.account.clone().ok_or(AppError::NoAccountResolved)?,
         };
         policy::check_launch(Some(&project), &account, &self.projects()?)?;
-        let tools = self.board_reaches(&self.account(account.as_str())?);
+        let tools = run.shares_board() && self.board_reaches(&self.account(account.as_str())?);
         let prompt = self.flow_role_prompt(task, &role, tools)?;
         task.stages.push(Stage {
             phase: role.phase(),
@@ -309,11 +335,13 @@ impl Hedy {
             model: seat.model.clone(),
         });
         let index = task.stages.len() - 1;
-        // A writer starts a new attempt: verdicts on the last one are stale.
-        if role.can.write
-            && let Some(run) = task.flow.as_mut()
-        {
-            run.verdicts.clear();
+        let now = self.now_secs();
+        if let Some(run) = task.flow.as_mut() {
+            run.role_started(now);
+            // A writer starts a new attempt: verdicts on the last one are stale.
+            if role.can.write {
+                run.verdicts.clear();
+            }
         }
         // Each role is a session of its own: the CLIs cannot share one.
         self.stop_session(&task.id);
@@ -1152,6 +1180,41 @@ mod tests {
     }
 
     #[test]
+    fn each_step_keeps_what_its_roles_spent() {
+        let f = setup();
+        f.git.set_files(&["Cargo.toml"]);
+        f.runner.reply_to("sh -c cargo test", "ok", 0);
+        let task = f
+            .hedy
+            .start_flow(request(&f, "Cobros"), "focused-review")
+            .unwrap();
+        let usage = |input: u64, cost: f64| {
+            f.agents.emit(AgentEvent::Usage(crate::domain::UsageSample {
+                input_tokens: input,
+                output_tokens: 10,
+                cache_read_tokens: 1000,
+                cost_usd: Some(cost),
+                ..Default::default()
+            }))
+        };
+        usage(100, 0.01);
+        usage(50, 0.005);
+        finish(&f, "Hecho.");
+        usage(20, 0.002);
+        finish(&f, "VEREDICTO: APRUEBA");
+        let run = f.hedy.task(&task.id).unwrap().flow.unwrap();
+        let programmer = &run.spent["n2"];
+        assert_eq!(programmer.input_tokens, 150);
+        assert_eq!(programmer.cache_read_tokens, 2000);
+        assert_eq!(programmer.cost_micros, Some(15_000));
+        let reviewer = &run.spent["n4"];
+        assert_eq!(reviewer.tokens(), 1030);
+        // Checks spend nothing; the run ended, so no role is at work.
+        assert!(!run.spent.contains_key("n3"));
+        assert_eq!(run.started_at, None);
+    }
+
+    #[test]
     fn roles_at_once_run_one_after_another_and_all_must_approve() {
         let f = setup();
         let text = "name: Doble revisión\nsteps:\n  - role: programmer\n  - parallel:\n      - role: reviewer\n      - role: security\n  - check: verdict\n    on_fail: 1\ntriggers: [manual]\n";
@@ -1195,6 +1258,13 @@ mod tests {
             .filter(|s| s.phase == Phase::Implement)
             .count();
         assert_eq!(implements, 3, "the first try and two rounds");
+        // Not an error: a notice with what the tests last said.
+        let said = events(&f, &task.id);
+        assert!(said.iter().any(|e| matches!(
+            e,
+            AgentEvent::FlowOutOfRounds { node, rounds: 2, asked } if node == "n3" && asked.contains("1 failed")
+        )));
+        assert!(!said.iter().any(|e| matches!(e, AgentEvent::Error { .. })));
     }
 
     #[test]
