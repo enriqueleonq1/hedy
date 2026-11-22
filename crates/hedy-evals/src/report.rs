@@ -7,6 +7,30 @@ use crate::Layer;
 /// The variant without experiments.
 pub const BASE: &str = "base";
 
+/// One step of a flow's run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum StepTrace {
+    /// A role's turn: its node, its role and what it spent.
+    Role {
+        node: String,
+        role: String,
+        tokens: u64,
+        #[serde(default)]
+        cost_usd: Option<f64>,
+    },
+    /// A condition and whether it passed.
+    Check {
+        node: String,
+        what: String,
+        passed: bool,
+    },
+}
+
 /// One agent run of one case with one layer and one variant. Written as a
 /// JSON line.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -52,6 +76,10 @@ pub struct RunResult {
     pub notes_read: usize,
     /// Why the run did not get to the check (timeout, launch error…).
     pub error: Option<String>,
+    /// A flow's run, step by step: each role's turn and what it spent, each
+    /// check and its result (to judge which steps add something).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<StepTrace>,
     /// The end of the check's output.
     pub check_output: String,
     pub started_at: i64,
@@ -314,6 +342,7 @@ mod tests {
             notes_read: 0,
             error: None,
             check_output: String::new(),
+            steps: Vec::new(),
             started_at: 0,
         }
     }

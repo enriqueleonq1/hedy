@@ -19,7 +19,8 @@ use hedy_core::domain::{
 
 use hedy_core::experiments;
 
-use crate::{Case, Layer, RunResult, Variant};
+use crate::{Case, Layer, RunResult, StepTrace, Variant};
+use hedy_core::domain::flow::NodeKind;
 
 enum Update {
     Event(TaskId, AgentEvent),
@@ -120,6 +121,21 @@ fn tail(text: &str, max: usize) -> String {
     text[start..].trim().to_owned()
 }
 
+/// `--flows file:<path>`: a flow written as text (the experiments' own).
+pub const FLOW_FILE: &str = "file:";
+
+/// What a flow is called in a result's variant: a template's key, or a
+/// flow file's name without its extension.
+pub fn flow_label(flow: &str) -> String {
+    match flow.strip_prefix(FLOW_FILE) {
+        Some(path) => Path::new(path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.to_owned()),
+        None => flow.to_owned(),
+    }
+}
+
 /// What the runner saw of a task while it ran.
 #[derive(Default)]
 struct Observed {
@@ -132,6 +148,8 @@ struct Observed {
     denied: u32,
     subagents: u32,
     error: Option<String>,
+    /// A flow's steps, in order.
+    steps: Vec<StepTrace>,
 }
 
 impl Runner {
@@ -163,7 +181,7 @@ impl Runner {
         let started_at = now();
         let name = match flow {
             "none" => variant.name.clone(),
-            key => format!("{}+flow:{key}", variant.name),
+            key => format!("{}+flow:{}", variant.name, flow_label(key)),
         };
         let mut result = RunResult {
             case: case.name.clone(),
@@ -187,6 +205,7 @@ impl Runner {
             subagents: 0,
             notes_read: 0,
             error: None,
+            steps: Vec::new(),
             check_output: String::new(),
             started_at,
         };
@@ -270,6 +289,11 @@ impl Runner {
         };
         let task = match flow {
             "none" => hedy.start_task(request),
+            // A flow written as text: saved (for every project) and run by its key.
+            key if key.starts_with(FLOW_FILE) => std::fs::read_to_string(&key[FLOW_FILE.len()..])
+                .map_err(|e| hedy_core::application::AppError::InvalidFlow(vec![e.to_string()]))
+                .and_then(|text| hedy.save_flow_text(None, &text))
+                .and_then(|entry| hedy.start_flow(request, &entry.key)),
             key => hedy.start_flow(request, key),
         };
         let task = match task {
@@ -337,6 +361,7 @@ impl Runner {
         out.denied = observed.denied;
         out.subagents = observed.subagents;
         out.error = observed.error;
+        out.steps = observed.steps;
         out.notes_read = self.hedy.memory(repo)?.used_last_task.len();
         if out.error.is_none() {
             let task = self.hedy.task(id)?;
@@ -396,6 +421,44 @@ impl Runner {
                 }
                 AgentEvent::Usage(sample) => {
                     seen.usage.add(sample);
+                    if let Some(StepTrace::Role {
+                        tokens, cost_usd, ..
+                    }) = seen.steps.last_mut()
+                    {
+                        *tokens += sample.total_tokens();
+                        if let Some(c) = sample.cost_usd {
+                            *cost_usd = Some(cost_usd.unwrap_or(0.0) + c);
+                        }
+                    }
+                    Ok(())
+                }
+                // A role of a flow starts: the step its usage goes to.
+                AgentEvent::PhaseStarted { .. } => {
+                    if let Some(run) = self.hedy.task(id).ok().and_then(|t| t.flow) {
+                        let node = run.position.node.clone();
+                        let role = match run.current().map(|n| &n.kind) {
+                            Some(NodeKind::Role(seat)) => seat.role.clone(),
+                            Some(NodeKind::Parallel { roles }) => roles
+                                .get(run.lane)
+                                .map(|s| s.role.clone())
+                                .unwrap_or_default(),
+                            _ => String::new(),
+                        };
+                        seen.steps.push(StepTrace::Role {
+                            node,
+                            role,
+                            tokens: 0,
+                            cost_usd: None,
+                        });
+                    }
+                    Ok(())
+                }
+                AgentEvent::FlowCheck { node, what, passed } => {
+                    seen.steps.push(StepTrace::Check {
+                        node: node.clone(),
+                        what: what.clone(),
+                        passed: *passed,
+                    });
                     Ok(())
                 }
                 AgentEvent::ToolUsed { tool, summary } if tool == "Read" => {

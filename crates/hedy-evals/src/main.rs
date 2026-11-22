@@ -44,10 +44,15 @@ struct Args {
     #[arg(long, value_delimiter = ',', default_value = "base")]
     variants: Vec<Variant>,
     /// Flujos a comparar (docs/decisions.md §45), separados por comas: none
-    /// (un solo agente, como siempre) o la clave de una plantilla (classic,
-    /// fix-loop, double-review). Cada flujo se compara con none.
+    /// (un solo agente, como siempre), la clave de una plantilla (classic,
+    /// fix-loop, double-review) o file:<ruta> (un flujo escrito como texto).
+    /// Cada flujo se compara con none.
     #[arg(long, value_delimiter = ',', default_value = "none")]
     flows: Vec<String>,
+    /// Roles propios que usan los flujos, escritos como texto (hedy roles
+    /// show); se guardan para todos los proyectos antes de las corridas.
+    #[arg(long, value_delimiter = ',', value_name = "ARCHIVO")]
+    roles: Vec<PathBuf>,
     /// Corridas por caso, capa y variante.
     #[arg(long, default_value_t = 1)]
     repeat: u32,
@@ -119,6 +124,11 @@ fn run(args: Args) -> Result<()> {
     let program = std::env::current_exe()?;
     let hedy = adapters::system_for_app(&HedyPaths::at(work.join("data")), &program)?;
     hedy.adopt_account(&account)?;
+    for path in &args.roles {
+        let text = std::fs::read_to_string(path)?;
+        hedy.save_role_text(None, &text, true)
+            .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
+    }
     for provider in Provider::ALL {
         for setting in [
             Setting::Binary(provider),
@@ -154,6 +164,11 @@ fn run(args: Args) -> Result<()> {
         },
     );
     for flow in &args.flows {
+        if let Some(path) = flow.strip_prefix(hedy_evals::runner::FLOW_FILE) {
+            hedy_core::domain::flow_text::from_text(&std::fs::read_to_string(path)?)
+                .map_err(|e| anyhow::anyhow!("{path}: {e}"))?;
+            continue;
+        }
         if flow != NO_FLOW && hedy_core::domain::flow::Template::from_key(flow).is_none() {
             anyhow::bail!("flujo desconocido: {flow} (none, classic, fix-loop, double-review)");
         }
