@@ -11,7 +11,7 @@ All notable changes to Hedy are listed here. The format follows
 ### Added
 
 - The orchestrator: a team of AIs on one task, step by step. A project's new **Flujos** tab
-  shows a flow on a canvas, as in n8n, with moving neon lines. Its steps can be roles
+  shows a flow on a canvas, with moving neon lines. Its steps can be roles
   (architect, programmer, tester, reviewer, security, or your own), your approval, checks
   (the tests pass, the changes follow your rules, the reviewers approve) and reviews at once.
   A failed check goes back to an earlier step, at most a few rounds. Hedy's templates (Pipeline

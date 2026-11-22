@@ -452,8 +452,7 @@ checks that `.env` stays unread. Both passed on Nov 13, 2026.
   verified against a real Codex**. The API agent gets the same tools natively.
   Verified for real: Claude Code (haiku) read a note through the server, the use was
   recorded with the task, and its proposal waited for approval.
-- **Topics, similar notes and progressive reading** (ideas taken from Engram, gentle-ai's
-  memory; nothing of it is used as code):
+- **Topics, similar notes and progressive reading:**
   - A note may have a `topic`: a stable lowercase slug path such as `arquitectura/pagos`
     (accents dropped, anything else becomes a dash; `normalize_topic`). Columns `topic`
     and `updated_at` were added in a migration, and `notes_fts` was rebuilt to index the

@@ -1,5 +1,5 @@
-/* A project's flows: the bar, the canvas (n8n-like: tiles, gradient lines,
-   dashed ways back), the floating panel and the list. Theme colors only;
+/* A project's flows: the bar, the canvas (tiles, gradient lines, dashed
+   ways back), the floating panel and the list. Theme colors only;
    moves are transform and opacity, and none with reduced motion. */
 
 .screen.flows {
