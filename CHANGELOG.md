@@ -6,6 +6,25 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A flow task shows what it spent: the run's tokens, time and cache share beside its name, and
+  each step's tokens and time under its steps.
+- When a flow goes back as many times as allowed, its task says so in a card, with what was
+  last asked (the failing tests or the review), and offers one more round or a hint in the
+  composer. It used to read as an error.
+- In a project's Flujos tab, a flow that over ten closed tasks spent at least twice what a task
+  with one agent spends there, without being accepted more often, says so, with a way to the
+  Essential template or to stop hearing about it.
+- A review comment can be saved, reworded, as a rule of the project's memory.
+- `hedy flow import <file>` saves a flow written as text as yours; it starts by hand.
+
+### Changed
+
+- A flow with a single role no longer gets the shared board, and the first role is no longer
+  asked to compare with a commit: in Hedy's measurements this cut a light flow's tokens by about
+  a quarter, with the same results.
+
 ## [1.6.0] - 2026-11-22
 
 ### Changed
