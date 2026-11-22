@@ -1,0 +1,12 @@
+name: Acotado
+steps:
+  - role: programmer
+  - check: tests
+    command: python3 -m unittest discover -q -s tests -t .
+    on_fail: 1
+    max_rounds: 2
+  - role: revisor-acotado
+  - check: verdict
+    on_fail: 1
+    max_rounds: 1
+triggers: [manual]

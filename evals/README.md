@@ -15,3 +15,9 @@ Each case is a folder:
 - `check/`: hidden checks, copied into the worktree only after the agent finishes.
 
 Results are appended as JSON lines to `evals/results/` (not committed).
+
+Flows (docs/decisions.md §45, §50): `--flows none,classic,file:<path>` runs each case as one
+agent, as a template or as a flow written as text; `--roles <path>,...` saves custom roles
+those flows use. Each run's `steps` records every role's tokens and every check's result.
+`experiments/value-meter/` holds the flows, roles and analysis scripts of §50
+(`analyze.py` for the value meter, `compare.py` for cost per solved task).

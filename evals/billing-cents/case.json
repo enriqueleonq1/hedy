@@ -1,0 +1,7 @@
+{
+  "title": "Migrar la facturación de float a centavos enteros, en varios módulos",
+  "measures": "plain",
+  "prompt": "billing/ calcula el dinero con float y a veces se equivoca en un centavo. Pásalo todo a centavos enteros (int): ningún módulo de billing/ debe usar float. Los precios del catálogo pasan a estar en centavos, y invoice_text sigue devolviendo exactamente el mismo formato. Reglas: cada línea es precio × cantidad; el cupón se aplica sobre el subtotal (porcentaje o monto fijo, nunca deja el subtotal por debajo de cero); el impuesto se calcula sobre el subtotal con descuento; todo redondeo es al centavo, la mitad hacia arriba.",
+  "check": "python3 -m unittest -q test_hidden_cents && python3 -m unittest discover -q -s tests -t .",
+  "timeoutSecs": 2400
+}

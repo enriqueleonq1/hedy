@@ -1,0 +1,7 @@
+{
+  "title": "Quitar la duplicación del cálculo de envío sin cambiar lo que cobra",
+  "measures": "plain",
+  "prompt": "En store/shipping.py, domestic_cost y international_cost hacen casi lo mismo: deja una sola lógica compartida, sin cambiar lo que cobra cada una.",
+  "check": "python3 -m unittest -q test_hidden_shipping && python3 -m unittest discover -q -s tests -t .",
+  "timeoutSecs": 2400
+}

@@ -1,0 +1,19 @@
+name: Experimento sin tests
+steps:
+  - role: programmer
+  - role: reviewer
+  - check: verdict
+    on_fail: 1
+    max_rounds: 2
+  - role: reviewer
+  - check: verdict
+    on_fail: 1
+    max_rounds: 2
+  - role: security
+  - check: verdict
+    on_fail: 1
+    max_rounds: 2
+  - check: rules
+    on_fail: 1
+    max_rounds: 2
+triggers: [manual]
