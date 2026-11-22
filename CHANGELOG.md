@@ -6,13 +6,15 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-22
+
 ### Added
 
 - A flow task shows what it spent: the run's tokens, time and cache share beside its name, and
   each step's tokens and time under its steps.
 - When a flow goes back as many times as allowed, its task says so in a card, with what was
-  last asked (the failing tests or the review), and offers one more round or a hint in the
-  composer. It used to read as an error.
+  last asked (the failing tests or the review), and offers one more round in the composer. It
+  used to read as an error.
 - In a project's Flujos tab, a flow that over ten closed tasks spent at least twice what a task
   with one agent spends there, without being accepted more often, says so, with a way to the
   Essential template or to stop hearing about it.
@@ -295,7 +297,8 @@ The first public release. Linux only for now.
 - `hedy account`, `hedy use`, `hedy run`, `hedy status`, `hedy tasks`, `hedy doctor`,
   `hedy skills` and `hedy template`.
 
-[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/enriqueleonq1/hedy/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/enriqueleonq1/hedy/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/enriqueleonq1/hedy/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/enriqueleonq1/hedy/compare/v1.3.0...v1.4.0
