@@ -11,6 +11,13 @@ All notable changes to Hedy are listed here. The format follows
 - PDFs attach to a message like images (up to 5 MB). Claude Code reads them, and so does Gemini
   CLI when it says it takes embedded files; for agents that cannot read a PDF (Codex, Kimi Code,
   Antigravity, API keys) the composer says so before anything is sent.
+- A question («Solo preguntar», «Investigar») can go on to change code in the same task: «Pasar a
+  cambiar código» under its answer, or «Cambiar código» in the mode menu, which questions now keep.
+  The task gets its own branch and the AI starts with what was asked and answered as context.
+- A task that changes code can follow a flow chosen in the mode menu («Cómo trabaja»: one AI or a
+  flow), and each project can set the flow its tasks start with («Usar por defecto» in its flows,
+  or `hedy flow default <name>`). One AI stays the default.
+- The composer says when a flow will take the task on as it ends, and Shift+Tab changes the mode.
 
 ### Changed
 

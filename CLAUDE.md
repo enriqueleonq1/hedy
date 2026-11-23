@@ -58,7 +58,8 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
 - Orchestrator flows (docs/decisions.md §42–§44): `hedy flow list`, `hedy flow show <name|key>`,
   `hedy flow run <name|key> "<request>" [--model M]` (asks approvals and permissions here),
   `hedy flow new <name> [--from <flow>] [--global]`, `hedy flow edit <name>` (in `$EDITOR`, checked
-  on save), `hedy flow import <file> [--global] [--replace]` (a flow as text; it starts by hand); the role library: `hedy roles` (`list`, `show <id>`, `new <id> [--from]`, `edit <id>`,
+  on save), `hedy flow import <file> [--global] [--replace]` (a flow as text; it starts by hand),
+  `hedy flow default [<name>|--clear]` (the flow a project's code tasks start with; none: one AI); the role library: `hedy roles` (`list`, `show <id>`, `new <id> [--from]`, `edit <id>`,
   `remove <id>`). In the app, a project's Flujos tab (`#pf=`); a flow can follow a task's end.
   With a team (§49, admins share): `hedy flow share|unshare <name>`, `hedy roles share|unshare <id>`,
   `hedy flow allow "<cmd>"` (a team flow's test command runs only once allowed on this PC)
