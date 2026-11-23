@@ -98,6 +98,8 @@ export const tauriApi: HedyApi = {
 
   startTask: (input) => invoke("start_task", { input }),
   flows: (project) => invoke("flows", { project }),
+  flowDefaults: (project) => invoke("flow_defaults", { project }),
+  setDefaultFlow: (project, flow) => invoke("set_default_flow", { project, flow }),
   flowProblems: (project, flow) => invoke("flow_problems", { project, flow }),
   saveFlow: (project, key, flow) => invoke("save_flow", { project, key, flow }),
   deleteFlow: (project, key) => invoke("delete_flow", { project, key }),
@@ -180,6 +182,7 @@ export const tauriApi: HedyApi = {
   },
   sendMessage: (id, text) => invoke("send_message", { id, text }),
   queued: (id) => invoke("queued", { id }),
+  changeCode: (id, text, images, planFirst) => invoke("change_code", { id, text, images, planFirst }),
   queueMessage: (id, text, images) => invoke("queue_message", { id, text, images: images ?? null }),
   imageSupport: (account) => invoke("image_support", { account }),
   pdfSupport: (account) => invoke("pdf_support", { account }),

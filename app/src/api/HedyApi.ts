@@ -84,6 +84,7 @@ import type {
   NewTemplateInput,
   BoardEntry,
   Flow,
+  FlowDefaults,
   FlowEntry,
   FlowIssue,
   FlowValue,
@@ -194,6 +195,10 @@ export interface HedyApi {
 
   /** Hedy's templates, then the project's flows and the global ones. */
   flows(project: string | null): Promise<FlowEntry[]>;
+  /** The flow a project's «Cambiar código» tasks start with, and the one that follows their end. */
+  flowDefaults(project: string): Promise<FlowDefaults>;
+  /** Sets the flow they start with, by key; `null`: one AI. */
+  setDefaultFlow(project: string, flow: string | null): Promise<void>;
   /** Why a flow being edited could not run yet (empty: it can). */
   flowProblems(project: string | null, flow: Flow): Promise<FlowIssue[]>;
   /** Updates flow `key` (renamed or not, where it was saved); null: a new one for `project`. */
@@ -252,6 +257,11 @@ export interface HedyApi {
    * now when it is idle. Returns what is left in the queue.
    */
   queueMessage(id: string, text: string, images?: ImageInput[]): Promise<QueuedMessage[]>;
+  /**
+   * A question ("Solo preguntar", "Investigar") goes on to change code in the
+   * same task, starting with `text`, with what was said as context.
+   */
+  changeCode(id: string, text: string, images: ImageInput[], planFirst: boolean): Promise<Task>;
   /** The project's files for `@` mentions, relative and sorted (never `.env` or keys). */
   projectFiles(project: string): Promise<string[]>;
   /** Whether the agent of `account` takes images with a prompt. */

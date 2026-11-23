@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use hedy_core::application::{
-    AppResult, Hedy, NewAccount, NewConversation, NewProject, NewTask, NewTemplate, Setting,
-    TemplateScope,
+    AppResult, ChangeCode, Hedy, NewAccount, NewConversation, NewProject, NewTask, NewTemplate,
+    Setting, TemplateScope,
 };
 use hedy_core::domain::ImageSupport;
 use hedy_core::domain::command::reports_commands;
@@ -281,6 +281,42 @@ pub async fn flows(
     project: Option<PathBuf>,
 ) -> CommandResult<Vec<hedy_core::application::FlowEntry>> {
     blocking(&state, move |h| h.flows(project.as_deref())).await
+}
+
+/// What a project's new «Cambiar código» tasks do: the flow they start with
+/// (`None`: one AI) and the one that takes them on when they end.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowDefaults {
+    start: Option<hedy_core::application::FlowEntry>,
+    after: Option<hedy_core::application::FlowEntry>,
+}
+
+#[tauri::command]
+pub async fn flow_defaults(
+    state: State<'_, AppState>,
+    project: PathBuf,
+) -> CommandResult<FlowDefaults> {
+    blocking(&state, move |h| {
+        Ok(FlowDefaults {
+            start: h.default_flow(&project)?,
+            after: h.task_end_flow(&project)?,
+        })
+    })
+    .await
+}
+
+/// Sets the flow a project's «Cambiar código» tasks start with (`None`: one AI).
+#[tauri::command]
+pub async fn set_default_flow(
+    state: State<'_, AppState>,
+    project: PathBuf,
+    flow: Option<String>,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.set_default_flow(&project, flow.as_deref()).map(drop)
+    })
+    .await
 }
 
 /// Why a flow being edited could not run yet (empty: it can).
@@ -568,6 +604,34 @@ pub async fn queue_message(
     let images = dto::decode_images(images.unwrap_or_default())?;
     blocking(&state, move |h| {
         h.queue_message_with(&task_id(id), &text, images)
+    })
+    .await
+}
+
+/// A question ("Solo preguntar", "Investigar") goes on to change code, in
+/// the same task, starting with `text`.
+#[tauri::command]
+pub async fn change_code(
+    state: State<'_, AppState>,
+    id: String,
+    text: String,
+    images: Option<Vec<ImageInput>>,
+    plan_first: bool,
+) -> CommandResult<TaskDto> {
+    let images = dto::decode_images(images.unwrap_or_default())?;
+    blocking(&state, move |h| {
+        let task = h.change_code(
+            &task_id(id),
+            ChangeCode {
+                text,
+                images,
+                plan_first,
+            },
+        )?;
+        Ok(TaskDto {
+            live: h.is_running(&task.id),
+            task,
+        })
     })
     .await
 }

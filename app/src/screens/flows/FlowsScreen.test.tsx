@@ -49,6 +49,19 @@ describe("A project's flows", () => {
     expect(saveState()).toHaveTextContent("Guardado");
   });
 
+  it("sets the flow a project's code tasks start with, and goes back to one AI", async () => {
+    const { api, user } = await setup(flowsOf(HEDY));
+    await step("Programador con tests");
+    const button = await screen.findByRole("button", { name: "Usar por defecto" });
+    expect(button).toHaveAttribute("aria-pressed", "false");
+    await user.click(button);
+    await waitFor(() => expect(screen.getByRole("button", { name: "✓ Por defecto" })).toHaveAttribute("aria-pressed", "true"));
+    expect((await api.flowDefaults(HEDY)).start?.key).toBe("essential");
+    await user.click(screen.getByRole("button", { name: "✓ Por defecto" }));
+    await screen.findByRole("button", { name: "Usar por defecto" });
+    expect((await api.flowDefaults(HEDY)).start).toBeNull();
+  });
+
   it("a template is read-only until duplicated, and the copy saves as the project's", async () => {
     const { api, user } = await setup(flowsOf(HEDY));
     // No flow of its own: the first template opens.

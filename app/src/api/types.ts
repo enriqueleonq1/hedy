@@ -778,6 +778,14 @@ export interface FlowEntry {
   unapproved?: string[];
 }
 
+/** What a project's new «Cambiar código» tasks do (docs/decisions.md §56). */
+export interface FlowDefaults {
+  /** The flow they start with; `null`: one AI. */
+  start: FlowEntry | null;
+  /** The flow that takes a task on when its request ends ("Al terminar una tarea"). */
+  after: FlowEntry | null;
+}
+
 /** The team a project's flows can be shared with; only an admin shares them. */
 export interface TeamShare {
   team: string;
@@ -1023,6 +1031,8 @@ export type AgentEvent =
   /** A flow's condition was checked (`what`: "npm test", "las reglas"…). */
   | { kind: "flowCheck"; node: string; what: string; passed: boolean }
   | { kind: "flowOutOfRounds"; node: string; rounds: number; asked: string }
+  /** A question went on to change code in `branch`: what follows changes code. */
+  | { kind: "changesCode"; branch: string }
   | {
       kind: "limitWarning";
       account: string;
