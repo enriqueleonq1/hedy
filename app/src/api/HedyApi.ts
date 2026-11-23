@@ -256,6 +256,8 @@ export interface HedyApi {
   projectFiles(project: string): Promise<string[]>;
   /** Whether the agent of `account` takes images with a prompt. */
   imageSupport(account: string): Promise<ImageSupport>;
+  /** Whether the agent of `account` reads PDFs with a prompt. */
+  pdfSupport(account: string): Promise<ImageSupport>;
   /** An image of a task's history as a data URL; `null` when it was deleted. */
   attachment(taskId: string, file: string): Promise<string | null>;
   editQueued(message: number, text: string): Promise<QueuedMessage[]>;

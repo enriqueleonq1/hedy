@@ -1,6 +1,7 @@
-// Images in the composer: picked with the paperclip, pasted or dropped, shown
-// as small removable thumbnails above the text, and sent with the message.
-// The backend checks them again (type from the bytes, size, count).
+// Images and PDFs in the composer: picked with the paperclip, pasted or
+// dropped, shown as small removable thumbnails (a named chip for a PDF) above
+// the text, and sent with the message. The backend checks them again (type
+// from the bytes, size, count).
 
 import { useId, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -9,16 +10,18 @@ import { useApi } from "../../api/context";
 import type { ImageInput, ImageMediaType, ImageSupport } from "../../api/types";
 import { useToast } from "../../components/ui/Toast";
 import { useT, type MessageKey } from "../../i18n";
-import { CloseIcon, PaperclipIcon } from "./icons";
+import { CloseIcon, DocumentIcon, PaperclipIcon } from "./icons";
 
 export const IMAGE_TYPES: ImageMediaType[] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+export const PDF_TYPE: ImageMediaType = "application/pdf";
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const MAX_IMAGES = 4;
 
-/** An image waiting in the composer. */
+/** An image or PDF waiting in the composer. */
 export interface DraftImage {
   id: string;
   name: string;
+  pdf: boolean;
   /** Base64, as the backend takes it. */
   data: string;
   /** A data URL, for the thumbnail. */
@@ -27,12 +30,22 @@ export interface DraftImage {
 
 export type ImageProblem = { key: MessageKey; params?: Record<string, string | number> };
 
-/** Which of `files` fit next to `current` images, and why the others do not. */
-export function sortImageFiles(files: File[], current: number): { accepted: File[]; problems: ImageProblem[] } {
+/**
+ * Which of `files` fit next to `current` attachments, and why the others do
+ * not. `pdfs`: whether the agent reads PDFs.
+ */
+export function sortImageFiles(
+  files: File[],
+  current: number,
+  pdfs = false,
+): { accepted: File[]; problems: ImageProblem[] } {
   const accepted: File[] = [];
   const problems: ImageProblem[] = [];
   for (const file of files) {
-    if (!IMAGE_TYPES.includes(file.type as ImageMediaType)) {
+    const pdf = file.type === PDF_TYPE;
+    if (pdf && !pdfs) {
+      problems.push({ key: "composer.pdf.notAccepted", params: { name: file.name } });
+    } else if (!pdf && !IMAGE_TYPES.includes(file.type as ImageMediaType)) {
       problems.push({ key: "composer.images.unsupported", params: { name: file.name } });
     } else if (file.size > MAX_IMAGE_BYTES) {
       problems.push({ key: "composer.images.tooLarge", params: { name: file.name } });
@@ -56,7 +69,13 @@ export function readImage(file: File): Promise<DraftImage> {
     reader.onerror = () => reject(reader.error ?? new Error(file.name));
     reader.onload = () => {
       const url = String(reader.result ?? "");
-      resolve({ id: `img-${++nextDraft}`, name: file.name || "image", data: url.slice(url.indexOf(",") + 1), url });
+      resolve({
+        id: `img-${++nextDraft}`,
+        name: file.name || "image",
+        pdf: file.type === PDF_TYPE,
+        data: url.slice(url.indexOf(",") + 1),
+        url,
+      });
     };
     reader.readAsDataURL(file);
   });
@@ -89,7 +108,15 @@ export function useComposerImages({ account, queueing }: { account: string | nul
     enabled: !!account,
     staleTime: 60_000,
   });
+  const pdfSupport = useQuery({
+    queryKey: ["pdfSupport", account],
+    queryFn: () => api.pdfSupport(account ?? ""),
+    enabled: !!account,
+    staleTime: 60_000,
+  });
   const supported: ImageSupport | undefined = account ? support.data : "no";
+  /** Whether the agent reads PDFs (an ACP agent may still say no when it starts). */
+  const pdfs = !!account && !!pdfSupport.data && pdfSupport.data !== "no";
   /** Why images cannot be attached now; `null` when they can. */
   const blocked: string | null =
     supported === "no" ? t("composer.images.notAccepted") : queueing ? t("composer.images.whileQueued") : null;
@@ -100,7 +127,7 @@ export function useComposerImages({ account, queueing }: { account: string | nul
       toast.info(blocked);
       return;
     }
-    const { accepted, problems } = sortImageFiles(files, images.length);
+    const { accepted, problems } = sortImageFiles(files, images.length, pdfs);
     for (const problem of problems) toast.error(t(problem.key, problem.params));
     const read = await Promise.all(
       accepted.map((file) =>
@@ -117,6 +144,7 @@ export function useComposerImages({ account, queueing }: { account: string | nul
   return {
     images,
     supported,
+    pdfs,
     blocked,
     add,
     remove: (id: string) => setImages((old) => old.filter((i) => i.id !== id)),
@@ -126,15 +154,17 @@ export function useComposerImages({ account, queueing }: { account: string | nul
   };
 }
 
-/** The paperclip: picks images from disk, or says why it cannot. */
+/** The paperclip: picks images (and PDFs, when the agent reads them) from disk, or says why it cannot. */
 export function AttachButton({
   blocked,
   supported,
+  pdfs = false,
   disabled,
   onFiles,
 }: {
   blocked: string | null;
   supported: ImageSupport | undefined;
+  pdfs?: boolean;
   disabled: boolean;
   onFiles: (files: File[]) => void;
 }) {
@@ -143,7 +173,11 @@ export function AttachButton({
   const picker = useRef<HTMLInputElement>(null);
   const detailId = useId();
   const unavailable = disabled || !!blocked;
-  const detail = blocked ?? (supported === "ifAgentAllows" ? t("composer.images.maybe") : t("composer.images.attachDetail"));
+  const detail =
+    blocked ??
+    (supported === "ifAgentAllows"
+      ? t("composer.images.maybe")
+      : t(pdfs ? "composer.images.attachDetailPdf" : "composer.images.attachDetail"));
   return (
     <>
       {/* Not `disabled`: it stays focusable and its tooltip says why. */}
@@ -167,7 +201,7 @@ export function AttachButton({
       <input
         ref={picker}
         type="file"
-        accept={IMAGE_TYPES.join(",")}
+        accept={(pdfs ? [...IMAGE_TYPES, PDF_TYPE] : IMAGE_TYPES).join(",")}
         multiple
         hidden
         tabIndex={-1}
@@ -181,7 +215,7 @@ export function AttachButton({
   );
 }
 
-/** The attached images, above the text: each one removable with the mouse or the keyboard. */
+/** The attached images and PDFs, above the text: each one removable with the mouse or the keyboard. */
 export function ImageTray({
   images,
   onRemove,
@@ -212,8 +246,15 @@ export function ImageTray({
   return (
     <ul className="image-tray" aria-label={t("composer.images.list")} ref={list}>
       {images.map((image, index) => (
-        <li key={image.id} className="image-tray__item">
-          <img src={image.url} alt={image.name} title={image.name} />
+        <li key={image.id} className={image.pdf ? "image-tray__item image-tray__item--file" : "image-tray__item"}>
+          {image.pdf ? (
+            <span className="image-tray__file" title={image.name}>
+              <DocumentIcon />
+              <span className="image-tray__name">{image.name}</span>
+            </span>
+          ) : (
+            <img src={image.url} alt={image.name} title={image.name} />
+          )}
           <button
             type="button"
             className="image-tray__remove"

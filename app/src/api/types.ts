@@ -852,17 +852,17 @@ export interface BoardEntry {
   byUser?: boolean;
 }
 
-/** The image formats every supported CLI takes. */
-export type ImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+/** The image formats every supported CLI takes, and PDF, which only some agents read. */
+export type ImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "application/pdf";
 
-/** An image attached in the composer: the backend checks the real type from the bytes. */
+/** An image or PDF attached in the composer: the backend checks the real type from the bytes. */
 export interface ImageInput {
   name: string;
   /** The file's bytes, base64. */
   data: string;
 }
 
-/** An image kept with a message of the history (in Hedy's data folder). */
+/** An image or PDF kept with a message of the history (in Hedy's data folder). */
 export interface Attachment {
   /** The user's file name, for the alt text. */
   name: string;

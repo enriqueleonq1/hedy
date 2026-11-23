@@ -248,6 +248,7 @@ const IMAGE_PREFIX: [string, ImageMediaType][] = [
   ["/9j/", "image/jpeg"],
   ["R0lGOD", "image/gif"],
   ["UklGR", "image/webp"],
+  ["JVBERi0", "application/pdf"],
 ];
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -3835,6 +3836,7 @@ export class MockApi implements HedyApi {
 
   private attachments = new Map<string, string>();
   private imageSupportFor = new Map<string, ImageSupport>();
+  private pdfSupportFor = new Map<string, ImageSupport>();
   private nextAttachment = 0;
 
   /** Tests: what `account` says about images. */
@@ -3851,6 +3853,19 @@ export class MockApi implements HedyApi {
     return found.provider === "claude" || found.provider === "codex" ? "yes" : "ifAgentAllows";
   }
 
+  /** Tests: what `account` says about PDFs. */
+  setPdfSupport(account: string, support: ImageSupport): void {
+    this.pdfSupportFor.set(account, support);
+  }
+
+  async pdfSupport(account: string): Promise<ImageSupport> {
+    const set = this.pdfSupportFor.get(account);
+    if (set) return set;
+    const found = this.account(account);
+    if (found.kind === "apiKey") return "no";
+    return found.provider === "claude" ? "yes" : found.provider === "gemini" ? "ifAgentAllows" : "no";
+  }
+
   async attachment(taskId: string, file: string): Promise<string | null> {
     return this.attachments.get(`${taskId}/${file}`) ?? null;
   }
@@ -3858,15 +3873,18 @@ export class MockApi implements HedyApi {
   /** Checks and keeps the images of a message, like the backend. */
   private async storeImages(taskId: string, account: string, images: ImageInput[] | undefined): Promise<Attachment[]> {
     if (!images?.length) return [];
-    if (images.length > MAX_IMAGES) throw `como mucho ${MAX_IMAGES} imágenes por mensaje`;
+    if (images.length > MAX_IMAGES) throw `como mucho ${MAX_IMAGES} adjuntos por mensaje`;
     const typed = images.map((image) => {
       const mediaType = IMAGE_PREFIX.find(([prefix]) => image.data.startsWith(prefix))?.[1];
-      if (!mediaType) throw `«${image.name}» no es una imagen PNG, JPEG, GIF o WebP`;
+      if (!mediaType) throw `«${image.name}» no es una imagen PNG, JPEG, GIF o WebP ni un PDF`;
       if ((image.data.length * 3) / 4 > MAX_IMAGE_BYTES) throw `«${image.name}» pesa más de 5 MB`;
       return { image, mediaType };
     });
     if ((await this.imageSupport(account)) === "no") {
       throw `${this.account(account).providerName} no acepta imágenes con esta cuenta`;
+    }
+    if (typed.some((t) => t.mediaType === "application/pdf") && (await this.pdfSupport(account)) === "no") {
+      throw `${this.account(account).providerName} no lee PDF: quítalo, pega el texto o usa otra cuenta`;
     }
     return typed.map(({ image, mediaType }) => {
       const file = `${(++this.nextAttachment).toString(16)}-0.${mediaType.split("/")[1]}`;

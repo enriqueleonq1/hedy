@@ -1280,6 +1280,7 @@ function Composer({
           <AttachButton
             blocked={images.blocked}
             supported={images.supported}
+            pdfs={images.pdfs}
             disabled={disabled}
             onFiles={(files) => void images.add(files)}
           />
