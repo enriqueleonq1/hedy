@@ -412,6 +412,42 @@ pub fn role_remove(hedy: &Hedy, dir: &Path, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// `hedy flow default [name] [--clear]`: the flow this project's «Cambiar
+/// código» tasks start with (docs/decisions.md §56), shown, set or cleared.
+pub fn default_flow(hedy: &Hedy, dir: &Path, name: Option<&str>, clear: bool) -> Result<()> {
+    let s = Style::for_stdout();
+    let Some(path) = project_path(hedy, dir)? else {
+        bail!(tr!(
+            "Esta carpeta no es un proyecto de Hedy",
+            "This folder is not a Hedy project"
+        ));
+    };
+    if name.is_some() || clear {
+        refuse_in_agent_session()?;
+        hedy.set_default_flow(&path, name)?;
+    }
+    match hedy.default_flow(&path)? {
+        Some(entry) => println!(
+            "{} {} {}",
+            s.ok("✓"),
+            tr!(
+                "Las tareas de «Cambiar código» empiezan con el flujo",
+                "«Change code» tasks start with the flow"
+            ),
+            s.bold(clean(&entry.flow.name)),
+        ),
+        None => println!(
+            "{} {}",
+            s.ok("✓"),
+            tr!(
+                "Las tareas de «Cambiar código» las hace una sola IA (sin flujo)",
+                "«Change code» tasks are done by one AI (no flow)"
+            ),
+        ),
+    }
+    Ok(())
+}
+
 pub fn share_flow(hedy: &Hedy, dir: &Path, name: &str) -> Result<()> {
     refuse_in_agent_session()?;
     let project = crate::commands::project_here(hedy, dir)?;

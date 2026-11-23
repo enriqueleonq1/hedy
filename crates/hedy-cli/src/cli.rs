@@ -1123,6 +1123,27 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             ),
         ),
         (
+            "flow default",
+            "",
+            tr!(
+                "El flujo con el que empiezan las tareas de «Cambiar código» de este proyecto (sin nombre: lo muestra)",
+                "The flow this project's «Change code» tasks start with (no name: shows it)"
+            ),
+        ),
+        (
+            "flow default",
+            "name",
+            tr!(
+                "Nombre o clave del flujo (essential, approval…)",
+                "Flow name or key (essential, approval…)"
+            ),
+        ),
+        (
+            "flow default",
+            "clear",
+            tr!("Vuelve a una sola IA, sin flujo", "Back to one AI, no flow"),
+        ),
+        (
             "flow edit",
             "",
             tr!(
@@ -2282,6 +2303,12 @@ pub enum FlowCommand {
         replace: bool,
     },
 
+    Default {
+        name: Option<String>,
+        #[arg(long, conflicts_with = "name")]
+        clear: bool,
+    },
+
     Share {
         name: String,
     },
@@ -2680,6 +2707,13 @@ mod tests {
         assert!(parse(&["hedy", "permissions"]).is_ok());
         assert!(parse(&["hedy", "flow", "run", "focused-review", "Arregla el login"]).is_ok());
         assert!(parse(&["hedy", "flow", "run", "focused-review"]).is_err());
+        assert!(matches!(
+            Cli::try_parse_from(["hedy", "flow", "default", "essential"]).map(|c| c.command),
+            Ok(Some(Command::Flow {
+                command: Some(FlowCommand::Default { name: Some(n), clear: false })
+            })) if n == "essential"
+        ));
+        assert!(parse(&["hedy", "flow", "default", "essential", "--clear"]).is_err());
         assert!(parse(&["hedy", "permissions", "auto"]).is_ok());
         assert!(parse(&["hedy", "permissions", "bypass"]).is_err());
         assert!(parse(&["hedy", "block", ".env", "*.pem"]).is_ok());
