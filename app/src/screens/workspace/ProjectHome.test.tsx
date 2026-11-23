@@ -72,13 +72,13 @@ describe("A project's home", () => {
     expect(screen.queryByRole("region", { name: "Trabajando" })).toBeNull();
 
     // Finished ones fold behind one line.
-    expect(screen.queryByRole("button", { name: /^Cambia el color del botón/ })).toBeNull();
+    expect(within(screen.getByRole("main")).queryByRole("button", { name: /^Cambia el color del botón/ })).toBeNull();
     const older = screen.getByRole("button", { name: "1 terminada · ver historial" });
     expect(older).toHaveAttribute("aria-expanded", "false");
     await user.click(older);
     expect(older).toHaveAttribute("aria-expanded", "true");
     expect(older).toHaveTextContent("Ocultar terminadas");
-    expect(screen.getByRole("button", { name: /^Cambia el color del botón/ })).toHaveTextContent("Descartada");
+    expect(within(screen.getByRole("main")).getByRole("button", { name: /^Cambia el color del botón/ })).toHaveTextContent("Descartada");
 
     await user.click(within(ready).getByRole("button", { name: new RegExp(`^${TAXES}`) }));
     expect(await screen.findByRole("heading", { level: 1, name: TAXES })).toBeInTheDocument();

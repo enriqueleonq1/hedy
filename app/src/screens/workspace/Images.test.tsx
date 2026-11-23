@@ -143,7 +143,7 @@ describe("Images in the composer", () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity());
     await user.click(await screen.findByRole("button", { name: /^tienda/ }));
     // tienda opens on its home: the running task (s4) is one click away.
-    await user.click(await screen.findByRole("button", { name: /^Revisa los tests del carrito/ }));
+    await user.click(await within(screen.getByRole("main")).findByRole("button", { name: /^Revisa los tests del carrito/ }));
     await screen.findByRole("region", { name: "Mensajes en cola" });
     const attach = screen.getByRole("button", { name: "Adjuntar imágenes" });
     await waitFor(() => expect(attach).toHaveAttribute("aria-disabled", "true"));

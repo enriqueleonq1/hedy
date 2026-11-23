@@ -11,7 +11,8 @@ import { DEFAULT_ACCOUNT_COLOR } from "../theme/tokens";
 import { useFocusMode } from "./focusMode";
 import { useSidebarMenus } from "./SidebarMenus";
 import { SidebarRailProvider, useSidebarRail } from "./sidebarRail";
-import { CollapseIcon, HomeIcon, LockIcon, MemoryIcon, PlusIcon, QuestionIcon, SearchIcon, SettingsIcon, TerminalIcon } from "./ui/icons";
+import { SidebarTasks, useOpenProjects } from "./SidebarTasks";
+import { ChevronIcon, CollapseIcon, HomeIcon, LockIcon, MemoryIcon, PlusIcon, QuestionIcon, SearchIcon, SettingsIcon, TerminalIcon } from "./ui/icons";
 import { MenuButton } from "./ui/Menu";
 import { Mascot } from "./Mascot/Mascot";
 import { modKey, paletteKeys } from "./palette/keys";
@@ -111,6 +112,8 @@ export function Sidebar({
   const proposals = inbox.items.filter((entry) => entry.kind === "note" || entry.kind === "skill").length;
 
   // What waits for the user in each project, for its row.
+  // Which projects show their latest tasks under their row.
+  const openProjects = useOpenProjects(active);
   const pending = new Map<string, number>();
   for (const entry of inbox.items) {
     const path = entry.kind === "task" ? entry.item.task.project : entry.kind === "note" || entry.kind === "skill" ? entry.project : null;
@@ -278,8 +281,23 @@ export function Sidebar({
           {overview.projects.map((p) => {
             const color = projectColor(p, overview.accounts);
             const waiting = pending.get(p.path) ?? 0;
+            const unfolded = !rail && openProjects.isOpen(p.path);
+            const listId = `sidebar-tasks-${p.path}`;
             return (
-              <li key={p.path} className="sidebar__row">
+              <li key={p.path} className={rail ? "sidebar__row" : "sidebar__row sidebar__row--tree"}>
+                {!rail && (
+                  <button
+                    type="button"
+                    className="sidebar__toggle"
+                    aria-expanded={unfolded}
+                    aria-controls={unfolded ? listId : undefined}
+                    aria-label={t(unfolded ? "shell.hideTasks" : "shell.showTasks", { name: p.name })}
+                    title={t(unfolded ? "shell.hideTasks" : "shell.showTasks", { name: p.name })}
+                    onClick={() => openProjects.toggle(p.path)}
+                  >
+                    <ChevronIcon />
+                  </button>
+                )}
                 <button
                   className="sidebar__item"
                   aria-current={active === p.path ? "page" : undefined}
@@ -322,6 +340,15 @@ export function Sidebar({
                   >
                     <PlusIcon />
                   </button>
+                )}
+                {unfolded && (
+                  <SidebarTasks
+                    id={listId}
+                    project={p.path}
+                    current={view.screen === "workspace" && view.project === p.path ? (view.task ?? null) : null}
+                    onOpen={(task) => onNavigate({ screen: "workspace", project: p.path, task })}
+                    onAll={() => onNavigate({ screen: "workspace", project: p.path })}
+                  />
                 )}
               </li>
             );
