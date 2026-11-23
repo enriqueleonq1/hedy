@@ -135,6 +135,9 @@ pub enum AppError {
     /// The agent that would get the message takes no images.
     #[error("{}", self.message())]
     ImagesNotAccepted(String),
+    /// The agent that would get the message cannot read PDFs.
+    #[error("{}", self.message())]
+    PdfNotAccepted(String),
     /// Images cannot wait in the queue: they go only with a message sent now.
     #[error("{}", self.message())]
     ImagesWhileQueued,
@@ -741,6 +744,10 @@ impl AppError {
             Self::ImagesNotAccepted(agent) => tr!(
                 "{agent} no acepta imágenes con esta cuenta: quítalas o usa otra cuenta",
                 "{agent} does not take images with this account: remove them or use another account"
+            ),
+            Self::PdfNotAccepted(agent) => tr!(
+                "{agent} no lee PDF: quítalo, pega el texto o usa otra cuenta",
+                "{agent} does not read PDFs: remove it, paste the text or use another account"
             ),
             Self::ImagesWhileQueued => tr!(
                 "las imágenes no pueden esperar en la cola: envíalas cuando el agente termine su turno",

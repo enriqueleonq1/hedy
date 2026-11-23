@@ -114,6 +114,13 @@ impl Provider {
         }
     }
 
+    /// Whether its ACP agent reads a PDF sent as an embedded `resource`
+    /// (docs/decisions.md §54): Gemini CLI turns it into inline data; Kimi
+    /// Code drops blobs and Antigravity does not say.
+    pub fn acp_reads_pdf(self) -> bool {
+        self == Self::Gemini
+    }
+
     /// Whether its CLI reads files without asking Hedy first. Such agents always
     /// work in a worktree, where protected files like `.env` do not exist.
     pub fn always_in_worktree(self) -> bool {

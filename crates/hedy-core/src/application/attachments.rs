@@ -1,4 +1,4 @@
-//! Images attached to a message. They are checked (type from the bytes,
+//! Images and PDFs attached to a message. They are checked (type from the bytes,
 //! size, count) before anything is created, kept in Hedy's data folder
 //! (`attachments/<task id>/`, private to the user, never in the repository)
 //! and go to the agent through its CLI's official input, only when its
@@ -25,11 +25,23 @@ impl Hedy {
         Ok(self.support_of(&account))
     }
 
+    /// Whether the agent of `account` reads PDFs with a prompt.
+    pub fn pdf_support(&self, account: &str) -> AppResult<ImageSupport> {
+        let account = self.account(account)?;
+        Ok(self.pdf_support_of(&account))
+    }
+
     /// What the account's adapter says; an account that cannot work yet
     /// (an API key missing) takes nothing.
     pub(super) fn support_of(&self, account: &Account) -> ImageSupport {
         self.backend(account)
             .map(|(backend, _)| self.agents.image_support(&backend))
+            .unwrap_or(ImageSupport::No)
+    }
+
+    fn pdf_support_of(&self, account: &Account) -> ImageSupport {
+        self.backend(account)
+            .map(|(backend, _)| self.agents.pdf_support(&backend))
             .unwrap_or(ImageSupport::No)
     }
 
@@ -40,13 +52,16 @@ impl Hedy {
             return Ok(());
         }
         attachment::check_count(images.len())?;
+        let mut pdf = false;
         for image in images {
-            attachment::check_image(&image.name, &image.data)?;
+            pdf |= attachment::check_image(&image.name, &image.data)?.is_pdf();
         }
+        let agent = || account.provider.agent_label(None);
         if !self.support_of(account).accepts() {
-            return Err(AppError::ImagesNotAccepted(
-                account.provider.agent_label(None),
-            ));
+            return Err(AppError::ImagesNotAccepted(agent()));
+        }
+        if pdf && !self.pdf_support_of(account).accepts() {
+            return Err(AppError::PdfNotAccepted(agent()));
         }
         Ok(())
     }
@@ -298,10 +313,47 @@ mod tests {
         let request = f.agents.last_request();
         assert!(request.images.is_empty());
         assert!(
-            request.prompt.contains("1 imagen(es)"),
+            request.prompt.contains("1 archivo(s)"),
             "{}",
             request.prompt
         );
+    }
+
+    fn pdf(name: &str) -> NewImage {
+        NewImage {
+            name: name.into(),
+            data: b"%PDF-1.7\n%\xE2\xE3".to_vec(),
+        }
+    }
+
+    #[test]
+    fn a_pdf_goes_only_to_agents_that_read_it() {
+        let f = Fixture::new();
+        project(&f);
+        assert_eq!(f.hedy.pdf_support("personal").unwrap(), ImageSupport::Yes);
+        let task = ask(&f, vec![png("a.png"), pdf("/home/e/factura.pdf")]).unwrap();
+        assert_eq!(task.images[1].name, "factura.pdf");
+        assert_eq!(task.images[1].media_type, ImageType::Pdf);
+        assert!(task.images[1].file.ends_with(".pdf"));
+        assert_eq!(f.agents.last_request().images.len(), 2);
+        f.agents.emit(finished());
+
+        // An agent that reads no PDFs: refused before anything is sent...
+        f.agents.set_pdf_support(ImageSupport::No);
+        assert_eq!(
+            f.hedy
+                .queue_message_with(&task.id, "y este", vec![pdf("otra.pdf")]),
+            Err(AppError::PdfNotAccepted("Claude".into()))
+        );
+        // ...and a later phase gets the images and is told about the PDF.
+        let mut stored = f.hedy.task(&task.id).unwrap();
+        f.hedy
+            .run_stage(&mut stored, 0, "Sigue".into(), None)
+            .unwrap();
+        let request = f.agents.last_request();
+        assert_eq!(request.images.len(), 1);
+        assert_eq!(request.images[0].media_type, ImageType::Png);
+        assert!(request.prompt.contains("factura.pdf"), "{}", request.prompt);
     }
 
     #[test]

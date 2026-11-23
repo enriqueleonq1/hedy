@@ -77,6 +77,20 @@ impl AgentLauncher for AgentRouter {
             AgentBackend::Acp { .. } => ImageSupport::IfAgentAllows,
         }
     }
+
+    /// Claude Code takes a Messages API `document` block; Gemini CLI an
+    /// embedded ACP `resource` when it advertises `embeddedContext`. Codex,
+    /// Kimi Code, Antigravity and the chat-completions APIs take no PDF in
+    /// a message (docs/decisions.md §54).
+    fn pdf_support(&self, backend: &AgentBackend) -> ImageSupport {
+        match backend {
+            AgentBackend::ClaudeCode => ImageSupport::Yes,
+            AgentBackend::Acp {
+                reads_pdf: true, ..
+            } => ImageSupport::IfAgentAllows,
+            _ => ImageSupport::No,
+        }
+    }
 }
 
 pub struct SystemClock;

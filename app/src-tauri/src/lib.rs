@@ -98,6 +98,7 @@ pub fn run() {
             commands::queued,
             commands::queue_message,
             commands::image_support,
+            commands::pdf_support,
             commands::project_files,
             commands::attachment,
             commands::edit_queued,

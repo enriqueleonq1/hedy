@@ -88,6 +88,10 @@ struct State {
     first_prompt: Option<Turn>,
     /// The agent's `promptCapabilities.image`: without it, images are not sent.
     takes_images: bool,
+    /// The agent reads PDFs (its backend says so) and advertised
+    /// `promptCapabilities.embeddedContext`: without both, PDFs are not sent.
+    takes_pdf: bool,
+    reads_pdf: bool,
     /// A prompt is running; further messages wait in `queued`.
     in_turn: bool,
     turn_started: Option<Instant>,
@@ -150,11 +154,11 @@ impl Shared {
         });
     }
 
-    /// Sends a prompt now, or after the running one. Images only go to an
-    /// agent that said it takes them; otherwise the user is told and only
-    /// the text goes.
+    /// Sends a prompt now, or after the running one. Images and PDFs only
+    /// go to an agent that said it takes them; otherwise the user is told
+    /// and only the text goes.
     fn prompt(&self, turn: Turn) -> PortResult<()> {
-        let (session, takes_images, name) = {
+        let (session, takes_images, takes_pdf, name) = {
             let mut s = self.state.lock().unwrap();
             if s.in_turn || s.session.is_none() {
                 s.queued.push_back(turn);
@@ -165,11 +169,13 @@ impl Shared {
             (
                 s.session.clone().unwrap_or_default(),
                 s.takes_images,
+                s.takes_pdf,
                 s.name.clone(),
             )
         };
-        let images: &[PromptImage] = if takes_images { &turn.images } else { &[] };
-        if !takes_images && !turn.images.is_empty() {
+        let (pdfs, images): (Vec<PromptImage>, Vec<PromptImage>) =
+            turn.images.into_iter().partition(|i| i.media_type.is_pdf());
+        if !takes_images && !images.is_empty() {
             self.emit(AgentEvent::Error {
                 message: tr!(
                     "{name} no acepta imágenes: se envió solo el texto.",
@@ -177,7 +183,19 @@ impl Shared {
                 ),
             });
         }
-        let prompt = match super::images::acp_prompt(&turn.text, images) {
+        if !takes_pdf && !pdfs.is_empty() {
+            self.emit(AgentEvent::Error {
+                message: tr!(
+                    "{name} no lee PDF: se envió sin ellos.",
+                    "{name} does not read PDFs: the message went without them."
+                ),
+            });
+        }
+        let sent: Vec<PromptImage> = (if takes_images { images } else { Vec::new() })
+            .into_iter()
+            .chain(if takes_pdf { pdfs } else { Vec::new() })
+            .collect();
+        let prompt = match super::images::acp_prompt(&turn.text, &sent) {
             Ok(prompt) => prompt,
             Err(e) => {
                 self.state.lock().unwrap().in_turn = false;
@@ -217,7 +235,12 @@ pub struct AcpSession {
 
 impl AgentLauncher for AcpLauncher {
     fn start(&self, request: AgentRequest, events: EventSink) -> PortResult<Box<dyn AgentSession>> {
-        let AgentBackend::Acp { name, model_flag } = &request.backend else {
+        let AgentBackend::Acp {
+            name,
+            model_flag,
+            reads_pdf,
+        } = &request.backend
+        else {
             return Err(PortError::new("este agente no habla ACP"));
         };
         let mut spec = request.launch.clone();
@@ -289,6 +312,8 @@ impl AgentLauncher for AcpLauncher {
                     images: request.images.clone(),
                 }),
                 takes_images: false,
+                takes_pdf: false,
+                reads_pdf: *reads_pdf,
                 in_turn: false,
                 turn_started: None,
                 queued: VecDeque::new(),
@@ -401,12 +426,13 @@ fn response(shared: &Shared, id: u64, msg: &Value) -> PortResult<()> {
                 .as_bool()
                 .unwrap_or(false);
             // Omitted capabilities are unsupported (ACP initialization).
-            let takes_images = result["agentCapabilities"]["promptCapabilities"]["image"]
-                .as_bool()
-                .unwrap_or(false);
+            let capabilities = &result["agentCapabilities"]["promptCapabilities"];
+            let takes_images = capabilities["image"].as_bool().unwrap_or(false);
+            let embedded = capabilities["embeddedContext"].as_bool().unwrap_or(false);
             let (cwd, mcp, resume) = {
                 let mut s = shared.state.lock().unwrap();
                 s.takes_images = takes_images;
+                s.takes_pdf = embedded && s.reads_pdf;
                 let resume = s.resume.clone().filter(|_| can_load);
                 s.loading = resume.is_some();
                 (s.cwd.clone(), s.mcp_servers.clone(), resume)
@@ -944,6 +970,7 @@ for line in sys.stdin:
             backend: AgentBackend::Acp {
                 name: "Kimi Code".into(),
                 model_flag: None,
+                reads_pdf: true,
             },
             launch,
             mode: TaskMode::Project,
@@ -1105,6 +1132,7 @@ for line in sys.stdin:
     const IMAGE_ACP: &str = r#"
 import json, os, sys
 images = os.environ.get("FAKE_ACP_IMAGES") == "1"
+embedded = os.environ.get("FAKE_ACP_EMBEDDED") == "1"
 def send(msg):
     sys.stdout.write(json.dumps(msg) + "\n"); sys.stdout.flush()
 for line in sys.stdin:
@@ -1112,36 +1140,53 @@ for line in sys.stdin:
     method, mid, params = msg.get("method"), msg.get("id"), msg.get("params", {})
     if method == "initialize":
         caps = {"loadSession": False}
-        if images:
-            caps["promptCapabilities"] = {"image": True}
+        caps["promptCapabilities"] = {"image": images, "embeddedContext": embedded}
         send({"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": 1, "agentCapabilities": caps}})
     elif method == "session/new":
         send({"jsonrpc": "2.0", "id": mid, "result": {"sessionId": "s-1"}})
     elif method == "session/prompt":
         blocks = params["prompt"]
-        kinds = ",".join(b["type"] + (":" + b["mimeType"] if b["type"] == "image" else "") for b in blocks)
+        def kind(b):
+            if b["type"] == "image":
+                return "image:" + b["mimeType"]
+            if b["type"] == "resource":
+                r = b["resource"]
+                return "resource:" + r["mimeType"] + ":" + str(bool(r.get("blob"))) + ":" + r["uri"][:7]
+            return b["type"]
+        kinds = ",".join(kind(b) for b in blocks)
         send({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "s-1",
               "update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": kinds}}}})
         send({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": "end_turn"}})
 "#;
 
     fn image_turn(takes_images: bool) -> Vec<AgentEvent> {
+        attachment_turn(takes_images, false, false)
+    }
+
+    /// A turn with a PNG, and a PDF when `pdf`; `embedded` is the agent's
+    /// `promptCapabilities.embeddedContext`.
+    fn attachment_turn(takes_images: bool, embedded: bool, pdf: bool) -> Vec<AgentEvent> {
         let tmp = tempfile::tempdir().unwrap();
-        let image = crate::adapters::images::tests::png(tmp.path());
+        let mut images = vec![crate::adapters::images::tests::png(tmp.path())];
+        if pdf {
+            images.push(crate::adapters::images::tests::pdf(tmp.path()));
+        }
         let script = tmp.path().join("image_acp.py");
         std::fs::write(&script, IMAGE_ACP).unwrap();
         let (tx, rx) = mpsc::channel();
         let tx = Mutex::new(tx);
-        let flag = if takes_images { "1" } else { "0" };
+        let flag = |on: bool| if on { "1" } else { "0" };
         let request = AgentRequest {
             backend: AgentBackend::Acp {
                 name: "Gemini CLI".into(),
                 model_flag: None,
+                reads_pdf: true,
             },
             launch: LaunchSpec::program(
                 "env",
                 vec![
-                    format!("FAKE_ACP_IMAGES={flag}"),
+                    format!("FAKE_ACP_IMAGES={}", flag(takes_images)),
+                    format!("FAKE_ACP_EMBEDDED={}", flag(embedded)),
                     "python3".into(),
                     "-I".into(),
                     script.to_string_lossy().into_owned(),
@@ -1153,7 +1198,7 @@ for line in sys.stdin:
             plan_first: false,
             model: None,
             prompt: "mira".into(),
-            images: vec![image],
+            images,
             resume: None,
             memory: None,
             mcp: vec![],
@@ -1192,6 +1237,31 @@ for line in sys.stdin:
                 |e| matches!(e, AgentEvent::Error { message } if message.contains("no acepta imágenes"))
             ),
             "the user hears the images did not go: {seen:?}"
+        );
+    }
+
+    #[test]
+    fn pdfs_go_as_embedded_resources_only_when_the_agent_takes_them() {
+        let seen = attachment_turn(true, true, true);
+        assert!(
+            seen.contains(&AgentEvent::Message {
+                text: "text,image:image/png,resource:application/pdf:True:file://".into()
+            }),
+            "{seen:?}"
+        );
+
+        let seen = attachment_turn(true, false, true);
+        assert!(
+            seen.contains(&AgentEvent::Message {
+                text: "text,image:image/png".into()
+            }),
+            "{seen:?}"
+        );
+        assert!(
+            seen.iter().any(
+                |e| matches!(e, AgentEvent::Error { message } if message.contains("no lee PDF"))
+            ),
+            "the user hears the PDF did not go: {seen:?}"
         );
     }
 }

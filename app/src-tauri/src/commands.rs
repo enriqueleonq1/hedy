@@ -590,7 +590,16 @@ pub async fn image_support(
     blocking(&state, move |h| h.image_support(&account)).await
 }
 
-/// An image of a task's history as a data URL, or `None` when it is gone.
+/// Whether the account's agent reads PDFs with a prompt.
+#[tauri::command]
+pub async fn pdf_support(
+    state: State<'_, AppState>,
+    account: String,
+) -> CommandResult<ImageSupport> {
+    blocking(&state, move |h| h.pdf_support(&account)).await
+}
+
+/// An image or PDF of a task's history as a data URL, or `None` when it is gone.
 #[tauri::command]
 pub async fn attachment(
     state: State<'_, AppState>,
