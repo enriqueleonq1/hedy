@@ -1,7 +1,7 @@
 # Builds Hedy from this checkout into a pacman package (Arch, CachyOS…):
 #   cd packaging/arch && makepkg -f && sudo pacman -U hedy-*.pkg.tar.zst
 pkgname=hedy
-pkgver=1.7.1
+pkgver=1.8.0
 pkgrel=1
 pkgdesc="Tus IAs de programación y tus cuentas, en un solo lugar"
 arch=('x86_64')

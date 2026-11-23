@@ -6,6 +6,8 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-23
+
 ### Added
 
 - PDFs attach to a message like images (up to 5 MB). Claude Code reads them, and so does Gemini
@@ -18,11 +20,17 @@ All notable changes to Hedy are listed here. The format follows
   flow), and each project can set the flow its tasks start with («Usar por defecto» in its flows,
   or `hedy flow default <name>`). One AI stays the default.
 - The composer says when a flow will take the task on as it ends, and Shift+Tab changes the mode.
+- Each project in the sidebar unfolds its latest ten tasks, to open any of them in one click.
 
 ### Changed
 
 - "Enséñame el plan primero" hangs under "Cambiar código" in the mode menu, as a setting of that
   mode, and the chip reads "Cambiar código · con plan" while it is on.
+
+### Fixed
+
+- A terminal tab's close button sits inside the tab; Delete closes the tab with the focus.
+- A question that goes on to change code is taken on by the flow set to follow a task's end.
 
 ## [1.7.1] - 2026-11-23
 
