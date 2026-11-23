@@ -318,7 +318,7 @@ impl Hedy {
 
     /// With the `briefing` experiment, a project task's first prompt ends
     /// with what Hedy found locally for it (docs/decisions.md §33).
-    fn with_briefing(&self, task: &Task, prompt: String) -> String {
+    pub(super) fn with_briefing(&self, task: &Task, prompt: String) -> String {
         if task.mode != TaskMode::Project || !experiments::on(Experiment::Briefing) {
             return prompt;
         }

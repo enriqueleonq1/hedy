@@ -175,6 +175,13 @@ pub enum AppError {
     /// Not a valid name for a file or folder.
     #[error("{}", self.message())]
     InvalidFileName(String),
+    /// Only a project's question ("Solo preguntar", "Investigar") goes on to
+    /// change code.
+    #[error("{}", self.message())]
+    NotAQuestion(TaskId),
+    /// The question's agent is still answering: changing code waits for it.
+    #[error("{}", self.message())]
+    QuestionBusy(TaskId),
     /// The conversation's agent is still answering: carrying waits for it.
     #[error("{}", self.message())]
     ConversationBusy(TaskId),
@@ -786,6 +793,14 @@ impl AppError {
             Self::InvalidFileName(name) => tr!(
                 "«{name}» no es un nombre válido para un archivo o carpeta",
                 "«{name}» is not a valid name for a file or folder"
+            ),
+            Self::NotAQuestion(id) => tr!(
+                "la tarea {id} no es una pregunta de un proyecto: ya cambia código o es una conversación",
+                "task {id} is not a project's question: it already changes code or is a conversation"
+            ),
+            Self::QuestionBusy(_) => tr!(
+                "la IA todavía está respondiendo; espera a que termine para pasar a cambiar código",
+                "the AI is still answering; wait for it to finish before changing code"
             ),
             Self::ConversationBusy(_) => tr!(
                 "la conversación todavía está respondiendo; espera a que termine para llevarla a un proyecto",
