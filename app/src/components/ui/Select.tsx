@@ -13,6 +13,8 @@ export interface SelectOption<T extends string = string> {
   /** Before the label (a color dot, an icon); decorative. */
   icon?: ReactNode;
   disabled?: boolean;
+  /** Indented under the option before it: a setting of that option. */
+  nested?: boolean;
 }
 
 export interface SelectSection<T extends string = string> {
@@ -271,7 +273,13 @@ export function Select<T extends string>({
                           .join(" ") || undefined
                       }
                       aria-disabled={option.disabled || undefined}
-                      className={`popover__item${at === active ? " popover__item--active" : ""}`}
+                      className={[
+                        "popover__item",
+                        at === active && "popover__item--active",
+                        option.nested && "popover__item--nested",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
                       onMouseMove={() => !option.disabled && at !== active && setActive(at)}
                       onClick={() => choose(at)}
                     >

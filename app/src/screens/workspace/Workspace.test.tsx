@@ -194,7 +194,8 @@ describe("Workspace", () => {
     await user.click(modes);
     expect(screen.getByRole("listbox", { name: "Modo" })).toBeInTheDocument();
     // "Show me the plan first" is a checkbox in the same menu, on by default.
-    expect(optionLabels()).toEqual(["Cambiar código", "Solo preguntar", "Investigar", "Enséñame el plan primero"]);
+    // It hangs under "Cambiar código", as a setting of that mode.
+    expect(optionLabels()).toEqual(["Cambiar código", "Enséñame el plan primero", "Solo preguntar", "Investigar"]);
     expect(screen.getByRole("option", { name: "Enséñame el plan primero" })).toHaveAccessibleDescription(
       "Sí: lo apruebas antes de que toque el código",
     );
@@ -628,11 +629,12 @@ describe("Composer", () => {
     // The plan-first checkbox in the mode menu, by keyboard: it stays on the mode.
     const modes = screen.getByRole("combobox", { name: "Modo" });
     modes.focus();
-    await user.keyboard("{ArrowDown}{End}");
+    await user.keyboard("{ArrowDown}{Home}{ArrowDown}");
     const plan = screen.getByRole("option", { name: "Enséñame el plan primero" });
     expect(modes).toHaveAttribute("aria-activedescendant", plan.id);
+    expect(modes).toHaveTextContent("Cambiar código · con plan");
     await user.keyboard("{Enter}");
-    expect(modes).toHaveTextContent("Cambiar código");
+    expect(modes).not.toHaveTextContent("con plan");
     await user.click(modes);
     expect(screen.getByRole("option", { name: "Enséñame el plan primero" })).toHaveAccessibleDescription(
       "No: empieza a cambiar el código enseguida",

@@ -603,6 +603,8 @@ select:disabled { opacity: 0.65; }
 .popover__item--active,
 button.popover__item:hover:not(:disabled),
 button.popover__item:focus-visible { background: var(--selection); outline: none; }
+/* A setting of the option above it (Select's `nested`), hanging under its label. */
+.popover__item--nested { min-height: 0; padding-left: calc(var(--space-2) + 28px); }
 .popover__item[aria-disabled="true"],
 .popover__item:disabled { color: var(--muted); cursor: default; }
 .popover__check { flex: none; width: 18px; display: inline-flex; justify-content: center; color: var(--action-text); }

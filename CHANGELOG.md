@@ -12,6 +12,11 @@ All notable changes to Hedy are listed here. The format follows
   CLI when it says it takes embedded files; for agents that cannot read a PDF (Codex, Kimi Code,
   Antigravity, API keys) the composer says so before anything is sent.
 
+### Changed
+
+- "Enséñame el plan primero" hangs under "Cambiar código" in the mode menu, as a setting of that
+  mode, and the chip reads "Cambiar código · con plan" while it is on.
+
 ## [1.7.1] - 2026-11-23
 
 ### Fixed

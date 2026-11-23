@@ -26,7 +26,7 @@ import { pressPanelShortcut } from "../../components/palette/codeCommands";
 import { taskState } from "../../tasks/state";
 import { Dialog } from "../../components/ui/Dialog";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { AskIcon, CodeIcon, InfoIcon, PlanIcon, ResearchIcon, SendIcon, TemplateIcon } from "../../components/ui/icons";
+import { AskIcon, CodeIcon, InfoIcon, ResearchIcon, SendIcon, TemplateIcon } from "../../components/ui/icons";
 import { MenuButton, type MenuItem } from "../../components/ui/Menu";
 import { Select } from "../../components/ui/Select";
 import { useToast } from "../../components/ui/Toast";
@@ -1185,33 +1185,29 @@ function Composer({
                 label={t("workspace.composer.mode")}
                 title={t("workspace.composer.mode")}
                 value={mode}
-                sections={[
+                options={(solo ? CONVERSATION_MODES : MODES).flatMap((value) => [
                   {
-                    options: (solo ? CONVERSATION_MODES : MODES).map((value) => ({
-                      value,
-                      label: t(MODE_LABEL[value]),
-                      detail: t(MODE_DETAIL[value]),
-                      icon: MODE_ICON[value],
-                    })),
+                    value,
+                    label: t(MODE_LABEL[value]),
+                    detail: t(MODE_DETAIL[value]),
+                    icon: MODE_ICON[value],
                   },
-                  // "Show me the plan first" is a checkbox in the same menu, for changing code only.
-                  ...(mode === "project"
+                  // "Show me the plan first" hangs under "Change code", as a setting of
+                  // that mode, and only while it is the chosen one.
+                  ...(value === "project" && mode === "project"
                     ? [
                         {
-                          options: [
-                            {
-                              value: PLAN_FIRST,
-                              label: t("workspace.composer.planFirst"),
-                              detail: t(planFirst ? "workspace.composer.planFirstOn" : "workspace.composer.planFirstOff"),
-                              icon: (
-                                <input type="checkbox" checked={planFirst} readOnly tabIndex={-1} style={{ pointerEvents: "none" }} />
-                              ),
-                            },
-                          ],
+                          value: PLAN_FIRST as typeof PLAN_FIRST,
+                          label: t("workspace.composer.planFirst"),
+                          detail: t(planFirst ? "workspace.composer.planFirstOn" : "workspace.composer.planFirstOff"),
+                          icon: (
+                            <input type="checkbox" checked={planFirst} readOnly tabIndex={-1} style={{ pointerEvents: "none" }} />
+                          ),
+                          nested: true,
                         },
                       ]
                     : []),
-                ]}
+                ])}
                 renderValue={(option) => (
                   <>
                     {option?.icon && (
@@ -1219,15 +1215,13 @@ function Composer({
                         {option.icon}
                       </span>
                     )}
-                    <span className="select__text">{option?.label ?? ""}</span>
-                    {mode === "project" && planFirst && (
-                      <span className="select__icon" aria-hidden>
-                        <PlanIcon />
-                      </span>
-                    )}
+                    <span className="select__text">
+                      {mode === "project" && planFirst
+                        ? t("workspace.composer.withPlan", { mode: option?.label ?? "" })
+                        : (option?.label ?? "")}
+                    </span>
                   </>
                 )}
-                tooltip={mode === "project" && planFirst ? t("workspace.composer.planFirst") : undefined}
                 onChange={(value) => (value === PLAN_FIRST ? setPlanFirst((on) => !on) : setNewMode(value))}
               />
               {accountPicker}
