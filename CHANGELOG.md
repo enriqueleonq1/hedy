@@ -6,6 +6,12 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- PDFs attach to a message like images (up to 5 MB). Claude Code reads them, and so does Gemini
+  CLI when it says it takes embedded files; for agents that cannot read a PDF (Codex, Kimi Code,
+  Antigravity, API keys) the composer says so before anything is sent.
+
 ## [1.7.1] - 2026-11-23
 
 ### Fixed

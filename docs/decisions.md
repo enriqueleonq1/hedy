@@ -1281,6 +1281,8 @@ claude -p /usage --output-format json --no-session-persistence --safe-mode
 
 ## 24. Images, file mentions and suggestions in the composer (Nov 15, 2026)
 
+PDFs attach the same way since §54.
+
 ### Images with a prompt
 
 - **What the user attaches.** PNG, JPEG, GIF or WebP, at most 5 MB each and 4 per message
@@ -4400,3 +4402,30 @@ is why it never showed there.
 - **WebGL rendering** (`@xterm/addon-webgl`, as VS Code's terminal) was tried and left out: in
   WebKitGTK it drew the text but lost repaints that only change colors (fish's syntax colors,
   the suggestion) and the right prompt. The DOM renderer draws them right.
+
+## 54. PDFs with a prompt (Nov 23, 2026)
+
+A PDF attaches like an image (§24): from the paperclip, a paste or a drop, at most 5 MB, within
+the same four attachments per message. Its type comes from its first bytes (`%PDF-`); it is
+stored with the images (`attachments/<task id>/`, never in the repository) and shows as a chip
+with its name, in the composer and in the history. Hedy never turns it into text: each agent
+gets the file through its own official input, or not at all.
+
+| Agent | Reads PDFs? | How | Source |
+|---|---|---|---|
+| Claude Code (`-p --input-format stream-json`) | Yes | a Messages API `document` block, `{"type":"document","source":{"type":"base64","media_type":"application/pdf","data"}}`, after the text | Agent SDK streaming input takes Messages API content blocks; its changelog fixes document blocks in user messages (2.1.284, 2.1.299). **Checked live** (haiku, no tools): it read a one-page invoice's total and keyword. |
+| Gemini CLI (ACP) | When it advertises `promptCapabilities.embeddedContext` | an embedded `resource`, `{"uri":"file://…","mimeType":"application/pdf","blob"}`; it turns a blob into inline data | agentclientprotocol.com/protocol/content; Gemini CLI's ACP session code (its `read_file` docs list PDF) |
+| Kimi Code (ACP) | No | it advertises `embeddedContext` but drops blob resources (its ACP reference) and its file tools read text, images and video | MoonshotAI/kimi-code docs/en/reference/kimi-acp.md, tools.md |
+| Antigravity (ACP) | No, until documented | its CLI lists images and video as media; its ACP guide does not say PDF | antigravity.google/docs |
+| Codex | No | `localImage` / `-i` take images only | developers.openai.com/codex |
+| Kimi / Gemini by API key | No | Kimi takes PDFs only through its Files API extraction (the docs say not to inline them); Hedy talks to both through chat completions, whose `image_url` parts are images | platform.kimi.ai "ask questions about PDF content" |
+
+- **Before sending.** `AgentLauncher::pdf_support` (beside `image_support`) answers per backend;
+  ACP's `reads_pdf` comes from `Provider::acp_reads_pdf`. The composer offers PDFs only when the
+  account's agent reads them; otherwise a dropped PDF is refused with the reason, and the use cases
+  refuse it too (`PdfNotAccepted`), so nothing is spent on a message the agent cannot read.
+- **Later phases and handoffs** whose agent reads no PDFs get the images and a line naming the
+  PDFs it cannot read. An ACP agent that started without `embeddedContext` gets the text, and the
+  chat says the PDFs did not go.
+- **Not verified live:** Gemini CLI (not installed here); its path is tested against a fake ACP
+  agent with and without the capability.
