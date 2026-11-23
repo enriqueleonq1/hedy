@@ -196,16 +196,16 @@ impl DomainError {
                 tr!("ponle un nombre al proyecto", "give the project a name")
             }
             Self::ImageTooLarge(name) => tr!(
-                "«{name}» pesa más de 5 MB: reduce la imagen o recórtala",
-                "«{name}» is larger than 5 MB: shrink or crop the image"
+                "«{name}» pesa más de 5 MB: redúcelo o recórtalo",
+                "«{name}» is larger than 5 MB: shrink or crop it"
             ),
             Self::UnsupportedImage(name) => tr!(
-                "«{name}» no es una imagen PNG, JPEG, GIF o WebP",
-                "«{name}» is not a PNG, JPEG, GIF or WebP image"
+                "«{name}» no es una imagen PNG, JPEG, GIF o WebP ni un PDF",
+                "«{name}» is not a PNG, JPEG, GIF or WebP image or a PDF"
             ),
             Self::TooManyImages(max) => tr!(
-                "como mucho {max} imágenes por mensaje",
-                "at most {max} images per message"
+                "como mucho {max} adjuntos por mensaje",
+                "at most {max} attachments per message"
             ),
             Self::InvalidProjectName(name) => tr!(
                 "«{name}» no sirve como nombre de carpeta: usa letras o números",

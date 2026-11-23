@@ -69,6 +69,16 @@ export function PaperclipIcon() {
   );
 }
 
+/** A page with a folded corner: an attached PDF. */
+export function DocumentIcon() {
+  return (
+    <svg {...common} className="icon">
+      <path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3.5V8h4.5M9 13h6M9 16.5h4" />
+    </svg>
+  );
+}
+
 /** A picture: an image that is gone. */
 export function ImageIcon() {
   return (

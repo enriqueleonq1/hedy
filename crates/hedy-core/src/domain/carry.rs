@@ -135,30 +135,7 @@ pub fn context_section(
             out.push_str(summary);
             out.push('\n');
         }
-        None => {
-            for (index, turn) in turns.iter().enumerate() {
-                let n = index + 1;
-                out.push_str(&tr!("Pregunta {n}:", "Question {n}:"));
-                out.push('\n');
-                out.push_str(&turn.question);
-                out.push('\n');
-                if !turn.images.is_empty() {
-                    let names = turn
-                        .images
-                        .iter()
-                        .map(|i| i.name.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    out.push_str(&tr!("(Imágenes: {names})", "(Images: {names})"));
-                    out.push('\n');
-                }
-                out.push('\n');
-                out.push_str(&tr!("Respuesta {n}:", "Answer {n}:"));
-                out.push('\n');
-                out.push_str(&turn.answer);
-                out.push_str("\n\n");
-            }
-        }
+        None => push_turns(&mut out, turns),
     }
     let images = turns.iter().map(|t| t.images.len()).sum::<usize>();
     if images > 0 {
@@ -180,6 +157,66 @@ pub fn context_section(
     }
     out.push_str(&tr!("--- Fin del contexto ---", "--- End of context ---"));
     out
+}
+
+/// Each question with its answer, numbered.
+fn push_turns(out: &mut String, turns: &[ContextTurn]) {
+    for (index, turn) in turns.iter().enumerate() {
+        let n = index + 1;
+        out.push_str(&tr!("Pregunta {n}:", "Question {n}:"));
+        out.push('\n');
+        out.push_str(&turn.question);
+        out.push('\n');
+        if !turn.images.is_empty() {
+            let names = turn
+                .images
+                .iter()
+                .map(|i| i.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(&tr!("(Imágenes: {names})", "(Images: {names})"));
+            out.push('\n');
+        }
+        out.push('\n');
+        out.push_str(&tr!("Respuesta {n}:", "Answer {n}:"));
+        out.push('\n');
+        out.push_str(&turn.answer);
+        out.push_str("\n\n");
+    }
+}
+
+/// What opens the first prompt of a question that goes on to change code
+/// (docs/decisions.md §55): the task's earlier questions and answers, the
+/// most recent ones when they are long. `None` when there are none.
+pub fn earlier_turns_section(turns: &[ContextTurn]) -> Option<String> {
+    let mut start = 0;
+    while start + 1 < turns.len() && context_chars(&turns[start..]) > LONG_CONTEXT_CHARS {
+        start += 1;
+    }
+    let kept = &turns[start..];
+    if kept.is_empty() {
+        return None;
+    }
+    let mut out = tr!(
+        "--- Contexto: lo hablado antes en esta tarea ---",
+        "--- Context: what was said earlier in this task ---"
+    );
+    out.push('\n');
+    out.push_str(&tr!(
+        "Hasta ahora el usuario solo preguntaba, sin cambiar código. Úsalo como contexto; lo que quiere que hagas va después de este bloque.",
+        "Until now the user only asked questions, without changing code. Use it as context; what they want done follows this block."
+    ));
+    out.push_str("\n\n");
+    if start > 0 {
+        out.push_str(&tr!(
+            "(Se omiten {start} pregunta(s) más antiguas.)",
+            "({start} older question(s) left out.)"
+        ));
+        out.push_str("\n\n");
+    }
+    push_turns(&mut out, kept);
+    out.push_str(&tr!("--- Fin del contexto ---", "--- End of context ---"));
+    Some(out)
 }
 
 /// The task's prompt: the context section, then the instruction.
@@ -419,5 +456,28 @@ mod tests {
         assert_eq!(note_text(" Base ", " SQLite "), "Base\n\nSQLite");
         assert_eq!(note_text("", "SQLite"), "SQLite");
         assert_eq!(note_text("Base", ""), "Base");
+    }
+
+    #[test]
+    fn earlier_turns_keep_the_most_recent_when_long() {
+        let turn = |q: &str, a: &str| ContextTurn {
+            question: q.into(),
+            answer: a.into(),
+            images: Vec::new(),
+        };
+        assert_eq!(earlier_turns_section(&[]), None);
+        let section =
+            earlier_turns_section(&[turn("¿Por qué falla?", "Por las mayúsculas.")]).unwrap();
+        assert!(section.starts_with("--- Contexto: lo hablado antes en esta tarea ---"));
+        assert!(section.contains("Pregunta 1:\n¿Por qué falla?"));
+        assert!(section.contains("Respuesta 1:\nPor las mayúsculas."));
+        assert!(section.ends_with("--- Fin del contexto ---"));
+
+        let long = "x".repeat(LONG_CONTEXT_CHARS);
+        let section =
+            earlier_turns_section(&[turn("vieja", &long), turn("nueva", "corta")]).unwrap();
+        assert!(!section.contains("vieja"));
+        assert!(section.contains("Se omiten 1 pregunta(s)"));
+        assert!(section.contains("Pregunta 1:\nnueva"));
     }
 }

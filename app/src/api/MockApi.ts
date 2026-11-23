@@ -24,6 +24,7 @@ import { buildTheme } from "../theme/derive";
 import type {
   BoardEntry,
   Flow,
+  FlowDefaults,
   FlowEntry,
   FlowIssue,
   FlowValue,
@@ -248,6 +249,7 @@ const IMAGE_PREFIX: [string, ImageMediaType][] = [
   ["/9j/", "image/jpeg"],
   ["R0lGOD", "image/gif"],
   ["UklGR", "image/webp"],
+  ["JVBERi0", "application/pdf"],
 ];
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -1841,6 +1843,38 @@ export class MockApi implements HedyApi {
     return this.emitQueue(id);
   }
 
+  async changeCode(id: string, text: string, images: ImageInput[], planFirst: boolean): Promise<Task> {
+    const task = this.tasksById.get(id);
+    if (!task || task.status === "accepted" || task.status === "discarded") throw "la tarea ya está cerrada";
+    if (task.conversation || task.mode === "project") throw `la tarea ${id} no es una pregunta de un proyecto`;
+    if (this.busy(task)) throw "la IA todavía está respondiendo; espera a que termine para pasar a cambiar código";
+    if (!text.trim()) throw "escribe qué quieres que haga";
+    const stored = await this.storeImages(id, task.account, images);
+    const branch = `hedy/${task.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}-${id}`;
+    const stage = (phase: "plan" | "implement") => ({ phase, account: task.account, model: task.model });
+    Object.assign(task, {
+      mode: "project",
+      workspace: { worktree: `${task.project}/.hedy/worktrees/${id}`, branch, baseBranch: "main", baseCommit: "abc1234" },
+      status: "running",
+      live: true,
+      sessionId: null,
+      stages: planFirst ? [stage("plan"), stage("implement")] : [stage("implement")],
+      stage: 0,
+      images: stored,
+    } satisfies Partial<Task>);
+    this.diffs.set(id, []);
+    this.notifyTask(task);
+    this.push(id, { kind: "changesCode", branch });
+    this.push(id, stored.length ? { kind: "userMessage", text: text.trim(), images: stored } : { kind: "userMessage", text: text.trim() });
+    this.script(id, [
+      { kind: "phaseStarted", phase: planFirst ? "plan" : "implement", agent: "Claude Opus", account: "Claude personal" },
+      ...(planFirst
+        ? [{ kind: "plan", text: "1. Pasar el correo a minúsculas\n2. Correr los tests", requestId: "plan-1" } as AgentEvent]
+        : this.implementation()),
+    ]);
+    return { ...task };
+  }
+
   async editQueued(message: number, text: string): Promise<QueuedMessage[]> {
     if (!text.trim()) throw "escribe qué quieres que haga";
     const found = this.queuedMessage(message);
@@ -1900,6 +1934,26 @@ export class MockApi implements HedyApi {
           }))
         : [];
     return [...mockTemplates(), ...(project ? mine(project) : []), ...mine(null), ...team];
+  }
+
+  private defaultFlows = new Map<string, string>();
+
+  async flowDefaults(project: string): Promise<FlowDefaults> {
+    const entries = await this.flows(project);
+    const key = this.defaultFlows.get(project);
+    return {
+      start: entries.find((e) => e.key === key) ?? null,
+      after: entries.find((e) => e.scope === "project" && e.flow.triggers.includes("taskEnd")) ?? null,
+    };
+  }
+
+  async setDefaultFlow(project: string, flow: string | null): Promise<void> {
+    if (flow === null) {
+      this.defaultFlows.delete(project);
+      return;
+    }
+    if (!(await this.flows(project)).some((e) => e.key === flow)) throw `no existe el flujo «${flow}»`;
+    this.defaultFlows.set(project, flow);
   }
 
   /** The sample team ("Café Aurora", tienda's): its shared flows, and the commands this PC allowed. */
@@ -3835,6 +3889,7 @@ export class MockApi implements HedyApi {
 
   private attachments = new Map<string, string>();
   private imageSupportFor = new Map<string, ImageSupport>();
+  private pdfSupportFor = new Map<string, ImageSupport>();
   private nextAttachment = 0;
 
   /** Tests: what `account` says about images. */
@@ -3851,6 +3906,19 @@ export class MockApi implements HedyApi {
     return found.provider === "claude" || found.provider === "codex" ? "yes" : "ifAgentAllows";
   }
 
+  /** Tests: what `account` says about PDFs. */
+  setPdfSupport(account: string, support: ImageSupport): void {
+    this.pdfSupportFor.set(account, support);
+  }
+
+  async pdfSupport(account: string): Promise<ImageSupport> {
+    const set = this.pdfSupportFor.get(account);
+    if (set) return set;
+    const found = this.account(account);
+    if (found.kind === "apiKey") return "no";
+    return found.provider === "claude" ? "yes" : found.provider === "gemini" ? "ifAgentAllows" : "no";
+  }
+
   async attachment(taskId: string, file: string): Promise<string | null> {
     return this.attachments.get(`${taskId}/${file}`) ?? null;
   }
@@ -3858,15 +3926,18 @@ export class MockApi implements HedyApi {
   /** Checks and keeps the images of a message, like the backend. */
   private async storeImages(taskId: string, account: string, images: ImageInput[] | undefined): Promise<Attachment[]> {
     if (!images?.length) return [];
-    if (images.length > MAX_IMAGES) throw `como mucho ${MAX_IMAGES} imágenes por mensaje`;
+    if (images.length > MAX_IMAGES) throw `como mucho ${MAX_IMAGES} adjuntos por mensaje`;
     const typed = images.map((image) => {
       const mediaType = IMAGE_PREFIX.find(([prefix]) => image.data.startsWith(prefix))?.[1];
-      if (!mediaType) throw `«${image.name}» no es una imagen PNG, JPEG, GIF o WebP`;
+      if (!mediaType) throw `«${image.name}» no es una imagen PNG, JPEG, GIF o WebP ni un PDF`;
       if ((image.data.length * 3) / 4 > MAX_IMAGE_BYTES) throw `«${image.name}» pesa más de 5 MB`;
       return { image, mediaType };
     });
     if ((await this.imageSupport(account)) === "no") {
       throw `${this.account(account).providerName} no acepta imágenes con esta cuenta`;
+    }
+    if (typed.some((t) => t.mediaType === "application/pdf") && (await this.pdfSupport(account)) === "no") {
+      throw `${this.account(account).providerName} no lee PDF: quítalo, pega el texto o usa otra cuenta`;
     }
     return typed.map(({ image, mediaType }) => {
       const file = `${(++this.nextAttachment).toString(16)}-0.${mediaType.split("/")[1]}`;

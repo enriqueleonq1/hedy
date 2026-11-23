@@ -332,6 +332,11 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX flow_board_task ON flow_board(task);
 "#,
+    r#"
+    -- The flow a project's new «Cambiar código» tasks start with (a flow
+    -- key; NULL: one AI). docs/decisions.md §56.
+    ALTER TABLE projects ADD COLUMN default_flow TEXT;
+"#,
 ];
 
 mod commands;
@@ -516,6 +521,7 @@ fn project_from_row(row: &Row) -> rusqlite::Result<Project> {
         .and_then(PermissionMode::parse)
         .unwrap_or_default();
     Ok(Project {
+        default_flow: row.get(10)?,
         client: row.get(7)?,
         blocked_files,
         permission_mode,
@@ -534,7 +540,7 @@ impl ProjectRepository for SqliteStore {
         self.with(|c| {
             c.prepare(
                 "SELECT path, name, account_id, protected, color, phases, memory_off, client, blocked_files,
-                    permission_mode
+                    permission_mode, default_flow
                  FROM projects ORDER BY name",
             )?
             .query_map([], project_from_row)?
@@ -558,14 +564,15 @@ impl ProjectRepository for SqliteStore {
         self.with(|c| {
             c.execute(
                 "INSERT INTO projects (path, name, account_id, protected, color, phases, memory_off, client, blocked_files,
-                    permission_mode)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                    permission_mode, default_flow)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                  ON CONFLICT (path) DO UPDATE SET
                     name = excluded.name, account_id = excluded.account_id,
                     protected = excluded.protected, color = excluded.color,
                     phases = excluded.phases, memory_off = excluded.memory_off,
                     client = excluded.client, blocked_files = excluded.blocked_files,
-                    permission_mode = excluded.permission_mode",
+                    permission_mode = excluded.permission_mode,
+                    default_flow = excluded.default_flow",
                 params![
                     project.path.to_string_lossy(),
                     project.name,
@@ -578,6 +585,7 @@ impl ProjectRepository for SqliteStore {
                     blocked_files,
                     (project.permission_mode != PermissionMode::Manual)
                         .then(|| project.permission_mode.as_str()),
+                    project.default_flow,
                 ],
             )
             .map(drop)

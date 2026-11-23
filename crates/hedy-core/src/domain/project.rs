@@ -25,6 +25,9 @@ pub struct Project {
     pub blocked_files: super::permissions::BlockedFiles,
     /// The permission mode its new tasks start with.
     pub permission_mode: super::task::PermissionMode,
+    /// The flow its new «Cambiar código» tasks start with (a flow's key);
+    /// `None`: one AI (docs/decisions.md §56).
+    pub default_flow: Option<String>,
 }
 
 impl Project {
@@ -44,6 +47,7 @@ impl Project {
             client: None,
             blocked_files: Default::default(),
             permission_mode: Default::default(),
+            default_flow: None,
         }
     }
 

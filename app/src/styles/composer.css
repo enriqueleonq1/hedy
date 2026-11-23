@@ -36,6 +36,22 @@
 @media (hover: none) {
   .image-tray__remove { opacity: 1; }
 }
+/* A PDF: its name next to a page icon, as wide as the name needs (up to a limit). */
+.image-tray__item--file { width: auto; max-width: 220px; }
+.image-tray__file,
+.message-images__item--file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 28px 0 10px;
+  color: var(--ink);
+  font-size: 0.8125rem;
+}
+.image-tray__file .icon,
+.message-images__item--file .icon { flex: none; width: 16px; height: 16px; color: var(--muted); }
+.image-tray__name,
+.message-images__name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 /* A drag with files over the composer. */
 .composer--dropping { border-color: var(--action); box-shadow: 0 0 0 4px var(--selection); }
@@ -68,6 +84,7 @@
 }
 .message-images__item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .message-images__item--missing { box-shadow: inset 0 0 0 1px var(--line); }
+.message-images__item.message-images__item--file { width: auto; max-width: 260px; height: 36px; padding-right: 12px; box-shadow: inset 0 0 0 1px var(--line); }
 
 /* The @file picker uses the template picker's look, one line per file; folders in mono.
    (Doubled classes: this sheet may load before global.css.) */

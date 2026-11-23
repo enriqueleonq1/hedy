@@ -118,9 +118,13 @@ describe("terminal tabs", () => {
     expect(one).toHaveAttribute("aria-selected", "true");
     expect(one).toHaveAttribute("tabindex", "0");
 
-    // Closing is for the terminal on screen, outside the tablist.
-    await user.click(screen.getByRole("button", { name: "Cerrar Uno" }));
+    // Each tab has its × inside (for the mouse); from the keyboard, Supr closes the tab.
+    await user.click(screen.getByTitle("Cerrar Uno"));
     expect(screen.queryByRole("tab", { name: "Uno" })).toBeNull();
-    expect(screen.getByRole("tab", { name: "Dos" })).toHaveAttribute("aria-selected", "true");
+    const left = screen.getByRole("tab", { name: "Dos" });
+    expect(left).toHaveAttribute("aria-selected", "true");
+    left.focus();
+    await user.keyboard("{Delete}");
+    expect(screen.queryByRole("tab", { name: "Dos" })).toBeNull();
   });
 });

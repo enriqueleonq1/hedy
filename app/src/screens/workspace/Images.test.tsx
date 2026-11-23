@@ -19,6 +19,7 @@ function setup(api = MockApi.withSampleData()) {
 
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 const png = (name: string) => new File([PNG_BYTES], name, { type: "image/png" });
+const pdf = (name: string) => new File(["%PDF-1.7\n"], name, { type: "application/pdf" });
 
 /** What a paste or a drop of `files` carries. */
 function transfer(files: File[], text = "") {
@@ -105,11 +106,44 @@ describe("Images in the composer", () => {
     expect(screen.queryByRole("list", { name: "Imágenes adjuntas" })).toBeNull();
   });
 
+  it("attaches a PDF as a named chip and sends it with the message", async () => {
+    const { user } = setup();
+    const composer = await newTaskInHedy(user);
+    await chooseMode(user, "Solo preguntar");
+    const attach = screen.getByRole("button", { name: "Adjuntar imágenes" });
+    await waitFor(() => expect(attach).toHaveAccessibleDescription(/o PDF, hasta 5 MB/));
+
+    fireEvent.paste(composer, { clipboardData: transfer([pdf("factura.pdf")]) });
+    const tray = await screen.findByRole("list", { name: "Imágenes adjuntas" });
+    expect(within(tray).getByText("factura.pdf")).toBeInTheDocument();
+    expect(within(tray).queryByRole("img")).toBeNull();
+
+    await user.type(composer, "¿Cuánto suma esta factura?");
+    await user.click(screen.getByRole("button", { name: "Enviar" }));
+    const sent = await screen.findByRole("list", { name: "Imágenes del mensaje" });
+    expect(within(sent).getByText("factura.pdf")).toBeInTheDocument();
+  });
+
+  it("says when the account does not read PDFs", async () => {
+    const api = MockApi.withSampleData();
+    api.setPdfSupport("claude-personal", "no");
+    const { user } = setup(api);
+    const composer = await newTaskInHedy(user);
+    const attach = screen.getByRole("button", { name: "Adjuntar imágenes" });
+    await waitFor(() => expect(attach).toHaveAccessibleDescription(/^PNG, JPEG, GIF o WebP/));
+
+    fireEvent.paste(composer, { clipboardData: transfer([pdf("factura.pdf")]) });
+    expect(
+      await screen.findByText("Esta cuenta no lee PDF: pega el texto de «factura.pdf» o usa otra cuenta"),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Imágenes adjuntas" })).toBeNull();
+  });
+
   it("does not let images wait in the queue while the agent works", async () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity());
     await user.click(await screen.findByRole("button", { name: /^tienda/ }));
     // tienda opens on its home: the running task (s4) is one click away.
-    await user.click(await screen.findByRole("button", { name: /^Revisa los tests del carrito/ }));
+    await user.click(await within(screen.getByRole("main")).findByRole("button", { name: /^Revisa los tests del carrito/ }));
     await screen.findByRole("region", { name: "Mensajes en cola" });
     const attach = screen.getByRole("button", { name: "Adjuntar imágenes" });
     await waitFor(() => expect(attach).toHaveAttribute("aria-disabled", "true"));
@@ -127,6 +161,13 @@ describe("sortImageFiles", () => {
       { key: "composer.images.tooLarge", params: { name: "big.png" } },
       { key: "composer.images.unsupported", params: { name: "logo.svg" } },
       { key: "composer.images.tooMany", params: { max: 4 } },
+    ]);
+  });
+
+  it("takes PDFs only when the agent reads them", () => {
+    expect(sortImageFiles([pdf("a.pdf")], 0, true).accepted.map((f) => f.name)).toEqual(["a.pdf"]);
+    expect(sortImageFiles([pdf("a.pdf")], 0).problems).toEqual([
+      { key: "composer.pdf.notAccepted", params: { name: "a.pdf" } },
     ]);
   });
 });

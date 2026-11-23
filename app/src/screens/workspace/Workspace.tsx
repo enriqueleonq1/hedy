@@ -4,6 +4,7 @@ import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { errorMessage, useAction, useApi, useOverview } from "../../api/context";
 import type { HedyApi } from "../../api/HedyApi";
 import type {
+  FlowScope,
   Account,
   AgentCommand,
   CommandSource,
@@ -26,7 +27,7 @@ import { pressPanelShortcut } from "../../components/palette/codeCommands";
 import { taskState } from "../../tasks/state";
 import { Dialog } from "../../components/ui/Dialog";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { AskIcon, CodeIcon, InfoIcon, PlanIcon, ResearchIcon, SendIcon, TemplateIcon } from "../../components/ui/icons";
+import { AskIcon, CodeIcon, InfoIcon, ResearchIcon, SendIcon, TemplateIcon } from "../../components/ui/icons";
 import { MenuButton, type MenuItem } from "../../components/ui/Menu";
 import { Select } from "../../components/ui/Select";
 import { useToast } from "../../components/ui/Toast";
@@ -79,6 +80,7 @@ import { CarryIcon, PanelIcon, PlusIcon, StopIcon } from "./icons";
 import { CarryDialog } from "./carry/CarryDialog";
 import { ContextCard, useCarryDraft } from "./carry/ContextCard";
 import { CarrySuggestion, ContinuedIn } from "./carry/links";
+import { ChangeCodeSuggestion } from "./ChangeCode";
 import { NoteDialog } from "./carry/NoteDialog";
 import { continuationsKey, contextKey, useContinuations } from "./carry/queries";
 import { jumpDigit, TaskSwitcher } from "./TaskSwitcher";
@@ -228,6 +230,8 @@ export function Workspace({
   const suggestions = useSuggestions(project, account?.provider);
   // A suggestion fills the composer of a new task; `n` tells the same one apart.
   const [fill, setFill] = useState<(Suggestion & { n: number; scope: string | null }) | null>(null);
+  // "Pasar a cambiar código" under a question's answer: the composer takes it.
+  const [codeRequest, setCodeRequest] = useState<{ task: string; n: number } | null>(null);
   const panel = useSidePanel(solo ? null : task);
   // The one switch for the side panel: focus mode puts it away too.
   const focusMode = useFocusMode();
@@ -427,6 +431,10 @@ export function Workspace({
                 <OutputsCard task={task} events={history} />
                 {carryable && task?.status === "review" ? (
                   <CarrySuggestion onCarry={startCarry} onNote={startNote} />
+                ) : !solo && task.mode !== "project" && task.status === "review" ? (
+                  <ChangeCodeSuggestion
+                    onChange={() => setCodeRequest((old) => ({ task: task.id, n: (old?.n ?? 0) + 1 }))}
+                  />
                 ) : !solo ? (
                   <EndCard
                     task={task}
@@ -494,6 +502,7 @@ export function Workspace({
             (a) => a.id === (isOpen(task) && task ? task.account : (account?.id ?? null)),
           )}
           onCarry={carryable ? startCarry : undefined}
+          codeRequest={codeRequest?.task === task?.id ? codeRequest : null}
           initialText={task ? "" : draft}
           context={
             carried ? (
@@ -639,6 +648,15 @@ const MODE_ICON: Record<TaskMode, ReactNode> = {
 
 /** The mode menu's checkbox: not a mode, it toggles showing the plan first. */
 const PLAN_FIRST = "plan-first" as const;
+/** "Cómo trabaja" in the mode menu: `flow:` is one AI, `flow:<key>` a flow. */
+type FlowChoice = `flow:${string}`;
+const flowChoice = (key: string | null): FlowChoice => `flow:${key ?? ""}`;
+const FLOW_PLACE: Record<FlowScope, MessageKey> = {
+  hedy: "flows.picker.templates",
+  project: "flows.picker.project",
+  global: "flows.picker.global",
+  team: "flows.picker.team",
+};
 
 const MODE_DETAIL: Record<TaskMode, MessageKey> = {
   project: "workspace.composer.modeProjectDetail",
@@ -656,6 +674,8 @@ type StartTask = (
     planFirst: boolean;
     permissions?: PermissionMode;
     images?: ImageInput[];
+    /** A flow to follow (its key), for a project's task. */
+    flow?: string;
   },
 ) => Promise<Task>;
 
@@ -722,6 +742,7 @@ function Composer({
   placeholder: placeholderOverride,
   commandAccount,
   onCarry,
+  codeRequest,
   onStarted,
 }: {
   /** The project, or `null` for a conversation. */
@@ -754,6 +775,8 @@ function Composer({
   commandAccount?: Account;
   /** "Llevar a un proyecto…", for a conversation that has a task to carry. */
   onCarry?: () => void;
+  /** "Pasar a cambiar código" was picked under the answer (`n` counts the clicks). */
+  codeRequest?: { task: string; n: number } | null;
   onStarted: (task: Task) => void;
 }) {
   const t = useT();
@@ -773,9 +796,33 @@ function Composer({
   const followUp = isOpen(task);
   // While the agent works, a follow-up waits in the queue for the end of its turn.
   const queueing = followUp && isBusy(task);
+  const api = useApi();
   const [newMode, setNewMode] = useProjectMode(scope, solo ? CONVERSATION_MODES : MODES);
-  // A follow-up stays in its task's mode; the selector is only for new tasks.
-  const mode = followUp && task ? task.mode : newMode;
+  // A project's question may go on to change code (docs/decisions.md §55):
+  // then its next message starts that, in the same task.
+  const question = followUp && !!task && !solo && task.mode !== "project";
+  const [changing, setChanging] = useState(false);
+  const toCode = question && changing && !queueing;
+  // Any other follow-up stays in its task's mode.
+  const mode = followUp && task ? (toCode ? "project" : task.mode) : newMode;
+  // How a new task that changes code works (docs/decisions.md §56): one AI or
+  // a flow, the project's default unless picked here. Not for a carried task.
+  const offersFlows = !followUp && !solo && !context && !!scope;
+  const flowList = useQuery({
+    queryKey: ["flows", scope],
+    queryFn: () => api.flows(scope),
+    enabled: offersFlows,
+  });
+  const flowDefaults = useQuery({
+    queryKey: ["flowDefaults", scope],
+    queryFn: () => api.flowDefaults(scope ?? ""),
+    enabled: offersFlows,
+  });
+  const [pickedFlow, setPickedFlow] = useState<string | null | undefined>(undefined);
+  const flowKey = offersFlows && mode === "project" ? (pickedFlow === undefined ? (flowDefaults.data?.start?.key ?? null) : pickedFlow) : null;
+  const chosenFlow = flowKey ? (flowList.data?.find((e) => e.key === flowKey) ?? null) : null;
+  // A flow that takes the task on when it ends, said before sending.
+  const afterFlow = offersFlows && mode === "project" && !chosenFlow ? (flowDefaults.data?.after ?? null) : null;
   // What the agent does without asking: a new task starts with the project's
   // default (or what was picked here); an open one changes its own.
   const overview = useOverview();
@@ -790,7 +837,6 @@ function Composer({
   const templates = useTemplates(scope);
   const images = useComposerImages({ account: disabled ? null : imageAccount, queueing });
   const [dropping, setDropping] = useState(false);
-  const api = useApi();
   // `@file` mentions: only in a project (a quick question has no files).
   const [caret, setCaret] = useState(0);
   const [fileActive, setFileActive] = useState(0);
@@ -809,6 +855,17 @@ function Composer({
   }, [autoFocus, disabled]);
 
   // A picked suggestion fills the composer; it is never sent by itself.
+  const [requested, setRequested] = useState(0);
+  if (codeRequest && codeRequest.n !== requested) {
+    setRequested(codeRequest.n);
+    setChanging(true);
+  }
+  useEffect(() => {
+    if (!requested) return;
+    const frame = requestAnimationFrame(() => input.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [requested]);
+
   const [filled, setFilled] = useState(0);
   if (fill && fill.n !== filled) {
     setFilled(fill.n);
@@ -881,8 +938,9 @@ function Composer({
         prompt: message.text,
         mode,
         model: model || null,
-        planFirst,
+        planFirst: planFirst && !chosenFlow,
         ...(mode === "project" ? { permissions: newPermissions } : {}),
+        ...(chosenFlow ? { flow: chosenFlow.key } : {}),
         ...(message.images.length ? { images: message.images } : {}),
       }),
     {
@@ -909,8 +967,20 @@ function Composer({
       },
     },
   );
+  const changeCode = useAction(
+    (api, message: { text: string; images: ImageInput[] }) =>
+      api.changeCode(task?.id ?? "", message.text, message.images, planFirst),
+    {
+      invalidate: [listKey, ACTIVITY_KEY],
+      onSuccess: () => {
+        setText("");
+        images.clear();
+        setChanging(false);
+      },
+    },
+  );
   const stop = useAction((api, id: string) => api.stopTask(id), { invalidate: task ? [listKeyFor(task)] : [] });
-  const busy = start.isPending || send.isPending;
+  const busy = start.isPending || send.isPending || changeCode.isPending;
   // While the agent runs, an empty composer offers to stop it (Esc does too).
   const stoppable = !!task?.live && !text.trim();
 
@@ -925,6 +995,20 @@ function Composer({
     setCaret(at ?? value.length);
     if (!mentionAt(value, at ?? value.length)) setMentionClosed(null);
     if (slashQuery(value) === null) setPickerClosed(false);
+  }
+
+  /** The next mode, where the mode menu is offered; `false` when it is not. */
+  function cycleMode(): boolean {
+    if (question) {
+      if (queueing) return false;
+      setChanging((on) => !on);
+      return true;
+    }
+    if (followUp) return false;
+    const modes = solo ? CONVERSATION_MODES : MODES;
+    const next = modes[(modes.indexOf(mode) + 1) % modes.length];
+    if (next) setNewMode(next);
+    return true;
   }
 
   function focusInput() {
@@ -978,7 +1062,8 @@ function Composer({
     const value = text.trim();
     if (!value || busy || disabled || sendBlocked) return;
     const message = { text: value, images: images.inputs() };
-    if (followUp) send.mutate(message);
+    if (toCode) changeCode.mutate(message);
+    else if (followUp) send.mutate(message);
     else start.mutate(message);
   }
 
@@ -1049,6 +1134,17 @@ function Composer({
         />
       )}
       {!followUp && context}
+      {afterFlow && (
+        <p className="composer__note">{t("workspace.composer.afterFlow", { flow: afterFlow.flow.name })}</p>
+      )}
+      {toCode && (
+        <p className="composer__note" role="status">
+          {t("changeCode.note")}{" "}
+          <button type="button" className="link-btn" onClick={() => setChanging(false)}>
+            {t("changeCode.cancel")}
+          </button>
+        </p>
+      )}
       <ImageTray images={images.images} onRemove={images.remove} onEmptied={focusInput} />
       {argsFor?.argumentHint && (
         <p className="composer__command" id={`${listId}-command`}>
@@ -1082,7 +1178,7 @@ function Composer({
         aria-activedescendant={
           current ? optionId(options.indexOf(current)) : currentFile >= 0 ? fileOptionId(currentFile) : undefined
         }
-        aria-keyshortcuts="Enter"
+        aria-keyshortcuts="Enter Shift+Tab"
         aria-describedby={argsFor?.argumentHint ? `${listId}-enter ${listId}-command` : `${listId}-enter`}
         placeholder={
           !followUp && placeholderOverride
@@ -1091,7 +1187,9 @@ function Composer({
             ? t("workspace.composer.placeholderCard")
             : queueing
               ? t("workspace.composer.placeholderQueue")
-              : followUp
+              : toCode
+                ? t("changeCode.placeholder")
+                : followUp
                 ? t("workspace.composer.placeholderFollowUp")
                 : solo
                   ? t("conversation.placeholder")
@@ -1109,6 +1207,11 @@ function Composer({
           void images.add(files);
         }}
         onKeyDown={(e) => {
+          // Shift+Tab moves to the next mode, as in the agents' own CLIs.
+          if (e.key === "Tab" && e.shiftKey && !pickerOpen && !mentionOpen && cycleMode()) {
+            e.preventDefault();
+            return;
+          }
           if (mentionOpen && mention) {
             if (fileMatches.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
               e.preventDefault();
@@ -1178,35 +1281,69 @@ function Composer({
               onChange={(value) => (followUp && task ? setTaskPermissions.mutate(value) : setPickedPermissions(value))}
             />
           )}
-          {!followUp && (
+          {(!followUp || (question && !queueing)) && (
             <>
-              <Select<TaskMode | typeof PLAN_FIRST>
+              <Select<TaskMode | typeof PLAN_FIRST | FlowChoice>
                 variant="chip"
                 label={t("workspace.composer.mode")}
                 title={t("workspace.composer.mode")}
+                tooltip={`${t("workspace.composer.mode")} · ${t("workspace.composer.modeKeys")}`}
                 value={mode}
                 sections={[
                   {
-                    options: (solo ? CONVERSATION_MODES : MODES).map((value) => ({
-                      value,
-                      label: t(MODE_LABEL[value]),
-                      detail: t(MODE_DETAIL[value]),
-                      icon: MODE_ICON[value],
-                    })),
+                // A question offers its own mode and changing code, never the other question mode.
+                options: (question && task
+                  ? MODES.filter((m) => m === "project" || m === task.mode)
+                  : solo
+                    ? CONVERSATION_MODES
+                    : MODES
+                ).flatMap((value) => [
+                  {
+                    value,
+                    label: t(MODE_LABEL[value]),
+                    detail: t(MODE_DETAIL[value]),
+                    icon: MODE_ICON[value],
                   },
-                  // "Show me the plan first" is a checkbox in the same menu, for changing code only.
-                  ...(mode === "project"
+                  // "Show me the plan first" hangs under "Change code", as a setting of
+                  // that mode, and only while it is the chosen one (a flow has its own steps).
+                  ...(value === "project" && mode === "project" && !chosenFlow
                     ? [
                         {
+                          value: PLAN_FIRST as typeof PLAN_FIRST,
+                          label: t("workspace.composer.planFirst"),
+                          detail: t(planFirst ? "workspace.composer.planFirstOn" : "workspace.composer.planFirstOff"),
+                          icon: (
+                            <input type="checkbox" checked={planFirst} readOnly tabIndex={-1} style={{ pointerEvents: "none" }} />
+                          ),
+                          nested: true,
+                        },
+                      ]
+                    : []),
+                ]),
+                  },
+                  // How it works: one AI, or one of the project's flows.
+                  ...(offersFlows && mode === "project" && flowList.data
+                    ? [
+                        {
+                          title: t("workspace.composer.howItWorks"),
                           options: [
                             {
-                              value: PLAN_FIRST,
-                              label: t("workspace.composer.planFirst"),
-                              detail: t(planFirst ? "workspace.composer.planFirstOn" : "workspace.composer.planFirstOff"),
-                              icon: (
-                                <input type="checkbox" checked={planFirst} readOnly tabIndex={-1} style={{ pointerEvents: "none" }} />
-                              ),
+                              value: flowChoice(null),
+                              label: t("workspace.composer.oneAi"),
+                              detail: t("workspace.composer.oneAiDetail"),
+                              icon: <input type="radio" checked={!chosenFlow} readOnly tabIndex={-1} style={{ pointerEvents: "none" }} />,
                             },
+                            ...flowList.data.map((entry) => ({
+                              value: flowChoice(entry.key),
+                              label: entry.flow.name,
+                              detail:
+                                entry.key === flowDefaults.data?.start?.key
+                                  ? `${t("workspace.composer.flowDefault")}${entry.summary ? ` · ${entry.summary}` : ""}`
+                                  : entry.summary || t(FLOW_PLACE[entry.scope]),
+                              icon: (
+                                <input type="radio" checked={chosenFlow?.key === entry.key} readOnly tabIndex={-1} style={{ pointerEvents: "none" }} />
+                              ),
+                            })),
                           ],
                         },
                       ]
@@ -1219,16 +1356,24 @@ function Composer({
                         {option.icon}
                       </span>
                     )}
-                    <span className="select__text">{option?.label ?? ""}</span>
-                    {mode === "project" && planFirst && (
-                      <span className="select__icon" aria-hidden>
-                        <PlanIcon />
-                      </span>
-                    )}
+                    <span className="select__text">
+                      {chosenFlow
+                        ? t("workspace.composer.withFlow", { mode: option?.label ?? "", flow: chosenFlow.flow.name })
+                        : mode === "project" && planFirst
+                          ? t("workspace.composer.withPlan", { mode: option?.label ?? "" })
+                          : (option?.label ?? "")}
+                    </span>
                   </>
                 )}
-                tooltip={mode === "project" && planFirst ? t("workspace.composer.planFirst") : undefined}
-                onChange={(value) => (value === PLAN_FIRST ? setPlanFirst((on) => !on) : setNewMode(value))}
+                onChange={(value) =>
+                  value === PLAN_FIRST
+                    ? setPlanFirst((on) => !on)
+                    : value.startsWith("flow:")
+                      ? setPickedFlow(value.slice("flow:".length) || null)
+                      : question
+                        ? setChanging(value === "project")
+                        : setNewMode(value as TaskMode)
+                }
               />
               {accountPicker}
               {models.length > 0 && (
@@ -1280,6 +1425,7 @@ function Composer({
           <AttachButton
             blocked={images.blocked}
             supported={images.supported}
+            pdfs={images.pdfs}
             disabled={disabled}
             onFiles={(files) => void images.add(files)}
           />

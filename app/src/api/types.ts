@@ -778,6 +778,14 @@ export interface FlowEntry {
   unapproved?: string[];
 }
 
+/** What a project's new «Cambiar código» tasks do (docs/decisions.md §56). */
+export interface FlowDefaults {
+  /** The flow they start with; `null`: one AI. */
+  start: FlowEntry | null;
+  /** The flow that takes a task on when its request ends ("Al terminar una tarea"). */
+  after: FlowEntry | null;
+}
+
 /** The team a project's flows can be shared with; only an admin shares them. */
 export interface TeamShare {
   team: string;
@@ -852,17 +860,17 @@ export interface BoardEntry {
   byUser?: boolean;
 }
 
-/** The image formats every supported CLI takes. */
-export type ImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+/** The image formats every supported CLI takes, and PDF, which only some agents read. */
+export type ImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "application/pdf";
 
-/** An image attached in the composer: the backend checks the real type from the bytes. */
+/** An image or PDF attached in the composer: the backend checks the real type from the bytes. */
 export interface ImageInput {
   name: string;
   /** The file's bytes, base64. */
   data: string;
 }
 
-/** An image kept with a message of the history (in Hedy's data folder). */
+/** An image or PDF kept with a message of the history (in Hedy's data folder). */
 export interface Attachment {
   /** The user's file name, for the alt text. */
   name: string;
@@ -1023,6 +1031,8 @@ export type AgentEvent =
   /** A flow's condition was checked (`what`: "npm test", "las reglas"…). */
   | { kind: "flowCheck"; node: string; what: string; passed: boolean }
   | { kind: "flowOutOfRounds"; node: string; rounds: number; asked: string }
+  /** A question went on to change code in `branch`: what follows changes code. */
+  | { kind: "changesCode"; branch: string }
   | {
       kind: "limitWarning";
       account: string;

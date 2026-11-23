@@ -99,6 +99,8 @@ export function FlowsScreen({
   const flows = useQuery({ queryKey: ["flows", path], queryFn: () => api.flows(path) });
   const rolesQuery = useQuery({ queryKey: ["flowRoles", path], queryFn: () => api.flowRoles(path) });
   const values = useQuery({ queryKey: ["flowValues", path], queryFn: () => api.flowValues(path) });
+  // The flow this project's «Cambiar código» tasks start with (docs/decisions.md §56).
+  const defaults = useQuery({ queryKey: ["flowDefaults", path], queryFn: () => api.flowDefaults(path) });
   const language = useLanguage();
   const [quiet, setQuiet] = useState<string[]>(readQuiet);
   const roles: RoleDef[] = useMemo(() => (rolesQuery.data ?? []).map((r) => r.role), [rolesQuery.data]);
@@ -372,6 +374,17 @@ export function FlowsScreen({
         ? t("flows.status.unsaved")
         : t("flows.status.saved");
   const canRun = !!draft?.key && !dirty && issues.length === 0;
+  const isDefault = !!draft?.key && defaults.data?.start?.key === draft.key;
+
+  async function makeDefault(key: string | null) {
+    try {
+      await api.setDefaultFlow(path, key);
+      await client.invalidateQueries({ queryKey: ["flowDefaults", path] });
+      toast.info(key ? t("flows.default.set", { name: flow?.name ?? "" }) : t("flows.default.cleared"));
+    } catch (error) {
+      toast.error(errorMessage(error, t));
+    }
+  }
   // The open flow, against this project's tasks with one agent: said when it
   // spends at least twice as much without being accepted more often.
   const value = flow ? values.data?.find((v) => v.flow === flow.name) : undefined;
@@ -455,6 +468,17 @@ export function FlowsScreen({
           ) : (
             <Button small variant={dirty ? "primary" : "secondary"} disabled={!dirty || saving || issues.length > 0} onClick={() => void save()}>
               {t("flows.save")}
+            </Button>
+          )}
+          {canRun && (
+            <Button
+              small
+              variant="ghost"
+              aria-pressed={isDefault}
+              title={t(isDefault ? "flows.default.onHint" : "flows.default.offHint")}
+              onClick={() => void makeDefault(isDefault ? null : (draft?.key ?? null))}
+            >
+              {t(isDefault ? "flows.default.on" : "flows.default.off")}
             </Button>
           )}
           <Button

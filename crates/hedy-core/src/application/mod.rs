@@ -7,6 +7,7 @@ mod attachments;
 mod board;
 mod briefing;
 mod carry;
+mod changes_code;
 mod code;
 mod code_edit;
 mod commands;
@@ -59,6 +60,7 @@ pub use activity::{MAX_FINISHED, RECENT_HOURS, TaskActivity};
 pub use ask::{AskScope, CodeLookup, MemoryAnswer};
 pub use attachments::NewImage;
 pub use carry::{Carry, ConversationContext};
+pub use changes_code::ChangeCode;
 pub use code::{
     BASE_REV, CodeCopy, CodeDiff, CodeTree, CopyInfo, FileContent, FileHistory, HistoryCommit,
     MAX_DIFF_CONTEXT, TaskTouch,

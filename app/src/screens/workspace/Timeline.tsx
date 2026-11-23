@@ -18,6 +18,7 @@ import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { LimitCard } from "./LimitCard";
 import { MessageImages } from "./MessageImages";
 import { FlowApprovalCard, FlowOutOfRounds, FlowProgress } from "../flows/FlowLive";
+import { ChangesCodeDivider } from "./ChangeCode";
 import { CarriedContext } from "./carry/links";
 import { splitCarried } from "./carry/queries";
 import { groupSteps, summarize, summaryFacts, type StepItem } from "./stepGroups";
@@ -104,7 +105,7 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
             <p key={item.key} className="phase-divider">
               <span>
                 <strong>{item.agent}</strong>{" "}
-                {t(task.mode === "project" ? PHASE_VERB[item.phase] : "workspace.phase.answer")} · {item.account}
+                {t(changesCodeAt(task, items, index) ? PHASE_VERB[item.phase] : "workspace.phase.answer")} · {item.account}
               </span>
             </p>
           );
@@ -170,6 +171,8 @@ function Item({ task, item }: { task: Task; item: TimelineItem }) {
       return <FlowApprovalCard task={task} node={item.node} answer={item.answer} latest={item.latest} />;
     case "flowOutOfRounds":
       return <FlowOutOfRounds task={task} rounds={item.rounds} asked={item.asked} />;
+    case "changesCode":
+      return <ChangesCodeDivider branch={item.branch} />;
     case "flowCheck":
       return (
         <p className={`activity activity--${item.passed ? "done" : "failed"} flow-check`}>
@@ -512,4 +515,14 @@ function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineIte
       )}
     </section>
   );
+}
+
+/**
+ * Whether the item at `index` comes from changing code: a task in that mode,
+ * past the point where its question went on to change code (if it did).
+ */
+function changesCodeAt(task: Task, items: TimelineItem[], index: number): boolean {
+  if (task.mode !== "project") return false;
+  const from = items.findIndex((i) => i.type === "changesCode");
+  return from < 0 || index > from;
 }

@@ -1,5 +1,6 @@
-//! Images attached to a message: what the user may attach (type, size,
-//! count), how they are kept with the history, and what goes to the agent.
+//! Images and PDFs attached to a message: what the user may attach (type,
+//! size, count), how they are kept with the history, and what goes to the
+//! agent.
 
 use std::path::PathBuf;
 
@@ -8,14 +9,15 @@ use serde::{Deserialize, Serialize};
 use super::DomainError;
 use crate::tr;
 
-/// Largest image the composer accepts, in bytes.
+/// Largest image or PDF the composer accepts, in bytes.
 pub const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
-/// Images per message.
+/// Attachments (images and PDFs) per message.
 pub const MAX_IMAGES: usize = 4;
 /// Characters kept of a file name shown next to an image.
 const MAX_NAME_CHARS: usize = 80;
 
-/// The image formats every supported CLI documents.
+/// The image formats every supported CLI documents, and PDF, which only
+/// some agents read (docs/decisions.md §54).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ImageType {
     #[serde(rename = "image/png")]
@@ -26,6 +28,8 @@ pub enum ImageType {
     Gif,
     #[serde(rename = "image/webp")]
     Webp,
+    #[serde(rename = "application/pdf")]
+    Pdf,
 }
 
 impl ImageType {
@@ -40,6 +44,8 @@ impl ImageType {
             Some(Self::Gif)
         } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
             Some(Self::Webp)
+        } else if bytes.starts_with(b"%PDF-") {
+            Some(Self::Pdf)
         } else {
             None
         }
@@ -51,6 +57,7 @@ impl ImageType {
             Self::Jpeg => "image/jpeg",
             Self::Gif => "image/gif",
             Self::Webp => "image/webp",
+            Self::Pdf => "application/pdf",
         }
     }
 
@@ -60,7 +67,12 @@ impl ImageType {
             Self::Jpeg => "jpg",
             Self::Gif => "gif",
             Self::Webp => "webp",
+            Self::Pdf => "pdf",
         }
+    }
+
+    pub fn is_pdf(self) -> bool {
+        self == Self::Pdf
     }
 }
 
@@ -76,7 +88,7 @@ pub struct Attachment {
     pub media_type: ImageType,
 }
 
-/// An image that goes to the agent with a prompt.
+/// An image or PDF that goes to the agent with a prompt.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PromptImage {
     /// The stored file (absolute).
@@ -84,7 +96,7 @@ pub struct PromptImage {
     pub media_type: ImageType,
 }
 
-/// Whether an agent takes images with a prompt.
+/// Whether an agent takes images (or PDFs) with a prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ImageSupport {
@@ -101,7 +113,7 @@ impl ImageSupport {
     }
 }
 
-/// Checks one image the user attached. Returns its real type.
+/// Checks one image or PDF the user attached. Returns its real type.
 pub fn check_image(name: &str, bytes: &[u8]) -> Result<ImageType, DomainError> {
     if bytes.len() > MAX_IMAGE_BYTES {
         return Err(DomainError::ImageTooLarge(display_name(name)));
@@ -165,6 +177,7 @@ mod tests {
             ImageType::sniff(b"RIFF\0\0\0\0WEBPVP8 "),
             Some(ImageType::Webp)
         );
+        assert_eq!(ImageType::sniff(b"%PDF-1.7\n"), Some(ImageType::Pdf));
         assert_eq!(ImageType::sniff(b"<svg xmlns="), None);
         assert_eq!(ImageType::sniff(b""), None);
     }
@@ -174,6 +187,8 @@ mod tests {
         let json = serde_json::to_string(&ImageType::Jpeg).unwrap();
         assert_eq!(json, "\"image/jpeg\"");
         assert_eq!(ImageType::Webp.extension(), "webp");
+        let json = serde_json::to_string(&ImageType::Pdf).unwrap();
+        assert_eq!(json, "\"application/pdf\"");
     }
 
     #[test]

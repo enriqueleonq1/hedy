@@ -1281,6 +1281,8 @@ claude -p /usage --output-format json --no-session-persistence --safe-mode
 
 ## 24. Images, file mentions and suggestions in the composer (Nov 15, 2026)
 
+PDFs attach the same way since §54.
+
 ### Images with a prompt
 
 - **What the user attaches.** PNG, JPEG, GIF or WebP, at most 5 MB each and 4 per message
@@ -4400,3 +4402,96 @@ is why it never showed there.
 - **WebGL rendering** (`@xterm/addon-webgl`, as VS Code's terminal) was tried and left out: in
   WebKitGTK it drew the text but lost repaints that only change colors (fish's syntax colors,
   the suggestion) and the right prompt. The DOM renderer draws them right.
+
+## 54. PDFs with a prompt (Nov 23, 2026)
+
+A PDF attaches like an image (§24): from the paperclip, a paste or a drop, at most 5 MB, within
+the same four attachments per message. Its type comes from its first bytes (`%PDF-`); it is
+stored with the images (`attachments/<task id>/`, never in the repository) and shows as a chip
+with its name, in the composer and in the history. Hedy never turns it into text: each agent
+gets the file through its own official input, or not at all.
+
+| Agent | Reads PDFs? | How | Source |
+|---|---|---|---|
+| Claude Code (`-p --input-format stream-json`) | Yes | a Messages API `document` block, `{"type":"document","source":{"type":"base64","media_type":"application/pdf","data"}}`, after the text | Agent SDK streaming input takes Messages API content blocks; its changelog fixes document blocks in user messages (2.1.284, 2.1.299). **Checked live** (haiku, no tools): it read a one-page invoice's total and keyword. |
+| Gemini CLI (ACP) | When it advertises `promptCapabilities.embeddedContext` | an embedded `resource`, `{"uri":"file://…","mimeType":"application/pdf","blob"}`; it turns a blob into inline data | agentclientprotocol.com/protocol/content; Gemini CLI's ACP session code (its `read_file` docs list PDF) |
+| Kimi Code (ACP) | No | it advertises `embeddedContext` but drops blob resources (its ACP reference) and its file tools read text, images and video | MoonshotAI/kimi-code docs/en/reference/kimi-acp.md, tools.md |
+| Antigravity (ACP) | No, until documented | its CLI lists images and video as media; its ACP guide does not say PDF | antigravity.google/docs |
+| Codex | No | `localImage` / `-i` take images only | developers.openai.com/codex |
+| Kimi / Gemini by API key | No | Kimi takes PDFs only through its Files API extraction (the docs say not to inline them); Hedy talks to both through chat completions, whose `image_url` parts are images | platform.kimi.ai "ask questions about PDF content" |
+
+- **Before sending.** `AgentLauncher::pdf_support` (beside `image_support`) answers per backend;
+  ACP's `reads_pdf` comes from `Provider::acp_reads_pdf`. The composer offers PDFs only when the
+  account's agent reads them; otherwise a dropped PDF is refused with the reason, and the use cases
+  refuse it too (`PdfNotAccepted`), so nothing is spent on a message the agent cannot read.
+- **Later phases and handoffs** whose agent reads no PDFs get the images and a line naming the
+  PDFs it cannot read. An ACP agent that started without `embeddedContext` gets the text, and the
+  chat says the PDFs did not go.
+- **Not verified live:** Gemini CLI (not installed here); its path is tested against a fake ACP
+  agent with and without the capability.
+
+## 55. A question that goes on to change code (Nov 23, 2026)
+
+A task in «Solo preguntar» or «Investigar» used to keep its mode: once the answer made clear what
+was wrong, fixing it meant a new task and explaining it again. Now the same task goes on to change
+code.
+
+- **Where.** Under a question's answer, «¿Y ahora? · Pasar a cambiar código»; and the mode menu,
+  which a project's question keeps after its first message, with its own mode and «Cambiar código»
+  (with «Enséñame el plan primero» hanging under it). Either way the composer says that the next
+  message starts changing code, with «Seguir preguntando» to go back. A task that changes code has
+  no mode menu: asking something there is just writing it.
+- **What happens** (`Hedy::change_code`): refused while the agent answers (`QuestionBusy`) and for
+  a task that already changes code or a conversation (`NotAQuestion`; a conversation has «Llevar a
+  un proyecto», §28). Otherwise, checked as a new task would be (the project's account and phases,
+  each agent allowed and ready, the images), the task gets its branch and worktree, its phases for
+  changing code, and a fresh agent session. The history records `ChangesCode { branch }`, shown as
+  a divider («Desde aquí cambia código, en la rama …»), then the user's message; the earlier turns
+  still read as answers.
+- **Why a fresh session.** A question runs in the project folder, read-only; changing code runs in
+  its own worktree, and a CLI session belongs to the folder it started in. So the first prompt opens
+  with what was asked and answered (`earlier_turns_section`, the most recent turns within
+  `LONG_CONTEXT_CHARS`, older ones counted as left out), then the user's message. That prompt
+  becomes the task's, which later phases read. Earlier images are named, not sent again.
+- Not a separate task: the user stays in one conversation, and nothing links two tasks.
+
+## 56. How a task that changes code works: one AI by default, a flow when chosen (Nov 23, 2026)
+
+**What others do** (checked Nov 23, 2026, in the editors' agents, the agents' CLIs and the
+multi-agent apps, about forty in all):
+- A plain request ("fix the 400 in this controller") goes to one agent everywhere. None plans,
+  writes tests first or reviews by itself.
+- The mode is picked in the composer, usually with Shift+Tab as well. Switching keeps the
+  conversation.
+- Heavy workflows (spec pipelines, orchestrator modes) are always picked by the user. The few
+  that run by themselves are short and quiet: plan, code and one review.
+- A repository shares context through files; a default workflow per project is rare.
+
+**What the evidence says:**
+- Several agents on sequential work did worse (−39 % to −70 %) and cost far more.
+- "Write the tests first" given as an instruction raised regressions in one study on small
+  models (6 % → 10 %). Telling the agent which tests cover the code it touches lowered them
+  (1.8 %) and solved more.
+- Specifications did not change the defect rate across 88,000 pull requests.
+- The extra step with the best support is one reviewer with a clean context.
+- Hedy's own runs (§50) agree: one AI is the right default, and test-first («Esencial») was the
+  only flow that paid, on few cases.
+
+**So:**
+- **One AI stays the default.** No method is added to every task.
+- **A flow is picked where the mode is.** In the mode menu, under «Cambiar código», «Cómo
+  trabaja» lists «Una IA» and the project's flows (Hedy's templates, the project's, the global
+  and the team's). The chip says the choice («Cambiar código · Esencial»). A flow has its own
+  steps, so «Enséñame el plan primero» hides under one. A carried conversation, a question that
+  goes on to change code (§55) and a conversation do not offer it.
+- **A project's default** (`Project::default_flow`, the `default_flow` column; `None`: one AI) is
+  set from its flows tab («Usar por defecto», on any flow that can run) or with
+  `hedy flow default <name|key>` (`--clear` goes back to one AI; with no name it says which). A
+  default whose flow is gone since reads as one AI. It is kept per PC, like the permission mode.
+- **Nothing happens unseen.** When a flow of the project takes tasks on as they end
+  (`Trigger::TaskEnd`, §48), the composer of a new task says so before sending
+  (`Hedy::task_end_flow`, the same lookup the trigger uses).
+- **Shift+Tab** in the composer moves to the next mode (in a question: changing code or not),
+  as in the agents' CLIs.
+- **Later, with evals:** telling the agent which tests cover what it will touch (Hedy has the code
+  map), instead of prescribing test-first.

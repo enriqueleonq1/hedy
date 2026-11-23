@@ -276,6 +276,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 global,
                 replace,
             } => flow_edit::import_flow(&hedy, &dir, &file, global, replace),
+            FlowCommand::Default { name, clear } => {
+                flow_edit::default_flow(&hedy, &dir, name.as_deref(), clear)
+            }
             FlowCommand::Share { name } => flow_edit::share_flow(&hedy, &dir, &name),
             FlowCommand::Unshare { name } => flow_edit::unshare_flow(&hedy, &dir, &name),
             FlowCommand::Allow { command } => flow_edit::allow_command(&hedy, &command),

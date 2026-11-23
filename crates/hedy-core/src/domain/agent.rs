@@ -114,6 +114,12 @@ pub enum AgentEvent {
         /// The last on the board: the failing tests' report or the review.
         asked: String,
     },
+    /// A question ("Solo preguntar" or "Investigar") goes on to change code
+    /// in a branch of its own (docs/decisions.md §55): a divider in the
+    /// history; what follows changes code.
+    ChangesCode {
+        branch: String,
+    },
     /// A flow's condition was checked: the tests, the rules or the
     /// reviewers' verdict (docs/decisions.md §44).
     FlowCheck {

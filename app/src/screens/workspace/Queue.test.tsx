@@ -30,7 +30,7 @@ describe("Message queue", () => {
     const { user } = setup(MockApi.withSampleData().withSampleActivity());
     await user.click(await screen.findByRole("button", { name: /^tienda/ }));
     // tienda opens on its home: the running task (s4) is one click away.
-    await user.click(await screen.findByRole("button", { name: /^Revisa los tests del carrito/ }));
+    await user.click(await within(screen.getByRole("main")).findByRole("button", { name: /^Revisa los tests del carrito/ }));
 
     const queue = await screen.findByRole("region", { name: "Mensajes en cola" });
     expect(within(queue).getAllByText("En cola")).toHaveLength(2);

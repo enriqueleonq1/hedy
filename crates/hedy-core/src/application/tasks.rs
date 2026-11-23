@@ -162,6 +162,7 @@ impl Hedy {
                 let backend = AgentBackend::Acp {
                     name: provider.cli_name().to_owned(),
                     model_flag: provider.model_flag(),
+                    reads_pdf: provider.acp_reads_pdf(),
                 };
                 (backend, args.iter().map(|a| a.to_string()).collect())
             }
@@ -317,7 +318,7 @@ impl Hedy {
 
     /// With the `briefing` experiment, a project task's first prompt ends
     /// with what Hedy found locally for it (docs/decisions.md §33).
-    fn with_briefing(&self, task: &Task, prompt: String) -> String {
+    pub(super) fn with_briefing(&self, task: &Task, prompt: String) -> String {
         if task.mode != TaskMode::Project || !experiments::on(Experiment::Briefing) {
             return prompt;
         }
@@ -790,16 +791,33 @@ impl Hedy {
         // reaches a CLI as one of its options.
         check_model(stage.model.as_deref())?;
         let (backend, launch) = self.backend(account)?;
-        // An agent that takes no images (a later phase, a handoff) is told
-        // they exist instead of getting them.
+        // An agent that takes no images or PDFs (a later phase, a handoff)
+        // is told they exist instead of getting them.
         if !images.is_empty() && !self.agents.image_support(&backend).accepts() {
             let count = images.len();
             prompt.push_str("\n\n");
             prompt.push_str(&tr!(
-                "(El usuario adjuntó {count} imagen(es) que este agente no puede ver.)",
-                "(The user attached {count} image(s) this agent cannot see.)"
+                "(El usuario adjuntó {count} archivo(s) que este agente no puede ver.)",
+                "(The user attached {count} file(s) this agent cannot see.)"
             ));
             images.clear();
+        }
+        if images.iter().any(|i| i.media_type.is_pdf())
+            && !self.agents.pdf_support(&backend).accepts()
+        {
+            let names: Vec<_> = task
+                .images
+                .iter()
+                .filter(|a| a.media_type.is_pdf())
+                .map(|a| a.name.as_str())
+                .collect();
+            let names = names.join(", ");
+            prompt.push_str("\n\n");
+            prompt.push_str(&tr!(
+                "(El usuario adjuntó PDF que este agente no puede leer: {names}.)",
+                "(The user attached PDFs this agent cannot read: {names}.)"
+            ));
+            images.retain(|i| !i.media_type.is_pdf());
         }
         // APIs need an explicit model; CLIs pick their own when none is set.
         let model = match backend {

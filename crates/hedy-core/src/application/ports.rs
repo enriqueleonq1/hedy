@@ -773,6 +773,9 @@ pub enum AgentBackend {
         name: String,
         /// The CLI's flag to pick a model, if it has one.
         model_flag: Option<&'static str>,
+        /// Whether it reads a PDF sent as an embedded resource, when it
+        /// advertises `promptCapabilities.embeddedContext`.
+        reads_pdf: bool,
     },
 }
 
@@ -838,12 +841,17 @@ pub trait AgentLauncher: Send + Sync {
     fn image_support(&self, _backend: &AgentBackend) -> ImageSupport {
         ImageSupport::No
     }
+    /// Whether the backend reads PDFs with a prompt (docs/decisions.md §54).
+    fn pdf_support(&self, _backend: &AgentBackend) -> ImageSupport {
+        ImageSupport::No
+    }
 }
 
 /// A running agent process.
 pub trait AgentSession: Send {
-    /// A follow-up message from the user, with its images (only sent when
-    /// [`AgentLauncher::image_support`] allows them).
+    /// A follow-up message from the user, with its images and PDFs (only
+    /// sent when [`AgentLauncher::image_support`] and
+    /// [`AgentLauncher::pdf_support`] allow them).
     fn send(&mut self, text: &str, images: &[PromptImage]) -> PortResult<()>;
     /// Answers a permission (or plan) request.
     fn answer(&mut self, request_id: &str, allow: bool, message: Option<&str>) -> PortResult<()>;

@@ -839,6 +839,7 @@ pub struct FakeAgents {
     sent_images: Arc<Mutex<Vec<Vec<PromptImage>>>>,
     /// Overrides what every backend says about images.
     image_support: Mutex<Option<ImageSupport>>,
+    pdf_support: Mutex<Option<ImageSupport>>,
     /// Events the next agent plays as soon as it starts.
     script: Mutex<Option<Vec<AgentEvent>>>,
 }
@@ -852,6 +853,10 @@ impl FakeAgents {
     /// Every backend answers `support` about images.
     pub fn set_image_support(&self, support: ImageSupport) {
         *self.image_support.lock().unwrap() = Some(support);
+    }
+
+    pub fn set_pdf_support(&self, support: ImageSupport) {
+        *self.pdf_support.lock().unwrap() = Some(support);
     }
     /// Images sent with each follow-up, in order.
     pub fn sent_images(&self) -> Vec<Vec<PromptImage>> {
@@ -956,6 +961,19 @@ impl AgentLauncher for FakeAgents {
         match backend {
             AgentBackend::Acp { .. } => ImageSupport::IfAgentAllows,
             _ => ImageSupport::Yes,
+        }
+    }
+
+    fn pdf_support(&self, backend: &AgentBackend) -> ImageSupport {
+        if let Some(support) = *self.pdf_support.lock().unwrap() {
+            return support;
+        }
+        match backend {
+            AgentBackend::ClaudeCode => ImageSupport::Yes,
+            AgentBackend::Acp {
+                reads_pdf: true, ..
+            } => ImageSupport::IfAgentAllows,
+            _ => ImageSupport::No,
         }
     }
 }

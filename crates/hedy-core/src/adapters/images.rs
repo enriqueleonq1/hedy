@@ -1,4 +1,5 @@
-//! Images in each agent's official prompt format (docs/decisions.md §24).
+//! Images and PDFs in each agent's official prompt format (docs/decisions.md
+//! §24, §54).
 //! The files were written by Hedy in its data folder; they are read here
 //! only to send them.
 
@@ -23,14 +24,20 @@ pub(crate) fn base64_of(image: &PromptImage) -> PortResult<String> {
 }
 
 /// Claude Code (`--input-format stream-json`): the Messages API content
-/// blocks, a text block then one base64 image block per image.
+/// blocks, a text block then one base64 `image` block per image and one
+/// `document` block per PDF.
 pub(crate) fn claude_content(text: &str, images: &[PromptImage]) -> PortResult<Value> {
     if images.is_empty() {
         return Ok(Value::String(text.to_owned()));
     }
     let mut blocks = vec![json!({"type": "text", "text": text})];
     for image in images {
-        blocks.push(json!({"type": "image", "source": {
+        let kind = if image.media_type.is_pdf() {
+            "document"
+        } else {
+            "image"
+        };
+        blocks.push(json!({"type": kind, "source": {
             "type": "base64",
             "media_type": image.media_type.media_type(),
             "data": base64_of(image)?,
@@ -52,15 +59,19 @@ pub(crate) fn codex_input(text: &str, images: &[PromptImage]) -> Value {
 }
 
 /// ACP `session/prompt`: a text block, then an `image` block per image
-/// (only for agents whose `promptCapabilities.image` is true).
+/// (only for agents whose `promptCapabilities.image` is true) and an
+/// embedded `resource` per PDF (only with `embeddedContext`).
 pub(crate) fn acp_prompt(text: &str, images: &[PromptImage]) -> PortResult<Value> {
     let mut blocks = vec![json!({"type": "text", "text": text})];
     for image in images {
-        blocks.push(json!({
-            "type": "image",
-            "mimeType": image.media_type.media_type(),
-            "data": base64_of(image)?,
-        }));
+        let media_type = image.media_type.media_type();
+        let data = base64_of(image)?;
+        blocks.push(if image.media_type.is_pdf() {
+            let uri = format!("file://{}", image.path.display());
+            json!({"type": "resource", "resource": {"uri": uri, "mimeType": media_type, "blob": data}})
+        } else {
+            json!({"type": "image", "mimeType": media_type, "data": data})
+        });
     }
     Ok(Value::Array(blocks))
 }
@@ -99,7 +110,36 @@ pub(crate) mod tests {
         }
     }
 
+    /// A PDF file in `dir`, as Hedy stores attachments.
+    pub(crate) fn pdf(dir: &std::path::Path) -> PromptImage {
+        let path = dir.join("a-1.pdf");
+        std::fs::write(&path, b"%PDF-1.7\n").unwrap();
+        PromptImage {
+            path,
+            media_type: ImageType::Pdf,
+        }
+    }
+
     const PNG_BASE64: &str = "iVBORw0KGgp4eA==";
+    const PDF_BASE64: &str = "JVBERi0xLjcK";
+
+    #[test]
+    fn pdfs_go_as_documents_or_embedded_resources() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pdf = pdf(tmp.path());
+        let uri = format!("file://{}", pdf.path.display());
+        let pdfs = [pdf];
+        assert_eq!(
+            claude_content("lee", &pdfs).unwrap(),
+            json!([{"type": "text", "text": "lee"},
+                   {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": PDF_BASE64}}])
+        );
+        assert_eq!(
+            acp_prompt("lee", &pdfs).unwrap(),
+            json!([{"type": "text", "text": "lee"},
+                   {"type": "resource", "resource": {"uri": uri, "mimeType": "application/pdf", "blob": PDF_BASE64}}])
+        );
+    }
 
     #[test]
     fn each_agent_gets_its_own_format() {

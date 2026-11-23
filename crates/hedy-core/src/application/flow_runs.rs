@@ -3,7 +3,9 @@
 //! agent session, its account's usage and limits, handoffs, permission cards
 //! and modes. The flow decides which step comes next.
 
-use super::flows::FlowScope;
+use std::path::Path;
+
+use super::flows::{FlowEntry, FlowScope};
 use super::tasks::NewTask;
 use super::{AppError, AppResult, Hedy};
 use crate::domain::flow::{
@@ -146,6 +148,16 @@ impl Hedy {
     /// set to follow a task's end (docs/decisions.md §48), in its own copy:
     /// its reviewers see its changes, its programmer can fix them. `false`:
     /// no such flow, or it cannot run (the task is left as it was, with why).
+    /// The flow that takes a task of `project` on when its request ends
+    /// (`Trigger::TaskEnd`), if any: the composer says so before sending.
+    /// The project's own flows only: a global one would fire everywhere.
+    pub fn task_end_flow(&self, project: &Path) -> AppResult<Option<FlowEntry>> {
+        Ok(self
+            .flows(Some(project))?
+            .into_iter()
+            .find(|e| e.scope == FlowScope::Project && e.flow.triggers.contains(&Trigger::TaskEnd)))
+    }
+
     pub(super) fn flow_after_task(&self, task: &mut Task) -> AppResult<bool> {
         if task.flow.is_some()
             || task.mode != TaskMode::Project
@@ -159,9 +171,14 @@ impl Hedy {
         };
         // Only the end of the task's request: a follow-up later (or a task
         // left in review before the flow was set) does not start it, and
-        // neither does a turn that changed nothing.
-        let requests = self
-            .task_events(&task.id)?
+        // neither does a turn that changed nothing. A question that went on
+        // to change code counts from there (docs/decisions.md §55).
+        let events = self.task_events(&task.id)?;
+        let from = events
+            .iter()
+            .rposition(|e| matches!(e, AgentEvent::ChangesCode { .. }))
+            .map_or(0, |at| at + 1);
+        let requests = events[from..]
             .iter()
             .filter(|e| matches!(e, AgentEvent::UserMessage { .. }))
             .count();
@@ -171,12 +188,7 @@ impl Hedy {
         let Ok(project) = self.project_at(&task.project) else {
             return Ok(false);
         };
-        // The project's own flows only: a global one would fire everywhere.
-        let Some(entry) = self
-            .flows(Some(&project.path))?
-            .into_iter()
-            .find(|e| e.scope == FlowScope::Project && e.flow.triggers.contains(&Trigger::TaskEnd))
-        else {
+        let Some(entry) = self.task_end_flow(&project.path)? else {
             return Ok(false);
         };
         let name = entry.flow.name.clone();
@@ -840,6 +852,32 @@ mod tests {
         f.git.set_diff(vec![changed("src/caja.rs")]);
         finish(&f, "Cambiado.");
         assert!(f.hedy.task(&task.id).unwrap().flow.is_none());
+    }
+
+    #[test]
+    fn a_question_that_goes_on_to_change_code_ends_like_a_new_task() {
+        use crate::application::ChangeCode;
+        use crate::domain::flow::Trigger;
+        let f = setup();
+        review_after(&f, vec![Trigger::TaskEnd]);
+        let mut asked = request(&f, "¿Dónde se cobra?");
+        asked.mode = TaskMode::Ask;
+        let task = f.hedy.start_task(asked).unwrap();
+        finish(&f, "En src/caja.");
+        f.hedy
+            .change_code(
+                &task.id,
+                ChangeCode {
+                    text: "Cobra con tarjeta".into(),
+                    images: Vec::new(),
+                    plan_first: false,
+                },
+            )
+            .unwrap();
+        f.git.set_diff(vec![changed("src/caja.rs")]);
+        finish(&f, "Cambiado.");
+        assert!(f.hedy.task(&task.id).unwrap().flow.is_some());
+        assert_eq!(f.agents.last_request().phase, Phase::Review);
     }
 
     #[test]
