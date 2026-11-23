@@ -170,6 +170,35 @@ impl Hedy {
             .ok_or_else(|| AppError::FlowNotFound(wanted.to_owned()))
     }
 
+    /// The flow a project's new «Cambiar código» tasks start with
+    /// (docs/decisions.md §56). `None`: one AI, also when the chosen flow
+    /// is gone since.
+    pub fn default_flow(&self, project: &Path) -> AppResult<Option<FlowEntry>> {
+        let project = self.project_at(project)?;
+        let Some(key) = project.default_flow else {
+            return Ok(None);
+        };
+        Ok(self
+            .flows(Some(&project.path))?
+            .into_iter()
+            .find(|e| e.key == key))
+    }
+
+    /// Sets it, by key or name; `None` goes back to one AI.
+    pub fn set_default_flow(
+        &self,
+        project: &Path,
+        which: Option<&str>,
+    ) -> AppResult<Option<FlowEntry>> {
+        let mut project = self.project_at(project)?;
+        let entry = which
+            .map(|which| self.flow(Some(&project.path), which))
+            .transpose()?;
+        project.default_flow = entry.as_ref().map(|e| e.key.clone());
+        self.store.save_project(&project)?;
+        Ok(entry)
+    }
+
     /// A flow as text (`hedy flow show`), the form `save_flow_text` reads.
     pub fn flow_text(&self, project: Option<&Path>, which: &str) -> AppResult<String> {
         Ok(flow_text::to_text(&self.flow(project, which)?.flow))
@@ -784,5 +813,24 @@ mod tests {
             roles.len(),
             "global sees Hedy's"
         );
+    }
+
+    #[test]
+    fn a_project_starts_its_code_tasks_with_its_default_flow() {
+        let f = Fixture::new();
+        let dir = project(&f);
+        assert_eq!(f.hedy.default_flow(&dir).unwrap(), None);
+        let chosen = f.hedy.set_default_flow(&dir, Some("Esencial")).unwrap();
+        assert_eq!(chosen.map(|e| e.key), Some("essential".into()));
+        assert_eq!(
+            f.hedy.default_flow(&dir).unwrap().map(|e| e.key),
+            Some("essential".into())
+        );
+        assert!(matches!(
+            f.hedy.set_default_flow(&dir, Some("No existe")),
+            Err(AppError::FlowNotFound(_))
+        ));
+        f.hedy.set_default_flow(&dir, None).unwrap();
+        assert_eq!(f.hedy.default_flow(&dir).unwrap(), None);
     }
 }
