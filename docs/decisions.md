@@ -4382,3 +4382,21 @@ slack), with «Ver Esencial» and «No volver a avisar» (kept per PC).
 - `hedy flow import <file> [--global] [--replace]`: a flow as text, saved as the user's. Its
   triggers become manual, as a copy's do: a file from elsewhere never runs agents after each task
   by itself. A flow of the same name in the same place is changed only with `--replace`.
+
+## 53. The terminal's colors and Tauri's CSP (Nov 23, 2026)
+
+xterm.js puts a terminal's colors in `<style>` elements it adds at run time. In a built app,
+Tauri adds nonces to `style-src`, and a CSP with a nonce ignores `'unsafe-inline'`, so those
+sheets never loaded: every cell took the inherited text color, fish's gray autosuggestion
+included, so a suggestion read as typed text. Development builds do not change the CSP, which
+is why it never showed there.
+
+- **Fix:** `"dangerousDisableAssetCspModification": ["style-src"]` in `tauri.conf.json`. The CSP
+  already allowed inline styles; this only keeps Tauri from voiding that. Scripts keep their
+  nonces.
+- **Checked** on a release build: xterm's three sheets load (they did not before), the prompt
+  has its colors, and typing `prin` shows it red with the suggestion `tf …` in the theme's
+  bright black (`#52525B`).
+- **WebGL rendering** (`@xterm/addon-webgl`, as VS Code's terminal) was tried and left out: in
+  WebKitGTK it drew the text but lost repaints that only change colors (fish's syntax colors,
+  the suggestion) and the right prompt. The DOM renderer draws them right.
