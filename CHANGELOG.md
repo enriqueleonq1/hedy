@@ -6,6 +6,8 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-11-23
+
 ### Fixed
 
 - The terminal shows colors again in the installed app: the prompt, the shell's syntax colors
@@ -302,7 +304,8 @@ The first public release. Linux only for now.
 - `hedy account`, `hedy use`, `hedy run`, `hedy status`, `hedy tasks`, `hedy doctor`,
   `hedy skills` and `hedy template`.
 
-[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/enriqueleonq1/hedy/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/enriqueleonq1/hedy/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/enriqueleonq1/hedy/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/enriqueleonq1/hedy/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/enriqueleonq1/hedy/compare/v1.4.0...v1.5.0
