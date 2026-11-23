@@ -6,6 +6,11 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The terminal shows colors again in the installed app: the prompt, the shell's syntax colors
+  and its suggestions (fish's gray autosuggestion read as typed text before).
+
 ## [1.7.0] - 2026-11-22
 
 ### Added
