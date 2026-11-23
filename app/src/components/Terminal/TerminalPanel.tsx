@@ -5,6 +5,7 @@ import { OVERVIEW_KEY } from "../../api/context";
 import { useT } from "../../i18n";
 import "../../styles/code.css";
 import { Button } from "../ui/Button";
+import { CloseIcon } from "../../screens/workspace/icons";
 import { rovingKeyDown } from "../ui/roving";
 import { clampSize, ResizeHandle } from "../ui/ResizeHandle";
 import { useTerminals } from "./TerminalProvider";
@@ -73,7 +74,6 @@ export function TerminalPanel() {
   const panel = usePanelHeight();
 
   if (sessions.length === 0) return null;
-  const active = sessions.find((s) => s.key === activeKey);
 
   return (
     <section className="terminal-panel" hidden={!panelOpen} aria-label={t("common.terminal")} style={{ height: panel.height }}>
@@ -88,8 +88,9 @@ export function TerminalPanel() {
         onChange={panel.set}
         onToggleMax={panel.toggleMax}
       />
-      {/* Only the tabs are in the tablist (arrow keys move between them); closing,
-          a new terminal and the panel's size are a toolbar beside it. */}
+      {/* Only the tabs are in the tablist (arrow keys move between them); a new
+          terminal and the panel's size are a toolbar beside it. Each tab's × is for
+          the mouse; from the keyboard, Supr closes the tab with the focus. */}
       <div className="terminal-panel__bar">
         <div className="terminal-panel__tabs" role="tablist" aria-label={t("shell.terminals")} onKeyDown={rovingKeyDown}>
           {sessions.map((s) => {
@@ -102,30 +103,38 @@ export function TerminalPanel() {
                 aria-selected={selected}
                 tabIndex={selected ? 0 : -1}
                 className={`terminal-tab${selected ? " terminal-tab--active" : ""}`}
+                aria-keyshortcuts="Delete"
+                aria-description={t("shell.terminalCloseKey")}
                 // A middle click closes it, as in a browser.
                 onAuxClick={(e) => e.button === 1 && close(s.key)}
+                onKeyDown={(e) => {
+                  if (e.key === "Delete") {
+                    e.preventDefault();
+                    close(s.key);
+                  }
+                }}
                 // A pointer click moves the keyboard into the terminal; the arrow
                 // keys (and Enter or Space) choose a tab and keep the focus on it.
                 onClick={(e) => activate(s.key, e.detail > 0)}
               >
                 <span className={`dot ${s.running ? "dot--running" : "dot--idle"}`} aria-hidden />
                 {s.title}
+                <span
+                  className="terminal-tab__close"
+                  aria-hidden
+                  title={t("common.closeNamed", { name: s.title })}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    close(s.key);
+                  }}
+                >
+                  <CloseIcon />
+                </span>
               </button>
             );
           })}
         </div>
         <div className="terminal-panel__actions">
-          {active && (
-            <button
-              type="button"
-              className="terminal-tab__close"
-              aria-label={t("common.closeNamed", { name: active.title })}
-              title={t("common.closeNamed", { name: active.title })}
-              onClick={() => close(active.key)}
-            >
-              ×
-            </button>
-          )}
           <Button small variant="ghost" onClick={() => open({ kind: "shell", path: null }, t("common.terminal"))}>
             + {t("common.terminal")}
           </Button>
