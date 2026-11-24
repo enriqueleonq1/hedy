@@ -12,7 +12,14 @@ export function splitAssumptions(text: string): { assumptions: string | null; re
   const lines = text.split("\n");
   const start = lines.findIndex((line) => ASSUMPTIONS.test(line.trim()));
   if (start < 0) return { assumptions: null, rest: text };
-  const after = lines.findIndex((line, i) => i > start && HEADING.test(line.trim()));
+  // It ends at the next heading of its level or above, outside code blocks.
+  const level = (line: string) => line.trim().match(/^#+/)?.[0].length ?? 0;
+  const own = level(lines[start] ?? "");
+  let fenced = false;
+  const after = lines.findIndex((line, i) => {
+    if (line.trim().startsWith("```")) fenced = !fenced;
+    return i > start && !fenced && HEADING.test(line.trim()) && level(line) <= own;
+  });
   const end = after < 0 ? lines.length : after;
   const assumptions = lines.slice(start + 1, end).join("\n").trim();
   const rest = [...lines.slice(0, start), ...lines.slice(end)].join("\n").trim();

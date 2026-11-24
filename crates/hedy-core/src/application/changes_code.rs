@@ -69,6 +69,10 @@ impl Hedy {
         };
         task.prompt = prompt.clone();
         task.mode = TaskMode::Project;
+        task.working = Some(crate::domain::WorkingStyle {
+            plan: request.plan_first,
+            ..project.working.clone()
+        });
         task.workspace = Some(workspace);
         task.stages = stages;
         task.stage = 0;
@@ -210,6 +214,11 @@ mod tests {
         let changed = f.hedy.change_code(&task.id, change("Hazlo", true)).unwrap();
         assert_eq!(changed.stages[0].phase, Phase::Plan);
         assert!(f.agents.last_request().plan_first);
+        // It now changes code: the project's way of working, with this plan.
+        let working = changed
+            .working
+            .expect("a code task keeps its way of working");
+        assert!(working.plan && working.tests);
     }
 
     #[test]

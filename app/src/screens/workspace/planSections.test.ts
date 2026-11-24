@@ -22,6 +22,13 @@ describe("splitAssumptions", () => {
     expect(rest).toBe("Intro\n## What I will change\nx");
   });
 
+  it("keeps its own subheadings and code blocks", () => {
+    const plan = "## Lo que supongo\n### Límites\n- 15 min\n```\n# no es un título\n```\n## Qué voy a cambiar\nx";
+    const { assumptions, rest } = splitAssumptions(plan);
+    expect(assumptions).toBe("### Límites\n- 15 min\n```\n# no es un título\n```");
+    expect(rest).toBe("## Qué voy a cambiar\nx");
+  });
+
   it("leaves a plan without the section as it is", () => {
     expect(splitAssumptions("1. Buscar\n2. Cambiar")).toEqual({ assumptions: null, rest: "1. Buscar\n2. Cambiar" });
   });

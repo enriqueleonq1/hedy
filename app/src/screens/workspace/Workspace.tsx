@@ -1075,7 +1075,9 @@ function Composer({
 
   // With a plan waiting, Enter sends a correction and Ctrl/⌘ + Enter (with
   // nothing written) approves it, in the same session (docs/decisions.md §60).
-  const correcting = followUp && card === "plan" && !!planRequest && !!task?.live;
+  // A correction is text only: with images attached, the message waits for
+  // the card's answer as before.
+  const correcting = followUp && card === "plan" && !!planRequest && !!task?.live && images.images.length === 0;
   const answerPlan = useAction(
     (api, vars: { approve: boolean; feedback: string | null }) =>
       api.answerPlan(task?.id ?? "", planRequest ?? "", vars.approve, vars.feedback),
@@ -1096,8 +1098,8 @@ function Composer({
 
   function submit() {
     const value = text.trim();
-    if (correcting && value && !answerPlan.isPending) {
-      answerPlan.mutate({ approve: false, feedback: value });
+    if (correcting) {
+      if (value && !answerPlan.isPending) answerPlan.mutate({ approve: false, feedback: value });
       return;
     }
     if (!value || busy || disabled || sendBlocked) return;

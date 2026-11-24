@@ -188,7 +188,7 @@ impl Hedy {
             return Ok(None);
         };
         Ok(self
-            .flows(Some(&project.path))?
+            .offered_flows(Some(&project.path))?
             .into_iter()
             .find(|e| e.key == key))
     }
@@ -203,6 +203,16 @@ impl Hedy {
         let entry = which
             .map(|which| self.flow(Some(&project.path), which))
             .transpose()?;
+        if let Some(e) = &entry
+            && e.scope == FlowScope::Hedy
+            && Template::from_key(&e.key).is_some_and(Template::retired)
+        {
+            let name = &e.flow.name;
+            return Err(AppError::InvalidFlow(vec![tr!(
+                "«{name}» ya no es una plantilla: para un plan y tu OK con una IA, elige «Tras tu OK» en los ajustes del proyecto",
+                "«{name}» is no longer a template: for a plan and your OK with one AI, pick «After your OK» in the project's settings"
+            )]));
+        }
         project.default_flow = entry.as_ref().map(|e| e.key.clone());
         self.store.save_project(&project)?;
         Ok(entry)
@@ -853,6 +863,10 @@ mod tests {
             Err(AppError::FlowNotFound(_))
         ));
         f.hedy.set_default_flow(&dir, None).unwrap();
+        assert!(matches!(
+            f.hedy.set_default_flow(&dir, Some("approval")),
+            Err(AppError::InvalidFlow(_))
+        ));
         assert_eq!(f.hedy.default_flow(&dir).unwrap(), None);
     }
 }
