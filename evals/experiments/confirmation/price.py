@@ -16,7 +16,9 @@ import glob, json, re, sys
 from collections import defaultdict
 
 PRICE = {"haiku": (0.10, 0.50), "sonnet": (2.0, 10.0), "opus": (4.0, 20.0)}
-NAME = re.compile(r"hedy-evals-(\d+)-(.+?)-plain-long-([a-z]+)-(\d+)-\1-")
+# The folder's first number names the temporary folder; the second is the run's start, which
+# can be a second later.
+NAME = re.compile(r"hedy-evals-\d+-(.+?)-plain-long-([a-z]+)-(\d+)-(\d+)-")
 
 args, layer = sys.argv[1:], []
 while "--layer" in args:
@@ -28,7 +30,7 @@ for root in args + layer:
         m = NAME.search(folder)
         if not m:
             continue
-        started, case, arm, attempt = m.groups()
+        case, arm, attempt, started = m.groups()
         key = f"{started} {case} {'layer' if root in layer else arm} {attempt}"
         seen = set()
         for path in glob.glob(folder + "/**/*.jsonl", recursive=True):
