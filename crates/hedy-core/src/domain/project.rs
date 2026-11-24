@@ -28,6 +28,9 @@ pub struct Project {
     /// The flow its new «Cambiar código» tasks start with (a flow's key);
     /// `None`: one AI (docs/decisions.md §56).
     pub default_flow: Option<String>,
+    /// How its «Cambiar código» tasks work with one AI: the plan and the
+    /// checks Hedy runs (docs/decisions.md §60). Kept per PC.
+    pub working: super::WorkingStyle,
 }
 
 impl Project {
@@ -48,6 +51,7 @@ impl Project {
             blocked_files: Default::default(),
             permission_mode: Default::default(),
             default_flow: None,
+            working: Default::default(),
         }
     }
 

@@ -43,6 +43,7 @@ pub mod team;
 pub mod template;
 pub mod theme;
 pub mod version;
+pub mod working;
 
 pub use account::{Account, AccountId, ConfigFolder, Credentials};
 pub use activity::{Notice, NoticeKind, TaskState, task_state};
@@ -71,3 +72,4 @@ pub use task::{
 };
 pub use template::{PromptTemplate, TemplateId};
 pub use theme::{CustomTheme, ThemeBase, ThemeDraft, ThemeOrigin};
+pub use working::{Preset, WorkingStyle};

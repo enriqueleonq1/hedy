@@ -1370,6 +1370,7 @@ fn seed_tasks(env: &Env, repo: &Path) {
         merge: None,
         wait: None,
         conversation: false,
+        working: None,
         ship: None,
         origin: None,
         code_map: None,

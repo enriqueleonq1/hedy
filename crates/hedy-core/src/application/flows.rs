@@ -170,6 +170,15 @@ impl Hedy {
             .ok_or_else(|| AppError::FlowNotFound(wanted.to_owned()))
     }
 
+    /// The flows a user picks from: `flows` without the retired templates.
+    pub fn offered_flows(&self, project: Option<&Path>) -> AppResult<Vec<FlowEntry>> {
+        let mut entries = self.flows(project)?;
+        entries.retain(|e| {
+            e.scope != FlowScope::Hedy || !Template::from_key(&e.key).is_some_and(Template::retired)
+        });
+        Ok(entries)
+    }
+
     /// The flow a project's new «Cambiar código» tasks start with
     /// (docs/decisions.md §56). `None`: one AI, also when the chosen flow
     /// is gone since.
@@ -579,6 +588,19 @@ mod tests {
             .map(|e| e.key)
             .collect();
         assert_eq!(keys, ["essential", "approval", "focused-review"]);
+        let offered: Vec<_> = f
+            .hedy
+            .offered_flows(Some(&dir))
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.scope == FlowScope::Hedy)
+            .map(|e| e.key)
+            .collect();
+        assert_eq!(
+            offered,
+            ["essential", "focused-review"],
+            "«Con tu aprobación» is retired"
+        );
 
         let text = f.hedy.flow_text(Some(&dir), "focused-review").unwrap();
         let mine = text.replacen(&Template::FocusedReview.name(), "Pago con revisión", 1);

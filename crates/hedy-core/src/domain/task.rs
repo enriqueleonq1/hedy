@@ -204,6 +204,11 @@ pub struct Task {
     /// with and without it (docs/decisions.md §33). `None`: an older task.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_map: Option<bool>,
+    /// How this task works with one AI, taken from its project when it
+    /// started (docs/decisions.md §60). `None`: a flow, a question or an
+    /// older task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working: Option<super::WorkingStyle>,
 }
 
 /// What "Aceptar" changed in the main checkout, kept so it can be undone

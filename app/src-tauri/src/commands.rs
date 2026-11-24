@@ -280,7 +280,7 @@ pub async fn flows(
     state: State<'_, AppState>,
     project: Option<PathBuf>,
 ) -> CommandResult<Vec<hedy_core::application::FlowEntry>> {
-    blocking(&state, move |h| h.flows(project.as_deref())).await
+    blocking(&state, move |h| h.offered_flows(project.as_deref())).await
 }
 
 /// What a project's new «Cambiar código» tasks do: the flow they start with

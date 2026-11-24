@@ -33,7 +33,7 @@ use crate::domain::{
     Account, AccountId, AgentEvent, Attachment, Commit, Credentials, Decision, FileDiff,
     HoldReason, LaunchPurpose, LaunchSpec, LimitLevel, Notice, NoticeKind, PermissionMode, Phase,
     Project, PromptImage, Provider, Stage, Task, TaskId, TaskMode, TaskStatus, UsageSample,
-    Workspace, policy,
+    WorkingStyle, Workspace, policy,
 };
 use crate::experiments::{self, Experiment};
 use crate::tr;
@@ -300,6 +300,12 @@ impl Hedy {
             origin,
             code_map,
             images: Vec::new(),
+            // One AI changing code: the project's stops, with the plan as
+            // asked for this task.
+            working: request.mode.changes_files().then(|| WorkingStyle {
+                plan: request.plan_first,
+                ..project.working.clone()
+            }),
         };
         task.images = self.store_images(&task.id, &images)?;
         self.store.save_task(&task)?;
@@ -2927,6 +2933,43 @@ mod tests {
         assert!(events.iter().any(|e| matches!(e,
             AgentEvent::PermissionResolved { automatic: true, reason: Some(r), .. }
                 if r == "Modo automático" || r == "Automatic mode")));
+    }
+
+    #[test]
+    fn a_code_task_keeps_its_projects_way_of_working_with_the_plan_it_asked_for() {
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        let dir = f.dir("/code/agenda");
+        f.hedy.use_account(&dir, "personal", None).unwrap();
+        let style = crate::domain::Preset::AfterOk.apply(&WorkingStyle {
+            e2e_command: Some(" npm run e2e ".into()),
+            ..Default::default()
+        });
+        let project = f.hedy.set_project_working(&dir, style).unwrap();
+        assert_eq!(project.working.e2e_command.as_deref(), Some("npm run e2e"));
+        let start = |mode: TaskMode, plan_first: bool| {
+            f.hedy
+                .start_task(NewTask {
+                    images: Vec::new(),
+                    project: dir.clone(),
+                    prompt: "Cambia algo".into(),
+                    mode,
+                    model: None,
+                    plan_first,
+                    permissions: None,
+                })
+                .unwrap()
+        };
+        // Right away for once: no plan, the project's checks all the same.
+        let quick = start(TaskMode::Project, false).working.unwrap();
+        assert!(!quick.plan && quick.tests && quick.e2e);
+        assert!(start(TaskMode::Project, true).working.unwrap().plan);
+        assert_eq!(start(TaskMode::Ask, false).working, None);
+        // A new style reaches new tasks only.
+        f.hedy
+            .set_project_working(&dir, WorkingStyle::default())
+            .unwrap();
+        assert!(!start(TaskMode::Project, false).working.unwrap().tests);
     }
 
     #[test]

@@ -12,7 +12,7 @@ use crate::domain::recall::NoteUse;
 use crate::domain::{
     Account, AccountId, AgentEvent, Category, Color, ConfigFolder, Credentials, Note, NoteStatus,
     PermissionMode, PlanUsage, Project, Skill, SkillStatus, Task, TaskId, UsageProblem,
-    UsageSample,
+    UsageSample, WorkingStyle,
 };
 use crate::tr;
 
@@ -337,6 +337,15 @@ const MIGRATIONS: &[&str] = &[
     -- key; NULL: one AI). docs/decisions.md §56.
     ALTER TABLE projects ADD COLUMN default_flow TEXT;
 "#,
+    r#"
+    -- How a project's «Cambiar código» tasks work with one AI (JSON; NULL:
+    -- every stop off). docs/decisions.md §60. «Con tu aprobación» is no
+    -- longer a template: a project that started its tasks with it plans
+    -- first and runs its tests with one AI instead («Tras tu OK»).
+    ALTER TABLE projects ADD COLUMN working TEXT;
+    UPDATE projects SET working = '{"plan":true,"tests":true,"e2e":true}', default_flow = NULL
+        WHERE default_flow = 'approval';
+"#,
 ];
 
 mod commands;
@@ -520,7 +529,14 @@ fn project_from_row(row: &Row) -> rusqlite::Result<Project> {
         .as_deref()
         .and_then(PermissionMode::parse)
         .unwrap_or_default();
+    let working = row
+        .get::<_, Option<String>>(11)?
+        .map(|p| serde_json::from_str(&p))
+        .transpose()
+        .map_err(invalid(11))?
+        .unwrap_or_default();
     Ok(Project {
+        working,
         default_flow: row.get(10)?,
         client: row.get(7)?,
         blocked_files,
@@ -540,7 +556,7 @@ impl ProjectRepository for SqliteStore {
         self.with(|c| {
             c.prepare(
                 "SELECT path, name, account_id, protected, color, phases, memory_off, client, blocked_files,
-                    permission_mode, default_flow
+                    permission_mode, default_flow, working
                  FROM projects ORDER BY name",
             )?
             .query_map([], project_from_row)?
@@ -561,18 +577,23 @@ impl ProjectRepository for SqliteStore {
             .then(|| serde_json::to_string(&project.blocked_files))
             .transpose()
             .map_err(json_error)?;
+        let working = (project.working != WorkingStyle::default())
+            .then(|| serde_json::to_string(&project.working))
+            .transpose()
+            .map_err(json_error)?;
         self.with(|c| {
             c.execute(
                 "INSERT INTO projects (path, name, account_id, protected, color, phases, memory_off, client, blocked_files,
-                    permission_mode, default_flow)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                    permission_mode, default_flow, working)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                  ON CONFLICT (path) DO UPDATE SET
                     name = excluded.name, account_id = excluded.account_id,
                     protected = excluded.protected, color = excluded.color,
                     phases = excluded.phases, memory_off = excluded.memory_off,
                     client = excluded.client, blocked_files = excluded.blocked_files,
                     permission_mode = excluded.permission_mode,
-                    default_flow = excluded.default_flow",
+                    default_flow = excluded.default_flow,
+                    working = excluded.working",
                 params![
                     project.path.to_string_lossy(),
                     project.name,
@@ -586,6 +607,7 @@ impl ProjectRepository for SqliteStore {
                     (project.permission_mode != PermissionMode::Manual)
                         .then(|| project.permission_mode.as_str()),
                     project.default_flow,
+                    working,
                 ],
             )
             .map(drop)
@@ -1324,6 +1346,23 @@ mod tests {
     }
 
     #[test]
+    fn projects_that_started_with_the_retired_flow_plan_first_with_one_ai() {
+        let migration = MIGRATIONS
+            .iter()
+            .find(|m| m.contains("ADD COLUMN working"))
+            .unwrap();
+        let json = &migration[migration.find("'{").unwrap() + 1..=migration.find("}'").unwrap()];
+        let style: WorkingStyle = serde_json::from_str(json).unwrap();
+        assert_eq!(style.preset(), Some(crate::domain::Preset::AfterOk));
+
+        let store = SqliteStore::in_memory().unwrap();
+        let mut project = Project::new("/code/tienda".into());
+        project.working = style.clone();
+        store.save_project(&project).unwrap();
+        assert_eq!(store.list_projects().unwrap()[0].working, style);
+    }
+
+    #[test]
     fn accounts_round_trip_in_insertion_order() {
         let store = SqliteStore::in_memory().unwrap();
         let accounts = [
@@ -1440,6 +1479,7 @@ mod tests {
             ship: None,
             origin: None,
             code_map: None,
+            working: None,
         };
         // Old but still running; old with a recent event; recent; old and done.
         let running = task("t1", "/code/a", 10, TaskStatus::Running);
@@ -1490,6 +1530,7 @@ mod tests {
             ship: None,
             origin: None,
             code_map: None,
+            working: None,
         };
         store.save_task(&task).unwrap();
         assert!(store.waiting_tasks().unwrap().is_empty());
@@ -1553,6 +1594,7 @@ mod tests {
             ship: None,
             origin: None,
             code_map: None,
+            working: None,
         };
         let (chat, other) = (task("c1", true), task("t1", false));
         store.save_task(&chat).unwrap();
@@ -1603,6 +1645,7 @@ mod tests {
             ship: None,
             origin,
             code_map: None,
+            working: None,
         };
         let origin = crate::domain::TaskOrigin {
             conversation: TaskId::new("c1"),
@@ -1664,6 +1707,7 @@ mod tests {
             ship: None,
             origin: None,
             code_map: None,
+            working: None,
         };
         let (old, new) = (task("t1", 10), task("t2", 20));
         store.save_task(&old).unwrap();
