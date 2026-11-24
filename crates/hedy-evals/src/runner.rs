@@ -12,7 +12,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, bail};
 use hedy_core::adapters::CODE_MAP_PROGRAM;
 use hedy_core::application::ports::TaskEvents;
-use hedy_core::application::{Hedy, NewTask, Setting};
+use hedy_core::application::{AppError, Hedy, NewTask, Setting};
 use hedy_core::domain::{
     AccountId, AgentEvent, Decision, Task, TaskId, TaskMode, TaskStatus, UsageSample,
 };
@@ -492,7 +492,7 @@ impl Runner {
             "none" => hedy.start_task(request),
             // A flow written as text: saved (for every project) and run by its key.
             key if key.starts_with(FLOW_FILE) => std::fs::read_to_string(&key[FLOW_FILE.len()..])
-                .map_err(|e| hedy_core::application::AppError::InvalidFlow(vec![e.to_string()]))
+                .map_err(|e| AppError::InvalidFlow(vec![e.to_string()]))
                 .and_then(|text| hedy.save_flow_text(None, &text))
                 .and_then(|entry| hedy.start_flow(request, &entry.key)),
             key => hedy.start_flow(request, key),
@@ -741,9 +741,13 @@ impl Runner {
                 }
                 _ => Ok(()),
             };
-            if let Err(e) = answered {
-                seen.error = Some(e.to_string());
-                return seen;
+            match answered {
+                // Its agent ended before the card was answered: its end comes next.
+                Err(AppError::TaskNotRunning(_)) | Ok(()) => {}
+                Err(e) => {
+                    seen.error = Some(e.to_string());
+                    return seen;
+                }
             }
             if cut.actions.is_some_and(|cap| seen.actions >= cap) && !seen.stopped {
                 seen.stopped = true;
