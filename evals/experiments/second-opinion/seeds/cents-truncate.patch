@@ -1,0 +1,92 @@
+diff --git a/billing/catalog.py b/billing/catalog.py
+index cb986a7..9a90960 100644
+--- a/billing/catalog.py
++++ b/billing/catalog.py
+@@ -1,11 +1,5 @@
+-# Unit prices, in dollars.
+-PRICES = {
+-    "pen": 1.15,
+-    "notebook": 2.35,
+-    "stapler": 7.05,
+-    "lamp": 19.99,
+-    "chair": 89.95,
+-}
++# Unit prices, in cents.
++PRICES = {"pen": 115, "notebook": 235, "stapler": 705, "lamp": 1999, "chair": 8995}
+ 
+ 
+ def price(sku):
+diff --git a/billing/coupons.py b/billing/coupons.py
+index fd35c9a..5daabf9 100644
+--- a/billing/coupons.py
++++ b/billing/coupons.py
+@@ -1,16 +1,12 @@
+-# A coupon is ("percent", 10) for 10 % off, or ("fixed", 5.0) for 5 dollars off.
+-COUPONS = {
+-    "TEN": ("percent", 10),
+-    "SAVE5": ("fixed", 5.0),
+-    "HALF": ("percent", 50),
+-    "BIG": ("fixed", 100.0),
+-}
++from .money import ratio
++
++COUPONS = {"TEN": ("percent", 10), "SAVE5": ("fixed", 500), "HALF": ("percent", 50), "BIG": ("fixed", 10000)}
+ 
+ 
+ def discount(subtotal, code):
+     if code is None:
+-        return 0.0
++        return 0
+     kind, value = COUPONS[code]
+     if kind == "percent":
+-        return round(subtotal * value / 100, 2)
++        return ratio(subtotal, value, 100)
+     return min(value, subtotal)
+diff --git a/billing/invoice.py b/billing/invoice.py
+index 164295d..9bc59b4 100644
+--- a/billing/invoice.py
++++ b/billing/invoice.py
+@@ -1,9 +1,8 @@
+ from .coupons import discount
++from .money import text as money
+ from .tax import tax
+ 
+ 
+-def money(amount):
+-    return f"${amount:,.2f}"
+ 
+ 
+ def totals(cart, region, coupon=None):
+diff --git a/billing/money.py b/billing/money.py
+new file mode 100644
+index 0000000..e691665
+--- /dev/null
++++ b/billing/money.py
+@@ -0,0 +1,8 @@
++def ratio(amount, num, den):
++    """amount * num / den in whole cents, half up (amounts are never negative)."""
++    return amount * num // den
++
++
++def text(cents):
++    whole, rest = divmod(cents, 100)
++    return f"${whole:,}.{rest:02d}"
+diff --git a/billing/tax.py b/billing/tax.py
+index 37bacac..3fe0693 100644
+--- a/billing/tax.py
++++ b/billing/tax.py
+@@ -1,9 +1,8 @@
+-RATES = {
+-    "NY": 0.08875,
+-    "TX": 0.0625,
+-    "OR": 0.0,
+-}
++from .money import ratio
++
++# Rates in hundred-thousandths.
++RATES = {"NY": 8875, "TX": 6250, "OR": 0}
+ 
+ 
+ def tax(amount, region):
+-    return round(amount * RATES[region], 2)
++    return ratio(amount, RATES[region], 100000)

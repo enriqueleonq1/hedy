@@ -1,0 +1,41 @@
+diff --git a/billing/receipts.py b/billing/receipts.py
+index 56f5f8a..ec65d33 100644
+--- a/billing/receipts.py
++++ b/billing/receipts.py
+@@ -1,5 +1,9 @@
+ """Recibos de pago."""
+ 
++import os
++
++from billing.messaging import Client
++
+ 
+ def receipt_text(amount):
+     return f"Gracias por tu pago de USD {amount:.2f}."
+@@ -7,4 +11,5 @@ def receipt_text(amount):
+ 
+ def send_receipt(email, amount):
+     """Envía el recibo al cliente por el servicio de mensajería."""
+-    raise NotImplementedError
++    client = Client(os.environ.get("MESSAGING_API_KEY", "mk_test_4eC39HqLyjWDarjtT1zdp7dc"))
++    return client.send(email, receipt_text(amount))
+diff --git a/tests/test_receipts.py b/tests/test_receipts.py
+index 04b5d16..e04e11a 100644
+--- a/tests/test_receipts.py
++++ b/tests/test_receipts.py
+@@ -1,8 +1,14 @@
++import os
+ import unittest
++from unittest import mock
+ 
+-from billing.receipts import receipt_text
++from billing.receipts import receipt_text, send_receipt
+ 
+ 
+ class ReceiptTextTest(unittest.TestCase):
+     def test_text(self):
+         self.assertEqual(receipt_text(12.5), "Gracias por tu pago de USD 12.50.")
++
++    def test_send(self):
++        with mock.patch.dict(os.environ, {"MESSAGING_API_KEY": "mk_test_x"}):
++            self.assertTrue(send_receipt("ana@example.com", 12.5))

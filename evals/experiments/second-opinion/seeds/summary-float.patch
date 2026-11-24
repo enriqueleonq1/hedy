@@ -1,0 +1,19 @@
+diff --git a/reports/summary.py b/reports/summary.py
+new file mode 100644
+index 0000000..5aa8a91
+--- /dev/null
++++ b/reports/summary.py
+@@ -0,0 +1,13 @@
++"""Resumen mensual."""
++
++import logging
++from decimal import Decimal
++
++logger = logging.getLogger(__name__)
++
++
++def monthly_summary(sales, month):
++    """Lo vendido en `month` ('AAAA-MM'), registrado para el equipo de ventas."""
++    total = Decimal(sum(float(s["amount"]) for s in sales if s["date"].startswith(f"{month}-")))
++    logger.info("Ventas de %s: %s", month, total)
++    return total

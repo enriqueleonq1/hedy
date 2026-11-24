@@ -56,3 +56,14 @@ gets the request and the diff and answers with the same JSON:
 Build «Pedir segunda opinión» if an arm detects at least 50 % of the bad diffs with fewer
 than 1 false alarm per 4 good diffs (false alarms / good diffs < 0.25), averaged over the
 repeats. Among arms that pass, the cheapest per detected error.
+
+## Before the first review (Nov 23, 2026)
+
+Two things settled while building the harness, before any review ran:
+
+- The reviewer and the verifier also get the project's notes (the case's memory), as Hedy's
+  own reviewer would.
+- Test A left 6 bad diffs (all from first attempts); 14 planted errors (`make_seeds.py`,
+  `seeds.json`) fill the bad side to 20. The planted ones sit on top of reference solutions,
+  not on haiku's code. The 20 good ones are haiku's. `pick_material.py` chose all of them
+  from the verdicts alone.

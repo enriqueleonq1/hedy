@@ -1,0 +1,30 @@
+diff --git a/calendar_utils.py b/calendar_utils.py
+index 30e5c1b..371ccaa 100644
+--- a/calendar_utils.py
++++ b/calendar_utils.py
+@@ -3,8 +3,10 @@ from datetime import date, timedelta
+ 
+ def business_days(start: date, end: date) -> int:
+     """Días hábiles (lunes a viernes) entre start y end, ambos incluidos."""
++    if start == end:
++        return 1
+     days = 0
+-    current = start + timedelta(days=1)
++    current = start
+     while current <= end:
+         if current.weekday() < 5:
+             days += 1
+diff --git a/tests/test_calendar.py b/tests/test_calendar.py
+index 3cd170b..d49dd92 100644
+--- a/tests/test_calendar.py
++++ b/tests/test_calendar.py
+@@ -8,6 +8,9 @@ class BusinessDays(unittest.TestCase):
+     def test_empty_range(self):
+         self.assertEqual(business_days(date(2025, 3, 8), date(2025, 3, 7)), 0)
+ 
++    def test_starts_on_a_business_day(self):
++        self.assertEqual(business_days(date(2025, 3, 3), date(2025, 3, 7)), 5)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
