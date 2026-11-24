@@ -90,7 +90,30 @@ pub struct RunResult {
     /// name, beside a `.json` with the hidden check's verdict).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diff: Option<String>,
+    /// A `--rescue` run: what its first attempt did and what came after.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rescue: Option<RescueTrace>,
     pub started_at: i64,
+}
+
+/// One arm of a `--rescue` run (evals/experiments/rescue). The four arms of a
+/// run share its first attempt (and `started_at`), so they pair.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RescueTrace {
+    /// The first attempt passed the hidden check.
+    pub first_passed: bool,
+    /// The project's tests failed after the first attempt: the arms differ
+    /// only then.
+    pub tests_failed: bool,
+    /// The project's tests on what the arm delivered.
+    pub tests_passed: bool,
+    /// What the arm delivered changes or removes lines of the project's own
+    /// tests (adding tests is fine): the run does not count.
+    pub tests_edited: bool,
+    /// The arm delivered its second attempt (the retry keeps the first when
+    /// the second does not pass the tests either).
+    pub second: bool,
 }
 
 fn base() -> String {
@@ -352,6 +375,7 @@ mod tests {
             error: None,
             check_output: String::new(),
             diff: None,
+            rescue: None,
             steps: Vec::new(),
             started_at: 0,
         }

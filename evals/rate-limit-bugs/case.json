@@ -3,5 +3,6 @@
   "measures": "plain",
   "prompt": "Clientes de la API se quejan del limitador de limiter/: alguien que casi no hizo peticiones recibe 429, un cliente que reintenta mientras está bloqueado no se desbloquea nunca, y quien espera justo la ventana completa sigue bloqueado. Encuentra la causa y corrígela; la regla es: como mucho `limit` peticiones aceptadas por cliente en cualquier ventana de `window` segundos, y una petición de hace exactamente `window` segundos ya no cuenta.",
   "check": "python3 -m unittest -q test_hidden_limiter && python3 -m unittest discover -q -s tests -t .",
+  "tests": "python3 -m unittest discover -q -s tests -t .",
   "timeoutSecs": 2400
 }

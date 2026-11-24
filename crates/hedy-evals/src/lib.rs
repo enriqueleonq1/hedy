@@ -9,8 +9,11 @@
 
 pub mod case;
 pub mod report;
+pub mod rescue;
 pub mod runner;
 
 pub use case::{Case, CaseSpec, Layer, NoteSpec, Variant, load_suite, select_cases};
-pub use report::{BASE, Comparison, RunResult, StepTrace, Summary, Verdict, compare, summarize};
+pub use report::{
+    BASE, Comparison, RescueTrace, RunResult, StepTrace, Summary, Verdict, compare, summarize,
+};
 pub use runner::{RemoveOnDrop, Runner, RunnerOptions};

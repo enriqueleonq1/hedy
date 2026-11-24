@@ -23,6 +23,10 @@ pub struct CaseSpec {
     pub prompt: String,
     /// Shell command run in the worktree after the agent finishes; exit 0 passes.
     pub check: String,
+    /// The project's own tests, as the agent can run them (`--rescue` runs
+    /// them after the agent and sends back a failure).
+    #[serde(default)]
+    pub tests: Option<String>,
     /// Project memory for the layers that include it.
     #[serde(default)]
     pub notes: Vec<NoteSpec>,
@@ -233,6 +237,7 @@ mod tests {
                 title: name.into(),
                 prompt: String::new(),
                 check: "true".into(),
+                tests: None,
                 notes: Vec::new(),
                 team_notes: Vec::new(),
                 measures: None,

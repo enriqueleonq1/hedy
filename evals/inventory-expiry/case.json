@@ -3,5 +3,6 @@
   "measures": "plain",
   "prompt": "Las reservas de shop/ deben vencer: si no se confirman en 15 minutos (a los 15 minutos exactos ya está vencida), la cantidad vuelve a estar disponible. Agrega Inventory.release_expired() que las libere y devuelva cuántas liberó, haz que confirmar una reserva vencida falle con un error ReservationExpired junto a los demás errores, y que el reporte de shop/report.py no muestre las vencidas. Las confirmadas no vencen nunca.",
   "check": "python3 -m unittest -q test_hidden_expiry && python3 -m unittest discover -q -s tests -t .",
+  "tests": "python3 -m unittest discover -q -s tests -t .",
   "timeoutSecs": 2400
 }

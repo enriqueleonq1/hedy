@@ -3,5 +3,6 @@
   "measures": "plain",
   "prompt": "Algunas líneas de factura salen un céntimo de menos: 2.675 x 1 da 2.67 y debería dar 2.68. La tienda redondea cada línea a 2 decimales con la mitad hacia arriba (redondeo comercial), y el total es la suma de las líneas ya redondeadas. Arréglalo.",
   "check": "python3 -m unittest -q test_hidden_invoice && python3 -m unittest discover -q -s tests -t .",
+  "tests": "python3 -m unittest discover -q -s tests -t .",
   "timeoutSecs": 2400
 }

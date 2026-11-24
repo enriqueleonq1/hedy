@@ -3,5 +3,6 @@
   "measures": "plain",
   "prompt": "En app/greetings.py, welcome(name) devuelve 'Bienvenido'. Haz que devuelva 'Bienvenido, <name>!' con el nombre que recibe.",
   "check": "python3 -m unittest -q test_hidden_greetings && python3 -m unittest discover -q -s tests -t .",
+  "tests": "python3 -m unittest discover -q -s tests -t .",
   "timeoutSecs": 2400
 }

@@ -63,13 +63,13 @@ pub struct RunnerOptions {
 }
 
 pub struct Runner {
-    hedy: Hedy,
+    pub(crate) hedy: Hedy,
     events: Receiver<Update>,
-    options: RunnerOptions,
+    pub(crate) options: RunnerOptions,
 }
 
 /// Seconds since the epoch.
-fn now() -> i64 {
+pub(crate) fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64)
@@ -82,7 +82,7 @@ fn team_repo(repo: &Path) -> std::path::PathBuf {
     name.into()
 }
 
-fn git(dir: &Path, args: &[&str]) -> Result<()> {
+pub(crate) fn git(dir: &Path, args: &[&str]) -> Result<()> {
     let status = Command::new("git")
         .args([
             "-c",
@@ -100,10 +100,14 @@ fn git(dir: &Path, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
-fn copy_dir(from: &Path, to: &Path) -> Result<()> {
+/// Copies a folder, without git's own (`.git`).
+pub(crate) fn copy_dir(from: &Path, to: &Path) -> Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
+        if entry.file_name() == ".git" {
+            continue;
+        }
         let target = to.join(entry.file_name());
         if entry.file_type()?.is_dir() {
             copy_dir(&entry.path(), &target)?;
@@ -121,6 +125,31 @@ fn tail(text: &str, max: usize) -> String {
         start += 1;
     }
     text[start..].trim().to_owned()
+}
+
+/// The case's starting repo in `repo`, as a git repo with one commit.
+pub(crate) fn prepare_repo(case: &Case, repo: &Path) -> Result<PathBuf> {
+    copy_dir(&case.repo(), repo)?;
+    git(repo, &["init", "-q", "-b", "main"])?;
+    git(repo, &["add", "-A"])?;
+    git(repo, &["commit", "-q", "-m", "Estado inicial del caso"])?;
+    Ok(repo.canonicalize()?)
+}
+
+/// Runs a shell command in `dir` for at most five minutes: whether it
+/// passed, and the end of what it printed.
+pub(crate) fn run_command(dir: &Path, command: &str) -> Result<(bool, String)> {
+    let output = Command::new("timeout")
+        .args(["300", "sh", "-c", command])
+        .current_dir(dir)
+        .output()
+        .context("no se pudo correr la verificación")?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok((output.status.success(), tail(&text, 2000)))
 }
 
 /// `--flows file:<path>`: a flow written as text (the experiments' own).
@@ -205,7 +234,7 @@ pub fn save_diff(dir: &Path, run: &RunResult, patch: &str) -> Result<String> {
 
 /// What the runner saw of a task while it ran.
 #[derive(Default)]
-struct Observed {
+pub(crate) struct Observed {
     usage: UsageSample,
     actions: u32,
     files_read: u32,
@@ -216,9 +245,36 @@ struct Observed {
     subagents: u32,
     /// Each action by kind (`Read`, `Edit`, `Bash:git`, an MCP tool…).
     tools: BTreeMap<String, u32>,
-    error: Option<String>,
+    pub(crate) error: Option<String>,
     /// A flow's steps, in order.
     steps: Vec<StepTrace>,
+}
+
+impl Observed {
+    /// Adds what was seen to `out`'s totals (a run with several turns adds
+    /// each); the last error stands.
+    pub(crate) fn add_to(&self, out: &mut RunResult) {
+        let usage = &self.usage;
+        out.tokens += usage.total_tokens();
+        out.input_tokens += usage.input_tokens;
+        out.output_tokens += usage.output_tokens;
+        out.cache_read_tokens += usage.cache_read_tokens;
+        out.cache_write_tokens += usage.cache_write_tokens;
+        out.cost_usd = match (out.cost_usd, usage.cost_usd) {
+            (None, None) => None,
+            (a, b) => Some(a.unwrap_or(0.0) + b.unwrap_or(0.0)),
+        };
+        out.actions += self.actions;
+        out.files_read += self.files_read;
+        out.rereads += self.rereads;
+        out.denied += self.denied;
+        out.subagents += self.subagents;
+        for (tool, n) in &self.tools {
+            *out.tools.entry(tool.clone()).or_default() += n;
+        }
+        out.error = self.error.clone();
+        out.steps.extend(self.steps.iter().cloned());
+    }
 }
 
 impl Runner {
@@ -252,10 +308,38 @@ impl Runner {
             "none" => variant.name.clone(),
             key => format!("{}+flow:{}", variant.name, flow_label(key)),
         };
-        let mut result = RunResult {
+        let mut result = self.new_result(case, layer, &name, attempt, started_at);
+        // Hedy, the agent's hooks and the memory server it starts all read
+        // this process's experiments.
+        experiments::set(variant.experiments);
+        let repo = self.options.work_dir.join(format!(
+            "{}-{layer}-{}-{attempt}-{started_at}",
+            case.name,
+            name.replace(['+', ':'], "_")
+        ));
+        let _repo = RemoveOnDrop(repo.clone());
+        // Its team's repo too, however the run ends.
+        let _team = RemoveOnDrop(team_repo(&repo));
+        if let Err(e) = self.run_in(case, layer, flow, &repo, &mut result) {
+            result.passed = false;
+            result.error.get_or_insert_with(|| format!("{e:#}"));
+        }
+        result
+    }
+
+    /// A run's result before it starts: nothing spent, nothing passed.
+    pub(crate) fn new_result(
+        &self,
+        case: &Case,
+        layer: Layer,
+        variant: &str,
+        attempt: u32,
+        started_at: i64,
+    ) -> RunResult {
+        RunResult {
             case: case.name.clone(),
             layer,
-            variant: name.clone(),
+            variant: variant.to_owned(),
             attempt,
             account: self.options.account.as_str().to_owned(),
             model: self.options.model.clone(),
@@ -278,24 +362,9 @@ impl Runner {
             steps: Vec::new(),
             check_output: String::new(),
             diff: None,
+            rescue: None,
             started_at,
-        };
-        // Hedy, the agent's hooks and the memory server it starts all read
-        // this process's experiments.
-        experiments::set(variant.experiments);
-        let repo = self.options.work_dir.join(format!(
-            "{}-{layer}-{}-{attempt}-{started_at}",
-            case.name,
-            name.replace(['+', ':'], "_")
-        ));
-        let _repo = RemoveOnDrop(repo.clone());
-        // Its team's repo too, however the run ends.
-        let _team = RemoveOnDrop(team_repo(&repo));
-        if let Err(e) = self.run_in(case, layer, flow, &repo, &mut result) {
-            result.passed = false;
-            result.error.get_or_insert_with(|| format!("{e:#}"));
         }
-        result
     }
 
     /// Prepares the repo and runs the task in it; always forgets the project.
@@ -307,26 +376,22 @@ impl Runner {
         repo: &Path,
         out: &mut RunResult,
     ) -> Result<()> {
-        copy_dir(&case.repo(), repo)?;
-        git(repo, &["init", "-q", "-b", "main"])?;
-        git(repo, &["add", "-A"])?;
-        git(repo, &["commit", "-q", "-m", "Estado inicial del caso"])?;
-        let repo = repo.canonicalize()?;
+        let repo = prepare_repo(case, repo)?;
         let result = self.run_task(case, layer, flow, &repo, out);
-        self.leave_teams();
-        let _ = std::fs::remove_dir_all(team_repo(&repo));
-        let _ = self.hedy.remove_project(&repo);
+        self.forget_project(&repo);
         result
     }
 
-    fn run_task(
-        &self,
-        case: &Case,
-        layer: Layer,
-        flow: &str,
-        repo: &Path,
-        out: &mut RunResult,
-    ) -> Result<()> {
+    /// Forgets a run's project and its team.
+    pub(crate) fn forget_project(&self, repo: &Path) {
+        self.leave_teams();
+        let _ = std::fs::remove_dir_all(team_repo(repo));
+        let _ = self.hedy.remove_project(repo);
+    }
+
+    /// Gives a run's project its account, and its memory and code map as
+    /// `layer` says.
+    pub(crate) fn prepare_project(&self, case: &Case, layer: Layer, repo: &Path) -> Result<()> {
         let hedy = &self.hedy;
         let account = self.options.account.as_str();
         hedy.use_account(repo, account, None)?;
@@ -347,17 +412,44 @@ impl Runner {
             false => None,
         };
         hedy.set_setting(Setting::CodeMap, code_map)?;
+        Ok(())
+    }
 
-        let clock = Instant::now();
-        let request = NewTask {
+    /// A task in `repo` that asks `prompt`, as the user would.
+    pub(crate) fn new_task(&self, repo: &Path, prompt: &str) -> NewTask {
+        NewTask {
             images: Vec::new(),
             project: repo.to_owned(),
-            prompt: case.spec.prompt.clone(),
+            prompt: prompt.to_owned(),
             mode: TaskMode::Project,
             model: self.options.model.clone(),
             plan_first: false,
             permissions: None,
-        };
+        }
+    }
+
+    /// Discards a task still open: in review its agent's session is alive.
+    pub(crate) fn close_task(&self, id: &TaskId) {
+        match self.hedy.task(id) {
+            Ok(current) if current.status.is_closed() => {}
+            _ => {
+                let _ = self.hedy.discard_task(id);
+            }
+        }
+    }
+
+    fn run_task(
+        &self,
+        case: &Case,
+        layer: Layer,
+        flow: &str,
+        repo: &Path,
+        out: &mut RunResult,
+    ) -> Result<()> {
+        let hedy = &self.hedy;
+        self.prepare_project(case, layer, repo)?;
+        let clock = Instant::now();
+        let request = self.new_task(repo, &case.spec.prompt);
         let task = match flow {
             "none" => hedy.start_task(request),
             // A flow written as text: saved (for every project) and run by its key.
@@ -375,14 +467,8 @@ impl Runner {
             }
         };
         let result = self.finish(case, &task.id, repo, clock, out);
-        // In review the agent's session is still alive: discarding stops it
-        // and removes the worktree, whatever happened above.
-        match hedy.task(&task.id) {
-            Ok(current) if current.status.is_closed() => {}
-            _ => {
-                let _ = hedy.discard_task(&task.id);
-            }
-        }
+        // Stops the agent and removes the worktree, whatever happened above.
+        self.close_task(&task.id);
         result
     }
 
@@ -417,23 +503,9 @@ impl Runner {
         clock: Instant,
         out: &mut RunResult,
     ) -> Result<()> {
-        let observed = self.drive(id, Duration::from_secs(case.spec.timeout_secs));
+        let observed = self.drive(id, Duration::from_secs(case.spec.timeout_secs), false);
         out.duration_ms = clock.elapsed().as_millis() as u64;
-        let usage = &observed.usage;
-        out.tokens = usage.total_tokens();
-        out.input_tokens = usage.input_tokens;
-        out.output_tokens = usage.output_tokens;
-        out.cache_read_tokens = usage.cache_read_tokens;
-        out.cache_write_tokens = usage.cache_write_tokens;
-        out.cost_usd = usage.cost_usd;
-        out.actions = observed.actions;
-        out.files_read = observed.files_read;
-        out.rereads = observed.rereads;
-        out.denied = observed.denied;
-        out.subagents = observed.subagents;
-        out.tools = observed.tools;
-        out.error = observed.error;
-        out.steps = observed.steps;
+        observed.add_to(out);
         out.notes_read = self.hedy.memory(repo)?.used_last_task.len();
         let task = self.hedy.task(id)?;
         // Before the check, whose hidden files are not the agent's work.
@@ -450,9 +522,12 @@ impl Runner {
         Ok(())
     }
 
-    /// Answers cards and collects usage until the task stops.
-    fn drive(&self, id: &TaskId, timeout: Duration) -> Observed {
+    /// Answers cards and collects usage until the task stops. `resumed`: a
+    /// follow-up was just sent, so a review seen before the task runs again
+    /// is the last turn's.
+    pub(crate) fn drive(&self, id: &TaskId, timeout: Duration, resumed: bool) -> Observed {
         let mut seen = Observed::default();
+        let mut running = !resumed;
         let deadline = Instant::now() + timeout;
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
@@ -472,6 +547,11 @@ impl Runner {
                 Update::Event(task, event) if &task == id => event,
                 Update::Status(task, status) if &task == id => {
                     match status {
+                        TaskStatus::Running => {
+                            running = true;
+                            continue;
+                        }
+                        TaskStatus::Review if !running => continue,
                         TaskStatus::Review => {
                             // Errors the agent recovered from do not fail the run.
                             seen.error = None;
@@ -600,17 +680,7 @@ impl Runner {
         if case.checks().is_dir() {
             copy_dir(&case.checks(), work_dir)?;
         }
-        let output = Command::new("timeout")
-            .args(["300", "sh", "-c", &case.spec.check])
-            .current_dir(work_dir)
-            .output()
-            .context("no se pudo correr la verificación")?;
-        let text = format!(
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        Ok((output.status.success(), tail(&text, 2000)))
+        run_command(work_dir, &case.spec.check)
     }
 }
 

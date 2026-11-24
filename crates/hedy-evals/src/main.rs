@@ -63,6 +63,12 @@ struct Args {
     /// en diffs/<nombre del archivo de resultados>/, junto a los resultados.
     #[arg(long)]
     diffs: bool,
+    /// Prueba de rescate (evals/experiments/rescue): tras el primer intento
+    /// corre los tests del proyecto (tests en case.json) y, si fallan, sigue
+    /// en tres brazos: la misma sesión con el fallo, una sesión nueva con el
+    /// fallo y un segundo intento sin él. Cuatro resultados por corrida.
+    #[arg(long)]
+    rescue: bool,
     /// Solo lista los casos.
     #[arg(long)]
     list: bool,
@@ -179,6 +185,22 @@ fn run(args: Args) -> Result<()> {
             anyhow::bail!("flujo desconocido: {flow} (none, essential, approval, focused-review)");
         }
     }
+    if args.rescue {
+        if args.flows.iter().any(|f| f != NO_FLOW) {
+            bail!("--rescue compara un solo agente: no admite --flows");
+        }
+        let missing: Vec<&str> = cases
+            .iter()
+            .filter(|c| c.spec.tests.is_none())
+            .map(|c| c.name.as_str())
+            .collect();
+        if !missing.is_empty() {
+            bail!(
+                "--rescue necesita tests en case.json; no los tienen: {}",
+                missing.join(", ")
+            );
+        }
+    }
     let total = cases.len()
         * args.layers.len()
         * args.variants.len()
@@ -223,6 +245,29 @@ fn run_all(
                         "· {} [{layer}] {} {flow} #{attempt}… ",
                         case.name, variant.name
                     );
+                    if args.rescue {
+                        let arms = runner.run_rescue(case, layer, variant, attempt);
+                        let line: Vec<&str> = arms
+                            .iter()
+                            .map(|a| if a.passed { "pasó" } else { "falló" })
+                            .collect();
+                        eprintln!(
+                            "{} · {} tokens{}",
+                            line.join(" / "),
+                            arms.iter().map(|a| a.tokens).max().unwrap_or(0),
+                            arms[0]
+                                .error
+                                .as_deref()
+                                .map(|e| format!(" · {e}"))
+                                .unwrap_or_default()
+                        );
+                        for arm in arms {
+                            writeln!(file, "{}", serde_json::to_string(&arm)?)?;
+                            results.push(arm);
+                        }
+                        file.flush()?;
+                        continue;
+                    }
                     let result = runner.run(case, layer, variant, flow, attempt);
                     eprintln!(
                         "{} · {} tokens · {} lecturas · {:.0} s{}",
