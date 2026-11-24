@@ -43,12 +43,16 @@ impl TaskEvents for ChannelEvents {
     }
 }
 
-/// A folder removed when dropped, on every way out (errors included).
+/// A folder or file removed when dropped, on every way out (errors included).
 pub struct RemoveOnDrop(pub PathBuf);
 
 impl Drop for RemoveOnDrop {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        if self.0.is_dir() {
+            let _ = std::fs::remove_dir_all(&self.0);
+        } else {
+            let _ = std::fs::remove_file(&self.0);
+        }
     }
 }
 
@@ -835,6 +839,16 @@ mod tests {
             std::fs::read_to_string(dir.join("new.py")).unwrap(),
             "y = 3\n"
         );
+    }
+
+    #[test]
+    fn a_temporary_file_is_removed_like_a_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (file, folder) = (tmp.path().join("index"), tmp.path().join("work"));
+        std::fs::write(&file, "x").unwrap();
+        std::fs::create_dir_all(folder.join("sub")).unwrap();
+        drop((RemoveOnDrop(file.clone()), RemoveOnDrop(folder.clone())));
+        assert!(!file.exists() && !folder.exists());
     }
 
     #[test]
