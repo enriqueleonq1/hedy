@@ -265,3 +265,9 @@ haiku the main model.
      smallest case), 1 run each, 300 000 tokens per session.
 - **Opus is dropped.**
 - The Sonnet pilot's runs are reported as a signal and stay out of the analysis.
+
+## Amendment 2 (Nov 24, 2026, 09:30, before any main run)
+
+The account at `~/.claude-personal` reached its five-hour limit during the haiku pilot. Its
+three runs were voided. At the user's word, runs from now on spend `~/.claude`, the account of
+the session that drives them. The model and everything else stay as they are.
