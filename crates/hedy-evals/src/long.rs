@@ -16,6 +16,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use hedy_core::domain::{ConfigFolder, Credentials, UsageSample};
 use hedy_core::experiments;
 
 use crate::rescue::CloseOnDrop;
@@ -107,6 +108,69 @@ pub fn parse_reqs(output: &str) -> BTreeMap<String, bool> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// What the sessions logged in `folder` spent: each assistant message's
+/// usage, once (a message is logged again as it streams). A stopped agent never
+/// reports its turn's usage, but Claude Code logs every message as it goes.
+pub fn logged_usage(folder: &Path) -> UsageSample {
+    let mut by_message: BTreeMap<String, UsageSample> = BTreeMap::new();
+    let logs = std::fs::read_dir(folder)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "jsonl"));
+    for log in logs {
+        let Ok(text) = std::fs::read_to_string(&log) else {
+            continue;
+        };
+        for line in text.lines() {
+            let Ok(entry) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            if entry["type"] != "assistant" {
+                continue;
+            }
+            let message = &entry["message"];
+            let usage = &message["usage"];
+            let n = |k: &str| usage[k].as_u64().unwrap_or(0);
+            let id = message["id"]
+                .as_str()
+                .map_or_else(|| entry["uuid"].to_string(), str::to_owned);
+            by_message.insert(
+                id,
+                UsageSample {
+                    input_tokens: n("input_tokens"),
+                    output_tokens: n("output_tokens"),
+                    cache_read_tokens: n("cache_read_input_tokens"),
+                    cache_write_tokens: n("cache_creation_input_tokens"),
+                    cost_usd: None,
+                },
+            );
+        }
+    }
+    let mut total = UsageSample::default();
+    for usage in by_message.values() {
+        total.add(usage);
+    }
+    total
+}
+
+/// Where Claude Code logs the sessions it ran in `work`, for the account's
+/// folder (`None`: `~/.claude`): its path with every other character a `-`.
+pub fn session_logs(folder: Option<&Path>, work: &Path) -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let folder = match folder {
+        Some(f) => f.to_owned(),
+        None => home?.join(".claude"),
+    };
+    let name: String = work
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    Some(folder.join("projects").join(name))
 }
 
 /// The files a patch touches.
@@ -205,6 +269,21 @@ impl Runner {
             out.duration_ms = clock.elapsed().as_millis() as u64;
             seen.add_to(&mut out);
             let work = self.hedy.task(&task.id)?.work_dir();
+            // Cut before its turn ended: what it spent is only in its logs
+            // (no cost there; the analysis prices the tokens).
+            if seen.stopped
+                && let Some(logs) = session_logs(self.account_folder()?.as_deref(), &work)
+            {
+                let logged = logged_usage(&logs);
+                if logged.total_tokens() > out.tokens {
+                    out.tokens = logged.total_tokens();
+                    out.input_tokens = logged.input_tokens;
+                    out.output_tokens = logged.output_tokens;
+                    out.cache_read_tokens = logged.cache_read_tokens;
+                    out.cache_write_tokens = logged.cache_write_tokens;
+                    out.cost_usd = None;
+                }
+            }
             let patch = changes_since(&work, &base)?;
             drop(close);
             if let Some(e) = &seen.error {
@@ -247,6 +326,17 @@ impl Runner {
             results.push(out);
         }
         Ok(())
+    }
+}
+
+impl Runner {
+    /// The account's own folder (`None`: the CLI's default one).
+    fn account_folder(&self) -> Result<Option<std::path::PathBuf>> {
+        let account = self.hedy.account(self.options.account.as_str())?;
+        Ok(match account.credentials {
+            Credentials::Subscription(ConfigFolder::Managed(path)) => Some(path),
+            _ => None,
+        })
     }
 }
 
@@ -317,6 +407,43 @@ mod tests {
         assert!(reqs["R01"]);
         assert!(!reqs["R02"]);
         assert!(parse_reqs("Traceback").is_empty());
+    }
+
+    #[test]
+    fn adds_each_logged_message_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        let line = |id: &str, out: u64| {
+            format!(
+                r#"{{"type":"assistant","message":{{"id":"{id}","usage":{{"input_tokens":2,"output_tokens":{out},"cache_read_input_tokens":100,"cache_creation_input_tokens":10}}}}}}"#
+            )
+        };
+        let log = [
+            r#"{"type":"user","message":{"content":"hola"}}"#.to_owned(),
+            line("m1", 5),
+            line("m1", 7),
+            line("m2", 3),
+            "not json".to_owned(),
+        ]
+        .join("\n");
+        std::fs::write(tmp.path().join("s.jsonl"), log).unwrap();
+        std::fs::write(tmp.path().join("notes.txt"), line("m3", 99)).unwrap();
+        let usage = logged_usage(tmp.path());
+        assert_eq!(usage.output_tokens, 10, "m1 counted once, as last logged");
+        assert_eq!(usage.cache_read_tokens, 200);
+        assert_eq!(usage.cost_usd, None);
+        assert_eq!(logged_usage(&tmp.path().join("none")).total_tokens(), 0);
+    }
+
+    #[test]
+    fn finds_where_a_folder_is_logged() {
+        let logs = session_logs(
+            Some(Path::new("/acc")),
+            Path::new("/tmp/hedy-evals-1/gym-1/.hedy/worktrees/t1"),
+        );
+        assert_eq!(
+            logs.unwrap(),
+            Path::new("/acc/projects/-tmp-hedy-evals-1-gym-1--hedy-worktrees-t1")
+        );
     }
 
     #[test]
