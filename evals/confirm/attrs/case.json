@@ -1,0 +1,8 @@
+{
+ "title": "Implementar attrs desde sus stubs (Commit0), en varias sesiones",
+ "prompt": "Implementa la librería attrs de este repositorio. En su código hay funciones y métodos cuyo cuerpo es solo su docstring y `pass`, y faltan funciones auxiliares que el resto del código usa: complétalo para que attrs funcione como la librería original, según sus docstrings y su documentación (docs/ y README).\n\nEl repositorio no trae los tests: se comprobará con la suite de tests de la librería, que no ves. Escribe tú el código: no instales ni copies la versión publicada de attrs. Usa `python3`, que ya tiene pytest y las dependencias.",
+ "change": "Añade `attr.converters.strip_whitespace(value)`: si el valor es un `str`, lo devuelve sin espacios al principio ni al final; cualquier otro valor, tal cual.",
+ "check": "python3 confirm_check.py src",
+ "tests": "python3 -c \"import sys; sys.path.insert(0, 'src'); import attrs\"",
+ "timeoutSecs": 3600
+}

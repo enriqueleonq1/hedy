@@ -1,0 +1,142 @@
+{
+ "G001": [
+  "tests/test_cli.py::EncryptDecryptTest::test_empty_decrypt",
+  "tests/test_cli.py::EncryptDecryptTest::test_empty_encrypt",
+  "tests/test_cli.py::EncryptDecryptTest::test_encrypt_decrypt",
+  "tests/test_cli.py::EncryptDecryptTest::test_encrypt_decrypt_unhappy"
+ ],
+ "G002": [
+  "tests/test_cli.py::KeygenTest::test_keygen_no_args",
+  "tests/test_cli.py::KeygenTest::test_keygen_priv_out_der",
+  "tests/test_cli.py::KeygenTest::test_keygen_priv_out_pem",
+  "tests/test_cli.py::KeygenTest::test_keygen_priv_stdout",
+  "tests/test_cli.py::KeygenTest::test_keygen_pub_out_pem"
+ ],
+ "G003": [
+  "tests/test_cli.py::PrivatePublicTest::test_private_to_public"
+ ],
+ "G004": [
+  "tests/test_cli.py::SignVerifyTest::test_empty_sign",
+  "tests/test_cli.py::SignVerifyTest::test_empty_verify",
+  "tests/test_cli.py::SignVerifyTest::test_sign_verify",
+  "tests/test_cli.py::SignVerifyTest::test_sign_verify_unhappy"
+ ],
+ "G005": [
+  "tests/test_common.py::TestBitSize::test_bad_type",
+  "tests/test_common.py::TestBitSize::test_negative_values",
+  "tests/test_common.py::TestBitSize::test_values",
+  "tests/test_common.py::TestBitSize::test_zero"
+ ],
+ "G006": [
+  "tests/test_common.py::TestByteSize::test_bad_type",
+  "tests/test_common.py::TestByteSize::test_values",
+  "tests/test_common.py::TestByteSize::test_zero"
+ ],
+ "G007": [
+  "tests/test_common.py::TestInverse::test_normal",
+  "tests/test_common.py::TestInverse::test_not_relprime"
+ ],
+ "G008": [
+  "tests/test_integers.py::IntegerTest::test_enc_dec",
+  "tests/test_integers.py::IntegerTest::test_sign_verify"
+ ],
+ "G009": [
+  "tests/test_key.py::BlindingTest::test_blinding"
+ ],
+ "G010": [
+  "tests/test_key.py::HashTest::test_hash_possible"
+ ],
+ "G011": [
+  "tests/test_key.py::KeyGenTest::test_custom_exponent",
+  "tests/test_key.py::KeyGenTest::test_custom_getprime_func",
+  "tests/test_key.py::KeyGenTest::test_default_exponent",
+  "tests/test_key.py::KeyGenTest::test_exponents_coefficient_calculation"
+ ],
+ "G012": [
+  "tests/test_load_save_keys.py::DerTest::test_load_malformed_private_key",
+  "tests/test_load_save_keys.py::DerTest::test_load_private_key",
+  "tests/test_load_save_keys.py::DerTest::test_load_public_key",
+  "tests/test_load_save_keys.py::DerTest::test_save_private_key",
+  "tests/test_load_save_keys.py::DerTest::test_save_public_key"
+ ],
+ "G013": [
+  "tests/test_load_save_keys.py::PemTest::test_load_from_disk",
+  "tests/test_load_save_keys.py::PemTest::test_load_private_key",
+  "tests/test_load_save_keys.py::PemTest::test_load_public_key",
+  "tests/test_load_save_keys.py::PemTest::test_save_private_key",
+  "tests/test_load_save_keys.py::PemTest::test_save_public_key"
+ ],
+ "G014": [
+  "tests/test_load_save_keys.py::PickleTest::test_private_key",
+  "tests/test_load_save_keys.py::PickleTest::test_public_key"
+ ],
+ "G015": [
+  "tests/test_parallel.py::ParallelTest::test_parallel_primegen"
+ ],
+ "G016": [
+  "tests/test_pem.py::TestByteInput::test_bytes_private",
+  "tests/test_pem.py::TestByteInput::test_bytes_public"
+ ],
+ "G017": [
+  "tests/test_pem.py::TestByteOutput::test_bytes_private",
+  "tests/test_pem.py::TestByteOutput::test_bytes_public"
+ ],
+ "G018": [
+  "tests/test_pem.py::TestBytesAndStrings::test_bytes_private",
+  "tests/test_pem.py::TestBytesAndStrings::test_bytes_public",
+  "tests/test_pem.py::TestBytesAndStrings::test_unicode_private",
+  "tests/test_pem.py::TestBytesAndStrings::test_unicode_public"
+ ],
+ "G019": [
+  "tests/test_pem.py::TestMarkers::test_values"
+ ],
+ "G020": [
+  "tests/test_pkcs1.py::BinaryTest::test_decoding_failure",
+  "tests/test_pkcs1.py::BinaryTest::test_enc_dec",
+  "tests/test_pkcs1.py::BinaryTest::test_randomness"
+ ],
+ "G021": [
+  "tests/test_pkcs1.py::ExtraZeroesTest::test_append_zeroes",
+  "tests/test_pkcs1.py::ExtraZeroesTest::test_prepend_zeroes",
+  "tests/test_pkcs1.py::ExtraZeroesTest::test_unmodified"
+ ],
+ "G022": [
+  "tests/test_pkcs1.py::PaddingSizeTest::test_too_little_padding"
+ ],
+ "G023": [
+  "tests/test_pkcs1.py::SignatureTest::test_alter_message",
+  "tests/test_pkcs1.py::SignatureTest::test_apppend_zeroes",
+  "tests/test_pkcs1.py::SignatureTest::test_find_signature_hash",
+  "tests/test_pkcs1.py::SignatureTest::test_hash_sign_verify",
+  "tests/test_pkcs1.py::SignatureTest::test_multiple_signings",
+  "tests/test_pkcs1.py::SignatureTest::test_prepend_zeroes",
+  "tests/test_pkcs1.py::SignatureTest::test_sign_different_key",
+  "tests/test_pkcs1.py::SignatureTest::test_sign_verify",
+  "tests/test_pkcs1.py::SignatureTest::test_sign_verify_sha3",
+  "tests/test_pkcs1.py::SignatureTest::test_split_hash_sign"
+ ],
+ "G024": [
+  "tests/test_pkcs1_v2.py::MGFTest::test_invalid_hasher",
+  "tests/test_pkcs1_v2.py::MGFTest::test_invalid_length",
+  "tests/test_pkcs1_v2.py::MGFTest::test_oaep_int_db_mask"
+ ],
+ "G025": [
+  "tests/test_prime.py::PrimeTest::test_get_primality_testing_rounds",
+  "tests/test_prime.py::PrimeTest::test_is_prime",
+  "tests/test_prime.py::PrimeTest::test_mersenne_primes",
+  "tests/test_prime.py::PrimeTest::test_miller_rabin_primality_testing"
+ ],
+ "G026": [
+  "tests/test_strings.py::StringTest::test_enc_dec"
+ ],
+ "G027": [
+  "tests/test_transform.py::Test_int2bytes::test_accuracy",
+  "tests/test_transform.py::Test_int2bytes::test_chunk_size",
+  "tests/test_transform.py::Test_int2bytes::test_codec_identity",
+  "tests/test_transform.py::Test_int2bytes::test_correctness_against_base_implementation",
+  "tests/test_transform.py::Test_int2bytes::test_raises_OverflowError_when_chunk_size_is_insufficient",
+  "tests/test_transform.py::Test_int2bytes::test_raises_TypeError_when_not_integer",
+  "tests/test_transform.py::Test_int2bytes::test_raises_ValueError_when_negative_integer",
+  "tests/test_transform.py::Test_int2bytes::test_zero"
+ ]
+}
