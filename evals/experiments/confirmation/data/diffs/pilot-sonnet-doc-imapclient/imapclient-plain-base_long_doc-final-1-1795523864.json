@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "imapclient",
+  "checkOutput": "test_fails_if_ssl_true - socket....\nFAILED tests/test_starttls.py::TestStarttls::test_works - socket.gaierror: [E...\nFAILED tests/test_store.py::TestFlagsConsts::test_flags_are_bytes - socket.ga...\nFAILED tests/test_store.py::TestFlags::test_add - socket.gaierror: [Errno -2]...\nFAILED tests/test_store.py::TestFlags::test_get - socket.gaierror: [Errno -2]...\nFAILED tests/test_store.py::TestFlags::test_remove - socket.gaierror: [Errno ...\nFAILED tests/test_store.py::TestFlags::test_set - socket.gaierror: [Errno -2]...\nFAILED tests/test_store.py::TestGmailLabels::test_add - socket.gaierror: [Err...\nFAILED tests/test_store.py::TestGmailLabels::test_get - socket.gaierror: [Err...\nFAILED tests/test_store.py::TestGmailLabels::test_remove - socket.gaierror: [...\nFAILED tests/test_store.py::TestGmailLabels::test_set - socket.gaierror: [Err...\nFAILED tests/test_thread.py::TestThread::test_all_args - socket.gaierror: [Er...\nFAILED tests/test_thread.py::TestThread::test_defaults - socket.gaierror: [Er...\nFAILED tests/test_thread.py::TestThread::test_no_thread_support - socket.gaie...\nFAILED tests/test_thread.py::TestThread::test_unsupported_algorithm - socket....\nFAILED tests/test_version.py::TestVersionString::test_alpha - AssertionError:...\nFAILED tests/test_version.py::TestVersionString::test_dot_oh - AssertionError...\nFAILED tests/test_version.py::TestVersionString::test_minor - AssertionError:...\nERROR tests/test_util_functions.py\n137 failed, 90 passed, 1 error in 514.83s (0:08:34)\n\nTESTS 90/267\nREQS G001=0 G002=1 G003=1 G004=1 G005=0 G006=1 G007=0 G008=1 G009=0 G010=0 G011=0 G012=0 G013=0 G014=0 G015=0 G016=0 G017=0 G018=0 G019=0 G020=0 G021=0 G022=0 G023=0 G024=0 G025=0 G026=0 G027=1 G028=1 G029=1 G030=0 G031=0 G032=0 G033=0 G034=0 G035=0 G036=0 G037=0 G038=0 G039=0 G040=0 G041=0 G042=0 G043=0 G044=0 G045=0 G046=0 CHG=1",
+  "error": null,
+  "layer": "plain",
+  "model": "sonnet",
+  "passed": false,
+  "variant": "base+long:doc-final"
+}

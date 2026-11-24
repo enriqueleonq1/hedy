@@ -1,0 +1,10 @@
+{
+  "attempt": 3,
+  "case": "attachment-download",
+  "checkOutput": "======================================================================\nERROR: test_serves_an_upload (test_hidden_attachments.HiddenAttachmentsTest.test_serves_an_upload)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"attachment-download-plain-base_cp_approval-3-1795554586/.hedy/worktrees/t1a20f64ae2b6c/test_hidden_attachments.py\", line 12, in test_serves_an_upload\n    self.assertIn(\"Manual de uso\", body)\n    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/case.py\", line 1189, in assertIn\n    if member not in container:\n       ^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: a bytes-like object is required, not 'str'\n\n----------------------------------------------------------------------\nRan 4 tests in 0.003s\n\nFAILED (errors=1)",
+  "error": null,
+  "layer": "plain",
+  "model": "claude-haiku-5-5",
+  "passed": false,
+  "variant": "base+cp:approval"
+}

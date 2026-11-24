@@ -1,0 +1,187 @@
+diff --git a/billing/cart.py b/billing/cart.py
+index 9645b87..0b578a1 100644
+--- a/billing/cart.py
++++ b/billing/cart.py
+@@ -6,9 +6,13 @@ class Cart:
+         self.lines = []
+ 
+     def add(self, sku, qty=1):
++        # qty entero: con un decimal los totales dejarían de ser centavos enteros.
++        if not isinstance(qty, int):
++            raise TypeError(f"qty debe ser int, no {type(qty).__name__}")
+         self.lines.append((sku, qty))
+ 
+     def line_totals(self):
++        # Importes de línea en centavos (int).
+         return [(sku, qty, price(sku) * qty) for sku, qty in self.lines]
+ 
+     def subtotal(self):
+diff --git a/billing/catalog.py b/billing/catalog.py
+index cb986a7..4b85cad 100644
+--- a/billing/catalog.py
++++ b/billing/catalog.py
+@@ -1,10 +1,10 @@
+-# Unit prices, in dollars.
++# Unit prices, in cents (int).
+ PRICES = {
+-    "pen": 1.15,
+-    "notebook": 2.35,
+-    "stapler": 7.05,
+-    "lamp": 19.99,
+-    "chair": 89.95,
++    "pen": 115,
++    "notebook": 235,
++    "stapler": 705,
++    "lamp": 1999,
++    "chair": 8995,
+ }
+ 
+ 
+diff --git a/billing/coupons.py b/billing/coupons.py
+index fd35c9a..c0cc998 100644
+--- a/billing/coupons.py
++++ b/billing/coupons.py
+@@ -1,16 +1,17 @@
+-# A coupon is ("percent", 10) for 10 % off, or ("fixed", 5.0) for 5 dollars off.
++# A coupon is ("percent", 10) for 10 % off, or ("fixed", 500) for 500 cents off.
+ COUPONS = {
+     "TEN": ("percent", 10),
+-    "SAVE5": ("fixed", 5.0),
++    "SAVE5": ("fixed", 500),
+     "HALF": ("percent", 50),
+-    "BIG": ("fixed", 100.0),
++    "BIG": ("fixed", 10000),
+ }
+ 
+ 
+ def discount(subtotal, code):
++    # Subtotal y resultado en centavos (int). Half-up al centavo.
+     if code is None:
+-        return 0.0
++        return 0
+     kind, value = COUPONS[code]
+     if kind == "percent":
+-        return round(subtotal * value / 100, 2)
++        return (subtotal * value + 50) // 100
+     return min(value, subtotal)
+diff --git a/billing/invoice.py b/billing/invoice.py
+index 164295d..bd8e697 100644
+--- a/billing/invoice.py
++++ b/billing/invoice.py
+@@ -2,8 +2,8 @@ from .coupons import discount
+ from .tax import tax
+ 
+ 
+-def money(amount):
+-    return f"${amount:,.2f}"
++def money(cents):
++    return f"${cents // 100:,}.{cents % 100:02d}"
+ 
+ 
+ def totals(cart, region, coupon=None):
+diff --git a/billing/tax.py b/billing/tax.py
+index 37bacac..cc366d6 100644
+--- a/billing/tax.py
++++ b/billing/tax.py
+@@ -1,9 +1,11 @@
++# Tasas en cienmilésimas (int): 8.875 % -> 8875.
+ RATES = {
+-    "NY": 0.08875,
+-    "TX": 0.0625,
+-    "OR": 0.0,
++    "NY": 8875,
++    "TX": 6250,
++    "OR": 0,
+ }
+ 
+ 
+-def tax(amount, region):
+-    return round(amount * RATES[region], 2)
++def tax(cents, region):
++    # Half-up al centavo, en enteros.
++    return (cents * RATES[region] + 50_000) // 100_000
+diff --git a/tests/test_invoice.py b/tests/test_invoice.py
+index 9437cab..d137b01 100644
+--- a/tests/test_invoice.py
++++ b/tests/test_invoice.py
+@@ -1,7 +1,10 @@
+ import unittest
+ 
+ from billing.cart import Cart
+-from billing.invoice import invoice_text
++from billing.catalog import PRICES
++from billing.coupons import discount
++from billing.invoice import invoice_text, money, totals
++from billing.tax import tax
+ 
+ 
+ class InvoiceTest(unittest.TestCase):
+@@ -19,3 +22,68 @@ class InvoiceTest(unittest.TestCase):
+         text = invoice_text(cart, "OR", "SAVE5")
+         self.assertIn("Descuento: -$5.00", text)
+         self.assertTrue(text.endswith("Total: $84.95"))
++
++    def test_thousands_separator(self):
++        cart = Cart()
++        cart.add("chair", 12)
++        self.assertEqual(
++            invoice_text(cart, "OR"),
++            "12 x chair: $1,079.40\nSubtotal: $1,079.40\nImpuesto: $0.00\nTotal: $1,079.40",
++        )
++
++    def test_regression_half_cent_discount(self):
++        # Con floats daba Descuento -$0.57, Impuesto $0.05 y Total $0.63.
++        # Exacto: 1.15 - 0.575 (half-up -> 0.58) = 0.57; impuesto 0.05; total 0.62.
++        cart = Cart()
++        cart.add("pen")
++        self.assertEqual(
++            invoice_text(cart, "NY", "HALF"),
++            "1 x pen: $1.15\nSubtotal: $1.15\nDescuento: -$0.58\nImpuesto: $0.05\nTotal: $0.62",
++        )
++
++
++class CentsTest(unittest.TestCase):
++    def test_catalog_prices_are_int_cents(self):
++        for sku, value in PRICES.items():
++            self.assertIs(type(value), int, sku)
++        self.assertEqual(PRICES["pen"], 115)
++        self.assertEqual(PRICES["chair"], 8995)
++
++    def test_tax_rounds_half_up(self):
++        # 1200 * 8.875 % = 106.5 centavos -> 107 (half-up, no half-even)
++        self.assertEqual(tax(1200, "NY"), 107)
++        self.assertEqual(tax(1200, "TX"), 75)
++        self.assertEqual(tax(1200, "OR"), 0)
++        self.assertIs(type(tax(1200, "NY")), int)
++
++    def test_percent_coupon_rounds_half_up(self):
++        # 1199 * 50 % = 599.5 -> 600
++        self.assertEqual(discount(1199, "HALF"), 600)
++        # 1005 * 10 % = 100.5 -> 101
++        self.assertEqual(discount(1005, "TEN"), 101)
++        self.assertIs(type(discount(1199, "HALF")), int)
++
++    def test_fixed_coupon_is_capped_at_subtotal(self):
++        self.assertEqual(discount(500, "SAVE5"), 500)
++        self.assertEqual(discount(3998, "BIG"), 3998)
++        self.assertEqual(discount(20000, "BIG"), 10000)
++        self.assertEqual(discount(3998, None), 0)
++        self.assertIs(type(discount(3998, None)), int)
++
++    def test_money_formats_cents(self):
++        self.assertEqual(money(0), "$0.00")
++        self.assertEqual(money(5), "$0.05")
++        self.assertEqual(money(123456), "$1,234.56")
++        self.assertEqual(money(100000000), "$1,000,000.00")
++
++    def test_totals_are_int(self):
++        cart = Cart()
++        cart.add("stapler", 3)
++        t = totals(cart, "NY", "TEN")
++        for key, value in t.items():
++            self.assertIs(type(value), int, key)
++
++    def test_cart_rejects_float_qty(self):
++        cart = Cart()
++        with self.assertRaises(TypeError):
++            cart.add("pen", 1.0)

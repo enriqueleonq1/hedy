@@ -1,0 +1,166 @@
+diff --git a/shop/errors.py b/shop/errors.py
+index 7703103..6016104 100644
+--- a/shop/errors.py
++++ b/shop/errors.py
+@@ -12,3 +12,7 @@ class NotEnoughStock(InventoryError):
+ 
+ class UnknownReservation(InventoryError):
+     pass
++
++
++class ReservationExpired(InventoryError):
++    pass
+diff --git a/shop/inventory.py b/shop/inventory.py
+index 0812abf..2151220 100644
+--- a/shop/inventory.py
++++ b/shop/inventory.py
+@@ -1,6 +1,6 @@
+ import time
+ 
+-from .errors import NotEnoughStock, UnknownProduct, UnknownReservation
++from .errors import NotEnoughStock, ReservationExpired, UnknownProduct, UnknownReservation
+ from .models import Product, Reservation
+ 
+ 
+@@ -8,8 +8,11 @@ class Inventory:
+     """Products and the reservations held against their stock.
+ 
+     `clock` returns the current time in seconds; tests pass a fake one.
++    Unconfirmed reservations expire RESERVATION_TTL seconds after they are created.
+     """
+ 
++    RESERVATION_TTL = 15 * 60
++
+     def __init__(self, clock=time.time):
+         self._clock = clock
+         self._products = {}
+@@ -25,8 +28,18 @@ class Inventory:
+         except KeyError:
+             raise UnknownProduct(sku) from None
+ 
++    def is_expired(self, reservation):
++        return (
++            not reservation.confirmed
++            and self._clock() - reservation.created_at >= self.RESERVATION_TTL
++        )
++
+     def reserved(self, sku):
+-        return sum(r.qty for r in self._reservations.values() if r.sku == sku and not r.confirmed)
++        return sum(
++            r.qty
++            for r in self._reservations.values()
++            if r.sku == sku and not r.confirmed and not r.released and not self.is_expired(r)
++        )
+ 
+     def available(self, sku):
+         return self.product(sku).stock - self.reserved(sku)
+@@ -51,10 +64,21 @@ class Inventory:
+         reservation = self.reservation(reservation_id)
+         if reservation.confirmed:
+             return reservation
++        if reservation.released or self.is_expired(reservation):
++            raise ReservationExpired(reservation_id)
+         self.product(reservation.sku).stock -= reservation.qty
+         reservation.confirmed = True
+         return reservation
+ 
++    def release_expired(self):
++        """Mark expired unconfirmed reservations as released; return how many."""
++        count = 0
++        for reservation in self._reservations.values():
++            if not reservation.released and self.is_expired(reservation):
++                reservation.released = True
++                count += 1
++        return count
++
+     def cancel(self, reservation_id):
+         reservation = self.reservation(reservation_id)
+         if reservation.confirmed:
+diff --git a/shop/models.py b/shop/models.py
+index bce361f..57bcd64 100644
+--- a/shop/models.py
++++ b/shop/models.py
+@@ -15,3 +15,4 @@ class Reservation:
+     qty: int
+     created_at: float
+     confirmed: bool = False
++    released: bool = False
+diff --git a/shop/report.py b/shop/report.py
+index a37d8e9..381be5c 100644
+--- a/shop/report.py
++++ b/shop/report.py
+@@ -1,7 +1,11 @@
+ def pending_report(inventory):
+-    """One line per pending (unconfirmed) reservation, oldest first."""
++    """One line per pending (unconfirmed, unexpired) reservation, oldest first."""
+     lines = []
+-    pending = [r for r in inventory.reservations() if not r.confirmed]
++    pending = [
++        r
++        for r in inventory.reservations()
++        if not r.confirmed and not r.released and not inventory.is_expired(r)
++    ]
+     for r in sorted(pending, key=lambda r: r.created_at):
+         name = inventory.product(r.sku).name
+         lines.append(f"#{r.id} {name} x{r.qty}")
+diff --git a/tests/test_inventory.py b/tests/test_inventory.py
+index 49f19d0..94bb730 100644
+--- a/tests/test_inventory.py
++++ b/tests/test_inventory.py
+@@ -1,6 +1,6 @@
+ import unittest
+ 
+-from shop.errors import NotEnoughStock
++from shop.errors import NotEnoughStock, ReservationExpired
+ from shop.inventory import Inventory
+ from shop.report import pending_report
+ 
+@@ -34,3 +34,48 @@ class InventoryTest(unittest.TestCase):
+     def test_report(self):
+         self.inv.reserve("A1", 1)
+         self.assertEqual(pending_report(self.inv), "#1 Lámpara x1")
++
++    def test_reservation_is_active_before_ttl(self):
++        r = self.inv.reserve("A1", 3)
++        self.clock.now += Inventory.RESERVATION_TTL - 1
++        self.assertEqual(self.inv.available("A1"), 2)
++        self.assertEqual(self.inv.release_expired(), 0)
++        self.inv.confirm(r.id)
++        self.assertEqual(self.inv.product("A1").stock, 2)
++
++    def test_expired_reservation_returns_stock(self):
++        self.inv.reserve("A1", 3)
++        self.clock.now += Inventory.RESERVATION_TTL
++        self.assertEqual(self.inv.available("A1"), 5)
++        self.assertEqual(self.inv.release_expired(), 1)
++        self.assertEqual(self.inv.release_expired(), 0)
++        self.assertEqual(self.inv.available("A1"), 5)
++
++    def test_confirmed_reservation_never_expires(self):
++        r = self.inv.reserve("A1", 2)
++        self.inv.confirm(r.id)
++        self.clock.now += 10 * Inventory.RESERVATION_TTL
++        self.assertEqual(self.inv.release_expired(), 0)
++        self.inv.confirm(r.id)
++        self.assertEqual(self.inv.product("A1").stock, 3)
++
++    def test_confirm_expired_reservation_fails(self):
++        r = self.inv.reserve("A1", 2)
++        self.clock.now += Inventory.RESERVATION_TTL
++        with self.assertRaises(ReservationExpired):
++            self.inv.confirm(r.id)
++        self.assertEqual(self.inv.product("A1").stock, 5)
++
++    def test_confirm_released_reservation_fails(self):
++        r = self.inv.reserve("A1", 2)
++        self.clock.now += Inventory.RESERVATION_TTL
++        self.inv.release_expired()
++        with self.assertRaises(ReservationExpired):
++            self.inv.confirm(r.id)
++
++    def test_report_hides_expired(self):
++        self.inv.reserve("A1", 1)
++        self.clock.now += Inventory.RESERVATION_TTL - 300
++        self.inv.reserve("A1", 2)
++        self.clock.now += 300
++        self.assertEqual(pending_report(self.inv), "#2 Lámpara x2")

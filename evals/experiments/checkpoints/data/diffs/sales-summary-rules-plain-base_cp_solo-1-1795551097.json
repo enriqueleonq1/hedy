@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "sales-summary-rules",
+  "checkOutput": "======================================================================\nFAIL: test_it_logs_and_never_prints (test_hidden_summary.HiddenSummaryTest.test_it_logs_and_never_prints)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"sales-summary-rules-plain-base_cp_solo-1-1795551097/.hedy/worktrees/t1a20f2f71fd29/test_hidden_summary.py\", line 27, in test_it_logs_and_never_prints\n    with redirect_stdout(out), self.assertLogs(\"reports.summary\", level=\"INFO\"):\n                               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/_log.py\", line 84, in __exit__\n    self._raiseFailure(\n    ~~~~~~~~~~~~~~~~~~^\n        \"no logs of level {} or higher triggered on {}\"\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        .format(logging.getLevelName(self.level), self.logger.name))\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: no logs of level INFO or higher triggered on reports.summary\n\n======================================================================\nFAIL: test_no_print_or_float_in_the_module (test_hidden_summary.HiddenSummaryTest.test_no_print_or_float_in_the_module)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"sales-summary-rules-plain-base_cp_solo-1-1795551097/.hedy/worktrees/t1a20f2f71fd29/test_hidden_summary.py\", line 34, in test_no_print_or_float_in_the_module\n    self.assertNotIn(\"print\", names)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^\nAssertionError: 'print' unexpectedly found in {'Decimal', 'print', 'sum', 'str'}\n\n----------------------------------------------------------------------\nRan 3 tests in 0.006s\n\nFAILED (failures=2)\nVentas de 2025-03: 10.30",
+  "error": null,
+  "layer": "plain",
+  "model": "claude-haiku-5-5",
+  "passed": false,
+  "variant": "base+cp:solo"
+}

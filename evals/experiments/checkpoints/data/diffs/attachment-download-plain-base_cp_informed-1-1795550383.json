@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "attachment-download",
+  "checkOutput": "----------------------------------------------------------------------\nRan 4 tests in 0.002s\n\nOK\n----------------------------------------------------------------------\nRan 9 tests in 0.008s\n\nOK",
+  "error": null,
+  "layer": "plain",
+  "model": "claude-haiku-5-5",
+  "passed": true,
+  "variant": "base+cp:informed"
+}

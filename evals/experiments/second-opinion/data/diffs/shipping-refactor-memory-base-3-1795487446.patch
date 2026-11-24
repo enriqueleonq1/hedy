@@ -1,0 +1,36 @@
+diff --git a/store/shipping.py b/store/shipping.py
+index 6d2fdf0..5943f99 100644
+--- a/store/shipping.py
++++ b/store/shipping.py
+@@ -1,21 +1,23 @@
+ """Costo de envío de un pedido."""
+ 
+ 
++def _tarifa(weight_kg, base, por_kg, pesado_desde, recargo):
++    # Tarifa base + tarifa por kilo, con recargo si el peso supera el límite.
++    cost = base + por_kg * weight_kg
++    if weight_kg > pesado_desde:
++        cost += recargo
++    return round(cost, 2)
++
++
+ def domestic_cost(subtotal, weight_kg):
+     # Gratis desde 50 (incluido).
+     if subtotal >= 50:
+         return 0
+-    cost = 4 + 1.5 * weight_kg
+-    if weight_kg > 10:
+-        cost += 8
+-    return round(cost, 2)
++    return _tarifa(weight_kg, base=4, por_kg=1.5, pesado_desde=10, recargo=8)
+ 
+ 
+ def international_cost(subtotal, weight_kg):
+     # Gratis solo por encima de 100 (100 exacto paga).
+     if subtotal > 100:
+         return 0
+-    cost = 15 + 4 * weight_kg
+-    if weight_kg > 5:
+-        cost += 20
+-    return round(cost, 2)
++    return _tarifa(weight_kg, base=15, por_kg=4, pesado_desde=5, recargo=20)

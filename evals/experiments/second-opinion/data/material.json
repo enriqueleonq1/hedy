@@ -1,0 +1,296 @@
+[
+ {
+  "id": "run:invoice-rounding-memory-base-1-1795487445",
+  "case": "invoice-rounding",
+  "patch": "data/diffs/invoice-rounding-memory-base-1-1795487445.patch",
+  "bad": true,
+  "checkOutput": "======================================================================\nERROR: test_the_total_is_the_sum_of_rounded_lines (test_hidden_invoice.HiddenInvoiceTest.test_the_total_is_the_sum_of_rounded_lines)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_invoice.py\", line 24, in test_the_total_is_the_sum_of_rounded_lines\n    self.check(invoice_total([]), 0)\n               ~~~~~~~~~~~~~^^^^\n  File \"shop/invoice.py\", line 26, in invoice_total\n    return float(sum(Decimal(str(line_total(**line))) for line in lines).quantize(CENT))\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'int' object has no attribute 'quantize'\n\n----------------------------------------------------------------------\nRan 3 tests in 0.001s\n\nFAILED (errors=1)"
+ },
+ {
+  "id": "run:inventory-expiry-memory-base-2-1795487382",
+  "case": "inventory-expiry",
+  "patch": "data/diffs/inventory-expiry-memory-base-2-1795487382.patch",
+  "bad": true,
+  "checkOutput": "======================================================================\nFAIL: test_release_expired_counts_once (test_hidden_expiry.HiddenExpiryTest.test_release_expired_counts_once)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_expiry.py\", line 41, in test_release_expired_counts_once\n    self.assertEqual(len(self.inv.reservations()), 1)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 3 != 1\n\n----------------------------------------------------------------------\nRan 5 tests in 0.001s\n\nFAILED (failures=1)"
+ },
+ {
+  "id": "run:parse-duration-memory-base-2-1795487374",
+  "case": "parse-duration",
+  "patch": "data/diffs/parse-duration-memory-base-2-1795487374.patch",
+  "bad": true,
+  "checkOutput": "======================================================================\nFAIL: test_what_is_not_understood_is_refused (test_hidden_durations.HiddenDurationTest.test_what_is_not_understood_is_refused)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_durations.py\", line 19, in test_what_is_not_understood_is_refused\n    with self.assertRaises(ValueError, msg=repr(bad)):\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ValueError not raised : '30'\n\n----------------------------------------------------------------------\nRan 3 tests in 0.001s\n\nFAILED (failures=1)"
+ },
+ {
+  "id": "run:shipping-refactor-memory-base-3-1795487446",
+  "case": "shipping-refactor",
+  "patch": "data/diffs/shipping-refactor-memory-base-3-1795487446.patch",
+  "bad": true,
+  "checkOutput": "======================================================================\nFAIL: test_one_shared_logic (test_hidden_shipping.HiddenShippingTest.test_one_shared_logic)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_shipping.py\", line 23, in test_one_shared_logic\n    self.assertLessEqual(ifs, 2, \"the threshold and surcharge checks live once\")\n    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 3 not less than or equal to 2 : the threshold and surcharge checks live once\n\n----------------------------------------------------------------------\nRan 2 tests in 0.001s\n\nFAILED (failures=1)"
+ },
+ {
+  "id": "run:parse-duration-memory-base-3-1795487394",
+  "case": "parse-duration",
+  "patch": "data/diffs/parse-duration-memory-base-3-1795487394.patch",
+  "bad": true,
+  "checkOutput": "======================================================================\nFAIL: test_what_is_not_understood_is_refused (test_hidden_durations.HiddenDurationTest.test_what_is_not_understood_is_refused)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_durations.py\", line 19, in test_what_is_not_understood_is_refused\n    with self.assertRaises(ValueError, msg=repr(bad)):\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ValueError not raised : '30'\n\n----------------------------------------------------------------------\nRan 3 tests in 0.001s\n\nFAILED (failures=1)"
+ },
+ {
+  "id": "run:shipping-refactor-memory-base-1-1795487411",
+  "case": "shipping-refactor",
+  "patch": "data/diffs/shipping-refactor-memory-base-1-1795487411.patch",
+  "bad": true,
+  "checkOutput": "======================================================================\nFAIL: test_one_shared_logic (test_hidden_shipping.HiddenShippingTest.test_one_shared_logic)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_shipping.py\", line 23, in test_one_shared_logic\n    self.assertLessEqual(ifs, 2, \"the threshold and surcharge checks live once\")\n    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 3 not less than or equal to 2 : the threshold and surcharge checks live once\n\n----------------------------------------------------------------------\nRan 2 tests in 0.002s\n\nFAILED (failures=1)"
+ },
+ {
+  "id": "seed:bakery-per-line",
+  "case": "bakery-inscription",
+  "patch": "seeds/bakery-per-line.patch",
+  "bad": true,
+  "cause": "the inscription is charged once per product line instead of once per order",
+  "checkOutput": "======================================================================\nFAIL: test_costs_two_pesos_once (test_hidden_inscription.Inscription.test_costs_two_pesos_once)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_inscription.py\", line 60, in test_costs_two_pesos_once\n    self.assertEqual(order_total_cents(parse_order(WITH_TEXT)), base + 200)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 3180 != 2980\n\n======================================================================\nFAIL: test_csv (test_hidden_inscription.Inscription.test_csv)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_inscription.py\", line 80, in test_csv\n    self.assertEqual(rows[0][\"total\"], \"29.80\")  # 26.00 + 2 x 0.90 + 2.00\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '31.80' != '29.80'\n- 31.80\n+ 29.80\n\n\n----------------------------------------------------------------------\nRan 5 tests in 0.005s\n\nFAILED (failures=2)"
+ },
+ {
+  "id": "seed:receipt-env-name",
+  "case": "receipt-api-key",
+  "patch": "seeds/receipt-env-name.patch",
+  "bad": true,
+  "cause": "the key is read from MESSAGING_KEY, not MESSAGING_API_KEY as docs/servicio.md says",
+  "checkOutput": "======================================================================\nERROR: test_the_key_comes_from_the_environment (test_hidden_receipts.HiddenReceiptTest.test_the_key_comes_from_the_environment)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_receipts.py\", line 22, in test_the_key_comes_from_the_environment\n    receipts.send_receipt(\"ana@example.com\", 12.5)\n    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"billing/receipts.py\", line 14, in send_receipt\n    client = Client(os.environ.get(\"MESSAGING_KEY\"))\n  File \"test_hidden_receipts.py\", line 18, in init\n    real_init(client, api_key)\n    ~~~~~~~~~^^^^^^^^^^^^^^^^^\n  File \"billing/messaging.py\", line 7, in __init__\n    raise ValueError(\"falta la clave del servicio\")\nValueError: falta la clave del servicio\n\n----------------------------------------------------------------------\nRan 2 tests in 0.002s\n\nFAILED (errors=1)"
+ },
+ {
+  "id": "seed:business-saturday",
+  "case": "business-days",
+  "patch": "seeds/business-saturday.patch",
+  "bad": true,
+  "cause": "Saturday counts as a business day (weekday() < 6)",
+  "checkOutput": "======================================================================\nFAIL: test_starts_on_saturday (test_hidden_calendar.HiddenBusinessDays.test_starts_on_saturday)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_calendar.py\", line 12, in test_starts_on_saturday\n    self.assertEqual(business_days(date(2025, 3, 8), date(2025, 3, 14)), 5)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 6 != 5\n\n======================================================================\nFAIL: test_two_weeks (test_hidden_calendar.HiddenBusinessDays.test_two_weeks)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_calendar.py\", line 19, in test_two_weeks\n    self.assertEqual(business_days(date(2025, 3, 3), date(2025, 3, 16)), 10)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 12 != 10\n\n----------------------------------------------------------------------\nRan 4 tests in 0.001s\n\nFAILED (failures=2)"
+ },
+ {
+  "id": "seed:business-single-day",
+  "case": "business-days",
+  "patch": "seeds/business-single-day.patch",
+  "bad": true,
+  "cause": "a one-day range always counts 1, even on a weekend",
+  "checkOutput": "======================================================================\nFAIL: test_single_day (test_hidden_calendar.HiddenBusinessDays.test_single_day)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_calendar.py\", line 16, in test_single_day\n    self.assertEqual(business_days(date(2025, 3, 9), date(2025, 3, 9)), 0)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0\n\n----------------------------------------------------------------------\nRan 4 tests in 0.001s\n\nFAILED (failures=1)"
+ },
+ {
+  "id": "seed:greeting-punctuation",
+  "case": "easy-greeting",
+  "patch": "seeds/greeting-punctuation.patch",
+  "bad": true,
+  "cause": "the greeting lacks the closing '!'",
+  "checkOutput": "======================================================================\nFAIL: test_welcome_names (test_hidden_greetings.HiddenGreetingTest.test_welcome_names)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_greetings.py\", line 8, in test_welcome_names\n    self.assertEqual(welcome(\"Ana\"), \"Bienvenido, Ana!\")\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 'Bienvenido, Ana' != 'Bienvenido, Ana!'\n- Bienvenido, Ana\n+ Bienvenido, Ana!\n?                +\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (failures=1)"
+ },
+ {
+  "id": "seed:cents-truncate",
+  "case": "billing-cents",
+  "patch": "seeds/cents-truncate.patch",
+  "bad": true,
+  "cause": "tax and ratios are truncated to the cent instead of rounded half up",
+  "checkOutput": "est_hidden_cents.HiddenCentsTest.test_every_combination) (lines=[('stapler', 1), ('notebook', 3), ('pen', 2)], region='NY', coupon='HALF')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_cents.py\", line 74, in test_every_combination\n    self.assertEqual(invoice_text(cart, region, coupon), expected(lines, region, coupon))\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '1 x [57 chars]otal: $16.40\\nDescuento: -$8.20\\nImpuesto: $0.72\\nTotal: $8.92' != '1 x [57 chars]otal: $16.40\\nDescuento: -$8.20\\nImpuesto: $0.73\\nTotal: $8.93'\n  1 x stapler: $7.05\n  3 x notebook: $7.05\n  2 x pen: $2.30\n  Subtotal: $16.40\n  Descuento: -$8.20\n- Impuesto: $0.72\n?               ^\n+ Impuesto: $0.73\n?               ^\n- Total: $8.92\n?            ^\n+ Total: $8.93\n?            ^\n\n\n======================================================================\nFAIL: test_every_combination (test_hidden_cents.HiddenCentsTest.test_every_combination) (lines=[('stapler', 1), ('notebook', 3), ('pen', 2)], region='TX', coupon=None)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_cents.py\", line 74, in test_every_combination\n    self.assertEqual(invoice_text(cart, region, coupon), expected(lines, region, coupon))\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '1 x [39 chars]x pen: $2.30\\nSubtotal: $16.40\\nImpuesto: $1.02\\nTotal: $17.42' != '1 x [39 chars]x pen: $2.30\\nSubtotal: $16.40\\nImpuesto: $1.03\\nTotal: $17.43'\n  1 x stapler: $7.05\n  3 x notebook: $7.05\n  2 x pen: $2.30\n  Subtotal: $16.40\n- Impuesto: $1.02\n?               ^\n+ Impuesto: $1.03\n?               ^\n- Total: $17.42\n?             ^\n+ Total: $17.43\n?             ^\n\n\n----------------------------------------------------------------------\nRan 3 tests in 0.021s\n\nFAILED (failures=41)"
+ },
+ {
+  "id": "seed:inventory-boundary",
+  "case": "inventory-expiry",
+  "patch": "seeds/inventory-boundary.patch",
+  "bad": true,
+  "cause": "a reservation of exactly 15 minutes is not expired yet (> instead of >=)",
+  "checkOutput": "----------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_expiry.py\", line 47, in test_confirm_expired_fails_and_keeps_stock\n    with self.assertRaises(errors.ReservationExpired):\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReservationExpired not raised\n\n======================================================================\nFAIL: test_expired_stock_is_available_again (test_hidden_expiry.HiddenExpiryTest.test_expired_stock_is_available_again)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_expiry.py\", line 30, in test_expired_stock_is_available_again\n    self.assertEqual(self.inv.available(\"A1\"), 5)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 5\n\n======================================================================\nFAIL: test_release_expired_counts_once (test_hidden_expiry.HiddenExpiryTest.test_release_expired_counts_once)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_expiry.py\", line 39, in test_release_expired_counts_once\n    self.assertEqual(self.inv.release_expired(), 2)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 0 != 2\n\n======================================================================\nFAIL: test_report_hides_expired (test_hidden_expiry.HiddenExpiryTest.test_report_hides_expired)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_expiry.py\", line 65, in test_report_hides_expired\n    self.assertEqual(pending_report(self.inv), \"#2 Silla x1\")\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '#1 Lámpara x1\\n#2 Silla x1' != '#2 Silla x1'\n- #1 Lámpara x1\n  #2 Silla x1\n\n\n----------------------------------------------------------------------\nRan 5 tests in 0.001s\n\nFAILED (failures=4)"
+ },
+ {
+  "id": "seed:summary-print",
+  "case": "sales-summary-rules",
+  "patch": "seeds/summary-print.patch",
+  "bad": true,
+  "cause": "the summary is also printed to the console, against the rule that reports/ never prints",
+  "checkOutput": "Ventas de 2025-03: 10.30\n======================================================================\nFAIL: test_it_logs_and_never_prints (test_hidden_summary.HiddenSummaryTest.test_it_logs_and_never_prints)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_summary.py\", line 29, in test_it_logs_and_never_prints\n    self.assertEqual(out.getvalue(), \"\", \"reports/ never prints (the project's rule)\")\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 'Ventas de 2025-03: 10.30\\n' != ''\n- Ventas de 2025-03: 10.30\n : reports/ never prints (the project's rule)\n\n======================================================================\nFAIL: test_no_print_or_float_in_the_module (test_hidden_summary.HiddenSummaryTest.test_no_print_or_float_in_the_module)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_summary.py\", line 34, in test_no_print_or_float_in_the_module\n    self.assertNotIn(\"print\", names)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^\nAssertionError: 'print' unexpectedly found in {'Decimal', 'print', 'sum', 'str'}\n\n----------------------------------------------------------------------\nRan 3 tests in 0.002s\n\nFAILED (failures=2)"
+ },
+ {
+  "id": "seed:shipping-threshold",
+  "case": "shipping-refactor",
+  "patch": "seeds/shipping-threshold.patch",
+  "bad": true,
+  "cause": "international shipping becomes free at exactly 100 (>= instead of >)",
+  "checkOutput": "======================================================================\nFAIL: test_same_prices_as_before (test_hidden_shipping.HiddenShippingTest.test_same_prices_as_before)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_shipping.py\", line 14, in test_same_prices_as_before\n    self.assertEqual(international_cost(100, 1), 19)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 0 != 19\n\n----------------------------------------------------------------------\nRan 2 tests in 0.001s\n\nFAILED (failures=1)"
+ },
+ {
+  "id": "seed:limiter-boundary",
+  "case": "rate-limit-bugs",
+  "patch": "seeds/limiter-boundary.patch",
+  "bad": true,
+  "cause": "a client that waits exactly the whole window is still blocked (< instead of <=)",
+  "checkOutput": "======================================================================\nFAIL: test_exactly_one_window_later_is_free (test_hidden_limiter.HiddenLimiterTest.test_exactly_one_window_later_is_free)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_limiter.py\", line 49, in test_exactly_one_window_later_is_free\n    self.assertTrue(limiter.allow(\"d\"))\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\nAssertionError: False is not true\n\n======================================================================\nFAIL: test_rejected_requests_do_not_count (test_hidden_limiter.HiddenLimiterTest.test_rejected_requests_do_not_count)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_limiter.py\", line 42, in test_rejected_requests_do_not_count\n    self.assertTrue(limiter.allow(\"c\"))\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\nAssertionError: False is not true\n\n======================================================================\nFAIL: test_remaining (test_hidden_limiter.HiddenLimiterTest.test_remaining)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_limiter.py\", line 63, in test_remaining\n    self.assertEqual(limiter.remaining(\"e\"), 3)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 0 != 3\n\n----------------------------------------------------------------------\nRan 5 tests in 0.001s\n\nFAILED (failures=3)"
+ },
+ {
+  "id": "seed:attachment-absolute",
+  "case": "attachment-download",
+  "patch": "seeds/attachment-absolute.patch",
+  "bad": true,
+  "cause": "only '..' is refused: an absolute or symlinked name escapes the upload folder",
+  "checkOutput": "======================================================================\nFAIL: test_never_leaves_the_upload_folder (test_hidden_attachments.HiddenAttachmentsTest.test_never_leaves_the_upload_folder) (path='/attachments//etc/passwd')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_attachments.py\", line 30, in test_never_leaves_the_upload_folder\n    self.assertNotEqual(status, 200, path)\n    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^\nAssertionError: 200 == 200 : /attachments//etc/passwd\n\n======================================================================\nFAIL: test_never_leaves_the_upload_folder (test_hidden_attachments.HiddenAttachmentsTest.test_never_leaves_the_upload_folder) (path='/attachments/%2fetc%2fpasswd')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_attachments.py\", line 30, in test_never_leaves_the_upload_folder\n    self.assertNotEqual(status, 200, path)\n    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^\nAssertionError: 200 == 200 : /attachments/%2fetc%2fpasswd\n\n----------------------------------------------------------------------\nRan 4 tests in 0.002s\n\nFAILED (failures=2)"
+ },
+ {
+  "id": "seed:inventory-counts-expired",
+  "case": "inventory-expiry",
+  "patch": "seeds/inventory-counts-expired.patch",
+  "bad": true,
+  "cause": "expired reservations still hold stock until release_expired() runs",
+  "checkOutput": "======================================================================\nFAIL: test_expired_stock_is_available_again (test_hidden_expiry.HiddenExpiryTest.test_expired_stock_is_available_again)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_expiry.py\", line 30, in test_expired_stock_is_available_again\n    self.assertEqual(self.inv.available(\"A1\"), 5)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 5\n\n----------------------------------------------------------------------\nRan 5 tests in 0.001s\n\nFAILED (failures=1)"
+ },
+ {
+  "id": "seed:duration-bare-number",
+  "case": "parse-duration",
+  "patch": "seeds/duration-bare-number.patch",
+  "bad": true,
+  "cause": "a bare number ('30', '1h30') is taken as minutes instead of refused",
+  "checkOutput": "======================================================================\nFAIL: test_what_is_not_understood_is_refused (test_hidden_durations.HiddenDurationTest.test_what_is_not_understood_is_refused)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_durations.py\", line 19, in test_what_is_not_understood_is_refused\n    with self.assertRaises(ValueError, msg=repr(bad)):\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ValueError not raised : '30'\n\n----------------------------------------------------------------------\nRan 3 tests in 0.001s\n\nFAILED (failures=1)"
+ },
+ {
+  "id": "seed:receipt-key-default",
+  "case": "receipt-api-key",
+  "patch": "seeds/receipt-key-default.patch",
+  "bad": true,
+  "cause": "the test key is written in the code as the default of MESSAGING_API_KEY",
+  "checkOutput": "======================================================================\nFAIL: test_no_key_written_in_the_code (test_hidden_receipts.HiddenReceiptTest.test_no_key_written_in_the_code)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_receipts.py\", line 31, in test_no_key_written_in_the_code\n    self.assertNotIn(KEY, path.read_text(), f\"the key is written in {path}\")\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 'mk_test_4eC39HqLyjWDarjtT1zdp7dc' unexpectedly found in '\"\"\"Recibos de pago.\"\"\"\\n\\nimport os\\n\\nfrom billing.messaging import Client\\n\\n\\ndef receipt_text(amount):\\n    return f\"Gracias por tu pago de USD {amount:.2f}.\"\\n\\n\\ndef send_receipt(email, amount):\\n    \"\"\"Envía el recibo al cliente por el servicio de mensajería.\"\"\"\\n    client = Client(os.environ.get(\"MESSAGING_API_KEY\", \"mk_test_4eC39HqLyjWDarjtT1zdp7dc\"))\\n    return client.send(email, receipt_text(amount))\\n' : the key is written in billing/receipts.py\n\n----------------------------------------------------------------------\nRan 2 tests in 0.002s\n\nFAILED (failures=1)"
+ },
+ {
+  "id": "run:inventory-expiry-memory-base-1-1795487348",
+  "case": "inventory-expiry",
+  "patch": "data/diffs/inventory-expiry-memory-base-1-1795487348.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 5 tests in 0.000s\n\nOK\n----------------------------------------------------------------------\nRan 8 tests in 0.000s\n\nOK"
+ },
+ {
+  "id": "run:receipt-api-key-memory-base-2-1795487447",
+  "case": "receipt-api-key",
+  "patch": "data/diffs/receipt-api-key-memory-base-2-1795487447.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 2 tests in 0.003s\n\nOK\n----------------------------------------------------------------------\nRan 4 tests in 0.002s\n\nOK"
+ },
+ {
+  "id": "run:library-holiday-fine-memory-base-2-1795487404",
+  "case": "library-holiday-fine",
+  "patch": "data/diffs/library-holiday-fine-memory-base-2-1795487404.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 5 tests in 0.027s\n\nOK\n----------------------------------------------------------------------\nRan 42 tests in 0.073s\n\nOK"
+ },
+ {
+  "id": "run:parse-duration-memory-base-1-1795487360",
+  "case": "parse-duration",
+  "patch": "data/diffs/parse-duration-memory-base-1-1795487360.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK\n----------------------------------------------------------------------\nRan 5 tests in 0.000s\n\nOK"
+ },
+ {
+  "id": "run:billing-cents-memory-base-2-1795487394",
+  "case": "billing-cents",
+  "patch": "data/diffs/billing-cents-memory-base-2-1795487394.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 3 tests in 0.006s\n\nOK\n----------------------------------------------------------------------\nRan 8 tests in 0.000s\n\nOK"
+ },
+ {
+  "id": "run:bakery-inscription-memory-base-3-1795487479",
+  "case": "bakery-inscription",
+  "patch": "data/diffs/bakery-inscription-memory-base-3-1795487479.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 5 tests in 0.004s\n\nOK\n----------------------------------------------------------------------\nRan 28 tests in 0.013s\n\nOK"
+ },
+ {
+  "id": "run:easy-greeting-memory-base-1-1795487473",
+  "case": "easy-greeting",
+  "patch": "data/diffs/easy-greeting-memory-base-1-1795487473.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK"
+ },
+ {
+  "id": "run:sales-summary-rules-memory-base-2-1795487440",
+  "case": "sales-summary-rules",
+  "patch": "data/diffs/sales-summary-rules-memory-base-2-1795487440.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 3 tests in 0.001s\n\nOK\n----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK"
+ },
+ {
+  "id": "run:business-days-memory-base-2-1795487478",
+  "case": "business-days",
+  "patch": "data/diffs/business-days-memory-base-2-1795487478.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 4 tests in 0.000s\n\nOK\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK"
+ },
+ {
+  "id": "run:attachment-download-memory-base-2-1795487384",
+  "case": "attachment-download",
+  "patch": "data/diffs/attachment-download-memory-base-2-1795487384.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 4 tests in 0.001s\n\nOK\n----------------------------------------------------------------------\nRan 3 tests in 0.001s\n\nOK"
+ },
+ {
+  "id": "run:invoice-rounding-memory-base-3-1795487483",
+  "case": "invoice-rounding",
+  "patch": "data/diffs/invoice-rounding-memory-base-3-1795487483.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK\n----------------------------------------------------------------------\nRan 4 tests in 0.000s\n\nOK"
+ },
+ {
+  "id": "run:shipping-refactor-memory-base-2-1795487427",
+  "case": "shipping-refactor",
+  "patch": "data/diffs/shipping-refactor-memory-base-2-1795487427.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 2 tests in 0.001s\n\nOK\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK"
+ },
+ {
+  "id": "run:rate-limit-bugs-memory-base-1-1795487356",
+  "case": "rate-limit-bugs",
+  "patch": "data/diffs/rate-limit-bugs-memory-base-1-1795487356.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 5 tests in 0.000s\n\nOK\n----------------------------------------------------------------------\nRan 5 tests in 0.000s\n\nOK"
+ },
+ {
+  "id": "run:inventory-expiry-memory-base-3-1795487415",
+  "case": "inventory-expiry",
+  "patch": "data/diffs/inventory-expiry-memory-base-3-1795487415.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 5 tests in 0.000s\n\nOK\n----------------------------------------------------------------------\nRan 9 tests in 0.000s\n\nOK"
+ },
+ {
+  "id": "run:receipt-api-key-memory-base-3-1795487471",
+  "case": "receipt-api-key",
+  "patch": "data/diffs/receipt-api-key-memory-base-3-1795487471.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 2 tests in 0.003s\n\nOK\n----------------------------------------------------------------------\nRan 3 tests in 0.002s\n\nOK"
+ },
+ {
+  "id": "run:library-holiday-fine-memory-base-3-1795487455",
+  "case": "library-holiday-fine",
+  "patch": "data/diffs/library-holiday-fine-memory-base-3-1795487455.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 5 tests in 0.031s\n\nOK\n----------------------------------------------------------------------\nRan 41 tests in 0.071s\n\nOK"
+ },
+ {
+  "id": "run:billing-cents-memory-base-1-1795487350",
+  "case": "billing-cents",
+  "patch": "data/diffs/billing-cents-memory-base-1-1795487350.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 3 tests in 0.006s\n\nOK\n----------------------------------------------------------------------\nRan 6 tests in 0.000s\n\nOK"
+ },
+ {
+  "id": "run:bakery-inscription-memory-base-1-1795487358",
+  "case": "bakery-inscription",
+  "patch": "data/diffs/bakery-inscription-memory-base-1-1795487358.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 5 tests in 0.004s\n\nOK\n----------------------------------------------------------------------\nRan 28 tests in 0.013s\n\nOK"
+ },
+ {
+  "id": "run:easy-greeting-memory-base-3-1795487489",
+  "case": "easy-greeting",
+  "patch": "data/diffs/easy-greeting-memory-base-3-1795487489.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK"
+ },
+ {
+  "id": "run:sales-summary-rules-memory-base-3-1795487456",
+  "case": "sales-summary-rules",
+  "patch": "data/diffs/sales-summary-rules-memory-base-3-1795487456.patch",
+  "bad": false,
+  "checkOutput": "----------------------------------------------------------------------\nRan 3 tests in 0.001s\n\nOK\n----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK"
+ }
+]

@@ -1,0 +1,61 @@
+diff --git a/app/routes.py b/app/routes.py
+index e947716..e72fe4e 100644
+--- a/app/routes.py
++++ b/app/routes.py
+@@ -6,6 +6,7 @@ matching, so `/invoices/10%30%31` is `/invoices/1001`.
+ 
+ from urllib.parse import unquote
+ 
++from .config import UPLOAD_DIR
+ from .invoices import find_invoice
+ 
+ 
+@@ -20,9 +21,19 @@ def invoice(invoice_id):
+     return 200, f"{found['customer']}: {found['total']}"
+ 
+ 
++def attachment(name):
++    base = UPLOAD_DIR.resolve()
++    target = (base / name).resolve()
++    # Resolving first rejects "..", absolute names and symlinks leaving the folder.
++    if base not in target.parents or not target.is_file():
++        return 404, "not found"
++    return 200, target.read_text(encoding="utf-8")
++
++
+ ROUTES = {
+     "/health": health,
+     "/invoices/": invoice,
++    "/attachments/": attachment,
+ }
+ 
+ 
+diff --git a/tests/test_routes.py b/tests/test_routes.py
+index 6dba1d9..5fdbf33 100644
+--- a/tests/test_routes.py
++++ b/tests/test_routes.py
+@@ -1,5 +1,6 @@
+ import unittest
+ 
++from app.config import UPLOAD_DIR
+ from app.routes import handle
+ 
+ 
+@@ -7,6 +8,17 @@ class RoutesTest(unittest.TestCase):
+     def test_health(self):
+         self.assertEqual(handle("/health"), (200, "ok"))
+ 
++    def test_attachment(self):
++        expected = (UPLOAD_DIR / "notas.txt").read_text(encoding="utf-8")
++        self.assertEqual(handle("/attachments/notas.txt"), (200, expected))
++
++    def test_attachment_missing(self):
++        self.assertEqual(handle("/attachments/no-existe.txt"), (404, "not found"))
++
++    def test_attachment_cannot_leave_uploads(self):
++        self.assertEqual(handle("/attachments/..%2Fsecrets.txt"), (404, "not found"))
++        self.assertEqual(handle("/attachments/..%2F..%2Fsecrets.txt"), (404, "not found"))
++
+     def test_invoice(self):
+         self.assertEqual(handle("/invoices/1001"), (200, "Acme: 120.00"))
+         self.assertEqual(handle("/invoices/10%30%31"), (200, "Acme: 120.00"))

@@ -1,0 +1,65 @@
+diff --git a/app/routes.py b/app/routes.py
+index e947716..d995159 100644
+--- a/app/routes.py
++++ b/app/routes.py
+@@ -6,6 +6,7 @@ matching, so `/invoices/10%30%31` is `/invoices/1001`.
+ 
+ from urllib.parse import unquote
+ 
++from .config import UPLOAD_DIR
+ from .invoices import find_invoice
+ 
+ 
+@@ -20,9 +21,18 @@ def invoice(invoice_id):
+     return 200, f"{found['customer']}: {found['total']}"
+ 
+ 
++def attachment(name):
++    base = UPLOAD_DIR.resolve()
++    path = (base / name).resolve()
++    if path.parent != base or not path.is_file():
++        return 404, "not found"
++    return 200, path.read_text(encoding="utf-8")
++
++
+ ROUTES = {
+     "/health": health,
+     "/invoices/": invoice,
++    "/attachments/": attachment,
+ }
+ 
+ 
+diff --git a/tests/test_routes.py b/tests/test_routes.py
+index 6dba1d9..83914e9 100644
+--- a/tests/test_routes.py
++++ b/tests/test_routes.py
+@@ -1,5 +1,7 @@
+ import unittest
++from urllib.parse import quote
+ 
++from app.config import ROOT, UPLOAD_DIR
+ from app.routes import handle
+ 
+ 
+@@ -11,3 +13,21 @@ class RoutesTest(unittest.TestCase):
+         self.assertEqual(handle("/invoices/1001"), (200, "Acme: 120.00"))
+         self.assertEqual(handle("/invoices/10%30%31"), (200, "Acme: 120.00"))
+         self.assertEqual(handle("/invoices/9"), (404, "not found"))
++
++    def test_attachment(self):
++        notas = (UPLOAD_DIR / "notas.txt").read_text(encoding="utf-8")
++        self.assertEqual(handle("/attachments/notas.txt"), (200, notas))
++        self.assertEqual(handle("/attachments/nope.txt"), (404, "not found"))
++
++    def test_attachment_rejects_paths_outside_uploads(self):
++        for path in (
++            "/attachments/../secrets.txt",
++            "/attachments/..%2Fsecrets.txt",
++            "/attachments/%2e%2e%2fsecrets.txt",
++            "/attachments/" + quote(str(ROOT / "secrets.txt"), safe=""),
++            "/attachments/sub%2Fx.txt",
++            "/attachments/",
++            "/attachments/.",
++        ):
++            with self.subTest(path=path):
++                self.assertEqual(handle(path), (404, "not found"))

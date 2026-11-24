@@ -1,0 +1,9 @@
+[
+  {"id": "yoga-1003", "name": "Yoga", "start": "2025-03-10T18:00", "capacity": 15, "instructor": "Marta", "room": "Sala 2", "minutes": 60},
+  {"id": "spin-1103", "name": "Spinning", "start": "2025-03-11T07:30", "capacity": 20, "instructor": "Raúl", "room": "Sala 1", "minutes": 45},
+  {"id": "pila-1103", "name": "Pilates", "start": "2025-03-11T19:00", "capacity": 12, "instructor": "Marta", "room": "Sala 2", "minutes": 60},
+  {"id": "box-1203", "name": "Boxeo", "start": "2025-03-12T20:00", "capacity": 10, "instructor": "Iván", "room": "Sala 1", "minutes": 90},
+  {"id": "spin-1303", "name": "Spinning", "start": "2025-03-13T07:30", "capacity": 20, "instructor": "Raúl", "room": "Sala 1", "minutes": 45},
+  {"id": "yoga-1403", "name": "Yoga", "start": "2025-03-14T18:00", "capacity": 15, "instructor": "Marta", "room": "Sala 2", "minutes": 60},
+  {"id": "func-1503", "name": "Funcional", "start": "2025-03-15T10:00", "capacity": 8, "instructor": "Iván", "room": "Sala 1", "minutes": 50}
+]

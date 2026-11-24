@@ -1,0 +1,88 @@
+diff --git a/tests/test_durations.py b/tests/test_durations.py
+index 1b9cfca..4e05a38 100644
+--- a/tests/test_durations.py
++++ b/tests/test_durations.py
+@@ -1,9 +1,46 @@
+ import unittest
+ 
+-from timer.durations import format_minutes
++from timer.durations import format_minutes, parse_duration
+ 
+ 
+ class FormatTest(unittest.TestCase):
+     def test_formats(self):
+         self.assertEqual(format_minutes(90), "1h30m")
+         self.assertEqual(format_minutes(45), "45m")
++
++
++class ParseTest(unittest.TestCase):
++    def test_parses_common_forms(self):
++        self.assertEqual(parse_duration("1h30m"), 90)
++        self.assertEqual(parse_duration("45m"), 45)
++        self.assertEqual(parse_duration("2h"), 120)
++
++    def test_parses_spelled_out_units(self):
++        self.assertEqual(parse_duration("1 hora 30 minutos"), 90)
++        self.assertEqual(parse_duration("2 horas"), 120)
++        self.assertEqual(parse_duration("15 min"), 15)
++
++    def test_tolerates_spaces_and_case(self):
++        self.assertEqual(parse_duration("  1H 30M "), 90)
++        self.assertEqual(parse_duration("1h 30m"), 90)
++
++    def test_hours_followed_by_bare_minutes(self):
++        self.assertEqual(parse_duration("1h30"), 90)
++
++    def test_zero(self):
++        self.assertEqual(parse_duration("0m"), 0)
++
++    def test_rejects_invalid(self):
++        for text in ["", "   ", "h", "m", "abc", "1x30m", "-5m", "1.5h", None]:
++            with self.subTest(text=text):
++                with self.assertRaises(ValueError):
++                    parse_duration(text)
++
++    def test_roundtrip_with_format(self):
++        for minutes in [0, 1, 45, 60, 90, 125]:
++            with self.subTest(minutes=minutes):
++                self.assertEqual(parse_duration(format_minutes(minutes)), minutes)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/timer/durations.py b/timer/durations.py
+index 4d7d010..892e440 100644
+--- a/timer/durations.py
++++ b/timer/durations.py
+@@ -1,5 +1,17 @@
+ """Duraciones del formulario de pausas."""
+ 
++import re
++
++_DURATION = re.compile(
++    r"""
++    ^\s*
++    (?:(?P<h>\d+)\s*h(?:oras?)?\s*)?
++    (?:(?P<m>\d+)\s*(?:m(?:in(?:utos?)?)?)?\s*)?
++    $
++    """,
++    re.VERBOSE | re.IGNORECASE,
++)
++
+ 
+ def format_minutes(minutes):
+     """90 -> '1h30m'."""
+@@ -7,3 +19,13 @@ def format_minutes(minutes):
+     if hours and rest:
+         return f"{hours}h{rest}m"
+     return f"{hours}h" if hours else f"{rest}m"
++
++
++def parse_duration(text):
++    """'1h30m' -> 90, '45m' -> 45, '2h' -> 120. Lanza ValueError si no se entiende."""
++    match = _DURATION.match(text) if isinstance(text, str) else None
++    if not match or (match.group("h") is None and match.group("m") is None):
++        raise ValueError(f"Duración no válida: {text!r}")
++    hours = int(match.group("h") or 0)
++    minutes = int(match.group("m") or 0)
++    return hours * 60 + minutes

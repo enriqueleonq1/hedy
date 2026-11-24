@@ -1,0 +1,7 @@
+id,name,email,plan,family
+s001,Ana Pérez,ana.perez@example.com,premium,perez
+s002,Luis Gómez,luis@example.com,basic,
+s003,Eva Ruiz,eva.ruiz@example.com,premium,
+s004,Tomás Díaz,tomas@example.com,basic,
+s005,Bea Sanz,bea@example.com,basic,
+s006,Hugo Pérez,hugo.perez@example.com,basic,perez

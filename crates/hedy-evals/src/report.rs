@@ -86,7 +86,66 @@ pub struct RunResult {
     pub steps: Vec<StepTrace>,
     /// The end of the check's output.
     pub check_output: String,
+    /// The patch of what the run changed, saved with `--diffs` (its file
+    /// name, beside a `.json` with the hidden check's verdict).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff: Option<String>,
+    /// A `--rescue` run: what its first attempt did and what came after.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rescue: Option<RescueTrace>,
+    /// One session of a `--long` run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub long: Option<LongTrace>,
+    /// A `--checkpoints` run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<CheckpointTrace>,
     pub started_at: i64,
+}
+
+/// A `--checkpoints` run (evals/experiments/checkpoints): its arm and how its
+/// checkpoints went.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckpointTrace {
+    pub arm: String,
+    /// Plans and approvals the user was asked.
+    pub cards: u32,
+    /// The user's clarification reached the agent at one of them.
+    pub corrected: bool,
+}
+
+/// One session of a `--long` run (evals/experiments/long-tasks): each
+/// requirement's hidden test after it, and how the session went.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LongTrace {
+    pub session: u32,
+    /// `R01` … and `REG`, from the check's `REQS` line.
+    pub reqs: BTreeMap<String, bool>,
+    pub tests_passed: bool,
+    pub reads_before_edit: Option<u32>,
+    /// Stopped at the cap of actions, in the middle of its work.
+    pub stopped: bool,
+}
+
+/// One arm of a `--rescue` run (evals/experiments/rescue). The four arms of a
+/// run share its first attempt (and `started_at`), so they pair.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RescueTrace {
+    /// The first attempt passed the hidden check.
+    pub first_passed: bool,
+    /// The project's tests failed after the first attempt: the arms differ
+    /// only then.
+    pub tests_failed: bool,
+    /// The project's tests on what the arm delivered.
+    pub tests_passed: bool,
+    /// What the arm delivered changes or removes lines of the project's own
+    /// tests (adding tests is fine): the run does not count.
+    pub tests_edited: bool,
+    /// The arm delivered its second attempt (the retry keeps the first when
+    /// the second does not pass the tests either).
+    pub second: bool,
 }
 
 fn base() -> String {
@@ -347,6 +406,10 @@ mod tests {
             notes_read: 0,
             error: None,
             check_output: String::new(),
+            diff: None,
+            rescue: None,
+            long: None,
+            checkpoint: None,
             steps: Vec::new(),
             started_at: 0,
         }

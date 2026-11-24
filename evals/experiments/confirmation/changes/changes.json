@@ -1,0 +1,62 @@
+{
+ "sqlparse": {
+  "change": "Añade `sqlparse.utils.strip_line_comments(sql)`: devuelve el texto sin los comentarios de línea (desde `--` hasta el final de la línea, sin quitar el salto de línea), salvo los `--` que estén dentro de una cadena entre comillas simples.",
+  "reference_change": {
+   "sqlparse/utils.py": "\n\ndef strip_line_comments(sql):\n    out, in_str, i = [], False, 0\n    while i < len(sql):\n        c = sql[i]\n        if c == \"'\":\n            in_str = not in_str\n        if not in_str and sql.startswith(\"--\", i):\n            j = sql.find(\"\\n\", i)\n            i = len(sql) if j < 0 else j\n            continue\n        out.append(c)\n        i += 1\n    return \"\".join(out)\n"
+  }
+ },
+ "voluptuous": {
+  "change": "Añade el validador `voluptuous.validators.Even(msg=None)`: deja pasar un entero par tal cual y, si el valor no es un entero par, lanza `Invalid` con el mensaje `msg` o, si no hay, «expected an even number».",
+  "reference_change": {
+   "voluptuous/validators.py": "\n\nclass Even(object):\n    def __init__(self, msg=None):\n        self.msg = msg\n\n    def __call__(self, v):\n        if isinstance(v, bool) or not isinstance(v, int) or v % 2:\n            raise Invalid(self.msg or \"expected an even number\")\n        return v\n"
+  }
+ },
+ "bitstring": {
+  "change": "Añade `bitstring.utils.popcount_hex(s)`: cuántos bits a 1 tiene un número hexadecimal dado como texto, con o sin `0x` delante (`'0xff'` → 8, `'10'` → 1, `''` → 0); si el texto no es hexadecimal, lanza `ValueError`.",
+  "reference_change": {
+   "bitstring/utils.py": "\n\ndef popcount_hex(s):\n    t = s[2:] if s[:2].lower() == \"0x\" else s\n    if not t:\n        return 0\n    return bin(int(t, 16)).count(\"1\")\n"
+  }
+ },
+ "marshmallow": {
+  "change": "Añade el validador `marshmallow.validate.Even(error=None)`: devuelve el valor si es un entero par y, si no, lanza `ValidationError` con `error` o, si no hay, «Must be an even number.».",
+  "reference_change": {
+   "src/marshmallow/validate.py": "\n\nclass Even(Validator):\n    def __init__(self, error=None):\n        self.error = error or \"Must be an even number.\"\n\n    def __call__(self, value):\n        if isinstance(value, bool) or not isinstance(value, int) or value % 2:\n            raise ValidationError(self.error)\n        return value\n"
+  }
+ },
+ "more-itertools": {
+  "change": "Añade `more_itertools.pairwise_sums(iterable)`, exportada como el resto: un iterador con la suma de cada par de elementos consecutivos (`[1, 2, 3]` → `3, 5`; con menos de dos elementos, nada).",
+  "reference_change": {
+   "more_itertools/__init__.py": "\n\ndef pairwise_sums(iterable):\n    it = iter(iterable)\n    try:\n        prev = next(it)\n    except StopIteration:\n        return\n    for x in it:\n        yield prev + x\n        prev = x\n"
+  }
+ },
+ "cookiecutter": {
+  "change": "Añade `cookiecutter.utils.slugify_project_name(name)`: el nombre en minúsculas, cada tramo de caracteres que no sean letras ASCII o dígitos cambiado por un solo `-`, y sin `-` al principio ni al final (`'Mi Proyecto 2!'` → `'mi-proyecto-2'`).",
+  "reference_change": {
+   "cookiecutter/utils.py": "\n\ndef slugify_project_name(name):\n    import re as _re\n    return _re.sub(r\"[^a-z0-9]+\", \"-\", name.lower()).strip(\"-\")\n"
+  }
+ },
+ "python-rsa": {
+  "change": "Añade `rsa.common.is_power_of_two(n)`: `True` si `n` es un entero positivo potencia de dos (1, 2, 4…), `False` si no (0 y los negativos incluidos); si `n` no es un entero, lanza `TypeError`.",
+  "reference_change": {
+   "rsa/common.py": "\n\ndef is_power_of_two(n):\n    if isinstance(n, bool) or not isinstance(n, int):\n        raise TypeError(\"n must be an int\")\n    return n > 0 and n & (n - 1) == 0\n"
+  }
+ },
+ "tinydb": {
+  "change": "Añade `tinydb.utils.chunked(iterable, size)`: una lista de listas con los elementos en grupos de `size`, en orden, y el último con los que sobren (`chunked([1, 2, 3], 2)` → `[[1, 2], [3]]`); si `size` es menor que 1, lanza `ValueError`.",
+  "reference_change": {
+   "tinydb/utils.py": "\n\ndef chunked(iterable, size):\n    if size < 1:\n        raise ValueError(\"size must be at least 1\")\n    out, part = [], []\n    for x in iterable:\n        part.append(x)\n        if len(part) == size:\n            out.append(part)\n            part = []\n    if part:\n        out.append(part)\n    return out\n"
+  }
+ },
+ "attrs": {
+  "change": "Añade `attr.converters.strip_whitespace(value)`: si el valor es un `str`, lo devuelve sin espacios al principio ni al final; cualquier otro valor, tal cual.",
+  "reference_change": {
+   "src/attr/converters.py": "\n\ndef strip_whitespace(value):\n    return value.strip() if isinstance(value, str) else value\n"
+  }
+ },
+ "imapclient": {
+  "change": "Añade `imapclient.util.quote_mailbox(name)`: el nombre entre comillas dobles, con cada `\\` y cada `\"` del nombre precedidos por `\\` (`'Sent \"old\"'` → `'\"Sent \\\\\"old\\\\\"\"'`).",
+  "reference_change": {
+   "imapclient/util.py": "\n\ndef quote_mailbox(name):\n    return '\"' + name.replace(\"\\\\\", \"\\\\\\\\\").replace('\"', '\\\\\"') + '\"'\n"
+  }
+ }
+}

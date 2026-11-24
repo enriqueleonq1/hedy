@@ -1,0 +1,361 @@
+{
+ "G001": [
+  "tests/test_auth.py::TestPlainLogin::test_fail",
+  "tests/test_auth.py::TestPlainLogin::test_simple",
+  "tests/test_auth.py::TestPlainLogin::test_with_authorization_identity"
+ ],
+ "G002": [
+  "tests/test_datetime_util.py::TestCriteriaDateFormatting::test_basic",
+  "tests/test_datetime_util.py::TestCriteriaDateFormatting::test_single_digit_day"
+ ],
+ "G003": [
+  "tests/test_datetime_util.py::TestDatetimeToINTERNALDATE::test_with_timezone",
+  "tests/test_datetime_util.py::TestDatetimeToINTERNALDATE::test_without_timezone"
+ ],
+ "G004": [
+  "tests/test_datetime_util.py::TestParsing::test_dots_for_time_separator",
+  "tests/test_datetime_util.py::TestParsing::test_internaldate_style",
+  "tests/test_datetime_util.py::TestParsing::test_invalid",
+  "tests/test_datetime_util.py::TestParsing::test_rfc822_style"
+ ],
+ "G005": [
+  "tests/test_enable.py::TestEnable::test_failed1",
+  "tests/test_enable.py::TestEnable::test_failed2",
+  "tests/test_enable.py::TestEnable::test_multiple",
+  "tests/test_enable.py::TestEnable::test_success",
+  "tests/test_enable.py::TestEnable::test_wrong_state"
+ ],
+ "G006": [
+  "tests/test_fixed_offset.py::TestFixedOffset::test_GMT",
+  "tests/test_fixed_offset.py::TestFixedOffset::test_for_system_DST_active",
+  "tests/test_fixed_offset.py::TestFixedOffset::test_for_system_DST_not_active",
+  "tests/test_fixed_offset.py::TestFixedOffset::test_for_system_no_DST",
+  "tests/test_fixed_offset.py::TestFixedOffset::test_negative",
+  "tests/test_fixed_offset.py::TestFixedOffset::test_positive"
+ ],
+ "G007": [
+  "tests/test_folder_status.py::TestFolderStatus::test_basic",
+  "tests/test_folder_status.py::TestFolderStatus::test_extra_response",
+  "tests/test_folder_status.py::TestFolderStatus::test_literal"
+ ],
+ "G008": [
+  "tests/test_imap_utf7.py::IMAP4UTF7TestCase::test_decode",
+  "tests/test_imap_utf7.py::IMAP4UTF7TestCase::test_encode",
+  "tests/test_imap_utf7.py::IMAP4UTF7TestCase::test_printable_singletons"
+ ],
+ "G009": [
+  "tests/test_imapclient.py::TestAclMethods::test_getacl",
+  "tests/test_imapclient.py::TestAclMethods::test_setacl"
+ ],
+ "G010": [
+  "tests/test_imapclient.py::TestAppend::test_multiappend",
+  "tests/test_imapclient.py::TestAppend::test_multiappend_with_flags_and_internaldate",
+  "tests/test_imapclient.py::TestAppend::test_with_msg_time",
+  "tests/test_imapclient.py::TestAppend::test_without_msg_time"
+ ],
+ "G011": [
+  "tests/test_imapclient.py::TestCapabilities::test_caching",
+  "tests/test_imapclient.py::TestCapabilities::test_decorator",
+  "tests/test_imapclient.py::TestCapabilities::test_has_capability",
+  "tests/test_imapclient.py::TestCapabilities::test_post_auth_request",
+  "tests/test_imapclient.py::TestCapabilities::test_preauth",
+  "tests/test_imapclient.py::TestCapabilities::test_server_returned_capability_after_auth",
+  "tests/test_imapclient.py::TestCapabilities::test_with_starttls"
+ ],
+ "G012": [
+  "tests/test_imapclient.py::TestContextManager::test_context_manager",
+  "tests/test_imapclient.py::TestContextManager::test_context_manager_fail_closing",
+  "tests/test_imapclient.py::TestContextManager::test_exception_inside_context_manager"
+ ],
+ "G013": [
+  "tests/test_imapclient.py::TestDebugLogging::test_IMAP_is_patched",
+  "tests/test_imapclient.py::TestDebugLogging::test_redacted_password"
+ ],
+ "G014": [
+  "tests/test_imapclient.py::TestExpunge::test_expunge",
+  "tests/test_imapclient.py::TestExpunge::test_id_expunge"
+ ],
+ "G015": [
+  "tests/test_imapclient.py::TestFindSpecialFolder::test_find_special_folder_with_special_use",
+  "tests/test_imapclient.py::TestFindSpecialFolder::test_find_special_folder_with_special_use_single_flag",
+  "tests/test_imapclient.py::TestFindSpecialFolder::test_find_special_folder_without_special_use_nor_namespace"
+ ],
+ "G016": [
+  "tests/test_imapclient.py::TestId::test_id",
+  "tests/test_imapclient.py::TestId::test_invalid_parameters",
+  "tests/test_imapclient.py::TestId::test_no_support"
+ ],
+ "G017": [
+  "tests/test_imapclient.py::TestIdleAndNoop::test_consume_until_tagged_response",
+  "tests/test_imapclient.py::TestIdleAndNoop::test_idle",
+  "tests/test_imapclient.py::TestIdleAndNoop::test_idle_check_blocking",
+  "tests/test_imapclient.py::TestIdleAndNoop::test_idle_check_blocking_poll",
+  "tests/test_imapclient.py::TestIdleAndNoop::test_idle_check_timeout",
+  "tests/test_imapclient.py::TestIdleAndNoop::test_idle_check_timeout_poll",
+  "tests/test_imapclient.py::TestIdleAndNoop::test_idle_check_with_data",
+  "tests/test_imapclient.py::TestIdleAndNoop::test_idle_check_with_data_poll",
+  "tests/test_imapclient.py::TestIdleAndNoop::test_idle_done",
+  "tests/test_imapclient.py::TestIdleAndNoop::test_noop"
+ ],
+ "G018": [
+  "tests/test_imapclient.py::TestListFolders::test_blanks",
+  "tests/test_imapclient.py::TestListFolders::test_empty_response",
+  "tests/test_imapclient.py::TestListFolders::test_folder_encode_off",
+  "tests/test_imapclient.py::TestListFolders::test_funky_characters",
+  "tests/test_imapclient.py::TestListFolders::test_list_folders",
+  "tests/test_imapclient.py::TestListFolders::test_list_folders_NO",
+  "tests/test_imapclient.py::TestListFolders::test_list_sub_folders",
+  "tests/test_imapclient.py::TestListFolders::test_list_sub_folders_NO",
+  "tests/test_imapclient.py::TestListFolders::test_mixed",
+  "tests/test_imapclient.py::TestListFolders::test_quoted_specials",
+  "tests/test_imapclient.py::TestListFolders::test_simple",
+  "tests/test_imapclient.py::TestListFolders::test_unquoted_numeric_folder_name",
+  "tests/test_imapclient.py::TestListFolders::test_unquoted_numeric_folder_name_parsed_as_long",
+  "tests/test_imapclient.py::TestListFolders::test_utf7_decoding",
+  "tests/test_imapclient.py::TestListFolders::test_without_quotes"
+ ],
+ "G019": [
+  "tests/test_imapclient.py::TestNamespace::test_complex",
+  "tests/test_imapclient.py::TestNamespace::test_folder_decoding",
+  "tests/test_imapclient.py::TestNamespace::test_other_only",
+  "tests/test_imapclient.py::TestNamespace::test_simple",
+  "tests/test_imapclient.py::TestNamespace::test_without_folder_decoding"
+ ],
+ "G020": [
+  "tests/test_imapclient.py::TestProtocolError::test_tagged_response_with_parse_error"
+ ],
+ "G021": [
+  "tests/test_imapclient.py::TestQuota::test__get_quota",
+  "tests/test_imapclient.py::TestQuota::test_get_quota_root",
+  "tests/test_imapclient.py::TestQuota::test_parse_quota",
+  "tests/test_imapclient.py::TestQuota::test_set_quota"
+ ],
+ "G022": [
+  "tests/test_imapclient.py::TestRawCommand::test_complex",
+  "tests/test_imapclient.py::TestRawCommand::test_embedded_literal",
+  "tests/test_imapclient.py::TestRawCommand::test_failed_continuation_wait",
+  "tests/test_imapclient.py::TestRawCommand::test_invalid_input_type",
+  "tests/test_imapclient.py::TestRawCommand::test_literal_at_end",
+  "tests/test_imapclient.py::TestRawCommand::test_literal_plus",
+  "tests/test_imapclient.py::TestRawCommand::test_literal_plus_multiple_literals",
+  "tests/test_imapclient.py::TestRawCommand::test_multiple_literals",
+  "tests/test_imapclient.py::TestRawCommand::test_not_uid",
+  "tests/test_imapclient.py::TestRawCommand::test_plain"
+ ],
+ "G023": [
+  "tests/test_imapclient.py::TestSelectFolder::test_normal",
+  "tests/test_imapclient.py::TestSelectFolder::test_unselect"
+ ],
+ "G024": [
+  "tests/test_imapclient.py::TestShutdown::test_shutdown"
+ ],
+ "G025": [
+  "tests/test_imapclient.py::TestSocket::test_issues_warning_for_deprecating_sock_property"
+ ],
+ "G026": [
+  "tests/test_imapclient.py::TestTimeNormalisation::test_default",
+  "tests/test_imapclient.py::TestTimeNormalisation::test_pass_through"
+ ],
+ "G027": [
+  "tests/test_init.py::TestInit::test_SSL",
+  "tests/test_init.py::TestInit::test_SSL_SocketTimeout",
+  "tests/test_init.py::TestInit::test_plain",
+  "tests/test_init.py::TestInit::test_plain_SocketTimeout",
+  "tests/test_init.py::TestInit::test_ssl_and_stream_is_error",
+  "tests/test_init.py::TestInit::test_stream",
+  "tests/test_init.py::TestInit::test_stream_and_port_is_error"
+ ],
+ "G028": [
+  "tests/test_response_lexer.py::TestTokenSource::test_escaping",
+  "tests/test_response_lexer.py::TestTokenSource::test_invalid_escape",
+  "tests/test_response_lexer.py::TestTokenSource::test_lists",
+  "tests/test_response_lexer.py::TestTokenSource::test_literal",
+  "tests/test_response_lexer.py::TestTokenSource::test_literals",
+  "tests/test_response_lexer.py::TestTokenSource::test_multiple_inputs",
+  "tests/test_response_lexer.py::TestTokenSource::test_no_escaping_in_square_brackets",
+  "tests/test_response_lexer.py::TestTokenSource::test_one_token",
+  "tests/test_response_lexer.py::TestTokenSource::test_quoted_strings",
+  "tests/test_response_lexer.py::TestTokenSource::test_simple_tokens",
+  "tests/test_response_lexer.py::TestTokenSource::test_square_brackets",
+  "tests/test_response_lexer.py::TestTokenSource::test_unmatched_square_brackets",
+  "tests/test_response_lexer.py::TestTokenSource::test_unterminated_strings",
+  "tests/test_response_lexer.py::TestTokenSource::test_whitespace"
+ ],
+ "G029": [
+  "tests/test_response_parser.py::TestParseFetchResponse::test_Address_str",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_Address_str_ignores_encoding_error",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_BODY",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_BODYSTRUCTURE",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_BODY_HEADER_FIELDS",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_ENVELOPE",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_ENVELOPE_with_empty_addresses",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_ENVELOPE_with_invalid_date",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_ENVELOPE_with_no_date",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_FLAGS",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_INTERNALDATE",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_INTERNALDATE_NIL",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_INTERNALDATE_normalised",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_UID",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_bad_UID",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_bad_data",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_bad_msgid",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_basic",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_literals",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_literals_and_keys_with_square_brackets",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_missing_data",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_mixed_types",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_multiple_messages",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_none_special_case",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_not_uid_is_key",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_odd_pairs",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_partial_fetch",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_same_message_appearing_multiple_times",
+  "tests/test_response_parser.py::TestParseFetchResponse::test_simple_pairs"
+ ],
+ "G030": [
+  "tests/test_response_parser.py::TestParseMessageList::test_basic",
+  "tests/test_response_parser.py::TestParseMessageList::test_modseq",
+  "tests/test_response_parser.py::TestParseMessageList::test_modseq_interleaved",
+  "tests/test_response_parser.py::TestParseMessageList::test_modseq_no_space",
+  "tests/test_response_parser.py::TestParseMessageList::test_one_id"
+ ],
+ "G031": [
+  "tests/test_response_parser.py::TestParseResponse::test_bad_literal",
+  "tests/test_response_parser.py::TestParseResponse::test_bad_quoting",
+  "tests/test_response_parser.py::TestParseResponse::test_complex_mixed",
+  "tests/test_response_parser.py::TestParseResponse::test_deeper_nest_tuple",
+  "tests/test_response_parser.py::TestParseResponse::test_empty_tuple",
+  "tests/test_response_parser.py::TestParseResponse::test_envelopey",
+  "tests/test_response_parser.py::TestParseResponse::test_envelopey_quoted",
+  "tests/test_response_parser.py::TestParseResponse::test_incomplete_tuple",
+  "tests/test_response_parser.py::TestParseResponse::test_int",
+  "tests/test_response_parser.py::TestParseResponse::test_int_and_tuple",
+  "tests/test_response_parser.py::TestParseResponse::test_int_zero",
+  "tests/test_response_parser.py::TestParseResponse::test_literal",
+  "tests/test_response_parser.py::TestParseResponse::test_literal_with_more",
+  "tests/test_response_parser.py::TestParseResponse::test_nested_tuple",
+  "tests/test_response_parser.py::TestParseResponse::test_nil",
+  "tests/test_response_parser.py::TestParseResponse::test_not_an_int",
+  "tests/test_response_parser.py::TestParseResponse::test_quoted_specials",
+  "tests/test_response_parser.py::TestParseResponse::test_square_brackets",
+  "tests/test_response_parser.py::TestParseResponse::test_string",
+  "tests/test_response_parser.py::TestParseResponse::test_tuple",
+  "tests/test_response_parser.py::TestParseResponse::test_unquoted"
+ ],
+ "G032": [
+  "tests/test_search.py::TestGmailSearch::test_bytes_query",
+  "tests/test_search.py::TestGmailSearch::test_bytes_query_with_charset",
+  "tests/test_search.py::TestGmailSearch::test_unicode_criteria_with_charset"
+ ],
+ "G033": [
+  "tests/test_search.py::TestSearch::test_bytes_criteria",
+  "tests/test_search.py::TestSearch::test_bytes_criteria_with_charset",
+  "tests/test_search.py::TestSearch::test_modseq",
+  "tests/test_search.py::TestSearch::test_nested",
+  "tests/test_search.py::TestSearch::test_nested_empty",
+  "tests/test_search.py::TestSearch::test_nested_multiple",
+  "tests/test_search.py::TestSearch::test_nested_tuple",
+  "tests/test_search.py::TestSearch::test_no_results",
+  "tests/test_search.py::TestSearch::test_quoting",
+  "tests/test_search.py::TestSearch::test_search_custom_exception_with_invalid_list",
+  "tests/test_search.py::TestSearch::test_search_custom_exception_with_invalid_text",
+  "tests/test_search.py::TestSearch::test_single",
+  "tests/test_search.py::TestSearch::test_unicode_criteria",
+  "tests/test_search.py::TestSearch::test_unicode_criteria_with_charset",
+  "tests/test_search.py::TestSearch::test_with_date",
+  "tests/test_search.py::TestSearch::test_with_datetime",
+  "tests/test_search.py::TestSearch::test_zero_length_quoting"
+ ],
+ "G034": [
+  "tests/test_sort.py::TestSort::test_all_args",
+  "tests/test_sort.py::TestSort::test_multiple_criteria",
+  "tests/test_sort.py::TestSort::test_no_support",
+  "tests/test_sort.py::TestSort::test_single_criteria"
+ ],
+ "G035": [
+  "tests/test_starttls.py::TestStarttls::test_command_fails",
+  "tests/test_starttls.py::TestStarttls::test_fails_if_called_twice",
+  "tests/test_starttls.py::TestStarttls::test_fails_if_ssl_true",
+  "tests/test_starttls.py::TestStarttls::test_works"
+ ],
+ "G036": [
+  "tests/test_store.py::TestFlags::test_add",
+  "tests/test_store.py::TestFlags::test_get",
+  "tests/test_store.py::TestFlags::test_remove",
+  "tests/test_store.py::TestFlags::test_set"
+ ],
+ "G037": [
+  "tests/test_store.py::TestFlagsConsts::test_flags_are_bytes"
+ ],
+ "G038": [
+  "tests/test_store.py::TestGmailLabels::test_add",
+  "tests/test_store.py::TestGmailLabels::test_get",
+  "tests/test_store.py::TestGmailLabels::test_remove",
+  "tests/test_store.py::TestGmailLabels::test_set"
+ ],
+ "G039": [
+  "tests/test_thread.py::TestThread::test_all_args",
+  "tests/test_thread.py::TestThread::test_defaults",
+  "tests/test_thread.py::TestThread::test_no_thread_support",
+  "tests/test_thread.py::TestThread::test_unsupported_algorithm"
+ ],
+ "G040": [
+  "tests/test_util_functions.py::TestAssertIMAPProtocol::test_assert_imap_protocol",
+  "tests/test_util_functions.py::TestAssertIMAPProtocol::test_assert_imap_protocol_with_message"
+ ],
+ "G041": [
+  "tests/test_util_functions.py::Test_join_message_ids::test_binary",
+  "tests/test_util_functions.py::Test_join_message_ids::test_binary_non_numeric",
+  "tests/test_util_functions.py::Test_join_message_ids::test_int",
+  "tests/test_util_functions.py::Test_join_message_ids::test_iter",
+  "tests/test_util_functions.py::Test_join_message_ids::test_mixed_list",
+  "tests/test_util_functions.py::Test_join_message_ids::test_tuple",
+  "tests/test_util_functions.py::Test_join_message_ids::test_unicode",
+  "tests/test_util_functions.py::Test_join_message_ids::test_unicode_non_numeric"
+ ],
+ "G042": [
+  "tests/test_util_functions.py::Test_normalise_search_criteria::test_None",
+  "tests/test_util_functions.py::Test_normalise_search_criteria::test_binary",
+  "tests/test_util_functions.py::Test_normalise_search_criteria::test_binary_with_charset",
+  "tests/test_util_functions.py::Test_normalise_search_criteria::test_empty",
+  "tests/test_util_functions.py::Test_normalise_search_criteria::test_ints",
+  "tests/test_util_functions.py::Test_normalise_search_criteria::test_list",
+  "tests/test_util_functions.py::Test_normalise_search_criteria::test_mixed_list",
+  "tests/test_util_functions.py::Test_normalise_search_criteria::test_no_quoting_when_criteria_given_as_string",
+  "tests/test_util_functions.py::Test_normalise_search_criteria::test_quoting",
+  "tests/test_util_functions.py::Test_normalise_search_criteria::test_tuple",
+  "tests/test_util_functions.py::Test_normalise_search_criteria::test_unicode",
+  "tests/test_util_functions.py::Test_normalise_search_criteria::test_unicode_with_charset"
+ ],
+ "G043": [
+  "tests/test_util_functions.py::Test_normalise_text_list::test_binary",
+  "tests/test_util_functions.py::Test_normalise_text_list::test_iter",
+  "tests/test_util_functions.py::Test_normalise_text_list::test_list",
+  "tests/test_util_functions.py::Test_normalise_text_list::test_mixed_list",
+  "tests/test_util_functions.py::Test_normalise_text_list::test_tuple",
+  "tests/test_util_functions.py::Test_normalise_text_list::test_unicode"
+ ],
+ "G044": [
+  "tests/test_util_functions.py::Test_seq_to_parenstr::test_binary",
+  "tests/test_util_functions.py::Test_seq_to_parenstr::test_iter",
+  "tests/test_util_functions.py::Test_seq_to_parenstr::test_list",
+  "tests/test_util_functions.py::Test_seq_to_parenstr::test_mixed_list",
+  "tests/test_util_functions.py::Test_seq_to_parenstr::test_tuple",
+  "tests/test_util_functions.py::Test_seq_to_parenstr::test_unicode"
+ ],
+ "G045": [
+  "tests/test_util_functions.py::Test_seq_to_parenstr_upper::test_binary",
+  "tests/test_util_functions.py::Test_seq_to_parenstr_upper::test_iter",
+  "tests/test_util_functions.py::Test_seq_to_parenstr_upper::test_list",
+  "tests/test_util_functions.py::Test_seq_to_parenstr_upper::test_mixed_list",
+  "tests/test_util_functions.py::Test_seq_to_parenstr_upper::test_tuple",
+  "tests/test_util_functions.py::Test_seq_to_parenstr_upper::test_unicode"
+ ],
+ "G046": [
+  "tests/test_version.py::TestVersionString::test_alpha",
+  "tests/test_version.py::TestVersionString::test_beta_point",
+  "tests/test_version.py::TestVersionString::test_dot_oh",
+  "tests/test_version.py::TestVersionString::test_minor",
+  "tests/test_version.py::TestVersionString::test_point_release"
+ ]
+}

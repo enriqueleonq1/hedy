@@ -10,6 +10,8 @@ use clap::Parser;
 use hedy_core::adapters::{self, CODE_MAP_PROGRAM, HedyPaths, find_program};
 use hedy_core::application::Setting;
 use hedy_core::domain::Provider;
+use hedy_evals::checkpoints::{self, Arm};
+use hedy_evals::long::{Limits, Plan};
 use hedy_evals::{
     Case, Layer, RemoveOnDrop, RunResult, Runner, RunnerOptions, Variant, Verdict, compare,
     load_suite, select_cases, summarize,
@@ -59,6 +61,40 @@ struct Args {
     /// Archivo JSONL de resultados (por defecto, <suite>/results/run-<fecha>.jsonl).
     #[arg(long)]
     out: Option<PathBuf>,
+    /// Guarda el diff final de cada corrida (y el veredicto oculto a su lado)
+    /// en diffs/<nombre del archivo de resultados>/, junto a los resultados.
+    #[arg(long)]
+    diffs: bool,
+    /// Prueba de rescate (evals/experiments/rescue): tras el primer intento
+    /// corre los tests del proyecto (tests en case.json) y, si fallan, sigue
+    /// en tres brazos: la misma sesión con el fallo, una sesión nueva con el
+    /// fallo y un segundo intento sin él. Cuatro resultados por corrida.
+    #[arg(long)]
+    rescue: bool,
+    /// Prueba de tareas largas (evals/experiments/long-tasks, casos en
+    /// evals/long): tres sesiones nuevas por corrida en cada brazo, separados
+    /// por comas: solo, repeat, doc, flow. Con --sessions, la prueba de
+    /// confirmación (evals/experiments/confirmation): today, request, doc, flow.
+    #[arg(long, value_delimiter = ',', value_name = "BRAZOS")]
+    long: Vec<String>,
+    /// Con --long, cuántas acciones puede hacer el agente en cada sesión
+    /// antes de que se lo corte.
+    #[arg(long)]
+    cap: Option<u32>,
+    /// Con --long, cuántos tokens a precio de entrada (la salida cuenta 5×,
+    /// la caché leída 0,1× y la escrita 1,25×) puede gastar cada sesión antes
+    /// de que se la corte.
+    #[arg(long)]
+    budget: Option<u64>,
+    /// Con --long: el cambio llega con la segunda sesión y la corrida sigue
+    /// hasta que una sesión desde entonces termina sola, como mucho estas.
+    #[arg(long)]
+    sessions: Option<u32>,
+    /// Prueba de puntos de control (evals/experiments/checkpoints): brazos
+    /// separados por comas: solo, informed, plan, approval. Usa el pedido y
+    /// la aclaración de checkpoint en case.json.
+    #[arg(long, value_delimiter = ',', value_name = "BRAZOS")]
+    checkpoints: Vec<String>,
     /// Solo lista los casos.
     #[arg(long)]
     list: bool,
@@ -154,6 +190,7 @@ fn run(args: Args) -> Result<()> {
         .append(true)
         .open(&out)?;
 
+    let diffs = args.diffs.then(|| diffs_dir(&out));
     let runner = Runner::new(
         hedy,
         RunnerOptions {
@@ -161,6 +198,7 @@ fn run(args: Args) -> Result<()> {
             model: args.model.clone(),
             code_map,
             work_dir: work.clone(),
+            diffs: diffs.clone(),
         },
     );
     for flow in &args.flows {
@@ -173,16 +211,70 @@ fn run(args: Args) -> Result<()> {
             anyhow::bail!("flujo desconocido: {flow} (none, essential, approval, focused-review)");
         }
     }
+    if args.rescue {
+        if args.flows.iter().any(|f| f != NO_FLOW) {
+            bail!("--rescue compara un solo agente: no admite --flows");
+        }
+        let missing: Vec<&str> = cases
+            .iter()
+            .filter(|c| c.spec.tests.is_none())
+            .map(|c| c.name.as_str())
+            .collect();
+        if !missing.is_empty() {
+            bail!(
+                "--rescue necesita tests en case.json; no los tienen: {}",
+                missing.join(", ")
+            );
+        }
+    }
+    let arms = match args.sessions {
+        None => &hedy_evals::long::ARMS,
+        Some(_) => &hedy_evals::long::CONFIRM_ARMS,
+    };
+    if let Some(arm) = args.long.iter().find(|a| !arms.contains(&a.as_str())) {
+        bail!("brazo desconocido: {arm} ({})", arms.join(", "));
+    }
+    if args
+        .sessions
+        .is_some_and(|n| n < hedy_evals::long::CHANGE_SESSION)
+    {
+        bail!(
+            "--sessions necesita al menos {}",
+            hedy_evals::long::CHANGE_SESSION
+        );
+    }
+    if !args.long.is_empty() && (args.rescue || args.flows.iter().any(|f| f != NO_FLOW)) {
+        bail!("--long no se combina con --rescue ni --flows");
+    }
+    if let Some(arm) = args.checkpoints.iter().find(|a| Arm::from_key(a).is_none()) {
+        bail!(
+            "brazo desconocido: {arm} ({})",
+            checkpoints::ARMS.join(", ")
+        );
+    }
+    if !args.checkpoints.is_empty() {
+        if args.rescue || !args.long.is_empty() || args.flows.iter().any(|f| f != NO_FLOW) {
+            bail!("--checkpoints no se combina con --rescue, --long ni --flows");
+        }
+        if let Some(case) = cases.iter().find(|c| c.spec.checkpoint.is_none()) {
+            bail!("el caso {} no tiene checkpoint en case.json", case.name);
+        }
+    }
     let total = cases.len()
         * args.layers.len()
         * args.variants.len()
         * args.flows.len()
+        * args.checkpoints.len().max(1)
         * args.repeat as usize;
     eprintln!(
-        "{total} corridas con {} ({}). Resultados en {}",
+        "{total} corridas con {} ({}). Resultados en {}{}",
         account.name,
         args.model.as_deref().unwrap_or("modelo por defecto"),
-        out.display()
+        out.display(),
+        diffs
+            .as_ref()
+            .map(|d| format!(", diffs en {}", d.display()))
+            .unwrap_or_default()
     );
 
     let mut results = Vec::new();
@@ -213,28 +305,122 @@ fn run_all(
                         "· {} [{layer}] {} {flow} #{attempt}… ",
                         case.name, variant.name
                     );
-                    let result = runner.run(case, layer, variant, flow, attempt);
-                    eprintln!(
-                        "{} · {} tokens · {} lecturas · {:.0} s{}",
-                        if result.passed { "pasó" } else { "falló" },
-                        result.tokens,
-                        result.files_read,
-                        result.duration_ms as f64 / 1000.0,
-                        result
-                            .error
-                            .as_deref()
-                            .map(|e| format!(" · {e}"))
-                            .unwrap_or_default()
-                    );
-                    let line = serde_json::to_string(&result)?;
-                    results.push(result);
-                    writeln!(file, "{line}")?;
-                    file.flush()?;
+                    if !args.long.is_empty() {
+                        eprintln!();
+                        for arm in &args.long {
+                            eprint!("  {arm}… ");
+                            let plan = match args.sessions {
+                                None => Plan::Three,
+                                Some(max) => Plan::UntilDone { max },
+                            };
+                            let limits = Limits {
+                                cap: args.cap,
+                                budget: args.budget,
+                            };
+                            let sessions =
+                                runner.run_long(case, layer, variant, arm, attempt, plan, limits);
+                            let line: Vec<String> = sessions
+                                .iter()
+                                .map(|s| {
+                                    let reqs = s.long.as_ref().map(|l| &l.reqs);
+                                    let met = reqs.map_or(0, |r| {
+                                        r.iter().filter(|(k, v)| **v && *k != "REG").count()
+                                    });
+                                    let all = reqs.map_or(0, |r| r.len().saturating_sub(1));
+                                    format!("{met}/{all}")
+                                })
+                                .collect();
+                            eprintln!(
+                                "{} · {} tokens{}",
+                                line.join(" → "),
+                                sessions.iter().map(|s| s.tokens).sum::<u64>(),
+                                sessions
+                                    .iter()
+                                    .find_map(|s| s.error.as_deref())
+                                    .map(|e| format!(" · {e}"))
+                                    .unwrap_or_default()
+                            );
+                            for session in sessions {
+                                writeln!(file, "{}", serde_json::to_string(&session)?)?;
+                                results.push(session);
+                            }
+                            file.flush()?;
+                        }
+                        continue;
+                    }
+                    if args.rescue {
+                        let arms = runner.run_rescue(case, layer, variant, attempt);
+                        let line: Vec<&str> = arms
+                            .iter()
+                            .map(|a| if a.passed { "pasó" } else { "falló" })
+                            .collect();
+                        eprintln!(
+                            "{} · {} tokens{}",
+                            line.join(" / "),
+                            arms.iter().map(|a| a.tokens).max().unwrap_or(0),
+                            arms[0]
+                                .error
+                                .as_deref()
+                                .map(|e| format!(" · {e}"))
+                                .unwrap_or_default()
+                        );
+                        for arm in arms {
+                            writeln!(file, "{}", serde_json::to_string(&arm)?)?;
+                            results.push(arm);
+                        }
+                        file.flush()?;
+                        continue;
+                    }
+                    let arms: Vec<Option<Arm>> = match args.checkpoints.is_empty() {
+                        true => vec![None],
+                        false => args.checkpoints.iter().map(|a| Arm::from_key(a)).collect(),
+                    };
+                    for arm in arms {
+                        if let Some(arm) = arm {
+                            eprint!("\n  {}… ", arm.key());
+                        }
+                        let result = runner.run(case, layer, variant, flow, attempt, arm);
+                        eprintln!(
+                            "{} · {} tokens · {} lecturas · {:.0} s{}{}",
+                            if result.passed { "pasó" } else { "falló" },
+                            result.tokens,
+                            result.files_read,
+                            result.duration_ms as f64 / 1000.0,
+                            result
+                                .checkpoint
+                                .as_ref()
+                                .filter(|c| c.cards > 0)
+                                .map(|c| format!(
+                                    " · {} planes{}",
+                                    c.cards,
+                                    if c.corrected { ", corregido" } else { "" }
+                                ))
+                                .unwrap_or_default(),
+                            result
+                                .error
+                                .as_deref()
+                                .map(|e| format!(" · {e}"))
+                                .unwrap_or_default()
+                        );
+                        let line = serde_json::to_string(&result)?;
+                        results.push(result);
+                        writeln!(file, "{line}")?;
+                        file.flush()?;
+                    }
                 }
             }
         }
     }
     Ok(())
+}
+
+/// `results/run-1.jsonl` keeps its diffs in `results/diffs/run-1/`.
+fn diffs_dir(out: &std::path::Path) -> PathBuf {
+    let stem = out.file_stem().unwrap_or_default();
+    out.parent()
+        .unwrap_or(std::path::Path::new("."))
+        .join("diffs")
+        .join(stem)
 }
 
 fn read_results(path: &PathBuf) -> Result<Vec<RunResult>> {
@@ -310,4 +496,17 @@ fn print_summary(results: &[RunResult]) {
     println!(
         "\nCambios: mediana por caso frente a la base; costo/resuelta, sobre todos los casos. Regla: se queda con 10 % menos de costo o más y sin bajar la tasa de aprobación."
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diffs_go_beside_their_results() {
+        assert_eq!(
+            diffs_dir(std::path::Path::new("evals/results/run-17.jsonl")),
+            PathBuf::from("evals/results/diffs/run-17")
+        );
+    }
 }

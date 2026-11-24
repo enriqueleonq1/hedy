@@ -1,0 +1,46 @@
+{
+  "customers": [
+    {"id": "C1", "name": "Laura Gómez", "phone": "1155550001", "email": "laura@example.com"},
+    {"id": "C2", "name": "Pedro Salas", "phone": "1155550002", "email": ""},
+    {"id": "C3", "name": "Marta Ruiz", "phone": "", "email": "marta@example.com"}
+  ],
+  "vehicles": [
+    {"plate": "AB123CD", "customer": "C1", "brand": "Fiat", "model": "Cronos", "year": 2021},
+    {"plate": "AC456EF", "customer": "C2", "brand": "Ford", "model": "Ka", "year": 2018},
+    {"plate": "KLM321", "customer": "C2", "brand": "VW", "model": "Gol", "year": 2012},
+    {"plate": "AD789GH", "customer": "C3", "brand": "Renault", "model": "Kwid", "year": 2022}
+  ],
+  "mechanics": [
+    {"id": "M1", "name": "Rosa Paz", "skills": ["general", "frenos"]},
+    {"id": "M2", "name": "Juan Ibáñez", "skills": ["general"]},
+    {"id": "M3", "name": "Ana Torres", "skills": ["electricidad", "frenos"]}
+  ],
+  "services": [
+    {"code": "OIL", "name": "cambio de aceite", "minutes": 30, "skill": "general", "labor_cents": 1500000,
+     "parts": [{"code": "FIL-ACE", "qty": 1}, {"code": "ACE-5W30", "qty": 4}]},
+    {"code": "BRK", "name": "cambio de pastillas de freno", "minutes": 90, "skill": "frenos", "labor_cents": 4500000,
+     "parts": [{"code": "PAS-DEL", "qty": 1}]},
+    {"code": "ELE", "name": "revisión eléctrica", "minutes": 60, "skill": "electricidad", "labor_cents": 3000000,
+     "parts": []},
+    {"code": "ALI", "name": "alineación y balanceo", "minutes": 60, "skill": "general", "labor_cents": 2800000,
+     "parts": [{"code": "PES-BAL", "qty": 4}]},
+    {"code": "AIR", "name": "carga de aire acondicionado", "minutes": 60, "skill": "climatizacion", "labor_cents": 3500000,
+     "parts": []}
+  ],
+  "parts": [
+    {"code": "FIL-ACE", "name": "filtro de aceite", "price_cents": 850000, "stock": 6, "min_stock": 2},
+    {"code": "ACE-5W30", "name": "aceite 5W30 (litro)", "price_cents": 1200000, "stock": 20, "min_stock": 8},
+    {"code": "PAS-DEL", "name": "pastillas delanteras", "price_cents": 3200000, "stock": 1, "min_stock": 1},
+    {"code": "PES-BAL", "name": "pesa de balanceo", "price_cents": 50000, "stock": 40, "min_stock": 10}
+  ],
+  "orders": [
+    {"id": 1, "plate": "AC456EF", "mechanic": "M2", "services": ["OIL"], "parts": [{"code": "FIL-ACE", "qty": 1}, {"code": "ACE-5W30", "qty": 4}],
+     "opened": "2025-02-03", "closed": "2025-02-03", "status": "cerrada", "total_cents": 8651500},
+    {"id": 2, "plate": "AC456EF", "mechanic": "M1", "services": ["BRK"], "parts": [{"code": "PAS-DEL", "qty": 1}],
+     "opened": "2025-02-17", "closed": "2025-02-18", "status": "cerrada", "total_cents": 9317000},
+    {"id": 3, "plate": "KLM321", "mechanic": "M2", "services": ["ALI"], "parts": [{"code": "PES-BAL", "qty": 4}],
+     "opened": "2025-02-24", "closed": "2025-02-24", "status": "cerrada", "total_cents": 3630000},
+    {"id": 4, "plate": "AB123CD", "mechanic": "M3", "services": ["ELE"], "parts": [],
+     "opened": "2025-03-05", "closed": null, "status": "abierta", "total_cents": 0}
+  ]
+}

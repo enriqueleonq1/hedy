@@ -1,0 +1,104 @@
+diff --git a/app/routes.py b/app/routes.py
+index e947716..289d170 100644
+--- a/app/routes.py
++++ b/app/routes.py
+@@ -6,6 +6,7 @@ matching, so `/invoices/10%30%31` is `/invoices/1001`.
+ 
+ from urllib.parse import unquote
+ 
++from . import config
+ from .invoices import find_invoice
+ 
+ 
+@@ -20,9 +21,22 @@ def invoice(invoice_id):
+     return 200, f"{found['customer']}: {found['total']}"
+ 
+ 
++def attachment(name):
++    # `name` ya viene decodificado por handle(), así que %2e%2e%2f llega como "../".
++    if not name or "\x00" in name or "/" in name or "\\" in name:
++        return 404, "not found"
++    base = config.UPLOAD_DIR.resolve()
++    # resolve() sigue symlinks: un enlace dentro de uploads que apunte fuera queda fuera.
++    target = (base / name).resolve()
++    if target.parent != base or not target.is_file():
++        return 404, "not found"
++    return 200, target.read_text(encoding="utf-8")
++
++
+ ROUTES = {
+     "/health": health,
+     "/invoices/": invoice,
++    "/attachments/": attachment,
+ }
+ 
+ 
+diff --git a/tests/test_routes.py b/tests/test_routes.py
+index 6dba1d9..43895d2 100644
+--- a/tests/test_routes.py
++++ b/tests/test_routes.py
+@@ -1,8 +1,64 @@
++import os
++import tempfile
+ import unittest
++from pathlib import Path
++from unittest import mock
+ 
++from app import config
+ from app.routes import handle
+ 
+ 
++class AttachmentsTest(unittest.TestCase):
++    def setUp(self):
++        self._tmp = tempfile.TemporaryDirectory()
++        root = Path(self._tmp.name)
++        self.uploads = root / "uploads"
++        self.uploads.mkdir()
++        (self.uploads / "notas.txt").write_text("hola")
++        (self.uploads / "sub").mkdir()
++        (root / "secret.txt").write_text("secreto")
++        os.symlink(root / "secret.txt", self.uploads / "enlace.txt")
++        patcher = mock.patch.object(config, "UPLOAD_DIR", self.uploads)
++        patcher.start()
++        self.addCleanup(patcher.stop)
++        self.addCleanup(self._tmp.cleanup)
++
++    def test_returns_file_content(self):
++        self.assertEqual(handle("/attachments/notas.txt"), (200, "hola"))
++
++    def test_missing_file(self):
++        self.assertEqual(handle("/attachments/nada.txt"), (404, "not found"))
++
++    def test_directories_are_not_served(self):
++        self.assertEqual(handle("/attachments/sub"), (404, "not found"))
++        self.assertEqual(handle("/attachments/"), (404, "not found"))
++        self.assertEqual(handle("/attachments/."), (404, "not found"))
++
++    def test_traversal_is_rejected(self):
++        for path in [
++            "/attachments/../secret.txt",
++            "/attachments/..",
++            "/attachments/%2e%2e%2fsecret.txt",
++            "/attachments/%2E%2E%2Fsecret.txt",
++            "/attachments/..%2fsecret.txt",
++            "/attachments/..%5csecret.txt",
++            "/attachments/sub/../../secret.txt",
++        ]:
++            with self.subTest(path=path):
++                self.assertEqual(handle(path), (404, "not found"))
++
++    def test_absolute_path_is_rejected(self):
++        secret = str(self.uploads.parent / "secret.txt")
++        self.assertEqual(handle("/attachments/" + secret), (404, "not found"))
++        self.assertEqual(handle("/attachments/%2F" + secret.lstrip("/")), (404, "not found"))
++
++    def test_symlink_pointing_outside_is_rejected(self):
++        self.assertEqual(handle("/attachments/enlace.txt"), (404, "not found"))
++
++    def test_null_byte_is_rejected(self):
++        self.assertEqual(handle("/attachments/notas.txt%00"), (404, "not found"))
++
++
+ class RoutesTest(unittest.TestCase):
+     def test_health(self):
+         self.assertEqual(handle("/health"), (200, "ok"))

@@ -1,0 +1,77 @@
+diff --git a/app/routes.py b/app/routes.py
+index e947716..259b25b 100644
+--- a/app/routes.py
++++ b/app/routes.py
+@@ -6,6 +6,7 @@ matching, so `/invoices/10%30%31` is `/invoices/1001`.
+ 
+ from urllib.parse import unquote
+ 
++from .config import UPLOAD_DIR
+ from .invoices import find_invoice
+ 
+ 
+@@ -20,9 +21,19 @@ def invoice(invoice_id):
+     return 200, f"{found['customer']}: {found['total']}"
+ 
+ 
++def attachment(name):
++    # El nombre lo escribe el cliente: se valida la ruta resuelta, no el texto.
++    base = UPLOAD_DIR.resolve()
++    path = (UPLOAD_DIR / name).resolve()
++    if path.parent != base or not path.is_file():
++        return 404, "not found"
++    return 200, path.read_text(encoding="utf-8")
++
++
+ ROUTES = {
+     "/health": health,
+     "/invoices/": invoice,
++    "/attachments/": attachment,
+ }
+ 
+ 
+diff --git a/tests/test_routes.py b/tests/test_routes.py
+index 6dba1d9..0b55432 100644
+--- a/tests/test_routes.py
++++ b/tests/test_routes.py
+@@ -1,5 +1,6 @@
+ import unittest
+ 
++from app.config import ROOT, UPLOAD_DIR
+ from app.routes import handle
+ 
+ 
+@@ -11,3 +12,33 @@ class RoutesTest(unittest.TestCase):
+         self.assertEqual(handle("/invoices/1001"), (200, "Acme: 120.00"))
+         self.assertEqual(handle("/invoices/10%30%31"), (200, "Acme: 120.00"))
+         self.assertEqual(handle("/invoices/9"), (404, "not found"))
++
++    def test_attachment(self):
++        for name in ("manual.txt", "notas.txt"):
++            expected = (UPLOAD_DIR / name).read_text(encoding="utf-8")
++            self.assertEqual(handle(f"/attachments/{name}"), (200, expected))
++        self.assertEqual(handle("/attachments/no-existe.txt"), (404, "not found"))
++
++    def test_attachment_rejects_folder_itself(self):
++        for path in ("/attachments/", "/attachments/.", "/attachments/%2e", "/attachments/.."):
++            self.assertEqual(handle(path), (404, "not found"), path)
++
++    def test_attachment_rejects_traversal(self):
++        # secrets.txt existe justo fuera de uploads/, así que el 404 es por la validación.
++        self.assertTrue((ROOT / "secrets.txt").is_file())
++        paths = (
++            "/attachments/..%2Fsecrets.txt",
++            "/attachments/%2e%2e%2fsecrets.txt",
++            "/attachments/..%2F..%2Fsecrets.txt",
++            "/attachments/%2e%2e/secrets.txt",
++            "/attachments/..%5Csecrets.txt",
++            "/attachments/%2e%2e%5c",
++            "/attachments/%2Fetc%2Fpasswd",
++            "/attachments//" + str(ROOT / "secrets.txt"),
++            "/attachments/%252e%252e%252fsecrets.txt",
++        )
++        for path in paths:
++            self.assertEqual(handle(path), (404, "not found"), path)
++
++    def test_attachment_rejects_subfolders(self):
++        self.assertEqual(handle("/attachments/a%2Fb.txt"), (404, "not found"))

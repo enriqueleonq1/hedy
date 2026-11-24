@@ -1,0 +1,141 @@
+diff --git a/billing/catalog.py b/billing/catalog.py
+index cb986a7..baf3101 100644
+--- a/billing/catalog.py
++++ b/billing/catalog.py
+@@ -1,10 +1,10 @@
+-# Unit prices, in dollars.
++# Unit prices, in cents.
+ PRICES = {
+-    "pen": 1.15,
+-    "notebook": 2.35,
+-    "stapler": 7.05,
+-    "lamp": 19.99,
+-    "chair": 89.95,
++    "pen": 115,
++    "notebook": 235,
++    "stapler": 705,
++    "lamp": 1999,
++    "chair": 8995,
+ }
+ 
+ 
+diff --git a/billing/coupons.py b/billing/coupons.py
+index fd35c9a..b83539d 100644
+--- a/billing/coupons.py
++++ b/billing/coupons.py
+@@ -1,16 +1,16 @@
+-# A coupon is ("percent", 10) for 10 % off, or ("fixed", 5.0) for 5 dollars off.
++# A coupon is ("percent", 10) for 10 % off, or ("fixed", 500) for 5 dollars off (amounts in cents).
+ COUPONS = {
+     "TEN": ("percent", 10),
+-    "SAVE5": ("fixed", 5.0),
++    "SAVE5": ("fixed", 500),
+     "HALF": ("percent", 50),
+-    "BIG": ("fixed", 100.0),
++    "BIG": ("fixed", 10000),
+ }
+ 
+ 
+ def discount(subtotal, code):
+     if code is None:
+-        return 0.0
++        return 0
+     kind, value = COUPONS[code]
+     if kind == "percent":
+-        return round(subtotal * value / 100, 2)
++        return (subtotal * value + 50) // 100  # half-up, to the cent
+     return min(value, subtotal)
+diff --git a/billing/invoice.py b/billing/invoice.py
+index 164295d..a24a719 100644
+--- a/billing/invoice.py
++++ b/billing/invoice.py
+@@ -2,8 +2,10 @@ from .coupons import discount
+ from .tax import tax
+ 
+ 
+-def money(amount):
+-    return f"${amount:,.2f}"
++def money(cents):
++    sign = "-" if cents < 0 else ""
++    dollars, rest = divmod(abs(cents), 100)
++    return f"${sign}{dollars:,}.{rest:02d}"
+ 
+ 
+ def totals(cart, region, coupon=None):
+diff --git a/billing/tax.py b/billing/tax.py
+index 37bacac..ca84a08 100644
+--- a/billing/tax.py
++++ b/billing/tax.py
+@@ -1,9 +1,10 @@
++# Rates in parts per 100 000 (8.875 % = 8875).
+ RATES = {
+-    "NY": 0.08875,
+-    "TX": 0.0625,
+-    "OR": 0.0,
++    "NY": 8875,
++    "TX": 6250,
++    "OR": 0,
+ }
+ 
+ 
+ def tax(amount, region):
+-    return round(amount * RATES[region], 2)
++    return (amount * RATES[region] + 50_000) // 100_000  # half-up, to the cent
+diff --git a/tests/test_invoice.py b/tests/test_invoice.py
+index 9437cab..d014602 100644
+--- a/tests/test_invoice.py
++++ b/tests/test_invoice.py
+@@ -1,7 +1,10 @@
+ import unittest
+ 
+ from billing.cart import Cart
+-from billing.invoice import invoice_text
++from billing.catalog import PRICES
++from billing.coupons import discount
++from billing.invoice import invoice_text, money, totals
++from billing.tax import tax
+ 
+ 
+ class InvoiceTest(unittest.TestCase):
+@@ -19,3 +22,41 @@ class InvoiceTest(unittest.TestCase):
+         text = invoice_text(cart, "OR", "SAVE5")
+         self.assertIn("Descuento: -$5.00", text)
+         self.assertTrue(text.endswith("Total: $84.95"))
++
++    def test_prices_are_integer_cents(self):
++        for sku, cents in PRICES.items():
++            self.assertIsInstance(cents, int, sku)
++        self.assertEqual(PRICES["chair"], 8995)
++
++    def test_twelve_chairs_thousands_and_cents(self):
++        cart = Cart()
++        cart.add("chair", 12)
++        self.assertIn("Total: $1,079.40", invoice_text(cart, "OR"))
++
++    def test_ny_tax_half_cent_rounds_up(self):
++        # 400 cents * 8.875% = 35.5 cents -> 36 cents (half-up, not float 0.35)
++        self.assertEqual(tax(400, "NY"), 36)
++
++    def test_percent_discount_half_cent_rounds_up(self):
++        # 1005 cents * 50% = 502.5 cents -> 503 cents
++        self.assertEqual(discount(1005, "HALF"), 503)
++
++    def test_no_coupon_discount_is_int_zero(self):
++        self.assertEqual(discount(1000, None), 0)
++        self.assertIsInstance(discount(1000, None), int)
++
++    def test_money_formats_cents(self):
++        self.assertEqual(money(0), "$0.00")
++        self.assertEqual(money(5), "$0.05")
++        self.assertEqual(money(123456), "$1,234.56")
++
++    def test_money_negative(self):
++        self.assertEqual(money(-5), "$-0.05")
++        self.assertEqual(money(-123456), "$-1,234.56")
++
++    def test_totals_are_all_int(self):
++        cart = Cart()
++        cart.add("pen", 3)
++        t = totals(cart, "NY", "TEN")
++        for field in ("subtotal", "discount", "tax", "total"):
++            self.assertIsInstance(t[field], int, field)

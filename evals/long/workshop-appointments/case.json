@@ -1,0 +1,41 @@
+{
+  "title": "Turnos del taller mecánico, hasta la orden, el stock y el presupuesto, en varias sesiones",
+  "prompt": "Queremos dar turnos desde el mostrador y que el turno siga hasta la orden de trabajo, el stock y los presupuestos. Todo pasa por taller/shop.py (Shop), como lo demás. Esta es la API que vamos a usar:\n\n- shop.book(patente, codigo_servicio, dia, inicio): da un turno. dia es un datetime.date e inicio un texto \"HH:MM\". Devuelve el turno (agrégalo a taller/models.py) con los atributos id, plate, service (el código), mechanic (el id del mecánico), day (date), start y end (\"HH:MM\"), status y order (el número de su orden de trabajo, o None).\n- shop.appointment(id), shop.cancel(id), shop.free_slots(dia, codigo_servicio), shop.reminder(id), shop.day_text(dia), shop.start_order(id), shop.appointment_quote(id) y shop.appointments_csv(dia).\n- shop.inventory.available(codigo): el stock de un repuesto que no está reservado para un turno.\n- Cuando algo de un turno no se puede, se lanza BookingError (agrégala a taller/errors.py, como subclase de ShopError) y su texto (str del error) es exactamente el mensaje que indico.\n\nRequisitos:\n\nR1. Un turno dura lo que dice su servicio (minutes) y empieza con status \"reservado\". Los ids son enteros que empiezan en 1 y suben de a uno, y un turno cancelado no libera su número.\nR2. El taller atiende de lunes a viernes de 08:00 a 18:00 y el turno entero tiene que caber en ese horario (uno de 30 minutos puede empezar a las 17:30). Si no: «Fuera del horario del taller». Sábados y domingos, lo mismo.\nR3. Hay pausa de almuerzo de 13:00 a 14:00: ningún turno puede pisarla (sí puede terminar a las 13:00 o empezar a las 14:00). Si la pisa: «Ese horario cruza la pausa de almuerzo (13:00–14:00)».\nR4. Los turnos empiezan cada 30 minutos (08:00, 08:30, 09:00…). Si no: «Los turnos empiezan cada 30 minutos».\nR5. Cada servicio necesita una especialidad (skill) y solo lo hace un mecánico que la tenga. Un código que no existe: «Servicio desconocido: <código>». Si ningún mecánico del taller tiene la especialidad: «Ningún mecánico hace ese servicio».\nR6. Un mecánico no puede tener dos turnos que se pisen (uno que termina a las 10:00 y otro que empieza a las 10:00 no se pisan). Se asigna el primer mecánico libre con la especialidad, en el orden del archivo. Si no hay ninguno libre: «No hay mecánicos libres en ese horario».\nR7. Un mismo auto no puede tener dos turnos que se pisen: «Ese auto ya tiene un turno en ese horario».\nR8. Solo se dan turnos a vehículos registrados: «Vehículo no registrado: <patente normalizada>».\nR9. Las patentes se normalizan en todo el sistema (alta de vehículos, búsqueda, turnos): mayúsculas, sin espacios ni guiones («ab-123-cd» es «AB123CD»). Solo valen las de formato viejo (ABC123) y las del Mercosur (AB123CD); cualquier otra da un ShopError con el texto «Patente inválida».\nR10. Para dar un turno, el dueño del vehículo tiene que tener teléfono (le mandamos el recordatorio): si no, «El cliente no tiene teléfono para avisarle».\nR11. shop.cancel(id) deja el turno con status \"cancelado\" y el mecánico queda libre en ese horario para otro. Cancelar un turno que no existe o que ya se canceló: «Turno inexistente».\nR12. shop.free_slots(dia, codigo_servicio) devuelve, en orden, las horas de inicio (\"HH:MM\") en que ese día algún mecánico podría hacer ese servicio cumpliendo el horario, la pausa, las medias horas y los turnos ya dados. Un turno cancelado vuelve a dejar libres sus horas. Sábado o domingo: lista vacía.\nR13. Al dar un turno, el cliente recibe el recordatorio (un mensaje en shop.outbox, a su teléfono) y shop.reminder(id) devuelve el mismo texto, exactamente así (con su nombre de pila, el día, la hora, el nombre del servicio y la patente): «Hola Laura, te esperamos el 10/03 a las 09:00 para cambio de aceite (patente AB123CD). Si no puedes venir, avísanos con 24 horas de anticipación.» Para un turno que no existe o está cancelado: «Turno inexistente».\nR14. shop.day_text(dia) devuelve la agenda del día en texto. Primera línea: «Agenda del taller — 10/03/2025» (con la fecha del día). Después, por cada mecánico en el orden del archivo, una línea con su nombre y dos puntos («Rosa Paz:») y debajo sus turnos de ese día por hora, cada uno como «  09:00–09:30 AB123CD cambio de aceite» (dos espacios, inicio–fin, patente, nombre del servicio), o «  (libre)» si no tiene ninguno. Los cancelados no salen.\nR15. Al dar un turno se reservan los repuestos de su servicio: shop.inventory.available(codigo) es el stock menos lo reservado, y el stock no cambia. Si lo disponible no alcanza: «Sin stock de <nombre del repuesto> para ese servicio».\nR16. Cancelar un turno devuelve sus repuestos a lo disponible. Cuando se cierra la orden de un turno, sus repuestos salen del stock y dejan de estar reservados (no se descuentan dos veces).\nR17. El listado de bajo stock (shop.inventory.low_stock() y «python3 -m taller repuestos --bajo-stock») compara con el mínimo lo disponible, no el stock.\nR18. shop.start_order(id) es cuando el auto llega: abre una orden de trabajo para el vehículo con el servicio y el mecánico del turno, abierta el día del turno, y la devuelve. El turno pasa a status \"en_taller\" y su order es el número de la orden. Un turno en el taller ya no se cancela ni se vuelve a empezar: «El turno ya está en el taller». Uno que no existe o está cancelado: «Turno inexistente».\nR19. Al cerrar la orden de un turno (shop.close_order, como hoy), el turno pasa a \"terminado\". Cancelar un turno terminado: «El turno ya terminó».\nR20. Los turnos se guardan con shop.save() en el mismo archivo de datos y se recuperan con Shop.load(): todos sus datos, los cancelados incluidos, la numeración sigue donde iba y lo reservado vuelve a contar.\nR21. Desde la línea de comandos (todas con --data): «python3 -m taller turno AB123CD OIL 2025-03-10 09:00» da el turno, lo guarda e imprime exactamente «Turno #1: 10/03 09:00–09:30, cambio de aceite con Rosa Paz»; «python3 -m taller agenda 2025-03-10» imprime la agenda del día (R14); «python3 -m taller cancelar 1» lo cancela, lo guarda e imprime «Turno #1 cancelado». Si no se puede, como los demás comandos: «Error: <mensaje>» por stderr y sale con 1.\nR22. shop.appointment_quote(id) devuelve el presupuesto del servicio del turno, igual al de shop.quote para ese vehículo y servicio, pero titulado «Presupuesto turno #1 — AB123CD» (es la primera línea de quotes.text).\nR23. Un cliente con 3 o más órdenes cerradas (de cualquiera de sus vehículos) antes de la que se presupuesta o se cierra tiene 10 % de descuento en la mano de obra: una línea «Descuento cliente frecuente (10%)» con el importe en negativo (redondeado con la mitad hacia arriba), antes del IVA. Vale en los presupuestos (shop.quote y el del turno) y en el total al cerrar una orden.\nR24. shop.appointments_csv(dia) devuelve los turnos del día en CSV, cancelados incluidos, ordenados por hora de inicio, con la cabecera exacta «id,patente,servicio,mecanico,inicio,fin,estado» (servicio es el código; mecanico, el nombre del mecánico; estado, el status del turno).\n\nAgrega tests de lo nuevo.",
+  "change": "Cambio: la pausa de almuerzo pasa a ser de 13:30 a 14:30 (el mensaje de rechazo tiene que decir el nuevo horario) y el recordatorio ahora pide avisar con 48 horas de anticipación en lugar de 24. Además, el CSV de turnos del día lleva al final una columna «cliente» con el nombre del dueño del vehículo.",
+  "check": "python3 check_reqs.py",
+  "checkChanged": "python3 check_reqs.py --changed",
+  "tests": "python3 -m unittest discover -q -s tests -t .",
+  "exact": [
+    "R02",
+    "R03",
+    "R04",
+    "R05",
+    "R06",
+    "R07",
+    "R08",
+    "R09",
+    "R10",
+    "R11",
+    "R13",
+    "R14",
+    "R15",
+    "R18",
+    "R19",
+    "R21",
+    "R22",
+    "R23",
+    "R24"
+  ],
+  "linked": [
+    "R11",
+    "R12",
+    "R15",
+    "R16"
+  ],
+  "changed": [
+    "R03",
+    "R13",
+    "R24"
+  ],
+  "timeoutSecs": 2400
+}

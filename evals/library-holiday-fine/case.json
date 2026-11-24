@@ -3,5 +3,6 @@
   "measures": "plain",
   "prompt": "En el reporte de multas de marzo (python3 -m library report fines 2025-03) le aparece a Laura Gómez una multa de $0.50 por «Rayuela». Lo sacó el lunes 17 de febrero y lo devolvió el miércoles 5 de marzo, que fue el primer día que abrimos después de Carnaval (el lunes 3 y el martes 4 estuvo cerrado). No debería tener multa. Encuentra la causa, arréglala y agrega un test.",
   "check": "python3 -m unittest -q test_hidden_holiday_fines && python3 -m unittest discover -q -s tests -t .",
+  "tests": "python3 -m unittest discover -q -s tests -t .",
   "timeoutSecs": 900
 }

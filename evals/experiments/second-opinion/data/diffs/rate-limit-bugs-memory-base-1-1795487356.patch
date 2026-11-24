@@ -1,0 +1,70 @@
+diff --git a/limiter/sliding.py b/limiter/sliding.py
+index 5658084..e7ee0bf 100644
+--- a/limiter/sliding.py
++++ b/limiter/sliding.py
+@@ -5,24 +5,25 @@ from collections import deque
+ class SlidingWindowLimiter:
+     """At most `limit` requests per client in any `window` seconds."""
+ 
+-    _hits = {}
+-
+     def __init__(self, limit, window, clock=time.monotonic):
+         self.limit = limit
+         self.window = window
+         self.clock = clock
++        self._hits = {}
+ 
+     def _recent(self, client):
+         hits = self._hits.setdefault(client, deque())
+         cutoff = self.clock() - self.window
+-        while hits and hits[0] < cutoff:
++        while hits and hits[0] <= cutoff:
+             hits.popleft()
+         return hits
+ 
+     def allow(self, client):
+         hits = self._recent(client)
++        if len(hits) >= self.limit:
++            return False
+         hits.append(self.clock())
+-        return len(hits) <= self.limit
++        return True
+ 
+     def remaining(self, client):
+         return max(0, self.limit - len(self._recent(client)))
+diff --git a/tests/test_limiter.py b/tests/test_limiter.py
+index bbea34d..f7240cd 100644
+--- a/tests/test_limiter.py
++++ b/tests/test_limiter.py
+@@ -25,3 +25,31 @@ class LimiterTest(unittest.TestCase):
+         self.assertTrue(limiter.allow("b"))
+         clock.now = 11
+         self.assertTrue(limiter.allow("b"))
++
++    def test_rejected_requests_do_not_extend_the_block(self):
++        clock = Clock()
++        limiter = SlidingWindowLimiter(1, 10, clock)
++        self.assertTrue(limiter.allow("c"))
++        for t in (2, 4, 6, 8):
++            clock.now = t
++            self.assertFalse(limiter.allow("c"))
++        clock.now = 10
++        self.assertTrue(limiter.allow("c"))
++
++    def test_request_exactly_one_window_old_no_longer_counts(self):
++        clock = Clock()
++        limiter = SlidingWindowLimiter(1, 10, clock)
++        self.assertTrue(limiter.allow("d"))
++        clock.now = 9.999
++        self.assertFalse(limiter.allow("d"))
++        clock.now = 10
++        self.assertEqual(limiter.remaining("d"), 1)
++        self.assertTrue(limiter.allow("d"))
++
++    def test_clients_and_instances_do_not_share_state(self):
++        clock = Clock()
++        first = SlidingWindowLimiter(1, 10, clock)
++        second = SlidingWindowLimiter(1, 10, clock)
++        self.assertTrue(first.allow("e"))
++        self.assertTrue(second.allow("e"))
++        self.assertTrue(first.allow("f"))

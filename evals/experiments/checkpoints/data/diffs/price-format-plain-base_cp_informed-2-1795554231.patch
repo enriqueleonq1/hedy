@@ -1,0 +1,13 @@
+diff --git a/shop/catalog.py b/shop/catalog.py
+index 37058f0..339b332 100644
+--- a/shop/catalog.py
++++ b/shop/catalog.py
+@@ -11,3 +11,8 @@ CATALOG = [
+     Product("Corte de cabello", 1250),
+     Product("Manicure", 900),
+ ]
++
++
++def format_price(product):
++    units, cents = divmod(product.price_cents, 100)
++    return f"USD {units}.{cents:02d}"

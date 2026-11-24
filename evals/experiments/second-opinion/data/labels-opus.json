@@ -1,0 +1,707 @@
+{
+ "26bdab2d29fc5a13": {
+  "label": "cause",
+  "note": "Con una lista vacía, sum() devuelve el int 0, que no tiene .quantize(). Es justo el AttributeError de la prueba oculta.",
+  "item": "run:invoice-rounding-memory-base-1-1795487445"
+ },
+ "cbc2cb67ad98e327": {
+  "label": "cause",
+  "note": "Misma causa del fallo oculto. Además propone bien la corrección: usar Decimal(0) como valor inicial.",
+  "item": "run:invoice-rounding-memory-base-1-1795487445"
+ },
+ "5cba442ae94f3001": {
+  "label": "cause",
+  "note": "Señala el AttributeError con la factura vacía, que es lo que hace fallar la prueba oculta.",
+  "item": "run:invoice-rounding-memory-base-1-1795487445"
+ },
+ "b253327c4a53567d": {
+  "label": "cause",
+  "note": "Misma causa. Las dos correcciones que propone son válidas.",
+  "item": "run:invoice-rounding-memory-base-1-1795487445"
+ },
+ "4d9b0ec60c1d2cfe": {
+  "label": "cause",
+  "note": "Señala la regresión con invoice_total([]), que es la que hace fallar la prueba oculta.",
+  "item": "run:invoice-rounding-memory-base-1-1795487445"
+ },
+ "b5805fe509617ea0": {
+  "label": "cause",
+  "note": "La línea 10 acepta un número sin unidad ('30' → 30). La prueba oculta espera ValueError para '30', y por eso falla.",
+  "item": "run:parse-duration-memory-base-2-1795487374"
+ },
+ "55c4ac6a1348e745": {
+  "label": "real",
+  "note": "MAX_TEXT (validation.py:9-12) limita nota y domicilio por lo que cabe en la impresora; dedication también se imprime en el ticket pero no se agregó, así que `problems()` no la controla.",
+  "item": "run:bakery-inscription-memory-base-3-1795487479"
+ },
+ "774d17ed97f1dfe4": {
+  "label": "real",
+  "note": "Mismo defecto: falta dedication en MAX_TEXT, así que una dedicatoria larga pasa la validación.",
+  "item": "run:bakery-inscription-memory-base-3-1795487479"
+ },
+ "68fe4a72f260c4cb": {
+  "label": "real",
+  "note": "Correcto: `bakery check` no avisa de una dedicatoria demasiado larga porque el bucle sobre MAX_TEXT no la incluye.",
+  "item": "run:bakery-inscription-memory-base-3-1795487479"
+ },
+ "39abff43088e640e": {
+  "label": "real",
+  "note": "Mismo defecto: falta en MAX_TEXT. Rompe la convención del proyecto para texto impreso.",
+  "item": "run:bakery-inscription-memory-base-3-1795487479"
+ },
+ "e5b4b415df77b74b": {
+  "label": "real",
+  "note": "Mismo defecto: falta en MAX_TEXT y el ticket no corta líneas largas, así que el texto desborda.",
+  "item": "run:bakery-inscription-memory-base-3-1795487479"
+ },
+ "6ac7f201b18f0d0b": {
+  "label": "real",
+  "note": "Mismo defecto: falta `\"dedication\": N` en MAX_TEXT. No es la causa de un fallo, porque el cambio pasa las pruebas ocultas.",
+  "item": "run:bakery-inscription-memory-base-3-1795487479"
+ },
+ "53d34e513dca586a": {
+  "label": "cause",
+  "note": "El cargo está dentro del bucle por línea. En el pedido oculto de 2 líneas suma 200 de más (3180 frente a 2980), y eso es lo que falla.",
+  "item": "seed:bakery-per-line"
+ },
+ "36dee82456758776": {
+  "label": "false",
+  "note": "Sigue la convención que ya usa el proyecto para domicilio: el cargo de envío y el filtro usan `is not None` aunque el texto esté vacío. Es un caso límite que el pedido no contempla.",
+  "item": "seed:bakery-per-line"
+ },
+ "2ebca85308a25ce6": {
+  "label": "cause",
+  "note": "Mismo defecto del bucle: cobra 2.00 × N líneas. Explica el 3180≠2980 y el 31.80≠29.80.",
+  "item": "seed:bakery-per-line"
+ },
+ "11cff5c10ae37c49": {
+  "label": "false",
+  "note": "Igual que el 2: es coherente con el manejo existente de domicilio vacío y no es un defecto que pida el cambio.",
+  "item": "seed:bakery-per-line"
+ },
+ "1e57d2a3a6d31fa3": {
+  "label": "cause",
+  "note": "El cargo dentro de `for line in order.lines` se cobra por línea. Es la causa de los dos fallos ocultos.",
+  "item": "seed:bakery-per-line"
+ },
+ "30f53c45d13ca18c": {
+  "label": "cause",
+  "note": "Bucle por línea: cobra 4.00 con 2 líneas. Es la causa de los fallos del total y del CSV.",
+  "item": "seed:bakery-per-line"
+ },
+ "603d793a38107f41": {
+  "label": "cause",
+  "note": "Mismo defecto del bucle, y es la causa de los fallos ocultos.",
+  "item": "seed:bakery-per-line"
+ },
+ "760f7105146e9718": {
+  "label": "cause",
+  "note": "El recargo se cobra por línea e infla el total y el CSV (31.80 en vez de 29.80). Es la causa.",
+  "item": "seed:bakery-per-line"
+ },
+ "8b1e6688aaaa349a": {
+  "label": "cause",
+  "note": "Lee MESSAGING_KEY en vez de MESSAGING_API_KEY (docs/servicio.md:5). Client(None) lanza ValueError, que es justo el error de la prueba oculta.",
+  "item": "seed:receipt-env-name"
+ },
+ "33a4cc83db70d5c4": {
+  "label": "cause",
+  "note": "Señala el mismo nombre de variable equivocado que provoca el ValueError de la prueba oculta.",
+  "item": "seed:receipt-env-name"
+ },
+ "9a1c63dfe5926aea": {
+  "label": "cause",
+  "note": "Mismo problema: MESSAGING_KEY frente a MESSAGING_API_KEY, que hace que Client(None) lance la excepción.",
+  "item": "seed:receipt-env-name"
+ },
+ "a7e59cf9f01f9ed6": {
+  "label": "real",
+  "note": "El test fija el nombre equivocado y por eso oculta el bug, lo que es un defecto real del test. Pero la prueba oculta falla por receipts.py; corregir el test no la arreglaría.",
+  "item": "seed:receipt-env-name"
+ },
+ "24eeb45062ad3e97": {
+  "label": "cause",
+  "note": "Identifica el nombre de variable incorrecto que provoca el ValueError observado.",
+  "item": "seed:receipt-env-name"
+ },
+ "da968e0c8d277a64": {
+  "label": "cause",
+  "note": "Misma causa. Cita la línea 15 en vez de la 14, pero describe bien el fallo.",
+  "item": "seed:receipt-env-name"
+ },
+ "23d07bd6a88307d8": {
+  "label": "cause",
+  "note": "Mismo problema, bien referenciado a docs/servicio.md:5. Es la razón del fallo.",
+  "item": "seed:receipt-env-name"
+ },
+ "feb8880920cd9e7b": {
+  "label": "cause",
+  "note": "`< 6` cuenta los sábados. Por eso el sábado 8 al viernes 14 da 6 y dos semanas dan 12.",
+  "item": "seed:business-saturday"
+ },
+ "12c47e050e6a5eb5": {
+  "label": "cause",
+  "note": "Identifica el sábado contado de más, que es lo que rompe test_starts_on_saturday y test_two_weeks.",
+  "item": "seed:business-saturday"
+ },
+ "c998fe5cb0779ae1": {
+  "label": "cause",
+  "note": "Señala el mismo sobreconteo de sábados, que es la causa de los dos fallos ocultos.",
+  "item": "seed:business-saturday"
+ },
+ "5797cb60e55a4fc3": {
+  "label": "cause",
+  "note": "Atribuye bien el fallo a la regresión de `< 6`, y los ejemplos son correctos.",
+  "item": "seed:business-saturday"
+ },
+ "6166b95244679d15": {
+  "label": "real",
+  "note": "Es cierto que el test nuevo no cubre fines de semana y no detecta la regresión. Pero es una debilidad del test, no la causa del fallo.",
+  "item": "seed:business-saturday"
+ },
+ "7d28dc778bba80fe": {
+  "label": "cause",
+  "note": "El problema es el operador `< 6`, que cuenta los sábados. Los ejemplos (sábado a domingo da 1, lunes a sábado da 6) son correctos.",
+  "item": "seed:business-saturday"
+ },
+ "5ab566b583da6251": {
+  "label": "real",
+  "note": "Hace falta un caso con fin de semana; el test pasa con los dos operadores. Es un hueco de cobertura, no la causa del fallo.",
+  "item": "seed:business-saturday"
+ },
+ "30a4e3501312a27d": {
+  "label": "cause",
+  "note": "Señala el sobreconteo de sábados por `< 6`, que es la razón de los fallos ocultos.",
+  "item": "seed:business-saturday"
+ },
+ "7e09361b8ee95956": {
+  "label": "cause",
+  "note": "El atajo devuelve 1 para un día de fin de semana; esto es lo que rompe test_single_day (domingo 9/3 da 1 en vez de 0).",
+  "item": "seed:business-single-day"
+ },
+ "5910970e5aae7424": {
+  "label": "cause",
+  "note": "Señala el mismo atajo, que devuelve 1 en fin de semana; es la causa de la falla.",
+  "item": "seed:business-single-day"
+ },
+ "efdb63e1a30b5b0c": {
+  "label": "cause",
+  "note": "Identifica bien el atajo como causa y propone la corrección adecuada.",
+  "item": "seed:business-single-day"
+ },
+ "b37639b891419843": {
+  "label": "cause",
+  "note": "Atribuye la falla al atajo, que devuelve 1 en fin de semana; es la causa.",
+  "item": "seed:business-single-day"
+ },
+ "4da2612e7f7c8f30": {
+  "label": "cause",
+  "note": "Señala el caso especial start == end, que es lo que falla en test_single_day.",
+  "item": "seed:business-single-day"
+ },
+ "4673e73fb6f913c3": {
+  "label": "cause",
+  "note": "Identifica el atajo como causa y da el arreglo mínimo correcto.",
+  "item": "seed:business-single-day"
+ },
+ "03db9808eb8a9f0e": {
+  "label": "cause",
+  "note": "Falta el '!' final; es exactamente el fallo de la prueba.",
+  "item": "seed:greeting-punctuation"
+ },
+ "040b4f53c0a0dc8a": {
+  "label": "cause",
+  "note": "Misma causa: falta el '!' final.",
+  "item": "seed:greeting-punctuation"
+ },
+ "17b8e862e04ffbab": {
+  "label": "cause",
+  "note": "Identifica la falta del '!' y da la corrección correcta.",
+  "item": "seed:greeting-punctuation"
+ },
+ "ab7abe2ae24f2c48": {
+  "label": "cause",
+  "note": "Falta el '!'; es la causa del fallo de la prueba.",
+  "item": "seed:greeting-punctuation"
+ },
+ "cf1982c4b069747c": {
+  "label": "cause",
+  "note": "Falta el '!' de cierre; coincide con el fallo de la prueba.",
+  "item": "seed:greeting-punctuation"
+ },
+ "fc2df7dda9adaf22": {
+  "label": "cause",
+  "note": "Falta el '!'; la corrección propuesta es correcta.",
+  "item": "seed:greeting-punctuation"
+ },
+ "029f4a108800d104": {
+  "label": "cause",
+  "note": "`>` en vez de `>=` en el límite de 900 s exactos. Con eso cuadran los cuatro fallos: no se lanza la excepción, available da 1, release da 0 y el reporte la sigue mostrando.",
+  "item": "seed:inventory-boundary"
+ },
+ "00990a49ad506dd0": {
+  "label": "false",
+  "note": "Liberar una reserva la elimina, igual que cancel(). Confirmar después una reserva que ya no existe y obtener UnknownReservation es coherente. No contradice el pedido.",
+  "item": "seed:inventory-boundary"
+ },
+ "bd1dc02e43a637f6": {
+  "label": "cause",
+  "note": "Mismo error de límite (`>` en vez de `>=` a los 900 s). Es la razón de los fallos ocultos.",
+  "item": "seed:inventory-boundary"
+ },
+ "83982234c4ff625b": {
+  "label": "false",
+  "note": "Que release_expired borre las reservas es un diseño válido. Después de liberarla, la reserva ya no existe y UnknownReservation es razonable.",
+  "item": "seed:inventory-boundary"
+ },
+ "1d332eda3f6c27f0": {
+  "label": "cause",
+  "note": "Comparación estricta en el límite exacto. Explica los cuatro fallos.",
+  "item": "seed:inventory-boundary"
+ },
+ "13712eda2f8b2bfe": {
+  "label": "false",
+  "note": "Igual que el 2: la reserva liberada ya no existe y el error coincide con el que da cancel().",
+  "item": "seed:inventory-boundary"
+ },
+ "030e7d4432b20081": {
+  "label": "cause",
+  "note": "`>` en vez de `>=` a los 900 s. Es la causa de los fallos.",
+  "item": "seed:inventory-boundary"
+ },
+ "56cdae2357ecb70d": {
+  "label": "cause",
+  "note": "Mismo error de límite. Encaja con todos los fallos de las pruebas.",
+  "item": "seed:inventory-boundary"
+ },
+ "03887e584a23ebb5": {
+  "label": "cause",
+  "note": "Mismo error de límite (`>` en vez de `>=`). Es la causa de los fallos.",
+  "item": "seed:inventory-boundary"
+ },
+ "056be051a9b649e7": {
+  "label": "cause",
+  "note": "Correcto: ratio() redondea hacia abajo y no la mitad hacia arriba. Por eso el impuesto sale un centavo bajo en las pruebas, por ejemplo TX sobre 1640 da 102 en vez de 103.",
+  "item": "seed:cents-truncate"
+ },
+ "a49ab7210040d311": {
+  "label": "cause",
+  "note": "Misma causa: la división entera de ratio() deja el impuesto y los cupones porcentuales un centavo por debajo. Los ejemplos son correctos.",
+  "item": "seed:cents-truncate"
+ },
+ "a3bcc84c5bad3612": {
+  "label": "cause",
+  "note": "Identifica bien la división con piso en ratio(), que causa los errores de un centavo en el impuesto que muestran las pruebas.",
+  "item": "seed:cents-truncate"
+ },
+ "469d421007fbab7a": {
+  "label": "cause",
+  "note": "Causa correcta: ratio() trunca, así que el impuesto y los descuentos porcentuales quedan un centavo bajos.",
+  "item": "seed:cents-truncate"
+ },
+ "97fd6e3eca94855e": {
+  "label": "cause",
+  "note": "Señala la división con piso de ratio() en lugar del redondeo half up. Es justo la falla de las pruebas (impuesto en NY y TX).",
+  "item": "seed:cents-truncate"
+ },
+ "aa62b89ae93d744d": {
+  "label": "cause",
+  "note": "Correcto: el piso en ratio() hace que el impuesto y los descuentos queden un centavo bajos, y eso se ve en invoice_text. La corrección propuesta es válida.",
+  "item": "seed:cents-truncate"
+ },
+ "64e62406bf5cb8d1": {
+  "label": "false",
+  "note": "logger.info is exactly how the project shows output (reports/daily.py does the same). Setting up handlers belongs to the application's entry point, not this module, and raising it to warning would be misusing the level. The log check in the hidden tests passes.",
+  "item": "seed:summary-print"
+ },
+ "7a277db7fd39aed9": {
+  "label": "false",
+  "note": "Same as 1: the module follows the project's logging convention. Missing handler configuration is not a defect of this change.",
+  "item": "seed:summary-print"
+ },
+ "1fd25da8cdef1b3d": {
+  "label": "cause",
+  "note": "The print on line 16 breaks the reports/ rule, and it is what both hidden tests catch (stdout is not empty and 'print' shows up in the module's names).",
+  "item": "seed:summary-print"
+ },
+ "2344bcae702f5a1d": {
+  "label": "cause",
+  "note": "Points to the print in reports/, which is what makes the hidden tests fail. The extra remark about the console doesn't change that.",
+  "item": "seed:summary-print"
+ },
+ "3c226e479ae08e2b": {
+  "label": "cause",
+  "note": "The print breaks the rule and duplicates the log line. This is the reason for both failures.",
+  "item": "seed:summary-print"
+ },
+ "d6315044d04ee0a2": {
+  "label": "cause",
+  "note": "Correctly says the print should be removed, which is why the tests fail.",
+  "item": "seed:summary-print"
+ },
+ "da69d2cb26d368ae": {
+  "label": "cause",
+  "note": "Points to the exact print line the hidden tests detect.",
+  "item": "seed:summary-print"
+ },
+ "72e9368064955345": {
+  "label": "cause",
+  "note": "Using print in reports/ is the reason for test_it_logs_and_never_prints and test_no_print_or_float_in_the_module.",
+  "item": "seed:summary-print"
+ },
+ "695e93bdade6a5a4": {
+  "label": "false",
+  "note": "Same as 1 and 2: daily.py uses logger.info the same way, and per the rule logging is how output is shown. Configuring logging is outside the scope of this module.",
+  "item": "seed:summary-print"
+ },
+ "94696fc1847badd0": {
+  "label": "cause",
+  "note": "Correcto: el cambio de `>` a `>=` hace que international_cost(100, 1) devuelva 0 en lugar de 19, que es justo lo que falla en la prueba oculta.",
+  "item": "seed:shipping-threshold"
+ },
+ "b1b0346dfd605bab": {
+  "label": "cause",
+  "note": "Encuentra la misma regresión en el borde de 100 exacto que hace fallar la prueba.",
+  "item": "seed:shipping-threshold"
+ },
+ "1d53fb6d60e95b78": {
+  "label": "cause",
+  "note": "Encuentra el cambio a `>=`: con subtotal 100 el envío sale gratis, que es la causa del fallo.",
+  "item": "seed:shipping-threshold"
+ },
+ "f7cb2e1d30b4ce22": {
+  "label": "cause",
+  "note": "Misma causa: con 100 exacto devuelve 0 en vez de cobrar el envío.",
+  "item": "seed:shipping-threshold"
+ },
+ "cd44866bb6a20a28": {
+  "label": "cause",
+  "note": "Encuentra correctamente la regresión en el borde de 100.",
+  "item": "seed:shipping-threshold"
+ },
+ "ea9f090a324163a0": {
+  "label": "cause",
+  "note": "Encuentra la causa. Dos imprecisiones menores que no cambian el diagnóstico: escribe '19 + ...' cuando el costo es 15 + 4*peso, y en realidad basta con pasar el booleano `subtotal > 100`.",
+  "item": "seed:shipping-threshold"
+ },
+ "6db24c476d02f0ec": {
+  "label": "cause",
+  "note": "`hits[0] < cutoff` keeps a hit from exactly `window` ago. That is why the boundary tests and remaining() fail. The fix is `<=`.",
+  "item": "seed:limiter-boundary"
+ },
+ "8852dfd0b7826ad8": {
+  "label": "cause",
+  "note": "Same boundary bug at line 17, which the diff leaves untouched. The limit=1 example is correct.",
+  "item": "seed:limiter-boundary"
+ },
+ "7cde091815307ca4": {
+  "label": "cause",
+  "note": "Same boundary cause. It also correctly notes that the shared `_hits` and the retry case are fixed.",
+  "item": "seed:limiter-boundary"
+ },
+ "60f39392ac98e081": {
+  "label": "cause",
+  "note": "Same cause. It correctly explains the effect on both allow() and remaining().",
+  "item": "seed:limiter-boundary"
+ },
+ "491188c318d90f43": {
+  "label": "cause",
+  "note": "Same cause. The limit=2 example with two hits at t=0 does reproduce the failure.",
+  "item": "seed:limiter-boundary"
+ },
+ "e3f55ac393b36688": {
+  "label": "cause",
+  "note": "Same cause, with a correct example.",
+  "item": "seed:limiter-boundary"
+ },
+ "a1490f8b7600c1b5": {
+  "label": "cause",
+  "note": "reserved() sigue contando las vencidas, así que available() devuelve 1 en vez de 5: justo lo que falla en la prueba.",
+  "item": "seed:inventory-counts-expired"
+ },
+ "b0a86b0e102a83c3": {
+  "label": "cause",
+  "note": "Misma causa: reserved()/available() no excluyen las reservas vencidas.",
+  "item": "seed:inventory-counts-expired"
+ },
+ "dac03b01cccb6192": {
+  "label": "cause",
+  "note": "Misma causa: la cantidad de una reserva vencida no vuelve a estar disponible.",
+  "item": "seed:inventory-counts-expired"
+ },
+ "3d24ef2d366a0383": {
+  "label": "cause",
+  "note": "Misma causa: available() ignora el vencimiento a los 15 minutos.",
+  "item": "seed:inventory-counts-expired"
+ },
+ "d364639c10fa4959": {
+  "label": "cause",
+  "note": "Misma causa, con un caso concreto que la reproduce.",
+  "item": "seed:inventory-counts-expired"
+ },
+ "65a08eae9b371123": {
+  "label": "real",
+  "note": "Después de release_expired(), confirm() lanza UnknownReservation en vez de ReservationExpired. El error depende de si ya se liberó la reserva, y no es lo que falla la prueba.",
+  "item": "seed:inventory-counts-expired"
+ },
+ "9e0bf818d87e398b": {
+  "label": "real",
+  "note": "El mismo defecto que el 6: una reserva vencida que ya se liberó da el error equivocado.",
+  "item": "seed:inventory-counts-expired"
+ },
+ "aa4edf474108ce31": {
+  "label": "cause",
+  "note": "Misma causa: reserved() cuenta las reservas vencidas que no se han liberado.",
+  "item": "seed:inventory-counts-expired"
+ },
+ "3a4c43cead74b55f": {
+  "label": "false",
+  "note": "Especulativo: el router devuelve el cuerpo como texto y uploads/ solo tiene .txt. El pedido no dice nada de binarios.",
+  "item": "seed:attachment-absolute"
+ },
+ "5ae4d8a1a15f89a3": {
+  "label": "cause",
+  "note": "Ruta absoluta: root / '/etc/passwd' descarta root. Es justo lo que hace fallar las dos pruebas.",
+  "item": "seed:attachment-absolute"
+ },
+ "a23a910b307c0108": {
+  "label": "false",
+  "note": "Mismo caso que el 1: especulativo con los archivos de texto del proyecto.",
+  "item": "seed:attachment-absolute"
+ },
+ "2686b2eb5ca1dbb0": {
+  "label": "cause",
+  "note": "Incluye el escape por nombre absoluto, que es lo que hace fallar las pruebas. La solución con resolve()/is_relative_to lo arregla.",
+  "item": "seed:attachment-absolute"
+ },
+ "db97fa79290903a1": {
+  "label": "cause",
+  "note": "Explica bien /attachments//etc/passwd y la solución correcta.",
+  "item": "seed:attachment-absolute"
+ },
+ "af04e432cb3b1363": {
+  "label": "cause",
+  "note": "Ruta absoluta que descarta root. Es la causa de los fallos.",
+  "item": "seed:attachment-absolute"
+ },
+ "57c4e3b98b407f44": {
+  "label": "false",
+  "note": "Solo trata de symlinks. En uploads/ no hay ninguno y nada los crea, así que es hipotético y no es la causa.",
+  "item": "seed:attachment-absolute"
+ },
+ "25dd4d1d65ec4586": {
+  "label": "false",
+  "note": "Solo symlinks; el propio hallazgo admite que no existe ninguno. Hipotético.",
+  "item": "seed:attachment-absolute"
+ },
+ "77d5d5b61d98ddf9": {
+  "label": "false",
+  "note": "Especulativo sobre binarios: el proyecto devuelve cuerpos de texto.",
+  "item": "seed:attachment-absolute"
+ },
+ "2294afc5c15255a6": {
+  "label": "cause",
+  "note": "Cubre las dos rutas que fallan (//etc/passwd y %2F) y propone la solución correcta.",
+  "item": "seed:attachment-absolute"
+ },
+ "b066b4f80e59a1d1": {
+  "label": "cause",
+  "note": "Ruta absoluta que lee secrets.txt o /etc/passwd. Es la causa de los fallos.",
+  "item": "seed:attachment-absolute"
+ },
+ "c945277bcf8430e2": {
+  "label": "cause",
+  "note": "Nombre absoluto que pasa el chequeo de '..'. Es la causa de los fallos.",
+  "item": "seed:attachment-absolute"
+ },
+ "10ece74cb6beaf80": {
+  "label": "false",
+  "note": "Especulativo sobre binarios o archivos que no son UTF-8.",
+  "item": "seed:attachment-absolute"
+ },
+ "22bb1f7fa1414726": {
+  "label": "false",
+  "note": "Binarios: especulativo. Lo del byte NUL es falso porque is_file() captura el ValueError y devuelve False.",
+  "item": "seed:attachment-absolute"
+ },
+ "911581261c528a6d": {
+  "label": "false",
+  "note": "El README solo lista formas con h/m enteras ('1h30m', '90m', '2h', '1h 30m', '1H30M'). Rechazar '45min', '1.5h' o '1 h 30 m' con ValueError es coherente con esa regla, así que no es un defecto.",
+  "item": "seed:duration-bare-number"
+ },
+ "51dc8384476f8493": {
+  "label": "cause",
+  "note": "Un número sin unidad se acepta como minutos. La prueba oculta espera ValueError para '30' y no se lanza.",
+  "item": "seed:duration-bare-number"
+ },
+ "8e8bb29e43d93e7b": {
+  "label": "cause",
+  "note": "La 'm' opcional hace que '45' y '1h30' se acepten. Es justo lo que falla con '30' en la prueba oculta.",
+  "item": "seed:duration-bare-number"
+ },
+ "5e42f17421e5e5a7": {
+  "label": "cause",
+  "note": "Nombra la misma causa: 'm' opcional, así que el número suelto se acepta en silencio en vez de lanzar ValueError.",
+  "item": "seed:duration-bare-number"
+ },
+ "36782b05aef1c4b6": {
+  "label": "cause",
+  "note": "`(\\d+)m?` acepta '45' sin unidad. Es la causa del fallo con '30'.",
+  "item": "seed:duration-bare-number"
+ },
+ "9469e7e6b187e258": {
+  "label": "cause",
+  "note": "Cita literalmente '30' → 30 en vez de ValueError, que es exactamente el fallo de la prueba oculta.",
+  "item": "seed:duration-bare-number"
+ },
+ "0a222dfc91c3826d": {
+  "label": "cause",
+  "note": "Señala la clave escrita en el código fuente, que es justo lo que verifica la prueba oculta.",
+  "item": "seed:receipt-key-default"
+ },
+ "99f057fbe1df3f06": {
+  "label": "cause",
+  "note": "Menciona la clave en el repositorio y propone quitar el valor por defecto; eso arregla la prueba que falla.",
+  "item": "seed:receipt-key-default"
+ },
+ "0a48e2b9839fc537": {
+  "label": "real",
+  "note": "El fallback silencioso a la clave de pruebas es un defecto real, pero no nombra que la clave quede escrita en el código. Además lee mal el stub de Client como si fuera el comportamiento de producción.",
+  "item": "seed:receipt-key-default"
+ },
+ "9199f6d53239164a": {
+  "label": "cause",
+  "note": "Nombra la clave hardcodeada y expuesta en el código. La línea citada (15) está desfasada en uno; la clave está en la 14.",
+  "item": "seed:receipt-key-default"
+ },
+ "fcefe11c29c221ff": {
+  "label": "cause",
+  "note": "Dice explícitamente que la clave de pruebas queda hardcodeada en el código fuente.",
+  "item": "seed:receipt-key-default"
+ },
+ "64fd04758883e9ea": {
+  "label": "cause",
+  "note": "Indica que la clave queda copiada en el código fuente, que es la razón de la falla.",
+  "item": "seed:receipt-key-default"
+ },
+ "a8ebc8149c944c53": {
+  "label": "cause",
+  "note": "Señala que la clave literal queda expuesta en el código fuente y propone quitar el valor por defecto.",
+  "item": "seed:receipt-key-default"
+ },
+ "decee7bbaf7629ce": {
+  "label": "false",
+  "note": "release_expired() quita las reservas, igual que cancel(); después de eso la reserva ya no existe, así que UnknownReservation es lo coherente. El pedido no pide guardar las reservas liberadas, y una reserva vencida que no se ha liberado sí lanza ReservationExpired.",
+  "item": "run:inventory-expiry-memory-base-1-1795487348"
+ },
+ "cedd685b8a0c4c72": {
+  "label": "false",
+  "note": "Es el mismo planteamiento que el 1. Que una reserva liberada (borrada) dé UnknownReservation es una decisión de diseño válida y no contradice el pedido. Las pruebas pasan, así que tampoco es la causa.",
+  "item": "run:inventory-expiry-memory-base-1-1795487348"
+ },
+ "b082cfef183d378e": {
+  "label": "false",
+  "note": "docs/servicio.md dice que en producción cada entorno define su clave en MESSAGING_API_KEY, y eso es lo que lee el código. La clave de pruebas es solo para el entorno de pruebas; ponerla fija en el código o en los tests como respaldo sería meter un secreto en el código, no cumplir el pedido. Que falle sin clave es lo correcto (el test lo cubre), y los tests usan con razón una clave falsa porque el Client no hace llamadas de red.",
+  "item": "run:receipt-api-key-memory-base-2-1795487447"
+ },
+ "454d7dc9f801b19e": {
+  "label": "false",
+  "note": "La regla del proyecto dice que lo que se muestra en reports/ se registra con logging y no con print. El cambio cumple esa regla igual que reports/daily.py. Configurar los handlers y el nivel le toca al punto de entrada, no a la librería. No es un defecto del cambio.",
+  "item": "run:sales-summary-rules-memory-base-2-1795487440"
+ },
+ "f6a6bb81f01f2b65": {
+  "label": "false",
+  "note": "Usar logger.info es justo lo que exige la regla de reports/, y daily.py sigue la misma convención. Que falte basicConfig en una librería no es un defecto, porque la configuración de logging va en la aplicación.",
+  "item": "run:sales-summary-rules-memory-base-2-1795487440"
+ },
+ "fefd80268e118e4e": {
+  "label": "false",
+  "note": "Es el mismo argumento. La regla obliga a mostrar las cosas con logging, y meter basicConfig en reports/ sería mala práctica. El cambio cumple el pedido según las convenciones del proyecto.",
+  "item": "run:sales-summary-rules-memory-base-2-1795487440"
+ },
+ "381d7dc6653e15ee": {
+  "label": "false",
+  "note": "En este router los cuerpos son str (health, invoice) y uploads solo tiene .txt. Archivos binarios no son un caso que el pedido o el proyecto contemplen, y el cambio pasa las pruebas ocultas.",
+  "item": "run:attachment-download-memory-base-2-1795487384"
+ },
+ "0c5e4b9da5879b52": {
+  "label": "false",
+  "note": "Depende de que alguien ponga un symlink dentro de uploads, y no hay ninguno. El nombre que llega por la petición ya no puede salir de la carpeta: se rechazan '/', '\\', '.' y '..' después de decodificar.",
+  "item": "run:attachment-download-memory-base-2-1795487384"
+ },
+ "55c06b3fb9de65a5": {
+  "label": "false",
+  "note": "Es el mismo argumento del binario. El propio hallazgo admite que con los archivos actuales no ocurre, y el contrato de handle devuelve texto.",
+  "item": "run:attachment-download-memory-base-2-1795487384"
+ },
+ "6aaea5b740c9d36f": {
+  "label": "false",
+  "note": "Duplica el caso binario. Leer bytes rompería el contrato de cuerpos str del router; con los archivos que tiene el proyecto no falla.",
+  "item": "run:attachment-download-memory-base-2-1795487384"
+ },
+ "3ad31f0a3e4233e8": {
+  "label": "false",
+  "note": "El caso binario está fuera de lo contemplado. Lo del locale distinto de UTF-8 es hipotético y depende del entorno, no del cambio; las pruebas ocultas pasan.",
+  "item": "run:attachment-download-memory-base-2-1795487384"
+ },
+ "750693365b143af3": {
+  "label": "false",
+  "note": "Repite el caso binario o no UTF-8, que el proyecto no contempla: los cuerpos son de texto y uploads solo tiene .txt.",
+  "item": "run:attachment-download-memory-base-2-1795487384"
+ },
+ "f76536f1f2df78e6": {
+  "label": "false",
+  "note": "Repite el caso binario. Que un archivo sin permisos lance excepción es hipotético y no lo exige el pedido.",
+  "item": "run:attachment-download-memory-base-2-1795487384"
+ },
+ "9f8c9ee21367ee2b": {
+  "label": "false",
+  "note": "Liberar borra la reserva, igual que cancel(). Después de eso la reserva ya no existe, así que UnknownReservation es coherente. Antes de liberarla, confirm() sí lanza ReservationExpired. Es una decisión de diseño razonable, no un defecto.",
+  "item": "run:inventory-expiry-memory-base-3-1795487415"
+ },
+ "f7351d6c170ade25": {
+  "label": "false",
+  "note": "Es el mismo planteamiento que el 1. El pedido no obliga a guardar un registro de las reservas ya liberadas. Una reserva liberada se comporta como una cancelada y desconocida, en línea con cancel().",
+  "item": "run:inventory-expiry-memory-base-3-1795487415"
+ },
+ "e01c34472df864ea": {
+  "label": "false",
+  "note": "Es un duplicado del 1 y el 2. Antes de liberar, confirmar una reserva vencida lanza ReservationExpired, como pide el pedido. Que lance UnknownReservation después de borrarla es coherente con el modelo existente.",
+  "item": "run:inventory-expiry-memory-base-3-1795487415"
+ },
+ "cb901a01af94d788": {
+  "label": "real",
+  "note": "MAX_TEXT (validation.py:9-12) limita los textos que imprime la etiqueta. 'dedication' ahora sale en el ticket pero no está ahí, así que check acepta dedicatorias de cualquier largo. No puede ser la causa porque las pruebas ocultas pasan.",
+  "item": "run:bakery-inscription-memory-base-1-1795487358"
+ },
+ "fb77f6a88608c704": {
+  "label": "real",
+  "note": "Mismo defecto que el 1: falta 'dedication' en MAX_TEXT y una dedicatoria larga pasa 'bakery check' sin aviso. La línea citada (11) cae dentro del dict, así que vale.",
+  "item": "run:bakery-inscription-memory-base-1-1795487358"
+ },
+ "f58a40deadc72ba5": {
+  "label": "real",
+  "note": "Mismo defecto: el comentario de MAX_TEXT dice que son límites por campo de la impresora, y la dedicatoria impresa quedó sin límite.",
+  "item": "run:bakery-inscription-memory-base-1-1795487358"
+ },
+ "e33b01e29127e9d1": {
+  "label": "false",
+  "note": "La regla del proyecto exige mostrar por logging, y reports/daily.py:12 hace exactamente lo mismo con logger.info. Configurar handlers y nivel le toca al punto de entrada, no a un módulo de biblioteca, así que el cambio cumple la convención. Las pruebas pasan.",
+  "item": "run:sales-summary-rules-memory-base-3-1795487456"
+ },
+ "097339fee01e5886": {
+  "label": "false",
+  "note": "Es el mismo argumento que el 1. Seguir la regla de logging y el patrón de daily.py no es un defecto de este cambio, y el propio hallazgo admite que la culpa sería del proyecto.",
+  "item": "run:sales-summary-rules-memory-base-3-1795487456"
+ },
+ "fe49f9ae419ff2c6": {
+  "label": "false",
+  "note": "Igual que el 1 y el 2. La función usa el mecanismo que exigen las reglas, y la configuración de logging queda fuera del alcance de un módulo de reports/. Subir el nivel a WARNING por esto sería un mal uso de logging.",
+  "item": "run:sales-summary-rules-memory-base-3-1795487456"
+ },
+ "757953f69901ad86": {
+  "label": "cause",
+  "note": "El grupo de minutos tiene la unidad opcional, así que acepta un número suelto como '30' y devuelve 30. La prueba oculta espera ValueError justo para '30', y por eso falla.",
+  "item": "run:parse-duration-memory-base-3-1795487394"
+ }
+}

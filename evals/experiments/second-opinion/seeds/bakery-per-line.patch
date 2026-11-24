@@ -1,0 +1,135 @@
+diff --git a/bakery/catalog.py b/bakery/catalog.py
+index 40f872e..aa3a42e 100644
+--- a/bakery/catalog.py
++++ b/bakery/catalog.py
+@@ -26,6 +26,7 @@ PRODUCTS = {
+ EXTRAS_CENTS = {
+     "delivery": 350,
+     "gift_box": 150,
++    "inscription": 200,
+ }
+ 
+ 
+diff --git a/bakery/export.py b/bakery/export.py
+index b8fb481..1b1c6c3 100644
+--- a/bakery/export.py
++++ b/bakery/export.py
+@@ -23,6 +23,7 @@ COLUMNS = {
+     "nota": lambda o: o.note or "",
+     "domicilio": lambda o: o.delivery_address or "",
+     "caja_regalo": lambda o: _yes_no(o.gift_box),
++    "dedicatoria": lambda o: o.inscription or "",
+ }
+ 
+ 
+diff --git a/bakery/filters.py b/bakery/filters.py
+index bf4fdc2..d981adf 100644
+--- a/bakery/filters.py
++++ b/bakery/filters.py
+@@ -5,6 +5,7 @@ FILTERS = {
+     "pendientes": ("solo los que falta pagar", lambda o: not o.paid),
+     "domicilio": ("solo los que van a domicilio", lambda o: o.delivery_address is not None),
+     "regalo": ("solo los que llevan caja de regalo", lambda o: o.gift_box),
++    "dedicatoria": ("solo los que llevan dedicatoria", lambda o: o.inscription is not None),
+ }
+ 
+ 
+diff --git a/bakery/models.py b/bakery/models.py
+index b7cbb1e..6ce0feb 100644
+--- a/bakery/models.py
++++ b/bakery/models.py
+@@ -23,4 +23,5 @@ class Order:
+     delivery_address: str | None = None
+     gift_box: bool = False
+     paid: bool = False
++    inscription: str | None = None
+     source: str = ""
+diff --git a/bakery/orderfile.py b/bakery/orderfile.py
+index 71e2fa0..0b28af8 100644
+--- a/bakery/orderfile.py
++++ b/bakery/orderfile.py
+@@ -57,6 +57,7 @@ HEADER_FIELDS = {
+     "domicilio": ("delivery_address", _text),
+     "caja de regalo": ("gift_box", _yes_no),
+     "pagado": ("paid", _yes_no),
++    "dedicatoria": ("inscription", _text),
+ }
+ REQUIRED = ("cliente", "fecha", "hora")
+ 
+diff --git a/bakery/pricing.py b/bakery/pricing.py
+index 04be9a2..e831aef 100644
+--- a/bakery/pricing.py
++++ b/bakery/pricing.py
+@@ -16,6 +16,8 @@ def price_lines(order: Order) -> list[tuple[str, int]]:
+         p = product(line.product)
+         label = f"{line.qty} x {p.name}"
+         lines.append((label, line.qty * p.price_cents))
++        if order.inscription is not None:
++            lines.append(("Dedicatoria", EXTRAS_CENTS["inscription"]))
+     for label, key, applies in EXTRA_RULES:
+         if applies(order):
+             lines.append((label, EXTRAS_CENTS[key]))
+diff --git a/bakery/ticket.py b/bakery/ticket.py
+index bfe5340..ef5a451 100644
+--- a/bakery/ticket.py
++++ b/bakery/ticket.py
+@@ -9,6 +9,7 @@ WIDTH = 32
+ DETAILS = [
+     ("Nota", lambda o: o.note),
+     ("Domicilio", lambda o: o.delivery_address),
++    ("Dedicatoria", lambda o: o.inscription),
+ ]
+ 
+ 
+diff --git a/tests/test_inscription.py b/tests/test_inscription.py
+new file mode 100644
+index 0000000..e5c3bf0
+--- /dev/null
++++ b/tests/test_inscription.py
+@@ -0,0 +1,46 @@
++import contextlib
++import csv
++import io
++import pathlib
++import tempfile
++import unittest
++
++from bakery.cli import main
++from bakery.export import to_csv
++from bakery.orderfile import parse_order
++from bakery.pricing import order_total_cents
++from bakery.ticket import render_ticket
++
++BASIC = """cliente: Marta Ruiz
++fecha: 2025-03-14
++hora: 09:30
++---
++2 x baguette
++"""
++WITH = BASIC.replace("---", "dedicatoria: Feliz cumple, Ana\n---")
++
++
++class Inscription(unittest.TestCase):
++    def test_parsed_and_charged(self):
++        order = parse_order(WITH)
++        self.assertEqual(order.inscription, "Feliz cumple, Ana")
++        self.assertEqual(order_total_cents(order), order_total_cents(parse_order(BASIC)) + 200)
++
++    def test_ticket_and_csv(self):
++        self.assertIn("Dedicatoria: Feliz cumple, Ana", render_ticket(parse_order(WITH)))
++        rows = list(csv.DictReader(io.StringIO(to_csv([parse_order(WITH), parse_order(BASIC)]))))
++        self.assertEqual([r["dedicatoria"] for r in rows], ["Feliz cumple, Ana", ""])
++
++    def test_list_filter(self):
++        with tempfile.TemporaryDirectory() as folder:
++            pathlib.Path(folder, "1.pedido").write_text(WITH, encoding="utf-8")
++            pathlib.Path(folder, "2.pedido").write_text(BASIC.replace("Marta Ruiz", "Pedro Salas"), encoding="utf-8")
++            out = io.StringIO()
++            with contextlib.redirect_stdout(out):
++                main(["list", folder, "--solo-dedicatoria"])
++            self.assertIn("Marta Ruiz", out.getvalue())
++            self.assertNotIn("Pedro Salas", out.getvalue())
++
++
++if __name__ == "__main__":
++    unittest.main()

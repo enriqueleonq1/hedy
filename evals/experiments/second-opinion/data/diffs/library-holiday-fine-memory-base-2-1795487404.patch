@@ -1,0 +1,87 @@
+diff --git a/library/calendar/loader.py b/library/calendar/loader.py
+index bc3ccad..f108c90 100644
+--- a/library/calendar/loader.py
++++ b/library/calendar/loader.py
+@@ -1,5 +1,6 @@
+ """Builds each branch's closure calendar from data/holidays.json."""
+ import json
++from datetime import date
+ from functools import lru_cache
+ 
+ from library.config import HOLIDAYS_FILE
+@@ -22,12 +23,12 @@ def applies_to(entry: dict, branch: str | None) -> bool:
+     return branch is not None and branch in branches
+ 
+ 
+-def holiday_dates(entries: list[dict], branch: str | None = None) -> set:
+-    """The days `branch` is closed for a holiday."""
++def holiday_dates(entries: list[dict], branch: str | None = None) -> set[date]:
++    """The days `branch` is closed for a holiday, as `date` values."""
+     days = set()
+     for entry in entries:
+         if applies_to(entry, branch):
+-            days.add(entry["date"])
++            days.add(date.fromisoformat(entry["date"]))
+     return days
+ 
+ 
+diff --git a/tests/test_calendar.py b/tests/test_calendar.py
+index 1da90e4..1d22ab2 100644
+--- a/tests/test_calendar.py
++++ b/tests/test_calendar.py
+@@ -2,7 +2,7 @@ import unittest
+ from datetime import date
+ 
+ from library.calendar.closures import ClosureCalendar
+-from library.calendar.loader import applies_to
++from library.calendar.loader import applies_to, holiday_dates, load_calendar
+ 
+ 
+ class Closures(unittest.TestCase):
+@@ -39,6 +39,20 @@ class Loader(unittest.TestCase):
+         self.assertFalse(applies_to(local, "centro"))
+         self.assertFalse(applies_to(local, None))
+ 
++    def test_holiday_dates_are_date_values(self):
++        entries = [{"date": "2025-03-03"}, {"date": "2025-06-24", "branches": ["norte"]}]
++        self.assertEqual(holiday_dates(entries, "centro"), {date(2025, 3, 3)})
++        self.assertEqual(holiday_dates(entries, "norte"), {date(2025, 3, 3), date(2025, 6, 24)})
++
++    def test_carnival_closes_the_library(self):
++        # Carnival 2025 was Mon 3 and Tue 4 March; the library reopened Wed 5.
++        calendar = load_calendar("centro")
++        self.assertFalse(calendar.is_open(date(2025, 3, 3)))
++        self.assertFalse(calendar.is_open(date(2025, 3, 4)))
++        self.assertEqual(calendar.next_open_day(date(2025, 3, 3)), date(2025, 3, 5))
++
++
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tests/test_fines.py b/tests/test_fines.py
+index 290dcc5..04bb085 100644
+--- a/tests/test_fines.py
++++ b/tests/test_fines.py
+@@ -2,6 +2,7 @@ import unittest
+ from datetime import date
+ 
+ from library.calendar.closures import ClosureCalendar
++from library.calendar.loader import load_calendar
+ from library.catalog.models import Item
+ from library.fines.calculator import fine_for
+ from library.loans.due import due_date
+@@ -58,6 +59,13 @@ class Fines(unittest.TestCase):
+     def test_staff_never_pays(self):
+         self.assertEqual(fine_for(loan(member=STAFF), BOOK, STAFF, date(2025, 6, 30), SUNDAYS), 0)
+ 
++    def test_carnival_closure_is_not_charged(self):
++        # Lent Mon 17 Feb: due Mon 3 Mar, but Carnival closed Mon 3 and Tue 4,
++        # so the due date moves to Wed 5. Returned Wed 5: no fine.
++        carnival_loan = loan(out=date(2025, 2, 17))
++        self.assertEqual(fine_for(carnival_loan, BOOK, ADULT, date(2025, 3, 5), load_calendar("centro")), 0)
++        self.assertEqual(fine_for(carnival_loan, BOOK, ADULT, date(2025, 3, 6), load_calendar("centro")), 25)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

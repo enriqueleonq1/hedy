@@ -1,0 +1,10 @@
+{
+  "attempt": 2,
+  "case": "price-format",
+  "checkOutput": "----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK",
+  "error": null,
+  "layer": "plain",
+  "model": "claude-haiku-5-5",
+  "passed": true,
+  "variant": "base+cp:approval"
+}

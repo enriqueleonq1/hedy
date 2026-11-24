@@ -1,0 +1,71 @@
+diff --git a/shop/errors.py b/shop/errors.py
+index 7703103..6016104 100644
+--- a/shop/errors.py
++++ b/shop/errors.py
+@@ -12,3 +12,7 @@ class NotEnoughStock(InventoryError):
+ 
+ class UnknownReservation(InventoryError):
+     pass
++
++
++class ReservationExpired(InventoryError):
++    pass
+diff --git a/shop/inventory.py b/shop/inventory.py
+index 0812abf..2f4e131 100644
+--- a/shop/inventory.py
++++ b/shop/inventory.py
+@@ -1,9 +1,12 @@
+ import time
+ 
+-from .errors import NotEnoughStock, UnknownProduct, UnknownReservation
++from .errors import NotEnoughStock, ReservationExpired, UnknownProduct, UnknownReservation
+ from .models import Product, Reservation
+ 
+ 
++HOLD_SECONDS = 15 * 60
++
++
+ class Inventory:
+     """Products and the reservations held against their stock.
+ 
+@@ -25,6 +28,18 @@ class Inventory:
+         except KeyError:
+             raise UnknownProduct(sku) from None
+ 
++    def expired(self, reservation):
++        return not reservation.confirmed and self._clock() - reservation.created_at >= HOLD_SECONDS
++
++    def active(self, reservation):
++        return not reservation.confirmed and not self.expired(reservation)
++
++    def release_expired(self):
++        gone = [r.id for r in self._reservations.values() if self.expired(r)]
++        for rid in gone:
++            del self._reservations[rid]
++        return len(gone)
++
+     def reserved(self, sku):
+         return sum(r.qty for r in self._reservations.values() if r.sku == sku and not r.confirmed)
+ 
+@@ -51,6 +66,8 @@ class Inventory:
+         reservation = self.reservation(reservation_id)
+         if reservation.confirmed:
+             return reservation
++        if self.expired(reservation):
++            raise ReservationExpired(reservation_id)
+         self.product(reservation.sku).stock -= reservation.qty
+         reservation.confirmed = True
+         return reservation
+diff --git a/shop/report.py b/shop/report.py
+index a37d8e9..41435dc 100644
+--- a/shop/report.py
++++ b/shop/report.py
+@@ -1,7 +1,7 @@
+ def pending_report(inventory):
+     """One line per pending (unconfirmed) reservation, oldest first."""
+     lines = []
+-    pending = [r for r in inventory.reservations() if not r.confirmed]
++    pending = [r for r in inventory.reservations() if inventory.active(r)]
+     for r in sorted(pending, key=lambda r: r.created_at):
+         name = inventory.product(r.sku).name
+         lines.append(f"#{r.id} {name} x{r.qty}")

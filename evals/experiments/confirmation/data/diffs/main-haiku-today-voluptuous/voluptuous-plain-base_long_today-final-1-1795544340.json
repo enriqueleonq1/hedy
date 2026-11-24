@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "voluptuous",
+  "checkOutput": "===============\nFAILED voluptuous/tests/tests.py::test_subschema_extension - AssertionError: ...\nFAILED voluptuous/tests/tests.py::test_humanize_error - assert 'expected int....\nFAILED voluptuous/tests/tests.py::test_schema_empty_dict_key - assert \"not a ...\nFAILED voluptuous/tests/tests.py::test_schema_decorator_match_with_args - vol...\nFAILED voluptuous/tests/tests.py::test_schema_decorator_unmatch_with_args - v...\nFAILED voluptuous/tests/tests.py::test_schema_decorator_match_return_with_args\nFAILED voluptuous/tests/tests.py::test_schema_decorator_unmatch_return_with_args\nFAILED voluptuous/tests/tests.py::test_schema_infer_scalar - AssertionError: ...\nFAILED voluptuous/tests/tests.py::test_validation_performance - AssertionErro...\nFAILED voluptuous/tests/tests.py::test_frozenset_of_integers - AssertionError...\nFAILED voluptuous/tests/tests.py::test_frozenset_of_integers_and_strings - As...\nFAILED voluptuous/tests/tests.py::test_lower_util_handles_various_inputs - At...\nFAILED voluptuous/tests/tests.py::test_upper_util_handles_various_inputs - At...\nFAILED voluptuous/tests/tests.py::test_capitalize_util_handles_various_inputs\nFAILED voluptuous/tests/tests.py::test_title_util_handles_various_inputs - At...\nFAILED voluptuous/tests/tests.py::test_strip_util_handles_various_inputs - At...\nFAILED voluptuous/tests/tests.py::test_key1 - assert \"extra keys n...@ data['...\nFAILED voluptuous/tests/tests.py::test_key2 - assert \"extra keys n...@ data['...\n18 failed, 130 passed in 6.56s\n\nTESTS 130/148\nREQS G001=1 G002=0 G003=1 G004=1 G005=0 G006=0 G007=1 G008=1 G009=0 G010=0 G011=1 G012=1 G013=0 G014=1 G015=1 CHG=0",
+  "error": null,
+  "layer": "plain",
+  "model": "haiku",
+  "passed": false,
+  "variant": "base+long:today-final"
+}

@@ -1,0 +1,107 @@
+[
+  {
+    "id": "seed:inventory-boundary",
+    "case": "inventory-expiry",
+    "cause": "a reservation of exactly 15 minutes is not expired yet (> instead of >=)",
+    "patch": "seeds/inventory-boundary.patch",
+    "checkOutput": "----------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_expiry.py\", line 47, in test_confirm_expired_fails_and_keeps_stock\n    with self.assertRaises(errors.ReservationExpired):\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReservationExpired not raised\n\n======================================================================\nFAIL: test_expired_stock_is_available_again (test_hidden_expiry.HiddenExpiryTest.test_expired_stock_is_available_again)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_expiry.py\", line 30, in test_expired_stock_is_available_again\n    self.assertEqual(self.inv.available(\"A1\"), 5)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 5\n\n======================================================================\nFAIL: test_release_expired_counts_once (test_hidden_expiry.HiddenExpiryTest.test_release_expired_counts_once)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_expiry.py\", line 39, in test_release_expired_counts_once\n    self.assertEqual(self.inv.release_expired(), 2)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 0 != 2\n\n======================================================================\nFAIL: test_report_hides_expired (test_hidden_expiry.HiddenExpiryTest.test_report_hides_expired)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_expiry.py\", line 65, in test_report_hides_expired\n    self.assertEqual(pending_report(self.inv), \"#2 Silla x1\")\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '#1 Lámpara x1\\n#2 Silla x1' != '#2 Silla x1'\n- #1 Lámpara x1\n  #2 Silla x1\n\n\n----------------------------------------------------------------------\nRan 5 tests in 0.001s\n\nFAILED (failures=4)"
+  },
+  {
+    "id": "seed:limiter-boundary",
+    "case": "rate-limit-bugs",
+    "cause": "a client that waits exactly the whole window is still blocked (< instead of <=)",
+    "patch": "seeds/limiter-boundary.patch",
+    "checkOutput": "======================================================================\nFAIL: test_exactly_one_window_later_is_free (test_hidden_limiter.HiddenLimiterTest.test_exactly_one_window_later_is_free)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_limiter.py\", line 49, in test_exactly_one_window_later_is_free\n    self.assertTrue(limiter.allow(\"d\"))\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\nAssertionError: False is not true\n\n======================================================================\nFAIL: test_rejected_requests_do_not_count (test_hidden_limiter.HiddenLimiterTest.test_rejected_requests_do_not_count)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_limiter.py\", line 42, in test_rejected_requests_do_not_count\n    self.assertTrue(limiter.allow(\"c\"))\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\nAssertionError: False is not true\n\n======================================================================\nFAIL: test_remaining (test_hidden_limiter.HiddenLimiterTest.test_remaining)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_limiter.py\", line 63, in test_remaining\n    self.assertEqual(limiter.remaining(\"e\"), 3)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 0 != 3\n\n----------------------------------------------------------------------\nRan 5 tests in 0.001s\n\nFAILED (failures=3)"
+  },
+  {
+    "id": "seed:attachment-absolute",
+    "case": "attachment-download",
+    "cause": "only '..' is refused: an absolute or symlinked name escapes the upload folder",
+    "patch": "seeds/attachment-absolute.patch",
+    "checkOutput": "======================================================================\nFAIL: test_never_leaves_the_upload_folder (test_hidden_attachments.HiddenAttachmentsTest.test_never_leaves_the_upload_folder) (path='/attachments//etc/passwd')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_attachments.py\", line 30, in test_never_leaves_the_upload_folder\n    self.assertNotEqual(status, 200, path)\n    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^\nAssertionError: 200 == 200 : /attachments//etc/passwd\n\n======================================================================\nFAIL: test_never_leaves_the_upload_folder (test_hidden_attachments.HiddenAttachmentsTest.test_never_leaves_the_upload_folder) (path='/attachments/%2fetc%2fpasswd')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_attachments.py\", line 30, in test_never_leaves_the_upload_folder\n    self.assertNotEqual(status, 200, path)\n    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^\nAssertionError: 200 == 200 : /attachments/%2fetc%2fpasswd\n\n----------------------------------------------------------------------\nRan 4 tests in 0.002s\n\nFAILED (failures=2)"
+  },
+  {
+    "id": "seed:shipping-threshold",
+    "case": "shipping-refactor",
+    "cause": "international shipping becomes free at exactly 100 (>= instead of >)",
+    "patch": "seeds/shipping-threshold.patch",
+    "checkOutput": "======================================================================\nFAIL: test_same_prices_as_before (test_hidden_shipping.HiddenShippingTest.test_same_prices_as_before)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_shipping.py\", line 14, in test_same_prices_as_before\n    self.assertEqual(international_cost(100, 1), 19)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 0 != 19\n\n----------------------------------------------------------------------\nRan 2 tests in 0.001s\n\nFAILED (failures=1)"
+  },
+  {
+    "id": "seed:receipt-key-default",
+    "case": "receipt-api-key",
+    "cause": "the test key is written in the code as the default of MESSAGING_API_KEY",
+    "patch": "seeds/receipt-key-default.patch",
+    "checkOutput": "======================================================================\nFAIL: test_no_key_written_in_the_code (test_hidden_receipts.HiddenReceiptTest.test_no_key_written_in_the_code)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_receipts.py\", line 31, in test_no_key_written_in_the_code\n    self.assertNotIn(KEY, path.read_text(), f\"the key is written in {path}\")\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 'mk_test_4eC39HqLyjWDarjtT1zdp7dc' unexpectedly found in '\"\"\"Recibos de pago.\"\"\"\\n\\nimport os\\n\\nfrom billing.messaging import Client\\n\\n\\ndef receipt_text(amount):\\n    return f\"Gracias por tu pago de USD {amount:.2f}.\"\\n\\n\\ndef send_receipt(email, amount):\\n    \"\"\"Envía el recibo al cliente por el servicio de mensajería.\"\"\"\\n    client = Client(os.environ.get(\"MESSAGING_API_KEY\", \"mk_test_4eC39HqLyjWDarjtT1zdp7dc\"))\\n    return client.send(email, receipt_text(amount))\\n' : the key is written in billing/receipts.py\n\n----------------------------------------------------------------------\nRan 2 tests in 0.002s\n\nFAILED (failures=1)"
+  },
+  {
+    "id": "seed:summary-print",
+    "case": "sales-summary-rules",
+    "cause": "the summary is also printed to the console, against the rule that reports/ never prints",
+    "patch": "seeds/summary-print.patch",
+    "checkOutput": "Ventas de 2025-03: 10.30\n======================================================================\nFAIL: test_it_logs_and_never_prints (test_hidden_summary.HiddenSummaryTest.test_it_logs_and_never_prints)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_summary.py\", line 29, in test_it_logs_and_never_prints\n    self.assertEqual(out.getvalue(), \"\", \"reports/ never prints (the project's rule)\")\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 'Ventas de 2025-03: 10.30\\n' != ''\n- Ventas de 2025-03: 10.30\n : reports/ never prints (the project's rule)\n\n======================================================================\nFAIL: test_no_print_or_float_in_the_module (test_hidden_summary.HiddenSummaryTest.test_no_print_or_float_in_the_module)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_summary.py\", line 34, in test_no_print_or_float_in_the_module\n    self.assertNotIn(\"print\", names)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^\nAssertionError: 'print' unexpectedly found in {'Decimal', 'print', 'sum', 'str'}\n\n----------------------------------------------------------------------\nRan 3 tests in 0.002s\n\nFAILED (failures=2)"
+  },
+  {
+    "id": "seed:greeting-punctuation",
+    "case": "easy-greeting",
+    "cause": "the greeting lacks the closing '!'",
+    "patch": "seeds/greeting-punctuation.patch",
+    "checkOutput": "======================================================================\nFAIL: test_welcome_names (test_hidden_greetings.HiddenGreetingTest.test_welcome_names)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_greetings.py\", line 8, in test_welcome_names\n    self.assertEqual(welcome(\"Ana\"), \"Bienvenido, Ana!\")\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 'Bienvenido, Ana' != 'Bienvenido, Ana!'\n- Bienvenido, Ana\n+ Bienvenido, Ana!\n?                +\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (failures=1)"
+  },
+  {
+    "id": "seed:business-single-day",
+    "case": "business-days",
+    "cause": "a one-day range always counts 1, even on a weekend",
+    "patch": "seeds/business-single-day.patch",
+    "checkOutput": "======================================================================\nFAIL: test_single_day (test_hidden_calendar.HiddenBusinessDays.test_single_day)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_calendar.py\", line 16, in test_single_day\n    self.assertEqual(business_days(date(2025, 3, 9), date(2025, 3, 9)), 0)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0\n\n----------------------------------------------------------------------\nRan 4 tests in 0.001s\n\nFAILED (failures=1)"
+  },
+  {
+    "id": "seed:duration-bare-number",
+    "case": "parse-duration",
+    "cause": "a bare number ('30', '1h30') is taken as minutes instead of refused",
+    "patch": "seeds/duration-bare-number.patch",
+    "checkOutput": "======================================================================\nFAIL: test_what_is_not_understood_is_refused (test_hidden_durations.HiddenDurationTest.test_what_is_not_understood_is_refused)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_durations.py\", line 19, in test_what_is_not_understood_is_refused\n    with self.assertRaises(ValueError, msg=repr(bad)):\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ValueError not raised : '30'\n\n----------------------------------------------------------------------\nRan 3 tests in 0.001s\n\nFAILED (failures=1)"
+  },
+  {
+    "id": "seed:summary-float",
+    "case": "sales-summary-rules",
+    "cause": "the month's total is added as float, against the rule that money is Decimal",
+    "patch": "seeds/summary-float.patch",
+    "checkOutput": "======================================================================\nFAIL: test_no_print_or_float_in_the_module (test_hidden_summary.HiddenSummaryTest.test_no_print_or_float_in_the_module)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_summary.py\", line 35, in test_no_print_or_float_in_the_module\n    self.assertNotIn(\"float\", names)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^\nAssertionError: 'float' unexpectedly found in {'Decimal', 'float', 'sum'}\n\n======================================================================\nFAIL: test_the_total_of_the_month_exactly (test_hidden_summary.HiddenSummaryTest.test_the_total_of_the_month_exactly)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_summary.py\", line 22, in test_the_total_of_the_month_exactly\n    self.assertEqual(Decimal(str(total)), Decimal(\"10.30\"))\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Decimal('10.300000000000000710542735760100185871124267578125') != Decimal('10.30')\n\n----------------------------------------------------------------------\nRan 3 tests in 0.002s\n\nFAILED (failures=2)"
+  },
+  {
+    "id": "seed:inventory-counts-expired",
+    "case": "inventory-expiry",
+    "cause": "expired reservations still hold stock until release_expired() runs",
+    "patch": "seeds/inventory-counts-expired.patch",
+    "checkOutput": "======================================================================\nFAIL: test_expired_stock_is_available_again (test_hidden_expiry.HiddenExpiryTest.test_expired_stock_is_available_again)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_expiry.py\", line 30, in test_expired_stock_is_available_again\n    self.assertEqual(self.inv.available(\"A1\"), 5)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 5\n\n----------------------------------------------------------------------\nRan 5 tests in 0.001s\n\nFAILED (failures=1)"
+  },
+  {
+    "id": "seed:business-saturday",
+    "case": "business-days",
+    "cause": "Saturday counts as a business day (weekday() < 6)",
+    "patch": "seeds/business-saturday.patch",
+    "checkOutput": "======================================================================\nFAIL: test_starts_on_saturday (test_hidden_calendar.HiddenBusinessDays.test_starts_on_saturday)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_calendar.py\", line 12, in test_starts_on_saturday\n    self.assertEqual(business_days(date(2025, 3, 8), date(2025, 3, 14)), 5)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 6 != 5\n\n======================================================================\nFAIL: test_two_weeks (test_hidden_calendar.HiddenBusinessDays.test_two_weeks)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_calendar.py\", line 19, in test_two_weeks\n    self.assertEqual(business_days(date(2025, 3, 3), date(2025, 3, 16)), 10)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 12 != 10\n\n----------------------------------------------------------------------\nRan 4 tests in 0.001s\n\nFAILED (failures=2)"
+  },
+  {
+    "id": "seed:receipt-env-name",
+    "case": "receipt-api-key",
+    "cause": "the key is read from MESSAGING_KEY, not MESSAGING_API_KEY as docs/servicio.md says",
+    "patch": "seeds/receipt-env-name.patch",
+    "checkOutput": "======================================================================\nERROR: test_the_key_comes_from_the_environment (test_hidden_receipts.HiddenReceiptTest.test_the_key_comes_from_the_environment)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_receipts.py\", line 22, in test_the_key_comes_from_the_environment\n    receipts.send_receipt(\"ana@example.com\", 12.5)\n    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"billing/receipts.py\", line 14, in send_receipt\n    client = Client(os.environ.get(\"MESSAGING_KEY\"))\n  File \"test_hidden_receipts.py\", line 18, in init\n    real_init(client, api_key)\n    ~~~~~~~~~^^^^^^^^^^^^^^^^^\n  File \"billing/messaging.py\", line 7, in __init__\n    raise ValueError(\"falta la clave del servicio\")\nValueError: falta la clave del servicio\n\n----------------------------------------------------------------------\nRan 2 tests in 0.002s\n\nFAILED (errors=1)"
+  },
+  {
+    "id": "seed:cents-truncate",
+    "case": "billing-cents",
+    "cause": "tax and ratios are truncated to the cent instead of rounded half up",
+    "patch": "seeds/cents-truncate.patch",
+    "checkOutput": "est_hidden_cents.HiddenCentsTest.test_every_combination) (lines=[('stapler', 1), ('notebook', 3), ('pen', 2)], region='NY', coupon='HALF')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_cents.py\", line 74, in test_every_combination\n    self.assertEqual(invoice_text(cart, region, coupon), expected(lines, region, coupon))\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '1 x [57 chars]otal: $16.40\\nDescuento: -$8.20\\nImpuesto: $0.72\\nTotal: $8.92' != '1 x [57 chars]otal: $16.40\\nDescuento: -$8.20\\nImpuesto: $0.73\\nTotal: $8.93'\n  1 x stapler: $7.05\n  3 x notebook: $7.05\n  2 x pen: $2.30\n  Subtotal: $16.40\n  Descuento: -$8.20\n- Impuesto: $0.72\n?               ^\n+ Impuesto: $0.73\n?               ^\n- Total: $8.92\n?            ^\n+ Total: $8.93\n?            ^\n\n\n======================================================================\nFAIL: test_every_combination (test_hidden_cents.HiddenCentsTest.test_every_combination) (lines=[('stapler', 1), ('notebook', 3), ('pen', 2)], region='TX', coupon=None)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_cents.py\", line 74, in test_every_combination\n    self.assertEqual(invoice_text(cart, region, coupon), expected(lines, region, coupon))\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '1 x [39 chars]x pen: $2.30\\nSubtotal: $16.40\\nImpuesto: $1.02\\nTotal: $17.42' != '1 x [39 chars]x pen: $2.30\\nSubtotal: $16.40\\nImpuesto: $1.03\\nTotal: $17.43'\n  1 x stapler: $7.05\n  3 x notebook: $7.05\n  2 x pen: $2.30\n  Subtotal: $16.40\n- Impuesto: $1.02\n?               ^\n+ Impuesto: $1.03\n?               ^\n- Total: $17.42\n?             ^\n+ Total: $17.43\n?             ^\n\n\n----------------------------------------------------------------------\nRan 3 tests in 0.021s\n\nFAILED (failures=41)"
+  },
+  {
+    "id": "seed:bakery-per-line",
+    "case": "bakery-inscription",
+    "cause": "the inscription is charged once per product line instead of once per order",
+    "patch": "seeds/bakery-per-line.patch",
+    "checkOutput": "======================================================================\nFAIL: test_costs_two_pesos_once (test_hidden_inscription.Inscription.test_costs_two_pesos_once)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_inscription.py\", line 60, in test_costs_two_pesos_once\n    self.assertEqual(order_total_cents(parse_order(WITH_TEXT)), base + 200)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 3180 != 2980\n\n======================================================================\nFAIL: test_csv (test_hidden_inscription.Inscription.test_csv)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"test_hidden_inscription.py\", line 80, in test_csv\n    self.assertEqual(rows[0][\"total\"], \"29.80\")  # 26.00 + 2 x 0.90 + 2.00\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '31.80' != '29.80'\n- 31.80\n+ 29.80\n\n\n----------------------------------------------------------------------\nRan 5 tests in 0.005s\n\nFAILED (failures=2)"
+  }
+]

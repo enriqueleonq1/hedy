@@ -1,0 +1,141 @@
+diff --git a/billing/catalog.py b/billing/catalog.py
+index cb986a7..baf3101 100644
+--- a/billing/catalog.py
++++ b/billing/catalog.py
+@@ -1,10 +1,10 @@
+-# Unit prices, in dollars.
++# Unit prices, in cents.
+ PRICES = {
+-    "pen": 1.15,
+-    "notebook": 2.35,
+-    "stapler": 7.05,
+-    "lamp": 19.99,
+-    "chair": 89.95,
++    "pen": 115,
++    "notebook": 235,
++    "stapler": 705,
++    "lamp": 1999,
++    "chair": 8995,
+ }
+ 
+ 
+diff --git a/billing/coupons.py b/billing/coupons.py
+index fd35c9a..fe82b9c 100644
+--- a/billing/coupons.py
++++ b/billing/coupons.py
+@@ -1,16 +1,18 @@
+-# A coupon is ("percent", 10) for 10 % off, or ("fixed", 5.0) for 5 dollars off.
++from .money import portion
++
++# A coupon is ("percent", 10) for 10 % off, or ("fixed", 500) for 500 cents off.
+ COUPONS = {
+     "TEN": ("percent", 10),
+-    "SAVE5": ("fixed", 5.0),
++    "SAVE5": ("fixed", 500),
+     "HALF": ("percent", 50),
+-    "BIG": ("fixed", 100.0),
++    "BIG": ("fixed", 10000),
+ }
+ 
+ 
+ def discount(subtotal, code):
+     if code is None:
+-        return 0.0
++        return 0
+     kind, value = COUPONS[code]
+     if kind == "percent":
+-        return round(subtotal * value / 100, 2)
++        return portion(subtotal, value, 100)
+     return min(value, subtotal)
+diff --git a/billing/invoice.py b/billing/invoice.py
+index 164295d..bd8e697 100644
+--- a/billing/invoice.py
++++ b/billing/invoice.py
+@@ -2,8 +2,8 @@ from .coupons import discount
+ from .tax import tax
+ 
+ 
+-def money(amount):
+-    return f"${amount:,.2f}"
++def money(cents):
++    return f"${cents // 100:,}.{cents % 100:02d}"
+ 
+ 
+ def totals(cart, region, coupon=None):
+diff --git a/billing/money.py b/billing/money.py
+new file mode 100644
+index 0000000..9819b4b
+--- /dev/null
++++ b/billing/money.py
+@@ -0,0 +1,10 @@
++# All money in billing/ is an int number of cents.
++
++
++def portion(cents, part, whole):
++    """Return cents * part / whole, rounded half up to the nearest cent.
++
++    Only integer arithmetic is used, so there are no float rounding errors.
++    Expects non-negative amounts.
++    """
++    return (cents * part + whole // 2) // whole
+diff --git a/billing/tax.py b/billing/tax.py
+index 37bacac..84e2428 100644
+--- a/billing/tax.py
++++ b/billing/tax.py
+@@ -1,9 +1,12 @@
++from .money import portion
++
++# Tax rates as parts per 100,000 (8.875 % is 8875 / 100000).
+ RATES = {
+-    "NY": 0.08875,
+-    "TX": 0.0625,
+-    "OR": 0.0,
++    "NY": 8875,
++    "TX": 6250,
++    "OR": 0,
+ }
+ 
+ 
+ def tax(amount, region):
+-    return round(amount * RATES[region], 2)
++    return portion(amount, RATES[region], 100000)
+diff --git a/tests/test_money.py b/tests/test_money.py
+new file mode 100644
+index 0000000..99684df
+--- /dev/null
++++ b/tests/test_money.py
+@@ -0,0 +1,34 @@
++import unittest
++
++from billing.cart import Cart
++from billing.catalog import PRICES
++from billing.invoice import invoice_text, money
++from billing.money import portion
++
++
++class MoneyTest(unittest.TestCase):
++    def test_prices_are_int_cents(self):
++        self.assertTrue(all(isinstance(p, int) for p in PRICES.values()))
++
++    def test_money_format(self):
++        self.assertEqual(money(5), "$0.05")
++        self.assertEqual(money(100000), "$1,000.00")
++
++    def test_portion_rounds_half_up(self):
++        self.assertEqual(portion(1, 50, 100), 1)
++        self.assertEqual(portion(1, 49, 100), 0)
++
++    def test_tax_with_cents(self):
++        cart = Cart()
++        cart.add("pen", 3)
++        self.assertEqual(
++            invoice_text(cart, "NY"),
++            "3 x pen: $3.45\nSubtotal: $3.45\nImpuesto: $0.31\nTotal: $3.76",
++        )
++
++    def test_percent_coupon_rounds_to_cent(self):
++        cart = Cart()
++        cart.add("chair")
++        text = invoice_text(cart, "OR", "TEN")
++        self.assertIn("Descuento: -$9.00", text)
++        self.assertTrue(text.endswith("Total: $80.95"))

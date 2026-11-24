@@ -1,0 +1,5 @@
+[
+  {"code": "cafe", "name": "Café", "price_cents": 120},
+  {"code": "impresion", "name": "Impresión", "price_cents": 10},
+  {"code": "taquilla", "name": "Taquilla", "price_cents": 2000}
+]

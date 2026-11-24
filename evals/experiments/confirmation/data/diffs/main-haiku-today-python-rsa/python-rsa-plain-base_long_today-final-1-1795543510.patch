@@ -1,0 +1,1474 @@
+diff --git a/rsa/asn1.py b/rsa/asn1.py
+index 7f9406e..13314d3 100644
+--- a/rsa/asn1.py
++++ b/rsa/asn1.py
+@@ -17,4 +17,31 @@ class AsnPubKey(univ.Sequence):
+          modulus           INTEGER,  -- n
+          publicExponent    INTEGER,  -- e
+     """
+-    componentType = namedtype.NamedTypes(namedtype.NamedType('modulus', univ.Integer()), namedtype.NamedType('publicExponent', univ.Integer()))
+\ No newline at end of file
++    componentType = namedtype.NamedTypes(namedtype.NamedType('modulus', univ.Integer()), namedtype.NamedType('publicExponent', univ.Integer()))
++
++class AsnPrivKey(univ.Sequence):
++    """ASN.1 contents of DER encoded private key:
++
++    RSAPrivateKey ::= SEQUENCE {
++         version           Version,
++         modulus           INTEGER,  -- n
++         publicExponent    INTEGER,  -- e
++         privateExponent   INTEGER,  -- d
++         prime1            INTEGER,  -- p
++         prime2            INTEGER,  -- q
++         exponent1         INTEGER,  -- d mod (p-1)
++         exponent2         INTEGER,  -- d mod (q-1)
++         coefficient       INTEGER,  -- (inverse of q) mod p
++    }
++    """
++    componentType = namedtype.NamedTypes(
++        namedtype.NamedType('version', univ.Integer()),
++        namedtype.NamedType('modulus', univ.Integer()),
++        namedtype.NamedType('publicExponent', univ.Integer()),
++        namedtype.NamedType('privateExponent', univ.Integer()),
++        namedtype.NamedType('prime1', univ.Integer()),
++        namedtype.NamedType('prime2', univ.Integer()),
++        namedtype.NamedType('exponent1', univ.Integer()),
++        namedtype.NamedType('exponent2', univ.Integer()),
++        namedtype.NamedType('coefficient', univ.Integer()),
++    )
+\ No newline at end of file
+diff --git a/rsa/cli.py b/rsa/cli.py
+index 869851a..9041bb6 100644
+--- a/rsa/cli.py
++++ b/rsa/cli.py
+@@ -14,7 +14,55 @@ Indexable = typing.Union[typing.Tuple, typing.List[str]]
+ 
+ def keygen() -> None:
+     """Key generator."""
+-    pass
++    parser = optparse.OptionParser(usage='usage: %prog [options] keysize',
++                                   description='Generates a new RSA keypair of "keysize" bits.')
++
++    parser.add_option('--pubout', type='string',
++                      help='Output filename for the public key. The public key is '
++                           'not saved if this option is not present. You can use '
++                           'pyrsa-priv2pub to create the public key file later.')
++
++    parser.add_option('-o', '--out', type='string',
++                      help='Output filename for the private key. The key is '
++                           'written to stdout if this option is not present.')
++
++    parser.add_option('--form',
++                      help='key format of the private and public keys - default PEM',
++                      choices=('PEM', 'DER'), default='PEM')
++
++    (cli, cli_args) = parser.parse_args(sys.argv[1:])
++
++    if len(cli_args) != 1:
++        parser.print_help()
++        raise SystemExit(1)
++
++    try:
++        keysize = int(cli_args[0])
++    except ValueError:
++        parser.print_help()
++        print('Not a valid number: %s' % cli_args[0], file=sys.stderr)
++        raise SystemExit(1)
++
++    print('Generating %i-bit key' % keysize, file=sys.stderr)
++    (pub_key, priv_key) = rsa.newkeys(keysize)
++
++    # Save public key
++    if cli.pubout:
++        print('Writing public key to %s' % cli.pubout, file=sys.stderr)
++        data = pub_key.save_pkcs1(format=cli.form)
++        with open(cli.pubout, 'wb') as outfile:
++            outfile.write(data)
++
++    # Save private key
++    data = priv_key.save_pkcs1(format=cli.form)
++
++    if cli.out:
++        print('Writing private key to %s' % cli.out, file=sys.stderr)
++        with open(cli.out, 'wb') as outfile:
++            outfile.write(data)
++    else:
++        print('Writing private key to stdout', file=sys.stderr)
++        sys.stdout.buffer.write(data)
+ 
+ class CryptoOperation(metaclass=abc.ABCMeta):
+     """CLI callable that operates with input, output, and a key."""
+@@ -60,19 +108,52 @@ class CryptoOperation(metaclass=abc.ABCMeta):
+ 
+         :returns: (cli_opts, cli_args)
+         """
+-        pass
++        parser = optparse.OptionParser(usage=self.usage, description=self.description)
++
++        parser.add_option('-i', '--input', dest='input', help=self.input_help)
++
++        if self.has_output:
++            parser.add_option('-o', '--output', dest='output', help=self.output_help)
++
++        parser.add_option('-k', '--keyform', dest='keyform',
++                          help='Key format of the %s key - default PEM' % self.keyname,
++                          choices=('PEM', 'DER'), default='PEM')
++
++        (cli, cli_args) = parser.parse_args(sys.argv[1:])
++
++        if len(cli_args) != self.expected_cli_args:
++            parser.print_help()
++            raise SystemExit(1)
++
++        return cli, cli_args
+ 
+     def read_key(self, filename: str, keyform: str) -> rsa.key.AbstractKey:
+         """Reads a public or private key."""
+-        pass
++        print('Reading %s key from %s' % (self.keyname, filename), file=sys.stderr)
++        with open(filename, 'rb') as keyfile:
++            keydata = keyfile.read()
++
++        return self.key_class.load_pkcs1(keydata, keyform)
+ 
+     def read_infile(self, inname: str) -> bytes:
+         """Read the input file"""
+-        pass
++        if inname:
++            print('Reading input from %s' % inname, file=sys.stderr)
++            with open(inname, 'rb') as infile:
++                return infile.read()
++
++        print('Reading input from stdin', file=sys.stderr)
++        return sys.stdin.buffer.read()
+ 
+     def write_outfile(self, outdata: bytes, outname: str) -> None:
+         """Write the output file"""
+-        pass
++        if outname:
++            print('Writing output to %s' % outname, file=sys.stderr)
++            with open(outname, 'wb') as outfile:
++                outfile.write(outdata)
++        else:
++            print('Writing output to stdout', file=sys.stderr)
++            sys.stdout.buffer.write(outdata)
+ 
+ class EncryptOperation(CryptoOperation):
+     """Encrypts a file."""
+@@ -84,7 +165,7 @@ class EncryptOperation(CryptoOperation):
+ 
+     def perform_operation(self, indata: bytes, pub_key: rsa.key.AbstractKey, cli_args: Indexable=()) -> bytes:
+         """Encrypts files."""
+-        pass
++        return rsa.encrypt(indata, pub_key)
+ 
+ class DecryptOperation(CryptoOperation):
+     """Decrypts a file."""
+@@ -97,7 +178,7 @@ class DecryptOperation(CryptoOperation):
+ 
+     def perform_operation(self, indata: bytes, priv_key: rsa.key.AbstractKey, cli_args: Indexable=()) -> bytes:
+         """Decrypts files."""
+-        pass
++        return rsa.decrypt(indata, priv_key)
+ 
+ class SignOperation(CryptoOperation):
+     """Signs a file."""
+@@ -113,7 +194,8 @@ class SignOperation(CryptoOperation):
+ 
+     def perform_operation(self, indata: bytes, priv_key: rsa.key.AbstractKey, cli_args: Indexable) -> bytes:
+         """Signs files."""
+-        pass
++        hash_method = cli_args[1]
++        return rsa.sign(indata, priv_key, hash_method)
+ 
+ class VerifyOperation(CryptoOperation):
+     """Verify a signature."""
+@@ -129,7 +211,18 @@ class VerifyOperation(CryptoOperation):
+ 
+     def perform_operation(self, indata: bytes, pub_key: rsa.key.AbstractKey, cli_args: Indexable) -> None:
+         """Verifies files."""
+-        pass
++        signature_file = cli_args[1]
++        print('Reading signature from %s' % signature_file, file=sys.stderr)
++        with open(signature_file, 'rb') as sigfile:
++            signature = sigfile.read()
++
++        try:
++            rsa.verify(indata, signature, pub_key)
++        except rsa.pkcs1.VerificationError:
++            print('Verification failed.', file=sys.stderr)
++            raise SystemExit(1)
++
++        print('Verification OK', file=sys.stderr)
+ encrypt = EncryptOperation()
+ decrypt = DecryptOperation()
+ sign = SignOperation()
+diff --git a/rsa/common.py b/rsa/common.py
+index 3a3066b..65baeb3 100644
+--- a/rsa/common.py
++++ b/rsa/common.py
+@@ -30,7 +30,10 @@ def bit_size(num: int) -> int:
+     :returns:
+         Returns the number of bits in the integer.
+     """
+-    pass
++    try:
++        return num.bit_length()
++    except AttributeError as ex:
++        raise TypeError('bit_size(num) only supports integers, not %r' % type(num)) from ex
+ 
+ def byte_size(number: int) -> int:
+     """
+@@ -52,7 +55,10 @@ def byte_size(number: int) -> int:
+     :returns:
+         The number of bytes required to hold a specific long number.
+     """
+-    pass
++    quanta, mod = divmod(bit_size(number), 8)
++    if mod or number == 0:
++        quanta += 1
++    return quanta
+ 
+ def ceil_div(num: int, div: int) -> int:
+     """
+@@ -72,11 +78,57 @@ def ceil_div(num: int, div: int) -> int:
+ 
+     :return: Rounded up result of the division between the parameters.
+     """
+-    pass
++    quanta, mod = divmod(num, div)
++    if mod:
++        quanta += 1
++    return quanta
++
++def is_power_of_two(n: int) -> bool:
++    """
++    Returns True if ``n`` is a positive integer power of two (1, 2, 4, ...),
++    and False otherwise. 0 and negative numbers are not powers of two.
++
++    Usage::
++
++        >>> is_power_of_two(1)
++        True
++        >>> is_power_of_two(1024)
++        True
++        >>> is_power_of_two(0)
++        False
++        >>> is_power_of_two(6)
++        False
++
++    :param n: the integer to check.
++    :returns: True if ``n`` is a positive power of two, False otherwise.
++    :raises TypeError: if ``n`` is not an integer.
++    """
++    if isinstance(n, bool) or not isinstance(n, int):
++        raise TypeError('is_power_of_two(n) only supports integers, not %r' % type(n))
++    return n > 0 and (n & (n - 1)) == 0
+ 
+ def extended_gcd(a: int, b: int) -> typing.Tuple[int, int, int]:
+     """Returns a tuple (r, i, j) such that r = gcd(a, b) = ia + jb"""
+-    pass
++    # r = gcd(a,b) i = multiplicitive inverse of a mod b
++    #      or      j = multiplicitive inverse of b mod a
++    # Neg return values for i or j are made positive mod b or a respectively
++    # Iterateive Version is faster and uses much less stack space
++    x = 0
++    y = 1
++    lx = 1
++    ly = 0
++    oa = a  # Remember original a/b to remove
++    ob = b  # negative values from return results
++    while b != 0:
++        q = a // b
++        (a, b) = (b, a % b)
++        (x, lx) = ((lx - (q * x)), x)
++        (y, ly) = ((ly - (q * y)), y)
++    if lx < 0:
++        lx += ob  # If neg wrap modulo orignal b
++    if ly < 0:
++        ly += oa  # If neg wrap modulo orignal a
++    return (a, lx, ly)  # Return only positive values
+ 
+ def inverse(x: int, n: int) -> int:
+     """Returns the inverse of x % n under multiplication, a.k.a x^-1 (mod n)
+@@ -86,7 +138,10 @@ def inverse(x: int, n: int) -> int:
+     >>> (inverse(143, 4) * 143) % 4
+     1
+     """
+-    pass
++    (divider, inv, _) = extended_gcd(x, n)
++    if divider != 1:
++        raise NotRelativePrimeError(x, n, divider)
++    return inv
+ 
+ def crt(a_values: typing.Iterable[int], modulo_values: typing.Iterable[int]) -> int:
+     """Chinese Remainder Theorem.
+@@ -107,7 +162,18 @@ def crt(a_values: typing.Iterable[int], modulo_values: typing.Iterable[int]) ->
+     >>> crt([2, 3, 0], [7, 11, 15])
+     135
+     """
+-    pass
++    a_values = list(a_values)
++    modulo_values = list(modulo_values)
++
++    m = 1
++    for modulo in modulo_values:
++        m *= modulo
++
++    x = 0
++    for a_i, m_i in zip(a_values, modulo_values):
++        M_i = m // m_i
++        x += a_i * M_i * inverse(M_i, m_i)
++    return x % m
+ if __name__ == '__main__':
+     import doctest
+-    doctest.testmod()
+\ No newline at end of file
++    doctest.testmod()
+diff --git a/rsa/core.py b/rsa/core.py
+index da6bc40..907bd33 100644
+--- a/rsa/core.py
++++ b/rsa/core.py
+@@ -6,8 +6,20 @@ mathematically on integers.
+ 
+ def encrypt_int(message: int, ekey: int, n: int) -> int:
+     """Encrypts a message using encryption key 'ekey', working modulo n"""
+-    pass
++    if message < 0:
++        raise ValueError('Only non-negative numbers are supported')
++
++    if message > n:
++        raise OverflowError("The message %i is too long for n=%i" % (message, n))
++
++    return pow(message, ekey, n)
+ 
+ def decrypt_int(cyphertext: int, dkey: int, n: int) -> int:
+     """Decrypts a cypher text using the decryption key 'dkey', working modulo n"""
+-    pass
+\ No newline at end of file
++    if cyphertext < 0:
++        raise ValueError('Only non-negative numbers are supported')
++
++    if cyphertext > n:
++        raise OverflowError("The cyphertext %i is too long for n=%i" % (cyphertext, n))
++
++    return pow(cyphertext, dkey, n)
+diff --git a/rsa/key.py b/rsa/key.py
+index 5af0506..6572e6f 100644
+--- a/rsa/key.py
++++ b/rsa/key.py
+@@ -48,7 +48,7 @@ class AbstractKey:
+         :return: the loaded key
+         :rtype: AbstractKey
+         """
+-        pass
++        raise NotImplementedError('Implement in a subclass')
+ 
+     @classmethod
+     def _load_pkcs1_der(cls: typing.Type[T], keyfile: bytes) -> T:
+@@ -61,7 +61,7 @@ class AbstractKey:
+         :return: the loaded key
+         :rtype: AbstractKey
+         """
+-        pass
++        raise NotImplementedError('Implement in a subclass')
+ 
+     def _save_pkcs1_pem(self) -> bytes:
+         """Saves the key in PKCS#1 PEM format, implement in a subclass.
+@@ -69,7 +69,7 @@ class AbstractKey:
+         :returns: the PEM-encoded key.
+         :rtype: bytes
+         """
+-        pass
++        raise NotImplementedError('Implement in a subclass')
+ 
+     def _save_pkcs1_der(self) -> bytes:
+         """Saves the key in PKCS#1 DER format, implement in a subclass.
+@@ -77,7 +77,7 @@ class AbstractKey:
+         :returns: the DER-encoded key.
+         :rtype: bytes
+         """
+-        pass
++        raise NotImplementedError('Implement in a subclass')
+ 
+     @classmethod
+     def load_pkcs1(cls: typing.Type[T], keyfile: bytes, format: str='PEM') -> T:
+@@ -92,12 +92,22 @@ class AbstractKey:
+         :return: the loaded key
+         :rtype: AbstractKey
+         """
+-        pass
++        methods = {
++            'PEM': cls._load_pkcs1_pem,
++            'DER': cls._load_pkcs1_der,
++        }
++
++        method = cls._assert_format_exists(format, methods)
++        return method(keyfile)
+ 
+     @staticmethod
+     def _assert_format_exists(file_format: str, methods: typing.Mapping[str, typing.Callable]) -> typing.Callable:
+         """Checks whether the given file format exists in 'methods'."""
+-        pass
++        try:
++            return methods[file_format]
++        except KeyError as ex:
++            formats = ', '.join(sorted(methods.keys()))
++            raise ValueError('Unsupported format: %r, try one of %s' % (file_format, formats)) from ex
+ 
+     def save_pkcs1(self, format: str='PEM') -> bytes:
+         """Saves the key in PKCS#1 DER or PEM format.
+@@ -107,7 +117,13 @@ class AbstractKey:
+         :returns: the DER- or PEM-encoded key.
+         :rtype: bytes
+         """
+-        pass
++        methods = {
++            'PEM': self._save_pkcs1_pem,
++            'DER': self._save_pkcs1_der,
++        }
++
++        method = self._assert_format_exists(format, methods)
++        return method()
+ 
+     def blind(self, message: int) -> typing.Tuple[int, int]:
+         """Performs blinding on the message.
+@@ -120,7 +136,9 @@ class AbstractKey:
+ 
+         See https://en.wikipedia.org/wiki/Blinding_%28cryptography%29
+         """
+-        pass
++        blindfac, blindfac_inverse = self._update_blinding_factor()
++        blinded = (message * pow(blindfac, self.e, self.n)) % self.n
++        return blinded, blindfac_inverse
+ 
+     def unblind(self, blinded: int, blindfac_inverse: int) -> int:
+         """Performs blinding on the message using random number 'blindfac_inverse'.
+@@ -133,7 +151,7 @@ class AbstractKey:
+ 
+         See https://en.wikipedia.org/wiki/Blinding_%28cryptography%29
+         """
+-        pass
++        return (blindfac_inverse * blinded) % self.n
+ 
+     def _update_blinding_factor(self) -> typing.Tuple[int, int]:
+         """Update blinding factors.
+@@ -146,7 +164,24 @@ class AbstractKey:
+ 
+         :return: the new blinding factor and its inverse.
+         """
+-        pass
++        with self.mutex:
++            if self.blindfac < 0:
++                # Compute initial blinding factor, which is rather slow to do.
++                # It must be relatively prime to n to be invertible.
++                while True:
++                    self.blindfac = rsa.randnum.randint(self.n - 1)
++                    if rsa.prime.are_relatively_prime(self.n, self.blindfac):
++                        break
++                self.blindfac_inverse = rsa.common.inverse(self.blindfac, self.n)
++            else:
++                # Reuse previous blinding factor as per section 9 of 'A Timing
++                # Attack against RSA with the Chinese Remainder Theorem' by Werner
++                # Schindler.
++                # See https://tls.mbed.org/public/WSchindler-RSA_Timing_Attack.pdf
++                self.blindfac = pow(self.blindfac, 2, self.n)
++                self.blindfac_inverse = pow(self.blindfac_inverse, 2, self.n)
++
++        return self.blindfac, self.blindfac_inverse
+ 
+ class PublicKey(AbstractKey):
+     """Represents a public RSA key.
+@@ -221,7 +256,11 @@ class PublicKey(AbstractKey):
+         PublicKey(2367317549, 65537)
+ 
+         """
+-        pass
++        from pyasn1.codec.der import decoder
++        from rsa.asn1 import AsnPubKey
++
++        (priv, _) = decoder.decode(keyfile, asn1Spec=AsnPubKey())
++        return cls(n=int(priv['modulus']), e=int(priv['publicExponent']))
+ 
+     def _save_pkcs1_der(self) -> bytes:
+         """Saves the public key in PKCS#1 DER format.
+@@ -229,7 +268,14 @@ class PublicKey(AbstractKey):
+         :returns: the DER-encoded public key.
+         :rtype: bytes
+         """
+-        pass
++        from pyasn1.codec.der import encoder
++        from rsa.asn1 import AsnPubKey
++
++        asn_key = AsnPubKey()
++        asn_key.setComponentByName('modulus', self.n)
++        asn_key.setComponentByName('publicExponent', self.e)
++
++        return encoder.encode(asn_key)
+ 
+     @classmethod
+     def _load_pkcs1_pem(cls, keyfile: bytes) -> 'PublicKey':
+@@ -242,7 +288,8 @@ class PublicKey(AbstractKey):
+             key.
+         :return: a PublicKey object
+         """
+-        pass
++        der = rsa.pem.load_pem(keyfile, 'RSA PUBLIC KEY')
++        return cls._load_pkcs1_der(der)
+ 
+     def _save_pkcs1_pem(self) -> bytes:
+         """Saves a PKCS#1 PEM-encoded public key file.
+@@ -250,7 +297,8 @@ class PublicKey(AbstractKey):
+         :return: contents of a PEM-encoded file that contains the public key.
+         :rtype: bytes
+         """
+-        pass
++        der = self._save_pkcs1_der()
++        return rsa.pem.save_pem(der, 'RSA PUBLIC KEY')
+ 
+     @classmethod
+     def load_pkcs1_openssl_pem(cls, keyfile: bytes) -> 'PublicKey':
+@@ -267,7 +315,8 @@ class PublicKey(AbstractKey):
+         :type keyfile: bytes
+         :return: a PublicKey object
+         """
+-        pass
++        der = rsa.pem.load_pem(keyfile, 'PUBLIC KEY')
++        return cls.load_pkcs1_openssl_der(der)
+ 
+     @classmethod
+     def load_pkcs1_openssl_der(cls, keyfile: bytes) -> 'PublicKey':
+@@ -277,7 +326,16 @@ class PublicKey(AbstractKey):
+             key, from OpenSSL.
+         :return: a PublicKey object
+         """
+-        pass
++        from pyasn1.codec.der import decoder
++        from pyasn1.type import univ
++        from rsa.asn1 import OpenSSLPubKey
++
++        (keyinfo, _) = decoder.decode(keyfile, asn1Spec=OpenSSLPubKey())
++        if keyinfo['header']['oid'] != univ.ObjectIdentifier('1.2.840.113549.1.1.1'):
++            raise TypeError('This is not a DER-encoded OpenSSL-compatible public key')
++
++        # The BIT STRING holding the key starts with a byte giving the number of unused bits.
++        return cls._load_pkcs1_der(keyinfo['key'][1:])
+ 
+ class PrivateKey(AbstractKey):
+     """Represents a private RSA key.
+@@ -350,7 +408,16 @@ class PrivateKey(AbstractKey):
+         :returns: the decrypted message
+         :rtype: int
+         """
+-        pass
++        blinded, blindfac_inverse = self.blind(encrypted)
++
++        # Decrypt with the Chinese Remainder Theorem, which is faster than a single
++        # exponentiation modulo n.
++        m1 = pow(blinded, self.exp1, self.p)
++        m2 = pow(blinded, self.exp2, self.q)
++        h = ((m1 - m2) * self.coef) % self.p
++        decrypted = m2 + h * self.q
++
++        return self.unblind(decrypted, blindfac_inverse)
+ 
+     def blinded_encrypt(self, message: int) -> int:
+         """Encrypts the message using blinding to prevent side-channel attacks.
+@@ -361,7 +428,10 @@ class PrivateKey(AbstractKey):
+         :returns: the encrypted message
+         :rtype: int
+         """
+-        pass
++        blinded, blindfac_inverse = self.blind(message)
++        encrypted = rsa.core.encrypt_int(blinded, self.d, self.n)
++
++        return self.unblind(encrypted, blindfac_inverse)
+ 
+     @classmethod
+     def _load_pkcs1_der(cls, keyfile: bytes) -> 'PrivateKey':
+@@ -384,7 +454,16 @@ class PrivateKey(AbstractKey):
+         PrivateKey(3727264081, 65537, 3349121513, 65063, 57287)
+ 
+         """
+-        pass
++        from pyasn1.codec.der import decoder
++        from rsa.asn1 import AsnPrivKey
++
++        (priv, _) = decoder.decode(keyfile, asn1Spec=AsnPrivKey())
++        if priv['version'] != 0:
++            raise ValueError('Unable to read this file, version %s != 0' % priv['version'])
++
++        # exp1, exp2 and coef are derived from the other values by __init__.
++        as_ints = tuple(int(priv[name]) for name in ('modulus', 'publicExponent', 'privateExponent', 'prime1', 'prime2'))
++        return cls(*as_ints)
+ 
+     def _save_pkcs1_der(self) -> bytes:
+         """Saves the private key in PKCS#1 DER format.
+@@ -392,7 +471,21 @@ class PrivateKey(AbstractKey):
+         :returns: the DER-encoded private key.
+         :rtype: bytes
+         """
+-        pass
++        from pyasn1.codec.der import encoder
++        from rsa.asn1 import AsnPrivKey
++
++        asn_key = AsnPrivKey()
++        asn_key.setComponentByName('version', 0)
++        asn_key.setComponentByName('modulus', self.n)
++        asn_key.setComponentByName('publicExponent', self.e)
++        asn_key.setComponentByName('privateExponent', self.d)
++        asn_key.setComponentByName('prime1', self.p)
++        asn_key.setComponentByName('prime2', self.q)
++        asn_key.setComponentByName('exponent1', self.exp1)
++        asn_key.setComponentByName('exponent2', self.exp2)
++        asn_key.setComponentByName('coefficient', self.coef)
++
++        return encoder.encode(asn_key)
+ 
+     @classmethod
+     def _load_pkcs1_pem(cls, keyfile: bytes) -> 'PrivateKey':
+@@ -406,7 +499,8 @@ class PrivateKey(AbstractKey):
+         :type keyfile: bytes
+         :return: a PrivateKey object
+         """
+-        pass
++        der = rsa.pem.load_pem(keyfile, 'RSA PRIVATE KEY')
++        return cls._load_pkcs1_der(der)
+ 
+     def _save_pkcs1_pem(self) -> bytes:
+         """Saves a PKCS#1 PEM-encoded private key file.
+@@ -414,7 +508,8 @@ class PrivateKey(AbstractKey):
+         :return: contents of a PEM-encoded file that contains the private key.
+         :rtype: bytes
+         """
+-        pass
++        der = self._save_pkcs1_der()
++        return rsa.pem.save_pem(der, 'RSA PRIVATE KEY')
+ 
+ def find_p_q(nbits: int, getprime_func: typing.Callable[[int], int]=rsa.prime.getprime, accurate: bool=True) -> typing.Tuple[int, int]:
+     """Returns a tuple of two different primes of nbits bits each.
+@@ -446,7 +541,48 @@ def find_p_q(nbits: int, getprime_func: typing.Callable[[int], int]=rsa.prime.ge
+     True
+ 
+     """
+-    pass
++    total_bits = nbits * 2
++
++    # Make sure that p and q aren't too close or the factoring programs can
++    # factor n.
++    shift = nbits // 16
++    pbits = nbits + shift
++    qbits = nbits - shift
++
++    # Choose the two initial primes
++    p = getprime_func(pbits)
++    q = getprime_func(qbits)
++
++    def is_acceptable(p, q):
++        """Returns True iff p and q are acceptable:
++
++            - p and q differ
++            - (p * q) has the right nr of bits (when accurate=True)
++        """
++        if p == q:
++            return False
++
++        if not accurate:
++            return True
++
++        # Make sure we have just the right amount of bits
++        found_size = rsa.common.bit_size(p * q)
++        return total_bits == found_size
++
++    # Keep choosing other primes until they match our requirements.
++    change_p = False
++    while not is_acceptable(p, q):
++        # Change p on one iteration and q on the other
++        if change_p:
++            p = getprime_func(pbits)
++        else:
++            q = getprime_func(qbits)
++
++        change_p = not change_p
++
++    # We want p > q as described on
++    # http://www.di-mgt.com.au/rsa_alg.html#crt
++    return (max(p, q), min(p, q))
+ 
+ def calculate_keys_custom_exponent(p: int, q: int, exponent: int) -> typing.Tuple[int, int]:
+     """Calculates an encryption and a decryption key given p, q and an exponent,
+@@ -460,7 +596,21 @@ def calculate_keys_custom_exponent(p: int, q: int, exponent: int) -> typing.Tupl
+     :type exponent: int
+ 
+     """
+-    pass
++    phi_n = (p - 1) * (q - 1)
++
++    try:
++        d = rsa.common.inverse(exponent, phi_n)
++    except rsa.common.NotRelativePrimeError as ex:
++        raise rsa.common.NotRelativePrimeError(
++            exponent, phi_n, ex.d,
++            msg='e (%d) and phi_n (%d) are not relatively prime (divider=%i)' % (exponent, phi_n, ex.d),
++        ) from ex
++
++    if (exponent * d) % phi_n != 1:
++        raise ValueError('e (%d) and d (%d) are not mult. inv. modulo phi_n (%d)' %
++                         (exponent, d, phi_n))
++
++    return (exponent, d)
+ 
+ def calculate_keys(p: int, q: int) -> typing.Tuple[int, int]:
+     """Calculates an encryption and a decryption key given p and q, and
+@@ -471,7 +621,7 @@ def calculate_keys(p: int, q: int) -> typing.Tuple[int, int]:
+ 
+     :return: tuple (e, d) with the encryption and decryption exponents.
+     """
+-    pass
++    return calculate_keys_custom_exponent(p, q, DEFAULT_EXPONENT)
+ 
+ def gen_keys(nbits: int, getprime_func: typing.Callable[[int], int], accurate: bool=True, exponent: int=DEFAULT_EXPONENT) -> typing.Tuple[int, int, int, int]:
+     """Generate RSA keys of nbits bits. Returns (p, q, e, d).
+@@ -487,7 +637,17 @@ def gen_keys(nbits: int, getprime_func: typing.Callable[[int], int], accurate: b
+         private key can be cracked. A very common choice for e is 65537.
+     :type exponent: int
+     """
+-    pass
++    # Regenerate p and q values, until calculate_keys doesn't raise a
++    # ValueError.
++    while True:
++        (p, q) = find_p_q(nbits // 2, getprime_func, accurate)
++        try:
++            (e, d) = calculate_keys_custom_exponent(p, q, exponent=exponent)
++            break
++        except ValueError:
++            pass
++
++    return (p, q, e, d)
+ 
+ def newkeys(nbits: int, accurate: bool=True, poolsize: int=1, exponent: int=DEFAULT_EXPONENT) -> typing.Tuple[PublicKey, PrivateKey]:
+     """Generates public and private keys, and returns them as (pub, priv).
+@@ -514,7 +674,20 @@ def newkeys(nbits: int, accurate: bool=True, poolsize: int=1, exponent: int=DEFA
+     Python 2.6 or newer.
+ 
+     """
+-    pass
++    if poolsize > 1:
++        from rsa import parallel
++        import functools
++        getprime_func = functools.partial(parallel.getprime, poolsize=poolsize)
++    else:
++        getprime_func = rsa.prime.getprime
++
++    # Generate the key components
++    (p, q, e, d) = gen_keys(nbits, getprime_func, accurate=accurate, exponent=exponent)
++
++    # Create the key objects
++    n = p * q
++
++    return (PublicKey(n, e), PrivateKey(n, e, d, p, q))
+ __all__ = ['PublicKey', 'PrivateKey', 'newkeys']
+ if __name__ == '__main__':
+     import doctest
+diff --git a/rsa/parallel.py b/rsa/parallel.py
+index 112a2a5..1b4a30c 100644
+--- a/rsa/parallel.py
++++ b/rsa/parallel.py
+@@ -12,6 +12,15 @@ from multiprocessing.connection import Connection
+ import rsa.prime
+ import rsa.randnum
+ 
++def _find_prime(nbits: int, pipe: Connection) -> None:
++    while True:
++        integer = rsa.randnum.read_random_odd_int(nbits)
++
++        # Test for primeness
++        if rsa.prime.is_prime(integer):
++            pipe.send(integer)
++            return
++
+ def getprime(nbits: int, poolsize: int) -> int:
+     """Returns a prime number that can be stored in 'nbits' bits.
+ 
+@@ -30,7 +39,30 @@ def getprime(nbits: int, poolsize: int) -> int:
+     True
+ 
+     """
+-    pass
++    (pipe_recv, pipe_send) = mp.Pipe(duplex=False)
++
++    procs = []
++    try:
++        # Create processes
++        procs = [mp.Process(target=_find_prime, args=(nbits, pipe_send))
++                 for _ in range(poolsize)]
++
++        # Start processes
++        for p in procs:
++            p.start()
++
++        result = pipe_recv.recv()
++    finally:
++        pipe_recv.close()
++        pipe_send.close()
++
++        # Terminate processes
++        for p in procs:
++            if p.pid is not None:
++                p.terminate()
++                p.join()
++
++    return result
+ __all__ = ['getprime']
+ if __name__ == '__main__':
+     print('Running doctests 1000x or until failure')
+diff --git a/rsa/pem.py b/rsa/pem.py
+index 732a4e2..d53f78f 100644
+--- a/rsa/pem.py
++++ b/rsa/pem.py
+@@ -7,11 +7,54 @@ def _markers(pem_marker: FlexiText) -> typing.Tuple[bytes, bytes]:
+     """
+     Returns the start and end PEM markers, as bytes.
+     """
+-    pass
++    if not isinstance(pem_marker, bytes):
++        pem_marker = pem_marker.encode('ascii')
++
++    return (b'-----BEGIN ' + pem_marker + b'-----',
++            b'-----END ' + pem_marker + b'-----')
+ 
+ def _pem_lines(contents: bytes, pem_start: bytes, pem_end: bytes) -> typing.Iterator[bytes]:
+     """Generator over PEM lines between pem_start and pem_end."""
+-    pass
++    in_pem_part = False
++    seen_pem_start = False
++
++    for line in contents.splitlines():
++        line = line.strip()
++
++        # Skip empty lines
++        if not line:
++            continue
++
++        # Handle start marker
++        if line == pem_start:
++            if in_pem_part:
++                raise ValueError('Seen start marker "%s" twice' % pem_start)
++
++            in_pem_part = True
++            seen_pem_start = True
++            continue
++
++        # Skip stuff before first marker
++        if not in_pem_part:
++            continue
++
++        # Handle end marker
++        if in_pem_part and line == pem_end:
++            in_pem_part = False
++            break
++
++        # Load fields
++        if b':' in line:
++            continue
++
++        yield line
++
++    # Do some sanity checks
++    if not seen_pem_start:
++        raise ValueError('No PEM start marker "%s" found' % pem_start)
++
++    if in_pem_part:
++        raise ValueError('No PEM end marker "%s" found' % pem_end)
+ 
+ def load_pem(contents: FlexiText, pem_marker: FlexiText) -> bytes:
+     """Loads a PEM file.
+@@ -27,7 +70,16 @@ def load_pem(contents: FlexiText, pem_marker: FlexiText) -> bytes:
+         marker cannot be found.
+ 
+     """
+-    pass
++    if not isinstance(contents, bytes):
++        contents = contents.encode('ascii')
++
++    (pem_start, pem_end) = _markers(pem_marker)
++
++    pem_lines = [line for line in _pem_lines(contents, pem_start, pem_end)]
++    pem_text = b''.join(pem_lines)
++
++    # base64.decodebytes raises binascii.Error, a ValueError subclass, on bad data.
++    return base64.decodebytes(pem_text)
+ 
+ def save_pem(contents: bytes, pem_marker: FlexiText) -> bytes:
+     """Saves a PEM file.
+@@ -40,4 +92,9 @@ def save_pem(contents: bytes, pem_marker: FlexiText) -> bytes:
+     :return: the base64-encoded content between the start and end markers, as bytes.
+ 
+     """
+-    pass
+\ No newline at end of file
++    (pem_start, pem_end) = _markers(pem_marker)
++
++    b64 = base64.standard_b64encode(contents)
++    b64_lines = [b64[start:start + 64] for start in range(0, len(b64), 64)]
++
++    return b'\n'.join([pem_start] + b64_lines + [pem_end]) + b'\n'
+\ No newline at end of file
+diff --git a/rsa/pkcs1.py b/rsa/pkcs1.py
+index c7529c4..e759598 100644
+--- a/rsa/pkcs1.py
++++ b/rsa/pkcs1.py
+@@ -51,7 +51,31 @@ def _pad_for_encryption(message: bytes, target_length: int) -> bytes:
+     b'\\x00hello'
+ 
+     """
+-    pass
++    max_msglength = target_length - 11
++    msglength = len(message)
++
++    if msglength > max_msglength:
++        raise OverflowError('%i bytes needed for message, but there is only'
++                            ' space for %i' % (msglength, max_msglength))
++
++    # Get random padding
++    padding = b''
++    padding_length = target_length - msglength - 3
++
++    # We remove 0-bytes, so we'll end up with less padding than we've asked for,
++    # so keep adding data until we're at the correct length.
++    while len(padding) < padding_length:
++        needed_bytes = padding_length - len(padding)
++        new_padding = os.urandom(needed_bytes + 5)
++        new_padding = new_padding.replace(b'\x00', b'')
++        padding = padding + new_padding[:needed_bytes]
++
++    assert len(padding) == padding_length
++
++    return b''.join([b'\x00\x02',
++                     padding,
++                     b'\x00',
++                     message])
+ 
+ def _pad_for_signing(message: bytes, target_length: int) -> bytes:
+     """Pads the message for signing, returning the padded message.
+@@ -71,7 +95,19 @@ def _pad_for_signing(message: bytes, target_length: int) -> bytes:
+     b'\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff'
+ 
+     """
+-    pass
++    max_msglength = target_length - 11
++    msglength = len(message)
++
++    if msglength > max_msglength:
++        raise OverflowError('%i bytes needed for message, but there is only'
++                            ' space for %i' % (msglength, max_msglength))
++
++    padding_length = target_length - msglength - 3
++
++    return b''.join([b'\x00\x01',
++                     padding_length * b'\xff',
++                     b'\x00',
++                     message])
+ 
+ def encrypt(message: bytes, pub_key: key.PublicKey) -> bytes:
+     """Encrypts the given message using PKCS#1 v1.5
+@@ -94,7 +130,13 @@ def encrypt(message: bytes, pub_key: key.PublicKey) -> bytes:
+     True
+ 
+     """
+-    pass
++    keylength = common.byte_size(pub_key.n)
++    padded = _pad_for_encryption(message, keylength)
++    payload = transform.bytes2int(padded)
++    encrypted = core.encrypt_int(payload, pub_key.e, pub_key.n)
++    block = transform.int2bytes(encrypted, keylength)
++
++    return block
+ 
+ def decrypt(crypto: bytes, priv_key: key.PrivateKey) -> bytes:
+     """Decrypts the given message using PKCS#1 v1.5
+@@ -146,7 +188,35 @@ def decrypt(crypto: bytes, priv_key: key.PrivateKey) -> bytes:
+     rsa.pkcs1.DecryptionError: Decryption failed
+ 
+     """
+-    pass
++    blocksize = common.byte_size(priv_key.n)
++
++    # Reject crypto texts that are not exactly one block long, for example
++    # ones with prepended zero bytes.
++    if len(crypto) != blocksize:
++        raise DecryptionError('Decryption failed')
++
++    encrypted = transform.bytes2int(crypto)
++    if encrypted >= priv_key.n:
++        raise DecryptionError('Decryption failed')
++
++    decrypted = priv_key.blinded_decrypt(encrypted)
++    cleartext = transform.int2bytes(decrypted, blocksize)
++
++    # If we can't find the cleartext marker before the padding, we have a problem
++    if cleartext[0:2] != b'\x00\x02':
++        raise DecryptionError('Decryption failed')
++
++    # Find the 00 separator between the padding and the message
++    try:
++        sep_idx = cleartext.index(b'\x00', 2)
++    except ValueError as ex:
++        raise DecryptionError('Decryption failed') from ex
++
++    # PKCS#1 v1.5 requires at least 8 bytes of padding.
++    if sep_idx < 10:
++        raise DecryptionError('Decryption failed')
++
++    return cleartext[sep_idx + 1:]
+ 
+ def sign_hash(hash_value: bytes, priv_key: key.PrivateKey, hash_method: str) -> bytes:
+     """Signs a precomputed hash with the private key.
+@@ -163,7 +233,21 @@ def sign_hash(hash_value: bytes, priv_key: key.PrivateKey, hash_method: str) ->
+         requested hash.
+ 
+     """
+-    pass
++    # Get the ASN1 code for this hash method
++    if hash_method not in HASH_ASN1:
++        raise ValueError('Invalid hash method: %s' % hash_method)
++    asn1code = HASH_ASN1[hash_method]
++
++    # Append the hash to the ASN1 code
++    digest = asn1code + hash_value
++
++    keylength = common.byte_size(priv_key.n)
++    padded = _pad_for_signing(digest, keylength)
++    payload = transform.bytes2int(padded)
++    encrypted = priv_key.blinded_encrypt(payload)
++    block = transform.int2bytes(encrypted, keylength)
++
++    return block
+ 
+ def sign(message: bytes, priv_key: key.PrivateKey, hash_method: str) -> bytes:
+     """Signs the message with the private key.
+@@ -182,7 +266,8 @@ def sign(message: bytes, priv_key: key.PrivateKey, hash_method: str) -> bytes:
+         requested hash.
+ 
+     """
+-    pass
++    msg_hash = compute_hash(message, hash_method)
++    return sign_hash(msg_hash, priv_key, hash_method)
+ 
+ def verify(message: bytes, signature: bytes, pub_key: key.PublicKey) -> str:
+     """Verifies that the signature matches the message.
+@@ -198,7 +283,28 @@ def verify(message: bytes, signature: bytes, pub_key: key.PublicKey) -> str:
+     :returns: the name of the used hash.
+ 
+     """
+-    pass
++    blocksize = common.byte_size(pub_key.n)
++    if len(signature) != blocksize:
++        raise VerificationError('Verification failed')
++
++    # Get the hash method
++    method_name = find_signature_hash(signature, pub_key)
++
++    # Calculate the hash of the message
++    message_hash = compute_hash(message, method_name)
++
++    # Reconstruct the expected padded hash
++    expected = _pad_for_signing(HASH_ASN1[method_name] + message_hash, blocksize)
++
++    # Recompute the signature and compare it with the expected block
++    encrypted = transform.bytes2int(signature)
++    decrypted = core.decrypt_int(encrypted, pub_key.e, pub_key.n)
++    clearsig = transform.int2bytes(decrypted, blocksize)
++
++    if not compare_digest(clearsig, expected):
++        raise VerificationError('Verification failed')
++
++    return method_name
+ 
+ def find_signature_hash(signature: bytes, pub_key: key.PublicKey) -> str:
+     """Returns the hash name detected from the signature.
+@@ -210,7 +316,18 @@ def find_signature_hash(signature: bytes, pub_key: key.PublicKey) -> str:
+     :param pub_key: the :py:class:`rsa.PublicKey` of the person signing the message.
+     :returns: the name of the used hash.
+     """
+-    pass
++    keylength = common.byte_size(pub_key.n)
++    if len(signature) != keylength:
++        raise VerificationError('Verification failed')
++
++    encrypted = transform.bytes2int(signature)
++    if encrypted >= pub_key.n:
++        raise VerificationError('Verification failed')
++
++    decrypted = core.decrypt_int(encrypted, pub_key.e, pub_key.n)
++    clearsig = transform.int2bytes(decrypted, keylength)
++
++    return _find_method_hash(clearsig)
+ 
+ def yield_fixedblocks(infile: typing.BinaryIO, blocksize: int) -> typing.Iterator[bytes]:
+     """Generator, yields each block of ``blocksize`` bytes in the input file.
+@@ -219,7 +336,14 @@ def yield_fixedblocks(infile: typing.BinaryIO, blocksize: int) -> typing.Iterato
+     :param blocksize: block size in bytes.
+     :returns: a generator that yields the contents of each block
+     """
+-    pass
++    while True:
++        block = infile.read(blocksize)
++
++        read_bytes = len(block)
++        if read_bytes == 0:
++            break
++
++        yield block
+ 
+ def compute_hash(message: typing.Union[bytes, typing.BinaryIO], method_name: str) -> bytes:
+     """Returns the message digest.
+@@ -231,7 +355,22 @@ def compute_hash(message: typing.Union[bytes, typing.BinaryIO], method_name: str
+         :py:const:`rsa.pkcs1.HASH_METHODS`.
+ 
+     """
+-    pass
++    try:
++        hasher = HASH_METHODS[method_name]()
++    except KeyError as ex:
++        raise ValueError('Invalid hash method: %s' % method_name) from ex
++
++    # A file-like object is read in blocks, so it doesn't need to fit in memory.
++    if hasattr(message, 'read') and hasattr(message.read, '__call__'):
++        while True:
++            block = message.read(1024)
++            if not block:
++                break
++            hasher.update(block)
++    else:
++        hasher.update(message)
++
++    return hasher.digest()
+ 
+ def _find_method_hash(clearsig: bytes) -> str:
+     """Finds the hash method.
+@@ -240,7 +379,12 @@ def _find_method_hash(clearsig: bytes) -> str:
+     :return: the used hash method.
+     :raise VerificationFailed: when the hash method cannot be found
+     """
+-    pass
++    # Find the hash method by looking for its ASN.1 code in the padded block.
++    for (hashname, asn1code) in HASH_ASN1.items():
++        if asn1code in clearsig:
++            return hashname
++
++    raise VerificationError('Verification failed')
+ __all__ = ['encrypt', 'decrypt', 'sign', 'verify', 'DecryptionError', 'VerificationError', 'CryptoError']
+ if __name__ == '__main__':
+     print('Running doctests 1000x or until failure')
+diff --git a/rsa/pkcs1_v2.py b/rsa/pkcs1_v2.py
+index 5ce6e42..f5e79be 100644
+--- a/rsa/pkcs1_v2.py
++++ b/rsa/pkcs1_v2.py
+@@ -26,7 +26,22 @@ def mgf1(seed: bytes, length: int, hasher: str='SHA-1') -> bytes:
+     :raise OverflowError: when `length` is too large for the specified `hasher`
+     :raise ValueError: when specified `hasher` is invalid
+     """
+-    pass
++    try:
++        hash_length = pkcs1.HASH_METHODS[hasher]().digest_size
++    except KeyError as ex:
++        raise ValueError('Invalid hasher %r, must be one of %s' %
++                         (hasher, ', '.join(pkcs1.HASH_METHODS.keys()))) from ex
++
++    # l = length, hLen = hash_length
++    if length > (2 ** 32 * hash_length):
++        raise OverflowError('Desired length %d is too long for hash %s' % (length, hasher))
++
++    T = b''
++    for counter in range(common.ceil_div(length, hash_length)):
++        c = transform.int2bytes(counter, fill_size=4)
++        T += pkcs1.compute_hash(seed + c, hasher)
++
++    return T[:length]
+ __all__ = ['mgf1']
+ if __name__ == '__main__':
+     print('Running doctests 1000x or until failure')
+diff --git a/rsa/prime.py b/rsa/prime.py
+index 7c4ea38..efe180e 100644
+--- a/rsa/prime.py
++++ b/rsa/prime.py
+@@ -13,7 +13,9 @@ def gcd(p: int, q: int) -> int:
+     >>> gcd(48, 180)
+     12
+     """
+-    pass
++    while q != 0:
++        (p, q) = (q, p % q)
++    return p
+ 
+ def get_primality_testing_rounds(number: int) -> int:
+     """Returns minimum number of rounds for Miller-Rabing primality testing,
+@@ -27,7 +29,17 @@ def get_primality_testing_rounds(number: int) -> int:
+       * p, q bitsize: 1536; rounds: 3
+     See: http://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.186-4.pdf
+     """
+-    pass
++    bitsize = rsa.common.bit_size(number)
++
++    if bitsize >= 1536:
++        return 3
++    if bitsize >= 1024:
++        return 4
++    if bitsize >= 512:
++        return 7
++
++    # For smaller bitsizes, set an arbitrary number of rounds.
++    return 10
+ 
+ def miller_rabin_primality_testing(n: int, k: int) -> bool:
+     """Calculates whether n is composite (which is always correct) or prime
+@@ -44,7 +56,41 @@ def miller_rabin_primality_testing(n: int, k: int) -> bool:
+     :return: False if the number is composite, True if it's probably prime.
+     :rtype: bool
+     """
+-    pass
++    # prevent potential infinite loop when d = 0
++    if n < 2:
++        return False
++
++    # Small primes are handled directly, and even numbers are composite.
++    if n in (2, 3):
++        return True
++    if n % 2 == 0:
++        return False
++
++    # Decompose (n - 1) to write it as (2 ** r) * d
++    # While d is even, divide it by 2 and increase the exponent.
++    d = n - 1
++    r = 0
++    while d % 2 == 0:
++        d //= 2
++        r += 1
++
++    for _ in range(k):
++        # Pick a random witness a in the range [2, n - 2].
++        a = rsa.randnum.randint(n - 3) + 1
++
++        x = pow(a, d, n)
++        if x == 1 or x == n - 1:
++            continue
++
++        for _ in range(r - 1):
++            x = pow(x, 2, n)
++            if x == n - 1:
++                break
++        else:
++            # a is a witness for the compositeness of n.
++            return False
++
++    return True
+ 
+ def is_prime(number: int) -> bool:
+     """Returns True if the number is prime, and False otherwise.
+@@ -56,7 +102,18 @@ def is_prime(number: int) -> bool:
+     >>> is_prime(41)
+     True
+     """
+-    pass
++    # Check for small numbers.
++    if number < 10:
++        return number in {2, 3, 5, 7}
++
++    # Check for even numbers.
++    if not (number & 1):
++        return False
++
++    # Calculate minimum number of rounds.
++    k = get_primality_testing_rounds(number)
++
++    return miller_rabin_primality_testing(number, k)
+ 
+ def getprime(nbits: int) -> int:
+     """Returns a prime number that can be stored in 'nbits' bits.
+@@ -73,7 +130,12 @@ def getprime(nbits: int) -> int:
+     >>> common.bit_size(p) == 128
+     True
+     """
+-    pass
++    while True:
++        integer = rsa.randnum.read_random_odd_int(nbits)
++
++        # Test for primeness
++        if is_prime(integer):
++            return integer
+ 
+ def are_relatively_prime(a: int, b: int) -> bool:
+     """Returns True if a and b are relatively prime, and False if they
+@@ -84,7 +146,8 @@ def are_relatively_prime(a: int, b: int) -> bool:
+     >>> are_relatively_prime(2, 4)
+     False
+     """
+-    pass
++    d = gcd(a, b)
++    return d == 1
+ if __name__ == '__main__':
+     print('Running doctests 1000x or until failure')
+     import doctest
+diff --git a/rsa/randnum.py b/rsa/randnum.py
+index 595dbf4..a48a433 100644
+--- a/rsa/randnum.py
++++ b/rsa/randnum.py
+@@ -9,11 +9,32 @@ def read_random_bits(nbits: int) -> bytes:
+     If nbits isn't a whole number of bytes, an extra byte will be appended with
+     only the lower bits set.
+     """
+-    pass
++    nbytes, rbits = divmod(nbits, 8)
++
++    # Get the random bytes
++    randomdata = os.urandom(nbytes)
++
++    # Add the remaining random bits
++    if rbits:
++        randomvalue = os.urandom(1)[0]
++        randomvalue >>= (8 - rbits)
++        randomdata = struct.pack('B', randomvalue) + randomdata
++
++    return randomdata
+ 
+ def read_random_int(nbits: int) -> int:
+     """Reads a random integer of approximately nbits bits."""
+-    pass
++    if nbits < 16:
++        raise ValueError('Only nbits >= 16 strong supported')
++
++    randomdata = read_random_bits(nbits)
++    value = transform.bytes2int(randomdata)
++
++    # Ensure that the number is large enough to just fill out the required
++    # number of bits.
++    value |= 1 << (nbits - 1)
++
++    return value
+ 
+ def read_random_odd_int(nbits: int) -> int:
+     """Reads a random odd integer of approximately nbits bits.
+@@ -21,7 +42,10 @@ def read_random_odd_int(nbits: int) -> int:
+     >>> read_random_odd_int(512) & 1
+     1
+     """
+-    pass
++    value = read_random_int(nbits)
++
++    # Make sure it's odd
++    return value | 1
+ 
+ def randint(maxvalue: int) -> int:
+     """Returns a random integer x with 1 <= x <= maxvalue
+@@ -30,4 +54,14 @@ def randint(maxvalue: int) -> int:
+     to store, the closer maxvalue is to (2 ** N) - 1, the faster this function
+     is.
+     """
+-    pass
+\ No newline at end of file
++    if maxvalue < 1:
++        raise ValueError('maxvalue must be at least 1, got %i' % maxvalue)
++
++    bitsize = common.bit_size(maxvalue)
++
++    # Rejection sampling: draw bitsize random bits until the value lies in
++    # the range [1, maxvalue]. This keeps the distribution uniform.
++    while True:
++        value = transform.bytes2int(read_random_bits(bitsize))
++        if 1 <= value <= maxvalue:
++            return value
+diff --git a/rsa/transform.py b/rsa/transform.py
+index c4e6a91..da3d431 100644
+--- a/rsa/transform.py
++++ b/rsa/transform.py
+@@ -3,6 +3,7 @@
+ From bytes to a number, number to bytes, etc.
+ """
+ import math
++from rsa import common
+ 
+ def bytes2int(raw_bytes: bytes) -> int:
+     """Converts a list of bytes or an 8-bit string to an integer.
+@@ -15,7 +16,7 @@ def bytes2int(raw_bytes: bytes) -> int:
+     8405007
+ 
+     """
+-    pass
++    return int.from_bytes(raw_bytes, 'big', signed=False)
+ 
+ def int2bytes(number: int, fill_size: int=0) -> bytes:
+     """
+@@ -37,7 +38,18 @@ def int2bytes(number: int, fill_size: int=0) -> bytes:
+         argument to this function to be set to ``False`` otherwise, no
+         error will be raised.
+     """
+-    pass
++    if number < 0:
++        raise ValueError('Number must be an unsigned integer: %d' % number)
++
++    needed_bytes = common.byte_size(number)
++    if fill_size and needed_bytes > fill_size:
++        raise OverflowError('Needed %i bytes for number, but fill size is %i' %
++                            (needed_bytes, fill_size))
++
++    raw_bytes = number.to_bytes(needed_bytes, 'big', signed=False)
++    if fill_size:
++        raw_bytes = raw_bytes.rjust(fill_size, b'\x00')
++    return raw_bytes
+ if __name__ == '__main__':
+     import doctest
+     doctest.testmod()
+\ No newline at end of file
+diff --git a/rsa/util.py b/rsa/util.py
+index 03e79d1..e3ca330 100644
+--- a/rsa/util.py
++++ b/rsa/util.py
+@@ -5,4 +5,44 @@ import rsa.key
+ 
+ def private_to_public() -> None:
+     """Reads a private key and outputs the corresponding public key."""
+-    pass
+\ No newline at end of file
++    parser = OptionParser(usage='usage: %prog [options]',
++                          description='Reads a private key and outputs the corresponding public key. Both private and public keys use the format described in PKCS#1 v1.5')
++
++    parser.add_option('-i', '--input', dest='infilename', type='string',
++                      help='Input filename. Reads from stdin if not specified')
++    parser.add_option('-o', '--output', dest='outfilename', type='string',
++                      help='Output filename. Writes to stdout of not specified')
++    parser.add_option('--inform', dest='inform',
++                      help='key format of input - default PEM',
++                      choices=('PEM', 'DER'), default='PEM')
++    parser.add_option('--outform', dest='outform',
++                      help='key format of output - default PEM',
++                      choices=('PEM', 'DER'), default='PEM')
++
++    (cli, cli_args) = parser.parse_args(sys.argv[1:])
++
++    if cli_args:
++        parser.print_help()
++        raise SystemExit(1)
++
++    # Read the input data
++    if cli.infilename:
++        print('Reading private key from %s in %s format' % (cli.infilename, cli.inform), file=sys.stderr)
++        with open(cli.infilename, 'rb') as infile:
++            priv_data = infile.read()
++    else:
++        print('Reading private key from stdin in %s format' % cli.inform, file=sys.stderr)
++        priv_data = sys.stdin.buffer.read()
++
++    priv_key = rsa.key.PrivateKey.load_pkcs1(priv_data, cli.inform)
++    pub_key = rsa.key.PublicKey(priv_key.n, priv_key.e)
++
++    # Save output
++    pub_data = pub_key.save_pkcs1(cli.outform)
++    if cli.outfilename:
++        print('Writing public key to %s in %s format' % (cli.outfilename, cli.outform), file=sys.stderr)
++        with open(cli.outfilename, 'wb') as outfile:
++            outfile.write(pub_data)
++    else:
++        print('Writing public key to stdout in %s format' % cli.outform, file=sys.stderr)
++        sys.stdout.buffer.write(pub_data)
+\ No newline at end of file

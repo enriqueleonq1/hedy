@@ -1,0 +1,61 @@
+diff --git a/tests/test_durations.py b/tests/test_durations.py
+index 1b9cfca..f0dcfab 100644
+--- a/tests/test_durations.py
++++ b/tests/test_durations.py
+@@ -1,9 +1,32 @@
+ import unittest
+ 
+-from timer.durations import format_minutes
++from timer.durations import format_minutes, parse_duration
+ 
+ 
+ class FormatTest(unittest.TestCase):
+     def test_formats(self):
+         self.assertEqual(format_minutes(90), "1h30m")
+         self.assertEqual(format_minutes(45), "45m")
++
++
++class ParseTest(unittest.TestCase):
++    def test_parses_common_formats(self):
++        self.assertEqual(parse_duration("1h30m"), 90)
++        self.assertEqual(parse_duration("45m"), 45)
++        self.assertEqual(parse_duration("2h"), 120)
++
++    def test_tolerates_spaces_and_case(self):
++        self.assertEqual(parse_duration(" 1h 30m "), 90)
++        self.assertEqual(parse_duration("1H30M"), 90)
++        self.assertEqual(parse_duration("0m"), 0)
++
++    def test_round_trips_with_format_minutes(self):
++        for minutes in (0, 1, 45, 60, 90, 125):
++            with self.subTest(minutes=minutes):
++                self.assertEqual(parse_duration(format_minutes(minutes)), minutes)
++
++    def test_rejects_invalid_input(self):
++        for text in ("", "   ", "h", "m", "30m1h", "1.5h", "abc", "90"):
++            with self.subTest(text=text):
++                with self.assertRaises(ValueError):
++                    parse_duration(text)
+diff --git a/timer/durations.py b/timer/durations.py
+index 4d7d010..77cdfe8 100644
+--- a/timer/durations.py
++++ b/timer/durations.py
+@@ -1,5 +1,18 @@
+ """Duraciones del formulario de pausas."""
+ 
++import re
++
++_DURATION_RE = re.compile(r"(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?", re.IGNORECASE)
++
++
++def parse_duration(text):
++    """'1h30m' -> 90, '45m' -> 45, '2h' -> 120. Lanza ValueError si no se entiende."""
++    match = _DURATION_RE.fullmatch(text.strip())
++    if not match or not any(match.groups()):
++        raise ValueError(f"Duración no válida: {text!r}")
++    hours, minutes = match.groups()
++    return int(hours or 0) * 60 + int(minutes or 0)
++
+ 
+ def format_minutes(minutes):
+     """90 -> '1h30m'."""

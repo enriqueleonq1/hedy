@@ -4495,3 +4495,168 @@ multi-agent apps, about forty in all):
   as in the agents' CLIs.
 - **Later, with evals:** telling the agent which tests cover what it will touch (Hedy has the code
   map), instead of prescribing test-first.
+
+## 57. What makes a result worth trusting: three tests, fixed before the data (Nov 23, 2026)
+
+**Question.** Flows did not pay (§50). What could make users trust the result of a code task
+instead? Three tests, each with its plan and its decision rule committed before its first run
+(`evals/experiments/rescue`, `second-opinion`, `long-tasks`: `PLAN.md`, then `RESULTS.md` and
+`data/`). Only Claude models were available, so «another provider» became another model.
+
+**Tools added to `hedy-evals`.** `--diffs` saves each run's final patch with the hidden
+verdict beside it. `--rescue` runs the project's tests after the agent and, when they fail,
+goes on in three arms from the same first attempt. `--long <arms> --cap N` runs a task over
+three fresh sessions, each cut after N actions (what a cut session spent comes from its logs).
+A case can name its own tests (`tests`) and carry a reference solution (`reference/`).
+
+**A. Run the project's tests after the agent and send the failure back** (haiku, 13 cases,
+39 runs, $0.26). The tests failed after 0 of 39 first attempts, so no arm ever acted: 33/39
+in every arm. The six failures all passed the project's tests (the agent's own included) and
+failed what they do not cover. The agent already runs the tests before it stops.
+**Decision:** not built as a default. The bottleneck is the tests, not who runs them (as
+`escalar` found in §50).
+
+**B. A second opinion on a finished change** (40 diffs: 20 bad, 6 of them real haiku failures
+and 14 planted; 20 good; haiku and Sonnet reviewing with a clean context, 3 repeats; $7.09
+with the judge). Every finding was labelled by hand and by a blind Opus judge (89 % agreement,
+kappa 0.79).
+
+| | detects | false alarms per good diff | $ per detection |
+|---|---|---|---|
+| haiku | 78 % | 0.17 (0.27 by the judge) | 0.009 |
+| Sonnet | 72 % | 0.05 | 0.079 |
+| either + a verifier per finding | same | same | +37–46 % |
+
+- Planted errors were caught almost always (42/42, 41/42); **real haiku failures 5/18
+  (haiku) and 2/18 (Sonnet)**.
+- The verifier confirmed 141 of 141 findings, the false alarms included.
+- Sonnet found nothing haiku missed; it raised fewer false alarms.
+
+**Decision:** «Pedir segunda opinión» meets the bar (≥ 50 % with < 1 false alarm per 4 good
+diffs): build it as an action the user asks for, Sonnet by default, no verification pass,
+shown as a review that catches visible mistakes (a boundary, a secret, a broken rule), never
+as a gate or a guarantee.
+
+**C. A long task over three fresh sessions** (three cases of 24 requirements, each session a
+new process cut after 20 actions; «Implementa esto» / «Continúa.» / «Cambia esto y termina»;
+haiku 45 runs, Sonnet 18, Opus 6; about $41).
+
+| haiku, after session 3 | requirements met | Δ with solo | first session cut early → done |
+|---|---|---|---|
+| solo | 61 % | | 0/4 |
+| request repeated | 90 % | +29 [+24, +33] | 3/4 |
+| task document | 99 % | +38 [+26, +53] | 5/5 |
+| third-party layer | 47 % | −14 [−36, +28] | 3/8 |
+| `essential` flow | 75 % | +13 [−6, +29] | 2/6 |
+
+- A session that only hears «Continúa.» does not know the task: alone, a task cut early never
+  moved again. The document (the request as written, the change, each session's progress)
+  finished every one in the next session, at 1.08× the cost, with no regressions.
+- Sonnet and Opus finished these cases in their first session (no arm can help: ±2 points).
+  With a cap of 5, run after the plan, Sonnet behaves as haiku: solo 6 %, repeat 47 %,
+  document 51 %.
+
+**Decision:** build the task document, on for tasks that span sessions; it costs a few
+lines when not needed. Flows stay an advanced option: below the document and the repeated
+request on every measure, the most expensive, the only arm with regressions.
+
+## 58. The task document, confirmed against what Hedy does today: not confirmed (Nov 24, 2026)
+
+**Question.** §57's test C found that a task document took haiku from 61 % to 99 % of a long
+task's requirements. Its cases were ours and it was cut at 20 actions with a bare «Continúa.».
+Does it hold with cases we did not write, a cut by budget, and against what Hedy actually sends
+when a task goes on in another session? (`evals/experiments/confirmation`: `PLAN.md` with six
+amendments, `RESULTS.md`, `data/`.)
+
+**How.**
+
+- **Cases:** eight Python libraries from Commit0, picked by a fixed rule and seed. Each was
+  emptied to its docstrings and graded by its own hidden tests.
+- **Sessions:** each a new process, cut at 600 000 tokens at input price.
+- **The change:** one change to the request, asked with session 2.
+- **Runs:** up to six sessions; haiku, one run per case and arm. Sonnet was too dear for the
+  $60 (amendment 1).
+- **hedy-hoy:** the handoff of `Hedy::handoff_task` (`prompts.rs:311`, called at
+  `tasks.rs:1692`). It sends the original request and the changed files, and it does not
+  carry the messages the user sent after the request.
+- **Cost:** $39.34.
+
+| haiku, 8 cases | requirements | Δ vs hedy-hoy | change respected | $ / run |
+|---|---|---|---|---|
+| hedy-hoy | 60 % | | 3/8 | 0.74 |
+| task document | 56 % | −4 [−7, −1] | 7/8 (+50 [+13, +88]) | 0.61 |
+| third-party layer (2 cases) | 54 % | −3 [−9, +3] | 1/2 | 1.19 |
+
+- **Requirements.** The document never came out ahead: four ties, four losses by 1–12 points.
+  C's gain came from the request being lost after a bare «Continúa.». Hedy's handoff already
+  carries the request as written.
+- **The change.** Whenever session 2 was cut before the change was done, hedy-hoy never did
+  it, because its next message no longer has it. The document carried it every time.
+- **The layer:** too few runs to decide. It cost 1.6× hedy-hoy, and in attrs a later session
+  undid 13 requirements.
+- **The flow** and the repeated request did not run (amendment 6).
+
+**Decision:**
+
+- The full task document is not confirmed and is not a priority (hedy-hoy within 5 points).
+- Build the part that carried the difference instead: Hedy's handoff carries the user's
+  later messages about the task (changes to the request) along with the original request.
+- §57's decision on flows stands, untested here.
+
+## 59. A way of working with checkpoints: one AI that stops for the user, not a flow (Nov 24, 2026)
+
+**Question.** A common way of working is: analyse the request, plan, have the plan checked,
+implement, check the result. Does it need a flow with several AIs, or one AI that stops for
+the user's word? (`evals/experiments/checkpoints`: `PLAN.md`, `RESULTS.md`, `data/`;
+`hedy-evals --checkpoints`.)
+
+**How.**
+
+- **Cases:** five existing cases, each asked without something only the user knows: a format,
+  two project rules, a security limit, a boundary, a rounding rule.
+- **The simulated user:** at the first plan or approval it always sends the same
+  clarification, then approves.
+- **Arms:**
+  - `solo`: one AI;
+  - `informed`: everything said up front;
+  - `plan`: «Enséñame el plan primero», where the same session plans, hears the user and
+    implements;
+  - `approval`: the «Con tu aprobación» flow, where an architect plans in its own session and
+    a test-first programmer implements in a new one.
+- **Runs:** haiku as `claude-haiku-5-5`, 3 repeats, 60 runs, $0.63.
+
+| arm | passed | $ / run | × plan | seconds |
+|---|---|---|---|---|
+| solo | 47 % | 0.006 | 0.55 | 29 |
+| informed | 100 % | 0.006 | 0.49 | 24 |
+| plan | 87 % | 0.012 | 1.00 | 47 |
+| approval | 80 % | 0.018 | 1.58 | 80 |
+
+- **The checkpoint brings in what the user knows.** In the two cases where the gap mattered,
+  `solo` passed 0/6 and every arm that heard the clarification passed 6/6. Haiku covered the
+  other gaps unasked.
+- **The clarification survives a handoff.** It reached the agent in 30 of 30 runs, and no
+  failure was about it, in the same session or in a new one. The remaining failures were
+  details nobody asked for: one case's released reservations still listed, in every arm but
+  `informed`; a file returned as bytes.
+- **The same session costs less and does as well.** `plan` − `approval`: +7 points [0, +20]
+  at 0.63× the cost and about half the time.
+- **Asking everything up front is still best:** 100 % at half the cost of a checkpoint.
+- **The pre-registered rule for part 1** (`plan` within 10 points of `informed`) was not met as
+  written (−13 [−40, 0]). The gap is all in that one case, and none of it is about the
+  clarification.
+
+**Found on the way.** Claude Code (2.1.306) runs another model in plan mode when the model is
+the alias `haiku` (or `opusplan`). A plan-mode session asked for haiku ran entirely on
+`claude-sonnet-5-5`. The full id stays on haiku. So «Enséñame el plan primero» with haiku
+spends Sonnet while Hedy shows haiku.
+
+**Decision.**
+
+- A user's way of working with checkpoints is built on one AI in one session, with Hedy
+  pausing for the user (as plan-first does today) and running the checks itself.
+- It is not built as a chain of roles in separate sessions: that costs about 1.6× and gains
+  nothing here.
+- Flows stay for what the evidence still leaves them: a clean-context review, and parallel
+  work.
+- To decide: how plan mode's model switch shows to the user, or whether Hedy passes the full id.

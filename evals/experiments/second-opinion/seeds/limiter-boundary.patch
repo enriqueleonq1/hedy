@@ -1,0 +1,30 @@
+diff --git a/limiter/sliding.py b/limiter/sliding.py
+index 5658084..aed221d 100644
+--- a/limiter/sliding.py
++++ b/limiter/sliding.py
+@@ -5,12 +5,11 @@ from collections import deque
+ class SlidingWindowLimiter:
+     """At most `limit` requests per client in any `window` seconds."""
+ 
+-    _hits = {}
+-
+     def __init__(self, limit, window, clock=time.monotonic):
+         self.limit = limit
+         self.window = window
+         self.clock = clock
++        self._hits = {}
+ 
+     def _recent(self, client):
+         hits = self._hits.setdefault(client, deque())
+@@ -21,8 +20,10 @@ class SlidingWindowLimiter:
+ 
+     def allow(self, client):
+         hits = self._recent(client)
++        if len(hits) >= self.limit:
++            return False
+         hits.append(self.clock())
+-        return len(hits) <= self.limit
++        return True
+ 
+     def remaining(self, client):
+         return max(0, self.limit - len(self._recent(client)))

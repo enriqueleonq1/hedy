@@ -1,0 +1,10 @@
+{
+  "next_booking": 1,
+  "bookings": [],
+  "consumptions": [],
+  "invoices": [],
+  "access_log": [],
+  "outbox": [],
+  "lockers": {},
+  "guests": []
+}
