@@ -285,7 +285,10 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
         args.extend(["--append-system-prompt".into(), system.join("\n\n")]);
     }
     if let Some(model) = &request.model {
-        args.extend(["--model".into(), model.clone()]);
+        args.extend([
+            "--model".into(),
+            session_model(model, request.plan_first).to_owned(),
+        ]);
     }
     if let Some(session) = &request.resume {
         args.extend(["--resume".into(), session.clone()]);
@@ -295,6 +298,19 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
         args.extend(["--tools".into(), lean_tools(request, mode)]);
     }
     args
+}
+
+/// Claude Code runs another model in plan mode when the session's model is
+/// the alias `haiku` (docs/decisions.md §59: haiku asked, Sonnet planned). A
+/// task that plans first names that model by its id, which stays as asked.
+const PLAN_MODE_IDS: [(&str, &str); 1] = [("haiku", "claude-haiku-5-5")];
+
+/// The model a session is launched with.
+fn session_model(model: &str, plan_first: bool) -> &str {
+    PLAN_MODE_IDS
+        .iter()
+        .find(|(alias, _)| plan_first && model.eq_ignore_ascii_case(alias))
+        .map_or(model, |(_, id)| id)
 }
 
 fn user_message(text: &str, images: &[PromptImage]) -> PortResult<Value> {
@@ -654,6 +670,26 @@ pub(crate) mod tests {
         assert!(system.starts_with("Responde en español.") && system.contains("Modo Research"));
         assert!(system.contains("memory_propose"));
         assert_eq!(args.iter().filter(|a| *a == "--allowedTools").count(), 1);
+    }
+
+    #[test]
+    fn a_task_that_plans_first_with_haiku_names_it_by_its_id() {
+        let model = |model: &str, plan_first: bool| {
+            let args = args(
+                &AgentRequest {
+                    model: Some(model.into()),
+                    ..request(TaskMode::Project, plan_first)
+                },
+                None,
+            );
+            args[args.iter().position(|a| a == "--model").unwrap() + 1].clone()
+        };
+        assert_eq!(model("haiku", true), "claude-haiku-5-5");
+        assert_eq!(model("Haiku", true), "claude-haiku-5-5");
+        assert_eq!(model("haiku", false), "haiku");
+        assert_eq!(model("sonnet", true), "sonnet");
+        // Who picks opusplan wants Opus to plan.
+        assert_eq!(model("opusplan", true), "opusplan");
     }
 
     #[test]
