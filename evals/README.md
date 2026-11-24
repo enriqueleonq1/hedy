@@ -14,7 +14,9 @@ Each case is a folder:
 - `repo/`: the starting project. Each run copies it into a fresh git repo.
 - `check/`: hidden checks, copied into the worktree only after the agent finishes.
 
-Results are appended as JSON lines to `evals/results/` (not committed).
+Results are appended as JSON lines to `evals/results/` (not committed). With `--diffs`, each
+run's final patch goes to `evals/results/diffs/<results file>/<run>.patch`, with the hidden
+check's verdict beside it in a `.json` of the same name.
 
 Flows (docs/decisions.md §45, §50): `--flows none,classic,file:<path>` runs each case as one
 agent, as a template or as a flow written as text; `--roles <path>,...` saves custom roles

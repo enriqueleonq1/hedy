@@ -58,6 +58,8 @@ pub struct RunnerOptions {
     pub code_map: Option<String>,
     /// Where repos are copied for each run.
     pub work_dir: PathBuf,
+    /// Where each run's patch and verdict are saved (`--diffs`).
+    pub diffs: Option<PathBuf>,
 }
 
 pub struct Runner {
@@ -136,6 +138,71 @@ pub fn flow_label(flow: &str) -> String {
     }
 }
 
+/// Everything changed in `work_dir` since `base`, new files included, as a
+/// patch `git apply` takes. A throwaway index leaves the worktree's own alone;
+/// Python's caches are left out.
+pub fn changes_since(work_dir: &Path, base: &str) -> Result<String> {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let index =
+        std::env::temp_dir().join(format!("hedy-evals-index-{}-{stamp}", std::process::id()));
+    let _index = RemoveOnDrop(index.clone());
+    let git = |args: &[&str]| -> Result<String> {
+        let output = Command::new("git")
+            .args(args)
+            .env("GIT_INDEX_FILE", &index)
+            .current_dir(work_dir)
+            .output()
+            .context("no se pudo ejecutar git")?;
+        if !output.status.success() {
+            bail!("git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    };
+    git(&["read-tree", base])?;
+    git(&[
+        "add",
+        "-A",
+        "--",
+        ".",
+        ":(exclude,glob)**/__pycache__/**",
+        ":(exclude,glob)**/*.pyc",
+    ])?;
+    git(&["diff", "--cached", "--binary", base])
+}
+
+/// Saves a run's patch as `<case>-<layer>-<variant>-<attempt>-<start>.patch`
+/// in `dir`, with the hidden check's verdict beside it in a `.json` of the
+/// same name. Returns the patch's file name.
+pub fn save_diff(dir: &Path, run: &RunResult, patch: &str) -> Result<String> {
+    std::fs::create_dir_all(dir)?;
+    let stem = format!(
+        "{}-{}-{}-{}-{}",
+        run.case,
+        run.layer,
+        run.variant.replace(['+', ':', '/'], "_"),
+        run.attempt,
+        run.started_at
+    );
+    let verdict = serde_json::json!({
+        "case": run.case,
+        "layer": run.layer,
+        "variant": run.variant,
+        "attempt": run.attempt,
+        "model": run.model,
+        "passed": run.passed,
+        "error": run.error,
+        "checkOutput": run.check_output,
+    });
+    std::fs::write(dir.join(format!("{stem}.patch")), patch)?;
+    std::fs::write(
+        dir.join(format!("{stem}.json")),
+        serde_json::to_string_pretty(&verdict)?,
+    )?;
+    Ok(format!("{stem}.patch"))
+}
+
 /// What the runner saw of a task while it ran.
 #[derive(Default)]
 struct Observed {
@@ -210,6 +277,7 @@ impl Runner {
             error: None,
             steps: Vec::new(),
             check_output: String::new(),
+            diff: None,
             started_at,
         };
         // Hedy, the agent's hooks and the memory server it starts all read
@@ -367,9 +435,17 @@ impl Runner {
         out.error = observed.error;
         out.steps = observed.steps;
         out.notes_read = self.hedy.memory(repo)?.used_last_task.len();
+        let task = self.hedy.task(id)?;
+        // Before the check, whose hidden files are not the agent's work.
+        let patch = match (&self.options.diffs, &task.workspace) {
+            (Some(_), Some(space)) => Some(changes_since(&space.worktree, &space.base_commit)?),
+            _ => None,
+        };
         if out.error.is_none() {
-            let task = self.hedy.task(id)?;
             (out.passed, out.check_output) = self.check(case, &task.work_dir())?;
+        }
+        if let (Some(dir), Some(patch)) = (&self.options.diffs, patch) {
+            out.diff = Some(save_diff(dir, out, &patch)?);
         }
         Ok(())
     }
@@ -541,6 +617,91 @@ impl Runner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn repo_with(files: &[(&str, &str)]) -> (tempfile::TempDir, String) {
+        let tmp = tempfile::tempdir().unwrap();
+        for (path, text) in files {
+            let path = tmp.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        git(tmp.path(), &["init", "-q", "-b", "main"]).unwrap();
+        git(tmp.path(), &["add", "-A"]).unwrap();
+        git(tmp.path(), &["commit", "-q", "-m", "base"]).unwrap();
+        let head = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        let head = String::from_utf8(head.stdout).unwrap().trim().to_owned();
+        (tmp, head)
+    }
+
+    #[test]
+    fn a_runs_changes_include_new_and_removed_files_but_not_caches() {
+        let (tmp, base) = repo_with(&[("app/a.py", "x = 1\n"), ("old.py", "gone\n")]);
+        let dir = tmp.path();
+        std::fs::write(dir.join("app/a.py"), "x = 2\n").unwrap();
+        std::fs::remove_file(dir.join("old.py")).unwrap();
+        std::fs::write(dir.join("new.py"), "y = 3\n").unwrap();
+        std::fs::create_dir_all(dir.join("app/__pycache__")).unwrap();
+        std::fs::write(dir.join("app/__pycache__/a.cpython-314.pyc"), [0u8, 1]).unwrap();
+        // The agent's own commits count too.
+        git(dir, &["add", "new.py"]).unwrap();
+        git(dir, &["commit", "-q", "-m", "agent"]).unwrap();
+
+        let patch = changes_since(dir, &base).unwrap();
+        assert!(patch.contains("-x = 1\n+x = 2"), "{patch}");
+        assert!(patch.contains("deleted file mode") && patch.contains("-gone"));
+        assert!(patch.contains("+++ b/new.py") && patch.contains("+y = 3"));
+        assert!(!patch.contains("__pycache__"), "{patch}");
+        // The worktree's index is untouched: the edit is still unstaged.
+        let staged = Command::new("git")
+            .args(["diff", "--cached", "--name-only"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(staged.stdout.is_empty());
+
+        // It applies on the base.
+        git(dir, &["checkout", "-q", "-f", &base]).unwrap();
+        git(dir, &["clean", "-qfdx"]).unwrap();
+        std::fs::write(dir.join("p.patch"), &patch).unwrap();
+        git(dir, &["apply", "p.patch"]).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("new.py")).unwrap(),
+            "y = 3\n"
+        );
+    }
+
+    #[test]
+    fn a_saved_diff_has_its_verdict_beside_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let run: RunResult = serde_json::from_value(serde_json::json!({
+            "case": "parse-duration", "layer": "memory", "variant": "base+flow:tdd",
+            "attempt": 2, "account": "eval", "model": "haiku", "passed": false,
+            "tokens": 1, "costUsd": null, "durationMs": 1, "actions": 0, "notesRead": 0,
+            "error": null, "checkOutput": "FAILED (failures=1)", "startedAt": 7
+        }))
+        .unwrap();
+        let name = save_diff(tmp.path(), &run, "diff --git a/x b/x\n").unwrap();
+        assert_eq!(name, "parse-duration-memory-base_flow_tdd-2-7.patch");
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join(&name)).unwrap(),
+            "diff --git a/x b/x\n"
+        );
+        let verdict: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                tmp.path()
+                    .join("parse-duration-memory-base_flow_tdd-2-7.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(verdict["passed"], false);
+        assert_eq!(verdict["checkOutput"], "FAILED (failures=1)");
+        assert_eq!(verdict["variant"], "base+flow:tdd");
+    }
 
     #[test]
     fn tail_keeps_the_end_on_a_char_boundary() {

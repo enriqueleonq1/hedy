@@ -59,6 +59,10 @@ struct Args {
     /// Archivo JSONL de resultados (por defecto, <suite>/results/run-<fecha>.jsonl).
     #[arg(long)]
     out: Option<PathBuf>,
+    /// Guarda el diff final de cada corrida (y el veredicto oculto a su lado)
+    /// en diffs/<nombre del archivo de resultados>/, junto a los resultados.
+    #[arg(long)]
+    diffs: bool,
     /// Solo lista los casos.
     #[arg(long)]
     list: bool,
@@ -154,6 +158,7 @@ fn run(args: Args) -> Result<()> {
         .append(true)
         .open(&out)?;
 
+    let diffs = args.diffs.then(|| diffs_dir(&out));
     let runner = Runner::new(
         hedy,
         RunnerOptions {
@@ -161,6 +166,7 @@ fn run(args: Args) -> Result<()> {
             model: args.model.clone(),
             code_map,
             work_dir: work.clone(),
+            diffs: diffs.clone(),
         },
     );
     for flow in &args.flows {
@@ -179,10 +185,14 @@ fn run(args: Args) -> Result<()> {
         * args.flows.len()
         * args.repeat as usize;
     eprintln!(
-        "{total} corridas con {} ({}). Resultados en {}",
+        "{total} corridas con {} ({}). Resultados en {}{}",
         account.name,
         args.model.as_deref().unwrap_or("modelo por defecto"),
-        out.display()
+        out.display(),
+        diffs
+            .as_ref()
+            .map(|d| format!(", diffs en {}", d.display()))
+            .unwrap_or_default()
     );
 
     let mut results = Vec::new();
@@ -235,6 +245,15 @@ fn run_all(
         }
     }
     Ok(())
+}
+
+/// `results/run-1.jsonl` keeps its diffs in `results/diffs/run-1/`.
+fn diffs_dir(out: &std::path::Path) -> PathBuf {
+    let stem = out.file_stem().unwrap_or_default();
+    out.parent()
+        .unwrap_or(std::path::Path::new("."))
+        .join("diffs")
+        .join(stem)
 }
 
 fn read_results(path: &PathBuf) -> Result<Vec<RunResult>> {
@@ -310,4 +329,17 @@ fn print_summary(results: &[RunResult]) {
     println!(
         "\nCambios: mediana por caso frente a la base; costo/resuelta, sobre todos los casos. Regla: se queda con 10 % menos de costo o más y sin bajar la tasa de aprobación."
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diffs_go_beside_their_results() {
+        assert_eq!(
+            diffs_dir(std::path::Path::new("evals/results/run-17.jsonl")),
+            PathBuf::from("evals/results/diffs/run-17")
+        );
+    }
 }

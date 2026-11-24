@@ -86,6 +86,10 @@ pub struct RunResult {
     pub steps: Vec<StepTrace>,
     /// The end of the check's output.
     pub check_output: String,
+    /// The patch of what the run changed, saved with `--diffs` (its file
+    /// name, beside a `.json` with the hidden check's verdict).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff: Option<String>,
     pub started_at: i64,
 }
 
@@ -347,6 +351,7 @@ mod tests {
             notes_read: 0,
             error: None,
             check_output: String::new(),
+            diff: None,
             steps: Vec::new(),
             started_at: 0,
         }
