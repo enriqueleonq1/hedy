@@ -30,6 +30,27 @@ for path in paths:
             arm = "layer"
         runs[(r["case"], arm, r.get("model"), r["attempt"], r["startedAt"])][r["long"]["session"]] = r
 
+def weighted(r):
+    """Tokens at input price: Claude's output costs 5×, a cache read 0.1×, a cache write 1.25×."""
+    return r.get("inputTokens", 0) + 5 * r.get("outputTokens", 0) + 0.1 * r.get("cacheReadTokens", 0) + 1.25 * r.get("cacheWriteTokens", 0)
+
+
+# A session cut at its cap has no price from the CLI: price it at the model's rate, the median
+# over its sessions that have one (a few long sessions are billed above the token rate).
+rates = defaultdict(list)
+for sessions in runs.values():
+    for r in sessions.values():
+        if r.get("costUsd") and weighted(r):
+            rates[r.get("model")].append(r["costUsd"] / weighted(r))
+rate = {m: sorted(ks)[len(ks) // 2] for m, ks in rates.items()}
+
+
+def cost(r):
+    if r.get("costUsd") is not None:
+        return r["costUsd"]
+    return weighted(r) * rate.get(r.get("model"), 0.0)
+
+
 complete, broken = {}, 0
 for key, sessions in runs.items():
     if len(sessions) == 3 and not any(s.get("error") for s in sessions.values()) and all(s["tokens"] for s in sessions.values()):
@@ -69,7 +90,7 @@ def row(case, sessions):
         "reg": float(reqs3.get("REG", False)),
         "reads": [sessions[n]["long"].get("readsBeforeEdit") for n in (2, 3)],
         "stopped": sum(sessions[n]["long"]["stopped"] for n in (1, 2, 3)),
-        "cost": sum(sessions[n].get("costUsd") or 0 for n in (1, 2, 3)),
+        "cost": sum(cost(sessions[n]) for n in (1, 2, 3)),
         "tokens": sum(sessions[n]["tokens"] for n in (1, 2, 3)),
     }
 
@@ -97,7 +118,10 @@ def boot_diff(arm_rows, solo_rows, n=10000, seed=7):
     return out[int(0.025 * n)], out[int(0.975 * n) - 1]
 
 
-print(f"{len(complete)} corridas completas, {broken} incompletas o con error (fuera)\n")
+print(f"{len(complete)} corridas completas, {broken} incompletas o con error (fuera)")
+for model, k in sorted(rate.items(), key=str):
+    print(f"  {model}: $ {k * 1e6:.3f} por millón de tokens de entrada (mediana de sus sesiones con precio)")
+print()
 for model in sorted({m for m, _ in table}, key=str):
     print(f"== {model}")
     print(f"{'brazo':<8} {'n':>3} {'S1':>5} {'S2':>5} {'S3':>5} {'Δ S3 vs solo':>13} {'IC 95 %':>17} {'regres.':>8} {'exactos':>8} {'cambio':>7} {'enlaz.':>7} {'REG':>5} {'lect. S2/S3':>12} {'cortes':>7} {'$':>8} {'$/req':>8}")
