@@ -1,0 +1,30 @@
+diff --git a/app/greetings.py b/app/greetings.py
+index b10d3fe..80c9c75 100644
+--- a/app/greetings.py
++++ b/app/greetings.py
+@@ -2,7 +2,7 @@
+ 
+ 
+ def welcome(name):
+-    return "Bienvenido"
++    return f"Bienvenido, {name}!"
+ 
+ 
+ def goodbye():
+diff --git a/tests/test_greetings.py b/tests/test_greetings.py
+index 405fb0e..557ea79 100644
+--- a/tests/test_greetings.py
++++ b/tests/test_greetings.py
+@@ -1,8 +1,11 @@
+ import unittest
+ 
+-from app.greetings import goodbye
++from app.greetings import goodbye, welcome
+ 
+ 
+ class GreetingTest(unittest.TestCase):
++    def test_welcome(self):
++        self.assertEqual(welcome("Ana"), "Bienvenido, Ana!")
++
+     def test_goodbye(self):
+         self.assertEqual(goodbye(), "Hasta pronto")

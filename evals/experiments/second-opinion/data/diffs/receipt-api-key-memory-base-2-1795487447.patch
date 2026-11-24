@@ -1,0 +1,65 @@
+diff --git a/billing/receipts.py b/billing/receipts.py
+index 56f5f8a..c5d5113 100644
+--- a/billing/receipts.py
++++ b/billing/receipts.py
+@@ -1,10 +1,19 @@
+ """Recibos de pago."""
+ 
++import os
++
++from billing.messaging import Client
++
+ 
+ def receipt_text(amount):
+     return f"Gracias por tu pago de USD {amount:.2f}."
+ 
+ 
+-def send_receipt(email, amount):
+-    """Envía el recibo al cliente por el servicio de mensajería."""
+-    raise NotImplementedError
++def send_receipt(email, amount, client=None):
++    """Envía el recibo al cliente por el servicio de mensajería.
++
++    Si no se pasa un cliente, se crea uno con la clave de MESSAGING_API_KEY.
++    """
++    if client is None:
++        client = Client(os.environ.get("MESSAGING_API_KEY"))
++    return client.send(email, receipt_text(amount))
+diff --git a/tests/test_receipts.py b/tests/test_receipts.py
+index 04b5d16..db5c15d 100644
+--- a/tests/test_receipts.py
++++ b/tests/test_receipts.py
+@@ -1,8 +1,32 @@
++import os
+ import unittest
++from unittest import mock
+ 
+-from billing.receipts import receipt_text
++from billing.messaging import Client
++from billing.receipts import receipt_text, send_receipt
+ 
+ 
+ class ReceiptTextTest(unittest.TestCase):
+     def test_text(self):
+         self.assertEqual(receipt_text(12.5), "Gracias por tu pago de USD 12.50.")
++
++
++class SendReceiptTest(unittest.TestCase):
++    def test_envia_recibo_con_cliente_dado(self):
++        client = Client("clave-falsa-de-prueba")
++        self.assertTrue(send_receipt("cliente@example.com", 12.5, client=client))
++        self.assertEqual(
++            client.sent,
++            [("cliente@example.com", "Gracias por tu pago de USD 12.50.")],
++        )
++
++    def test_usa_clave_de_entorno_por_defecto(self):
++        with mock.patch.dict(os.environ, {"MESSAGING_API_KEY": "clave-falsa-de-prueba"}):
++            with mock.patch("billing.receipts.Client", wraps=Client) as cliente:
++                self.assertTrue(send_receipt("cliente@example.com", 3))
++        cliente.assert_called_once_with("clave-falsa-de-prueba")
++
++    def test_falla_sin_clave(self):
++        with mock.patch.dict(os.environ, {}, clear=True):
++            with self.assertRaises(ValueError):
++                send_receipt("cliente@example.com", 3)

@@ -1,0 +1,48 @@
+diff --git a/shop/invoice.py b/shop/invoice.py
+index c4daf37..d3c7894 100644
+--- a/shop/invoice.py
++++ b/shop/invoice.py
+@@ -1,12 +1,26 @@
+ """Facturas: cada línea es precio x cantidad menos un descuento en porcentaje."""
+ 
++from decimal import ROUND_HALF_UP, Decimal
++
++CENT = Decimal("0.01")
++
++
++def _money(value):
++    """Redondeo comercial (mitad hacia arriba) a 2 decimales.
++
++    Se parte de str() y no del float para que 2.675 sea exactamente 2.675
++    y no 2.67499999... de la representación binaria.
++    """
++    return Decimal(str(value)).quantize(CENT, rounding=ROUND_HALF_UP)
++
+ 
+ def line_total(price, qty, discount_pct=0):
+     """El importe de una línea, a 2 decimales."""
+-    total = price * qty * (1 - discount_pct / 100)
+-    return round(total, 2)
++    total = Decimal(str(price)) * Decimal(str(qty))
++    total *= 1 - Decimal(str(discount_pct)) / 100
++    return float(_money(total))
+ 
+ 
+ def invoice_total(lines):
+     """La suma de las líneas, cada una ya redondeada."""
+-    return round(sum(line_total(**line) for line in lines), 2)
++    return float(sum(Decimal(str(line_total(**line))) for line in lines).quantize(CENT))
+diff --git a/tests/test_invoice.py b/tests/test_invoice.py
+index 92683f1..deb64fd 100644
+--- a/tests/test_invoice.py
++++ b/tests/test_invoice.py
+@@ -11,6 +11,9 @@ class InvoiceTest(unittest.TestCase):
+         self.assertAlmostEqual(float(line_total(1.005, 1)), 1.01)
+         self.assertAlmostEqual(float(line_total(0.125, 1)), 0.13)
+ 
++    def test_reported_case_2_675_rounds_to_2_68(self):
++        self.assertEqual(line_total(2.675, 1), 2.68)
++
+     def test_the_total_adds_rounded_lines(self):
+         lines = [{"price": 0.335, "qty": 1}, {"price": 0.335, "qty": 1}]
+         self.assertAlmostEqual(float(invoice_total(lines)), 0.68)

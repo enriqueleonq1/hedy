@@ -1,0 +1,192 @@
+diff --git a/README.md b/README.md
+index 9675332..fb7afb0 100644
+--- a/README.md
++++ b/README.md
+@@ -14,6 +14,7 @@ nota: sin azúcar glas
+ ```
+ 
+ Campos opcionales del encabezado: `nota`, `domicilio` (agrega el envío),
++`dedicatoria` (agrega $2.00 y sale en el ticket y en el CSV),
+ `caja de regalo: sí|no` y `pagado: sí|no`.
+ 
+ ## Uso
+diff --git a/bakery/catalog.py b/bakery/catalog.py
+index 40f872e..c746e86 100644
+--- a/bakery/catalog.py
++++ b/bakery/catalog.py
+@@ -26,6 +26,7 @@ PRODUCTS = {
+ EXTRAS_CENTS = {
+     "delivery": 350,
+     "gift_box": 150,
++    "dedication": 200,
+ }
+ 
+ 
+diff --git a/bakery/export.py b/bakery/export.py
+index b8fb481..798fca0 100644
+--- a/bakery/export.py
++++ b/bakery/export.py
+@@ -23,6 +23,7 @@ COLUMNS = {
+     "nota": lambda o: o.note or "",
+     "domicilio": lambda o: o.delivery_address or "",
+     "caja_regalo": lambda o: _yes_no(o.gift_box),
++    "dedicatoria": lambda o: o.dedication or "",
+ }
+ 
+ 
+diff --git a/bakery/filters.py b/bakery/filters.py
+index bf4fdc2..9b206a7 100644
+--- a/bakery/filters.py
++++ b/bakery/filters.py
+@@ -5,6 +5,7 @@ FILTERS = {
+     "pendientes": ("solo los que falta pagar", lambda o: not o.paid),
+     "domicilio": ("solo los que van a domicilio", lambda o: o.delivery_address is not None),
+     "regalo": ("solo los que llevan caja de regalo", lambda o: o.gift_box),
++    "dedicatoria": ("solo los que llevan dedicatoria", lambda o: bool(o.dedication)),
+ }
+ 
+ 
+diff --git a/bakery/models.py b/bakery/models.py
+index b7cbb1e..d62e28b 100644
+--- a/bakery/models.py
++++ b/bakery/models.py
+@@ -21,6 +21,7 @@ class Order:
+     lines: list[Line] = field(default_factory=list)
+     note: str | None = None
+     delivery_address: str | None = None
++    dedication: str | None = None
+     gift_box: bool = False
+     paid: bool = False
+     source: str = ""
+diff --git a/bakery/orderfile.py b/bakery/orderfile.py
+index 71e2fa0..818c2ae 100644
+--- a/bakery/orderfile.py
++++ b/bakery/orderfile.py
+@@ -55,6 +55,7 @@ HEADER_FIELDS = {
+     "hora": ("pickup_time", _time),
+     "nota": ("note", _text),
+     "domicilio": ("delivery_address", _text),
++    "dedicatoria": ("dedication", _text),
+     "caja de regalo": ("gift_box", _yes_no),
+     "pagado": ("paid", _yes_no),
+ }
+diff --git a/bakery/pricing.py b/bakery/pricing.py
+index 04be9a2..706917b 100644
+--- a/bakery/pricing.py
++++ b/bakery/pricing.py
+@@ -6,6 +6,7 @@ from .models import Order
+ EXTRA_RULES = [
+     ("Envío a domicilio", "delivery", lambda o: o.delivery_address is not None),
+     ("Caja de regalo", "gift_box", lambda o: o.gift_box),
++    ("Dedicatoria", "dedication", lambda o: bool(o.dedication)),
+ ]
+ 
+ 
+diff --git a/bakery/ticket.py b/bakery/ticket.py
+index bfe5340..1d8ba7d 100644
+--- a/bakery/ticket.py
++++ b/bakery/ticket.py
+@@ -9,6 +9,7 @@ WIDTH = 32
+ DETAILS = [
+     ("Nota", lambda o: o.note),
+     ("Domicilio", lambda o: o.delivery_address),
++    ("Dedicatoria", lambda o: o.dedication),
+ ]
+ 
+ 
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index df0b9d4..5c3dc40 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -1,6 +1,7 @@
+ import contextlib
+ import io
+ import pathlib
++import tempfile
+ import unittest
+ 
+ from bakery.cli import main
+@@ -35,6 +36,16 @@ class Cli(unittest.TestCase):
+         self.assertIn("Club Atlético Unión", text)
+         self.assertNotIn("Pedro Salas", text)
+ 
++    def test_filter_dedication(self):
++        with tempfile.TemporaryDirectory() as folder:
++            folder = pathlib.Path(folder)
++            (folder / "001.pedido").write_text("cliente: Ana Paz\nfecha: 2025-03-14\nhora: 10:00\ndedicatoria: Feliz cumple, Ana\n---\n1 x torta de chocolate\n", encoding="utf-8")
++            (folder / "002.pedido").write_text("cliente: Luis Gil\nfecha: 2025-03-14\nhora: 11:00\n---\n1 x baguette\n", encoding="utf-8")
++            _, text = run("list", str(folder), "--solo-dedicatoria")
++            self.assertIn("Ana Paz", text)
++            self.assertNotIn("Luis Gil", text)
++            self.assertIn("1 pedidos", text)
++
+     def test_ticket(self):
+         code, text = run("ticket", str(SAMPLES / "2025-03-14-003.pedido"))
+         self.assertEqual(code, 0)
+diff --git a/tests/test_orderfile.py b/tests/test_orderfile.py
+index 3aea0f8..4af911a 100644
+--- a/tests/test_orderfile.py
++++ b/tests/test_orderfile.py
+@@ -30,6 +30,11 @@ class ParseOrder(unittest.TestCase):
+         self.assertTrue(order.gift_box)
+         self.assertFalse(order.paid)
+ 
++    def test_dedication(self):
++        order = parse_order(BASIC.replace("---", "dedicatoria: Feliz cumple, Ana\n---"))
++        self.assertEqual(order.dedication, "Feliz cumple, Ana")
++        self.assertIsNone(parse_order(BASIC).dedication)
++
+     def test_unknown_field(self):
+         with self.assertRaises(OrderFileError):
+             parse_order(BASIC.replace("---", "color: rojo\n---"))
+diff --git a/tests/test_output.py b/tests/test_output.py
+index 6da8258..d7c548a 100644
+--- a/tests/test_output.py
++++ b/tests/test_output.py
+@@ -29,6 +29,12 @@ class Ticket(unittest.TestCase):
+         text = render_ticket(parse_order(BASIC.replace("---", "nota: sin azúcar glas\n---")))
+         self.assertIn("Nota: sin azúcar glas", text)
+ 
++    def test_dedication_on_ticket(self):
++        text = render_ticket(parse_order(BASIC.replace("---", "dedicatoria: Feliz cumple, Ana\n---")))
++        self.assertIn("Dedicatoria: Feliz cumple, Ana", text)
++        self.assertIn("$2.00", text)
++        self.assertNotIn("Dedicatoria:", render_ticket(parse_order(BASIC)))
++
+ 
+ class Csv(unittest.TestCase):
+     def test_columns(self):
+@@ -38,6 +44,13 @@ class Csv(unittest.TestCase):
+         self.assertEqual(rows[0]["total"], "19.90")
+         self.assertEqual(rows[0]["domicilio"], "Belgrano 742")
+         self.assertEqual(rows[0]["caja_regalo"], "no")
++        self.assertEqual(rows[0]["dedicatoria"], "")
++
++    def test_dedication_column(self):
++        order = parse_order(BASIC.replace("---", "dedicatoria: Feliz cumple, Ana\n---"))
++        rows = list(csv.DictReader(io.StringIO(to_csv([order]))))
++        self.assertEqual(rows[0]["dedicatoria"], "Feliz cumple, Ana")
++        self.assertEqual(rows[0]["total"], "18.40")
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/tests/test_pricing.py b/tests/test_pricing.py
+index df7fba0..8de3ac0 100644
+--- a/tests/test_pricing.py
++++ b/tests/test_pricing.py
+@@ -26,6 +26,15 @@ class Pricing(unittest.TestCase):
+         order = parse_order(BASIC.replace("---", "caja de regalo: sí\n---"))
+         self.assertEqual(order_total_cents(order), 2 * 120 + 1400 + 150)
+ 
++    def test_dedication_is_charged_once(self):
++        order = parse_order(BASIC.replace("---", "dedicatoria: Feliz cumple, Ana\n---"))
++        self.assertEqual(order_total_cents(order), 2 * 120 + 1400 + 200)
++        self.assertEqual(price_lines(order)[-1], ("Dedicatoria", 200))
++
++    def test_no_dedication_no_charge(self):
++        order = parse_order(BASIC.replace("---", "dedicatoria:  \n---"))
++        self.assertEqual(order_total_cents(order), 2 * 120 + 1400)
++
+     def test_day_total(self):
+         order = parse_order(BASIC)
+         self.assertEqual(day_total_cents([order, order]), 2 * (2 * 120 + 1400))

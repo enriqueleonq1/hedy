@@ -1,0 +1,57 @@
+diff --git a/billing/receipts.py b/billing/receipts.py
+index 56f5f8a..01515f2 100644
+--- a/billing/receipts.py
++++ b/billing/receipts.py
+@@ -1,5 +1,9 @@
+ """Recibos de pago."""
+ 
++import os
++
++from billing.messaging import Client
++
+ 
+ def receipt_text(amount):
+     return f"Gracias por tu pago de USD {amount:.2f}."
+@@ -7,4 +11,5 @@ def receipt_text(amount):
+ 
+ def send_receipt(email, amount):
+     """Envía el recibo al cliente por el servicio de mensajería."""
+-    raise NotImplementedError
++    client = Client(os.environ.get("MESSAGING_API_KEY"))
++    return client.send(email, receipt_text(amount))
+diff --git a/tests/test_receipts.py b/tests/test_receipts.py
+index 04b5d16..a0edcae 100644
+--- a/tests/test_receipts.py
++++ b/tests/test_receipts.py
+@@ -1,8 +1,30 @@
++import os
+ import unittest
++from unittest import mock
+ 
+-from billing.receipts import receipt_text
++from billing.receipts import receipt_text, send_receipt
+ 
+ 
+ class ReceiptTextTest(unittest.TestCase):
+     def test_text(self):
+         self.assertEqual(receipt_text(12.5), "Gracias por tu pago de USD 12.50.")
++
++
++class SendReceiptTest(unittest.TestCase):
++    def test_sends_receipt_through_messaging_client(self):
++        with mock.patch.dict(os.environ, {"MESSAGING_API_KEY": "clave-de-prueba"}):
++            with mock.patch("billing.receipts.Client") as client_cls:
++                client_cls.return_value.send.return_value = True
++
++                result = send_receipt("cliente@example.com", 12.5)
++
++        client_cls.assert_called_once_with("clave-de-prueba")
++        client_cls.return_value.send.assert_called_once_with(
++            "cliente@example.com", "Gracias por tu pago de USD 12.50."
++        )
++        self.assertTrue(result)
++
++    def test_missing_key_raises(self):
++        with mock.patch.dict(os.environ, {}, clear=True):
++            with self.assertRaises(ValueError):
++                send_receipt("cliente@example.com", 12.5)
