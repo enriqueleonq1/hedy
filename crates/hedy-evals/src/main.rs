@@ -69,6 +69,15 @@ struct Args {
     /// fallo y un segundo intento sin él. Cuatro resultados por corrida.
     #[arg(long)]
     rescue: bool,
+    /// Prueba de tareas largas (evals/experiments/long-tasks, casos en
+    /// evals/long): tres sesiones nuevas por corrida en cada brazo, separados
+    /// por comas: solo, repeat, doc, flow.
+    #[arg(long, value_delimiter = ',', value_name = "BRAZOS")]
+    long: Vec<String>,
+    /// Con --long, cuántas acciones puede hacer el agente en cada sesión
+    /// antes de que se lo corte.
+    #[arg(long)]
+    cap: Option<u32>,
     /// Solo lista los casos.
     #[arg(long)]
     list: bool,
@@ -201,6 +210,16 @@ fn run(args: Args) -> Result<()> {
             );
         }
     }
+    if let Some(arm) = args
+        .long
+        .iter()
+        .find(|a| !hedy_evals::long::ARMS.contains(&a.as_str()))
+    {
+        bail!("brazo desconocido: {arm} (solo, repeat, doc, flow)");
+    }
+    if !args.long.is_empty() && (args.rescue || args.flows.iter().any(|f| f != NO_FLOW)) {
+        bail!("--long no se combina con --rescue ni --flows");
+    }
     let total = cases.len()
         * args.layers.len()
         * args.variants.len()
@@ -245,6 +264,41 @@ fn run_all(
                         "· {} [{layer}] {} {flow} #{attempt}… ",
                         case.name, variant.name
                     );
+                    if !args.long.is_empty() {
+                        eprintln!();
+                        for arm in &args.long {
+                            eprint!("  {arm}… ");
+                            let sessions =
+                                runner.run_long(case, layer, variant, arm, attempt, args.cap);
+                            let line: Vec<String> = sessions
+                                .iter()
+                                .map(|s| {
+                                    let reqs = s.long.as_ref().map(|l| &l.reqs);
+                                    let met = reqs.map_or(0, |r| {
+                                        r.iter().filter(|(k, v)| **v && *k != "REG").count()
+                                    });
+                                    let all = reqs.map_or(0, |r| r.len().saturating_sub(1));
+                                    format!("{met}/{all}")
+                                })
+                                .collect();
+                            eprintln!(
+                                "{} · {} tokens{}",
+                                line.join(" → "),
+                                sessions.iter().map(|s| s.tokens).sum::<u64>(),
+                                sessions
+                                    .iter()
+                                    .find_map(|s| s.error.as_deref())
+                                    .map(|e| format!(" · {e}"))
+                                    .unwrap_or_default()
+                            );
+                            for session in sessions {
+                                writeln!(file, "{}", serde_json::to_string(&session)?)?;
+                                results.push(session);
+                            }
+                            file.flush()?;
+                        }
+                        continue;
+                    }
                     if args.rescue {
                         let arms = runner.run_rescue(case, layer, variant, attempt);
                         let line: Vec<&str> = arms

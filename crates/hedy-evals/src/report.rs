@@ -93,7 +93,24 @@ pub struct RunResult {
     /// A `--rescue` run: what its first attempt did and what came after.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rescue: Option<RescueTrace>,
+    /// One session of a `--long` run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub long: Option<LongTrace>,
     pub started_at: i64,
+}
+
+/// One session of a `--long` run (evals/experiments/long-tasks): each
+/// requirement's hidden test after it, and how the session went.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LongTrace {
+    pub session: u32,
+    /// `R01` … and `REG`, from the check's `REQS` line.
+    pub reqs: BTreeMap<String, bool>,
+    pub tests_passed: bool,
+    pub reads_before_edit: Option<u32>,
+    /// Stopped at the cap of actions, in the middle of its work.
+    pub stopped: bool,
 }
 
 /// One arm of a `--rescue` run (evals/experiments/rescue). The four arms of a
@@ -376,6 +393,7 @@ mod tests {
             check_output: String::new(),
             diff: None,
             rescue: None,
+            long: None,
             steps: Vec::new(),
             started_at: 0,
         }

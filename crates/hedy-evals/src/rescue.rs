@@ -13,15 +13,14 @@
 //! When the tests pass after the first attempt, the four arms are that attempt.
 
 use std::path::Path;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use hedy_core::domain::TaskId;
 use hedy_core::experiments;
 
 use crate::runner::{
-    Observed, RemoveOnDrop, Runner, changes_since, copy_dir, git, prepare_repo, run_command,
-    save_diff,
+    Observed, RemoveOnDrop, Runner, changes_since, git, head, prepare_repo, save_diff,
 };
 use crate::{Case, Layer, RescueTrace, RunResult, Variant};
 
@@ -316,7 +315,12 @@ impl Runner {
         clock: Instant,
         resumed: bool,
     ) -> Result<Attempt> {
-        let seen = self.drive(id, Duration::from_secs(case.spec.timeout_secs), resumed);
+        let seen = self.drive(
+            id,
+            Duration::from_secs(case.spec.timeout_secs),
+            resumed,
+            None,
+        );
         let ms = clock.elapsed().as_millis() as u64;
         let work = self.hedy.task(id)?.work_dir();
         let patch = changes_since(&work, base)?;
@@ -335,20 +339,6 @@ impl Runner {
             hidden,
         })
     }
-
-    /// Runs `command` on a copy of `work` (with `checks` added, if any).
-    fn in_copy(&self, work: &Path, checks: Option<&Path>, command: &str) -> Result<(bool, String)> {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos());
-        let copy = self.options.work_dir.join(format!("copy-{stamp}"));
-        let _copy = RemoveOnDrop(copy.clone());
-        copy_dir(work, &copy)?;
-        if let Some(checks) = checks.filter(|c| c.is_dir()) {
-            copy_dir(checks, &copy)?;
-        }
-        run_command(&copy, command)
-    }
 }
 
 fn arms_first_passed(first: &Attempt) -> bool {
@@ -360,17 +350,8 @@ fn fail(arm: &mut RunResult, e: anyhow::Error) {
     arm.error = Some(format!("{e:#}"));
 }
 
-fn head(repo: &Path) -> Result<String> {
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(repo)
-        .output()
-        .context("no se pudo ejecutar git")?;
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
-}
-
 /// Discards a task however its attempt ends.
-struct CloseOnDrop<'a>(&'a Runner, TaskId);
+pub(crate) struct CloseOnDrop<'a>(pub(crate) &'a Runner, pub(crate) TaskId);
 
 impl Drop for CloseOnDrop<'_> {
     fn drop(&mut self) {

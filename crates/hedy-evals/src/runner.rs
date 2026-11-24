@@ -136,6 +136,16 @@ pub(crate) fn prepare_repo(case: &Case, repo: &Path) -> Result<PathBuf> {
     Ok(repo.canonicalize()?)
 }
 
+/// The commit `repo` is at.
+pub(crate) fn head(repo: &Path) -> Result<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(repo)
+        .output()
+        .context("no se pudo ejecutar git")?;
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
 /// Runs a shell command in `dir` for at most five minutes: whether it
 /// passed, and the end of what it printed.
 pub(crate) fn run_command(dir: &Path, command: &str) -> Result<(bool, String)> {
@@ -248,6 +258,12 @@ pub(crate) struct Observed {
     pub(crate) error: Option<String>,
     /// A flow's steps, in order.
     steps: Vec<StepTrace>,
+    /// What the agent last said.
+    pub(crate) last_message: Option<String>,
+    /// Files read before its first edit: how long it took to find its way.
+    pub(crate) reads_before_edit: Option<u32>,
+    /// The runner stopped it at its cap of actions.
+    pub(crate) stopped: bool,
 }
 
 impl Observed {
@@ -363,6 +379,7 @@ impl Runner {
             check_output: String::new(),
             diff: None,
             rescue: None,
+            long: None,
             started_at,
         }
     }
@@ -503,7 +520,7 @@ impl Runner {
         clock: Instant,
         out: &mut RunResult,
     ) -> Result<()> {
-        let observed = self.drive(id, Duration::from_secs(case.spec.timeout_secs), false);
+        let observed = self.drive(id, Duration::from_secs(case.spec.timeout_secs), false, None);
         out.duration_ms = clock.elapsed().as_millis() as u64;
         observed.add_to(out);
         out.notes_read = self.hedy.memory(repo)?.used_last_task.len();
@@ -524,8 +541,14 @@ impl Runner {
 
     /// Answers cards and collects usage until the task stops. `resumed`: a
     /// follow-up was just sent, so a review seen before the task runs again
-    /// is the last turn's.
-    pub(crate) fn drive(&self, id: &TaskId, timeout: Duration, resumed: bool) -> Observed {
+    /// is the last turn's. `cap`: the task is stopped after that many actions.
+    pub(crate) fn drive(
+        &self,
+        id: &TaskId,
+        timeout: Duration,
+        resumed: bool,
+        cap: Option<u32>,
+    ) -> Observed {
         let mut seen = Observed::default();
         let mut running = !resumed;
         let deadline = Instant::now() + timeout;
@@ -567,6 +590,13 @@ impl Runner {
                 }
                 _ => continue,
             };
+            match &event {
+                AgentEvent::Message { text } => seen.last_message = Some(text.clone()),
+                AgentEvent::FileEdited { .. } if seen.reads_before_edit.is_none() => {
+                    seen.reads_before_edit = Some(seen.files_read);
+                }
+                _ => {}
+            }
             let answered = match &event {
                 AgentEvent::PermissionRequest { request_id, .. } => {
                     self.hedy.answer_permission(id, request_id, Decision::Allow)
@@ -672,7 +702,31 @@ impl Runner {
                 seen.error = Some(e.to_string());
                 return seen;
             }
+            if cap.is_some_and(|cap| seen.actions >= cap) && !seen.stopped {
+                seen.stopped = true;
+                let _ = self.hedy.stop_task(id);
+            }
         }
+    }
+
+    /// Runs `command` on a copy of `work` (with `checks` added, if any), so
+    /// `work` stays as it is.
+    pub(crate) fn in_copy(
+        &self,
+        work: &Path,
+        checks: Option<&Path>,
+        command: &str,
+    ) -> Result<(bool, String)> {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let copy = self.options.work_dir.join(format!("copy-{stamp}"));
+        let _copy = RemoveOnDrop(copy.clone());
+        copy_dir(work, &copy)?;
+        if let Some(checks) = checks.filter(|c| c.is_dir()) {
+            copy_dir(checks, &copy)?;
+        }
+        run_command(&copy, command)
     }
 
     /// Copies the hidden checks into the worktree and runs the check command.

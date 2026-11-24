@@ -8,12 +8,14 @@
 //! agent finishes, so the agent never sees the checks.
 
 pub mod case;
+pub mod long;
 pub mod report;
 pub mod rescue;
 pub mod runner;
 
 pub use case::{Case, CaseSpec, Layer, NoteSpec, Variant, load_suite, select_cases};
 pub use report::{
-    BASE, Comparison, RescueTrace, RunResult, StepTrace, Summary, Verdict, compare, summarize,
+    BASE, Comparison, LongTrace, RescueTrace, RunResult, StepTrace, Summary, Verdict, compare,
+    summarize,
 };
 pub use runner::{RemoveOnDrop, Runner, RunnerOptions};

@@ -27,6 +27,20 @@ pub struct CaseSpec {
     /// them after the agent and sends back a failure).
     #[serde(default)]
     pub tests: Option<String>,
+    /// A long case (`--long`): what changes in its last session, and the
+    /// check of the requirements once changed.
+    #[serde(default)]
+    pub change: Option<String>,
+    #[serde(default)]
+    pub check_changed: Option<String>,
+    /// A long case's requirements with exact texts, the two that depend on
+    /// each other, and those the change touches (informative).
+    #[serde(default)]
+    pub exact: Vec<String>,
+    #[serde(default)]
+    pub linked: Vec<String>,
+    #[serde(default)]
+    pub changed: Vec<String>,
     /// Project memory for the layers that include it.
     #[serde(default)]
     pub notes: Vec<NoteSpec>,
@@ -238,6 +252,11 @@ mod tests {
                 prompt: String::new(),
                 check: "true".into(),
                 tests: None,
+                change: None,
+                check_changed: None,
+                exact: Vec::new(),
+                linked: Vec::new(),
+                changed: Vec::new(),
                 notes: Vec::new(),
                 team_notes: Vec::new(),
                 measures: None,
