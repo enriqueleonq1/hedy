@@ -4660,3 +4660,40 @@ spends Sonnet while Hedy shows haiku.
 - Flows stay for what the evidence still leaves them: a clean-context review, and parallel
   work.
 - To decide: how plan mode's model switch shows to the user, or whether Hedy passes the full id.
+
+## 60. How it works: one AI with stops (Nov 24, 2026)
+
+Built from §59 and the options the user picked on a canvas (composer 1D, plan card 2B,
+stops bar 3A, Cambios as today 4A, presets in settings 5B, `hedy do` 6A). The plan, in eight
+sub-phases C1–C8, is kept outside the repository.
+
+- **C1 · The model asked is the model that plans.** With `--permission-mode plan`, Claude
+  Code runs another model when the session's model is the alias `haiku` or `opusplan`. A
+  task that plans first with `haiku` is launched as `claude-haiku-5-5`. `opusplan` stays:
+  who picks it wants Opus to plan. Real check: the session logged `claude-haiku-5-5` at
+  $0.005; with the alias it was Sonnet at ~$0.07.
+- **C2 · A project's way of working** (`domain::working`): `WorkingStyle` holds `plan`,
+  `tests`, `e2e`, `review` and the two commands.
+  - Presets: «Enseguida», «Tras tu OK» and «Tras tu OK y una revisión». Any other set is
+    «Personalizada».
+  - Kept per PC in the `working` column. NULL means `initial()`, which is «Tras tu OK»:
+    new tasks already offered the plan first, and Hedy's tests cost no tokens.
+  - Each code task keeps a copy (`Task.working`), with `plan` as asked for that task.
+  - «Con tu aprobación» is retired from the lists (`Template::retired`,
+    `Hedy::offered_flows`). It still runs by its key. Projects that started with it move
+    to «Tras tu OK».
+- **C3 · The composer.** The mode menu asks «¿Qué hace?» and «¿Cuándo empieza a tocar el
+  código?» (Enseguida / Cuando apruebes el plan), then «O con un flujo de varias IAs». The
+  project's way of working picks the default. The chip reads «Cambiar código · tras tu OK».
+- **C4 · The plan.**
+  - Every agent is asked to open its plan with «## Lo que supongo», then «Qué voy a
+    cambiar» and «Cómo lo voy a comprobar» (`prompts::plan_format`). Claude gets it in its
+    appended system prompt when it plans first.
+  - The card shows the assumptions first.
+  - While a plan waits, the composer is the correction: Enter sends it to the same
+    session, and Ctrl/⌘+Enter with nothing written approves. The card's own «Pedir
+    cambios» form is gone.
+  - Measured: the `plan` arm of §59 once per case (haiku, $0.06, 5/5 passed). In 5 of 5
+    cases «Lo que supongo» named the very gap the request left: the currency («`$`, porque
+    el pedido no indica moneda»), «mostrar en la consola» read as `print()`, the boundary
+    `>= 900`, half-up rounding, and the path check.
