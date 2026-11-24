@@ -1,0 +1,6 @@
+[
+  {"id": "S001", "name": "Ana Ruiz", "email": "ana@example.com", "nif": "12345678Z", "plan": "fijo", "joined": "2024-11-01", "left": null},
+  {"id": "S002", "name": "Bruno Sanz", "email": "bruno@example.com", "nif": "87654321X", "plan": "flex", "joined": "2025-03-10", "left": null},
+  {"id": "S003", "name": "Carla Gil", "email": "carla@example.com", "nif": "11111111H", "plan": "nomada", "joined": "2025-01-15", "left": null},
+  {"id": "S004", "name": "Diego Paz", "email": "diego@example.com", "nif": "22222222J", "plan": "fijo", "joined": "2024-06-01", "left": "2025-02-28"}
+]

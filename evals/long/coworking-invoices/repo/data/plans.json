@@ -1,0 +1,5 @@
+[
+  {"id": "fijo", "name": "Fijo", "price_cents": 25000, "room_hours": 10},
+  {"id": "flex", "name": "Flex", "price_cents": 15000, "room_hours": 4},
+  {"id": "nomada", "name": "Nómada", "price_cents": 9000, "room_hours": 0}
+]
