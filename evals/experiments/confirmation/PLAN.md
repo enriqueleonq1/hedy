@@ -278,3 +278,21 @@ A haiku run takes about 30 minutes (six sessions of about five), so 3 repeats we
 eight hours of runs. To make it shorter, the user chose **2 repeats** for haiku's main runs
 (8 cases × arms 1–4 × 2 = 64 runs), with more runs at once. The intervals will be wider.
 Nothing else changes.
+
+## Amendment 4 (Nov 24, 2026, 12:40, after the haiku pilot, before any main run)
+
+**The pilot.** imapclient at 600 000 tokens per session, six sessions each:
+
+- no arm ended by itself in session 1, so the budget stays at **600 000** (the rule of
+  amendment 1);
+- every session was cut. hedy-hoy wrote nothing, documento passed 10 of 267 tests (1 of 46
+  requirements) and capa-de-terceros 0;
+- priced from the session logs at haiku's rates (five times dearer above 100 000 tokens of
+  prompt), a run costs about $1.40. About $18 of the $60 is spent.
+
+**What changes.** Two repeats (64 runs, about $90) do not fit, so, as the rules say,
+repeats go down: haiku's main runs are **1 repeat** (8 cases × arms 1–4, 32 runs), in that
+order by case, so a cut leaves whole cases. At $60 the runs stop and the analysis uses what
+is there. The flow and the Sonnet signal run only if money is left. Besides requirements,
+the results show the share of hidden tests passed, as a secondary measure outside the rules,
+because haiku is near zero on requirements.
