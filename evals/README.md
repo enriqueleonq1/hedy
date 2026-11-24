@@ -31,3 +31,12 @@ they fail, the run goes on in three arms (the same session told the failure, a n
 it, and a second attempt without it); four results per run, sharing the first attempt.
 `experiments/rescue/stability.py` checks a case's tests and hidden check on its start and its
 reference before using it.
+
+Long tasks (`--long <arms>`, cases in `long/`, `experiments/long-tasks/`): each run is three new
+sessions (`solo`, `repeat`, `doc`, `flow`), each cut after `--cap N` actions. With
+`--sessions N` it is the confirmation test (cases in `confirm/`, `experiments/confirmation/`):
+arms `today` (Hedy's handoff), `request`, `doc` and `flow`; the change is asked with the second
+session and the run goes on until a session ends by itself, at most N. `--budget T` cuts a
+session once it has spent T tokens at input price (output 5×, cache read 0.1×, cache write
+1.25×), weighed from its logs. `experiments/confirmation/make_cases.py` builds the `confirm/`
+cases from Commit0 by the rule in its `PLAN.md`.

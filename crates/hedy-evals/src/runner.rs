@@ -151,7 +151,7 @@ pub(crate) fn head(repo: &Path) -> Result<String> {
 /// passed, and the end of what it printed.
 pub(crate) fn run_command(dir: &Path, command: &str) -> Result<(bool, String)> {
     let output = Command::new("timeout")
-        .args(["300", "sh", "-c", command])
+        .args(["900", "sh", "-c", command])
         .current_dir(dir)
         .output()
         .context("no se pudo correr la verificación")?;
@@ -162,7 +162,7 @@ pub(crate) fn run_command(dir: &Path, command: &str) -> Result<(bool, String)> {
         String::from_utf8_lossy(&output.stderr),
         String::from_utf8_lossy(&output.stdout)
     );
-    Ok((output.status.success(), tail(&text, 2000)))
+    Ok((output.status.success(), tail(&text, 4000)))
 }
 
 /// `--flows file:<path>`: a flow written as text (the experiments' own).
@@ -869,7 +869,7 @@ mod tests {
     #[test]
     fn a_commands_stdout_comes_after_its_stderr() {
         let tmp = tempfile::tempdir().unwrap();
-        let noise = "x".repeat(3000);
+        let noise = "x".repeat(5000);
         let (passed, text) = run_command(
             tmp.path(),
             &format!("echo REQS R01=1; echo {noise} >&2; exit 1"),
