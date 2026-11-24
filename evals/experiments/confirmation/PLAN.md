@@ -296,3 +296,27 @@ order by case, so a cut leaves whole cases. At $60 the runs stop and the analysi
 is there. The flow and the Sonnet signal run only if money is left. Besides requirements,
 the results show the share of hidden tests passed, as a secondary measure outside the rules,
 because haiku is near zero on requirements.
+
+## Amendment 5 (Nov 24, 2026, 14:20, during the main runs)
+
+**What happened.** At 13:56 the session that drove the runs closed, and the runs it had
+started stopped with it. About $31 of the $60 was spent:
+
+- 7 runs were complete: cookiecutter × hedy-hoy, documento and capa-de-terceros; attrs ×
+  capa-de-terceros; marshmallow × hedy-hoy, pedido-repetido and documento;
+- 8 runs were voided at 13:14 by an account error (403) and stay in the data with it;
+- 8 runs were cut by the closing (the retries of attrs × hedy-hoy, pedido-repetido and
+  documento, cookiecutter × pedido-repetido and marshmallow × capa-de-terceros, and the first
+  three arms of more-itertools). They left no rows, so they are not in the data, but their
+  cost is in the spend;
+- 17 runs had not started.
+
+**What changes.** The 25 runs left cost about $35 and $29 is left, so not all of them fit.
+The first decision rule compares documento with hedy-hoy, so those arms go first:
+
+1. hedy-hoy and documento in every case still missing them (12 runs);
+2. then pedido-repetido (7 runs);
+3. then capa-de-terceros (6 runs).
+
+Each step starts when the one before has finished, and the runs stop at $60 as before. The
+runs are now detached from the session that starts them.
