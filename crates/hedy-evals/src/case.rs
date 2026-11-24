@@ -52,8 +52,23 @@ pub struct CaseSpec {
     /// Which layer the case is meant to measure (informative).
     #[serde(default)]
     pub measures: Option<String>,
+    /// The checkpoints test (`--checkpoints`, evals/experiments/checkpoints).
+    #[serde(default)]
+    pub checkpoint: Option<CheckpointSpec>,
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
+}
+
+/// A case of the checkpoints test: a request that leaves out something only
+/// the user knows, and what the user adds once they see the plan.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CheckpointSpec {
+    /// The request as asked in this test (by default, the case's `prompt`).
+    #[serde(default)]
+    pub prompt: Option<String>,
+    /// What the user adds at the plan.
+    pub clarify: String,
 }
 
 fn default_timeout() -> u64 {
@@ -260,6 +275,7 @@ mod tests {
                 notes: Vec::new(),
                 team_notes: Vec::new(),
                 measures: None,
+                checkpoint: None,
                 timeout_secs: 1,
             },
         };

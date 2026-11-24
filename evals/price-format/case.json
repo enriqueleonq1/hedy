@@ -7,5 +7,8 @@
     { "text": "Los precios se muestran como «USD 12.50»: prefijo USD, un espacio, punto decimal y siempre dos decimales.", "category": "convention" },
     { "text": "Los montos se guardan en centavos enteros (price_cents), nunca en float.", "category": "decision" }
   ],
-  "timeoutSecs": 600
+  "timeoutSecs": 600,
+  "checkpoint": {
+    "clarify": "Ojo: los precios se muestran como «USD 12.50»: prefijo USD, un espacio, punto decimal y siempre dos decimales. Y los montos están en centavos enteros (price_cents), nunca en float."
+  }
 }

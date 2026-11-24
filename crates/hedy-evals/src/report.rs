@@ -96,7 +96,22 @@ pub struct RunResult {
     /// One session of a `--long` run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub long: Option<LongTrace>,
+    /// A `--checkpoints` run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<CheckpointTrace>,
     pub started_at: i64,
+}
+
+/// A `--checkpoints` run (evals/experiments/checkpoints): its arm and how its
+/// checkpoints went.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckpointTrace {
+    pub arm: String,
+    /// Plans and approvals the user was asked.
+    pub cards: u32,
+    /// The user's clarification reached the agent at one of them.
+    pub corrected: bool,
 }
 
 /// One session of a `--long` run (evals/experiments/long-tasks): each
@@ -394,6 +409,7 @@ mod tests {
             diff: None,
             rescue: None,
             long: None,
+            checkpoint: None,
             steps: Vec::new(),
             started_at: 0,
         }

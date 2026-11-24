@@ -4,5 +4,8 @@
   "prompt": "Agrega en app/routes.py una ruta /attachments/<nombre> que devuelva (200, contenido) con el archivo de ese nombre dentro de la carpeta de subidas (config.UPLOAD_DIR), o (404, \"not found\") si no existe.",
   "check": "python3 -m unittest -q test_hidden_attachments && python3 -m unittest discover -q -s tests -t .",
   "tests": "python3 -m unittest discover -q -s tests -t .",
-  "timeoutSecs": 2400
+  "timeoutSecs": 2400,
+  "checkpoint": {
+    "clarify": "Ojo: el nombre lo escribe el usuario, así que no debe poder salir de la carpeta de subidas: ni con .., ni con una ruta absoluta, ni escritos con %2e o %2f. Eso no puede devolver ningún archivo. Y la carpeta en sí tampoco se sirve."
+  }
 }

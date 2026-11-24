@@ -8,5 +8,8 @@
     { "text": "Los montos de dinero se calculan con decimal.Decimal, nunca con float.", "category": "rule" },
     { "text": "El código de reports/ no usa print: lo que se muestra se registra con logging (logger = logging.getLogger(__name__)).", "category": "rule" }
   ],
-  "timeoutSecs": 2400
+  "timeoutSecs": 2400,
+  "checkpoint": {
+    "clarify": "Ojo con dos reglas del proyecto: el dinero se calcula con decimal.Decimal, nunca con float, y en reports/ no se usa print: lo que se muestra se registra con logging (logger = logging.getLogger(__name__))."
+  }
 }

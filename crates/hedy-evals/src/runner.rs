@@ -2,6 +2,7 @@
 //! card itself: plans are approved and permissions allowed. Hedy's own rules
 //! still apply (protected files, writes only inside the worktree).
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -19,8 +20,9 @@ use hedy_core::domain::{
 
 use hedy_core::experiments;
 
+use crate::checkpoints::Arm;
 use crate::long::{at_input_price, logged_usage};
-use crate::{Case, Layer, RunResult, StepTrace, Variant};
+use crate::{Case, CheckpointTrace, Layer, RunResult, StepTrace, Variant};
 use hedy_core::domain::flow::NodeKind;
 
 enum Update {
@@ -71,6 +73,9 @@ pub struct Runner {
     pub(crate) hedy: Hedy,
     events: Receiver<Update>,
     pub(crate) options: RunnerOptions,
+    /// What the user says at the next plan or approval, once
+    /// (`--checkpoints`): that card goes back with it instead of approved.
+    correction: Cell<Option<String>>,
 }
 
 /// Seconds since the epoch.
@@ -285,6 +290,8 @@ pub(crate) struct Observed {
     pub(crate) reads_before_edit: Option<u32>,
     /// The runner stopped it at its cap of actions.
     pub(crate) stopped: bool,
+    /// Plans and flow approvals it was asked.
+    cards: u32,
 }
 
 impl Observed {
@@ -311,6 +318,9 @@ impl Observed {
         }
         out.error = self.error.clone();
         out.steps.extend(self.steps.iter().cloned());
+        if let Some(trace) = out.checkpoint.as_mut() {
+            trace.cards += self.cards;
+        }
     }
 }
 
@@ -323,6 +333,7 @@ impl Runner {
             hedy,
             events: rx,
             options,
+            correction: Cell::new(None),
         }
     }
 
@@ -331,7 +342,8 @@ impl Runner {
     /// it is recorded in [`RunResult::error`] and the suite goes on.
     /// `flow`: `none` (one agent) or a template's key; a flow shows in the
     /// result's variant (`base+flow:fix-loop`), so the report compares it
-    /// with the same variant without a flow.
+    /// with the same variant without a flow. `checkpoint`: an arm of the
+    /// checkpoints test, which picks the request and the flow itself.
     pub fn run(
         &self,
         case: &Case,
@@ -339,11 +351,13 @@ impl Runner {
         variant: &Variant,
         flow: &str,
         attempt: u32,
+        checkpoint: Option<Arm>,
     ) -> RunResult {
         let started_at = now();
-        let name = match flow {
-            "none" => variant.name.clone(),
-            key => format!("{}+flow:{}", variant.name, flow_label(key)),
+        let name = match (checkpoint, flow) {
+            (Some(arm), _) => format!("{}+cp:{}", variant.name, arm.key()),
+            (None, "none") => variant.name.clone(),
+            (None, key) => format!("{}+flow:{}", variant.name, flow_label(key)),
         };
         let mut result = self.new_result(case, layer, &name, attempt, started_at);
         // Hedy, the agent's hooks and the memory server it starts all read
@@ -357,7 +371,7 @@ impl Runner {
         let _repo = RemoveOnDrop(repo.clone());
         // Its team's repo too, however the run ends.
         let _team = RemoveOnDrop(team_repo(&repo));
-        if let Err(e) = self.run_in(case, layer, flow, &repo, &mut result) {
+        if let Err(e) = self.run_in(case, layer, flow, checkpoint, &repo, &mut result) {
             result.passed = false;
             result.error.get_or_insert_with(|| format!("{e:#}"));
         }
@@ -401,6 +415,7 @@ impl Runner {
             diff: None,
             rescue: None,
             long: None,
+            checkpoint: None,
             started_at,
         }
     }
@@ -411,11 +426,12 @@ impl Runner {
         case: &Case,
         layer: Layer,
         flow: &str,
+        checkpoint: Option<Arm>,
         repo: &Path,
         out: &mut RunResult,
     ) -> Result<()> {
         let repo = prepare_repo(case, repo)?;
-        let result = self.run_task(case, layer, flow, &repo, out);
+        let result = self.run_task(case, layer, flow, checkpoint, &repo, out);
         self.forget_project(&repo);
         result
     }
@@ -481,13 +497,30 @@ impl Runner {
         case: &Case,
         layer: Layer,
         flow: &str,
+        checkpoint: Option<Arm>,
         repo: &Path,
         out: &mut RunResult,
     ) -> Result<()> {
         let hedy = &self.hedy;
         self.prepare_project(case, layer, repo)?;
+        let mut request = self.new_task(repo, &case.spec.prompt);
+        let mut flow = flow;
+        if let Some(arm) = checkpoint {
+            let spec = case.spec.checkpoint.as_ref().with_context(|| {
+                format!("el caso {} no tiene checkpoint en case.json", case.name)
+            })?;
+            request.prompt = arm.prompt(spec, &case.spec.prompt);
+            request.plan_first = arm.plan_first();
+            flow = arm.flow();
+            self.correction
+                .set(arm.corrects().then(|| spec.clarify.clone()));
+            out.checkpoint = Some(CheckpointTrace {
+                arm: arm.key().to_owned(),
+                cards: 0,
+                corrected: false,
+            });
+        }
         let clock = Instant::now();
-        let request = self.new_task(repo, &case.spec.prompt);
         let task = match flow {
             "none" => hedy.start_task(request),
             // A flow written as text: saved (for every project) and run by its key.
@@ -507,6 +540,11 @@ impl Runner {
         let result = self.finish(case, &task.id, repo, clock, out);
         // Stops the agent and removes the worktree, whatever happened above.
         self.close_task(&task.id);
+        // A clarification never asked for must not reach the next run.
+        let unsaid = self.correction.take().is_some();
+        if let (Some(arm), Some(trace)) = (checkpoint, out.checkpoint.as_mut()) {
+            trace.corrected = arm.corrects() && !unsaid;
+        }
         result
     }
 
@@ -644,13 +682,24 @@ impl Runner {
                 AgentEvent::PermissionRequest { request_id, .. } => {
                     self.hedy.answer_permission(id, request_id, Decision::Allow)
                 }
+                // The eval approves plans, unless the user has something to add.
                 AgentEvent::Plan {
                     request_id: Some(request_id),
                     ..
-                } => self.hedy.answer_plan(id, request_id, true, None),
-                // A flow's approval: the eval approves, as it approves plans.
+                } => {
+                    seen.cards += 1;
+                    match self.correction.take() {
+                        Some(text) => self.hedy.answer_plan(id, request_id, false, Some(&text)),
+                        None => self.hedy.answer_plan(id, request_id, true, None),
+                    }
+                }
+                // A flow's approval, likewise.
                 AgentEvent::FlowApproval { .. } => {
-                    self.hedy.answer_flow_approval(id, true, None).map(drop)
+                    seen.cards += 1;
+                    let text = self.correction.take();
+                    self.hedy
+                        .answer_flow_approval(id, text.is_none(), text.as_deref())
+                        .map(drop)
                 }
                 AgentEvent::Usage(sample) => {
                     seen.usage.add(sample);

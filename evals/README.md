@@ -40,3 +40,8 @@ session and the run goes on until a session ends by itself, at most N. `--budget
 session once it has spent T tokens at input price (output 5×, cache read 0.1×, cache write
 1.25×), weighed from its logs. `experiments/confirmation/make_cases.py` builds the `confirm/`
 cases from Commit0 by the rule in its `PLAN.md`.
+
+Checkpoints (`--checkpoints solo,informed,plan,approval`, `experiments/checkpoints/`): a case's
+`checkpoint` in `case.json` holds the request as asked there and what the user adds at the plan.
+`plan` (plan first, the same session implements) and `approval` (the «Con tu aprobación» flow)
+answer their first plan or approval with it and approve the next; `informed` asks it up front.

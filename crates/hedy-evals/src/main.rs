@@ -10,6 +10,7 @@ use clap::Parser;
 use hedy_core::adapters::{self, CODE_MAP_PROGRAM, HedyPaths, find_program};
 use hedy_core::application::Setting;
 use hedy_core::domain::Provider;
+use hedy_evals::checkpoints::{self, Arm};
 use hedy_evals::long::{Limits, Plan};
 use hedy_evals::{
     Case, Layer, RemoveOnDrop, RunResult, Runner, RunnerOptions, Variant, Verdict, compare,
@@ -89,6 +90,11 @@ struct Args {
     /// hasta que una sesión desde entonces termina sola, como mucho estas.
     #[arg(long)]
     sessions: Option<u32>,
+    /// Prueba de puntos de control (evals/experiments/checkpoints): brazos
+    /// separados por comas: solo, informed, plan, approval. Usa el pedido y
+    /// la aclaración de checkpoint en case.json.
+    #[arg(long, value_delimiter = ',', value_name = "BRAZOS")]
+    checkpoints: Vec<String>,
     /// Solo lista los casos.
     #[arg(long)]
     list: bool,
@@ -240,10 +246,25 @@ fn run(args: Args) -> Result<()> {
     if !args.long.is_empty() && (args.rescue || args.flows.iter().any(|f| f != NO_FLOW)) {
         bail!("--long no se combina con --rescue ni --flows");
     }
+    if let Some(arm) = args.checkpoints.iter().find(|a| Arm::from_key(a).is_none()) {
+        bail!(
+            "brazo desconocido: {arm} ({})",
+            checkpoints::ARMS.join(", ")
+        );
+    }
+    if !args.checkpoints.is_empty() {
+        if args.rescue || !args.long.is_empty() || args.flows.iter().any(|f| f != NO_FLOW) {
+            bail!("--checkpoints no se combina con --rescue, --long ni --flows");
+        }
+        if let Some(case) = cases.iter().find(|c| c.spec.checkpoint.is_none()) {
+            bail!("el caso {} no tiene checkpoint en case.json", case.name);
+        }
+    }
     let total = cases.len()
         * args.layers.len()
         * args.variants.len()
         * args.flows.len()
+        * args.checkpoints.len().max(1)
         * args.repeat as usize;
     eprintln!(
         "{total} corridas con {} ({}). Resultados en {}{}",
@@ -350,23 +371,42 @@ fn run_all(
                         file.flush()?;
                         continue;
                     }
-                    let result = runner.run(case, layer, variant, flow, attempt);
-                    eprintln!(
-                        "{} · {} tokens · {} lecturas · {:.0} s{}",
-                        if result.passed { "pasó" } else { "falló" },
-                        result.tokens,
-                        result.files_read,
-                        result.duration_ms as f64 / 1000.0,
-                        result
-                            .error
-                            .as_deref()
-                            .map(|e| format!(" · {e}"))
-                            .unwrap_or_default()
-                    );
-                    let line = serde_json::to_string(&result)?;
-                    results.push(result);
-                    writeln!(file, "{line}")?;
-                    file.flush()?;
+                    let arms: Vec<Option<Arm>> = match args.checkpoints.is_empty() {
+                        true => vec![None],
+                        false => args.checkpoints.iter().map(|a| Arm::from_key(a)).collect(),
+                    };
+                    for arm in arms {
+                        if let Some(arm) = arm {
+                            eprint!("\n  {}… ", arm.key());
+                        }
+                        let result = runner.run(case, layer, variant, flow, attempt, arm);
+                        eprintln!(
+                            "{} · {} tokens · {} lecturas · {:.0} s{}{}",
+                            if result.passed { "pasó" } else { "falló" },
+                            result.tokens,
+                            result.files_read,
+                            result.duration_ms as f64 / 1000.0,
+                            result
+                                .checkpoint
+                                .as_ref()
+                                .filter(|c| c.cards > 0)
+                                .map(|c| format!(
+                                    " · {} planes{}",
+                                    c.cards,
+                                    if c.corrected { ", corregido" } else { "" }
+                                ))
+                                .unwrap_or_default(),
+                            result
+                                .error
+                                .as_deref()
+                                .map(|e| format!(" · {e}"))
+                                .unwrap_or_default()
+                        );
+                        let line = serde_json::to_string(&result)?;
+                        results.push(result);
+                        writeln!(file, "{line}")?;
+                        file.flush()?;
+                    }
                 }
             }
         }
