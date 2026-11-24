@@ -6,10 +6,13 @@ is one case, arm, repeat and start; its sessions are its lines. Runs under the
 third-party layer's account are the `layer` arm. A run with an error in any
 session was voided (a usage limit, mostly) and run again: it is counted, not used.
 
-    python3 analyze.py <evals/confirm> results.jsonl [more.jsonl ...] [--layer-account layer] [--pilot imapclient]
+    python3 analyze.py <evals/confirm> results.jsonl [more.jsonl ...] [--layer-account layer] [--pilot imapclient] [--costs costs.json]
+
+With --costs (price.py's output), a run costs what its logs priced; without it, its
+sessions' CLI cost, or their tokens at the model's median rate when cut.
 """
 
-import json, random, sys
+import json, random, re, sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -18,7 +21,9 @@ NAMES = {"today": "hedy-hoy", "request": "pedido-repetido", "doc": "documento",
          "layer": "capa-de-terceros", "flow": "flujo"}
 
 args = sys.argv[1:]
-layer_account, pilot = "layer", "imapclient"
+layer_account, pilot, priced = "layer", "imapclient", {}
+if "--costs" in args:
+    i = args.index("--costs"); priced = json.load(open(args[i + 1])); del args[i:i + 2]
 if "--layer-account" in args:
     i = args.index("--layer-account"); layer_account = args[i + 1]; del args[i:i + 2]
 if "--pilot" in args:
@@ -59,8 +64,14 @@ def cost(r):
 
 complete, voided = {}, defaultdict(int)
 spent = defaultdict(float)
+def run_cost(key, sessions):
+    case, arm, _, attempt, started = key
+    logged = priced.get(f"{started} {case} {arm} {attempt}")
+    return logged if logged is not None else sum(cost(s) for s in sessions.values())
+
+
 for key, sessions in runs.items():
-    spent[key[2]] += sum(cost(s) for s in sessions.values())
+    spent[key[2]] += run_cost(key, sessions)
     if sessions and not any(s.get("error") for s in sessions.values()) and all(s["tokens"] for s in sessions.values()):
         complete[key] = sessions
     else:
@@ -71,7 +82,13 @@ def reqs(session):
     return {k: v for k, v in session["long"]["reqs"].items() if k != "CHG"}
 
 
-def row(sessions):
+def tests(session):
+    """Share of hidden tests passed (secondary, outside the rules): the check's `TESTS p/t`."""
+    m = re.search(r"TESTS (\d+)/(\d+)", session.get("checkOutput") or "")
+    return int(m[1]) / int(m[2]) if m and int(m[2]) else 0.0
+
+
+def row(sessions, usd):
     order = sorted(sessions)
     last = sessions[order[-1]]
     met = reqs(last)
@@ -81,10 +98,11 @@ def row(sessions):
         regressions += sum(1 for k, ok in before.items() if ok and not after.get(k, False))
     return {
         "met": sum(met.values()) / max(len(met), 1),
+        "tests": tests(last),
         "done": float(bool(met) and all(met.values()) and last["long"]["reqs"].get("CHG", False)),
         "change": float(last["long"]["reqs"].get("CHG", False)),
         "regressions": regressions,
-        "cost": sum(cost(s) for s in sessions.values()),
+        "cost": usd,
         "tokens": sum(s["tokens"] for s in sessions.values()),
         "sessions": len(order),
         "first_cut": sessions[order[0]]["long"]["stopped"],
@@ -92,8 +110,9 @@ def row(sessions):
 
 
 table = defaultdict(lambda: defaultdict(list))  # (model, arm) -> case -> rows
-for (case, arm, model, _, _), sessions in complete.items():
-    table[(model, arm)][case].append(row(sessions))
+for key, sessions in complete.items():
+    case, arm, model, _, _ = key
+    table[(model, arm)][case].append(row(sessions, run_cost(key, sessions)))
 
 
 def mean(xs):
@@ -116,6 +135,11 @@ def boot(arm, base, key="met", n=10000, seed=7):
         out.append(mean([rng.choice(diffs) for _ in diffs]))
     out.sort()
     return mean(diffs), out[int(0.025 * n)], out[int(0.975 * n) - 1]
+
+
+def tests_vs_today(cases, today):
+    d, lo, hi = boot(cases, today, "tests")
+    return "" if cases is today or d != d else f"{pct(d)} [{pct(lo)}, {pct(hi)}]"
 
 
 def pct(x):
@@ -144,7 +168,7 @@ for model in sorted({m for m, _ in table}, key=str):
                 cases.pop(c, None)
     print(f"== {model}")
     print(f"{'brazo':<17} {'n':>3} {'req.':>5} {'Δ vs hoy':>9} {'IC 95 %':>13} {'Δ vs doc':>9} {'IC 95 %':>13} "
-          f"{'termina':>8} {'cambio':>7} {'regr.':>6} {'ses.':>5} {'$/corr.':>8} {'× hoy':>6}")
+          f"{'termina':>8} {'cambio':>7} {'regr.':>6} {'ses.':>5} {'$/corr.':>8} {'× hoy':>6} {'tests':>6} {'Δ tests vs hoy':>15}")
     base_cost = mean([case_mean(rs, "cost") for rs in today.values()])
     for arm in ARMS:
         cases = table.get((model, arm))
@@ -159,7 +183,8 @@ for model in sorted({m for m, _ in table}, key=str):
               f"{pct(d2):>9} {('[' + pct(l2) + ', ' + pct(h2) + ']') if d2 == d2 else '':>13} "
               f"{mean([r['done'] for r in rows]):>8.0%} {mean([r['change'] for r in rows]):>7.0%} "
               f"{mean([r['regressions'] for r in rows]):>6.2f} {mean([r['sessions'] for r in rows]):>5.1f} "
-              f"{c:>8.3f} {c / base_cost if base_cost else float('nan'):>6.2f}")
+              f"{c:>8.3f} {c / base_cost if base_cost else float('nan'):>6.2f} "
+              f"{mean([case_mean(rs, 'tests') for rs in cases.values()]):>6.0%} {tests_vs_today(cases, today):>15}")
     print("\n  por caso (requisitos tras la última sesión, media; corridas):")
     print(f"    {'caso':<16} " + " ".join(f"{NAMES[a][:10]:>11}" for a in ARMS))
     for case in sorted({c for (m, _), t in table.items() if m == model for c in t}):
