@@ -154,10 +154,12 @@ pub(crate) fn run_command(dir: &Path, command: &str) -> Result<(bool, String)> {
         .current_dir(dir)
         .output()
         .context("no se pudo correr la verificación")?;
+    // What the command prints on stdout goes last, so a summary line there
+    // (a long case's `REQS …`) survives the tail; test runners write to stderr.
     let text = format!(
         "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
     );
     Ok((output.status.success(), tail(&text, 2000)))
 }
@@ -825,6 +827,19 @@ mod tests {
         assert_eq!(verdict["passed"], false);
         assert_eq!(verdict["checkOutput"], "FAILED (failures=1)");
         assert_eq!(verdict["variant"], "base+flow:tdd");
+    }
+
+    #[test]
+    fn a_commands_stdout_comes_after_its_stderr() {
+        let tmp = tempfile::tempdir().unwrap();
+        let noise = "x".repeat(3000);
+        let (passed, text) = run_command(
+            tmp.path(),
+            &format!("echo REQS R01=1; echo {noise} >&2; exit 1"),
+        )
+        .unwrap();
+        assert!(!passed);
+        assert!(text.ends_with("REQS R01=1"), "{}", &text[text.len() - 40..]);
     }
 
     #[test]
