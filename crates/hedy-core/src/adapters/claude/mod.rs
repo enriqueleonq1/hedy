@@ -227,6 +227,10 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     };
     let mut allowed: Vec<String> = Vec::new();
     let mut system: Vec<String> = vec![prompts::reply_language()];
+    // Its native plan mode asks for the plan; Hedy says how to write it.
+    if request.plan_first {
+        system.push(prompts::plan_format());
+    }
     match mode {
         TaskMode::Project => {}
         TaskMode::Ask => {
@@ -699,6 +703,12 @@ pub(crate) mod tests {
         assert!(project.contains(r#""Read(**/.env)""#), "{project}");
         assert!(project.contains(r#""Edit(**/*.pem)""#));
         assert!(project.contains("--permission-mode plan"));
+        assert!(project.contains("Lo que supongo") || project.contains("What I assume"));
+        assert!(
+            !args(&request(TaskMode::Project, false), None)
+                .join(" ")
+                .contains("supongo")
+        );
         assert!(project.ends_with("--model opus --resume s-1"));
         assert!(!project.contains("disallowedTools"));
         // A project that keeps nothing from the AI gives Claude no deny rule.

@@ -7,9 +7,19 @@ use crate::tr;
 
 /// For agents without a native plan mode.
 pub fn plan_first() -> String {
-    tr!(
+    let ask = tr!(
         "Antes de cambiar nada, propón un plan breve y numerado para este pedido. No modifiques archivos todavía: espera a que el plan se apruebe.",
         "Before changing anything, propose a short numbered plan for this request. Do not modify files yet: wait for the plan to be approved."
+    );
+    format!("{ask} {}", plan_format())
+}
+
+/// How a plan is written, for every agent (docs/decisions.md §60): what it
+/// assumes comes first, since that is what the user corrects.
+pub fn plan_format() -> String {
+    tr!(
+        "Escribe el plan en tres secciones, en este orden: «## Lo que supongo» (solo lo que el pedido no dice y tú decides: valores, límites, formatos, casos borde; si no supones nada, «Nada»), «## Qué voy a cambiar» (archivos y cambios, breve) y «## Cómo lo voy a comprobar».",
+        "Write the plan in three sections, in this order: «## What I assume» (only what the request does not say and you decide: values, limits, formats, edge cases; if you assume nothing, «Nothing»), «## What I will change» (files and changes, briefly) and «## How I will check it»."
     )
 }
 
