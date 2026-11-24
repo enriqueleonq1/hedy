@@ -35,8 +35,8 @@ By case (base = every arm):
 **Where the 6 failures were.** All six passed the project's tests, the agent's own new ones
 included, and failed what those tests do not cover: a bare number taken as minutes
 (`parse-duration`, twice), the free-shipping threshold still checked twice
-(`shipping-refactor`, twice), `invoice_total([])` raising (`invoice-rounding`), and `release_expired()` counting
-reservations that had not expired (`inventory-expiry`). The agent runs the tests itself before it stops; a failure
+(`shipping-refactor`, twice), `invoice_total([])` raising (`invoice-rounding`), and `release_expired()`
+returning the wrong count (`inventory-expiry`). The agent runs the tests itself before it stops; a failure
 it can see, it already fixes.
 
 **Decision (as fixed):** the trigger fired in 0 % of first attempts (< 5 %), so «Verificar y
