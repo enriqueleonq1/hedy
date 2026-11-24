@@ -142,6 +142,13 @@ for model in sorted({m for m, _ in table}, key=str):
         print(f"{arm:<8} {len(rows):>3} {s[0]:>5.0%} {s[1]:>5.0%} {s[2]:>5.0%} {delta:>13} {ci:>17} {mean([r['regressions'] for r in rows]):>8.1f} "
               f"{mean([r['exact'] for r in rows]):>8.0%} {mean([r['change'] for r in rows]):>7.0%} {mean([r['linked'] for r in rows]):>7.0%} "
               f"{mean([r['reg'] for r in rows]):>5.0%} {reads:>12} {mean([r['stopped'] for r in rows]):>7.1f} {cost:>8.4f} {per_req:>8.4f}")
+    # Descriptive, not in the plan: of the runs whose first session left work (under 20 of 24),
+    # how many got to 20 by the third.
+    print("\n  primera sesión a medias (< 20/24) que llegan a 20/24 tras S3:")
+    for arm in ("solo", "repeat", "doc", "layer", "flow"):
+        rows = [r for rs in table.get((model, arm), {}).values() for r in rs if r["met"][0] < 20 / 24]
+        if rows:
+            print(f"    {arm:<8} {sum(r['met'][2] >= 20 / 24 for r in rows)}/{len(rows)}")
     print("\n  por caso (requisitos tras S3, media):")
     for case in sorted(specs):
         cells = []

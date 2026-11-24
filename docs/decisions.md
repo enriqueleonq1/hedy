@@ -4536,3 +4536,26 @@ kappa 0.79).
 diffs): build it as an action the user asks for, Sonnet by default, no verification pass,
 shown as a review that catches visible mistakes (a boundary, a secret, a broken rule), never
 as a gate or a guarantee.
+
+**C. A long task over three fresh sessions** (three cases of 24 requirements, each session a
+new process cut after 20 actions; «Implementa esto» / «Continúa.» / «Cambia esto y termina»;
+haiku 45 runs, Sonnet 18, Opus 6; about $41).
+
+| haiku, after session 3 | requirements met | Δ with solo | first session cut early → done |
+|---|---|---|---|
+| solo | 61 % | | 0/4 |
+| request repeated | 90 % | +29 [+24, +33] | 3/4 |
+| task document | 99 % | +38 [+26, +53] | 5/5 |
+| third-party layer | 47 % | −14 [−36, +28] | 3/8 |
+| `essential` flow | 75 % | +13 [−6, +29] | 2/6 |
+
+- A session that only hears «Continúa.» does not know the task: alone, a task cut early never
+  moved again. The document (the request as written, the change, each session's progress)
+  finished every one in the next session, at 1.08× the cost, with no regressions.
+- Sonnet and Opus finished these cases in their first session (no arm can help: ±2 points).
+  With a cap of 5, run after the plan, Sonnet behaves as haiku: solo 6 %, repeat 47 %,
+  document 51 %.
+
+**Decision:** build the task document, on for tasks that span sessions; it costs a few
+lines when not needed. Flows stay an advanced option: below the document and the repeated
+request on every measure, the most expensive, the only arm with regressions.
