@@ -4559,3 +4559,46 @@ haiku 45 runs, Sonnet 18, Opus 6; about $41).
 **Decision:** build the task document, on for tasks that span sessions; it costs a few
 lines when not needed. Flows stay an advanced option: below the document and the repeated
 request on every measure, the most expensive, the only arm with regressions.
+
+## 58. The task document, confirmed against what Hedy does today: not confirmed (Nov 24, 2026)
+
+**Question.** §57's test C found that a task document took haiku from 61 % to 99 % of a long
+task's requirements. Its cases were ours and it was cut at 20 actions with a bare «Continúa.».
+Does it hold with cases we did not write, a cut by budget, and against what Hedy actually sends
+when a task goes on in another session? (`evals/experiments/confirmation`: `PLAN.md` with six
+amendments, `RESULTS.md`, `data/`.)
+
+**How.**
+
+- **Cases:** eight Python libraries from Commit0, picked by a fixed rule and seed. Each was
+  emptied to its docstrings and graded by its own hidden tests.
+- **Sessions:** each a new process, cut at 600 000 tokens at input price.
+- **The change:** one change to the request, asked with session 2.
+- **Runs:** up to six sessions; haiku, one run per case and arm. Sonnet was too dear for the
+  $60 (amendment 1).
+- **hedy-hoy:** the handoff of `Hedy::handoff_task` (`prompts.rs:311`, called at
+  `tasks.rs:1692`). It sends the original request and the changed files, and it does not
+  carry the messages the user sent after the request.
+- **Cost:** $39.34.
+
+| haiku, 8 cases | requirements | Δ vs hedy-hoy | change respected | $ / run |
+|---|---|---|---|---|
+| hedy-hoy | 60 % | | 3/8 | 0.74 |
+| task document | 56 % | −4 [−7, −1] | 7/8 (+50 [+13, +88]) | 0.61 |
+| third-party layer (2 cases) | 54 % | −3 [−9, +3] | 1/2 | 1.19 |
+
+- **Requirements.** The document never came out ahead: four ties, four losses by 1–12 points.
+  C's gain came from the request being lost after a bare «Continúa.». Hedy's handoff already
+  carries the request as written.
+- **The change.** Whenever session 2 was cut before the change was done, hedy-hoy never did
+  it, because its next message no longer has it. The document carried it every time.
+- **The layer:** too few runs to decide. It cost 1.6× hedy-hoy, and in attrs a later session
+  undid 13 requirements.
+- **The flow** and the repeated request did not run (amendment 6).
+
+**Decision:**
+
+- The full task document is not confirmed and is not a priority (hedy-hoy within 5 points).
+- Build the part that carried the difference instead: Hedy's handoff carries the user's
+  later messages about the task (changes to the request) along with the original request.
+- §57's decision on flows stands, untested here.

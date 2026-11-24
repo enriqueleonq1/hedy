@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "tinydb",
+  "checkOutput": "with pytest.raises(TypeError):\n            frozen[3]['a'] = 10\n    \n>       with pytest.raises(TypeError):\nE       Failed: DID NOT RAISE <class 'TypeError'>\n\ntests/test_utils.py:104: Failed\n---------------- generated xml file: /tmp/tmpxhhu3qv2/tests.xml ----------------\n=========================== short test summary info ============================\nFAILED tests/test_storages.py::test_read_once - assert 2 == 3\nFAILED tests/test_tables.py::test_query_cache_with_mutable_callable[memory]\nFAILED tests/test_tables.py::test_query_cache_with_mutable_callable[json] - A...\nFAILED tests/test_tables.py::test_lru_cache[memory] - AttributeError: 'LRUCac...\nFAILED tests/test_tables.py::test_lru_cache[json] - AttributeError: 'LRUCache...\nFAILED tests/test_tinydb.py::test_insert_invalid_dict - json.decoder.JSONDeco...\nFAILED tests/test_utils.py::test_lru_cache - AttributeError: 'LRUCache' objec...\nFAILED tests/test_utils.py::test_lru_cache_set_multiple - AttributeError: 'LR...\nFAILED tests/test_utils.py::test_lru_cache_get - AttributeError: 'LRUCache' o...\nFAILED tests/test_utils.py::test_lru_cache_delete - AttributeError: 'LRUCache...\nFAILED tests/test_utils.py::test_lru_cache_clear - AttributeError: 'LRUCache'...\nFAILED tests/test_utils.py::test_lru_cache_unlimited - AttributeError: 'LRUCa...\nFAILED tests/test_utils.py::test_lru_cache_unlimited_explicit - AttributeErro...\nFAILED tests/test_utils.py::test_freeze - Failed: DID NOT RAISE <class 'TypeE...\n14 failed, 187 passed in 1.96s\n\nTESTS 187/201\nREQS G001=1 G002=1 G003=1 G004=1 G005=1 G006=1 G007=0 G008=1 G009=0 G010=1 G011=1 G012=1 G013=1 G014=1 G015=0 G016=1 G017=0 CHG=1",
+  "error": null,
+  "layer": "plain",
+  "model": "haiku",
+  "passed": false,
+  "variant": "base+long:today-final"
+}

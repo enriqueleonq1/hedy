@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "imapclient",
+  "checkOutput": "s/test_response_lexer.py::TestTokenSource::test_literals - Asserti...\nFAILED tests/test_response_lexer.py::TestTokenSource::test_no_escaping_in_square_brackets\nFAILED tests/test_response_lexer.py::TestTokenSource::test_quoted_strings - A...\nFAILED tests/test_response_lexer.py::TestTokenSource::test_square_brackets - ...\nFAILED tests/test_response_lexer.py::TestTokenSource::test_unmatched_square_brackets\nFAILED tests/test_response_lexer.py::TestTokenSource::test_unterminated_strings\nERROR tests/test_auth.py - TypeError: 'NoneType' object is not callable\nERROR tests/test_datetime_util.py\nERROR tests/test_enable.py - TypeError: 'NoneType' object is not callable\nERROR tests/test_folder_status.py - TypeError: 'NoneType' object is not callable\nERROR tests/test_imapclient.py - TypeError: 'NoneType' object is not callable\nERROR tests/test_init.py - TypeError: 'NoneType' object is not callable\nERROR tests/test_response_parser.py\nERROR tests/test_search.py - TypeError: 'NoneType' object is not callable\nERROR tests/test_sort.py - TypeError: 'NoneType' object is not callable\nERROR tests/test_starttls.py - TypeError: 'NoneType' object is not callable\nERROR tests/test_store.py - TypeError: 'NoneType' object is not callable\nERROR tests/test_thread.py - TypeError: 'NoneType' object is not callable\nERROR tests/test_util_functions.py - TypeError: 'NoneType' object is not call...\nERROR tests/test_version.py - TypeError: 'NoneType' object is not callable\n13 failed, 10 passed, 14 errors in 0.64s\n\nTESTS 10/267\nREQS G001=0 G002=0 G003=0 G004=0 G005=0 G006=0 G007=0 G008=1 G009=0 G010=0 G011=0 G012=0 G013=0 G014=0 G015=0 G016=0 G017=0 G018=0 G019=0 G020=0 G021=0 G022=0 G023=0 G024=0 G025=0 G026=0 G027=0 G028=0 G029=0 G030=0 G031=0 G032=0 G033=0 G034=0 G035=0 G036=0 G037=0 G038=0 G039=0 G040=0 G041=0 G042=0 G043=0 G044=0 G045=0 G046=0 CHG=0",
+  "error": null,
+  "layer": "plain",
+  "model": "haiku",
+  "passed": false,
+  "variant": "base+long:doc-final"
+}

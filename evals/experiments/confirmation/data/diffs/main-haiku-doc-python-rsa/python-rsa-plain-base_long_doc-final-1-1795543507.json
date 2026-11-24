@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "python-rsa",
+  "checkOutput": "predict/control the code path.\n        \"\"\"\n    \n        randints = []\n    \n        def fake_randint(maxvalue):\n            return randints.pop(0)\n    \n        orig_randint = rsa.randnum.randint\n        rsa.randnum.randint = fake_randint\n        try:\n            # 'n is composite'\n            randints.append(2630484832)  # causes the 'n is composite' case with n=3784949785\n>           self.assertEqual(False, rsa.prime.miller_rabin_primality_testing(2787998641, 7))\n\ntests/test_prime.py:61: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \nrsa/prime.py:74: in miller_rabin_primality_testing\n    a = rsa.randnum.randint(n - 4) + 2\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n\nmaxvalue = 2787998637\n\n    def fake_randint(maxvalue):\n>       return randints.pop(0)\nE       IndexError: pop from empty list\n\ntests/test_prime.py:54: IndexError\n---------------- generated xml file: /tmp/tmpkeklgjx8/tests.xml ----------------\n=========================== short test summary info ============================\nFAILED tests/test_cli.py::KeygenTest::test_keygen_priv_stdout - AssertionErro...\nFAILED tests/test_cli.py::KeygenTest::test_keygen_pub_out_pem - SystemExit: 2\nFAILED tests/test_common.py::TestBitSize::test_bad_type - AttributeError: 'fl...\nFAILED tests/test_load_save_keys.py::DerTest::test_load_malformed_private_key\nFAILED tests/test_prime.py::PrimeTest::test_miller_rabin_primality_testing - ...\n5 failed, 81 passed in 2.35s\n\nTESTS 81/86\nREQS G001=1 G002=0 G003=1 G004=1 G005=0 G006=1 G007=1 G008=1 G009=1 G010=1 G011=1 G012=0 G013=1 G014=1 G015=1 G016=1 G017=1 G018=1 G019=1 G020=1 G021=1 G022=1 G023=1 G024=1 G025=0 G026=1 G027=1 CHG=1",
+  "error": null,
+  "layer": "plain",
+  "model": "haiku",
+  "passed": false,
+  "variant": "base+long:doc-final"
+}

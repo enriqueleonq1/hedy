@@ -1,0 +1,2367 @@
+diff --git a/sqlparse/cli.py b/sqlparse/cli.py
+index 36590f9..2240cdd 100755
+--- a/sqlparse/cli.py
++++ b/sqlparse/cli.py
+@@ -16,6 +16,195 @@ from io import TextIOWrapper
+ import sqlparse
+ from sqlparse.exceptions import SQLParseError
+ 
++def create_parser():
++    """Create parser for command line options."""
++    parser = argparse.ArgumentParser(
++        prog='sqlformat',
++        description='Format FILE according to OPTIONS. Use "-" as FILE '
++                    'to read from stdin.',
++        usage='%(prog)s [options] FILE, ...',
++    )
++
++    parser.add_argument('filename', nargs='+')
++
++    parser.add_argument(
++        '-o', '--outfile',
++        dest='outfile',
++        metavar='FILE',
++        help='Write output to FILE (defaults to stdout).')
++
++    parser.add_argument(
++        '--verbose',
++        dest='verbose',
++        action='store_true',
++        default=False,
++        help='Verbose output.')
++
++    parser.add_argument(
++        '--encoding',
++        dest='encoding',
++        default='utf-8',
++        help='Specify the input encoding (default: utf-8).')
++
++    group = parser.add_argument_group('Formatting Options')
++
++    group.add_argument(
++        '-k', '--keywords',
++        metavar='CASE',
++        dest='keyword_case',
++        choices=['upper', 'lower', 'capitalize'],
++        help='Change case of keywords, CASE is one of "upper", "lower" '
++             'or "capitalize".')
++
++    group.add_argument(
++        '-i', '--identifiers',
++        metavar='CASE',
++        dest='identifier_case',
++        choices=['upper', 'lower', 'capitalize'],
++        help='Change case of identifiers, CASE is one of "upper", "lower" '
++             'or "capitalize".')
++
++    group.add_argument(
++        '-l', '--language',
++        metavar='LANG',
++        dest='output_format',
++        choices=['python', 'php'],
++        help='Output a snippet in programming language LANG, '
++             'can be "python" or "php".')
++
++    group.add_argument(
++        '--strip-comments',
++        dest='strip_comments',
++        action='store_true',
++        default=False,
++        help='Remove comments.')
++
++    group.add_argument(
++        '-r', '--reindent',
++        dest='reindent',
++        action='store_true',
++        default=False,
++        help='Reindent statements.')
++
++    group.add_argument(
++        '-a', '--reindent_aligned',
++        dest='reindent_aligned',
++        action='store_true',
++        default=False,
++        help='Reindent statements to aligned format.')
++
++    group.add_argument(
++        '-s', '--use_space_around_operators',
++        dest='use_space_around_operators',
++        action='store_true',
++        default=False,
++        help='Place spaces around mathematical operators.')
++
++    group.add_argument(
++        '--indent_width',
++        dest='indent_width',
++        default=2,
++        type=int,
++        help='Specify indentation columns (default: 2).')
++
++    group.add_argument(
++        '--indent_after_first',
++        dest='indent_after_first',
++        action='store_true',
++        default=False,
++        help='Indent after first line, when formatting SQL.')
++
++    group.add_argument(
++        '--indent_columns',
++        dest='indent_columns',
++        action='store_true',
++        default=False,
++        help='Indent all columns by indent_width instead of keyword length.')
++
++    group.add_argument(
++        '--wrap_after',
++        dest='wrap_after',
++        default=0,
++        type=int,
++        help='Column after which lists should be wrapped.')
++
++    group.add_argument(
++        '--comma_first',
++        dest='comma_first',
++        action='store_true',
++        default=False,
++        help='Insert comma at the beginning of the line.')
++
++    group.add_argument(
++        '--compact',
++        dest='compact',
++        action='store_true',
++        default=False,
++        help='Use a compact layout when reindenting.')
++
++    parser.add_argument(
++        '--version',
++        action='version',
++        version=sqlparse.__version__)
++
++    return parser
++
++
+ def _error(msg):
+     """Print msg and optionally exit with return code exit_."""
+-    pass
+\ No newline at end of file
++    sys.stderr.write('[ERROR] %s\n' % msg)
++    return 1
++
++
++def _read_input(filenames, encoding):
++    """Return the text of all *filenames* concatenated ("-" is stdin)."""
++    chunks = []
++    for filename in filenames:
++        if filename == '-':
++            wrapper = TextIOWrapper(sys.stdin.buffer, encoding=encoding)
++            try:
++                chunks.append(wrapper.read())
++            finally:
++                wrapper.detach()
++        else:
++            with open(filename, encoding=encoding) as f:
++                chunks.append(f.read())
++    return ''.join(chunks)
++
++
++def main(*args):
++    """Command-line interface (see sqlformat(1))."""
++    parser = create_parser()
++    args = parser.parse_args(args or None)
++
++    try:
++        data = _read_input(args.filename, args.encoding)
++    except OSError as e:
++        return _error('Failed to read {}: {}'.format(', '.join(args.filename), e))
++
++    if args.outfile:
++        try:
++            stream = open(args.outfile, 'w', encoding=args.encoding)
++        except OSError as e:
++            return _error('Failed to open {}: {}'.format(args.outfile, e))
++        close_stream = True
++    else:
++        stream = sys.stdout
++        close_stream = False
++
++    formatter_opts = vars(args)
++    for key in ('filename', 'outfile', 'verbose', 'encoding'):
++        formatter_opts.pop(key)
++    try:
++        formatter_opts = sqlparse.formatter.validate_options(formatter_opts)
++    except SQLParseError as e:
++        if close_stream:
++            stream.close()
++        return _error('Invalid options: {}'.format(e))
++
++    s = sqlparse.format(data, **formatter_opts)
++    stream.write(s)
++    stream.flush()
++    if close_stream:
++        stream.close()
++    return 0
+\ No newline at end of file
+diff --git a/sqlparse/engine/filter_stack.py b/sqlparse/engine/filter_stack.py
+index 0b2f20c..4035f95 100644
+--- a/sqlparse/engine/filter_stack.py
++++ b/sqlparse/engine/filter_stack.py
+@@ -12,4 +12,29 @@ class FilterStack:
+         self.postprocess = []
+         self._grouping = False
+         if strip_semicolon:
+-            self.stmtprocess.append(StripTrailingSemicolonFilter())
+\ No newline at end of file
++            self.stmtprocess.append(
++                StripTrailingSemicolonFilter())
++
++    def enable_grouping(self):
++        self._grouping = True
++
++    def run(self, sql, encoding=None):
++        stream = lexer.tokenize(sql, encoding)
++        # Process token stream
++        for filter_ in self.preprocess:
++            stream = filter_.process(stream)
++
++        stream = StatementSplitter().process(stream)
++
++        # Output: Stream processed Statements
++        for stmt in stream:
++            if self._grouping:
++                stmt = grouping.group(stmt)
++
++            for filter_ in self.stmtprocess:
++                filter_.process(stmt)
++
++            for filter_ in self.postprocess:
++                stmt = filter_.process(stmt)
++
++            yield stmt
+diff --git a/sqlparse/engine/grouping.py b/sqlparse/engine/grouping.py
+index 7d36088..ca6f8c0 100644
+--- a/sqlparse/engine/grouping.py
++++ b/sqlparse/engine/grouping.py
+@@ -1,19 +1,433 @@
+ from sqlparse import sql
+ from sqlparse import tokens as T
+ from sqlparse.utils import recurse, imt
++
+ T_NUMERICAL = (T.Number, T.Number.Integer, T.Number.Float)
+ T_STRING = (T.String, T.String.Single, T.String.Symbol)
+ T_NAME = (T.Name, T.Name.Placeholder)
+ 
+ def _group_matching(tlist, cls):
+     """Groups Tokens that have beginning and end."""
+-    pass
++    opens = []
++    tidx_offset = 0
++    for idx, token in enumerate(list(tlist)):
++        tidx = idx - tidx_offset
++
++        if token.is_whitespace:
++            # ~50% of tokens will be whitespace. Will checking early
++            # for them avoid 3 comparisons, but then add 1 more comparison
++            # for the other ~50% of tokens...
++            continue
++
++        if token.is_group and not isinstance(token, cls):
++            # Check inside previously grouped (i.e. parenthesis) if group
++            # of different type is inside (i.e., case). though ideally  should
++            # should check for all open/close tokens at once to avoid recursion
++            _group_matching(token, cls)
++            continue
++
++        if token.match(*cls.M_OPEN):
++            opens.append(tidx)
++
++        elif token.match(*cls.M_CLOSE):
++            try:
++                open_idx = opens.pop()
++            except IndexError:
++                # this indicates invalid sql and unbalanced tokens.
++                # instead of break, continue in case other "valid" groups exist
++                continue
++            close_idx = tidx
++            tlist.group_tokens(cls, open_idx, close_idx)
++            tidx_offset += close_idx - open_idx
++
++def group_brackets(tlist):
++    _group_matching(tlist, sql.SquareBrackets)
++
++def group_parenthesis(tlist):
++    _group_matching(tlist, sql.Parenthesis)
++
++def group_case(tlist):
++    _group_matching(tlist, sql.Case)
++
++def group_if(tlist):
++    _group_matching(tlist, sql.If)
++
++def group_for(tlist):
++    _group_matching(tlist, sql.For)
++
++def group_begin(tlist):
++    _group_matching(tlist, sql.Begin)
++
++def group_over(tlist):
++    tidx, token = tlist.token_next_by(m=sql.Over.M_OPEN)
++    while token:
++        nidx, next_ = tlist.token_next(tidx)
++        if imt(next_, i=sql.Parenthesis, t=T.Name):
++            tlist.group_tokens(sql.Over, tidx, nidx)
++        tidx, token = tlist.token_next_by(m=sql.Over.M_OPEN, idx=tidx)
++
++@recurse(sql.Function)
++def group_functions(tlist):
++    has_create = False
++    has_table = False
++    has_as = False
++    for tmp_token in tlist.tokens:
++        if tmp_token.value.upper() == 'CREATE':
++            has_create = True
++        if tmp_token.value.upper() == 'TABLE':
++            has_table = True
++        if tmp_token.value == 'AS':
++            has_as = True
++    if has_create and has_table and not has_as:
++        return
++
++    tidx, token = tlist.token_next_by(t=T.Name)
++    while token:
++        nidx, next_ = tlist.token_next(tidx)
++        if isinstance(next_, sql.Parenthesis):
++            over_idx, over = tlist.token_next(nidx)
++            if over is not None and isinstance(over, sql.Over):
++                eidx = over_idx
++            else:
++                eidx = nidx
++            tlist.group_tokens(sql.Function, tidx, eidx)
++        tidx, token = tlist.token_next_by(t=T.Name, idx=tidx)
+ 
+ @recurse(sql.Identifier)
+ def group_order(tlist):
+     """Group together Identifier and Asc/Desc token"""
+-    pass
++    tidx, token = tlist.token_next_by(t=T.Keyword.Order)
++    while token:
++        pidx, prev_ = tlist.token_prev(tidx)
++        if imt(prev_, i=sql.Identifier, t=T.Number):
++            tlist.group_tokens(sql.Identifier, pidx, tidx)
++            tidx = pidx
++        tidx, token = tlist.token_next_by(t=T.Keyword.Order, idx=tidx)
++
++def group_typecasts(tlist):
++    def match(token):
++        return token.match(T.Punctuation, '::')
++
++    def valid(token):
++        return token is not None
++
++    def post(tlist, pidx, tidx, nidx):
++        return pidx, nidx
++
++    _group(tlist, sql.Identifier, match, valid, valid, post)
++
++def group_tzcasts(tlist):
++    def match(token):
++        return token.ttype == T.Keyword.TZCast
++
++    def valid_prev(token):
++        return token is not None
++
++    def valid_next(token):
++        return token is not None and (
++            token.is_whitespace
++            or token.match(T.Keyword, 'AS')
++            or token.match(*sql.TypedLiteral.M_CLOSE)
++        )
++
++    def post(tlist, pidx, tidx, nidx):
++        return pidx, nidx
++
++    _group(tlist, sql.Identifier, match, valid_prev, valid_next, post)
++
++def group_typed_literal(tlist):
++    # definitely not complete, see e.g.:
++    # https://docs.microsoft.com/en-us/sql/odbc/reference/appendixes/interval-literal-syntax
++    # https://docs.microsoft.com/en-us/sql/odbc/reference/appendixes/interval-literals
++    # https://www.postgresql.org/docs/9.1/datatype-datetime.html
++    # https://www.postgresql.org/docs/9.1/functions-datetime.html
++    def match(token):
++        return imt(token, m=sql.TypedLiteral.M_OPEN)
++
++    def valid_prev(token):
++        return token is not None
++
++    def valid_next(token):
++        return token is not None and token.match(*sql.TypedLiteral.M_CLOSE)
++
++    def match_to_extend(token):
++        return isinstance(token, sql.TypedLiteral)
++
++    def valid_final(token):
++        return token is not None and token.match(*sql.TypedLiteral.M_EXTEND)
++
++    def post(tlist, pidx, tidx, nidx):
++        return tidx, nidx
++
++    _group(tlist, sql.TypedLiteral, match, valid_prev, valid_next, post,
++           extend=False)
++    _group(tlist, sql.TypedLiteral, match_to_extend, valid_prev, valid_final,
++           post, extend=True)
++
++def group_period(tlist):
++    def match(token):
++        for ttype, value in ((T.Punctuation, '.'), (T.Operator, '->'), (T.Operator, '->>')):
++            if token.match(ttype, value):
++                return True
++        return False
++
++    def valid_prev(token):
++        sqlcls = sql.SquareBrackets, sql.Identifier
++        ttypes = T.Name, T.String.Symbol
++        return imt(token, i=sqlcls, t=ttypes)
++
++    def valid_next(token):
++        # issue261, allow invalid next token
++        return True
++
++    def post(tlist, pidx, tidx, nidx):
++        # next_ validation is being performed here. issue261
++        sqlcls = sql.SquareBrackets, sql.Function
++        ttypes = T.Name, T.String.Symbol, T.Wildcard, T.String.Single
++        next_ = tlist[nidx] if nidx is not None else None
++        valid_next = imt(next_, i=sqlcls, t=ttypes)
++
++        return (pidx, nidx) if valid_next else (pidx, tidx)
++
++    _group(tlist, sql.Identifier, match, valid_prev, valid_next, post)
++
++def group_arrays(tlist):
++    sqlcls = sql.SquareBrackets, sql.Identifier, sql.Function
++    ttypes = T.Name, T.String.Symbol
++
++    def match(token):
++        return isinstance(token, sql.SquareBrackets)
++
++    def valid_prev(token):
++        return imt(token, i=sqlcls, t=ttypes)
++
++    def valid_next(token):
++        return True
++
++    def post(tlist, pidx, tidx, nidx):
++        return pidx, tidx
++
++    _group(tlist, sql.Identifier, match,
++           valid_prev, valid_next, post, extend=True, recurse=False)
+ 
+-def _group(tlist, cls, match, valid_prev=lambda t: True, valid_next=lambda t: True, post=None, extend=True, recurse=True):
++def group_identifier(tlist):
++    ttypes = (T.String.Symbol, T.Name)
++
++    tidx, token = tlist.token_next_by(t=ttypes)
++    while token:
++        tlist.group_tokens(sql.Identifier, tidx, tidx)
++        tidx, token = tlist.token_next_by(t=ttypes, idx=tidx)
++
++@recurse(sql.Where)
++def group_where(tlist):
++    tidx, token = tlist.token_next_by(m=sql.Where.M_OPEN)
++    while token:
++        eidx, end = tlist.token_next_by(m=sql.Where.M_CLOSE, idx=tidx)
++
++        if end is None:
++            eidx = len(tlist.tokens) - 1
++        else:
++            eidx = eidx - 1
++        tlist.group_tokens(sql.Where, tidx, eidx)
++        tidx, token = tlist.token_next_by(m=sql.Where.M_OPEN, idx=tidx)
++
++@recurse(sql.Comment)
++def group_comments(tlist):
++    tidx, token = tlist.token_next_by(t=T.Comment)
++    while token:
++        eidx, end = tlist.token_not_matching(
++            lambda tk: imt(tk, t=T.Comment) or tk.is_whitespace, idx=tidx)
++        if end is not None:
++            eidx, end = tlist.token_prev(eidx, skip_ws=False)
++            tlist.group_tokens(sql.Comment, tidx, eidx)
++
++        tidx, token = tlist.token_next_by(t=T.Comment, idx=tidx)
++
++def group_aliased(tlist):
++    I_ALIAS = (sql.Parenthesis, sql.Function, sql.Case, sql.Identifier,
++               sql.Operation, sql.Comparison)
++
++    tidx, token = tlist.token_next_by(i=I_ALIAS, t=T.Number)
++    while token:
++        nidx, next_ = tlist.token_next(tidx)
++        if isinstance(next_, sql.Identifier):
++            tlist.group_tokens(sql.Identifier, tidx, nidx, extend=True)
++        tidx, token = tlist.token_next_by(i=I_ALIAS, t=T.Number, idx=tidx)
++
++@recurse(sql.Comparison)
++def group_comparison(tlist):
++    sqlcls = (sql.Parenthesis, sql.Function, sql.Identifier,
++              sql.Operation, sql.TypedLiteral)
++    ttypes = T_NUMERICAL + T_STRING + T_NAME
++
++    def match(token):
++        return token.ttype == T.Operator.Comparison
++
++    def valid(token):
++        if imt(token, t=ttypes, i=sqlcls):
++            return True
++        elif token and token.match(
++                T.Keyword, ('CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP')):
++            return True
++        else:
++            return False
++
++    def post(tlist, pidx, tidx, nidx):
++        return pidx, nidx
++
++    _group(tlist, sql.Comparison, match,
++           valid, valid, post, extend=False)
++
++@recurse(sql.IdentifierList)
++def group_identifier_list(tlist):
++    m_role = T.Keyword, ('null', 'role')
++    sqlcls = (sql.Function, sql.Case, sql.Identifier, sql.Comparison,
++              sql.IdentifierList, sql.Operation)
++    ttypes = (T_NUMERICAL + T_STRING + T_NAME
++              + (T.Keyword, T.Comment, T.Wildcard))
++
++    def match(token):
++        return token.match(T.Punctuation, ',')
++
++    def valid(token):
++        return imt(token, i=sqlcls, m=m_role, t=ttypes)
++
++    def post(tlist, pidx, tidx, nidx):
++        return pidx, nidx
++
++    _group(tlist, sql.IdentifierList, match,
++           valid, valid, post, extend=True)
++
++@recurse(sql.Assignment)
++def group_assignment(tlist):
++    tidx, token = tlist.token_next_by(t=T.Assignment)
++    while token:
++        nidx, next_ = tlist.token_next(tidx)
++        if isinstance(next_, sql.Identifier):
++            tlist.group_tokens(sql.Assignment, tidx, nidx)
++        tidx, token = tlist.token_next_by(t=T.Assignment, idx=tidx)
++
++def group_as(tlist):
++    def match(token):
++        return token.is_keyword and token.normalized == 'AS'
++
++    def valid_prev(token):
++        return token.normalized == 'NULL' or not token.is_keyword
++
++    def valid_next(token):
++        ttypes = T.DML, T.DDL, T.CTE
++        return not imt(token, t=ttypes) and token is not None
++
++    def post(tlist, pidx, tidx, nidx):
++        return pidx, nidx
++
++    _group(tlist, sql.Identifier, match, valid_prev, valid_next, post)
++
++def group_operator(tlist):
++    ttypes = T_NUMERICAL + T_STRING + T_NAME
++    sqlcls = (sql.SquareBrackets, sql.Parenthesis, sql.Function,
++              sql.Identifier, sql.Operation, sql.TypedLiteral)
++
++    def match(token):
++        # comparison operators are grouped by group_comparison instead
++        return (imt(token, t=(T.Operator, T.Wildcard))
++                and not imt(token, t=T.Operator.Comparison))
++
++    def valid(token):
++        return imt(token, i=sqlcls, t=ttypes)
++
++    def post(tlist, pidx, tidx, nidx):
++        tlist[tidx].ttype = T.Operator
++        return pidx, nidx
++
++    _group(tlist, sql.Operation, match,
++           valid, valid, post, extend=False)
++
++def group_values(tlist):
++    tidx, token = tlist.token_next_by(m=(T.Keyword, 'VALUES'))
++    start_idx = tidx
++    end_idx = -1
++    while token:
++        if isinstance(token, sql.Parenthesis):
++            end_idx = tidx
++        tidx, token = tlist.token_next(tidx)
++    if end_idx != -1:
++        tlist.group_tokens(sql.Values, start_idx, end_idx, extend=True)
++
++def align_comments(tlist):
++    tidx, token = tlist.token_next_by(i=sql.Comment)
++    while token:
++        pidx, prev_ = tlist.token_prev(tidx)
++        if isinstance(prev_, sql.TokenList):
++            tlist.group_tokens(sql.TokenList, pidx, tidx, extend=True)
++            tidx = pidx
++        tidx, token = tlist.token_next_by(i=sql.Comment, idx=tidx)
++
++def _group(tlist, cls, match,
++           valid_prev=lambda t: True,
++           valid_next=lambda t: True,
++           post=None,
++           extend=True,
++           recurse=True
++           ):
+     """Groups together tokens that are joined by a middle token. i.e. x < y"""
+-    pass
+\ No newline at end of file
++
++    tidx_offset = 0
++    pidx, prev_ = None, None
++    for idx, token in enumerate(list(tlist)):
++        tidx = idx - tidx_offset
++        if tidx < 0:  # tidx shouldn't get negative
++            continue
++
++        if token.is_whitespace:
++            continue
++
++        if recurse and token.is_group and not isinstance(token, cls):
++            _group(token, cls, match, valid_prev, valid_next, post, extend)
++
++        if match(token):
++            nidx, next_ = tlist.token_next(tidx)
++            if prev_ and valid_prev(prev_) and valid_next(next_):
++                from_idx, to_idx = post(tlist, pidx, tidx, nidx)
++                grp = tlist.group_tokens(cls, from_idx, to_idx, extend=extend)
++
++                tidx_offset += to_idx - from_idx
++                pidx, prev_ = from_idx, grp
++                continue
++
++        pidx, prev_ = tidx, token
++
++def group(stmt):
++    for func in [
++        group_comments,
++
++        # _group_matching
++        group_brackets,
++        group_parenthesis,
++        group_case,
++        group_if,
++        group_for,
++        group_begin,
++
++        group_over,
++        group_functions,
++        group_where,
++        group_period,
++        group_arrays,
++        group_identifier,
++        group_order,
++        group_typecasts,
++        group_tzcasts,
++        group_typed_literal,
++        group_operator,
++        group_comparison,
++        group_as,
++        group_aliased,
++        group_assignment,
++
++        align_comments,
++        group_identifier_list,
++        group_values,
++    ]:
++        func(stmt)
++    return stmt
+diff --git a/sqlparse/engine/statement_splitter.py b/sqlparse/engine/statement_splitter.py
+index e6a2f16..5fda331 100644
+--- a/sqlparse/engine/statement_splitter.py
++++ b/sqlparse/engine/statement_splitter.py
+@@ -8,12 +8,100 @@ class StatementSplitter:
+ 
+     def _reset(self):
+         """Set the filter attributes to its default values"""
+-        pass
++        self._in_declare = False
++        self._is_create = False
++        self._begin_depth = 0
++
++        self.consume_ws = False
++        self.tokens = []
++        self.level = 0
+ 
+     def _change_splitlevel(self, ttype, value):
+         """Get the new split level (increase, decrease or remain equal)"""
+-        pass
++        # parenthesis increase/decrease a level
++        if ttype is T.Punctuation and value == '(':
++            return 1
++        elif ttype is T.Punctuation and value == ')':
++            return -1
++        elif ttype not in T.Keyword:  # if normal token return
++            return 0
++
++        # Everything after here is ttype = T.Keyword
++        # Also to note, once entered an If statement you are done and basically
++        # returning
++        unified = value.upper()
++
++        # three keywords begin with CREATE, but only one of them is DDL
++        # DDL Create though can contain more words such as "or replace"
++        if ttype is T.Keyword.DDL and unified.startswith('CREATE'):
++            self._is_create = True
++            return 0
++
++        # can have nested declare inside of being...
++        if unified == 'DECLARE' and self._is_create and self._begin_depth == 0:
++            self._in_declare = True
++            return 1
++
++        if unified == 'BEGIN':
++            self._begin_depth += 1
++            if self._is_create:
++                # The DECLARE block has already opened a level, so the BEGIN
++                # that closes it must not open another one.
++                if self._in_declare:
++                    self._in_declare = False
++                    return 0
++                return 1
++            return 0
++
++        # Should this respect a preceding BEGIN?
++        # In CASE ... WHEN ... END this results in a split level -1.
++        # Would having multiple CASE WHEN END and a Assignment Operator
++        # cause the statement to cut off prematurely?
++        if unified == 'END':
++            self._begin_depth = max(0, self._begin_depth - 1)
++            return -1
++
++        if (unified in ('IF', 'FOR', 'WHILE', 'CASE')
++                and self._is_create and self._begin_depth > 0):
++            return 1
++
++        if unified in ('END IF', 'END FOR', 'END WHILE'):
++            return -1
++
++        # Default
++        return 0
+ 
+     def process(self, stream):
+         """Process the stream"""
+-        pass
+\ No newline at end of file
++        EOS_TTYPE = T.Whitespace, T.Comment.Single
++
++        # Run over all stream tokens
++        for ttype, value in stream:
++            # Yield token if we finished a statement and there's no whitespaces
++            # It will count newline token as a non whitespace. In this context
++            # whitespace ignores newlines.
++            # why don't multi line comments also count?
++            if self.consume_ws and ttype not in EOS_TTYPE:
++                yield sql.Statement(self.tokens)
++
++                # Reset filter and prepare to process next statement
++                self._reset()
++
++            # Change current split level (increase, decrease or remain equal)
++            self.level += self._change_splitlevel(ttype, value)
++
++            # Append the token to the current statement
++            self.tokens.append(sql.Token(ttype, value))
++
++            # Check if we get the end of a statement
++            # Issue762: Allow GO (or "GO 2") as statement splitter.
++            # When implementing a language toggle, it's not only to add
++            # keywords it's also to change some rules, like this splitting
++            # rule.
++            if (self.level <= 0 and ttype is T.Punctuation and value == ';') \
++               or (ttype is T.Keyword and value.split()[0] == 'GO'):
++                self.consume_ws = True
++
++        # Yield pending statement (if any)
++        if self.tokens and not all(t.is_whitespace for t in self.tokens):
++            yield sql.Statement(self.tokens)
+diff --git a/sqlparse/filters/aligned_indent.py b/sqlparse/filters/aligned_indent.py
+index 6d3eb1f..d1abe93 100644
+--- a/sqlparse/filters/aligned_indent.py
++++ b/sqlparse/filters/aligned_indent.py
+@@ -1,14 +1,117 @@
++import re
+ from sqlparse import sql, tokens as T
+ from sqlparse.utils import offset, indent
+ 
+ class AlignedIndentFilter:
+-    join_words = '((LEFT\\s+|RIGHT\\s+|FULL\\s+)?(INNER\\s+|OUTER\\s+|STRAIGHT\\s+)?|(CROSS\\s+|NATURAL\\s+)?)?JOIN\\b'
+-    by_words = '(GROUP|ORDER)\\s+BY\\b'
+-    split_words = ('FROM', join_words, 'ON', by_words, 'WHERE', 'AND', 'OR', 'HAVING', 'LIMIT', 'UNION', 'VALUES', 'SET', 'BETWEEN', 'EXCEPT')
++    join_words = r'((LEFT\s+|RIGHT\s+|FULL\s+)?(INNER\s+|OUTER\s+|STRAIGHT\s+)?|(CROSS\s+|NATURAL\s+)?)?JOIN\b'
++    by_words = r'(GROUP|ORDER)\s+BY\b'
++    split_words = ('FROM', join_words, 'ON', by_words,
++                   'WHERE', 'AND', 'OR', 'HAVING', 'LIMIT',
++                   'UNION', 'VALUES',
++                   'SET', 'BETWEEN', 'EXCEPT')
+ 
+     def __init__(self, char=' ', n='\n'):
+         self.n = n
+         self.offset = 0
+         self.indent = 0
+         self.char = char
+-        self._max_kwd_len = len('select')
+\ No newline at end of file
++        self._max_kwd_len = len('select')
++
++    def nl(self, offset=1):
++        # offset = 1 represent a single space after SELECT
++        offset = -len(offset) if not isinstance(offset, int) else offset
++        # add two for the space and parenthesis
++        indent = self.indent * (2 + self._max_kwd_len)
++
++        return sql.Token(T.Whitespace, self.n + self.char * (
++            self._max_kwd_len + offset + indent + self.offset))
++
++    def _process_statement(self, tlist):
++        if len(tlist.tokens) > 0 and tlist.tokens[0].is_whitespace \
++                and self.indent == 0:
++            tlist.tokens.pop(0)
++
++        # process the main query body
++        self._process(sql.TokenList(tlist.tokens))
++
++    def _process_parenthesis(self, tlist):
++        # if this isn't a subquery, don't re-indent
++        _, token = tlist.token_next_by(m=(T.DML, 'SELECT'))
++        if token is not None:
++            with indent(self):
++                tlist.insert_after(tlist[0], self.nl('SELECT'))
++                # process the inside of the parenthesis
++                self._process_default(tlist)
++
++            # de-indent last parenthesis
++            tlist.insert_before(tlist[-1], self.nl())
++
++    def _process_identifierlist(self, tlist):
++        # columns being selected
++        identifiers = list(tlist.get_identifiers())
++        identifiers.pop(0)
++        [tlist.insert_before(token, self.nl()) for token in identifiers]
++        self._process_default(tlist)
++
++    def _process_case(self, tlist):
++        offset_ = len('case ') + len('when ')
++        cases = tlist.get_cases(skip_ws=True)
++        # align the end as well
++        end_token = tlist.token_next_by(m=(T.Keyword, 'END'))[1]
++        cases.append((None, [end_token]))
++
++        condition_width = [len(' '.join(map(str, cond))) if cond else 0
++                           for cond, _ in cases]
++        max_cond_width = max(condition_width)
++
++        for i, (cond, value) in enumerate(cases):
++            # cond is None when 'else' or 'end'
++            stmt = cond[0] if cond else value[0]
++
++            if i > 0:
++                tlist.insert_before(stmt, self.nl(offset_ - len(str(stmt))))
++            if cond:
++                ws = sql.Token(T.Whitespace, self.char * (
++                    max_cond_width - condition_width[i]))
++                tlist.insert_after(cond[-1], ws)
++
++    def _next_token(self, tlist, idx=-1):
++        split_words = T.Keyword, self.split_words, True
++        tidx, token = tlist.token_next_by(m=split_words, idx=idx)
++        # treat "BETWEEN x and y" as a single statement
++        if token and token.normalized == 'BETWEEN':
++            tidx, token = self._next_token(tlist, tidx)
++            if token and token.normalized == 'AND':
++                tidx, token = self._next_token(tlist, tidx)
++        return tidx, token
++
++    def _split_kwds(self, tlist):
++        tidx, token = self._next_token(tlist)
++        while token:
++            # joins are special case. only consider the first word as aligner
++            if re.match(self.join_words, token.value, re.I):
++                token_indent = token.value.split()[0]
++            else:
++                token_indent = str(token)
++            tlist.insert_before(tidx, self.nl(token_indent))
++            tidx += 1
++            tidx, token = self._next_token(tlist, tidx)
++
++    def _process_default(self, tlist):
++        self._split_kwds(tlist)
++        # process any sub-sub statements
++        for sgroup in tlist.get_sublists():
++            prev_token = tlist.token_prev(tlist.token_index(sgroup))[1]
++            # HACK: make "group/order by" work. Longer than max_len.
++            offset_ = 3 if (prev_token and prev_token.match(T.Keyword, 'BY')) else 0
++            with offset(self, offset_):
++                self._process(sgroup)
++
++    def _process(self, tlist):
++        func_name = '_process_{cls}'.format(cls=type(tlist).__name__)
++        func = getattr(self, func_name.lower(), self._process_default)
++        func(tlist)
++
++    def process(self, stmt):
++        self._process(stmt)
++        return stmt
+diff --git a/sqlparse/filters/others.py b/sqlparse/filters/others.py
+index e67490c..86fc3c1 100644
+--- a/sqlparse/filters/others.py
++++ b/sqlparse/filters/others.py
+@@ -3,16 +3,132 @@ from sqlparse import sql, tokens as T
+ from sqlparse.utils import split_unquoted_newlines
+ 
+ class StripCommentsFilter:
+-    pass
++
++    @staticmethod
++    def _process(tlist):
++        def get_next_comment():
++            # TODO(andi) Comment types should be unified, see related issue38
++            return tlist.token_next_by(i=sql.Comment, t=T.Comment)
++
++        def _get_insert_token(token):
++            """Returns either a whitespace or the line breaks from token."""
++            # See issue484 why line breaks should be preserved.
++            # Note: The actual value for a line break is replaced by \n
++            # in SerializerUnicode which will be executed in the
++            # postprocessing state.
++            m = re.search(r'([\r\n]+) *$', token.value)
++            if m is not None:
++                return sql.Token(T.Whitespace.Newline, m.groups()[0])
++            else:
++                return sql.Token(T.Whitespace, ' ')
++
++        tidx, token = get_next_comment()
++        while token:
++            # skipping token remove if token is not a comment and comment is not wrapped
++            pidx, prev_ = tlist.token_prev(tidx, skip_ws=False)
++            nidx, next_ = tlist.token_next(tidx, skip_ws=False)
++            # Replace by whitespace if prev and next exist and if they're not
++            # whitespaces. This doesn't apply if prev or next is a parenthesis.
++            if (prev_ is None or next_ is None
++                    or prev_.is_whitespace or prev_.match(T.Punctuation, '(')
++                    or next_.is_whitespace or next_.match(T.Punctuation, ')')):
++                # Insert a whitespace to ensure the following SQL produces
++                # a valid SQL (see #425).
++                if prev_ is not None and not prev_.match(T.Punctuation, '('):
++                    tlist.tokens.insert(tidx, _get_insert_token(token))
++                tlist.tokens.remove(token)
++            else:
++                tlist.tokens[tidx] = _get_insert_token(token)
++
++            tidx, token = get_next_comment()
++
++    def process(self, stmt):
++        [self.process(sgroup) for sgroup in stmt.get_sublists()]
++        StripCommentsFilter._process(stmt)
++        return stmt
++
+ 
+ class StripWhitespaceFilter:
+-    pass
++    def _stripws(self, tlist):
++        func_name = '_stripws_{cls}'.format(cls=type(tlist).__name__)
++        func = getattr(self, func_name.lower(), self._stripws_default)
++        func(tlist)
++
++    @staticmethod
++    def _stripws_default(tlist):
++        last_was_ws = False
++        is_first_char = True
++        for token in tlist.tokens:
++            if token.is_whitespace:
++                token.value = '' if last_was_ws or is_first_char else ' '
++            last_was_ws = token.is_whitespace
++            is_first_char = False
++
++    def _stripws_identifierlist(self, tlist):
++        # Removes newlines before commas, see issue140
++        last_nl = None
++        for token in list(tlist.tokens):
++            if last_nl and token.ttype is T.Punctuation and token.value == ',':
++                tlist.tokens.remove(last_nl)
++            last_nl = token if token.is_whitespace else None
++
++            # next_ = tlist.token_next(token)
++            # if next_ and not next_.is_whitespace:
++            #     if token.value == ',':
++            #         tlist.insert_after(token, sql.Token(T.Whitespace, ' '))
++        return self._stripws_default(tlist)
++
++    def _stripws_parenthesis(self, tlist):
++        while tlist.tokens[1].is_whitespace:
++            tlist.tokens.pop(1)
++        while tlist.tokens[-2].is_whitespace:
++            tlist.tokens.pop(-2)
++        self._stripws_default(tlist)
++
++    def process(self, stmt, depth=0):
++        [self.process(sgroup, depth + 1) for sgroup in stmt.get_sublists()]
++        self._stripws(stmt)
++        if depth == 0 and stmt.tokens and stmt.tokens[-1].is_whitespace:
++            stmt.tokens.pop(-1)
++        return stmt
++
+ 
+ class SpacesAroundOperatorsFilter:
+-    pass
++    @staticmethod
++    def _process(tlist):
++        ttypes = (T.Operator, T.Comparison)
++        tidx, token = tlist.token_next_by(t=ttypes)
++        while token:
++            nidx, next_ = tlist.token_next(tidx, skip_ws=False)
++            if next_ and next_.ttype != T.Whitespace:
++                tlist.insert_after(tidx, sql.Token(T.Whitespace, ' '))
++
++            pidx, prev_ = tlist.token_prev(tidx, skip_ws=False)
++            if prev_ and prev_.ttype != T.Whitespace:
++                tlist.insert_before(tidx, sql.Token(T.Whitespace, ' '))
++                tidx += 1  # has to shift since token inserted before it
++
++            # assert tlist.token_index(token) == tidx
++            tidx, token = tlist.token_next_by(t=ttypes, idx=tidx)
++
++    def process(self, stmt):
++        [self.process(sgroup) for sgroup in stmt.get_sublists()]
++        SpacesAroundOperatorsFilter._process(stmt)
++        return stmt
++
+ 
+ class StripTrailingSemicolonFilter:
+-    pass
++
++    def process(self, stmt):
++        while stmt.tokens and (stmt.tokens[-1].is_whitespace
++                               or stmt.tokens[-1].value == ';'):
++            stmt.tokens.pop()
++        return stmt
++
+ 
+ class SerializerUnicode:
+-    pass
+\ No newline at end of file
++
++    @staticmethod
++    def process(stmt):
++        lines = split_unquoted_newlines(stmt)
++        return '\n'.join(line.rstrip() for line in lines)
+diff --git a/sqlparse/filters/output.py b/sqlparse/filters/output.py
+index a85bab1..86cdec7 100644
+--- a/sqlparse/filters/output.py
++++ b/sqlparse/filters/output.py
+@@ -8,7 +8,83 @@ class OutputFilter:
+         self.count = 0
+ 
+ class OutputPythonFilter(OutputFilter):
+-    pass
++    def _process(self, stream, varname, has_nl):
++        # SQL query assignation to varname
++        if self.count > 1:
++            yield sql.Token(T.Whitespace, '\n')
++        yield sql.Token(T.Name, varname)
++        yield sql.Token(T.Whitespace, ' ')
++        yield sql.Token(T.Operator, '=')
++        yield sql.Token(T.Whitespace, ' ')
++        if has_nl:
++            yield sql.Token(T.Operator, '(')
++        yield sql.Token(T.Text, "'")
++
++        # Print the tokens on the quote
++        for token in stream:
++            # Token is a new line separator
++            if token.is_newline:
++                # Close quote and add a new line
++                yield sql.Token(T.Text, "'")
++                yield sql.Token(T.Whitespace, '\n')
++
++                # Quote header on secondary lines
++                yield sql.Token(T.Whitespace, ' ' * (len(varname) + 4))
++                yield sql.Token(T.Text, "'")
++            else:
++                yield sql.Token(T.Text, token.value)
++
++        yield sql.Token(T.Text, "'")
++        if has_nl:
++            yield sql.Token(T.Operator, ')')
++
++    def process(self, stmt):
++        self.count += 1
++        if self.count > 1:
++            varname = '{f.varname}{f.count}'.format(f=self)
++        else:
++            varname = self.varname
++
++        has_nl = len(str(stmt).strip().splitlines()) > 1
++        stmt.tokens = self._process(stmt.tokens, varname, has_nl)
++        return stmt
+ 
+ class OutputPHPFilter(OutputFilter):
+-    varname_prefix = '$'
+\ No newline at end of file
++    varname_prefix = '$'
++
++    def _process(self, stream, varname):
++        # SQL query assignation to varname (quote header)
++        if self.count > 1:
++            yield sql.Token(T.Whitespace, '\n')
++        yield sql.Token(T.Name, varname)
++        yield sql.Token(T.Whitespace, ' ')
++        yield sql.Token(T.Operator, '=')
++        yield sql.Token(T.Whitespace, ' ')
++        yield sql.Token(T.Text, '"')
++
++        # Print the tokens on the quote
++        for token in stream:
++            # Token is a new line separator
++            if token.is_newline:
++                # Close quote and add a new line
++                yield sql.Token(T.Text, ' ";')
++                yield sql.Token(T.Whitespace, '\n')
++
++                # Quote header on secondary lines
++                yield sql.Token(T.Whitespace, ' ' * (len(varname) + 4))
++                yield sql.Token(T.Text, '"')
++            else:
++                yield sql.Token(T.Text, token.value)
++
++        # Close quote
++        yield sql.Token(T.Text, '";')
++
++    def process(self, stmt):
++        self.count += 1
++        if self.count > 1:
++            varname = '{f.varname}{f.count}'.format(f=self)
++        else:
++            varname = self.varname
++
++        stmt.tokens = self._process(stmt.tokens, varname)
++        return stmt
+diff --git a/sqlparse/filters/reindent.py b/sqlparse/filters/reindent.py
+index 9a5150e..e8e1d2d 100644
+--- a/sqlparse/filters/reindent.py
++++ b/sqlparse/filters/reindent.py
+@@ -19,4 +19,184 @@ class ReindentFilter:
+ 
+     def _flatten_up_to_token(self, token):
+         """Yields all tokens up to token but excluding current."""
+-        pass
+\ No newline at end of file
++        if token.is_group:
++            token = next(token.flatten())
++
++        for t in self._curr_stmt.flatten():
++            if t == token:
++                break
++            yield t
++
++    @property
++    def leading_ws(self):
++        return self.offset + self.indent * self.width
++
++    def _get_offset(self, token):
++        raw = ''.join(map(str, self._flatten_up_to_token(token)))
++        line = (raw or '\n').splitlines()[-1]
++        # Now take current offset into account and return relative offset.
++        return len(line) - len(self.char * self.leading_ws)
++
++    def nl(self, offset=0):
++        return sql.Token(
++            T.Whitespace,
++            self.n + self.char * max(0, self.leading_ws + offset))
++
++    def _next_token(self, tlist, idx=-1):
++        split_words = ('FROM', 'STRAIGHT_JOIN$', 'JOIN$', 'AND', 'OR',
++                       'GROUP BY', 'ORDER BY', 'UNION', 'VALUES',
++                       'SET', 'BETWEEN', 'EXCEPT', 'HAVING', 'LIMIT')
++        m_split = T.Keyword, split_words, True
++        tidx, token = tlist.token_next_by(m=m_split, idx=idx)
++
++        if token and token.normalized == 'BETWEEN':
++            tidx, token = self._next_token(tlist, tidx)
++
++            if token and token.normalized == 'AND':
++                m_split = T.Keyword, split_words, True
++                tidx, token = tlist.token_next_by(m=m_split, idx=tidx)
++        return tidx, token
++
++    def _split_kwds(self, tlist):
++        tidx, token = self._next_token(tlist)
++        while token:
++            pidx, prev_ = tlist.token_prev(tidx, skip_ws=False)
++            uprev = str(prev_)
++
++            if prev_ and prev_.is_whitespace:
++                del tlist.tokens[pidx]
++                tidx -= 1
++
++            if not (uprev.endswith('\n') or uprev.endswith('\r')):
++                tlist.insert_before(tidx, self.nl())
++                tidx += 1
++
++            tidx, token = self._next_token(tlist, tidx)
++
++    def _split_statements(self, tlist):
++        ttypes = T.Keyword.DML, T.Keyword.DDL
++        tidx, token = tlist.token_next_by(t=ttypes)
++        while token:
++            pidx, prev_ = tlist.token_prev(tidx)
++            if prev_ and prev_.is_whitespace:
++                del tlist.tokens[pidx]
++                tidx -= 1
++            # only break if it's not the first token
++            if prev_:
++                tlist.insert_before(tidx, self.nl())
++                tidx += 1
++            tidx, token = tlist.token_next_by(t=ttypes, idx=tidx)
++
++    def _process(self, tlist):
++        func_name = '_process_{cls}'.format(cls=type(tlist).__name__)
++        func = getattr(self, func_name.lower(), self._process_default)
++        func(tlist)
++
++    def _process_where(self, tlist):
++        tidx, token = tlist.token_next_by(m=(T.Keyword, 'WHERE'))
++        if not token:
++            return
++
++        # issue121, errors in statement fixed??
++        tlist.insert_before(tidx, self.nl())
++
++        with indent(self):
++            self._process_default(tlist)
++
++    def _process_parenthesis(self, tlist):
++        ttypes = T.Keyword.DML, T.Keyword.DDL
++        _, is_dml_dll = tlist.token_next_by(t=ttypes)
++        fidx, first = tlist.token_next_by(m=sql.Parenthesis.M_OPEN)
++        if first is None:
++            return
++
++        with indent(self, 1 if is_dml_dll else 0):
++            tlist.tokens.insert(0, self.nl()) if is_dml_dll else None
++            with offset(self, self._get_offset(first) + 1):
++                self._process_default(tlist, not is_dml_dll)
++
++    def _process_function(self, tlist):
++        self._last_func = tlist[0]
++        self._process_default(tlist)
++
++    def _process_identifierlist(self, tlist):
++        identifiers = list(tlist.get_identifiers())
++        if self.indent_columns:
++            first = next(identifiers[0].flatten())
++            num_offset = 1 if self.char == '\t' else self.width
++        else:
++            first = next(identifiers.pop(0).flatten())
++            num_offset = 1 if self.char == '\t' else self._get_offset(first)
++
++        if not tlist.within(sql.Function) and not tlist.within(sql.Values):
++            with offset(self, num_offset):
++                position = 0
++                for token in identifiers:
++                    # Add 1 for the "," separator
++                    position += len(token.value) + 1
++                    if position > (self.wrap_after - self.offset):
++                        adjust = 0
++                        if self.comma_first:
++                            adjust = -2
++                            _, comma = tlist.token_prev(
++                                tlist.token_index(token))
++                            if comma is None:
++                                continue
++                            token = comma
++                        tlist.insert_before(token, self.nl(offset=adjust))
++                        position = 0
++        self._process_default(tlist)
++
++    def _process_case(self, tlist):
++        iterable = iter(tlist.get_cases())
++        cond, _ = next(iterable)
++        first = next(cond[0].flatten())
++
++        with offset(self, self._get_offset(tlist[0])):
++            with offset(self, self._get_offset(first)):
++                for cond, value in iterable:
++                    token = value[0] if cond is None else cond[0]
++                    tlist.insert_before(token, self.nl())
++
++                # Line breaks on group level are done. let's add an offset of
++                # len "when ", "then ", "else "
++                with offset(self, len("WHEN ")):
++                    self._process_default(tlist)
++        end_idx, end = tlist.token_next_by(m=sql.Case.M_CLOSE)
++        if end_idx is not None:
++            tlist.insert_before(end_idx, self.nl())
++
++    def _process_values(self, tlist):
++        tlist.insert_before(0, self.nl())
++        tidx, token = tlist.token_next_by(i=sql.Parenthesis)
++        first_token = token
++        while token:
++            ptidx, ptoken = tlist.token_next_by(m=(T.Punctuation, ','),
++                                                idx=tidx)
++            if ptoken:
++                if self.comma_first:
++                    adjust = -2
++                    offset_ = self._get_offset(first_token) + adjust
++                    tlist.insert_before(ptoken, self.nl(offset_))
++                else:
++                    tlist.insert_after(
++                        ptoken,
++                        self.nl(self._get_offset(token)))
++            tidx, token = tlist.token_next_by(i=sql.Parenthesis, idx=tidx)
++
++    def _process_default(self, tlist, stmts=True):
++        self._split_statements(tlist) if stmts else None
++        self._split_kwds(tlist)
++        for sgroup in tlist.get_sublists():
++            self._process(sgroup)
++
++    def process(self, stmt):
++        self._curr_stmt = stmt
++        self._process(stmt)
++
++        if self._last_stmt is not None:
++            nl = '\n' if str(self._last_stmt).endswith('\n') else '\n\n'
++            stmt.tokens.insert(0, sql.Token(T.Whitespace, nl))
++
++        self._last_stmt = stmt
++        return stmt
+diff --git a/sqlparse/filters/right_margin.py b/sqlparse/filters/right_margin.py
+index 90962ad..59111b6 100644
+--- a/sqlparse/filters/right_margin.py
++++ b/sqlparse/filters/right_margin.py
+@@ -2,8 +2,33 @@ import re
+ from sqlparse import sql, tokens as T
+ 
+ class RightMarginFilter:
+-    keep_together = ()
++    keep_together = (
++        # sql.TypeCast, sql.Identifier, sql.Alias,
++    )
+ 
+     def __init__(self, width=79):
+         self.width = width
+-        self.line = ''
+\ No newline at end of file
++        self.line = ''
++
++    def _process(self, group, stream):
++        for token in stream:
++            if token.is_whitespace and '\n' in token.value:
++                if token.value.endswith('\n'):
++                    self.line = ''
++                else:
++                    self.line = token.value.splitlines()[-1]
++            elif token.is_group and type(token) not in self.keep_together:
++                token.tokens = list(self._process(token, token.tokens))
++            else:
++                val = str(token)
++                if len(self.line) + len(val) > self.width:
++                    match = re.search(r'^ +', self.line)
++                    indent = match.group() if match else ''
++                    yield sql.Token(T.Whitespace, '\n{}'.format(indent))
++                    self.line = indent
++                self.line += val
++            yield token
++
++    def process(self, group):
++        group.tokens = list(self._process(group, group.tokens))
++        return group
+diff --git a/sqlparse/filters/tokens.py b/sqlparse/filters/tokens.py
+index 36e3867..19e03db 100644
+--- a/sqlparse/filters/tokens.py
++++ b/sqlparse/filters/tokens.py
+@@ -7,14 +7,46 @@ class _CaseFilter:
+         case = case or 'upper'
+         self.convert = getattr(str, case)
+ 
++    def process(self, stream):
++        for ttype, value in stream:
++            if ttype in self.ttype:
++                value = self.convert(value)
++            yield ttype, value
++
++
+ class KeywordCaseFilter(_CaseFilter):
+     ttype = T.Keyword
+ 
++
+ class IdentifierCaseFilter(_CaseFilter):
+     ttype = (T.Name, T.String.Symbol)
+ 
++    def process(self, stream):
++        for ttype, value in stream:
++            if ttype in self.ttype and not value.strip()[0] == '"':
++                value = self.convert(value)
++            yield ttype, value
++
++
+ class TruncateStringFilter:
+ 
+     def __init__(self, width, char):
+         self.width = width
+-        self.char = char
+\ No newline at end of file
++        self.char = char
++
++    def process(self, stream):
++        for ttype, value in stream:
++            if ttype != T.Literal.String.Single:
++                yield ttype, value
++                continue
++
++            if value[:2] == "''":
++                inner = value[2:-2]
++                quote = "''"
++            else:
++                inner = value[1:-1]
++                quote = "'"
++
++            if len(inner) > self.width:
++                value = ''.join((quote, inner[:self.width], self.char, quote))
++            yield ttype, value
+diff --git a/sqlparse/formatter.py b/sqlparse/formatter.py
+index f839b0c..c0e4074 100644
+--- a/sqlparse/formatter.py
++++ b/sqlparse/formatter.py
+@@ -4,7 +4,124 @@ from sqlparse.exceptions import SQLParseError
+ 
+ def validate_options(options):
+     """Validates options."""
+-    pass
++    kwcase = options.get('keyword_case')
++    if kwcase not in [None, 'upper', 'lower', 'capitalize']:
++        raise SQLParseError('Invalid value for keyword_case: '
++                            '{!r}'.format(kwcase))
++
++    idcase = options.get('identifier_case')
++    if idcase not in [None, 'upper', 'lower', 'capitalize']:
++        raise SQLParseError('Invalid value for identifier_case: '
++                            '{!r}'.format(idcase))
++
++    ofrmt = options.get('output_format')
++    if ofrmt not in [None, 'sql', 'python', 'php']:
++        raise SQLParseError('Unknown output format: '
++                            '{!r}'.format(ofrmt))
++
++    strip_comments = options.get('strip_comments', False)
++    if strip_comments not in [True, False]:
++        raise SQLParseError('Invalid value for strip_comments: '
++                            '{!r}'.format(strip_comments))
++
++    space_around_operators = options.get('use_space_around_operators', False)
++    if space_around_operators not in [True, False]:
++        raise SQLParseError('Invalid value for use_space_around_operators: '
++                            '{!r}'.format(space_around_operators))
++
++    strip_ws = options.get('strip_whitespace', False)
++    if strip_ws not in [True, False]:
++        raise SQLParseError('Invalid value for strip_whitespace: '
++                            '{!r}'.format(strip_ws))
++
++    truncate_strings = options.get('truncate_strings')
++    if truncate_strings is not None:
++        try:
++            truncate_strings = int(truncate_strings)
++        except (ValueError, TypeError):
++            raise SQLParseError('Invalid value for truncate_strings: '
++                                '{!r}'.format(truncate_strings))
++        if truncate_strings <= 1:
++            raise SQLParseError('Invalid value for truncate_strings: '
++                                '{!r}'.format(truncate_strings))
++        options['truncate_strings'] = truncate_strings
++        options['truncate_char'] = options.get('truncate_char') or '[...]'
++
++    indent_columns = options.get('indent_columns', False)
++    if indent_columns not in [True, False]:
++        raise SQLParseError('Invalid value for indent_columns: '
++                            '{!r}'.format(indent_columns))
++    options['indent_columns'] = indent_columns
++
++    reindent = options.get('reindent', False)
++    if reindent not in [True, False]:
++        raise SQLParseError('Invalid value for reindent: '
++                            '{!r}'.format(reindent))
++    elif reindent:
++        options['strip_whitespace'] = True
++
++    reindent_aligned = options.get('reindent_aligned', False)
++    if reindent_aligned not in [True, False]:
++        raise SQLParseError('Invalid value for reindent_aligned: '
++                            '{!r}'.format(reindent_aligned))
++    elif reindent_aligned:
++        options['strip_whitespace'] = True
++
++    indent_after_first = options.get('indent_after_first', False)
++    if indent_after_first not in [True, False]:
++        raise SQLParseError('Invalid value for indent_after_first: '
++                            '{!r}'.format(indent_after_first))
++    options['indent_after_first'] = indent_after_first
++
++    indent_tabs = options.get('indent_tabs', False)
++    if indent_tabs not in [True, False]:
++        raise SQLParseError('Invalid value for indent_tabs: '
++                            '{!r}'.format(indent_tabs))
++    elif indent_tabs:
++        options['indent_char'] = '\t'
++    else:
++        options['indent_char'] = ' '
++
++    indent_width = options.get('indent_width', 2)
++    try:
++        indent_width = int(indent_width)
++    except (TypeError, ValueError):
++        raise SQLParseError('indent_width requires an integer')
++    if indent_width < 1:
++        raise SQLParseError('indent_width requires a positive integer')
++    options['indent_width'] = indent_width
++
++    wrap_after = options.get('wrap_after', 0)
++    try:
++        wrap_after = int(wrap_after)
++    except (TypeError, ValueError):
++        raise SQLParseError('wrap_after requires an integer')
++    if wrap_after < 0:
++        raise SQLParseError('wrap_after requires a positive integer')
++    options['wrap_after'] = wrap_after
++
++    comma_first = options.get('comma_first', False)
++    if comma_first not in [True, False]:
++        raise SQLParseError('comma_first requires a boolean value')
++    options['comma_first'] = comma_first
++
++    compact = options.get('compact', False)
++    if compact not in [True, False]:
++        raise SQLParseError('compact requires a boolean value')
++    options['compact'] = compact
++
++    right_margin = options.get('right_margin')
++    if right_margin is not None:
++        try:
++            right_margin = int(right_margin)
++        except (ValueError, TypeError):
++            raise SQLParseError('right_margin requires an integer')
++        if right_margin < 10 or right_margin > 100:
++            raise SQLParseError('right_margin requires an integer between '
++                                '10 and 100')
++        options['right_margin'] = right_margin
++
++    return options
+ 
+ def build_filter_stack(stack, options):
+     """Setup and return a filter stack.
+@@ -13,4 +130,64 @@ def build_filter_stack(stack, options):
+       stack: :class:`~sqlparse.filters.FilterStack` instance
+       options: Dictionary with options validated by validate_options.
+     """
+-    pass
+\ No newline at end of file
++    # Token filter
++    if options.get('keyword_case'):
++        stack.preprocess.append(
++            filters.KeywordCaseFilter(options['keyword_case']))
++
++    if options.get('identifier_case'):
++        stack.preprocess.append(
++            filters.IdentifierCaseFilter(options['identifier_case']))
++
++    if options.get('truncate_strings'):
++        stack.preprocess.append(filters.TruncateStringFilter(
++            width=options['truncate_strings'], char=options['truncate_char']))
++
++    if options.get('use_space_around_operators', False):
++        stack.enable_grouping()
++        stack.stmtprocess.append(filters.SpacesAroundOperatorsFilter())
++
++    # After grouping
++    if options.get('strip_comments'):
++        stack.enable_grouping()
++        stack.stmtprocess.append(filters.StripCommentsFilter())
++
++    if options.get('strip_whitespace') or options.get('reindent'):
++        stack.enable_grouping()
++        stack.stmtprocess.append(filters.StripWhitespaceFilter())
++
++    if options.get('reindent'):
++        stack.enable_grouping()
++        stack.stmtprocess.append(
++            filters.ReindentFilter(
++                char=options['indent_char'],
++                width=options['indent_width'],
++                indent_after_first=options['indent_after_first'],
++                indent_columns=options['indent_columns'],
++                wrap_after=options['wrap_after'],
++                comma_first=options['comma_first'],
++                compact=options['compact']))
++
++    if options.get('reindent_aligned', False):
++        stack.enable_grouping()
++        stack.stmtprocess.append(
++            filters.AlignedIndentFilter(char=options['indent_char']))
++
++    if options.get('right_margin'):
++        stack.enable_grouping()
++        stack.stmtprocess.append(
++            filters.RightMarginFilter(width=options['right_margin']))
++
++    # Serializer
++    if options.get('output_format'):
++        frmt = options['output_format']
++        if frmt.lower() == 'php':
++            fltr = filters.OutputPHPFilter()
++        elif frmt.lower() == 'python':
++            fltr = filters.OutputPythonFilter()
++        else:
++            fltr = None
++        if fltr is not None:
++            stack.postprocess.append(fltr)
++
++    return stack
+diff --git a/sqlparse/lexer.py b/sqlparse/lexer.py
+index 28233c7..317dcdb 100644
+--- a/sqlparse/lexer.py
++++ b/sqlparse/lexer.py
+@@ -15,28 +15,43 @@ class Lexer:
+     def get_default_instance(cls):
+         """Returns the lexer instance used internally
+         by the sqlparse core functions."""
+-        pass
++        with cls._lock:
++            if cls._default_instance is None:
++                cls._default_instance = cls()
++                cls._default_instance.default_initialization()
++        return cls._default_instance
+ 
+     def default_initialization(self):
+         """Initialize the lexer with default dictionaries.
+         Useful if you need to revert custom syntax settings."""
+-        pass
++        self.clear()
++        self.set_SQL_REGEX(keywords.SQL_REGEX)
++        self.add_keywords(keywords.KEYWORDS_COMMON)
++        self.add_keywords(keywords.KEYWORDS_ORACLE)
++        self.add_keywords(keywords.KEYWORDS_PLPGSQL)
++        self.add_keywords(keywords.KEYWORDS_HQL)
++        self.add_keywords(keywords.KEYWORDS_MSACCESS)
++        self.add_keywords(keywords.KEYWORDS)
+ 
+     def clear(self):
+         """Clear all syntax configurations.
+         Useful if you want to load a reduced set of syntax configurations.
+         After this call, regexps and keyword dictionaries need to be loaded
+         to make the lexer functional again."""
+-        pass
++        self._SQL_REGEX = []
++        self._keywords = []
+ 
+     def set_SQL_REGEX(self, SQL_REGEX):
+         """Set the list of regex that will parse the SQL."""
+-        pass
++        FLAGS = re.IGNORECASE | re.UNICODE
++        self._SQL_REGEX = [
++            (re.compile(rx, FLAGS).match, tt)
++            for rx, tt in SQL_REGEX]
+ 
+     def add_keywords(self, keywords):
+         """Add keyword dictionaries. Keywords are looked up in the same order
+         that dictionaries were added."""
+-        pass
++        self._keywords.append(keywords)
+ 
+     def is_keyword(self, value):
+         """Checks for a keyword.
+@@ -44,7 +59,11 @@ class Lexer:
+         If the given value is in one of the KEYWORDS_* dictionary
+         it's considered a keyword. Otherwise, tokens.Name is returned.
+         """
+-        pass
++        val = value.upper()
++        for kwdict in self._keywords:
++            if val in kwdict:
++                return kwdict[val], value
++        return tokens.Name, value
+ 
+     def get_tokens(self, text, encoding=None):
+         """
+@@ -59,7 +78,38 @@ class Lexer:
+ 
+         ``stack`` is the initial stack (default: ``['root']``)
+         """
+-        pass
++        if isinstance(text, TextIOBase):
++            text = text.read()
++
++        if isinstance(text, str):
++            pass
++        elif isinstance(text, bytes):
++            if encoding:
++                text = text.decode(encoding)
++            else:
++                try:
++                    text = text.decode('utf-8')
++                except UnicodeDecodeError:
++                    text = text.decode('unicode-escape')
++        else:
++            raise TypeError("Expected text or file-like object, got {!r}".format(type(text)))
++
++        iterable = enumerate(text)
++        for pos, char in iterable:
++            for rexmatch, action in self._SQL_REGEX:
++                m = rexmatch(text, pos)
++
++                if not m:
++                    continue
++                elif isinstance(action, tokens._TokenType):
++                    yield action, m.group()
++                elif action is keywords.PROCESS_AS_KEYWORD:
++                    yield self.is_keyword(m.group())
++
++                consume(iterable, m.end() - pos - 1)
++                break
++            else:
++                yield tokens.Error, char
+ 
+ def tokenize(sql, encoding=None):
+     """Tokenize sql.
+@@ -67,4 +117,4 @@ def tokenize(sql, encoding=None):
+     Tokenize *sql* using the :class:`Lexer` and return a 2-tuple stream
+     of ``(token type, value)`` items.
+     """
+-    pass
+\ No newline at end of file
++    return Lexer.get_default_instance().get_tokens(sql, encoding)
+diff --git a/sqlparse/sql.py b/sqlparse/sql.py
+index 03b5e9f..9f6ce78 100644
+--- a/sqlparse/sql.py
++++ b/sqlparse/sql.py
+@@ -9,11 +9,22 @@ class NameAliasMixin:
+ 
+     def get_real_name(self):
+         """Returns the real name (object name) of this identifier."""
+-        pass
++        # a.b
++        dot_idx, _ = self.token_next_by(m=(T.Punctuation, '.'))
++        return self._get_first_name(dot_idx, real_name=True)
+ 
+     def get_alias(self):
+         """Returns the alias for this identifier or ``None``."""
+-        pass
++
++        # "name AS alias"
++        kw_idx, kw = self.token_next_by(m=(T.Keyword, 'AS'))
++        if kw is not None:
++            return self._get_first_name(kw_idx + 1, keywords=True)
++
++        # "name alias" or "complicated column expression alias"
++        _, ws = self.token_next_by(t=T.Whitespace)
++        if len(self.tokens) > 2 and ws is not None:
++            return self._get_first_name(reverse=True)
+ 
+ class Token:
+     """Base class for all other classes in this module.
+@@ -44,9 +55,18 @@ class Token:
+         q = '"' if value.startswith("'") and value.endswith("'") else "'"
+         return '<{cls} {q}{value}{q} at 0x{id:2X}>'.format(id=id(self), **locals())
+ 
++    def _get_repr_name(self):
++        return str(self.ttype).split('.')[-1]
++
++    def _get_repr_value(self):
++        raw = str(self)
++        if len(raw) > 7:
++            raw = raw[:6] + '...'
++        return re.sub(r'\s+', ' ', raw)
++
+     def flatten(self):
+         """Resolve subgroups."""
+-        pass
++        yield self
+ 
+     def match(self, ttype, values, regex=False):
+         """Checks whether the token matches the given arguments.
+@@ -60,7 +80,27 @@ class Token:
+         If *regex* is ``True`` (default is ``False``) the given values are
+         treated as regular expressions.
+         """
+-        pass
++        type_matched = self.ttype is ttype
++        if not type_matched or values is None:
++            return type_matched
++
++        if isinstance(values, str):
++            values = (values,)
++
++        if regex:
++            # TODO: Add test for regex with is_keyboard = false
++            flag = re.IGNORECASE if self.is_keyword else 0
++            values = (re.compile(v, flag) for v in values)
++
++            for pattern in values:
++                if pattern.search(self.normalized):
++                    return True
++            return False
++
++        if self.is_keyword:
++            values = (v.upper() for v in values)
++
++        return self.normalized in values
+ 
+     def within(self, group_cls):
+         """Returns ``True`` if this token is within *group_cls*.
+@@ -68,15 +108,25 @@ class Token:
+         Use this method for example to check if an identifier is within
+         a function: ``t.within(sql.Function)``.
+         """
+-        pass
++        parent = self.parent
++        while parent:
++            if isinstance(parent, group_cls):
++                return True
++            parent = parent.parent
++        return False
+ 
+     def is_child_of(self, other):
+         """Returns ``True`` if this token is a direct child of *other*."""
+-        pass
++        return self.parent == other
+ 
+     def has_ancestor(self, other):
+         """Returns ``True`` if *other* is in this tokens ancestry."""
+-        pass
++        cursor = self.parent
++        while cursor:
++            if cursor == other:
++                return True
++            cursor = cursor.parent
++        return False
+ 
+ class TokenList(Token):
+     """A group of tokens.
+@@ -101,24 +151,72 @@ class TokenList(Token):
+     def __getitem__(self, item):
+         return self.tokens[item]
+ 
++    def _get_repr_name(self):
++        return type(self).__name__
++
+     def _pprint_tree(self, max_depth=None, depth=0, f=None, _pre=''):
+         """Pretty-print the object tree."""
+-        pass
++        token_count = len(self.tokens)
++        for idx, token in enumerate(self.tokens):
++            cls = token._get_repr_name()
++            value = token._get_repr_value()
++
++            last = idx == (token_count - 1)
++            pre = '`- ' if last else '|  '
++
++            print("{_pre}{pre}{idx} {cls} '{value}'"
++                  .format(**locals()), file=f)
++
++            if token.is_group and (max_depth is None or depth < max_depth):
++                parent_pre = '   ' if last else '|  '
++                token._pprint_tree(max_depth, depth + 1, f, _pre + parent_pre)
+ 
+     def get_token_at_offset(self, offset):
+         """Returns the token that is on position offset."""
+-        pass
++        idx = 0
++        for token in self.flatten():
++            end = idx + len(token.value)
++            if idx <= offset < end:
++                return token
++            idx = end
++
++    def get_sublists(self):
++        for token in self.tokens:
++            if token.is_group:
++                yield token
+ 
+     def flatten(self):
+         """Generator yielding ungrouped tokens.
+ 
+         This method is recursively called for all child tokens.
+         """
+-        pass
++        for token in self.tokens:
++            if token.is_group:
++                yield from token.flatten()
++            else:
++                yield token
+ 
+     def _token_matching(self, funcs, start=0, end=None, reverse=False):
+         """next token that match functions"""
+-        pass
++        if start is None:
++            return None
++
++        if not isinstance(funcs, (list, tuple)):
++            funcs = (funcs,)
++
++        if reverse:
++            assert end is None
++            indexes = range(start - 2, -1, -1)
++        else:
++            if end is None:
++                end = len(self.tokens)
++            indexes = range(start, end)
++        for idx in indexes:
++            token = self.tokens[idx]
++            for func in funcs:
++                if func(token):
++                    return idx, token
++        return None, None
+ 
+     def token_first(self, skip_ws=True, skip_cm=False):
+         """Returns the first child token.
+@@ -129,7 +227,18 @@ class TokenList(Token):
+         if *skip_cm* is ``True`` (default: ``False``), comments are
+         ignored too.
+         """
+-        pass
++        funcs = lambda tk: not ((skip_ws and tk.is_whitespace)
++                                or (skip_cm and imt(tk, t=T.Comment, i=Comment)))
++        return self._token_matching(funcs)[1]
++
++    def token_next_by(self, i=None, m=None, t=None, idx=-1, end=None):
++        idx += 1
++        return self._token_matching(lambda tk: imt(tk, i, m, t), idx, end)
++
++    def token_not_matching(self, funcs, idx):
++        funcs = (funcs,) if not isinstance(funcs, (list, tuple)) else funcs
++        funcs = [lambda tk: not func(tk) for func in funcs]
++        return self._token_matching(funcs, idx)
+ 
+     def token_prev(self, idx, skip_ws=True, skip_cm=False):
+         """Returns the previous token relative to *idx*.
+@@ -138,7 +247,7 @@ class TokenList(Token):
+         If *skip_cm* is ``True`` comments are ignored.
+         ``None`` is returned if there's no previous token.
+         """
+-        pass
++        return self.token_next(idx, skip_ws, skip_cm, _reverse=True)
+ 
+     def token_next(self, idx, skip_ws=True, skip_cm=False, _reverse=False):
+         """Returns the next token relative to *idx*.
+@@ -147,31 +256,78 @@ class TokenList(Token):
+         If *skip_cm* is ``True`` comments are ignored.
+         ``None`` is returned if there's no next token.
+         """
+-        pass
++        if idx is None:
++            return None, None
++        idx += 1  # alot of code usage current pre-compensates for this
++
++        def matcher(tk):
++            return not ((skip_ws and tk.is_whitespace)
++                        or (skip_cm and imt(tk, t=T.Comment, i=Comment)))
++        return self._token_matching(matcher, idx, reverse=_reverse)
+ 
+     def token_index(self, token, start=0):
+         """Return list index of token."""
+-        pass
+-
+-    def group_tokens(self, grp_cls, start, end, include_end=True, extend=False):
++        if start > 0:
++            # Performing `index` manually is much faster when starting in the middle
++            # of the list of tokens and expected to find the token near to the starting
++            # index.
++            for i in range(start, len(self.tokens)):
++                if self.tokens[i] == token:
++                    return i
++            return -1
++        return self.tokens.index(token)
++
++    def group_tokens(self, grp_cls, start, end, include_end=True,
++                     extend=False):
+         """Replace tokens by an instance of *grp_cls*."""
+-        pass
++        start_idx = start
++        start = self.tokens[start_idx]
++
++        end_idx = end + include_end
++
++        if extend and isinstance(start, grp_cls):
++            subtokens = self.tokens[start_idx + 1:end_idx]
++
++            grp = start
++            grp.tokens.extend(subtokens)
++            del self.tokens[start_idx + 1:end_idx]
++            grp.value = str(start)
++        else:
++            subtokens = self.tokens[start_idx:end_idx]
++            grp = grp_cls(subtokens)
++            self.tokens[start_idx:end_idx] = [grp]
++            grp.parent = self
++
++        for token in subtokens:
++            token.parent = grp
++
++        return grp
+ 
+     def insert_before(self, where, token):
+         """Inserts *token* before *where*."""
+-        pass
++        if not isinstance(where, int):
++            where = self.token_index(where)
++        self.tokens.insert(where, token)
++        token.parent = self
+ 
+     def insert_after(self, where, token, skip_ws=True):
+         """Inserts *token* after *where*."""
+-        pass
++        if not isinstance(where, int):
++            where = self.token_index(where)
++        nidx, next_ = self.token_next(where, skip_ws=skip_ws)
++        if next_ is None:
++            self.tokens.append(token)
++        else:
++            self.tokens.insert(nidx, token)
++        token.parent = self
+ 
+     def has_alias(self):
+         """Returns ``True`` if an alias is present."""
+-        pass
++        return self.get_alias() is not None
+ 
+     def get_alias(self):
+         """Returns the alias for this identifier or ``None``."""
+-        pass
++        return None
+ 
+     def get_name(self):
+         """Returns the name of this identifier.
+@@ -180,22 +336,42 @@ class TokenList(Token):
+         be considered as the name under which the object corresponding to
+         this identifier is known within the current statement.
+         """
+-        pass
++        alias = self.get_alias()
++        if alias is not None:
++            return alias
++        return self.get_real_name()
+ 
+     def get_real_name(self):
+         """Returns the real name (object name) of this identifier."""
+-        pass
++        # a.b
++        dot_idx, _ = self.token_next_by(m=(T.Punctuation, '.'))
++        return self._get_first_name(dot_idx, real_name=True)
+ 
+     def get_parent_name(self):
+         """Return name of the parent object if any.
+ 
+         A parent object is identified by the first occurring dot.
+         """
+-        pass
++        dot_idx, _ = self.token_next_by(m=(T.Punctuation, '.'))
++        _, prev_ = self.token_prev(dot_idx)
++        return remove_quotes(prev_.value) if prev_ is not None else None
+ 
+-    def _get_first_name(self, idx=None, reverse=False, keywords=False, real_name=False):
++    def _get_first_name(self, idx=None, reverse=False, keywords=False,
++                        real_name=False):
+         """Returns the name of the first token with a name"""
+-        pass
++
++        tokens = self.tokens[idx:] if idx else self.tokens
++        tokens = reversed(tokens) if reverse else tokens
++        types = [T.Name, T.Wildcard, T.String.Symbol]
++
++        if keywords:
++            types.append(T.Keyword)
++
++        for token in tokens:
++            if token.ttype in types:
++                return remove_quotes(token.value)
++            elif isinstance(token, (Identifier, Function)):
++                return token.get_real_name() if real_name else token.get_name()
+ 
+ class Statement(TokenList):
+     """Represents a SQL statement."""
+@@ -210,7 +386,29 @@ class Statement(TokenList):
+         Whitespaces and comments at the beginning of the statement
+         are ignored.
+         """
+-        pass
++        first_token = self.token_first(skip_cm=True)
++        if first_token is None:
++            # An "empty" statement that either has not tokens at all
++            # or only whitespace tokens.
++            return 'UNKNOWN'
++
++        elif first_token.ttype in (T.Keyword.DML, T.Keyword.DDL):
++            return first_token.normalized
++
++        elif first_token.ttype == T.Keyword.CTE:
++            # The WITH keyword should be followed by either an Identifier or
++            # an IdentifierList containing the CTE definitions;  the actual
++            # DML keyword (e.g. SELECT, INSERT) will follow next.
++            fidx = self.token_index(first_token)
++            tidx, token = self.token_next(fidx, skip_ws=True)
++            if isinstance(token, (Identifier, IdentifierList)):
++                _, dml_keyword = self.token_next(tidx, skip_ws=True)
++
++                if dml_keyword is not None \
++                        and dml_keyword.ttype == T.Keyword.DML:
++                    return dml_keyword.normalized
++
++        return 'UNKNOWN'
+ 
+ class Identifier(NameAliasMixin, TokenList):
+     """Represents an identifier.
+@@ -220,19 +418,27 @@ class Identifier(NameAliasMixin, TokenList):
+ 
+     def is_wildcard(self):
+         """Return ``True`` if this identifier contains a wildcard."""
+-        pass
++        _, token = self.token_next_by(t=T.Wildcard)
++        return token is not None
+ 
+     def get_typecast(self):
+         """Returns the typecast or ``None`` of this object as a string."""
+-        pass
++        midx, marker = self.token_next_by(m=(T.Punctuation, '::'))
++        nidx, next_ = self.token_next(midx, skip_ws=False)
++        return next_.value if next_ else None
+ 
+     def get_ordering(self):
+         """Returns the ordering or ``None`` as uppercase string."""
+-        pass
++        _, ordering = self.token_next_by(t=T.Keyword.Order)
++        return ordering.normalized if ordering else None
+ 
+     def get_array_indices(self):
+         """Returns an iterator of index token lists"""
+-        pass
++
++        for token in self.tokens:
++            if isinstance(token, SquareBrackets):
++                # Use [1:-1] index to discard the square brackets
++                yield token.tokens[1:-1]
+ 
+ class IdentifierList(TokenList):
+     """A list of :class:`~sqlparse.sql.Identifier`'s."""
+@@ -242,7 +448,9 @@ class IdentifierList(TokenList):
+ 
+         Whitespaces and punctuations are not included in this generator.
+         """
+-        pass
++        for token in self.tokens:
++            if not (token.is_whitespace or token.match(T.Punctuation, ',')):
++                yield token
+ 
+ class TypedLiteral(TokenList):
+     """A typed literal, such as "date '2001-09-28'" or "interval '2 hours'"."""
+@@ -303,18 +511,69 @@ class Case(TokenList):
+ 
+         If an ELSE exists condition is None.
+         """
+-        pass
++        CONDITION = 1
++        VALUE = 2
++
++        ret = []
++        mode = CONDITION
++
++        for token in self.tokens:
++            # Set mode from the current statement
++            if token.match(T.Keyword, 'CASE'):
++                continue
++
++            elif skip_ws and token.ttype in T.Whitespace:
++                continue
++
++            elif token.match(T.Keyword, 'WHEN'):
++                ret.append(([], []))
++                mode = CONDITION
++
++            elif token.match(T.Keyword, 'THEN'):
++                mode = VALUE
++
++            elif token.match(T.Keyword, 'ELSE'):
++                ret.append((None, []))
++                mode = VALUE
++
++            elif token.match(T.Keyword, 'END'):
++                mode = None
++
++            # First condition without preceding WHEN
++            if mode and not ret:
++                ret.append(([], []))
++
++            # Append token depending of the current mode
++            if mode == CONDITION:
++                ret[-1][0].append(token)
++
++            elif mode == VALUE:
++                ret[-1][1].append(token)
++
++        # Return cases list
++        return ret
+ 
+ class Function(NameAliasMixin, TokenList):
+     """A function or procedure call."""
+ 
+     def get_parameters(self):
+         """Return a list of parameters."""
+-        pass
++        parenthesis = self.token_next_by(i=Parenthesis)[1]
++        result = []
++        for token in parenthesis.tokens:
++            if isinstance(token, IdentifierList):
++                return token.get_identifiers()
++            elif imt(token, i=(Function, Identifier, TypedLiteral),
++                     t=T.Literal):
++                result.append(token)
++        return result
+ 
+     def get_window(self):
+         """Return the window if it exists."""
+-        pass
++        over_clause = self.token_next_by(i=Over)[1]
++        if not over_clause:
++            return None
++        return over_clause.tokens[-1]
+ 
+ class Begin(TokenList):
+     """A BEGIN/END block."""
+@@ -328,4 +587,4 @@ class Values(TokenList):
+     """Grouping of values"""
+ 
+ class Command(TokenList):
+-    """Grouping of CLI commands."""
+\ No newline at end of file
++    """Grouping of CLI commands."""
+diff --git a/sqlparse/utils.py b/sqlparse/utils.py
+index cf2e1ab..a86b68f 100644
+--- a/sqlparse/utils.py
++++ b/sqlparse/utils.py
+@@ -5,16 +5,35 @@ from contextlib import contextmanager
+ SPLIT_REGEX = re.compile('\n(\n (?:                     # Start of non-capturing group\n  (?:\\r\\n|\\r|\\n)      |  # Match any single newline, or\n  [^\\r\\n\'"]+          |  # Match any character series without quotes or\n                         # newlines, or\n  "(?:[^"\\\\]|\\\\.)*"   |  # Match double-quoted strings, or\n  \'(?:[^\'\\\\]|\\\\.)*\'      # Match single quoted strings\n )\n)\n', re.VERBOSE)
+ LINE_MATCH = re.compile('(\\r\\n|\\r|\\n)')
+ 
++# Matches either a single-quoted string (kept as-is) or a line comment
++# (removed). Single-quoted strings are matched first, so a ``--`` inside a
++# string is never treated as a comment. ``''`` and ``\'`` are escapes.
++_LINE_COMMENT_OR_STRING = re.compile(r"""('(?:''|\\'|[^'])*')|--[^\r\n]*""")
++
+ def split_unquoted_newlines(stmt):
+     """Split a string on all unquoted newlines.
+ 
+     Unlike str.splitlines(), this will ignore CR/LF/CR+LF if the requisite
+     character is inside of a string."""
+-    pass
++    text = str(stmt)
++    lines = SPLIT_REGEX.split(text)
++    outputlines = ['']
++    for line in lines:
++        if not line:
++            continue
++        elif LINE_MATCH.match(line):
++            outputlines.append('')
++        else:
++            outputlines[-1] += line
++    return outputlines
+ 
+ def remove_quotes(val):
+     """Helper that removes surrounding quotes from strings."""
+-    pass
++    if val is None:
++        return
++    if val[0] in ('"', "'", '`') and val[0] == val[-1]:
++        val = val[1:-1]
++    return val
+ 
+ def recurse(*cls):
+     """Function decorator to help with recursion
+@@ -22,7 +41,16 @@ def recurse(*cls):
+     :param cls: Classes to not recurse over
+     :return: function
+     """
+-    pass
++    def wrap(f):
++        def wrapped_f(tlist):
++            for sgroup in tlist.get_sublists():
++                if not isinstance(sgroup, cls):
++                    wrapped_f(sgroup)
++            f(tlist)
++
++        return wrapped_f
++
++    return wrap
+ 
+ def imt(token, i=None, m=None, t=None):
+     """Helper function to simplify comparisons Instance, Match and TokenType
+@@ -32,8 +60,53 @@ def imt(token, i=None, m=None, t=None):
+     :param t: TokenType or Tuple/List of TokenTypes
+     :return:  bool
+     """
+-    pass
++    clss = i
++    # A tuple of token types is a list of alternatives; a single TokenType
++    # (itself a tuple subclass) is one alternative.
++    if type(t) in (list, tuple):
++        types = list(t)
++    else:
++        types = [t, ] if t else None
++    mpatterns = [m, ] if m and not isinstance(m, list) else m
++
++    if token is None:
++        return False
++    elif clss and isinstance(token, clss):
++        return True
++    elif mpatterns and any(token.match(*pattern) for pattern in mpatterns):
++        return True
++    elif types and any(token.ttype in ttype for ttype in types):
++        return True
++    else:
++        return False
+ 
+ def consume(iterator, n):
+     """Advance the iterator n-steps ahead. If n is none, consume entirely."""
+-    pass
+\ No newline at end of file
++    deque(itertools.islice(iterator, n), maxlen=0)
++
++@contextmanager
++def offset(filter_, n=2):
++    filter_.offset += n
++    yield
++    filter_.offset -= n
++
++@contextmanager
++def indent(filter_, n=1):
++    filter_.indent += n
++    yield
++    filter_.indent -= n
++
++def strip_line_comments(sql):
++    """Remove ``--`` line comments from *sql*.
++
++    A comment runs from ``--`` to the end of the line; the line break itself
++    is kept. ``--`` inside a single-quoted string is not a comment.
++
++    :param sql: A string containing SQL.
++    :returns: The SQL without line comments.
++    """
++    def _strip(match):
++        # Group 1 only matches for a string literal; comments leave it unset.
++        return match.group(1) or ''
++
++    return _LINE_COMMENT_OR_STRING.sub(_strip, sql)

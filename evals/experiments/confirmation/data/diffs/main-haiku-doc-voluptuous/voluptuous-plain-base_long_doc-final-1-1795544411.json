@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "voluptuous",
+  "checkOutput": "_______________________________ test_exception ________________________________\n\n    def test_exception():\n        s = Schema(None)\n        with pytest.raises(MultipleInvalid) as ctx:\n            s(123)\n    \n        invalid_scalar_excp_repr = \"ScalarInvalid('not a valid value')\"\n>       assert repr(ctx.value) == f\"MultipleInvalid([{invalid_scalar_excp_repr}])\"\nE       assert \"MultipleInva...value', [])])\" == \"MultipleInva...lid value')])\"\nE         \nE         Skipping 40 identical leading characters in diff, use -v to show\nE         - lid value')])\nE         + lid value', [])])\nE         ?           ++++\n\nvoluptuous/tests/tests.py:1770: AssertionError\n---------------- generated xml file: /tmp/tmp8wvapvkj/tests.xml ----------------\n=========================== short test summary info ============================\nFAILED voluptuous/tests/tests.py::test_schema_empty_dict_key - assert 'not a ...\nFAILED voluptuous/tests/tests.py::test_schema_decorator_unmatch_with_args - F...\nFAILED voluptuous/tests/tests.py::test_named_tuples_validate_as_tuples - Type...\nFAILED voluptuous/tests/tests.py::test_schema_infer_scalar - AssertionError: ...\nFAILED voluptuous/tests/tests.py::test_PathExists - Failed: DID NOT RAISE <cl...\nFAILED voluptuous/tests/tests.py::test_key1 - assert \"extra keys n...@ data['...\nFAILED voluptuous/tests/tests.py::test_key2 - assert \"extra keys n...@ data['...\nFAILED voluptuous/tests/tests.py::test_exception - assert \"MultipleInva...val...\n8 failed, 140 passed in 0.53s\n\nTESTS 140/148\nREQS G001=1 G002=0 G003=0 G004=1 G005=1 G006=0 G007=0 G008=1 G009=1 G010=1 G011=1 G012=1 G013=0 G014=1 G015=0 CHG=1",
+  "error": null,
+  "layer": "plain",
+  "model": "haiku",
+  "passed": false,
+  "variant": "base+long:doc-final"
+}

@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "tinydb",
+  "checkOutput": "t len(db) == 4\n    \n        # Missing doc_id and condition\n        with pytest.raises(ValueError, match=r\"(?=.*\\bdoc_id\\b)(?=.*\\bquery\\b)\"):\n            db.upsert({'no_Document': 'no_query'})\n    \n        # Make sure we didn't break anything\n>       assert db.insert({'check': '_next_id'}) == 6\nE       AssertionError: assert 4 == 6\nE        +  where 4 = insert({'check': '_next_id'})\nE        +    where insert = <TinyDB tables=['_default'], tables_count=1, default_table_documents_count=5, all_tables_documents_count=['_default=5']>.insert\n\ntests/test_tinydb.py:336: AssertionError\n---------------- generated xml file: /tmp/tmpsuq275m2/tests.xml ----------------\n=========================== short test summary info ============================\nFAILED tests/test_queries.py::test_regex - TypeError: expected string or byte...\nFAILED tests/test_queries.py::test_fragment - RuntimeError: Empty query was e...\nFAILED tests/test_queries.py::test_fragment_with_path - RuntimeError: Empty q...\nFAILED tests/test_tables.py::test_query_cache_with_mutable_callable[memory]\nFAILED tests/test_tables.py::test_query_cache_with_mutable_callable[json] - A...\nFAILED tests/test_tinydb.py::test_insert_with_doc_id[memory] - AssertionError...\nFAILED tests/test_tinydb.py::test_insert_with_doc_id[json] - AssertionError: ...\nFAILED tests/test_tinydb.py::test_upsert_by_id[memory] - AssertionError: asse...\nFAILED tests/test_tinydb.py::test_upsert_by_id[json] - AssertionError: assert...\n9 failed, 192 passed in 1.78s\n\nTESTS 192/201\nREQS G001=1 G002=1 G003=1 G004=0 G005=0 G006=0 G007=1 G008=1 G009=0 G010=1 G011=0 G012=1 G013=0 G014=1 G015=1 G016=1 G017=1 CHG=1",
+  "error": null,
+  "layer": "plain",
+  "model": "haiku",
+  "passed": false,
+  "variant": "base+long:doc-final"
+}

@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "cookiecutter",
+  "checkOutput": "onE...\nFAILED tests/test_templates.py::test_build_templates[include] - jinja2.except...\nFAILED tests/test_templates.py::test_build_templates[extends] - jinja2.except...\nFAILED tests/test_templates.py::test_build_templates[super] - jinja2.exceptio...\nFAILED tests/test_time_extension.py::test_add_time - arrow.parser.ParserError...\nFAILED tests/test_time_extension.py::test_substract_time - TypeError: unsuppo...\nFAILED tests/test_time_extension.py::test_offset_with_format - TypeError: uns...\nFAILED tests/vcs/test_clone.py::test_clone_should_rstrip_trailing_slash_in_repo_url\nFAILED tests/vcs/test_clone.py::test_clone_should_invoke_vcs_command[git-https://github.com/hello/world.git-world]\nFAILED tests/vcs/test_clone.py::test_clone_should_invoke_vcs_command[hg-https://bitbucket.org/foo/bar-bar]\nFAILED tests/vcs/test_clone.py::test_clone_should_invoke_vcs_command[git-git@host:gitoliterepo-gitoliterepo]\nFAILED tests/vcs/test_clone.py::test_clone_should_invoke_vcs_command[git-git@gitlab.com:cookiecutter/cookiecutter.git-cookiecutter]\nFAILED tests/vcs/test_clone.py::test_clone_should_invoke_vcs_command[git-git@github.com:cookiecutter/cookiecutter.git-cookiecutter]\nFAILED tests/zipfile/test_unzip.py::test_unzip_protected_local_file_bad_environment_password\nFAILED tests/zipfile/test_unzip.py::test_unzip_protected_local_file_user_password_with_noinput\nFAILED tests/zipfile/test_unzip.py::test_unzip_protected_local_file_user_bad_password\n114 failed, 253 passed, 4 skipped, 1 warning in 6.09s\n\nTESTS 253/367\nREQS G001=1 G002=1 G003=0 G004=1 G005=1 G006=1 G007=1 G008=1 G009=1 G010=1 G011=1 G012=0 G013=0 G014=0 G015=1 G016=1 G017=0 G018=0 G019=0 G020=1 G021=0 G022=1 G023=1 G024=0 G025=0 G026=0 G027=1 G028=0 G029=0 G030=0 G031=0 G032=0 G033=0 G034=0 G035=1 G036=1 G037=1 G038=1 G039=0 G040=0 G041=0 G042=0 G043=1 G044=0 G045=0 G046=1 G047=0 G048=0 G049=0 G050=1 G051=0 G052=0 G053=0 G054=1 G055=1 G056=0 G057=0 G058=0 G059=1 G060=0 G061=1 G062=1 G063=0 G064=1 CHG=0",
+  "error": null,
+  "layer": "plain",
+  "model": "haiku",
+  "passed": false,
+  "variant": "base+long:today-final"
+}

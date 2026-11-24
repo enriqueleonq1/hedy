@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "python-rsa",
+  "checkOutput": ") -> 'PrivateKey':\n        \"\"\"Loads a key in PKCS#1 DER format.\n    \n        :param keyfile: contents of a DER-encoded file that contains the private\n            key.\n        :type keyfile: bytes\n        :return: a PrivateKey object\n    \n        First let's construct a DER encoded key:\n    \n        >>> import base64\n        >>> b64der = 'MC4CAQACBQDeKYlRAgMBAAECBQDHn4npAgMA/icCAwDfxwIDANcXAgInbwIDAMZt'\n        >>> der = base64.standard_b64decode(b64der)\n    \n        This loads the file:\n    \n        >>> PrivateKey._load_pkcs1_der(der)\n        PrivateKey(3727264081, 65537, 3349121513, 65063, 57287)\n    \n        \"\"\"\n        from pyasn1.codec.der import decoder\n        from rsa.asn1 import AsnPrivKey\n    \n        (priv, _) = decoder.decode(keyfile, asn1Spec=AsnPrivKey())\n>       if priv['version'] != 0:\nE       TypeError: list indices must be integers or slices, not str\n\nrsa/key.py:461: TypeError\n---------------- generated xml file: /tmp/tmp5oadkfjg/tests.xml ----------------\n=========================== short test summary info ============================\nFAILED tests/test_cli.py::SignVerifyTest::test_sign_verify_unhappy - Assertio...\nFAILED tests/test_key.py::KeyGenTest::test_custom_exponent - ValueError: Only...\nFAILED tests/test_key.py::KeyGenTest::test_default_exponent - ValueError: Onl...\nFAILED tests/test_key.py::HashTest::test_hash_possible - ValueError: Only nbi...\nFAILED tests/test_load_save_keys.py::DerTest::test_load_malformed_private_key\n5 failed, 81 passed in 3.11s\n\nTESTS 81/86\nREQS G001=1 G002=1 G003=1 G004=0 G005=1 G006=1 G007=1 G008=1 G009=1 G010=0 G011=0 G012=0 G013=1 G014=1 G015=1 G016=1 G017=1 G018=1 G019=1 G020=1 G021=1 G022=1 G023=1 G024=1 G025=1 G026=1 G027=1 CHG=1",
+  "error": null,
+  "layer": "plain",
+  "model": "haiku",
+  "passed": false,
+  "variant": "base+long:today-final"
+}

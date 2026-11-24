@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "cookiecutter",
+  "checkOutput": "rror\nFAILED tests/vcs/test_clone.py::test_clone_should_rstrip_trailing_slash_in_repo_url\nFAILED tests/vcs/test_clone.py::test_clone_should_invoke_vcs_command[git-https://github.com/hello/world.git-world]\nFAILED tests/vcs/test_clone.py::test_clone_should_invoke_vcs_command[hg-https://bitbucket.org/foo/bar-bar]\nFAILED tests/vcs/test_clone.py::test_clone_should_invoke_vcs_command[git-git@host:gitoliterepo-gitoliterepo]\nFAILED tests/vcs/test_clone.py::test_clone_should_invoke_vcs_command[git-git@gitlab.com:cookiecutter/cookiecutter.git-cookiecutter]\nFAILED tests/vcs/test_clone.py::test_clone_should_invoke_vcs_command[git-git@github.com:cookiecutter/cookiecutter.git-cookiecutter]\nFAILED tests/vcs/test_clone.py::test_clone_handles_branch_typo[error: pathspec 'unknown_branch' did not match any file(s) known to git]\nFAILED tests/vcs/test_clone.py::test_clone_handles_branch_typo[hg: abort: unknown revision 'unknown_branch'!]\nFAILED tests/vcs/test_clone.py::test_clone_unknown_subprocess_error - cookiec...\nFAILED tests/vcs/test_identify_repo.py::test_identify_raise_on_unknown_repo[foo+git]\nFAILED tests/vcs/test_identify_repo.py::test_identify_raise_on_unknown_repo[foo+hg]\nFAILED tests/vcs/test_identify_repo.py::test_identify_raise_on_unknown_repo[foo+bar]\nFAILED tests/vcs/test_identify_repo.py::test_identify_raise_on_unknown_repo[foobar]\nFAILED tests/vcs/test_identify_repo.py::test_identify_raise_on_unknown_repo[http://norepotypespecified.com]\n152 failed, 215 passed, 4 skipped in 6.47s\n\nTESTS 215/367\nREQS G001=0 G002=0 G003=0 G004=1 G005=1 G006=1 G007=1 G008=1 G009=1 G010=1 G011=1 G012=0 G013=0 G014=0 G015=1 G016=0 G017=0 G018=0 G019=0 G020=0 G021=0 G022=1 G023=1 G024=0 G025=0 G026=0 G027=0 G028=0 G029=0 G030=0 G031=0 G032=0 G033=0 G034=0 G035=1 G036=1 G037=1 G038=1 G039=0 G040=0 G041=0 G042=0 G043=1 G044=0 G045=0 G046=1 G047=0 G048=0 G049=0 G050=1 G051=0 G052=0 G053=0 G054=1 G055=1 G056=1 G057=0 G058=0 G059=0 G060=0 G061=0 G062=1 G063=1 G064=1 CHG=1",
+  "error": null,
+  "layer": "plain",
+  "model": "haiku",
+  "passed": false,
+  "variant": "base+long:doc-final"
+}

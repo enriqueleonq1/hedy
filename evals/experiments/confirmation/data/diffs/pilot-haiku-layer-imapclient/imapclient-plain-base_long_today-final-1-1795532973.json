@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "imapclient",
+  "checkOutput": "le '/tmp/hedy-evals-1795532973/copy-1795535186038605017/tests/test_version.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n/usr/lib/python3.14/importlib/__init__.py:88: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\ntests/test_version.py:7: in <module>\n    from imapclient.version import _imapclient_version_string\nimapclient/__init__.py:8: in <module>\n    from .imapclient import *  # noqa: F401,F403\nimapclient/imapclient.py:15: in <module>\n    from . import exceptions, imap4, response_lexer, tls\nimapclient/response_lexer.py:8: in <module>\n    from .util import assert_imap_protocol\nE   ImportError: cannot import name 'assert_imap_protocol' from 'imapclient.util' (/tmp/hedy-evals-1795532973/copy-1795535186038605017/imapclient/util.py)\n---------------- generated xml file: /tmp/tmpp5d6um57/tests.xml ----------------\n=========================== short test summary info ============================\nERROR tests/test_auth.py\nERROR tests/test_datetime_util.py\nERROR tests/test_enable.py\nERROR tests/test_fixed_offset.py\nERROR tests/test_folder_status.py\nERROR tests/test_imap_utf7.py\nERROR tests/test_imapclient.py\nERROR tests/test_init.py\nERROR tests/test_response_lexer.py\nERROR tests/test_response_parser.py\nERROR tests/test_search.py\nERROR tests/test_sort.py\nERROR tests/test_starttls.py\nERROR tests/test_store.py\nERROR tests/test_thread.py\nERROR tests/test_util_functions.py\nERROR tests/test_version.py\n17 errors in 0.31s\n\nTESTS 0/267\nREQS G001=0 G002=0 G003=0 G004=0 G005=0 G006=0 G007=0 G008=0 G009=0 G010=0 G011=0 G012=0 G013=0 G014=0 G015=0 G016=0 G017=0 G018=0 G019=0 G020=0 G021=0 G022=0 G023=0 G024=0 G025=0 G026=0 G027=0 G028=0 G029=0 G030=0 G031=0 G032=0 G033=0 G034=0 G035=0 G036=0 G037=0 G038=0 G039=0 G040=0 G041=0 G042=0 G043=0 G044=0 G045=0 G046=0 CHG=0",
+  "error": null,
+  "layer": "plain",
+  "model": "haiku",
+  "passed": false,
+  "variant": "base+long:today-final"
+}

@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "sqlparse",
+  "checkOutput": "ro...\nFAILED tests/test_grouping.py::test_comparison_with_typed_literal - Assertion...\nFAILED tests/test_parse.py::test_parse_function_parameter - assert 0 == 1\nFAILED tests/test_parse.py::test_double_precision_is_builtin - AssertionError...\nFAILED tests/test_parse.py::test_placeholder[?] - AssertionError: assert None...\nFAILED tests/test_parse.py::test_placeholder[:1] - AssertionError: assert Non...\nFAILED tests/test_parse.py::test_placeholder[:foo] - AssertionError: assert N...\nFAILED tests/test_parse.py::test_placeholder[%s] - AssertionError: assert Non...\nFAILED tests/test_parse.py::test_placeholder[%(foo)s] - AssertionError: asser...\nFAILED tests/test_parse.py::test_array_literal - AssertionError: assert 1 == 2\nFAILED tests/test_parse.py::test_typed_array_definition - AssertionError: ass...\nFAILED tests/test_parse.py::test_pprint - assert \"|  0 DML 'se...Integer '2'\\...\nFAILED tests/test_parse.py::test_configurable_keywords - AssertionError: asse...\nFAILED tests/test_regressions.py::test_issue9 - AssertionError: assert 2 == 3\nFAILED tests/test_regressions.py::test_issue90 - assert 'UPDATE \"gall...ption...\nFAILED tests/test_regressions.py::test_comment_between_cte_clauses_issue632\nFAILED tests/test_regressions.py::test_max_recursion - RecursionError: maximu...\nFAILED tests/test_split.py::test_split_multiple_case_in_begin - AssertionErro...\nFAILED tests/test_tokenize.py::test_tokenlist_token_matching - AttributeError...\n73 failed, 387 passed, 2 xfailed, 1 xpassed in 2.33s\n\nTESTS 387/461\nREQS G001=0 G002=0 G003=0 G004=0 G005=0 G006=0 G007=0 G008=1 G009=0 G010=0 G011=0 G012=0 G013=0 G014=1 G015=1 G016=1 G017=1 G018=1 G019=1 G020=0 G021=0 G022=0 G023=0 G024=0 G025=0 G026=1 G027=0 G028=0 G029=1 G030=1 G031=1 G032=1 G033=1 G034=1 G035=1 G036=1 G037=1 G038=1 G039=1 G040=1 G041=1 G042=1 G043=1 G044=1 G045=1 G046=1 G047=1 G048=1 G049=1 G050=1 G051=0 G052=1 G053=0 G054=1 G055=1 CHG=1",
+  "error": null,
+  "layer": "plain",
+  "model": "haiku",
+  "passed": false,
+  "variant": "base+long:doc-final"
+}
