@@ -232,3 +232,36 @@ How each rule is read:
 - **Data:** Hedy's real data is never touched (`HEDY_DATA_DIR` temporary).
 - **Environment:** each case's Python environment is outside the repository and is put first
   on the agent's `PATH`, so the agent's `python3` has pytest and the dependencies.
+
+## Amendment 1 (Nov 24, 2026, after the Sonnet pilot, before any main run)
+
+**Why.** The Sonnet pilot (imapclient, 300 000 tokens per session) ran as follows:
+
+- hedy-hoy was cut in all six sessions and met 3 of 46 requirements;
+- documento met 8 of 46 by its fourth session and then ended by itself.
+
+Sonnet spends most of a session reading these libraries before it writes. The rule above
+says to double the budget. At Sonnet's price, a run would then cost about $7, and the main
+runs about $220 even with one repeat, against $60. The user chose to keep the $60 and make
+haiku the main model.
+
+**What changes:**
+
+- **Main model:** haiku, every case × arms 1–4 × 3 repeats.
+- **The decision rules apply to haiku** instead of Sonnet.
+- **The cut is calibrated by a haiku pilot:** imapclient × hedy-hoy, documento and
+  capa-de-terceros × 1 run, starting at 600 000 tokens per session.
+  - If hedy-hoy or documento ends by itself in session 1, the budget is halved and the pilot
+    runs again (at most twice).
+  - Otherwise the budget stays.
+  - Its value goes in a commit before the main runs.
+  - These libraries are larger than what haiku finishes in six sessions, so «2–4 sessions» is
+    not the target any more. The test measures how far each way of going on gets in at most
+    six sessions under a budget.
+- **Order:**
+  1. haiku;
+  2. the flow with haiku, 1 repeat (8 runs);
+  3. Sonnet as a signal only, if at least $8 is left: hedy-hoy and documento on voluptuous (the
+     smallest case), 1 run each, 300 000 tokens per session.
+- **Opus is dropped.**
+- The Sonnet pilot's runs are reported as a signal and stay out of the analysis.
