@@ -320,3 +320,12 @@ The first decision rule compares documento with hedy-hoy, so those arms go first
 
 Each step starts when the one before has finished, and the runs stop at $60 as before. The
 runs are now detached from the session that starts them.
+
+## Amendment 6 (Nov 24, 2026, 14:55, after step 1 of amendment 5)
+
+At the user's word, the runs stop once hedy-hoy and documento finish in all eight cases.
+pedido-repetido (step 2) and capa-de-terceros (step 3) do not run the cases they miss. The
+first decision rule keeps all its runs. pedido-repetido is reported only where it ran
+(marshmallow). capa-de-terceros is reported in the three cases where it ran (attrs,
+cookiecutter and marshmallow, which was voided). The rule on the layer and the flow stays
+without an answer, and the report says so.
