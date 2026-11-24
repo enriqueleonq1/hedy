@@ -1,0 +1,107 @@
+diff --git a/billing/catalog.py b/billing/catalog.py
+index cb986a7..baf3101 100644
+--- a/billing/catalog.py
++++ b/billing/catalog.py
+@@ -1,10 +1,10 @@
+-# Unit prices, in dollars.
++# Unit prices, in cents.
+ PRICES = {
+-    "pen": 1.15,
+-    "notebook": 2.35,
+-    "stapler": 7.05,
+-    "lamp": 19.99,
+-    "chair": 89.95,
++    "pen": 115,
++    "notebook": 235,
++    "stapler": 705,
++    "lamp": 1999,
++    "chair": 8995,
+ }
+ 
+ 
+diff --git a/billing/coupons.py b/billing/coupons.py
+index fd35c9a..32a332f 100644
+--- a/billing/coupons.py
++++ b/billing/coupons.py
+@@ -1,16 +1,17 @@
+-# A coupon is ("percent", 10) for 10 % off, or ("fixed", 5.0) for 5 dollars off.
++# A coupon is ("percent", 10) for 10 % off, or ("fixed", 500) for 500 cents off.
+ COUPONS = {
+     "TEN": ("percent", 10),
+-    "SAVE5": ("fixed", 5.0),
++    "SAVE5": ("fixed", 500),
+     "HALF": ("percent", 50),
+-    "BIG": ("fixed", 100.0),
++    "BIG": ("fixed", 10000),
+ }
+ 
+ 
+ def discount(subtotal, code):
+     if code is None:
+-        return 0.0
++        return 0
+     kind, value = COUPONS[code]
+     if kind == "percent":
+-        return round(subtotal * value / 100, 2)
++        # Integer division rounding half up to the nearest cent.
++        return (subtotal * value + 50) // 100
+     return min(value, subtotal)
+diff --git a/billing/invoice.py b/billing/invoice.py
+index 164295d..bd8e697 100644
+--- a/billing/invoice.py
++++ b/billing/invoice.py
+@@ -2,8 +2,8 @@ from .coupons import discount
+ from .tax import tax
+ 
+ 
+-def money(amount):
+-    return f"${amount:,.2f}"
++def money(cents):
++    return f"${cents // 100:,}.{cents % 100:02d}"
+ 
+ 
+ def totals(cart, region, coupon=None):
+diff --git a/billing/tax.py b/billing/tax.py
+index 37bacac..8896464 100644
+--- a/billing/tax.py
++++ b/billing/tax.py
+@@ -1,9 +1,11 @@
++# Tax rates in parts per million, so 0.08875 is 88750.
+ RATES = {
+-    "NY": 0.08875,
+-    "TX": 0.0625,
+-    "OR": 0.0,
++    "NY": 88750,
++    "TX": 62500,
++    "OR": 0,
+ }
+ 
+ 
+ def tax(amount, region):
+-    return round(amount * RATES[region], 2)
++    # amount is in cents; result is in cents, rounded half up.
++    return (amount * RATES[region] + 500_000) // 1_000_000
+diff --git a/tests/test_invoice.py b/tests/test_invoice.py
+index 9437cab..7b6af83 100644
+--- a/tests/test_invoice.py
++++ b/tests/test_invoice.py
+@@ -19,3 +19,19 @@ class InvoiceTest(unittest.TestCase):
+         text = invoice_text(cart, "OR", "SAVE5")
+         self.assertIn("Descuento: -$5.00", text)
+         self.assertTrue(text.endswith("Total: $84.95"))
++
++    def test_percent_coupon_rounds_half_up_to_cent(self):
++        cart = Cart()
++        cart.add("pen", 5)  # $5.75; 10 % is exactly $0.575
++        self.assertEqual(
++            invoice_text(cart, "OR", "TEN"),
++            "5 x pen: $5.75\nSubtotal: $5.75\nDescuento: -$0.58\nImpuesto: $0.00\nTotal: $5.17",
++        )
++
++    def test_tax_rounds_half_up_to_cent(self):
++        cart = Cart()
++        cart.add("chair")  # $89.95 * 8.875 % = $7.98456
++        self.assertEqual(
++            invoice_text(cart, "NY"),
++            "1 x chair: $89.95\nSubtotal: $89.95\nImpuesto: $7.98\nTotal: $97.93",
++        )

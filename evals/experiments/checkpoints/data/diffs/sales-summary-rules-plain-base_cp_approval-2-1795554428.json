@@ -1,0 +1,10 @@
+{
+  "attempt": 2,
+  "case": "sales-summary-rules",
+  "checkOutput": "----------------------------------------------------------------------\nRan 3 tests in 0.002s\n\nOK\n----------------------------------------------------------------------\nRan 7 tests in 0.002s\n\nOK",
+  "error": null,
+  "layer": "plain",
+  "model": "claude-haiku-5-5",
+  "passed": true,
+  "variant": "base+cp:approval"
+}

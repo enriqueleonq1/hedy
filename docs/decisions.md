@@ -4602,3 +4602,61 @@ amendments, `RESULTS.md`, `data/`.)
 - Build the part that carried the difference instead: Hedy's handoff carries the user's
   later messages about the task (changes to the request) along with the original request.
 - §57's decision on flows stands, untested here.
+
+## 59. A way of working with checkpoints: one AI that stops for the user, not a flow (Nov 24, 2026)
+
+**Question.** A common way of working is: analyse the request, plan, have the plan checked,
+implement, check the result. Does it need a flow with several AIs, or one AI that stops for
+the user's word? (`evals/experiments/checkpoints`: `PLAN.md`, `RESULTS.md`, `data/`;
+`hedy-evals --checkpoints`.)
+
+**How.**
+
+- **Cases:** five existing cases, each asked without something only the user knows: a format,
+  two project rules, a security limit, a boundary, a rounding rule.
+- **The simulated user:** at the first plan or approval it always sends the same
+  clarification, then approves.
+- **Arms:**
+  - `solo`: one AI;
+  - `informed`: everything said up front;
+  - `plan`: «Enséñame el plan primero», where the same session plans, hears the user and
+    implements;
+  - `approval`: the «Con tu aprobación» flow, where an architect plans in its own session and
+    a test-first programmer implements in a new one.
+- **Runs:** haiku as `claude-haiku-5-5`, 3 repeats, 60 runs, $0.63.
+
+| arm | passed | $ / run | × plan | seconds |
+|---|---|---|---|---|
+| solo | 47 % | 0.006 | 0.55 | 29 |
+| informed | 100 % | 0.006 | 0.49 | 24 |
+| plan | 87 % | 0.012 | 1.00 | 47 |
+| approval | 80 % | 0.018 | 1.58 | 80 |
+
+- **The checkpoint brings in what the user knows.** In the two cases where the gap mattered,
+  `solo` passed 0/6 and every arm that heard the clarification passed 6/6. Haiku covered the
+  other gaps unasked.
+- **The clarification survives a handoff.** It reached the agent in 30 of 30 runs, and no
+  failure was about it, in the same session or in a new one. The remaining failures were
+  details nobody asked for: one case's released reservations still listed, in every arm but
+  `informed`; a file returned as bytes.
+- **The same session costs less and does as well.** `plan` − `approval`: +7 points [0, +20]
+  at 0.63× the cost and about half the time.
+- **Asking everything up front is still best:** 100 % at half the cost of a checkpoint.
+- **The pre-registered rule for part 1** (`plan` within 10 points of `informed`) was not met as
+  written (−13 [−40, 0]). The gap is all in that one case, and none of it is about the
+  clarification.
+
+**Found on the way.** Claude Code (2.1.306) runs another model in plan mode when the model is
+the alias `haiku` (or `opusplan`). A plan-mode session asked for haiku ran entirely on
+`claude-sonnet-5-5`. The full id stays on haiku. So «Enséñame el plan primero» with haiku
+spends Sonnet while Hedy shows haiku.
+
+**Decision.**
+
+- A user's way of working with checkpoints is built on one AI in one session, with Hedy
+  pausing for the user (as plan-first does today) and running the checks itself.
+- It is not built as a chain of roles in separate sessions: that costs about 1.6× and gains
+  nothing here.
+- Flows stay for what the evidence still leaves them: a clean-context review, and parallel
+  work.
+- To decide: how plan mode's model switch shows to the user, or whether Hedy passes the full id.

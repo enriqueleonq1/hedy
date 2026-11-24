@@ -1,0 +1,10 @@
+{
+  "attempt": 2,
+  "case": "price-format",
+  "checkOutput": "======================================================================\nFAIL: test_project_convention (test_hidden_prices.FormatPrice.test_project_convention)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"price-format-plain-base_cp_solo-2-1795554214/.hedy/worktrees/t1a20f5f016251/test_hidden_prices.py\", line 8, in test_project_convention\n    self.assertEqual(format_price(Product(\"x\", 1250)), \"USD 12.50\")\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '$12.50' != 'USD 12.50'\n- $12.50\n+ USD 12.50\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (failures=1)",
+  "error": null,
+  "layer": "plain",
+  "model": "claude-haiku-5-5",
+  "passed": false,
+  "variant": "base+cp:solo"
+}

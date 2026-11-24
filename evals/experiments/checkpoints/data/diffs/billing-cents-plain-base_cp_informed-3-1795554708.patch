@@ -1,0 +1,147 @@
+diff --git a/billing/catalog.py b/billing/catalog.py
+index cb986a7..baf3101 100644
+--- a/billing/catalog.py
++++ b/billing/catalog.py
+@@ -1,10 +1,10 @@
+-# Unit prices, in dollars.
++# Unit prices, in cents.
+ PRICES = {
+-    "pen": 1.15,
+-    "notebook": 2.35,
+-    "stapler": 7.05,
+-    "lamp": 19.99,
+-    "chair": 89.95,
++    "pen": 115,
++    "notebook": 235,
++    "stapler": 705,
++    "lamp": 1999,
++    "chair": 8995,
+ }
+ 
+ 
+diff --git a/billing/coupons.py b/billing/coupons.py
+index fd35c9a..697789f 100644
+--- a/billing/coupons.py
++++ b/billing/coupons.py
+@@ -1,16 +1,18 @@
+-# A coupon is ("percent", 10) for 10 % off, or ("fixed", 5.0) for 5 dollars off.
++from .money import div_half_up
++
++# A coupon is ("percent", 10) for 10 % off, or ("fixed", 500) for 5 dollars off (cents).
+ COUPONS = {
+     "TEN": ("percent", 10),
+-    "SAVE5": ("fixed", 5.0),
++    "SAVE5": ("fixed", 500),
+     "HALF": ("percent", 50),
+-    "BIG": ("fixed", 100.0),
++    "BIG": ("fixed", 10000),
+ }
+ 
+ 
+ def discount(subtotal, code):
+     if code is None:
+-        return 0.0
++        return 0
+     kind, value = COUPONS[code]
+     if kind == "percent":
+-        return round(subtotal * value / 100, 2)
++        return div_half_up(subtotal * value, 100)
+     return min(value, subtotal)
+diff --git a/billing/invoice.py b/billing/invoice.py
+index 164295d..bd8e697 100644
+--- a/billing/invoice.py
++++ b/billing/invoice.py
+@@ -2,8 +2,8 @@ from .coupons import discount
+ from .tax import tax
+ 
+ 
+-def money(amount):
+-    return f"${amount:,.2f}"
++def money(cents):
++    return f"${cents // 100:,}.{cents % 100:02d}"
+ 
+ 
+ def totals(cart, region, coupon=None):
+diff --git a/billing/money.py b/billing/money.py
+new file mode 100644
+index 0000000..6244842
+--- /dev/null
++++ b/billing/money.py
+@@ -0,0 +1,9 @@
++# Todo el dinero de billing/ se maneja en centavos (int).
++
++
++def div_half_up(num, den):
++    """num / den redondeado al entero más cercano, con la mitad hacia arriba.
++
++    Solo para num >= 0 y den > 0.
++    """
++    return (2 * num + den) // (2 * den)
+diff --git a/billing/tax.py b/billing/tax.py
+index 37bacac..699379c 100644
+--- a/billing/tax.py
++++ b/billing/tax.py
+@@ -1,9 +1,13 @@
++from .money import div_half_up
++
++# Tasas en partes por RATE_SCALE: 8.875 % -> 8875 / 100000.
++RATE_SCALE = 100000
+ RATES = {
+-    "NY": 0.08875,
+-    "TX": 0.0625,
+-    "OR": 0.0,
++    "NY": 8875,
++    "TX": 6250,
++    "OR": 0,
+ }
+ 
+ 
+ def tax(amount, region):
+-    return round(amount * RATES[region], 2)
++    return div_half_up(amount * RATES[region], RATE_SCALE)
+diff --git a/tests/test_money.py b/tests/test_money.py
+new file mode 100644
+index 0000000..8baf5d2
+--- /dev/null
++++ b/tests/test_money.py
+@@ -0,0 +1,40 @@
++import unittest
++
++from billing.cart import Cart
++from billing.catalog import PRICES
++from billing.coupons import discount
++from billing.invoice import invoice_text
++from billing.money import div_half_up
++from billing.tax import tax
++
++
++class MoneyTest(unittest.TestCase):
++    def test_prices_are_int_cents(self):
++        self.assertTrue(all(type(p) is int for p in PRICES.values()))
++
++    def test_div_half_up_rounds_half_up(self):
++        self.assertEqual(div_half_up(1, 2), 1)  # 0.5 -> 1, no al par
++        self.assertEqual(div_half_up(5, 2), 3)  # 2.5 -> 3
++        self.assertEqual(div_half_up(4, 3), 1)  # 1.33 -> 1
++        self.assertEqual(div_half_up(5, 3), 2)  # 1.67 -> 2
++
++    def test_tax_half_cent_rounds_up(self):
++        # 8 cents * 6.25 % = 0.5 cents -> 1 cent (float round() daba 0)
++        self.assertEqual(tax(8, "TX"), 1)
++        # 24 cents * 6.25 % = 1.5 cents -> 2 cents
++        self.assertEqual(tax(24, "TX"), 2)
++
++    def test_percent_discount_half_up(self):
++        # 5 cents * 10 % = 0.5 cents -> 1 cent
++        self.assertEqual(discount(5, "TEN"), 1)
++
++    def test_large_amount_formatting(self):
++        cart = Cart()
++        cart.add("chair", 14)  # 14 * 89.95 = 1259.30
++        text = invoice_text(cart, "OR")
++        self.assertIn("14 x chair: $1,259.30", text)
++        self.assertTrue(text.endswith("Total: $1,259.30"))
++
++
++if __name__ == "__main__":
++    unittest.main()

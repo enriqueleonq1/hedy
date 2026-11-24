@@ -1,0 +1,10 @@
+{
+  "attempt": 2,
+  "case": "inventory-expiry",
+  "checkOutput": "----------------------------------------------------------------------\nRan 5 tests in 0.001s\n\nOK\n----------------------------------------------------------------------\nRan 9 tests in 0.001s\n\nOK",
+  "error": null,
+  "layer": "plain",
+  "model": "claude-haiku-5-5",
+  "passed": true,
+  "variant": "base+cp:informed"
+}

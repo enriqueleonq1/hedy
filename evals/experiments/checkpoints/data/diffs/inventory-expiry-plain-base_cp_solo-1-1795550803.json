@@ -1,0 +1,10 @@
+{
+  "attempt": 1,
+  "case": "inventory-expiry",
+  "checkOutput": "======================================================================\nFAIL: test_release_expired_counts_once (test_hidden_expiry.HiddenExpiryTest.test_release_expired_counts_once)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"inventory-expiry-plain-base_cp_solo-1-1795550803/.hedy/worktrees/t1a20f2af78714/test_hidden_expiry.py\", line 41, in test_release_expired_counts_once\n    self.assertEqual(len(self.inv.reservations()), 1)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 3 != 1\n\n----------------------------------------------------------------------\nRan 5 tests in 0.001s\n\nFAILED (failures=1)",
+  "error": null,
+  "layer": "plain",
+  "model": "claude-haiku-5-5",
+  "passed": false,
+  "variant": "base+cp:solo"
+}

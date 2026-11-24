@@ -1,0 +1,60 @@
+diff --git a/app/routes.py b/app/routes.py
+index e947716..c460ffb 100644
+--- a/app/routes.py
++++ b/app/routes.py
+@@ -6,6 +6,7 @@ matching, so `/invoices/10%30%31` is `/invoices/1001`.
+ 
+ from urllib.parse import unquote
+ 
++from . import config
+ from .invoices import find_invoice
+ 
+ 
+@@ -20,9 +21,20 @@ def invoice(invoice_id):
+     return 200, f"{found['customer']}: {found['total']}"
+ 
+ 
++def attachment(name):
++    if not name or "/" in name or "\\" in name:
++        return 404, "not found"
++    base = config.UPLOAD_DIR.resolve()
++    target = (base / name).resolve()
++    if target.parent != base or not target.is_file():
++        return 404, "not found"
++    return 200, target.read_text(encoding="utf-8")
++
++
+ ROUTES = {
+     "/health": health,
+     "/invoices/": invoice,
++    "/attachments/": attachment,
+ }
+ 
+ 
+diff --git a/tests/test_routes.py b/tests/test_routes.py
+index 6dba1d9..5a18567 100644
+--- a/tests/test_routes.py
++++ b/tests/test_routes.py
+@@ -11,3 +11,22 @@ class RoutesTest(unittest.TestCase):
+         self.assertEqual(handle("/invoices/1001"), (200, "Acme: 120.00"))
+         self.assertEqual(handle("/invoices/10%30%31"), (200, "Acme: 120.00"))
+         self.assertEqual(handle("/invoices/9"), (404, "not found"))
++
++    def test_attachment(self):
++        self.assertEqual(handle("/attachments/manual.txt"), (200, "Manual de uso del producto.\n"))
++        self.assertEqual(handle("/attachments/notas.txt"), (200, "Notas de la reunión.\n"))
++        self.assertEqual(handle("/attachments/nope.txt"), (404, "not found"))
++
++    def test_attachment_rejects_folder_and_special_names(self):
++        for path in ["/attachments/", "/attachments/.", "/attachments/..", "/attachments/%2E%2E"]:
++            self.assertEqual(handle(path), (404, "not found"), path)
++
++    def test_attachment_rejects_traversal(self):
++        for path in [
++            "/attachments/..%2Fsecrets.txt",
++            "/attachments/..%2F..%2Fsecrets.txt",
++            "/attachments/sub%2F..%2F..%2Fsecrets.txt",
++            "/attachments/%2Fetc%2Fpasswd",
++            "/attachments/%252e%252e%252fsecrets.txt",
++        ]:
++            self.assertEqual(handle(path), (404, "not found"), path)

@@ -1,0 +1,39 @@
+diff --git a/reports/summary.py b/reports/summary.py
+new file mode 100644
+index 0000000..46158b8
+--- /dev/null
++++ b/reports/summary.py
+@@ -0,0 +1,10 @@
++"""Resumen mensual."""
++
++from decimal import Decimal
++
++
++def monthly_summary(sales, month):
++    """Total vendido en `month` ('AAAA-MM') y lo muestra en la consola."""
++    total = sum((Decimal(str(s["amount"])) for s in sales if s["date"][:7] == month), Decimal("0"))
++    print(f"Ventas de {month}: {total}")
++    return total
+diff --git a/tests/test_summary.py b/tests/test_summary.py
+new file mode 100644
+index 0000000..834b16d
+--- /dev/null
++++ b/tests/test_summary.py
+@@ -0,0 +1,17 @@
++import unittest
++from decimal import Decimal
++
++from reports.summary import monthly_summary
++
++
++class MonthlySummaryTest(unittest.TestCase):
++    def test_adds_the_month(self):
++        sales = [
++            {"date": "2025-03-01", "amount": "10.10"},
++            {"date": "2025-03-31", "amount": "4.90"},
++            {"date": "2025-04-01", "amount": "100"},
++        ]
++        self.assertEqual(monthly_summary(sales, "2025-03"), Decimal("15.00"))
++
++    def test_empty_month_is_zero(self):
++        self.assertEqual(monthly_summary([], "2025-03"), Decimal("0"))

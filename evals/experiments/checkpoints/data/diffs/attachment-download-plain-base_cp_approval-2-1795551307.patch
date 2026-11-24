@@ -1,0 +1,113 @@
+diff --git a/app/routes.py b/app/routes.py
+index e947716..108dc61 100644
+--- a/app/routes.py
++++ b/app/routes.py
+@@ -6,6 +6,7 @@ matching, so `/invoices/10%30%31` is `/invoices/1001`.
+ 
+ from urllib.parse import unquote
+ 
++from . import config
+ from .invoices import find_invoice
+ 
+ 
+@@ -20,9 +21,22 @@ def invoice(invoice_id):
+     return 200, f"{found['customer']}: {found['total']}"
+ 
+ 
++def attachment(name):
++    # `name` ya viene decodificado por handle(); se valida antes de tocar el disco.
++    if name in ("", ".", "..") or any(c in name for c in "/\\:\x00"):
++        return 404, "not found"
++    base = config.UPLOAD_DIR.resolve()
++    candidate = (base / name).resolve()
++    # Segunda barrera: un enlace simbólico que apunte fuera cae aquí.
++    if candidate.parent != base or not candidate.is_file():
++        return 404, "not found"
++    return 200, candidate.read_text(encoding="utf-8")
++
++
+ ROUTES = {
+     "/health": health,
+     "/invoices/": invoice,
++    "/attachments/": attachment,
+ }
+ 
+ 
+diff --git a/tests/test_routes.py b/tests/test_routes.py
+index 6dba1d9..9a2f6e0 100644
+--- a/tests/test_routes.py
++++ b/tests/test_routes.py
+@@ -1,4 +1,9 @@
++import os
++import tempfile
+ import unittest
++from pathlib import Path
++from unittest.mock import patch
++from urllib.parse import quote
+ 
+ from app.routes import handle
+ 
+@@ -11,3 +16,63 @@ class RoutesTest(unittest.TestCase):
+         self.assertEqual(handle("/invoices/1001"), (200, "Acme: 120.00"))
+         self.assertEqual(handle("/invoices/10%30%31"), (200, "Acme: 120.00"))
+         self.assertEqual(handle("/invoices/9"), (404, "not found"))
++
++
++class AttachmentsTest(unittest.TestCase):
++    def setUp(self):
++        self._tmp = tempfile.TemporaryDirectory()
++        self.addCleanup(self._tmp.cleanup)
++        # parent/ contiene el secreto; parent/uploads/ es UPLOAD_DIR.
++        self.parent = Path(self._tmp.name)
++        self.uploads = self.parent / "uploads"
++        self.uploads.mkdir()
++        (self.uploads / "a.txt").write_text("hola", encoding="utf-8")
++        (self.uploads / "sub").mkdir()
++        (self.parent / "secreto.txt").write_text("secreto", encoding="utf-8")
++        patcher = patch("app.config.UPLOAD_DIR", self.uploads)
++        patcher.start()
++        self.addCleanup(patcher.stop)
++
++    def test_existing_file(self):
++        self.assertEqual(handle("/attachments/a.txt"), (200, "hola"))
++
++    def test_missing_file(self):
++        self.assertEqual(handle("/attachments/no.txt"), (404, "not found"))
++
++    def test_directory_inside_uploads(self):
++        self.assertEqual(handle("/attachments/sub"), (404, "not found"))
++
++    def test_uploads_folder_itself(self):
++        self.assertEqual(handle("/attachments/"), (404, "not found"))
++        self.assertEqual(handle("/attachments/."), (404, "not found"))
++        self.assertEqual(handle("/attachments/%2e"), (404, "not found"))
++
++    def test_traversal_cannot_leave_uploads(self):
++        for path in (
++            "/attachments/..",
++            "/attachments/%2e%2e",
++            "/attachments/..%2Fsecreto.txt",
++            "/attachments/%2e%2e%2fsecreto.txt",
++            "/attachments/..%5Csecreto.txt",
++            "/attachments/%2Fetc%2Fpasswd",
++            "/attachments/" + quote(str(self.parent / "secreto.txt"), safe=""),
++            "/attachments/" + str(self.parent / "secreto.txt"),
++            "/attachments/%00a.txt",
++            "/attachments/C:secreto.txt",
++        ):
++            with self.subTest(path=path):
++                self.assertEqual(handle(path), (404, "not found"))
++
++    def test_double_encoding_is_a_literal_name(self):
++        # %25 se decodifica una vez: el nombre es el literal "%2e%2e%2f..." y no existe.
++        self.assertEqual(
++            handle("/attachments/%252e%252e%252fsecreto.txt"), (404, "not found")
++        )
++
++    @unittest.skipUnless(hasattr(os, "symlink"), "sin soporte de enlaces simbólicos")
++    def test_symlink_pointing_outside_is_rejected(self):
++        try:
++            os.symlink(self.parent / "secreto.txt", self.uploads / "enlace.txt")
++        except OSError:
++            self.skipTest("el entorno no permite crear enlaces simbólicos")
++        self.assertEqual(handle("/attachments/enlace.txt"), (404, "not found"))
