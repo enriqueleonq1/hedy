@@ -57,6 +57,7 @@ import type {
   FileDiff,
   OutputFile,
   PermissionMode,
+  WorkingStyle,
   MemoryView,
   ExportReport,
   ImportPick,
@@ -137,6 +138,10 @@ export interface HedyApi {
   suggestedBlockedFiles(): Promise<string[]>;
   /** The permission mode a project's new tasks start with. */
   setProjectPermissionMode(path: string, mode: PermissionMode): Promise<void>;
+  /** How a project's «Cambiar código» tasks work with one AI. */
+  setProjectWorking(path: string, working: WorkingStyle): Promise<void>;
+  /** The tests' command Hedy finds in a project (`null`: none it knows). */
+  detectedTestsCommand(path: string): Promise<string | null>;
   /** A task's permission mode, changed from the composer. */
   setTaskPermissions(id: string, mode: PermissionMode): Promise<void>;
   projectStatus(path: string): Promise<ProjectStatus>;

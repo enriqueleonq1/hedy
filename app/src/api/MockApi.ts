@@ -101,6 +101,7 @@ import type {
   FileDiff,
   OutputFile,
   PermissionMode,
+  WorkingStyle,
   MemoryView,
   NewAccountInput,
   NewConversationInput,
@@ -136,6 +137,9 @@ import { taskState } from "../tasks/state";
 
 const NO_PLAN: PlanState = { usage: null, attemptedAt: null, problem: null, supported: false };
 const NO_USAGE: Usage = { weekTokens: 0, weekCostUsd: null, limit: null, plan: NO_PLAN };
+
+/** Where every project starts («Tras tu OK»), as the backend's `WorkingStyle::initial`. */
+const AFTER_OK: WorkingStyle = { plan: true, tests: true, e2e: true, review: false };
 
 /** Like the backend: Claude Code and Codex subscriptions, and Kimi API keys. */
 function planSupported(provider: string, kind: Account["kind"]): boolean {
@@ -583,6 +587,16 @@ export class MockApi implements HedyApi {
 
   async setProjectPermissionMode(path: string, mode: PermissionMode): Promise<void> {
     this.project(path).permissionMode = mode;
+  }
+
+  async setProjectWorking(path: string, working: WorkingStyle): Promise<void> {
+    const clean = (c?: string | null) => c?.trim() || null;
+    this.project(path).working = { ...working, testsCommand: clean(working.testsCommand), e2eCommand: clean(working.e2eCommand) };
+  }
+
+  async detectedTestsCommand(path: string): Promise<string | null> {
+    this.project(path);
+    return "npm test";
   }
 
   async setTaskPermissions(id: string, mode: PermissionMode): Promise<void> {
@@ -4023,6 +4037,7 @@ function emptyProject(path: string): Project {
     client: null,
     blockedFiles: [],
     permissionMode: "manual",
+    working: { ...AFTER_OK },
   };
 }
 

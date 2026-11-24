@@ -1072,6 +1072,28 @@ pub async fn set_project_permission_mode(
     .await
 }
 
+/// How a project's «Cambiar código» tasks work with one AI (docs/decisions.md §60).
+#[tauri::command]
+pub async fn set_project_working(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    working: hedy_core::domain::WorkingStyle,
+) -> CommandResult<()> {
+    blocking(&state, move |h| {
+        h.set_project_working(&path, working).map(drop)
+    })
+    .await
+}
+
+/// The tests' command Hedy finds in a project, shown beside its tests stop.
+#[tauri::command]
+pub async fn detected_tests_command(
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> CommandResult<Option<String>> {
+    blocking(&state, move |h| h.detected_tests_command(&path)).await
+}
+
 /// What "Agregar los de siempre" adds.
 #[tauri::command]
 pub fn suggested_blocked_files() -> Vec<String> {

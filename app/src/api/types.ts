@@ -41,6 +41,27 @@ export interface Project {
   blockedFiles: string[];
   /** The permission mode its new tasks start with. */
   permissionMode: PermissionMode;
+  /** How its «Cambiar código» tasks work with one AI (docs/decisions.md §60). */
+  working: WorkingStyle;
+}
+
+/**
+ * A project's stops with one AI: the plan and the checks Hedy runs once the
+ * AI is done. The same AI works the whole task, in one session.
+ */
+export interface WorkingStyle {
+  /** Proposes a plan and waits for the user's OK before changing code. */
+  plan: boolean;
+  /** Hedy runs the project's tests. */
+  tests: boolean;
+  /** Hedy runs the user's end-to-end check. */
+  e2e: boolean;
+  /** Another AI reads the change with a clean context. */
+  review: boolean;
+  /** The tests' command; missing: the one Hedy finds. */
+  testsCommand?: string | null;
+  /** The end-to-end check's command, written by the user; missing: no e2e. */
+  e2eCommand?: string | null;
 }
 
 /**
@@ -505,6 +526,8 @@ export interface Task {
   permissions?: PermissionMode;
   /** The flow it follows, and where it is in it. */
   flow?: FlowRun | null;
+  /** How it works with one AI, from its project when it started. */
+  working?: WorkingStyle | null;
 }
 
 // ------------------------------------------------- carrying a conversation

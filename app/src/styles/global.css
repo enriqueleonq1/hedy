@@ -2750,3 +2750,7 @@ a.link-button { display: inline-flex; align-items: center; text-decoration: none
 .state-label::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
 .state-label--off { color: var(--muted); }
 .state-label--off::before { background: var(--line-strong); }
+
+/* What the AI assumes, first in its plan: what the user corrects (docs/decisions.md §60). */
+.plan-card__assumptions { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--warn-line); border-radius: var(--radius-md); background: var(--warn-bg); color: var(--ink); font-size: var(--text-body); }
+.plan-card__assumptions h4 { margin: 0; font: 600 var(--text-caption) var(--font-ui); color: var(--warn-ink); }

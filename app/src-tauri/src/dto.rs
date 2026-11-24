@@ -485,6 +485,8 @@ pub struct ProjectDto {
     pub blocked_files: Vec<String>,
     /// The permission mode its new tasks start with.
     pub permission_mode: hedy_core::domain::PermissionMode,
+    /// How its «Cambiar código» tasks work with one AI (docs/decisions.md §60).
+    pub working: hedy_core::domain::WorkingStyle,
 }
 
 /// Tokens and estimated cost.
@@ -796,6 +798,7 @@ impl ProjectDto {
             client: project.client.clone(),
             blocked_files: project.blocked_files.patterns().to_vec(),
             permission_mode: project.permission_mode,
+            working: project.working.clone(),
         }
     }
 }

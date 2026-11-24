@@ -155,16 +155,17 @@ describe("Workspace", () => {
     await waitFor(() => expect(screen.getAllByText("Rastreando").length).toBeGreaterThanOrEqual(2));
   });
 
-  it("sends the plan back with feedback", async () => {
+  it("corrects the plan from the composer", async () => {
     const { user } = setup();
     await openProject(user, /^hedy/);
     await user.type(await screen.findByLabelText("Pídele algo a hedy"), "Recordatorios");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
 
     const plan = await screen.findByRole("region", { name: "Plan de Claude Opus" });
-    await user.click(within(plan).getByRole("button", { name: "Pedir cambios" }));
-    await user.type(within(plan).getByLabelText("¿Qué cambiarías?"), "usa Celery");
-    await user.click(within(plan).getByRole("button", { name: "Enviar cambios" }));
+    await user.click(within(plan).getByRole("button", { name: "Corregir abajo" }));
+    const composer = screen.getByLabelText("Corrige el plan de arriba");
+    expect(composer).toHaveFocus();
+    await user.type(composer, "usa Celery{Enter}");
 
     await waitFor(() => expect(screen.getAllByRole("region", { name: "Plan de Claude Opus" })).toHaveLength(2));
     expect(screen.getByText(/con cambios pedidos/)).toBeInTheDocument();
@@ -176,7 +177,7 @@ describe("Workspace", () => {
     await openProject(user, /^hedy/);
     await chooseMode(user, "Solo preguntar");
     await user.click(screen.getByRole("combobox", { name: "Modo" }));
-    expect(screen.queryByRole("option", { name: "Enséñame el plan primero" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Cuando apruebes el plan" })).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
     await user.type(screen.getByLabelText("Pídele algo a hedy"), "¿Dónde se crean las citas?");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
@@ -193,20 +194,18 @@ describe("Workspace", () => {
 
     await user.click(modes);
     expect(screen.getByRole("listbox", { name: "Modo" })).toBeInTheDocument();
-    // "Show me the plan first" is a checkbox in the same menu, on by default.
-    // It hangs under "Cambiar código", as a setting of that mode; then how it works.
+    // What it does; when it starts changing code (one AI); or a flow of several AIs.
     expect(optionLabels()).toEqual([
       "Cambiar código",
-      "Enséñame el plan primero",
       "Solo preguntar",
       "Investigar",
-      "Una IA",
+      "Enseguida",
+      "Cuando apruebes el plan",
       "Esencial",
-      "Con tu aprobación",
       "Revisión acotada",
     ]);
-    expect(screen.getByRole("option", { name: "Enséñame el plan primero" })).toHaveAccessibleDescription(
-      "Sí: lo apruebas antes de que toque el código",
+    expect(screen.getByRole("option", { name: "Cuando apruebes el plan" })).toHaveAccessibleDescription(
+      "Te enseña el plan; empieza cuando lo apruebas",
     );
     expect(screen.getByRole("option", { name: "Cambiar código" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("option", { name: "Solo preguntar" })).toHaveAccessibleDescription("Responde sin tocar archivos");
@@ -255,21 +254,17 @@ describe("Workspace", () => {
     const approve = within(plan).getByRole("button", { name: "Aprobar plan" });
     expect(approve).toHaveAttribute("aria-keyshortcuts", "Enter");
     expect(within(approve).getByText("Enter")).toHaveClass("kbd");
-    expect(within(within(plan).getByRole("button", { name: "Pedir cambios" })).getByText("E")).toHaveClass("kbd");
-    // Meanwhile the composer says what a message does now: it waits for the answer.
-    expect(screen.getByLabelText(/^Primero responde al plan de arriba/)).toHaveAttribute(
-      "placeholder",
-      "Responde la tarjeta de arriba; esto espera en cola…",
-    );
+    expect(within(within(plan).getByRole("button", { name: "Corregir abajo" })).getByText("E")).toHaveClass("kbd");
+    // Meanwhile the composer says what a message does now: it corrects the plan.
+    const composer = screen.getByLabelText("Corrige el plan de arriba");
+    expect(composer).toHaveAttribute("placeholder", "Escribe qué corregir del plan, o Ctrl+Enter para aprobarlo");
     // Empty while the agent runs: the round button stops it instead.
     expect(screen.getByRole("button", { name: "Detener" })).toBeEnabled();
 
     await user.keyboard("e");
-    const feedback = within(plan).getByLabelText("¿Qué cambiarías?");
-    expect(feedback).toHaveFocus();
-    expect(feedback).toHaveValue("");
-    await user.click(within(plan).getByRole("button", { name: "Cancelar" }));
-    expect(plan).toHaveFocus();
+    expect(composer).toHaveFocus();
+    expect(composer).toHaveValue("");
+    plan.focus();
 
     await user.keyboard("{Enter}");
     const card = await screen.findByRole("region", { name: "Claude quiere correr un comando" });
@@ -459,7 +454,7 @@ describe("Workspace", () => {
     const { api, user } = setup();
     await openProject(user, /^hedy/);
     await user.type(await screen.findByLabelText("Pídele algo a hedy"), "Recordatorios");
-    await chooseMode(user, "Enséñame el plan primero");
+    await chooseMode(user, "Enseguida");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
     await screen.findByRole("region", { name: "Claude quiere correr un comando" });
 
@@ -636,19 +631,17 @@ describe("Composer", () => {
     await user.click(screen.getByRole("option", { name: "Sonnet" }));
     expect(model).toHaveTextContent("Sonnet");
 
-    // The plan-first checkbox in the mode menu, by keyboard: it stays on the mode.
+    // When it starts changing code, in the mode menu by keyboard: it stays on the mode.
     const modes = screen.getByRole("combobox", { name: "Modo" });
     modes.focus();
-    await user.keyboard("{ArrowDown}{Home}{ArrowDown}");
-    const plan = screen.getByRole("option", { name: "Enséñame el plan primero" });
-    expect(modes).toHaveAttribute("aria-activedescendant", plan.id);
-    expect(modes).toHaveTextContent("Cambiar código · con plan");
+    await user.keyboard("{ArrowDown}{Home}{ArrowDown}{ArrowDown}{ArrowDown}");
+    const now = screen.getByRole("option", { name: "Enseguida" });
+    expect(modes).toHaveAttribute("aria-activedescendant", now.id);
+    expect(modes).toHaveTextContent("Cambiar código · tras tu OK");
     await user.keyboard("{Enter}");
-    expect(modes).not.toHaveTextContent("con plan");
+    expect(modes).not.toHaveTextContent("tras tu OK");
     await user.click(modes);
-    expect(screen.getByRole("option", { name: "Enséñame el plan primero" })).toHaveAccessibleDescription(
-      "No: empieza a cambiar el código enseguida",
-    );
+    expect(screen.getByRole("option", { name: "Enseguida" })).toHaveAccessibleDescription("Implementa y te deja los cambios");
     await user.keyboard("{Escape}");
     await user.click(composer);
 
@@ -712,7 +705,7 @@ describe("Composer", () => {
     await chooseOption(user, screen.getByRole("combobox", { name: "Modelo" }), "kimi-k3");
     await chooseMode(user, "Investigar");
     await user.click(screen.getByRole("combobox", { name: "Modo" }));
-    expect(screen.queryByRole("option", { name: "Enséñame el plan primero" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Cuando apruebes el plan" })).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
 
     // Shift+Enter is a new line; Enter sends.

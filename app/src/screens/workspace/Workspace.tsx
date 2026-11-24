@@ -209,6 +209,12 @@ export function Workspace({
   const milestone = useMilestone(task?.id ?? null, items, events.isSuccess);
   // A message written now waits for the card's answer (and the end of the turn).
   const card: CardWaiting = isBusy(task) && task?.status === "waitingApproval" ? (pendingCard(history) ?? "other") : null;
+  // A plan waiting for its answer: what is written in the composer corrects it.
+  const planRequest =
+    card === "plan"
+      ? (items.findLast((i): i is Extract<TimelineItem, { type: "plan" }> => i.type === "plan" && !!i.requestId && !i.resolution)
+          ?.requestId ?? null)
+      : null;
 
   // Ctrl/Cmd + 1-9 jump to the project's tasks, from anywhere in the workspace.
   const taskId = task?.id;
@@ -494,6 +500,7 @@ export function Workspace({
           name={name}
           task={task}
           card={card}
+          planRequest={planRequest}
           models={account ? MODEL_SUGGESTIONS[account.provider] : []}
           agent={agent}
           disabled={!account}
@@ -646,9 +653,14 @@ const MODE_ICON: Record<TaskMode, ReactNode> = {
   research: <ResearchIcon />,
 };
 
-/** The mode menu's checkbox: not a mode, it toggles showing the plan first. */
+/**
+ * «¿Cuándo empieza a tocar el código?» in the mode menu (docs/decisions.md
+ * §60): right away, or once the plan is approved. Not modes: one AI either way.
+ */
+const PLAN_NOW = "plan-now" as const;
 const PLAN_FIRST = "plan-first" as const;
-/** "Cómo trabaja" in the mode menu: `flow:` is one AI, `flow:<key>` a flow. */
+type PlanChoice = typeof PLAN_NOW | typeof PLAN_FIRST;
+/** A flow with several AIs in the mode menu: `flow:<key>`; `flow:` is none. */
 type FlowChoice = `flow:${string}`;
 const flowChoice = (key: string | null): FlowChoice => `flow:${key ?? ""}`;
 const FLOW_PLACE: Record<FlowScope, MessageKey> = {
@@ -728,6 +740,7 @@ function Composer({
   name,
   task,
   card,
+  planRequest,
   models,
   agent,
   disabled,
@@ -751,6 +764,8 @@ function Composer({
   task: Task | null;
   /** A plan or permission card waits: what is written now goes after its answer. */
   card: CardWaiting;
+  /** The plan that waits for its answer: what is written now corrects it. */
+  planRequest?: string | null;
   models: string[];
   /** Who works on the task now, for the queue's label. */
   agent: string;
@@ -788,7 +803,8 @@ function Composer({
   const listKey: QueryKey = solo ? CONVERSATIONS_KEY : tasksKey(scope);
   const [text, setText] = useState(initialText ?? "");
   const [model, setModel] = useState("");
-  const [planFirst, setPlanFirst] = useState(true);
+  // Plan first or not: the project's way of working unless picked here.
+  const [pickedPlan, setPickedPlan] = useState<boolean | null>(null);
   const [active, setActive] = useState(0);
   const [pickerClosed, setPickerClosed] = useState(false);
   const [filling, setFilling] = useState<PromptTemplate | null>(null);
@@ -826,7 +842,9 @@ function Composer({
   // What the agent does without asking: a new task starts with the project's
   // default (or what was picked here); an open one changes its own.
   const overview = useOverview();
-  const projectPermissions = overview.data?.projects.find((p) => p.path === scope)?.permissionMode ?? "manual";
+  const scopeProject = overview.data?.projects.find((p) => p.path === scope);
+  const projectPermissions = scopeProject?.permissionMode ?? "manual";
+  const planFirst = pickedPlan ?? scopeProject?.working.plan ?? true;
   const [pickedPermissions, setPickedPermissions] = useState<PermissionMode | null>(null);
   const newPermissions = pickedPermissions ?? projectPermissions;
   const permissions: PermissionMode = followUp && task ? (task.permissions ?? "manual") : newPermissions;
@@ -1055,11 +1073,33 @@ function Composer({
     focusInput();
   }
 
-  const sendLabel =
-    followUp && card ? t("workspace.composer.sendAfterCard") : queueing ? t("queue.add") : t("workspace.composer.send");
+  // With a plan waiting, Enter sends a correction and Ctrl/⌘ + Enter (with
+  // nothing written) approves it, in the same session (docs/decisions.md §60).
+  const correcting = followUp && card === "plan" && !!planRequest && !!task?.live;
+  const answerPlan = useAction(
+    (api, vars: { approve: boolean; feedback: string | null }) =>
+      api.answerPlan(task?.id ?? "", planRequest ?? "", vars.approve, vars.feedback),
+    {
+      invalidate: [listKey],
+      onSuccess: (_, vars) => {
+        if (!vars.approve) setText("");
+      },
+    },
+  );
+  const sendLabel = correcting
+    ? t("workspace.composer.correctPlan")
+    : followUp && card
+      ? t("workspace.composer.sendAfterCard")
+      : queueing
+        ? t("queue.add")
+        : t("workspace.composer.send");
 
   function submit() {
     const value = text.trim();
+    if (correcting && value && !answerPlan.isPending) {
+      answerPlan.mutate({ approve: false, feedback: value });
+      return;
+    }
     if (!value || busy || disabled || sendBlocked) return;
     const message = { text: value, images: images.inputs() };
     if (toCode) changeCode.mutate(message);
@@ -1153,7 +1193,9 @@ function Composer({
       )}
       {/* The placeholder says what sending does now; the label says it in full. */}
       <label className="sr-only" htmlFor="composer-input">
-        {followUp && card
+        {correcting
+          ? t("workspace.composer.labelPlan")
+          : followUp && card
           ? t(CARD_LABEL[card])
           : queueing
             ? t("queue.composerBusy", { agent })
@@ -1183,6 +1225,8 @@ function Composer({
         placeholder={
           !followUp && placeholderOverride
             ? placeholderOverride
+            : correcting
+            ? t("workspace.composer.placeholderPlan", { approve: keyLabels().submit })
             : followUp && card
             ? t("workspace.composer.placeholderCard")
             : queueing
@@ -1258,6 +1302,10 @@ function Composer({
           // Enter sends (Ctrl/⌘ + Enter too); Shift + Enter is a new line.
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
+            if (correcting && (e.ctrlKey || e.metaKey) && !text.trim()) {
+              if (!answerPlan.isPending) answerPlan.mutate({ approve: true, feedback: null });
+              return;
+            }
             submit();
           }
         }}
@@ -1283,7 +1331,7 @@ function Composer({
           )}
           {(!followUp || (question && !queueing)) && (
             <>
-              <Select<TaskMode | typeof PLAN_FIRST | FlowChoice>
+              <Select<TaskMode | PlanChoice | FlowChoice>
                 variant="chip"
                 label={t("workspace.composer.mode")}
                 title={t("workspace.composer.mode")}
@@ -1291,60 +1339,63 @@ function Composer({
                 value={mode}
                 sections={[
                   {
-                // A question offers its own mode and changing code, never the other question mode.
-                options: (question && task
-                  ? MODES.filter((m) => m === "project" || m === task.mode)
-                  : solo
-                    ? CONVERSATION_MODES
-                    : MODES
-                ).flatMap((value) => [
-                  {
-                    value,
-                    label: t(MODE_LABEL[value]),
-                    detail: t(MODE_DETAIL[value]),
-                    icon: MODE_ICON[value],
+                    title: t("workspace.composer.whatTitle"),
+                    // A question offers its own mode and changing code, never the other question mode.
+                    options: (question && task
+                      ? MODES.filter((m) => m === "project" || m === task.mode)
+                      : solo
+                        ? CONVERSATION_MODES
+                        : MODES
+                    ).map((value) => ({
+                      value,
+                      label: t(MODE_LABEL[value]),
+                      detail: t(MODE_DETAIL[value]),
+                      icon: MODE_ICON[value],
+                    })),
                   },
-                  // "Show me the plan first" hangs under "Change code", as a setting of
-                  // that mode, and only while it is the chosen one (a flow has its own steps).
-                  ...(value === "project" && mode === "project" && !chosenFlow
+                  // When it starts changing code: one AI, right away or after the plan.
+                  ...(mode === "project"
                     ? [
                         {
-                          value: PLAN_FIRST as typeof PLAN_FIRST,
-                          label: t("workspace.composer.planFirst"),
-                          detail: t(planFirst ? "workspace.composer.planFirstOn" : "workspace.composer.planFirstOff"),
-                          icon: (
-                            <input type="checkbox" checked={planFirst} readOnly tabIndex={-1} style={{ pointerEvents: "none" }} />
-                          ),
-                          nested: true,
+                          title: t("workspace.composer.whenTitle"),
+                          options: (
+                            [
+                              [PLAN_NOW, false, "workspace.composer.now", "workspace.composer.nowDetail"],
+                              [PLAN_FIRST, true, "workspace.composer.afterPlan", "workspace.composer.afterPlanDetail"],
+                            ] as const
+                          ).map(([value, plan, label, detail]) => ({
+                            value,
+                            label: t(label),
+                            detail: t(detail),
+                            icon: (
+                              <input
+                                type="radio"
+                                checked={!chosenFlow && planFirst === plan}
+                                readOnly
+                                tabIndex={-1}
+                                style={{ pointerEvents: "none" }}
+                              />
+                            ),
+                          })),
                         },
                       ]
                     : []),
-                ]),
-                  },
-                  // How it works: one AI, or one of the project's flows.
-                  ...(offersFlows && mode === "project" && flowList.data
+                  // Or a flow with several AIs: the project's, the global and Hedy's templates.
+                  ...(offersFlows && mode === "project" && flowList.data?.length
                     ? [
                         {
-                          title: t("workspace.composer.howItWorks"),
-                          options: [
-                            {
-                              value: flowChoice(null),
-                              label: t("workspace.composer.oneAi"),
-                              detail: t("workspace.composer.oneAiDetail"),
-                              icon: <input type="radio" checked={!chosenFlow} readOnly tabIndex={-1} style={{ pointerEvents: "none" }} />,
-                            },
-                            ...flowList.data.map((entry) => ({
-                              value: flowChoice(entry.key),
-                              label: entry.flow.name,
-                              detail:
-                                entry.key === flowDefaults.data?.start?.key
-                                  ? `${t("workspace.composer.flowDefault")}${entry.summary ? ` · ${entry.summary}` : ""}`
-                                  : entry.summary || t(FLOW_PLACE[entry.scope]),
-                              icon: (
-                                <input type="radio" checked={chosenFlow?.key === entry.key} readOnly tabIndex={-1} style={{ pointerEvents: "none" }} />
-                              ),
-                            })),
-                          ],
+                          title: t("workspace.composer.flowsTitle"),
+                          options: flowList.data.map((entry) => ({
+                            value: flowChoice(entry.key),
+                            label: entry.flow.name,
+                            detail:
+                              entry.key === flowDefaults.data?.start?.key
+                                ? `${t("workspace.composer.flowDefault")}${entry.summary ? ` · ${entry.summary}` : ""}`
+                                : entry.summary || t(FLOW_PLACE[entry.scope]),
+                            icon: (
+                              <input type="radio" checked={chosenFlow?.key === entry.key} readOnly tabIndex={-1} style={{ pointerEvents: "none" }} />
+                            ),
+                          })),
                         },
                       ]
                     : []),
@@ -1365,15 +1416,18 @@ function Composer({
                     </span>
                   </>
                 )}
-                onChange={(value) =>
-                  value === PLAN_FIRST
-                    ? setPlanFirst((on) => !on)
-                    : value.startsWith("flow:")
-                      ? setPickedFlow(value.slice("flow:".length) || null)
-                      : question
-                        ? setChanging(value === "project")
-                        : setNewMode(value as TaskMode)
-                }
+                onChange={(value) => {
+                  if (value === PLAN_NOW || value === PLAN_FIRST) {
+                    setPickedPlan(value === PLAN_FIRST);
+                    setPickedFlow(null);
+                  } else if (value.startsWith("flow:")) {
+                    setPickedFlow(value.slice("flow:".length) || null);
+                  } else if (question) {
+                    setChanging(value === "project");
+                  } else {
+                    setNewMode(value as TaskMode);
+                  }
+                }}
               />
               {accountPicker}
               {models.length > 0 && (

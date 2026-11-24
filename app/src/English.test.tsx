@@ -229,7 +229,7 @@ describe("English", () => {
     const { api, user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
     await user.type(await screen.findByLabelText("Ask hedy for something"), "Recordatorios");
-    await chooseMode(user, "Show me the plan first", "Mode");
+    await chooseMode(user, "Right away", "Mode");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByRole("region", { name: "Claude wants to run a command" });
     await user.type(screen.getByLabelText(/^Answer the permission request above first/), "Sigue");
@@ -248,7 +248,7 @@ describe("English", () => {
     const { api, user } = setup();
     await user.click(await screen.findByRole("button", { name: /^hedy/ }));
     await user.type(await screen.findByLabelText("Ask hedy for something"), "Recordatorios");
-    await chooseMode(user, "Show me the plan first", "Mode");
+    await chooseMode(user, "Right away", "Mode");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByRole("region", { name: "Claude wants to run a command" });
 
