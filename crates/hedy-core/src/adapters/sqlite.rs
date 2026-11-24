@@ -339,7 +339,7 @@ const MIGRATIONS: &[&str] = &[
 "#,
     r#"
     -- How a project's «Cambiar código» tasks work with one AI (JSON; NULL:
-    -- every stop off). docs/decisions.md §60. «Con tu aprobación» is no
+    -- «Tras tu OK», where every project starts). docs/decisions.md §60. «Con tu aprobación» is no
     -- longer a template: a project that started its tasks with it plans
     -- first and runs its tests with one AI instead («Tras tu OK»).
     ALTER TABLE projects ADD COLUMN working TEXT;
@@ -534,7 +534,7 @@ fn project_from_row(row: &Row) -> rusqlite::Result<Project> {
         .map(|p| serde_json::from_str(&p))
         .transpose()
         .map_err(invalid(11))?
-        .unwrap_or_default();
+        .unwrap_or_else(WorkingStyle::initial);
     Ok(Project {
         working,
         default_flow: row.get(10)?,
@@ -577,7 +577,7 @@ impl ProjectRepository for SqliteStore {
             .then(|| serde_json::to_string(&project.blocked_files))
             .transpose()
             .map_err(json_error)?;
-        let working = (project.working != WorkingStyle::default())
+        let working = (project.working != WorkingStyle::initial())
             .then(|| serde_json::to_string(&project.working))
             .transpose()
             .map_err(json_error)?;

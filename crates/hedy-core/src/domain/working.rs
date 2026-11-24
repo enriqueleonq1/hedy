@@ -82,6 +82,13 @@ impl Preset {
 }
 
 impl WorkingStyle {
+    /// Where every project starts: «Tras tu OK». New tasks always offered
+    /// the plan first; now Hedy also runs the tests it finds, which spends
+    /// no tokens.
+    pub fn initial() -> Self {
+        Preset::AfterOk.apply(&Self::default())
+    }
+
     /// The preset these stops are, or `None` («Personalizada»).
     pub fn preset(&self) -> Option<Preset> {
         Preset::ALL.into_iter().find(|p| &p.apply(self) == self)
@@ -111,6 +118,11 @@ impl WorkingStyle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_project_starts_after_your_ok() {
+        assert_eq!(WorkingStyle::initial().preset(), Some(Preset::AfterOk));
+    }
 
     #[test]
     fn every_stop_off_is_right_away() {

@@ -29,7 +29,8 @@ pub struct Project {
     /// `None`: one AI (docs/decisions.md §56).
     pub default_flow: Option<String>,
     /// How its «Cambiar código» tasks work with one AI: the plan and the
-    /// checks Hedy runs (docs/decisions.md §60). Kept per PC.
+    /// checks Hedy runs (docs/decisions.md §60). Kept per PC; every project
+    /// starts «Tras tu OK».
     pub working: super::WorkingStyle,
 }
 
@@ -51,7 +52,7 @@ impl Project {
             blocked_files: Default::default(),
             permission_mode: Default::default(),
             default_flow: None,
-            working: Default::default(),
+            working: super::WorkingStyle::initial(),
         }
     }
 
