@@ -20,7 +20,7 @@ use hedy_core::domain::TaskId;
 use hedy_core::experiments;
 
 use crate::runner::{
-    Observed, RemoveOnDrop, Runner, changes_since, git, head, prepare_repo, save_diff,
+    Cut, Observed, RemoveOnDrop, Runner, changes_since, git, head, prepare_repo, save_diff,
 };
 use crate::{Case, Layer, RescueTrace, RunResult, Variant};
 
@@ -319,7 +319,7 @@ impl Runner {
             id,
             Duration::from_secs(case.spec.timeout_secs),
             resumed,
-            None,
+            &Cut::default(),
         );
         let ms = clock.elapsed().as_millis() as u64;
         let work = self.hedy.task(id)?.work_dir();

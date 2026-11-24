@@ -10,21 +10,64 @@
 //!   asked, and each session's progress;
 //! - `flow`: as `solo`, each session run as the `essential` flow, under the
 //!   same cap.
+//!
+//! The confirmation test (evals/experiments/confirmation, [`Plan::UntilDone`])
+//! cuts each session at a budget of tokens, asks the change with the second
+//! session and goes on until a session after it ends by itself. Its arms:
+//!
+//! - `today`: what Hedy sends today when a task goes on in another session
+//!   (the handoff to another agent: the request, the files changed so far);
+//! - `request`: the request as written, then «Continúa.»;
+//! - `doc`: the task document, as above;
+//! - `flow`: as `today`, each session run as the `essential` flow.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use hedy_core::domain::{ConfigFolder, Credentials, UsageSample};
+use hedy_core::domain::{ConfigFolder, Credentials, Provider, UsageSample, prompts};
 use hedy_core::experiments;
 
 use crate::rescue::CloseOnDrop;
-use crate::runner::{RemoveOnDrop, Runner, changes_since, git, head, prepare_repo, save_diff};
+use crate::runner::{Cut, RemoveOnDrop, Runner, changes_since, git, head, prepare_repo, save_diff};
 use crate::{Case, Layer, LongTrace, RunResult, Variant};
 
 pub const ARMS: [&str; 4] = ["solo", "repeat", "doc", "flow"];
+/// The confirmation test's arms ([`Plan::UntilDone`]).
+pub const CONFIRM_ARMS: [&str; 4] = ["today", "request", "doc", "flow"];
 pub const SESSIONS: u32 = 3;
+/// With [`Plan::UntilDone`], the session whose message asks the change.
+pub const CHANGE_SESSION: u32 = 2;
+
+/// How a `--long` run goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Plan {
+    /// Test C: three sessions, the change asked in the third.
+    Three,
+    /// The change asked in the second session; the run ends when a session
+    /// from then on ends by itself, or after `max` sessions.
+    UntilDone { max: u32 },
+}
+
+/// How a session is cut.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Limits {
+    /// Actions per session.
+    pub cap: Option<u32>,
+    /// Tokens at input price per session ([`at_input_price`]).
+    pub budget: Option<u64>,
+}
+
+/// Tokens weighed by their price, counted as input tokens: Claude's output
+/// costs 5×, a cache read 0.1× and a cache write 1.25× an input token. A
+/// session's budget is counted in these, the same for every model.
+pub fn at_input_price(usage: &UsageSample) -> u64 {
+    usage.input_tokens
+        + 5 * usage.output_tokens
+        + usage.cache_read_tokens / 10
+        + usage.cache_write_tokens * 5 / 4
+}
 /// The template a `flow` session runs as (docs/decisions.md §51).
 const FLOW: &str = "essential";
 
@@ -92,6 +135,49 @@ pub fn session_prompt(
             format!("{message}\n\n{}", task_document(prompt, change, progress))
         }
         _ => message,
+    }
+}
+
+/// The user's change, asked with the second session in every arm.
+pub fn change_message(change: &str) -> String {
+    format!("Además, un cambio al pedido: {change}")
+}
+
+/// What the agent gets in `session` with `arm` ([`Plan::UntilDone`]): the
+/// request alone in the first; then what the arm sends to go on, with the
+/// change after it in [`CHANGE_SESSION`]. `agent`: who worked before, as
+/// Hedy names it in a handoff.
+pub fn continue_prompt(
+    arm: &str,
+    session: u32,
+    prompt: &str,
+    change: &str,
+    progress: &[Progress],
+    agent: &str,
+) -> String {
+    if session == 1 {
+        return prompt.to_owned();
+    }
+    let asked = (session >= CHANGE_SESSION).then_some(change);
+    let base = match arm {
+        "request" => format!("{prompt}\n\nContinúa."),
+        "doc" => format!("Continúa.\n\n{}", task_document(prompt, asked, progress)),
+        // Hedy's handoff (`Hedy::handoff_task`): its files are those changed
+        // since the task started.
+        _ => {
+            let mut files: Vec<String> = progress
+                .iter()
+                .flat_map(|p| p.files.iter().cloned())
+                .collect();
+            files.sort();
+            files.dedup();
+            prompts::handoff_prompt(prompt, None, agent, &files)
+        }
+    };
+    if session == CHANGE_SESSION {
+        format!("{base}\n\n{}", change_message(change))
+    } else {
+        base
     }
 }
 
@@ -186,6 +272,7 @@ fn files_in(patch: &str) -> Vec<String> {
 impl Runner {
     /// One run of `arm`: a result per session. A session that fails stops
     /// the run (its later sessions are not recorded).
+    #[allow(clippy::too_many_arguments)]
     pub fn run_long(
         &self,
         case: &Case,
@@ -193,7 +280,8 @@ impl Runner {
         variant: &Variant,
         arm: &str,
         attempt: u32,
-        cap: Option<u32>,
+        plan: Plan,
+        limits: Limits,
     ) -> Vec<RunResult> {
         let started_at = crate::runner::now();
         experiments::set(variant.experiments);
@@ -211,7 +299,8 @@ impl Runner {
                     case,
                     arm,
                     &repo,
-                    cap,
+                    plan,
+                    limits,
                     &mut |n| {
                         self.new_result(case, layer, &name, attempt, started_at)
                             .with_session(n)
@@ -237,27 +326,44 @@ impl Runner {
         results
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn long_sessions(
         &self,
         case: &Case,
         arm: &str,
         repo: &Path,
-        cap: Option<u32>,
+        plan: Plan,
+        limits: Limits,
         new: &mut dyn FnMut(u32) -> RunResult,
         results: &mut Vec<RunResult>,
     ) -> Result<()> {
         let spec = &case.spec;
         let change = spec.change.as_deref().context("el caso no tiene change")?;
-        let changed = spec
-            .check_changed
-            .as_deref()
-            .context("el caso no tiene checkChanged")?;
+        let changed = match plan {
+            Plan::Three => spec
+                .check_changed
+                .as_deref()
+                .context("el caso no tiene checkChanged")?,
+            // Its check judges the change with the rest.
+            Plan::UntilDone { .. } => &spec.check,
+        };
         let tests = spec.tests.as_deref().context("el caso no tiene tests")?;
+        let sessions = match plan {
+            Plan::Three => SESSIONS,
+            Plan::UntilDone { max } => max,
+        };
+        let agent = Provider::Claude.agent_label(self.options.model.as_deref());
+        let start = head(repo)?;
         let mut progress = Vec::new();
-        for session in 1..=SESSIONS {
+        for session in 1..=sessions {
             let mut out = new(session);
             let base = head(repo)?;
-            let prompt = session_prompt(arm, session, &spec.prompt, change, &progress);
+            let prompt = match plan {
+                Plan::Three => session_prompt(arm, session, &spec.prompt, change, &progress),
+                Plan::UntilDone { .. } => {
+                    continue_prompt(arm, session, &spec.prompt, change, &progress, &agent)
+                }
+            };
             let clock = Instant::now();
             let request = self.new_task(repo, &prompt);
             let task = match arm {
@@ -265,16 +371,26 @@ impl Runner {
                 _ => self.hedy.start_task(request)?,
             };
             let close = CloseOnDrop(self, task.id.clone());
-            let seen = self.drive(&task.id, Duration::from_secs(spec.timeout_secs), false, cap);
+            let work = self.hedy.task(&task.id)?.work_dir();
+            let logs = session_logs(self.account_folder()?.as_deref(), &work);
+            let cut = Cut {
+                actions: limits.cap,
+                tokens: limits.budget.zip(logs.clone()).map(|(b, l)| (l, b)),
+            };
+            let seen = self.drive(
+                &task.id,
+                Duration::from_secs(spec.timeout_secs),
+                false,
+                &cut,
+            );
             out.duration_ms = clock.elapsed().as_millis() as u64;
             seen.add_to(&mut out);
-            let work = self.hedy.task(&task.id)?.work_dir();
             // Cut before its turn ended: what it spent is only in its logs
             // (no cost there; the analysis prices the tokens).
             if seen.stopped
-                && let Some(logs) = session_logs(self.account_folder()?.as_deref(), &work)
+                && let Some(logs) = &logs
             {
-                let logged = logged_usage(&logs);
+                let logged = logged_usage(logs);
                 if logged.total_tokens() > out.tokens {
                     out.tokens = logged.total_tokens();
                     out.input_tokens = logged.input_tokens;
@@ -300,7 +416,7 @@ impl Runner {
                 git(repo, &["commit", "-q", "-m", &format!("Sesión {session}")])?;
             }
             let tests_passed = self.in_copy(repo, None, tests)?.0;
-            let check = if session == SESSIONS {
+            let check = if session == SESSIONS && plan == Plan::Three {
                 changed
             } else {
                 &spec.check
@@ -313,10 +429,21 @@ impl Runner {
                 reads_before_edit: seen.reads_before_edit,
                 stopped: seen.stopped,
             });
+            // A session that ends by itself after the change ends the run.
+            let last = session == sessions
+                || matches!(plan, Plan::UntilDone { .. })
+                    && session >= CHANGE_SESSION
+                    && !seen.stopped;
             if let Some(dir) = &self.options.diffs {
                 let mut named = out.clone();
                 named.variant = format!("{}-s{session}", out.variant);
                 out.diff = Some(save_diff(dir, &named, &patch)?);
+                // The run's whole change, beside its last session's.
+                if last && matches!(plan, Plan::UntilDone { .. }) {
+                    named.variant = format!("{}-final", out.variant);
+                    let whole = changes_since(repo, &start)?;
+                    save_diff(dir, &named, &whole)?;
+                }
             }
             progress.push(Progress {
                 files: files_in(&patch),
@@ -324,6 +451,9 @@ impl Runner {
                 said: seen.last_message.clone().unwrap_or_default(),
             });
             results.push(out);
+            if last {
+                break;
+            }
         }
         Ok(())
     }
@@ -376,6 +506,50 @@ mod tests {
             "Cambia esto y termina: x"
         );
         assert!(session_prompt("repeat", 2, "R1. Algo.", "x", &[]).ends_with("R1. Algo."));
+    }
+
+    #[test]
+    fn the_change_comes_with_the_second_session_and_only_the_document_keeps_it() {
+        hedy_core::i18n::set_language(hedy_core::i18n::Language::Spanish);
+        let progress = [Progress {
+            files: vec!["lib/a.py".into()],
+            tests_passed: true,
+            said: "Hice la mitad.".into(),
+        }];
+        for arm in CONFIRM_ARMS {
+            assert_eq!(
+                continue_prompt(arm, 1, "Haz X.", "Y.", &[], "Claude Sonnet"),
+                "Haz X."
+            );
+            let second = continue_prompt(arm, 2, "Haz X.", "Y.", &progress, "Claude Sonnet");
+            assert!(second.ends_with(&change_message("Y.")), "{arm}");
+            assert!(
+                second.contains("Haz X."),
+                "{arm}: every arm brings the request"
+            );
+            let third = continue_prompt(arm, 3, "Haz X.", "Y.", &progress, "Claude Sonnet");
+            assert_eq!(third.contains("Y."), arm == "doc", "{arm}");
+        }
+        let today = continue_prompt("today", 3, "Haz X.", "Y.", &progress, "Claude Sonnet");
+        assert!(today.starts_with("## Pedido original\nHaz X."));
+        assert!(today.contains("Claude Sonnet estaba trabajando"));
+        assert!(today.contains("lib/a.py"));
+        assert_eq!(
+            continue_prompt("request", 3, "Haz X.", "Y.", &progress, "Claude Sonnet"),
+            "Haz X.\n\nContinúa."
+        );
+    }
+
+    #[test]
+    fn a_budget_weighs_tokens_by_their_price() {
+        let usage = UsageSample {
+            input_tokens: 10,
+            output_tokens: 100,
+            cache_read_tokens: 1000,
+            cache_write_tokens: 400,
+            cost_usd: None,
+        };
+        assert_eq!(at_input_price(&usage), 10 + 500 + 100 + 500);
     }
 
     #[test]

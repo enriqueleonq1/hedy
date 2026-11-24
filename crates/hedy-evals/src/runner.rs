@@ -19,6 +19,7 @@ use hedy_core::domain::{
 
 use hedy_core::experiments;
 
+use crate::long::{at_input_price, logged_usage};
 use crate::{Case, Layer, RunResult, StepTrace, Variant};
 use hedy_core::domain::flow::NodeKind;
 
@@ -242,6 +243,20 @@ pub fn save_diff(dir: &Path, run: &RunResult, patch: &str) -> Result<String> {
         serde_json::to_string_pretty(&verdict)?,
     )?;
     Ok(format!("{stem}.patch"))
+}
+
+/// How often a budget of tokens is weighed against the session's logs.
+const BUDGET_EVERY: Duration = Duration::from_secs(3);
+
+/// When the runner stops a task in the middle of its work.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Cut {
+    /// After this many actions.
+    pub actions: Option<u32>,
+    /// Once the sessions logged in this folder spent this many tokens at
+    /// input price ([`at_input_price`]): a session that reaches its account's
+    /// limit.
+    pub tokens: Option<(PathBuf, u64)>,
 }
 
 /// What the runner saw of a task while it ran.
@@ -522,7 +537,12 @@ impl Runner {
         clock: Instant,
         out: &mut RunResult,
     ) -> Result<()> {
-        let observed = self.drive(id, Duration::from_secs(case.spec.timeout_secs), false, None);
+        let observed = self.drive(
+            id,
+            Duration::from_secs(case.spec.timeout_secs),
+            false,
+            &Cut::default(),
+        );
         out.duration_ms = clock.elapsed().as_millis() as u64;
         observed.add_to(out);
         out.notes_read = self.hedy.memory(repo)?.used_last_task.len();
@@ -543,21 +563,38 @@ impl Runner {
 
     /// Answers cards and collects usage until the task stops. `resumed`: a
     /// follow-up was just sent, so a review seen before the task runs again
-    /// is the last turn's. `cap`: the task is stopped after that many actions.
+    /// is the last turn's. `cut`: when the task is stopped mid-work.
     pub(crate) fn drive(
         &self,
         id: &TaskId,
         timeout: Duration,
         resumed: bool,
-        cap: Option<u32>,
+        cut: &Cut,
     ) -> Observed {
         let mut seen = Observed::default();
         let mut running = !resumed;
         let deadline = Instant::now() + timeout;
+        let mut weighed = Instant::now();
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
-            let update = match self.events.recv_timeout(left.max(Duration::from_millis(1))) {
+            // With a budget of tokens, its logs are weighed every few seconds.
+            let wait = match cut.tokens {
+                Some(_) => left.min(BUDGET_EVERY),
+                None => left,
+            };
+            if let Some((logs, budget)) = &cut.tokens
+                && !seen.stopped
+                && weighed.elapsed() >= BUDGET_EVERY
+            {
+                weighed = Instant::now();
+                if at_input_price(&logged_usage(logs)) >= *budget {
+                    seen.stopped = true;
+                    let _ = self.hedy.stop_task(id);
+                }
+            }
+            let update = match self.events.recv_timeout(wait.max(Duration::from_millis(1))) {
                 Ok(update) => update,
+                Err(RecvTimeoutError::Timeout) if !left.is_zero() && wait < left => continue,
                 Err(RecvTimeoutError::Timeout) => {
                     let _ = self.hedy.stop_task(id);
                     seen.error = Some(format!("no terminó en {} s", timeout.as_secs()));
@@ -704,7 +741,7 @@ impl Runner {
                 seen.error = Some(e.to_string());
                 return seen;
             }
-            if cap.is_some_and(|cap| seen.actions >= cap) && !seen.stopped {
+            if cut.actions.is_some_and(|cap| seen.actions >= cap) && !seen.stopped {
                 seen.stopped = true;
                 let _ = self.hedy.stop_task(id);
             }

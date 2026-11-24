@@ -10,6 +10,7 @@ use clap::Parser;
 use hedy_core::adapters::{self, CODE_MAP_PROGRAM, HedyPaths, find_program};
 use hedy_core::application::Setting;
 use hedy_core::domain::Provider;
+use hedy_evals::long::{Limits, Plan};
 use hedy_evals::{
     Case, Layer, RemoveOnDrop, RunResult, Runner, RunnerOptions, Variant, Verdict, compare,
     load_suite, select_cases, summarize,
@@ -71,13 +72,23 @@ struct Args {
     rescue: bool,
     /// Prueba de tareas largas (evals/experiments/long-tasks, casos en
     /// evals/long): tres sesiones nuevas por corrida en cada brazo, separados
-    /// por comas: solo, repeat, doc, flow.
+    /// por comas: solo, repeat, doc, flow. Con --sessions, la prueba de
+    /// confirmación (evals/experiments/confirmation): today, request, doc, flow.
     #[arg(long, value_delimiter = ',', value_name = "BRAZOS")]
     long: Vec<String>,
     /// Con --long, cuántas acciones puede hacer el agente en cada sesión
     /// antes de que se lo corte.
     #[arg(long)]
     cap: Option<u32>,
+    /// Con --long, cuántos tokens a precio de entrada (la salida cuenta 5×,
+    /// la caché leída 0,1× y la escrita 1,25×) puede gastar cada sesión antes
+    /// de que se la corte.
+    #[arg(long)]
+    budget: Option<u64>,
+    /// Con --long: el cambio llega con la segunda sesión y la corrida sigue
+    /// hasta que una sesión desde entonces termina sola, como mucho estas.
+    #[arg(long)]
+    sessions: Option<u32>,
     /// Solo lista los casos.
     #[arg(long)]
     list: bool,
@@ -210,12 +221,21 @@ fn run(args: Args) -> Result<()> {
             );
         }
     }
-    if let Some(arm) = args
-        .long
-        .iter()
-        .find(|a| !hedy_evals::long::ARMS.contains(&a.as_str()))
+    let arms = match args.sessions {
+        None => &hedy_evals::long::ARMS,
+        Some(_) => &hedy_evals::long::CONFIRM_ARMS,
+    };
+    if let Some(arm) = args.long.iter().find(|a| !arms.contains(&a.as_str())) {
+        bail!("brazo desconocido: {arm} ({})", arms.join(", "));
+    }
+    if args
+        .sessions
+        .is_some_and(|n| n < hedy_evals::long::CHANGE_SESSION)
     {
-        bail!("brazo desconocido: {arm} (solo, repeat, doc, flow)");
+        bail!(
+            "--sessions necesita al menos {}",
+            hedy_evals::long::CHANGE_SESSION
+        );
     }
     if !args.long.is_empty() && (args.rescue || args.flows.iter().any(|f| f != NO_FLOW)) {
         bail!("--long no se combina con --rescue ni --flows");
@@ -268,8 +288,16 @@ fn run_all(
                         eprintln!();
                         for arm in &args.long {
                             eprint!("  {arm}… ");
+                            let plan = match args.sessions {
+                                None => Plan::Three,
+                                Some(max) => Plan::UntilDone { max },
+                            };
+                            let limits = Limits {
+                                cap: args.cap,
+                                budget: args.budget,
+                            };
                             let sessions =
-                                runner.run_long(case, layer, variant, arm, attempt, args.cap);
+                                runner.run_long(case, layer, variant, arm, attempt, plan, limits);
                             let line: Vec<String> = sessions
                                 .iter()
                                 .map(|s| {
