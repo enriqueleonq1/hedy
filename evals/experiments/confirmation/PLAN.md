@@ -271,3 +271,10 @@ haiku the main model.
 The account at `~/.claude-personal` reached its five-hour limit during the haiku pilot. Its
 three runs were voided. At the user's word, runs from now on spend `~/.claude`, the account of
 the session that drives them. The model and everything else stay as they are.
+
+## Amendment 3 (Nov 24, 2026, 11:40, during the haiku pilot, before any main run)
+
+A haiku run takes about 30 minutes (six sessions of about five), so 3 repeats were about
+eight hours of runs. To make it shorter, the user chose **2 repeats** for haiku's main runs
+(8 cases × arms 1–4 × 2 = 64 runs), with more runs at once. The intervals will be wider.
+Nothing else changes.
