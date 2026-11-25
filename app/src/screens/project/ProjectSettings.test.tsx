@@ -30,6 +30,13 @@ async function card(name: string | RegExp) {
   return heading.closest("section") as HTMLElement;
 }
 
+/** «Quién hace cada paso», under «Más opciones» of how the project works. */
+async function openSteps(user: ReturnType<typeof userEvent.setup>) {
+  const working = await card("Cómo trabaja en este proyecto");
+  await user.click(within(working).getByRole("button", { name: "Más opciones: quién hace cada paso" }));
+  return working;
+}
+
 async function projectOf(api: MockApi, path: string) {
   return (await api.overview()).projects.find((p) => p.path === path)!;
 }
@@ -41,6 +48,34 @@ afterEach(() => {
 });
 
 describe("A project's settings", () => {
+  it("picks how the project works: a preset, its stops, and the e2e command", async () => {
+    const { api, user } = await setup();
+    const working = await card("Cómo trabaja en este proyecto");
+    const presets = within(working).getByRole("radiogroup");
+    // Every project starts «Tras tu OK».
+    expect(within(presets).getByRole("radio", { name: /Plan y tu OK/ })).toBeChecked();
+    await waitFor(() =>
+      expect(within(working).getByRole("textbox", { name: "Comando de los tests" })).toHaveAttribute(
+        "placeholder",
+        "npm test · detectado",
+      ),
+    );
+
+    await user.click(within(working).getByRole("switch", { name: "Hedy corre los tests al terminar" }));
+    await waitFor(async () => expect((await projectOf(api, HEDY)).working.tests).toBe(false));
+    expect(await within(working).findByText("Personalizada")).toBeInTheDocument();
+    expect(within(presets).getAllByRole("radio").filter((r) => r.getAttribute("aria-checked") === "true")).toEqual([]);
+
+    const e2e = within(working).getByRole("textbox", { name: "Comando de la prueba e2e" });
+    await user.type(e2e, "  npm run e2e {Enter}");
+    await waitFor(async () => expect((await projectOf(api, HEDY)).working.e2eCommand).toBe("npm run e2e"));
+
+    await user.click(within(presets).getByRole("radio", { name: /^Enseguida/ }));
+    await waitFor(async () => expect((await projectOf(api, HEDY)).working).toMatchObject({ plan: false, tests: false, e2e: false }));
+    expect((await projectOf(api, HEDY)).working.e2eCommand).toBe("npm run e2e");
+    expect(within(working).queryByText("Personalizada")).toBeNull();
+  });
+
   it("sets the permission mode its new tasks start with", async () => {
     const { api, user } = await setup();
     const general = await card("General");
@@ -127,7 +162,7 @@ describe("A project's settings", () => {
     expect(within(account).getByRole("combobox", { name: "Cuenta del proyecto" })).toBeDisabled();
     expect(within(account).getByRole("switch", { name: "Proteger" })).toHaveAttribute("aria-checked", "true");
 
-    const steps = await card("Quién hace cada paso");
+    const steps = await openSteps(user);
     expect(within(steps).getByText(/Protegido: todos los pasos usan su cuenta/)).toBeInTheDocument();
     expect(within(steps).getByRole("combobox", { name: "Quién hace «Planificar»" })).toBeDisabled();
     expect(within(steps).getByRole("combobox", { name: "Quién hace «Implementar»" })).toBeDisabled();
@@ -146,7 +181,7 @@ describe("A project's settings", () => {
   it("says who does each step, inline, with a model from a list", async () => {
     const { api, user } = await setup();
     const save = vi.spyOn(api, "setProjectPhases");
-    const steps = await card("Quién hace cada paso");
+    const steps = await openSteps(user);
     const accountFor = (step: string) => within(steps).getByRole("combobox", { name: `Quién hace «${step}»` });
     const modelFor = (step: string) => within(steps).getByRole("combobox", { name: `Modelo para «${step}»` });
 
@@ -195,7 +230,7 @@ describe("A project's settings", () => {
   it("puts a step back on Automático when its account is another provider's", async () => {
     const { api, user } = await setup();
     const save = vi.spyOn(api, "setProjectPhases");
-    const steps = await card("Quién hace cada paso");
+    const steps = await openSteps(user);
     const accountFor = (step: string) => within(steps).getByRole("combobox", { name: `Quién hace «${step}»` });
     const modelFor = (step: string) => within(steps).getByRole("combobox", { name: `Modelo para «${step}»` });
 
@@ -220,7 +255,7 @@ describe("A project's settings", () => {
     const sample = MockApi.withSampleData();
     await sample.addAccount({ name: "Claude extra", provider: "claude", apiKey: false, defaultFolder: false, color: null });
     const { api, user } = await setup(sheet(HEDY), sample);
-    const steps = await card("Quién hace cada paso");
+    const steps = await openSteps(user);
     const account = await card("Cuenta");
     const projectAccount = within(account).getByRole("combobox", { name: "Cuenta del proyecto" });
     const accountFor = (step: string) => within(steps).getByRole("combobox", { name: `Quién hace «${step}»` });

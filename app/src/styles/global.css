@@ -2754,3 +2754,17 @@ a.link-button { display: inline-flex; align-items: center; text-decoration: none
 /* What the AI assumes, first in its plan: what the user corrects (docs/decisions.md §60). */
 .plan-card__assumptions { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--warn-line); border-radius: var(--radius-md); background: var(--warn-bg); color: var(--ink); font-size: var(--text-body); }
 .plan-card__assumptions h4 { margin: 0; font: 600 var(--text-caption) var(--font-ui); color: var(--warn-ink); }
+
+/* «Cómo trabaja en este proyecto» (docs/decisions.md §60): presets, then their stops. */
+.working__custom { font-size: var(--text-caption); font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: var(--radius-pill); padding: 2px 10px; }
+.working__presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.working__preset { display: grid; gap: 4px; text-align: left; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); color: var(--ink); font: inherit; cursor: pointer; }
+.working__preset:hover { border-color: var(--line-strong); }
+.working__preset[aria-checked="true"] { border: 2px solid var(--action); padding: 11px; background: var(--selection); }
+.working__preset:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.working__preset-name { font-weight: 600; }
+.working__preset-detail { font-size: var(--text-caption); color: var(--muted); }
+.working__stops { list-style: none; margin: 0; padding: 0; display: grid; }
+.working__stop { display: grid; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); }
+.working__command input { width: 100%; }
+.working__more { display: grid; gap: 10px; }
