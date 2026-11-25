@@ -4697,3 +4697,33 @@ sub-phases C1–C8, is kept outside the repository.
     cases «Lo que supongo» named the very gap the request left: the currency («`$`, porque
     el pedido no indica moneda»), «mostrar en la consola» read as `print()`, the boundary
     `>= 900`, half-up rounding, and the path check.
+- **C5 · Hedy checks** (`application::checks`).
+  - **What runs:** once the AI's code turn ends (not a plan, a flow, a trial, a failed or
+    limited turn), Hedy runs the tests (`tests_command`, else the detected one) and the
+    user's e2e command. They run in the task's copy, isolated like a flow's tests, with
+    `PYTHONDONTWRITEBYTECODE=1` so no bytecode lands in the change.
+  - **Events:** `CheckRan` and `ChecksSkipped`. Without bubblewrap the checks are skipped
+    and the reason is shown. Tests Hedy cannot find are skipped quietly. A command that
+    does not start is said, never sent to the AI.
+  - **A failure:** the first since the user last wrote goes back to the same session,
+    without showing as the user's message (`push_to_session`). After that, the task is
+    ready with what failed.
+  - **Where it shows:** a line in the chat, and the accept sheet's line, which shows the
+    last turn's checks («Hedy comprobó: tests ✓ · e2e ✗ (…)»). Accepting is never blocked.
+  - **Real check:** `smoke_task -- haiku checks` passed: haiku wrote `hola.py`, then Hedy
+    ran `python3 -m unittest` isolated.
+- **C6 · Settings.** «Cómo trabaja en este proyecto» offers the three presets as cards, then
+  their stops with the commands (the detected tests command as a placeholder). Editing any
+  stop reads «Personalizada». «Quién hace cada paso» moved under «Más opciones».
+- **C7 · The stops bar** (`tasks/stops.ts`): Plan · Tu OK · Implementa · Tests · e2e ·
+  Revisión · Revisas, derived from the task's way of working, status and history.
+  - Results go stale while the AI works again.
+  - «Enseguida» with nothing to check shows no bar.
+- **C8 · The clean-context review and `hedy do`.**
+  - **The review:** with `review`, after the checks another AI reads only the change, with
+    no tools, on the task's own account (Sonnet on Claude). It answers one mistake per line
+    (`ReviewRan`) and never blocks. Real check: Sonnet's first review caught Hedy's own
+    `__pycache__` in the change, which is why the checks now skip bytecode.
+  - **`hedy do "<pedido>" [--plan|--direct]`:** follows a task with one AI in the terminal,
+    with the same loop as `hedy flow run`. Enter approves the plan, text corrects it, and
+    the checks and the review are printed.
