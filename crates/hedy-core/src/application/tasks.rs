@@ -1226,6 +1226,16 @@ impl Hedy {
                     );
                     return self.run_stage(&mut task, next, prompt, None);
                 }
+                // Hedy runs the task's checks; a first failure goes back to
+                // the same session (docs/decisions.md §60).
+                if *ok
+                    && !limited
+                    && current_stage(&task).phase != Phase::Plan
+                    && self.trial_of(id).is_none()
+                    && self.run_task_checks(&mut task)?
+                {
+                    return Ok(());
+                }
                 // A flow set to follow a task's end takes it on from here.
                 if *ok
                     && !limited
@@ -1575,6 +1585,18 @@ impl Hedy {
                 images: attachments,
             },
         )?;
+        self.push_to_session(task, text, images)
+    }
+
+    /// Sends `text` to the task's agent, in its running session or resuming
+    /// it, and sets the task running. What sent it records it.
+    pub(super) fn push_to_session(
+        &self,
+        task: &mut Task,
+        text: &str,
+        images: Vec<PromptImage>,
+    ) -> AppResult<()> {
+        let id = &task.id.clone();
         // An agent started before the project's list changed keeps its old
         // rules: it resumes its session with the new ones instead.
         let blocked = self.blocked_files_at(&task.project);

@@ -8,6 +8,7 @@ mod board;
 mod briefing;
 mod carry;
 mod changes_code;
+mod checks;
 mod code;
 mod code_edit;
 mod commands;
@@ -84,7 +85,7 @@ pub use memory_home::MemoryHomeStatus;
 pub use metrics::{ProjectStatus, TestRun, UsageSummary};
 pub use plan_usage::{LimitCheck, PLAN_USAGE_MIN_INTERVAL_SECS, PlanUsageState};
 pub use projects::NewProject;
-pub use review::AcceptPreview;
+pub use review::{AcceptPreview, CheckResult};
 pub use rule_check::{RuleCheck, RuleTarget};
 pub use settings::{CUSTOM_THEME_PREFIX, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, Setting, THEMES};
 pub use ship::{

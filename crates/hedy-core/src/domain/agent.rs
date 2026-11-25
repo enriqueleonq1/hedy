@@ -128,6 +128,21 @@ pub enum AgentEvent {
         what: String,
         passed: bool,
     },
+    /// Hedy ran a check of the task's way of working once the AI was done
+    /// (docs/decisions.md §60): the project's tests or the user's e2e.
+    CheckRan {
+        /// `tests` or `e2e`.
+        check: String,
+        command: String,
+        passed: bool,
+        /// The end of its output.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        output: String,
+    },
+    /// The task's checks could not run, and why (no isolation, no command).
+    ChecksSkipped {
+        reason: String,
+    },
     /// The agent finished its turn ("Termino").
     Finished {
         ok: bool,

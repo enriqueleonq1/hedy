@@ -35,6 +35,20 @@ pub struct AcceptPreview {
     pub message: String,
     /// The task's latest test run; `None` when it never ran tests.
     pub tests: Option<TestRun>,
+    /// What Hedy checked after the AI's last turn (docs/decisions.md §60).
+    pub checks: Vec<CheckResult>,
+    /// Why those checks could not run, when they could not.
+    pub checks_skipped: Option<String>,
+}
+
+/// One check Hedy ran once the AI was done.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckResult {
+    /// `tests` or `e2e`.
+    pub check: String,
+    pub command: String,
+    pub passed: bool,
 }
 
 impl Hedy {
@@ -65,6 +79,29 @@ impl Hedy {
             }),
             _ => None,
         });
+        // The checks run after the AI's last turn.
+        let last_turn = timed
+            .iter()
+            .rposition(|(_, e)| matches!(e, AgentEvent::Finished { .. }))
+            .map_or(timed.len(), |i| i + 1);
+        let mut checks = Vec::new();
+        let mut checks_skipped = None;
+        for (_, event) in &timed[last_turn..] {
+            match event {
+                AgentEvent::CheckRan {
+                    check,
+                    command,
+                    passed,
+                    ..
+                } => checks.push(CheckResult {
+                    check: check.clone(),
+                    command: command.clone(),
+                    passed: *passed,
+                }),
+                AgentEvent::ChecksSkipped { reason } => checks_skipped = Some(reason.clone()),
+                _ => {}
+            }
+        }
         let message = self.proposed_message(&task, timed.iter().map(|(_, e)| e));
         Ok(AcceptPreview {
             branch: ws.branch.clone(),
@@ -75,6 +112,8 @@ impl Hedy {
             deletions: diff.iter().map(|f| u64::from(f.deletions)).sum(),
             message,
             tests,
+            checks,
+            checks_skipped,
         })
     }
 

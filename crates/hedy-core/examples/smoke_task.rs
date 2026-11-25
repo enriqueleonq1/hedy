@@ -12,6 +12,7 @@
 //! cargo run -p hedy-core --example smoke_task -- haiku doc   # a question's document, outside
 //! cargo run -p hedy-core --example smoke_task -- haiku auto  # automatic mode: no card at all
 //! cargo run -p hedy-core --example smoke_task -- haiku flow  # the classic flow, role by role
+//! cargo run -p hedy-core --example smoke_task -- haiku checks  # Hedy runs the tests after the AI
 //! ```
 //!
 //! `HEDY_SMOKE_ACCOUNT=<folder>` uses that Claude account folder (one already
@@ -62,11 +63,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let doc_check = check.as_deref() == Some("doc");
     let auto_check = check.as_deref() == Some("auto");
     let flow_check = check.as_deref() == Some("flow");
+    let checks_check = check.as_deref() == Some("checks");
     let tmp = std::env::temp_dir().join(format!("hedy-smoke-{}", std::process::id()));
     let repo = tmp.join("demo");
     std::fs::create_dir_all(&repo)?;
     git(&repo, &["init", "-q", "-b", "main"]);
     std::fs::write(repo.join("README.md"), "# Demo\n")?;
+    if checks_check {
+        std::fs::write(
+            repo.join("test_hola.py"),
+            "import unittest\n\nfrom hola import saludo\n\n\nclass Saludo(unittest.TestCase):\n    def test_saludo(self):\n        self.assertEqual(saludo(), \"hola\")\n",
+        )?;
+    }
     git(&repo, &["add", "."]);
     git(
         &repo,
@@ -111,6 +119,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         hedy.set_project_blocked_files(&repo, &[".env".into()])?;
     }
 
+    if checks_check {
+        let style = hedy_core::domain::Preset::AfterOk.apply(&hedy_core::domain::WorkingStyle {
+            tests_command: Some("python3 -m unittest -q".into()),
+            ..Default::default()
+        });
+        hedy.set_project_working(&repo, style)?;
+    }
     let task = if flow_check {
         hedy.start_flow(
             NewTask {
@@ -135,6 +150,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             model: Some(model),
             plan_first: false,
             permissions: None,
+            images: Vec::new(),
+        }
+    } else if checks_check {
+        NewTask {
+            project: repo.clone(),
+            prompt: "Crea hola.py con una función saludo() que devuelva el texto 'hola'. No corras los tests ni hagas nada más."
+                .into(),
+            mode: TaskMode::Project,
+            model: Some(model),
+            plan_first: false,
+            permissions: Some(PermissionMode::AcceptEdits),
             images: Vec::new(),
         }
     } else if auto_check {
@@ -220,6 +246,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    if checks_check {
+        // The checks run after the turn's end: wait until the task is ready.
+        for _ in 0..240 {
+            if hedy.task(&task.id)?.status == TaskStatus::Review {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        let ran: Vec<_> = hedy
+            .task_events(&task.id)?
+            .into_iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    AgentEvent::CheckRan { .. } | AgentEvent::ChecksSkipped { .. }
+                )
+            })
+            .collect();
+        println!("Comprobaciones: {ran:?}");
+        assert!(
+            ran.iter()
+                .any(|e| matches!(e, AgentEvent::CheckRan { passed: true, check, .. } if check == "tests")),
+            "Hedy did not run the tests, or they failed"
+        );
+        println!(
+            "OK · Hedy corrió los tests tras la IA · datos en {}",
+            tmp.display()
+        );
+        return Ok(());
+    }
     if doc_check {
         let outputs = hedy.task_outputs(&task.id)?;
         println!("Archivos de la tarea: {outputs:?}");
