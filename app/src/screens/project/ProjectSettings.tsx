@@ -16,6 +16,7 @@ import { Select, type SelectOption } from "../../components/ui/Select";
 import { useT, type MessageKey } from "../../i18n";
 import { MemoryHomeCard } from "../sync/ProjectSync";
 import { ProjectHead, projectTabView } from "../workspace/ProjectHome";
+import { WorkingCard } from "./WorkingCard";
 
 const STEPS: { phase: Phase; label: MessageKey; optional: boolean }[] = [
   { phase: "plan", label: "projectSettings.step.plan", optional: false },
@@ -63,7 +64,7 @@ export function ProjectSettings({
         />
       </div>
       <AccountCard project={project} overview={overview} />
-      <StepsCard project={project} overview={overview} />
+      <WorkingCard project={project} more={<StepsFields project={project} overview={overview} />} />
       <GeneralCard project={project} />
       <BlockedFilesCard project={project} />
       <MemoryHomeCard project={path} />
@@ -155,9 +156,9 @@ export function changeStep(
   return { ...others, [phase]: { account, model } };
 }
 
-function StepsCard({ project, overview }: { project: Project; overview: Overview }) {
+/** Who does each step: under «Más opciones» of how the project works. */
+function StepsFields({ project, overview }: { project: Project; overview: Overview }) {
   const t = useT();
-  const titleId = useId();
   const save = useAction((api, phases: PhasePlan) => api.setProjectPhases(project.path, phases), {
     invalidate: [OVERVIEW_KEY, ["status", project.path]],
   });
@@ -165,8 +166,7 @@ function StepsCard({ project, overview }: { project: Project; overview: Overview
   const usable = usableAccounts(project, overview);
 
   return (
-    <section className="card" aria-labelledby={titleId}>
-      <h2 id={titleId}>{t("projectSettings.steps.title")}</h2>
+    <div className="working__more">
       <p className="small muted">
         {project.protected ? t("projectSettings.steps.protected") : t("projectSettings.steps.text")}
       </p>
@@ -223,7 +223,7 @@ function StepsCard({ project, overview }: { project: Project; overview: Overview
           );
         })}
       </div>
-    </section>
+    </div>
   );
 }
 

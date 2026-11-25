@@ -112,6 +112,9 @@ pub struct CheckpointTrace {
     pub cards: u32,
     /// The user's clarification reached the agent at one of them.
     pub corrected: bool,
+    /// The first plan the user was shown, as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_plan: Option<String>,
 }
 
 /// One session of a `--long` run (evals/experiments/long-tasks): each

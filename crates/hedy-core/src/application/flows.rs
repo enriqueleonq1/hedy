@@ -170,6 +170,15 @@ impl Hedy {
             .ok_or_else(|| AppError::FlowNotFound(wanted.to_owned()))
     }
 
+    /// The flows a user picks from: `flows` without the retired templates.
+    pub fn offered_flows(&self, project: Option<&Path>) -> AppResult<Vec<FlowEntry>> {
+        let mut entries = self.flows(project)?;
+        entries.retain(|e| {
+            e.scope != FlowScope::Hedy || !Template::from_key(&e.key).is_some_and(Template::retired)
+        });
+        Ok(entries)
+    }
+
     /// The flow a project's new «Cambiar código» tasks start with
     /// (docs/decisions.md §56). `None`: one AI, also when the chosen flow
     /// is gone since.
@@ -179,7 +188,7 @@ impl Hedy {
             return Ok(None);
         };
         Ok(self
-            .flows(Some(&project.path))?
+            .offered_flows(Some(&project.path))?
             .into_iter()
             .find(|e| e.key == key))
     }
@@ -194,6 +203,16 @@ impl Hedy {
         let entry = which
             .map(|which| self.flow(Some(&project.path), which))
             .transpose()?;
+        if let Some(e) = &entry
+            && e.scope == FlowScope::Hedy
+            && Template::from_key(&e.key).is_some_and(Template::retired)
+        {
+            let name = &e.flow.name;
+            return Err(AppError::InvalidFlow(vec![tr!(
+                "«{name}» ya no es una plantilla: para un plan y tu OK con una IA, elige «Tras tu OK» en los ajustes del proyecto",
+                "«{name}» is no longer a template: for a plan and your OK with one AI, pick «After your OK» in the project's settings"
+            )]));
+        }
         project.default_flow = entry.as_ref().map(|e| e.key.clone());
         self.store.save_project(&project)?;
         Ok(entry)
@@ -579,6 +598,19 @@ mod tests {
             .map(|e| e.key)
             .collect();
         assert_eq!(keys, ["essential", "approval", "focused-review"]);
+        let offered: Vec<_> = f
+            .hedy
+            .offered_flows(Some(&dir))
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.scope == FlowScope::Hedy)
+            .map(|e| e.key)
+            .collect();
+        assert_eq!(
+            offered,
+            ["essential", "focused-review"],
+            "«Con tu aprobación» is retired"
+        );
 
         let text = f.hedy.flow_text(Some(&dir), "focused-review").unwrap();
         let mine = text.replacen(&Template::FocusedReview.name(), "Pago con revisión", 1);
@@ -831,6 +863,10 @@ mod tests {
             Err(AppError::FlowNotFound(_))
         ));
         f.hedy.set_default_flow(&dir, None).unwrap();
+        assert!(matches!(
+            f.hedy.set_default_flow(&dir, Some("approval")),
+            Err(AppError::InvalidFlow(_))
+        ));
         assert_eq!(f.hedy.default_flow(&dir).unwrap(), None);
     }
 }

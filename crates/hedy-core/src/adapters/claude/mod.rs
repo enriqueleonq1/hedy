@@ -227,6 +227,10 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
     };
     let mut allowed: Vec<String> = Vec::new();
     let mut system: Vec<String> = vec![prompts::reply_language()];
+    // Its native plan mode asks for the plan; Hedy says how to write it.
+    if request.plan_first {
+        system.push(prompts::plan_format());
+    }
     match mode {
         TaskMode::Project => {}
         TaskMode::Ask => {
@@ -285,7 +289,10 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
         args.extend(["--append-system-prompt".into(), system.join("\n\n")]);
     }
     if let Some(model) = &request.model {
-        args.extend(["--model".into(), model.clone()]);
+        args.extend([
+            "--model".into(),
+            session_model(model, request.plan_first).to_owned(),
+        ]);
     }
     if let Some(session) = &request.resume {
         args.extend(["--resume".into(), session.clone()]);
@@ -295,6 +302,19 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
         args.extend(["--tools".into(), lean_tools(request, mode)]);
     }
     args
+}
+
+/// Claude Code runs another model in plan mode when the session's model is
+/// the alias `haiku` (docs/decisions.md §59: haiku asked, Sonnet planned). A
+/// task that plans first names that model by its id, which stays as asked.
+const PLAN_MODE_IDS: [(&str, &str); 1] = [("haiku", "claude-haiku-5-5")];
+
+/// The model a session is launched with.
+fn session_model(model: &str, plan_first: bool) -> &str {
+    PLAN_MODE_IDS
+        .iter()
+        .find(|(alias, _)| plan_first && model.eq_ignore_ascii_case(alias))
+        .map_or(model, |(_, id)| id)
 }
 
 fn user_message(text: &str, images: &[PromptImage]) -> PortResult<Value> {
@@ -657,12 +677,38 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_task_that_plans_first_with_haiku_names_it_by_its_id() {
+        let model = |model: &str, plan_first: bool| {
+            let args = args(
+                &AgentRequest {
+                    model: Some(model.into()),
+                    ..request(TaskMode::Project, plan_first)
+                },
+                None,
+            );
+            args[args.iter().position(|a| a == "--model").unwrap() + 1].clone()
+        };
+        assert_eq!(model("haiku", true), "claude-haiku-5-5");
+        assert_eq!(model("Haiku", true), "claude-haiku-5-5");
+        assert_eq!(model("haiku", false), "haiku");
+        assert_eq!(model("sonnet", true), "sonnet");
+        // Who picks opusplan wants Opus to plan.
+        assert_eq!(model("opusplan", true), "opusplan");
+    }
+
+    #[test]
     fn arguments_per_mode() {
         let project = args(&request(TaskMode::Project, true), None).join(" ");
         assert!(project.contains("--permission-prompt-tool stdio"));
         assert!(project.contains(r#""Read(**/.env)""#), "{project}");
         assert!(project.contains(r#""Edit(**/*.pem)""#));
         assert!(project.contains("--permission-mode plan"));
+        assert!(project.contains("Lo que supongo") || project.contains("What I assume"));
+        assert!(
+            !args(&request(TaskMode::Project, false), None)
+                .join(" ")
+                .contains("supongo")
+        );
         assert!(project.ends_with("--model opus --resume s-1"));
         assert!(!project.contains("disallowedTools"));
         // A project that keeps nothing from the AI gives Claude no deny rule.

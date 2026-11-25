@@ -183,6 +183,8 @@ pub fn run() {
             commands::suggested_blocked_files,
             commands::set_task_permissions,
             commands::set_project_permission_mode,
+            commands::set_project_working,
+            commands::detected_tests_command,
             commands::detect_clis,
             commands::doctor,
             commands::open_link,

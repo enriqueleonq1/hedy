@@ -292,6 +292,8 @@ pub(crate) struct Observed {
     pub(crate) stopped: bool,
     /// Plans and flow approvals it was asked.
     cards: u32,
+    /// The first plan it proposed.
+    first_plan: Option<String>,
 }
 
 impl Observed {
@@ -320,6 +322,9 @@ impl Observed {
         out.steps.extend(self.steps.iter().cloned());
         if let Some(trace) = out.checkpoint.as_mut() {
             trace.cards += self.cards;
+            if trace.first_plan.is_none() {
+                trace.first_plan = self.first_plan.clone();
+            }
         }
     }
 }
@@ -518,6 +523,7 @@ impl Runner {
                 arm: arm.key().to_owned(),
                 cards: 0,
                 corrected: false,
+                first_plan: None,
             });
         }
         let clock = Instant::now();
@@ -685,9 +691,10 @@ impl Runner {
                 // The eval approves plans, unless the user has something to add.
                 AgentEvent::Plan {
                     request_id: Some(request_id),
-                    ..
+                    text,
                 } => {
                     seen.cards += 1;
+                    seen.first_plan.get_or_insert_with(|| text.clone());
                     match self.correction.take() {
                         Some(text) => self.hedy.answer_plan(id, request_id, false, Some(&text)),
                         None => self.hedy.answer_plan(id, request_id, true, None),

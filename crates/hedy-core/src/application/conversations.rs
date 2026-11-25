@@ -110,6 +110,7 @@ impl Hedy {
             origin: None,
             code_map: None,
             images: Vec::new(),
+            working: None,
         };
         task.images = self.store_images(&task.id, &request.images)?;
         self.store.save_task(&task)?;

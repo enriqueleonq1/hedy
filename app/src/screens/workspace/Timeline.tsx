@@ -22,6 +22,9 @@ import { ChangesCodeDivider } from "./ChangeCode";
 import { CarriedContext } from "./carry/links";
 import { splitCarried } from "./carry/queries";
 import { groupSteps, summarize, summaryFacts, type StepItem } from "./stepGroups";
+import { splitAssumptions } from "./planSections";
+import { StopsBar } from "./StopsBar";
+import type { Stop } from "../../tasks/stops";
 
 interface TimelineProps {
   task: Task;
@@ -35,9 +38,11 @@ interface TimelineProps {
   footer?: ReactNode;
   /** Scrolls to the end when it changes, besides new items. */
   scrollKey?: number;
+  /** A task that works with one AI: its stops, in a bar over the conversation. */
+  stops?: Stop[] | null;
 }
 
-export function Timeline({ task, items, agent, account, accounts, mascot, footer, scrollKey }: TimelineProps) {
+export function Timeline({ task, items, agent, account, accounts, mascot, footer, scrollKey, stops }: TimelineProps) {
   const t = useT();
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -83,6 +88,7 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
     <OpenFileContext.Provider value={openFile}>
     <div className="timeline">
       {task.flow && <FlowProgress task={task} run={task.flow} />}
+      {stops && <StopsBar stops={stops} />}
       {entries.map((entry) => {
         if (entry.type === "group") {
           // The run still going on shows its latest step without opening it.
@@ -428,27 +434,28 @@ function PendingPermission({
 
 function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineItem, { type: "plan" }>; agent: string }) {
   const t = useT();
-  const [changing, setChanging] = useState(false);
-  const [feedback, setFeedback] = useState("");
   const answer = useAction((api, vars: { approve: boolean; feedback: string | null }) =>
     api.answerPlan(task.id, item.requestId ?? "", vars.approve, vars.feedback),
   );
   const pending = item.requestId !== null && item.resolution === null;
   const card = useRef<HTMLElement>(null);
   const keys = keyLabels();
+  const { assumptions, rest } = splitAssumptions(item.text);
   const approve = () => {
     if (task.live && !answer.isPending) answer.mutate({ approve: true, feedback: null });
   };
+  // A correction is written in the composer, as any message (docs/decisions.md §60).
+  const correct = () => document.getElementById("composer-input")?.focus();
   useClaimFocus(card, pending && task.live);
 
   function shortcut(e: KeyboardEvent<HTMLElement>) {
-    if (!pending || changing || e.ctrlKey || e.metaKey || e.altKey || isTextField(e.target)) return;
+    if (!pending || e.ctrlKey || e.metaKey || e.altKey || isTextField(e.target)) return;
     if (e.key === "Enter" && e.target === e.currentTarget) {
       e.preventDefault();
       approve();
     } else if ((e.key === "e" || e.key === "E") && task.live) {
       e.preventDefault();
-      setChanging(true);
+      correct();
     }
   }
 
@@ -468,8 +475,14 @@ function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineIte
           </span>
         )}
       </h3>
-      <Markdown className="plan-card__text" text={item.text} />
-      {pending && !changing && (
+      {assumptions && (
+        <section className="plan-card__assumptions" aria-label={t("workspace.plan.assumptions")}>
+          <h4>{t("workspace.plan.assumptions")}</h4>
+          <Markdown text={assumptions} />
+        </section>
+      )}
+      <Markdown className="plan-card__text" text={rest} />
+      {pending && (
         <div className="actions">
           <Button variant="primary" aria-keyshortcuts="Enter" disabled={!task.live || answer.isPending} onClick={approve}>
             {t("workspace.plan.approve")}
@@ -477,41 +490,13 @@ function PlanCard({ task, item, agent }: { task: Task; item: Extract<TimelineIte
               {keys.enter}
             </kbd>
           </Button>
-          <Button aria-keyshortcuts="E" disabled={!task.live} onClick={() => setChanging(true)}>
-            {t("workspace.plan.requestChanges")}
+          <Button variant="ghost" aria-keyshortcuts="E" disabled={!task.live} onClick={correct}>
+            {t("workspace.plan.correctBelow")}
             <kbd className="kbd" aria-hidden>
               E
             </kbd>
           </Button>
         </div>
-      )}
-      {pending && changing && (
-        <form
-          className="plan-card__feedback"
-          onSubmit={(e) => {
-            e.preventDefault();
-            answer.mutate({ approve: false, feedback });
-          }}
-        >
-          <label className="field">
-            <span className="field__label">{t("workspace.plan.whatToChange")}</span>
-            <textarea autoFocus value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={2} />
-          </label>
-          <div className="actions">
-            <Button type="submit" variant="primary" disabled={!feedback.trim() || answer.isPending}>
-              {t("workspace.plan.sendChanges")}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setChanging(false);
-                card.current?.focus();
-              }}
-            >
-              {t("common.cancel")}
-            </Button>
-          </div>
-        </form>
       )}
     </section>
   );

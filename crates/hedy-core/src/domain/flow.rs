@@ -433,6 +433,13 @@ impl Template {
         Self::ALL.into_iter().find(|t| t.key() == key)
     }
 
+    /// No longer offered: one AI that plans first, in one session, does the
+    /// same at less cost («Tras tu OK», docs/decisions.md §59, §60). It still
+    /// runs by its key, for the flows and scripts that name it.
+    pub fn retired(self) -> bool {
+        self == Self::Approval
+    }
+
     pub fn name(self) -> String {
         match self {
             Self::Essential => tr!("Esencial", "Essential"),

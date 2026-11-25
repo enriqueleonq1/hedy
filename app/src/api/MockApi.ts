@@ -101,6 +101,7 @@ import type {
   FileDiff,
   OutputFile,
   PermissionMode,
+  WorkingStyle,
   MemoryView,
   NewAccountInput,
   NewConversationInput,
@@ -136,6 +137,9 @@ import { taskState } from "../tasks/state";
 
 const NO_PLAN: PlanState = { usage: null, attemptedAt: null, problem: null, supported: false };
 const NO_USAGE: Usage = { weekTokens: 0, weekCostUsd: null, limit: null, plan: NO_PLAN };
+
+/** Where every project starts («Tras tu OK»), as the backend's `WorkingStyle::initial`. */
+const AFTER_OK: WorkingStyle = { plan: true, tests: true, e2e: true, review: false };
 
 /** Like the backend: Claude Code and Codex subscriptions, and Kimi API keys. */
 function planSupported(provider: string, kind: Account["kind"]): boolean {
@@ -583,6 +587,16 @@ export class MockApi implements HedyApi {
 
   async setProjectPermissionMode(path: string, mode: PermissionMode): Promise<void> {
     this.project(path).permissionMode = mode;
+  }
+
+  async setProjectWorking(path: string, working: WorkingStyle): Promise<void> {
+    const clean = (c?: string | null) => c?.trim() || null;
+    this.project(path).working = { ...working, testsCommand: clean(working.testsCommand), e2eCommand: clean(working.e2eCommand) };
+  }
+
+  async detectedTestsCommand(path: string): Promise<string | null> {
+    this.project(path);
+    return "npm test";
   }
 
   async setTaskPermissions(id: string, mode: PermissionMode): Promise<void> {
@@ -2094,6 +2108,8 @@ export class MockApi implements HedyApi {
       live: true,
       ...(images.length ? { images } : {}),
       ...(carried ? { origin: carried.origin } : {}),
+      // One AI changing code keeps the project's way of working, as the backend.
+      ...(input.mode === "project" && !flowEntry ? { working: { ...project.working, plan: planFirst } } : {}),
       ...(flowEntry
         ? {
             flow: {
@@ -2401,6 +2417,8 @@ export class MockApi implements HedyApi {
       { kind: "message", text: "Listo: el recordatorio se programa 24 h antes y los tests pasan." },
       { kind: "usage", inputTokens: 1200, outputTokens: 800, cacheReadTokens: 9000, cacheWriteTokens: 0, costUsd: 0.04 },
       { kind: "finished", ok: true, summary: "Listo", durationMs: 42_000 },
+      // Hedy's check after the turn, as a project «Tras tu OK» runs it.
+      { kind: "checkRan", check: "tests", command: "pytest -q", passed: true },
     ];
   }
 
@@ -2624,9 +2642,21 @@ export class MockApi implements HedyApi {
       "/code/hedy",
       "claude-personal",
       "Agrega recordatorios por WhatsApp antes de cada cita",
-      { status: "waitingApproval", live: true, stages: [{ phase: "plan", account: "claude-personal", model: "opus" }] },
+      {
+        status: "waitingApproval",
+        live: true,
+        stages: [{ phase: "plan", account: "claude-personal", model: "opus" }],
+        working: { plan: true, tests: true, e2e: false, review: false },
+      },
       { created: 6 * min, updated: 1 * min },
-      [opus("Claude personal", "plan"), { kind: "plan", text: "1. Buscar\n2. Programar\n3. Tests", requestId: "plan-s1" }],
+      [
+        opus("Claude personal", "plan"),
+        {
+          kind: "plan",
+          text: "## Lo que supongo\n- El recordatorio sale 24 h antes de la cita\n- Solo para citas con teléfono\n\n## Qué voy a cambiar\n1. Buscar\n2. Programar\n3. Tests",
+          requestId: "plan-s1",
+        },
+      ],
     );
     add(
       "s2",
@@ -2850,6 +2880,20 @@ export class MockApi implements HedyApi {
         tests?.kind === "testsRun"
           ? { command: tests.command, passed: tests.passed, at: this.updatedAt.get(id) ?? task.createdAt }
           : null,
+      // Like the backend: what Hedy checked after the AI's last turn.
+      checks: events
+        .slice(events.findLastIndex((e) => e.kind === "finished") + 1)
+        .flatMap((e) => (e.kind === "checkRan" ? [{ check: e.check, command: e.command, passed: e.passed }] : [])),
+      checksSkipped:
+        events
+          .slice(events.findLastIndex((e) => e.kind === "finished") + 1)
+          .flatMap((e) => (e.kind === "checksSkipped" ? [e.reason] : []))
+          .pop() ?? null,
+      review:
+        events
+          .slice(events.findLastIndex((e) => e.kind === "finished") + 1)
+          .flatMap((e) => (e.kind === "reviewRan" ? [e.warnings] : []))
+          .pop() ?? null,
     };
   }
 
@@ -4023,6 +4067,7 @@ function emptyProject(path: string): Project {
     client: null,
     blockedFiles: [],
     permissionMode: "manual",
+    working: { ...AFTER_OK },
   };
 }
 

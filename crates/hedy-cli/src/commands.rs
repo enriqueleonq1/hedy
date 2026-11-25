@@ -1877,7 +1877,7 @@ pub fn flow_list(hedy: &Hedy, dir: &Path) -> Result<()> {
     let s = Style::for_stdout();
     let project = hedy.project_for(dir)?;
     let path = project.as_ref().map(|p| p.path.as_path());
-    let flows = hedy.flows(path)?;
+    let flows = hedy.offered_flows(path)?;
     println!();
     for (scope, title) in [
         (

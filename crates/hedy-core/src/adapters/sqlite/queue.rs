@@ -133,6 +133,7 @@ mod tests {
                 ship: None,
                 origin: None,
                 code_map: None,
+                working: None,
             })
             .unwrap();
         store

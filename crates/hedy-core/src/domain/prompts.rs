@@ -7,9 +7,33 @@ use crate::tr;
 
 /// For agents without a native plan mode.
 pub fn plan_first() -> String {
-    tr!(
+    let ask = tr!(
         "Antes de cambiar nada, propón un plan breve y numerado para este pedido. No modifiques archivos todavía: espera a que el plan se apruebe.",
         "Before changing anything, propose a short numbered plan for this request. Do not modify files yet: wait for the plan to be approved."
+    );
+    format!("{ask} {}", plan_format())
+}
+
+/// The clean-context review of a finished change (docs/decisions.md §57 B):
+/// the request and the change only, an answer one mistake per line.
+pub fn review_prompt(request: &str, change: &str) -> String {
+    let ask = tr!(
+        "Revisa un cambio que hizo otra IA. Busca solo errores reales: algo que falla o falla en un caso borde, rompe lo que ya funcionaba, no cumple el pedido o expone datos (una clave, datos personales). No reportes estilo, nombres ni mejoras opcionales. Responde un error por línea, así: ruta:línea: qué falla y en qué caso. Si no ves ninguno, responde solo NADA.",
+        "Review a change another AI made. Look only for real mistakes: something that fails or fails in an edge case, breaks what already worked, does not do what was asked, or exposes data (a key, personal data). Do not report style, names or optional improvements. Answer one mistake per line, like this: path:line: what fails and in which case. If you see none, answer only NOTHING."
+    );
+    format!(
+        "{ask}\n\n{}{}",
+        section(&tr!("Pedido original", "Original request"), request),
+        section(&tr!("El cambio", "The change"), change)
+    )
+}
+
+/// How a plan is written, for every agent (docs/decisions.md §60): what it
+/// assumes comes first, since that is what the user corrects.
+pub fn plan_format() -> String {
+    tr!(
+        "Escribe el plan en tres secciones, en este orden: «## Lo que supongo» (solo lo que el pedido no dice y tú decides: valores, límites, formatos, casos borde; si no supones nada, «Nada»), «## Qué voy a cambiar» (archivos y cambios, breve) y «## Cómo lo voy a comprobar».",
+        "Write the plan in three sections, in this order: «## What I assume» (only what the request does not say and you decide: values, limits, formats, edge cases; if you assume nothing, «Nothing»), «## What I will change» (files and changes, briefly) and «## How I will check it»."
     )
 }
 

@@ -3,6 +3,10 @@
 //! end are printed; approvals, plans and permission requests are asked here,
 //! one at a time. Without a terminal, permission requests are declined and an
 //! approval leaves the task waiting for the app.
+//!
+//! `hedy do "<request>"` follows a task with one AI the same way, with the
+//! project's way of working (docs/decisions.md §60): its plan is approved with
+//! Enter or corrected by writing, and Hedy's checks are printed.
 
 use std::collections::VecDeque;
 use std::io::{BufRead, Write};
@@ -65,6 +69,54 @@ fn yes(line: &str) -> bool {
     )
 }
 
+/// Hedy with its task events coming here, and Ctrl+C.
+fn listen(hedy: &Hedy) -> Result<(Hedy, mpsc::Sender<Signal>, mpsc::Receiver<Signal>)> {
+    let (tx, rx) = mpsc::channel();
+    let hedy = hedy.clone().with_task_events(Arc::new(Forward(tx.clone())));
+    let interrupt = tx.clone();
+    ctrlc::set_handler(move || {
+        let _ = interrupt.send(Signal::Interrupt);
+    })
+    .context("Ctrl+C")?;
+    Ok((hedy, tx, rx))
+}
+
+/// `hedy do`: a task with one AI and the project's way of working; `plan`
+/// overrides its plan for this task.
+pub fn run_do(
+    hedy: &Hedy,
+    dir: &Path,
+    request: &str,
+    plan: Option<bool>,
+    model: Option<String>,
+) -> Result<()> {
+    refuse_in_agent_session()?;
+    let project = project_here(hedy, dir)?;
+    let ask = interactive();
+    let (hedy, tx, rx) = listen(hedy)?;
+    let task = hedy.start_task(NewTask {
+        images: Vec::new(),
+        project: project.path.clone(),
+        prompt: request.to_owned(),
+        mode: TaskMode::Project,
+        model,
+        plan_first: plan.unwrap_or(project.working.plan),
+        permissions: None,
+    })?;
+    // The project's way of working, and what this task changes of it.
+    let mut name = project.working.name();
+    match plan {
+        Some(true) if !project.working.plan => {
+            name.push_str(&tr!(" · esta vez con plan", " · this time with a plan"))
+        }
+        Some(false) if project.working.plan => {
+            name.push_str(&tr!(" · esta vez sin plan", " · this time without a plan"))
+        }
+        _ => {}
+    }
+    follow(&hedy, task, &name, ask, true, tx, rx)
+}
+
 pub fn run(
     hedy: &Hedy,
     dir: &Path,
@@ -73,16 +125,9 @@ pub fn run(
     model: Option<String>,
 ) -> Result<()> {
     refuse_in_agent_session()?;
-    let s = Style::for_stdout();
     let project = project_here(hedy, dir)?;
     let ask = interactive();
-    let (tx, rx) = mpsc::channel();
-    let hedy = hedy.clone().with_task_events(Arc::new(Forward(tx.clone())));
-    let interrupt = tx.clone();
-    ctrlc::set_handler(move || {
-        let _ = interrupt.send(Signal::Interrupt);
-    })
-    .context("Ctrl+C")?;
+    let (hedy, tx, rx) = listen(hedy)?;
     // A team's test command runs here only once the user allows it.
     let entry = hedy.flow(Some(&project.path), flow)?;
     for command in &entry.unapproved {
@@ -117,6 +162,26 @@ pub fn run(
         },
         flow,
     )?;
+    let name = task
+        .flow
+        .as_ref()
+        .map(|r| r.flow.name.clone())
+        .unwrap_or_default();
+    follow(&hedy, task, &name, ask, false, tx, rx)
+}
+
+/// Prints the task as it goes and asks its questions here until it ends.
+/// `one_ai`: a task with one AI, whose plan Enter approves.
+fn follow(
+    hedy: &Hedy,
+    task: Task,
+    name: &str,
+    ask: bool,
+    one_ai: bool,
+    tx: mpsc::Sender<Signal>,
+    rx: mpsc::Receiver<Signal>,
+) -> Result<()> {
+    let s = Style::for_stdout();
     if ask {
         // Answers are read on their own thread, so Ctrl+C works mid-question.
         std::thread::spawn(move || {
@@ -128,14 +193,9 @@ pub fn run(
             let _ = tx.send(Signal::Line(None));
         });
     }
-    let name = task
-        .flow
-        .as_ref()
-        .map(|r| r.flow.name.clone())
-        .unwrap_or_default();
     println!(
         "{} {}",
-        s.bold(clean(&name)),
+        s.bold(clean(name)),
         s.muted(format!("· {}", clean(&task.title)))
     );
     let id = task.id.clone();
@@ -215,8 +275,10 @@ pub fn run(
                         let _ = hedy.answer_permission(&id, &request_id, decision);
                     }
                     Some(Question::Plan(request_id)) => {
-                        let feedback = (!yes(&line)).then_some(line.trim());
-                        let _ = hedy.answer_plan(&id, &request_id, yes(&line), feedback);
+                        // With one AI, Enter approves and anything written corrects it.
+                        let approve = yes(&line) || (one_ai && line.trim().is_empty());
+                        let feedback = (!approve).then_some(line.trim());
+                        let _ = hedy.answer_plan(&id, &request_id, approve, feedback);
                     }
                     Some(Question::Approval) => {
                         // Anything but yes: what to change (or a plain no).
@@ -232,6 +294,34 @@ pub fn run(
                 }
             }
             Ok(Signal::Event(event_id, event)) if event_id == id => match event {
+                AgentEvent::PhaseStarted { agent, .. } if one_ai => {
+                    println!("{} {}", s.ok("▶"), s.muted(clean(&agent)));
+                }
+                AgentEvent::CheckRan {
+                    check,
+                    command,
+                    passed,
+                    ..
+                } => {
+                    let mark = if passed { s.ok("✓") } else { s.warn("✗") };
+                    println!("{mark} {:<6} {}", clean(&check), s.muted(clean(&command)));
+                }
+                AgentEvent::ChecksSkipped { reason } => {
+                    println!("{} {}", s.warn("!"), clean(&reason));
+                }
+                AgentEvent::ReviewRan { warnings, .. } => {
+                    if warnings.is_empty() {
+                        println!(
+                            "{} {}",
+                            s.ok("✓"),
+                            tr!("revisión: no vio errores", "review: it saw no mistakes")
+                        );
+                    }
+                    for w in warnings {
+                        let at = w.line.map_or(w.path.clone(), |n| format!("{}:{n}", w.path));
+                        println!("{} {} {}", s.warn("!"), clean(&at), clean(&w.message));
+                    }
+                }
                 AgentEvent::PhaseStarted { agent, .. } => {
                     let role = hedy
                         .task(&id)
@@ -294,13 +384,18 @@ pub fn run(
                 } => {
                     println!("\n{}\n", clean_lines(&text));
                     if ask {
-                        waiting.push_back((
-                            Question::Plan(request_id),
+                        let question = if one_ai {
+                            tr!(
+                                "Corrige el plan, o Enter para aprobarlo ›",
+                                "Correct the plan, or Enter to approve it ›"
+                            )
+                        } else {
                             tr!(
                                 "¿Apruebas el plan? [s / escribe qué cambiar]",
                                 "Approve the plan? [y / write what to change]"
-                            ),
-                        ));
+                            )
+                        };
+                        waiting.push_back((Question::Plan(request_id), question));
                     } else {
                         let _ = hedy.answer_plan(&id, &request_id, false, None);
                     }

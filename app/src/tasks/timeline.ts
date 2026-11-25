@@ -233,6 +233,50 @@ export function buildTimeline(events: AgentEvent[], t: Translate): TimelineItem[
           }),
         });
         break;
+      case "checkRan":
+        items.push({
+          type: "activity",
+          key,
+          tone: e.passed ? "done" : "failed",
+          step: "tests",
+          detail: e.command,
+          text: t(
+            e.check === "e2e"
+              ? e.passed
+                ? "workspace.activity.e2ePassed"
+                : "workspace.activity.e2eFailed"
+              : e.passed
+                ? "workspace.activity.checkPassed"
+                : "workspace.activity.checkFailed",
+            { command: e.command },
+          ),
+        });
+        break;
+      case "checksSkipped":
+        items.push({ type: "activity", key, tone: "failed", step: "tests", detail: "", text: e.reason });
+        break;
+      case "reviewRan":
+        items.push({
+          type: "activity",
+          key,
+          tone: e.warnings.length ? "failed" : "done",
+          step: "tests",
+          detail: "",
+          text: e.warnings.length
+            ? t("workspace.activity.reviewWarnings", { n: String(e.warnings.length) })
+            : t("workspace.activity.reviewClean"),
+        });
+        e.warnings.forEach((w, i) =>
+          items.push({
+            type: "activity",
+            key: `${key}-${i}`,
+            tone: "failed",
+            step: "tests",
+            detail: w.line ? `${w.path}:${w.line}` : w.path,
+            text: `${w.line ? `${w.path}:${w.line}` : w.path} · ${w.message}`,
+          }),
+        );
+        break;
       case "toolUsed": {
         const verb = TOOL_VERB[e.tool];
         items.push({

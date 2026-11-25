@@ -485,6 +485,8 @@ pub struct ProjectDto {
     pub blocked_files: Vec<String>,
     /// The permission mode its new tasks start with.
     pub permission_mode: hedy_core::domain::PermissionMode,
+    /// How its «Cambiar código» tasks work with one AI (docs/decisions.md §60).
+    pub working: hedy_core::domain::WorkingStyle,
 }
 
 /// Tokens and estimated cost.
@@ -616,6 +618,10 @@ pub struct AcceptPreviewDto {
     pub message: String,
     /// The task's latest test run; `None` when it never ran tests.
     pub tests: Option<TestRunDto>,
+    /// What Hedy checked after the AI's last turn.
+    pub checks: Vec<hedy_core::application::CheckResult>,
+    pub checks_skipped: Option<String>,
+    pub review: Option<Vec<hedy_core::domain::ReviewWarning>>,
 }
 
 impl From<AcceptPreview> for AcceptPreviewDto {
@@ -629,6 +635,9 @@ impl From<AcceptPreview> for AcceptPreviewDto {
             deletions: p.deletions,
             message: p.message,
             tests: p.tests.map(Into::into),
+            checks: p.checks,
+            checks_skipped: p.checks_skipped,
+            review: p.review,
         }
     }
 }
@@ -796,6 +805,7 @@ impl ProjectDto {
             client: project.client.clone(),
             blocked_files: project.blocked_files.patterns().to_vec(),
             permission_mode: project.permission_mode,
+            working: project.working.clone(),
         }
     }
 }

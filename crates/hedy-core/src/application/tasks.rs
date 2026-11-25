@@ -33,7 +33,7 @@ use crate::domain::{
     Account, AccountId, AgentEvent, Attachment, Commit, Credentials, Decision, FileDiff,
     HoldReason, LaunchPurpose, LaunchSpec, LimitLevel, Notice, NoticeKind, PermissionMode, Phase,
     Project, PromptImage, Provider, Stage, Task, TaskId, TaskMode, TaskStatus, UsageSample,
-    Workspace, policy,
+    WorkingStyle, Workspace, policy,
 };
 use crate::experiments::{self, Experiment};
 use crate::tr;
@@ -300,6 +300,12 @@ impl Hedy {
             origin,
             code_map,
             images: Vec::new(),
+            // One AI changing code: the project's stops, with the plan as
+            // asked for this task.
+            working: request.mode.changes_files().then(|| WorkingStyle {
+                plan: request.plan_first,
+                ..project.working.clone()
+            }),
         };
         task.images = self.store_images(&task.id, &images)?;
         self.store.save_task(&task)?;
@@ -1220,6 +1226,35 @@ impl Hedy {
                     );
                     return self.run_stage(&mut task, next, prompt, None);
                 }
+                // Hedy runs the task's checks, then the review with a clean
+                // context (docs/decisions.md §60). A first failure goes back
+                // to the same session; a stop meanwhile ends it all here.
+                if *ok
+                    && !limited
+                    && current_stage(&task).phase != Phase::Plan
+                    && self.trial_of(id).is_none()
+                {
+                    if self.run_task_checks(&mut task)? {
+                        return Ok(());
+                    }
+                    // It never fails a finished task: a review that cannot
+                    // run says so.
+                    match self.run_task_review(&task) {
+                        Ok(true) => return Ok(()),
+                        Ok(false) => {}
+                        Err(e) => {
+                            let reason = tr!(
+                                "La revisión no se pudo hacer: {e}",
+                                "The review could not run: {e}"
+                            );
+                            self.record(id, AgentEvent::ChecksSkipped { reason })?;
+                        }
+                    }
+                    // Messages written while they ran go now, to the same session.
+                    if self.deliver_queue_at_turn_end(&mut task)? {
+                        return Ok(());
+                    }
+                }
                 // A flow set to follow a task's end takes it on from here.
                 if *ok
                     && !limited
@@ -1569,6 +1604,18 @@ impl Hedy {
                 images: attachments,
             },
         )?;
+        self.push_to_session(task, text, images)
+    }
+
+    /// Sends `text` to the task's agent, in its running session or resuming
+    /// it, and sets the task running. What sent it records it.
+    pub(super) fn push_to_session(
+        &self,
+        task: &mut Task,
+        text: &str,
+        images: Vec<PromptImage>,
+    ) -> AppResult<()> {
+        let id = &task.id.clone();
         // An agent started before the project's list changed keeps its old
         // rules: it resumes its session with the new ones instead.
         let blocked = self.blocked_files_at(&task.project);
@@ -2927,6 +2974,43 @@ mod tests {
         assert!(events.iter().any(|e| matches!(e,
             AgentEvent::PermissionResolved { automatic: true, reason: Some(r), .. }
                 if r == "Modo automático" || r == "Automatic mode")));
+    }
+
+    #[test]
+    fn a_code_task_keeps_its_projects_way_of_working_with_the_plan_it_asked_for() {
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        let dir = f.dir("/code/agenda");
+        f.hedy.use_account(&dir, "personal", None).unwrap();
+        let style = crate::domain::Preset::AfterOk.apply(&WorkingStyle {
+            e2e_command: Some(" npm run e2e ".into()),
+            ..Default::default()
+        });
+        let project = f.hedy.set_project_working(&dir, style).unwrap();
+        assert_eq!(project.working.e2e_command.as_deref(), Some("npm run e2e"));
+        let start = |mode: TaskMode, plan_first: bool| {
+            f.hedy
+                .start_task(NewTask {
+                    images: Vec::new(),
+                    project: dir.clone(),
+                    prompt: "Cambia algo".into(),
+                    mode,
+                    model: None,
+                    plan_first,
+                    permissions: None,
+                })
+                .unwrap()
+        };
+        // Right away for once: no plan, the project's checks all the same.
+        let quick = start(TaskMode::Project, false).working.unwrap();
+        assert!(!quick.plan && quick.tests && quick.e2e);
+        assert!(start(TaskMode::Project, true).working.unwrap().plan);
+        assert_eq!(start(TaskMode::Ask, false).working, None);
+        // A new style reaches new tasks only.
+        f.hedy
+            .set_project_working(&dir, WorkingStyle::default())
+            .unwrap();
+        assert!(!start(TaskMode::Project, false).working.unwrap().tests);
     }
 
     #[test]

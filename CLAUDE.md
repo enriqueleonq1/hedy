@@ -31,6 +31,9 @@ Verified facts live in `docs/decisions.md`; read it before touching adapters.
   `scripts/rules-eval.py <claude-account-folder> [model] [runs]`
 - Health check (CLIs and their versions, accounts, Hedy, environment): `hedy doctor`
 - Running and recent tasks across projects: `hedy tasks`
+- A task with one AI and the project's way of working (docs/decisions.md §60), followed in the
+  terminal: `hedy do "<request>" [--plan|--direct] [--model M]` (Enter approves its plan, text
+  corrects it); in the app, a project's settings → «Cómo trabaja en este proyecto»
 - Personal sync (docs/sync.md): `hedy sync` (`setup <url>`, `join <url>`, `now`, `conflicts`,
   `resolve`, `owner`, `project`, `remove <pc>`, `leave`). End to end against an empty repo:
   `scripts/sync-e2e.sh <url>` (real binary) and

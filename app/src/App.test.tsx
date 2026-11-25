@@ -322,7 +322,8 @@ describe("Who does each step", () => {
     expect(within(row()).getAllByRole("cell").at(-1)).toHaveTextContent(/^Claude$/);
 
     await user.click(within(row()).getByRole("link", { name: "hedy" }));
-    const steps = (await screen.findByRole("heading", { level: 2, name: "Quién hace cada paso" })).closest("section")!;
+    const steps = (await screen.findByRole("heading", { level: 2, name: "Cómo trabaja en este proyecto" })).closest("section")!;
+    await user.click(within(steps).getByRole("button", { name: "Más opciones: quién hace cada paso" }));
     await chooseOption(user, within(steps).getByRole("combobox", { name: "Quién hace «Implementar»" }), "ChatGPT");
     await waitFor(() => expect(within(steps).getByRole("combobox", { name: "Quién hace «Implementar»" })).toHaveTextContent("ChatGPT"));
     await chooseOption(user, within(steps).getByRole("combobox", { name: "Quién hace «Verificar»" }), "Kimi");

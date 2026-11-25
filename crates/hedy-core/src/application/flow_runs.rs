@@ -19,7 +19,7 @@ use crate::domain::{
 use crate::tr;
 
 /// How long a flow's tests may run.
-const FLOW_TESTS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(900);
+pub(super) const FLOW_TESTS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(900);
 /// How much of the last request an out-of-rounds notice carries.
 const ASKED_MAX: usize = 1200;
 
@@ -89,6 +89,7 @@ impl Hedy {
             origin: None,
             code_map,
             images: Vec::new(),
+            working: None,
         };
         task.images = self.store_images(&task.id, &request.images)?;
         self.store.save_task(&task)?;

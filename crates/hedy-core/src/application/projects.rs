@@ -94,6 +94,27 @@ impl Hedy {
         Ok(project)
     }
 
+    /// How the project's «Cambiar código» tasks work with one AI
+    /// (docs/decisions.md §60). Its new tasks take it; running ones keep theirs.
+    pub fn set_project_working(
+        &self,
+        path: &Path,
+        working: crate::domain::WorkingStyle,
+    ) -> AppResult<Project> {
+        let mut project = self.project_at(path)?;
+        project.working = working.normalized();
+        self.store.save_project(&project)?;
+        Ok(project)
+    }
+
+    /// The tests' command Hedy finds in the project (`None`: none it knows),
+    /// shown beside the tests stop.
+    pub fn detected_tests_command(&self, path: &Path) -> AppResult<Option<String>> {
+        let project = self.project_at(path)?;
+        let files = self.git.list_files(&project.path)?;
+        Ok(crate::domain::briefing::test_command(&files))
+    }
+
     /// The project registered exactly at `path`.
     pub fn project_at(&self, path: &Path) -> AppResult<Project> {
         let path = self.fs.canonicalize(path)?;

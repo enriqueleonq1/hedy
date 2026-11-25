@@ -35,7 +35,7 @@ describe("A question that goes on to change code", () => {
     expect(screen.getByText(/Tu próximo mensaje empieza a cambiar código/)).toBeInTheDocument();
     const composer = screen.getByPlaceholderText("¿Qué cambio hago? Ej.: arréglalo");
     await waitFor(() => expect(composer).toHaveFocus());
-    expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Cambiar código · con plan");
+    expect(screen.getByRole("combobox", { name: "Modo" })).toHaveTextContent("Cambiar código · tras tu OK");
 
     await user.type(composer, "Arréglalo{Enter}");
     expect(await screen.findByRole("separator", { name: /Desde aquí cambia código, en la rama hedy\// })).toBeInTheDocument();
@@ -67,7 +67,7 @@ describe("A question that goes on to change code", () => {
     expect(modes).toHaveTextContent("Solo preguntar");
 
     await chooseMode(user, "Cambiar código");
-    await chooseMode(user, "Enséñame el plan primero");
+    await chooseMode(user, "Enseguida");
     await user.type(screen.getByPlaceholderText("¿Qué cambio hago? Ej.: arréglalo"), "Arréglalo{Enter}");
     await screen.findByRole("separator", { name: /Desde aquí cambia código/ });
     const [changed] = await api.tasks("/code/hedy");

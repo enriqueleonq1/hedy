@@ -41,6 +41,27 @@ export interface Project {
   blockedFiles: string[];
   /** The permission mode its new tasks start with. */
   permissionMode: PermissionMode;
+  /** How its «Cambiar código» tasks work with one AI (docs/decisions.md §60). */
+  working: WorkingStyle;
+}
+
+/**
+ * A project's stops with one AI: the plan and the checks Hedy runs once the
+ * AI is done. The same AI works the whole task, in one session.
+ */
+export interface WorkingStyle {
+  /** Proposes a plan and waits for the user's OK before changing code. */
+  plan: boolean;
+  /** Hedy runs the project's tests. */
+  tests: boolean;
+  /** Hedy runs the user's end-to-end check. */
+  e2e: boolean;
+  /** Another AI reads the change with a clean context. */
+  review: boolean;
+  /** The tests' command; missing: the one Hedy finds. */
+  testsCommand?: string | null;
+  /** The end-to-end check's command, written by the user; missing: no e2e. */
+  e2eCommand?: string | null;
 }
 
 /**
@@ -505,6 +526,8 @@ export interface Task {
   permissions?: PermissionMode;
   /** The flow it follows, and where it is in it. */
   flow?: FlowRun | null;
+  /** How it works with one AI, from its project when it started. */
+  working?: WorkingStyle | null;
 }
 
 // ------------------------------------------------- carrying a conversation
@@ -689,6 +712,26 @@ export interface AcceptPreview {
   message: string;
   /** The task's latest test run; `null` when it never ran tests. */
   tests: { command: string; passed: boolean; at: number } | null;
+  /** What Hedy checked after the AI's last turn (docs/decisions.md §60). */
+  checks: CheckResult[];
+  /** Why those checks could not run, when they could not. */
+  checksSkipped: string | null;
+  /** What the clean-context review pointed at after that turn; `null`: no review. */
+  review: ReviewWarning[] | null;
+}
+
+/** A visible mistake the clean-context review points at. */
+export interface ReviewWarning {
+  path: string;
+  line: number | null;
+  message: string;
+}
+
+/** One check Hedy ran once the AI was done: the project's tests or the user's e2e. */
+export interface CheckResult {
+  check: "tests" | "e2e";
+  command: string;
+  passed: boolean;
 }
 
 export interface NewTaskInput {
@@ -1011,6 +1054,12 @@ export type AgentEvent =
   | { kind: "fileEdited"; path: string }
   | { kind: "commandRun"; command: string; tests: boolean }
   | { kind: "testsRun"; command: string; passed: boolean }
+  /** Hedy ran a check of the task's way of working once the AI was done. */
+  | { kind: "checkRan"; check: "tests" | "e2e"; command: string; passed: boolean; output?: string }
+  /** The task's checks could not run, and why. */
+  | { kind: "checksSkipped"; reason: string }
+  /** Another AI read the change with a clean context: what it warns about (none: nothing seen). */
+  | { kind: "reviewRan"; warnings: ReviewWarning[]; model?: string | null }
   | { kind: "toolUsed"; tool: string; summary: string }
   /** Live only, never in the stored history: what the mascot shows while a tool runs. */
   | { kind: "toolStarted"; tool: string; detail: string }

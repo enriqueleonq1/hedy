@@ -44,6 +44,7 @@ function straight(name: string, steps: FlowNodeKind[], back: Record<number, numb
 
 const seat = (r: string): Seat => ({ role: r });
 
+/** Hedy's templates, as the backend offers them: «Con tu aprobación» is retired (docs/decisions.md §60). */
 export function mockTemplates(): FlowEntry[] {
   return [
     {
@@ -51,16 +52,6 @@ export function mockTemplates(): FlowEntry[] {
       scope: "hedy",
       summary: "Recomendado · ligero: un programador y los tests como filtro",
       flow: straight("Esencial", [{ kind: "role", ...seat("test-first") }, { kind: "condition", check: "tests" }], { 3: 2 }),
-    },
-    {
-      key: "approval",
-      scope: "hedy",
-      summary: "Ligero: un plan y tu OK antes de tocar el código, luego como Esencial",
-      flow: straight(
-        "Con tu aprobación",
-        [{ kind: "role", ...seat("architect") }, { kind: "approval" }, { kind: "role", ...seat("test-first") }, { kind: "condition", check: "tests" }],
-        { 5: 4 },
-      ),
     },
     {
       key: "focused-review",
