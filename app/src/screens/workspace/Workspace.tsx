@@ -1373,15 +1373,7 @@ function Composer({
                             value,
                             label: t(label),
                             detail: t(detail),
-                            icon: (
-                              <input
-                                type="radio"
-                                checked={!chosenFlow && planFirst === plan}
-                                readOnly
-                                tabIndex={-1}
-                                style={{ pointerEvents: "none" }}
-                              />
-                            ),
+                            checked: !chosenFlow && planFirst === plan,
                           })),
                         },
                       ]
@@ -1398,9 +1390,7 @@ function Composer({
                               entry.key === flowDefaults.data?.start?.key
                                 ? `${t("workspace.composer.flowDefault")}${entry.summary ? ` · ${entry.summary}` : ""}`
                                 : entry.summary || t(FLOW_PLACE[entry.scope]),
-                            icon: (
-                              <input type="radio" checked={chosenFlow?.key === entry.key} readOnly tabIndex={-1} style={{ pointerEvents: "none" }} />
-                            ),
+                            checked: chosenFlow?.key === entry.key,
                           })),
                         },
                       ]

@@ -4,6 +4,8 @@
 
 import { useLayoutEffect, type RefObject } from "react";
 
+/** The widest a list grows to match its control (a list's own max width). */
+const MAX_MATCHED_WIDTH = 380;
 /** Space between the control and the popover, and the popover and the window's edge. */
 const GAP = 6;
 const MARGIN = 8;
@@ -30,7 +32,8 @@ export function placePopover(
   const room = Math.max(MIN_HEIGHT, up ? above : below);
   const wanted = align === "end" ? anchor.right - popover.width : anchor.left;
   const left = Math.max(MARGIN, Math.min(wanted, viewport.width - MARGIN - popover.width));
-  const minWidth = Math.round(anchor.right - anchor.left);
+  // As wide as its control, up to a list's width: a wide field gets no wide list.
+  const minWidth = Math.min(Math.round(anchor.right - anchor.left), MAX_MATCHED_WIDTH);
   const style = up
     ? { left, minWidth, bottom: viewport.height - anchor.top + GAP, maxHeight: room }
     : { left, minWidth, top: anchor.bottom + GAP, maxHeight: room };

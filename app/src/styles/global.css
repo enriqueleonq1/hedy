@@ -611,7 +611,8 @@ select:disabled { opacity: 0.65; }
 
 .color-dot { flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
 
-/* Floating lists: a select's options, a menu's actions. Placed by components/ui/popover.ts. */
+/* Floating lists: a select's options, a menu's actions. Placed by components/ui/popover.ts.
+   Quiet and precise: a neutral hover, the chosen one marked by a check at the end. */
 .popover {
   position: fixed;
   z-index: 60;
@@ -619,7 +620,8 @@ select:disabled { opacity: 0.65; }
   max-width: min(380px, calc(100vw - 16px));
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--space-1);
+  scrollbar-width: thin;
+  padding: 6px;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--panel);
@@ -631,25 +633,24 @@ select:disabled { opacity: 0.65; }
 .popover[data-side="top"] { transform-origin: bottom left; animation-name: pop-up; }
 @keyframes pop-up { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
 
+/* A section's question or a list's name: sentence case, never shouted. */
 .popover__title {
-  padding: var(--space-2) var(--space-3) var(--space-1);
-  font: 600 var(--text-eyebrow) var(--font-ui);
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
+  padding: 8px 10px 4px;
+  font: 600 var(--text-caption) var(--font-ui);
   color: var(--muted);
 }
 
-.select__group + .select__group { margin-top: var(--space-1); padding-top: var(--space-1); border-top: 1px solid var(--line); }
+.select__group + .select__group { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
 
 .popover__item {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 10px;
   width: 100%;
-  min-height: var(--target);
-  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2);
+  min-height: 36px;
+  padding: 7px 10px;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: none;
   color: var(--ink);
   font: inherit;
@@ -659,17 +660,21 @@ select:disabled { opacity: 0.65; }
 
 .popover__item--active,
 button.popover__item:hover:not(:disabled),
-button.popover__item:focus-visible { background: var(--selection); outline: none; }
+button.popover__item:focus-visible { background: var(--panel-2); outline: none; }
 /* A setting of the option above it (Select's `nested`), hanging under its label. */
-.popover__item--nested { min-height: 0; padding-left: calc(var(--space-2) + 28px); }
+.popover__item--nested { min-height: 0; padding-left: 40px; }
 .popover__item[aria-disabled="true"],
 .popover__item:disabled { color: var(--muted); cursor: default; }
-.popover__check { flex: none; width: 18px; display: inline-flex; justify-content: center; color: var(--action-text); }
-.popover__icon { flex: none; display: inline-flex; color: var(--accent); }
-.popover__text { flex: 1; min-width: 0; display: grid; line-height: 1.3; }
-.popover__label { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popover__icon { flex: none; display: inline-flex; justify-content: center; width: 20px; color: var(--muted); }
+.popover__item--selected .popover__icon { color: var(--accent); }
+.popover__text { flex: 1; min-width: 0; display: grid; gap: 1px; line-height: 1.35; }
+.popover__label { font-size: var(--text-body); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popover__item--selected .popover__label { font-weight: 600; }
 .popover__detail { font-size: var(--text-caption); color: var(--muted); }
-.popover__hint { flex: none; padding-left: var(--space-3); font-size: var(--text-caption); color: var(--muted); font-variant-numeric: tabular-nums; }
+.popover__hint { flex: none; padding-left: var(--space-2); font-size: var(--text-caption); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* The chosen one: a check at the end, where the eye finishes reading. */
+.popover__check { flex: none; display: inline-flex; justify-content: center; width: 18px; margin-left: auto; color: var(--action-text); }
+.popover__check:empty { visibility: hidden; }
 
 .popover__footnote {
   margin-top: var(--space-1);

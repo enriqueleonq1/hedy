@@ -15,6 +15,11 @@ export interface SelectOption<T extends string = string> {
   disabled?: boolean;
   /** Indented under the option before it: a setting of that option. */
   nested?: boolean;
+  /**
+   * Marks this option as chosen instead of the select's value: a choice of
+   * its own inside the list (the composer's «¿Cuándo empieza…?»).
+   */
+  checked?: boolean;
 }
 
 export interface SelectSection<T extends string = string> {
@@ -79,6 +84,9 @@ export function Select<T extends string>({
   const groups: SelectSection<T>[] = sections ?? [{ options: options ?? [] }];
   const all = groups.flatMap((g) => g.options);
   const selectedIndex = all.findIndex((o) => o.value === value);
+  const showTitle = !!title && variant !== "field" && !groups.some((g) => g.title);
+  // One option with an icon keeps the column for all: every label starts at one line.
+  const withIcons = all.some((o) => o.icon);
   const selected = all[selectedIndex];
 
   const [open, setOpen] = useState(false);
@@ -232,7 +240,9 @@ export function Select<T extends string>({
           // The focus stays on the control: a click in the list must not take it.
           onMouseDown={(e) => e.preventDefault()}
         >
-          {title && (
+          {/* The list's heading only when nothing else names what is chosen: not
+              over sections with their own, nor under a field's visible label. */}
+          {showTitle && (
             <div id={titleId} className="popover__title">
               {title}
             </div>
@@ -241,8 +251,8 @@ export function Select<T extends string>({
             role="listbox"
             id={listId}
             className="select__list"
-            aria-labelledby={title ? titleId : undefined}
-            aria-label={title ? undefined : label}
+            aria-labelledby={showTitle ? titleId : undefined}
+            aria-label={showTitle ? undefined : (title ?? label)}
           >
             {groups.map((group, g) => (
               <div
@@ -258,7 +268,7 @@ export function Select<T extends string>({
                 )}
                 {group.options.map((option, i) => {
                   const at = (offsets[g] ?? 0) + i;
-                  const isSelected = option.value === value;
+                  const isSelected = option.checked ?? option.value === value;
                   return (
                     <div
                       key={option.value}
@@ -276,6 +286,7 @@ export function Select<T extends string>({
                       className={[
                         "popover__item",
                         at === active && "popover__item--active",
+                        isSelected && "popover__item--selected",
                         option.nested && "popover__item--nested",
                       ]
                         .filter(Boolean)
@@ -283,10 +294,7 @@ export function Select<T extends string>({
                       onMouseMove={() => !option.disabled && at !== active && setActive(at)}
                       onClick={() => choose(at)}
                     >
-                      <span className="popover__check" aria-hidden>
-                        {isSelected && <CheckIcon />}
-                      </span>
-                      {option.icon && (
+                      {withIcons && (
                         <span className="popover__icon" aria-hidden>
                           {option.icon}
                         </span>
@@ -306,6 +314,9 @@ export function Select<T extends string>({
                           {option.hint}
                         </span>
                       )}
+                      <span className="popover__check" aria-hidden>
+                        {isSelected && <CheckIcon />}
+                      </span>
                     </div>
                   );
                 })}
