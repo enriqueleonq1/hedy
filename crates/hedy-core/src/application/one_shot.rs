@@ -12,6 +12,9 @@ use super::ports::{AgentBackend, AgentRequest, EventSink, RateLimit};
 use super::{AppResult, Hedy};
 use crate::domain::{Account, AgentEvent, LimitLevel, Phase, Stage, TaskId, TaskMode};
 
+/// How often a one-shot looks whether its task was stopped.
+const STOP_POLL: Duration = Duration::from_millis(200);
+
 /// What to ask, and of whom.
 pub(super) struct OneShot<'a> {
     /// Whose usage the tokens count as; `None`: only the account's.
@@ -59,6 +62,10 @@ impl Hedy {
             let _ = tx.send(event);
         });
         super::tasks::check_model(model.as_deref())?;
+        // A stop from before this one is not for it.
+        if let Some(task) = shot.task {
+            self.stopped_shots.lock().unwrap().remove(task);
+        }
         // One that reads the project keeps away from what its AI may not read.
         let blocked = self.blocked_files_at(&shot.cwd);
         let mut session = self.agents.start(
@@ -88,7 +95,8 @@ impl Hedy {
         let mut last_text: Option<String> = None;
         let result = loop {
             let left = deadline.saturating_duration_since(Instant::now());
-            match rx.recv_timeout(left) {
+            // A short wait at a time: a stop of its task ends it.
+            match rx.recv_timeout(left.min(STOP_POLL)) {
                 Ok(AgentEvent::Usage(sample)) => {
                     // The tokens were spent: they count for the account.
                     let _ = match shot.task {
@@ -132,7 +140,17 @@ impl Hedy {
                     break Err(OneShotFailure::Failed(Some(message)));
                 }
                 Ok(_) => {}
-                Err(mpsc::RecvTimeoutError::Timeout) => break Err(OneShotFailure::TimedOut),
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if shot
+                        .task
+                        .is_some_and(|task| self.stopped_shots.lock().unwrap().remove(task))
+                    {
+                        break Err(OneShotFailure::Failed(None));
+                    }
+                    if Instant::now() >= deadline {
+                        break Err(OneShotFailure::TimedOut);
+                    }
+                }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     break Err(OneShotFailure::Failed(None));
                 }

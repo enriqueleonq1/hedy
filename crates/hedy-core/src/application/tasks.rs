@@ -1764,8 +1764,9 @@ impl Hedy {
     pub fn stop_task(&self, id: &TaskId) -> AppResult<()> {
         self.trial_run_stopped(id);
         self.stop_session(id);
-        // A flow's check (its tests) stops too.
+        // A flow's check (its tests) stops too, and so does the review.
         self.runner.stop_checks(id.as_str());
+        self.stopped_shots.lock().unwrap().insert(id.clone());
         self.hold_queue(id, HoldReason::Stopped);
         let mut task = self.task(id)?;
         let _ = self.close_copy(&mut task);
@@ -1806,6 +1807,7 @@ impl Hedy {
         }
         self.stop_session(id);
         self.runner.stop_checks(id.as_str());
+        self.stopped_shots.lock().unwrap().insert(id.clone());
         if let Some(ws) = &task.workspace {
             self.git
                 .remove_worktree(&task.project, &ws.worktree, &ws.branch)?;

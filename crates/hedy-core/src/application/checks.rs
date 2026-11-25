@@ -457,6 +457,42 @@ mod tests {
     }
 
     #[test]
+    fn stopping_the_task_ends_its_review_at_once() {
+        let f = Fixture::new();
+        let style = Preset::AfterOkReview.apply(&WorkingStyle::default());
+        let task = start(
+            &f,
+            WorkingStyle {
+                tests: false,
+                ..style
+            },
+        );
+        f.git.set_diff(a_change());
+        let started = f.agents.requests().len();
+        // The review never answers; the user stops the task while it waits.
+        let (hedy, agents, id) = (f.hedy.clone(), f.agents.clone(), task.id.clone());
+        let stopper = std::thread::spawn(move || {
+            while agents.requests().len() == started {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            hedy.stop_task(&id).unwrap();
+        });
+        let began = std::time::Instant::now();
+        finish(&f);
+        stopper.join().unwrap();
+        assert!(began.elapsed() < std::time::Duration::from_secs(10));
+        let events = f.hedy.task_events(&task.id).unwrap();
+        assert!(
+            !events.iter().any(|e| matches!(
+                e,
+                AgentEvent::ReviewRan { .. } | AgentEvent::ChecksSkipped { .. }
+            )),
+            "a stopped review leaves no result: {events:?}"
+        );
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
+    }
+
+    #[test]
     fn a_failure_is_not_sent_to_a_read_only_last_step() {
         let f = Fixture::new();
         f.add_claude("Personal");
@@ -584,6 +620,19 @@ mod tests {
         assert_eq!(sent.len(), 1, "{sent:?}");
         assert!(sent[0].contains("Y agrega un test del total"));
         assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Running);
+    }
+
+    #[test]
+    fn an_accepted_task_keeps_the_base_its_change_was_measured_from() {
+        let f = Fixture::new();
+        let task = start(&f, WorkingStyle::default());
+        finish(&f);
+        f.git.bring_in("c0ffee");
+        let accepted = f.hedy.accept_task(&task.id).unwrap();
+        assert_eq!(
+            accepted.merge.and_then(|m| m.base).as_deref(),
+            Some("c0ffee")
+        );
     }
 
     #[test]

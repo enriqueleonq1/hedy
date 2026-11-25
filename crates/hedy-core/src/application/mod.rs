@@ -52,7 +52,7 @@ mod testing_code;
 mod themes;
 mod waits;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
@@ -158,6 +158,8 @@ pub struct Hedy {
     live: Arc<Mutex<HashMap<TaskId, tasks::LiveTask>>>,
     /// Numbers sessions, so late events from a replaced session are ignored.
     sessions: Arc<AtomicU64>,
+    /// Tasks stopped while a one-shot of theirs answers (the review): it ends there.
+    stopped_shots: Arc<Mutex<HashSet<TaskId>>>,
     /// Serializes changes to message queues with their delivery.
     queue_lock: Arc<Mutex<()>>,
     /// Serializes a status change that depends on the current one (an
@@ -190,6 +192,7 @@ impl Hedy {
             events: Arc::new(NoTaskEvents),
             live: Arc::default(),
             sessions: Arc::default(),
+            stopped_shots: Arc::default(),
             queue_lock: Arc::default(),
             status_lock: Arc::default(),
             sync_lock: Arc::default(),
