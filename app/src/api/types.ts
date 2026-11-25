@@ -716,6 +716,8 @@ export interface AcceptPreview {
   checks: CheckResult[];
   /** Why those checks could not run, when they could not. */
   checksSkipped: string | null;
+  /** What the clean-context review pointed at after that turn; `null`: no review. */
+  review: ReviewWarning[] | null;
 }
 
 /** A visible mistake the clean-context review points at. */

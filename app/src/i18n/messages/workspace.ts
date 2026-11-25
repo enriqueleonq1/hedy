@@ -34,6 +34,8 @@ const es = {
   "workspace.activity.checkFailed": "Hedy: fallan los tests · {command}",
   "workspace.activity.e2ePassed": "Hedy: pasa el e2e · {command}",
   "workspace.activity.e2eFailed": "Hedy: falla el e2e · {command}",
+  "workspace.activity.reviewClean": "Revisión con contexto limpio: no vio errores",
+  "workspace.activity.reviewWarnings": "Revisión con contexto limpio: {n} avisos",
 
   "workspace.chat": "Chat",
   "workspace.newTask": "Nueva tarea",
@@ -234,6 +236,8 @@ const en: Record<keyof typeof es, string> = {
   "workspace.activity.checkFailed": "Hedy: tests fail · {command}",
   "workspace.activity.e2ePassed": "Hedy: the e2e passes · {command}",
   "workspace.activity.e2eFailed": "Hedy: the e2e fails · {command}",
+  "workspace.activity.reviewClean": "Clean-context review: it saw no mistakes",
+  "workspace.activity.reviewWarnings": "Clean-context review: {n} warnings",
 
   "workspace.chat": "Chat",
   "workspace.newTask": "New task",

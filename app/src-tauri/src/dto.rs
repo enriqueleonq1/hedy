@@ -621,6 +621,7 @@ pub struct AcceptPreviewDto {
     /// What Hedy checked after the AI's last turn.
     pub checks: Vec<hedy_core::application::CheckResult>,
     pub checks_skipped: Option<String>,
+    pub review: Option<Vec<hedy_core::domain::ReviewWarning>>,
 }
 
 impl From<AcceptPreview> for AcceptPreviewDto {
@@ -636,6 +637,7 @@ impl From<AcceptPreview> for AcceptPreviewDto {
             tests: p.tests.map(Into::into),
             checks: p.checks,
             checks_skipped: p.checks_skipped,
+            review: p.review,
         }
     }
 }

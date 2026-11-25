@@ -162,6 +162,7 @@ describe("Hedy's checks after a turn", () => {
         { kind: "checkRan", check: "tests", command: "pytest -q", passed: true },
         { kind: "checkRan", check: "e2e", command: "npm run e2e", passed: false, output: "1 failed" },
         { kind: "checksSkipped", reason: "Hedy no corre las comprobaciones sin aislarlas." },
+        { kind: "reviewRan", warnings: [{ path: "shop/cart.py", line: 3, message: "redondea antes del impuesto" }] },
       ],
       t,
     );
@@ -170,6 +171,8 @@ describe("Hedy's checks after a turn", () => {
       ["Hedy: pasan los tests · pytest -q", "done"],
       ["Hedy: falla el e2e · npm run e2e", "failed"],
       ["Hedy no corre las comprobaciones sin aislarlas.", "failed"],
+      ["Revisión con contexto limpio: 1 avisos", "failed"],
+      ["shop/cart.py:3 · redondea antes del impuesto", "failed"],
     ]);
   });
 });
