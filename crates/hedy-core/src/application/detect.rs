@@ -97,9 +97,21 @@ mod tests {
     }
 
     #[test]
-    fn only_https_links_open() {
+    fn only_https_and_local_links_open() {
         let f = Fixture::new();
         assert!(f.hedy.open_link("file:///etc/passwd").is_err());
+        // The preview's local dev server, and nothing that only looks like it.
+        f.hedy.open_link("http://localhost:5173/citas").unwrap();
+        f.hedy.open_link("http://127.0.0.1:3000").unwrap();
+        for bad in [
+            "http://localhost.evil.com",
+            "http://localhost@evil.com",
+            "http://localhost:80a",
+            "http://example.com",
+            "http://localhost:3000/ x",
+        ] {
+            assert!(f.hedy.open_link(bad).is_err(), "{bad}");
+        }
         f.hedy.open_link("https://antigravity.google").unwrap();
     }
 }

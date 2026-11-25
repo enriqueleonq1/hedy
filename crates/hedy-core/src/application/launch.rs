@@ -118,7 +118,7 @@ impl Hedy {
 
     /// Opens a web page in the user's browser. Only `https` links.
     pub fn open_link(&self, url: &str) -> AppResult<()> {
-        if !url.starts_with("https://") {
+        if !url.starts_with("https://") && !is_local_url(url) {
             return Err(AppError::InvalidSettingValue {
                 key: "url".into(),
                 value: url.to_owned(),
@@ -146,6 +146,27 @@ impl Hedy {
     pub fn exec(&self, resolved: &Resolved) -> PortError {
         self.runner.exec(&resolved.spec)
     }
+}
+
+/// A local dev server's address, as the preview opens it: `http(s)://`
+/// `localhost` or `127.0.0.1`, an optional port and path, nothing else
+/// (no user, no spaces).
+pub fn is_local_url(url: &str) -> bool {
+    let Some(rest) = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+    else {
+        return false;
+    };
+    let host_port = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let (host, port) = match host_port.split_once(':') {
+        Some((host, port)) => (host, Some(port)),
+        None => (host_port, None),
+    };
+    matches!(host, "localhost" | "127.0.0.1")
+        && port
+            .is_none_or(|p| !p.is_empty() && p.len() <= 5 && p.bytes().all(|b| b.is_ascii_digit()))
+        && !url.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
 #[cfg(test)]
