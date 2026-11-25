@@ -192,9 +192,10 @@ impl Hedy {
             }
         };
         self.stop_session(id);
+        let base = self.task_base(&ws);
         let files = self
             .git
-            .diff(&ws.worktree, &self.task_base(&ws))?
+            .diff(&ws.worktree, &base)?
             .iter()
             .map(ShippedFile::from)
             .collect();
@@ -242,6 +243,7 @@ impl Hedy {
             after,
             tip,
             at: self.now_secs(),
+            base: (base != ws.base_commit).then_some(base),
         });
         task.ship = Some(Shipment {
             branch: ws.base_branch.clone(),

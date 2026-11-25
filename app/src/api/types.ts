@@ -683,6 +683,8 @@ export interface MergeRecord {
   tip: string;
   /** Unix seconds. */
   at: number;
+  /** The commit its change was measured from, when not the copy's start. */
+  base?: string | null;
 }
 
 /**

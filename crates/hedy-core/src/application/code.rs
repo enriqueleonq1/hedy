@@ -269,7 +269,11 @@ impl Hedy {
                     info,
                     dir: task.project.clone(),
                     at: Some(record.tip.clone()),
-                    base: ws.base_commit.clone(),
+                    // Measured as it was accepted: what the base branch brought in is not its own.
+                    base: record
+                        .base
+                        .clone()
+                        .unwrap_or_else(|| ws.base_commit.clone()),
                     task: true,
                     blocked: BlockedFiles::default(),
                 })
@@ -891,6 +895,24 @@ mod tests {
                 size: 11,
                 version: content_version(b"IVA = 0.19\n"),
             }
+        );
+
+        // The AI brought main in before the accept: measured from there, as it shipped.
+        let f2 = Fixture::new();
+        let (brought, _) = project_task(&f2);
+        finish(&f2);
+        f2.git.bring_in("c0ffee");
+        f2.hedy.accept_task(&brought.id).unwrap();
+        f2.code
+            .add_file(ROOT, Some("tip"), "facturas/impuestos.py", b"IVA = 0.19\n");
+        f2.code.set_changes(ROOT, Vec::new());
+        f2.hedy
+            .code_tree(&CodeCopy::Task(brought.id.clone()), true)
+            .unwrap();
+        assert!(
+            f2.code
+                .calls()
+                .contains(&format!("changes {ROOT} c0ffee..tip"))
         );
 
         let f = Fixture::new();

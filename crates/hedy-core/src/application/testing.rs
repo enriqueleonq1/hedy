@@ -584,6 +584,7 @@ pub struct FakeGit {
     work_left: Mutex<usize>,
     /// The branch a task's copy was moved to (`branch_off`).
     branch_off: Mutex<Option<String>>,
+    brought_in: Mutex<Option<String>>,
 }
 
 impl Default for FakeGit {
@@ -606,6 +607,7 @@ impl Default for FakeGit {
             main: Mutex::default(),
             work_left: Mutex::default(),
             branch_off: Mutex::default(),
+            brought_in: Mutex::default(),
         }
     }
 }
@@ -657,6 +659,10 @@ impl FakeGit {
     /// A task's copy is now on `branch` (the agent switched it).
     pub fn move_copy_to(&self, branch: &str) {
         *self.branch_off.lock().unwrap() = Some(branch.to_owned());
+    }
+    /// The AI brought the base branch into the copy, up to `commit`.
+    pub fn bring_in(&self, commit: &str) {
+        *self.brought_in.lock().unwrap() = Some(commit.to_owned());
     }
     pub fn set_diff(&self, diff: Vec<FileDiff>) {
         *self.diff.lock().unwrap() = diff;
@@ -740,7 +746,12 @@ impl Git for FakeGit {
         Ok(self.diff.lock().unwrap().clone())
     }
     fn diff_base(&self, _: &Path, base_commit: &str, _: &str) -> PortResult<String> {
-        Ok(base_commit.to_owned())
+        Ok(self
+            .brought_in
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| base_commit.to_owned()))
     }
     fn branch_off(&self, _: &Path, _: &str) -> PortResult<Option<String>> {
         Ok(self.branch_off.lock().unwrap().clone())

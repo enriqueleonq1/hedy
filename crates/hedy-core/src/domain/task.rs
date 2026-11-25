@@ -225,6 +225,10 @@ pub struct MergeRecord {
     pub tip: String,
     /// Unix seconds.
     pub at: i64,
+    /// The commit its change was measured from, when the base branch it
+    /// brought in moved it past the copy's start; `None`: the start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
 }
 
 /// "Esperar": the task waits for its account's limit to renew, then Hedy

@@ -1546,6 +1546,7 @@ mod tests {
             after: "b".into(),
             tip: "c".into(),
             at: 5,
+            base: Some("d".into()),
         });
         store.save_task(&task).unwrap();
         assert_eq!(store.waiting_tasks().unwrap(), vec![task.clone()]);
