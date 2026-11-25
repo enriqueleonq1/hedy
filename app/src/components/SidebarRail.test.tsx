@@ -51,7 +51,7 @@ describe("Sidebar rail", () => {
     expect(within(sidebar).getByRole("button", { name: "Pregunta rápida" })).toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: /^Inicio/ })).toHaveAttribute("title", "Inicio");
     // The account in use keeps its figure; the meter and the "+" of each project wait for the full sidebar.
-    const account = within(sidebar).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" });
+    const account = within(sidebar).getByRole("button", { name: "Claude personal: Sesión 5 h · 58%, Semana · 83%. Abrir la cuenta" });
     expect(within(account).queryByRole("meter")).not.toBeInTheDocument();
     expect(within(sidebar).queryByRole("button", { name: "Nueva tarea en hedy" })).not.toBeInTheDocument();
     expect(localStorage.getItem("hedy.sidebar")).toBe("rail");

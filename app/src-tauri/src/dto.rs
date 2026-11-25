@@ -622,6 +622,7 @@ pub struct AcceptPreviewDto {
     pub checks: Vec<hedy_core::application::CheckResult>,
     pub checks_skipped: Option<String>,
     pub review: Option<Vec<hedy_core::domain::ReviewWarning>>,
+    pub branch_off: Option<String>,
 }
 
 impl From<AcceptPreview> for AcceptPreviewDto {
@@ -638,6 +639,7 @@ impl From<AcceptPreview> for AcceptPreviewDto {
             checks: p.checks,
             checks_skipped: p.checks_skipped,
             review: p.review,
+            branch_off: p.branch_off,
         }
     }
 }

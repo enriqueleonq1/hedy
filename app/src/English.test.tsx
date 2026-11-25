@@ -81,7 +81,7 @@ describe("English", () => {
     expect(within(within(sidebar).getByRole("button", { name: /^tienda/ })).getByText("Protected project: it only uses its account")).toBeInTheDocument();
     expect(within(sidebar).getByRole("heading", { name: "Chats" })).toBeInTheDocument();
     expect(within(sidebar).getByText("Ask something without opening a project.")).toBeInTheDocument();
-    expect(within(sidebar).getByRole("button", { name: "Claude personal: Week · 83%. Open the account" })).toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "Claude personal: 5-hour session · 58%, Week · 83%. Open the account" })).toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: /^Terminal/ })).toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: "Settings" })).toBeInTheDocument();
 

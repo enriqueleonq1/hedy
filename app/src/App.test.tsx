@@ -243,16 +243,16 @@ describe("Accounts", () => {
     // The sidebar's foot shows the account in use (outside a project, the default one) with the
     // window closest to its limit: a name, a figure warning-colored only near the limit, and a meter.
     const sidebar = screen.getByRole("complementary", { name: "Navegación" });
-    const personalRow = within(sidebar).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" });
+    const personalRow = within(sidebar).getByRole("button", { name: "Claude personal: Sesión 5 h · 58%, Semana · 83%. Abrir la cuenta" });
     expect(within(personalRow).getByText("83%")).toHaveClass("level--warning");
     expect(within(personalRow).getByRole("meter", { name: "Semana · 83%" })).toHaveAttribute("aria-valuenow", "83");
     // Its tooltip says how old the reading is.
-    expect(personalRow).toHaveAttribute("title", "Claude personal · Semana · 83% · actualizado hace 2 min");
+    expect(personalRow.getAttribute("title")).toMatch(/\nactualizado hace 2 min$/);
     // Only that account: the others are a click away, in their cards.
     expect(within(sidebar).queryByRole("button", { name: /^Claude trabajo: / })).not.toBeInTheDocument();
     // In a project, it is that project's account.
     await user.click(within(sidebar).getByRole("button", { name: /^tienda/ }));
-    const workRow = await within(sidebar).findByRole("button", { name: "Claude trabajo: Sesión 5 h · 34%. Abrir la cuenta" });
+    const workRow = await within(sidebar).findByRole("button", { name: "Claude trabajo: Sesión 5 h · 34%, Semana · 29%. Abrir la cuenta" });
     expect(within(workRow).getByText("34%")).not.toHaveClass("level--warning");
     // The status bar no longer repeats the account.
     const bar = screen.getByRole("contentinfo", { name: "Barra de estado" });

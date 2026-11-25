@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
-import type { Account, Overview } from "../api/types";
-import { useLanguage, useT, type Language } from "../i18n";
+import type { Account, Overview, UsageWindow } from "../api/types";
+import { useLanguage, useT, type Language, type MessageKey, type Translate } from "../i18n";
 import { useCreate } from "../screens/create/CreateProvider";
 import { useNowSeconds } from "../tasks/countdown";
 import { isOpen } from "../tasks/timeline";
@@ -16,8 +16,20 @@ import { ChevronIcon, CollapseIcon, HomeIcon, LockIcon, MemoryIcon, PlusIcon, Qu
 import { MenuButton } from "./ui/Menu";
 import { Mascot } from "./Mascot/Mascot";
 import { modKey, paletteKeys } from "./palette/keys";
-import { headlineText, levelClass, planPercent, usageLabel, usageTitle, usePlanRefresh } from "./planUsage";
+import {
+  headlineText,
+  levelClass,
+  planPercent,
+  resetLabel,
+  sharedWindows,
+  usageLabel,
+  usageTitle,
+  usePlanRefresh,
+  windowLabel,
+  windowText,
+} from "./planUsage";
 import { Meter } from "./ui/Meter";
+import { timeAgo } from "../format";
 import { projectColor } from "./projects";
 import { useTerminals } from "./Terminal/TerminalProvider";
 import { Button } from "./ui/Button";
@@ -462,7 +474,23 @@ export function Sidebar({
   );
 }
 
-/** The plan of the account in use, in one line: its name, its figure and a meter. */
+/** The rows' short names: the window is said in full on hover. */
+const COMPACT_LABEL: Record<Exclude<UsageWindow["kind"], "other">, MessageKey> = {
+  session: "shell.usage.session",
+  week: "shell.usage.week",
+  day: "shell.usage.day",
+};
+
+function compactLabel(w: UsageWindow, t: Translate): string {
+  if (w.kind !== "other") return t(COMPACT_LABEL[w.kind]);
+  return w.minutes !== null && w.minutes % 60 === 0 ? t("shell.usage.hours", { n: w.minutes / 60 }) : t("shell.usage.other");
+}
+
+/**
+ * The plan of the account in use: its name, then a row per limit window (the
+ * 5-hour session and the week), each with its meter and figure; on hover, which
+ * window it is and when it renews. One meter when no window is known.
+ */
 function AccountUsage({
   account,
   rail,
@@ -481,25 +509,49 @@ function AccountUsage({
   const t = useT();
   const percent = planPercent(account);
   const usage = headlineText(account, t) ?? usageLabel(account, language);
+  const plan = account.usage.plan.usage;
+  const windows = plan ? sharedWindows(plan).slice(0, 2) : [];
+  const windowTitle = (w: UsageWindow) =>
+    [windowLabel(w, t), `${Math.round(w.percent)}%`, resetLabel(w, t, language, now * 1000)].filter(Boolean).join(" · ");
+  const checkedAt = plan?.checkedAt;
+  const age = checkedAt == null ? null : t("shell.usage.updated", { when: timeAgo(checkedAt, t, now) });
+  const title =
+    windows.length > 0
+      ? [account.name, ...windows.map(windowTitle), age].filter(Boolean).join("\n")
+      : usageTitle(account, t, language, now);
   return (
     <button
       type="button"
       className="sidebar__usage"
-      title={[usageTitle(account, t, language, now), busy && t("shell.usage.refreshing")].filter(Boolean).join(" · ")}
-      aria-label={t("shell.openAccount", { name: account.name, usage })}
+      title={[title, busy && t("shell.usage.refreshing")].filter(Boolean).join(" · ")}
+      aria-label={t("shell.openAccount", { name: account.name, usage: windows.length > 0 ? windows.map((w) => windowText(w, t)).join(", ") : usage })}
       aria-busy={busy || undefined}
       onClick={onOpen}
     >
       <span className="sidebar__usage-top">
         <span className="dot" style={{ background: account.color }} aria-hidden />
         {!rail && <span className="sidebar__usage-name">{account.name}</span>}
-        {percent !== null && (
+        {/* The figure goes on each row; folded, the one closest to its limit. */}
+        {percent !== null && (rail || windows.length === 0) && (
           <span className={["sidebar__usage-pct", levelClass(percent), busy && "plan-figure--busy"].filter(Boolean).join(" ")}>
             {Math.round(percent)}%
           </span>
         )}
       </span>
-      {!rail && percent !== null && <Meter percent={percent} label={usage} />}
+      {!rail && windows.length > 0 && (
+        <span className="sidebar__usage-windows">
+          {windows.map((w) => (
+            <span key={`${w.kind}-${w.minutes ?? ""}`} className="sidebar__usage-window" title={windowTitle(w)}>
+              <span className="sidebar__usage-label">{compactLabel(w, t)}</span>
+              <Meter percent={w.percent} label={windowText(w, t)} />
+              <span className={["sidebar__usage-pct", levelClass(w.percent), busy && "plan-figure--busy"].filter(Boolean).join(" ")}>
+                {Math.round(w.percent)}%
+              </span>
+            </span>
+          ))}
+        </span>
+      )}
+      {!rail && windows.length === 0 && percent !== null && <Meter percent={percent} label={usage} />}
     </button>
   );
 }

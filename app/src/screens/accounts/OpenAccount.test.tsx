@@ -18,7 +18,7 @@ describe("Opening an account from the shell", () => {
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
 
     // Outside a project, the sidebar names the default account; a click opens its card.
-    await user.click(within(sidebar()).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" }));
+    await user.click(within(sidebar()).getByRole("button", { name: "Claude personal: Sesión 5 h · 58%, Semana · 83%. Abrir la cuenta" }));
     const personal = await screen.findByRole("article", { name: "Claude personal" });
     expect(personal).toHaveClass("account-card--focus");
     expect(personal).toHaveFocus();
@@ -31,7 +31,7 @@ describe("Opening an account from the shell", () => {
     render(<App api={MockApi.withSampleData()} queryClient={new QueryClient()} />);
     const user = userEvent.setup();
     const side = await screen.findByRole("complementary", { name: "Navegación" });
-    const account = await within(side).findByRole("button", { name: "Claude trabajo: Sesión 5 h · 34%. Abrir la cuenta" });
+    const account = await within(side).findByRole("button", { name: "Claude trabajo: Sesión 5 h · 34%, Semana · 29%. Abrir la cuenta" });
     await user.click(account);
     expect(await screen.findByRole("article", { name: "Claude trabajo" })).toHaveClass("account-card--focus");
     expect(window.location.hash).toBe("#a=claude-trabajo");

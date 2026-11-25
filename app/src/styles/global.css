@@ -361,6 +361,11 @@ main[tabindex="-1"]:focus { outline: none; }
 .sidebar__usage-top .dot { width: 6px; height: 6px; }
 .sidebar__usage-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .sidebar__usage-pct { font-family: var(--font-mono); }
+/* One row per limit window: its short name, its meter, its figure, in columns. */
+.sidebar__usage-windows { display: grid; gap: 6px; }
+.sidebar__usage-window { display: grid; grid-template-columns: 4.6em minmax(0, 1fr) 3.4ch; align-items: center; gap: 8px; font-size: var(--text-caption); }
+.sidebar__usage-label { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar__usage-window .sidebar__usage-pct { text-align: right; }
 
 /* In focus mode, the way back sits in the top right corner. */
 .focus-exit {

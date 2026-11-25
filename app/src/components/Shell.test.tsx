@@ -74,7 +74,7 @@ describe("Shell", () => {
     const { user } = setup();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     // Outside a project: the default account.
-    const row = within(sidebar()).getByRole("button", { name: "Claude personal: Semana · 83%. Abrir la cuenta" });
+    const row = within(sidebar()).getByRole("button", { name: "Claude personal: Sesión 5 h · 58%, Semana · 83%. Abrir la cuenta" });
     expect(within(row).getByText("Claude personal")).toBeInTheDocument();
     expect(within(row).getByRole("meter", { name: "Semana · 83%" })).toHaveClass("meter--warn");
     // In a project: that project's account.

@@ -8,8 +8,8 @@ import type { PlanState } from "../api/types";
 
 vi.mock("./Terminal/TerminalView", () => ({ TerminalView: () => null }));
 
-const PERSONAL = "Claude personal: Semana · 83%. Abrir la cuenta";
-const WORK = "Claude trabajo: Sesión 5 h · 34%. Abrir la cuenta";
+const PERSONAL = "Claude personal: Sesión 5 h · 58%, Semana · 83%. Abrir la cuenta";
+const WORK = "Claude trabajo: Sesión 5 h · 34%, Semana · 29%. Abrir la cuenta";
 const nowSecs = () => Math.floor(Date.now() / 1000);
 
 function setup() {
@@ -37,7 +37,12 @@ describe("Sidebar account", () => {
     setup();
     await screen.findByRole("heading", { name: /¡Hola, Alex!/ });
     const account = within(sidebar()).getByRole("button", { name: PERSONAL });
-    expect(account.getAttribute("title")).toBe("Claude personal · Semana · 83% · actualizado hace 2 min");
+    // A line per window (which one, its figure, when it renews), then the reading's age.
+    const lines = account.getAttribute("title")!.split("\n");
+    expect(lines[0]).toBe("Claude personal");
+    expect(lines[1]).toMatch(/^Sesión actual \(5 h\) · 58% · Se renueva /);
+    expect(lines[2]).toMatch(/^Esta semana · 83% · Se renueva /);
+    expect(lines[3]).toBe("actualizado hace 2 min");
   });
 
   it("keeps the last figure, muted, while the palette reads the plans again", async () => {
