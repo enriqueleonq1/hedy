@@ -209,6 +209,40 @@ fn help_texts() -> Vec<(&'static str, &'static str, String)> {
             ),
         ),
         (
+            "do",
+            "",
+            tr!(
+                "Pide algo a una IA con la forma de trabajar del proyecto y lo sigue aquí: corriges el plan o lo apruebas con Enter",
+                "Ask one AI for something with the project's way of working and follow it here: correct the plan or approve it with Enter"
+            ),
+        ),
+        (
+            "do",
+            "request",
+            tr!("Qué tiene que hacer", "What it has to do"),
+        ),
+        (
+            "do",
+            "plan",
+            tr!(
+                "Esta vez, que proponga un plan y espere tu OK",
+                "This time, propose a plan and wait for your OK"
+            ),
+        ),
+        (
+            "do",
+            "direct",
+            tr!(
+                "Esta vez, que empiece enseguida, sin plan",
+                "This time, start right away, without a plan"
+            ),
+        ),
+        (
+            "do",
+            "model",
+            tr!("Modelo para esta tarea", "Model for this task"),
+        ),
+        (
             "summary",
             "",
             tr!(
@@ -2026,6 +2060,16 @@ pub enum Command {
 
     Tasks,
 
+    Do {
+        request: String,
+        #[arg(long, conflicts_with = "direct")]
+        plan: bool,
+        #[arg(long)]
+        direct: bool,
+        #[arg(long, short)]
+        model: Option<String>,
+    },
+
     Summary {
         #[arg(long, conflicts_with = "days")]
         week: bool,
@@ -2706,6 +2750,9 @@ mod tests {
         assert!(parse(&["hedy", "block"]).is_ok());
         assert!(parse(&["hedy", "permissions"]).is_ok());
         assert!(parse(&["hedy", "flow", "run", "focused-review", "Arregla el login"]).is_ok());
+        assert!(parse(&["hedy", "do", "Arregla el login", "--plan"]).is_ok());
+        assert!(parse(&["hedy", "do", "Arregla el login", "--plan", "--direct"]).is_err());
+        assert!(parse(&["hedy", "do"]).is_err());
         assert!(parse(&["hedy", "flow", "run", "focused-review"]).is_err());
         assert!(matches!(
             Cli::try_parse_from(["hedy", "flow", "default", "essential"]).map(|c| c.command),

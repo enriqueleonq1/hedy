@@ -2691,3 +2691,24 @@ fn flows_and_roles_are_made_from_the_terminal() {
             "Permitido en este PC: npm run audit",
         ));
 }
+
+#[test]
+fn hedy_do_follows_a_task_with_one_ai_in_the_terminal() {
+    let env = Env::new();
+    let repo = commit_repo(&env);
+    env.hedy(&["account", "add", "Claude", "--claude", "--no-login"])
+        .assert()
+        .success();
+    env.hedy_in(&repo, &["use", "claude"]).assert().success();
+    // Right away for once: no plan to answer without a terminal.
+    env.hedy_in(&repo, &["do", "Explica el saludo", "--direct"])
+        .timeout(std::time::Duration::from_secs(60))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Tras tu OK · esta vez sin plan"))
+        .stdout(predicate::str::contains("Listo:"));
+    env.hedy_in(&repo, &["tasks"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Explica el saludo"));
+}

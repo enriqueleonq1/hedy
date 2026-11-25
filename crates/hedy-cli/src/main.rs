@@ -114,6 +114,18 @@ fn run(cli: Cli) -> Result<ExitCode> {
             protect,
         } => commands::new_project(&hedy, &dir, &name, parent, account, protect),
         Command::Tasks => commands::tasks(&hedy),
+        Command::Do {
+            request,
+            plan,
+            direct,
+            model,
+        } => flow_run::run_do(
+            &hedy,
+            &dir,
+            &request,
+            (plan || direct).then_some(plan),
+            model,
+        ),
         Command::Summary { week: _, days } => commands::summary(&hedy, days.unwrap_or(7)),
         Command::Client { name, clear } => {
             commands::set_client(&hedy, &dir, if clear { None } else { name.as_deref() })
