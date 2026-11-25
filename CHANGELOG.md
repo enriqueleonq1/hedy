@@ -6,6 +6,15 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-11-25
+
+### Fixed
+
+- Stopping or discarding a task also ends its review by another AI right away, instead of letting it
+  run on (up to four minutes) and spend tokens.
+- An accepted task's changes show what was accepted: when the AI had brought the base branch into
+  its copy, other people's files no longer appear among them.
+
 ## [1.9.0] - 2026-11-24
 
 ### Added
