@@ -6,6 +6,42 @@ All notable changes to Hedy are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-24
+
+### Added
+
+- Each project has a way of working with one AI, in its settings («Cómo trabaja en este
+  proyecto»): «Enseguida», «Tras tu OK» or «Tras tu OK y revisión», with its stops (plan, your OK,
+  tests, e2e, review) shown in a bar over the task's conversation.
+- Every plan opens with what the AI assumes, and you correct it from the composer: Enter sends the
+  correction, Ctrl/⌘+Enter with an empty composer approves it.
+- Once the AI is done, Hedy runs the project's tests (and the e2e, if set) isolated with bubblewrap,
+  and sends a first failure back to the same session. «Tras tu OK y revisión» adds a review by
+  another AI with a clean context, shown in the chat and the accept sheet.
+- `hedy do "<request>"` runs a task with one AI and the project's way of working in the terminal
+  (`--plan`, `--direct`, `--model`).
+- The preview expands over the window, with phone, tablet and desktop sizes, and opens in the
+  browser; a local dev server's address opens there too.
+- The sidebar shows the 5-hour session and the week as two meters, each named on hover.
+
+### Changed
+
+- The AI's turn reads more cleanly: answers in a larger size, its steps in one line with a dot per
+  step that stays open while it works (and when tests fail or the review warns), and a footer with
+  the files changed, the tests, Copy, «Revisar cambios» and a next step or two.
+- Projects start «Tras tu OK»: new tasks plan first and Hedy runs the tests after each turn (only
+  where bubblewrap isolates them). Projects that used the approval flow move to it; the flow is
+  retired from the list.
+- Dropdowns are quieter and aligned, with the chosen option checked at the end.
+
+### Fixed
+
+- Cambios no longer shows other people's changes when the AI brought the base branch into its copy,
+  and a copy switched to another branch is never accepted from there.
+- A tag the AI names like the base branch can no longer hide commits from the review.
+- A task that plans first with Haiku keeps Haiku.
+- Escape in the expanded preview closes it without stopping the agent.
+
 ## [1.8.0] - 2026-11-23
 
 ### Added
