@@ -116,7 +116,7 @@ impl Hedy {
         Ok(self.runner.spawn_detached(&spec)?)
     }
 
-    /// Opens a web page in the user's browser. Only `https` links.
+    /// Opens a web page in the user's browser: `https` links, or a local dev server's.
     pub fn open_link(&self, url: &str) -> AppResult<()> {
         if !url.starts_with("https://") && !is_local_url(url) {
             return Err(AppError::InvalidSettingValue {

@@ -421,7 +421,9 @@ impl Git for GitCli {
         base_commit: &str,
         base_branch: &str,
     ) -> PortResult<String> {
-        let Ok(common) = git(worktree, &["merge-base", "HEAD", base_branch]) else {
+        // The branch itself: a tag the AI makes with its name never stands in for it.
+        let branch = format!("refs/heads/{base_branch}");
+        let Ok(common) = git(worktree, &["merge-base", "HEAD", &branch]) else {
             return Ok(base_commit.to_owned());
         };
         let common = common.trim();
@@ -1047,6 +1049,25 @@ mod tests {
             g.branch_off(&wt, "hedy/t1").unwrap().as_deref(),
             Some("HEAD")
         );
+    }
+
+    #[test]
+    fn a_tag_named_like_the_base_branch_hides_no_commit() {
+        let (_tmp, repo) = repo();
+        let g = GitCli;
+        let base = g.head_commit(&repo).unwrap();
+        let wt = repo.join(".hedy/worktrees/t1");
+        g.add_worktree(&repo, &wt, "hedy/t1", &base).unwrap();
+        // The AI commits a change, tags it `main` and adds a harmless one on top.
+        fs::write(wt.join("oculto.py"), "x = 1\n").unwrap();
+        git(&wt, &["add", "."]).unwrap();
+        git(&wt, &["commit", "-qm", "Oculto"]).unwrap();
+        git(&wt, &["tag", "main"]).unwrap();
+        fs::write(wt.join("app.py"), "y = 2\n").unwrap();
+        git(&wt, &["add", "."]).unwrap();
+        git(&wt, &["commit", "-qm", "Visible"]).unwrap();
+        // Measured from where it started: both changes in sight.
+        assert_eq!(g.diff_base(&wt, &base, "main").unwrap(), base);
     }
 
     #[test]
