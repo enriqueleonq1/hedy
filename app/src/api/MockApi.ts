@@ -2108,6 +2108,8 @@ export class MockApi implements HedyApi {
       live: true,
       ...(images.length ? { images } : {}),
       ...(carried ? { origin: carried.origin } : {}),
+      // One AI changing code keeps the project's way of working, as the backend.
+      ...(input.mode === "project" && !flowEntry ? { working: { ...project.working, plan: planFirst } } : {}),
       ...(flowEntry
         ? {
             flow: {
@@ -2640,9 +2642,21 @@ export class MockApi implements HedyApi {
       "/code/hedy",
       "claude-personal",
       "Agrega recordatorios por WhatsApp antes de cada cita",
-      { status: "waitingApproval", live: true, stages: [{ phase: "plan", account: "claude-personal", model: "opus" }] },
+      {
+        status: "waitingApproval",
+        live: true,
+        stages: [{ phase: "plan", account: "claude-personal", model: "opus" }],
+        working: { plan: true, tests: true, e2e: false, review: false },
+      },
       { created: 6 * min, updated: 1 * min },
-      [opus("Claude personal", "plan"), { kind: "plan", text: "1. Buscar\n2. Programar\n3. Tests", requestId: "plan-s1" }],
+      [
+        opus("Claude personal", "plan"),
+        {
+          kind: "plan",
+          text: "## Lo que supongo\n- El recordatorio sale 24 h antes de la cita\n- Solo para citas con teléfono\n\n## Qué voy a cambiar\n1. Buscar\n2. Programar\n3. Tests",
+          requestId: "plan-s1",
+        },
+      ],
     );
     add(
       "s2",

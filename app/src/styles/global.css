@@ -2768,3 +2768,14 @@ a.link-button { display: inline-flex; align-items: center; text-decoration: none
 .working__stop { display: grid; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); }
 .working__command input { width: 100%; }
 .working__more { display: grid; gap: 10px; }
+
+/* The stops of a task with one AI, over its conversation (3A, docs/decisions.md §60). */
+.stops { position: sticky; top: 0; z-index: 2; margin-bottom: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); }
+.stops__list { display: flex; align-items: center; gap: 0; margin: 0; padding: 0; list-style: none; overflow-x: auto; }
+.stops__stop { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; font-size: var(--text-callout); color: var(--muted); }
+.stops__stop:first-child { flex: none; }
+.stops__line { flex: 1 1 16px; min-width: 12px; height: 1px; margin: 0 var(--space-2); background: var(--line-strong); }
+.stops__name { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.stops__stop[data-state="done"] { color: var(--success); font-weight: 500; }
+.stops__stop[data-state="failed"] { color: var(--danger); font-weight: 600; }
+.stops__stop[data-state="current"] .stops__name { padding: 3px 10px; border-radius: var(--radius-pill); background: var(--action); color: var(--action-ink); font-weight: 600; }

@@ -28,6 +28,7 @@ import statusbar from "./statusbar";
 import sync from "./sync";
 import team from "./team";
 import status from "./status";
+import stops from "./stops";
 import templates from "./templates";
 import themes from "./themes";
 import flows from "./flows";
@@ -52,6 +53,7 @@ const es = {
   ...skillLibrary.es,
   ...status.es,
   ...workspace.es,
+  ...stops.es,
   ...activity.es,
   ...queue.es,
   ...templates.es,
@@ -88,6 +90,7 @@ const en: Record<keyof typeof es, string> = {
   ...skillLibrary.en,
   ...status.en,
   ...workspace.en,
+  ...stops.en,
   ...activity.en,
   ...queue.en,
   ...templates.en,

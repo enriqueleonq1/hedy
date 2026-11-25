@@ -718,6 +718,13 @@ export interface AcceptPreview {
   checksSkipped: string | null;
 }
 
+/** A visible mistake the clean-context review points at. */
+export interface ReviewWarning {
+  path: string;
+  line: number | null;
+  message: string;
+}
+
 /** One check Hedy ran once the AI was done: the project's tests or the user's e2e. */
 export interface CheckResult {
   check: "tests" | "e2e";
@@ -1049,6 +1056,8 @@ export type AgentEvent =
   | { kind: "checkRan"; check: "tests" | "e2e"; command: string; passed: boolean; output?: string }
   /** The task's checks could not run, and why. */
   | { kind: "checksSkipped"; reason: string }
+  /** Another AI read the change with a clean context: what it warns about (none: nothing seen). */
+  | { kind: "reviewRan"; warnings: ReviewWarning[]; model?: string | null }
   | { kind: "toolUsed"; tool: string; summary: string }
   /** Live only, never in the stored history: what the mascot shows while a tool runs. */
   | { kind: "toolStarted"; tool: string; detail: string }

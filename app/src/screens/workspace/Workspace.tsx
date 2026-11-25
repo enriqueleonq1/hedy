@@ -63,6 +63,7 @@ import { useMascot } from "../../tasks/useMascot";
 import { MODEL_HINTS, MODEL_SUGGESTIONS, modelLabel } from "../../components/models";
 import { useT, type MessageKey } from "../../i18n";
 import { keyLabels } from "../../platform";
+import { stopsOf } from "../../tasks/stops";
 import { DEFAULT_ACCOUNT_COLOR } from "../../theme/tokens";
 import { fillTemplate, filterTemplates, slashQuery } from "../../templates/placeholders";
 import { commandName, commandText, commandWithArguments, filterCommands } from "../../templates/commands";
@@ -209,6 +210,8 @@ export function Workspace({
   const milestone = useMilestone(task?.id ?? null, items, events.isSuccess);
   // A message written now waits for the card's answer (and the end of the turn).
   const card: CardWaiting = isBusy(task) && task?.status === "waitingApproval" ? (pendingCard(history) ?? "other") : null;
+  // A task that works with one AI shows its stops over the conversation.
+  const stops = useMemo(() => (task ? stopsOf(task, history) : null), [task, history]);
   // A plan waiting for its answer: what is written in the composer corrects it.
   const planRequest =
     card === "plan"
@@ -427,6 +430,7 @@ export function Workspace({
           <Timeline
             task={task}
             items={items}
+            stops={stops}
             agent={agent}
             account={account}
             accounts={overview.accounts}

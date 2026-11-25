@@ -23,6 +23,8 @@ import { CarriedContext } from "./carry/links";
 import { splitCarried } from "./carry/queries";
 import { groupSteps, summarize, summaryFacts, type StepItem } from "./stepGroups";
 import { splitAssumptions } from "./planSections";
+import { StopsBar } from "./StopsBar";
+import type { Stop } from "../../tasks/stops";
 
 interface TimelineProps {
   task: Task;
@@ -36,9 +38,11 @@ interface TimelineProps {
   footer?: ReactNode;
   /** Scrolls to the end when it changes, besides new items. */
   scrollKey?: number;
+  /** A task that works with one AI: its stops, in a bar over the conversation. */
+  stops?: Stop[] | null;
 }
 
-export function Timeline({ task, items, agent, account, accounts, mascot, footer, scrollKey }: TimelineProps) {
+export function Timeline({ task, items, agent, account, accounts, mascot, footer, scrollKey, stops }: TimelineProps) {
   const t = useT();
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -84,6 +88,7 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
     <OpenFileContext.Provider value={openFile}>
     <div className="timeline">
       {task.flow && <FlowProgress task={task} run={task.flow} />}
+      {stops && <StopsBar stops={stops} />}
       {entries.map((entry) => {
         if (entry.type === "group") {
           // The run still going on shows its latest step without opening it.

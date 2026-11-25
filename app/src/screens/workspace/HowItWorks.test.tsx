@@ -43,6 +43,15 @@ describe("How a task that changes code works", () => {
     expect(start.mock.calls[0]?.[0]).toMatchObject({ flow: "essential", planFirst: false, mode: "project" });
   });
 
+  it("shows the task's stops over its conversation", async () => {
+    const { user } = setup();
+    const composer = await openHedy(user);
+    await user.type(composer, "Recordatorios{Enter}");
+    const stops = await screen.findByRole("navigation", { name: "Paradas de la tarea" });
+    expect(stops).toHaveTextContent(/Plan.*Tu OK.*Implementa.*Tests.*Revisas/);
+    await waitFor(() => expect(within(stops).getByText("Tu OK").closest("li")).toHaveAttribute("aria-current", "step"));
+  });
+
   it("starts right away when asked, for this task only", async () => {
     const { api, user } = setup();
     const start = vi.spyOn(api, "startTask");
