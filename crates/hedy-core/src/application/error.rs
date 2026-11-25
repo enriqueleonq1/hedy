@@ -45,6 +45,10 @@ pub enum AppError {
     TaskClosed(TaskId),
     #[error("{}", self.message())]
     TaskWithoutChanges(TaskId),
+    /// The task's copy is on another branch than its own (its agent ran
+    /// `git checkout`): accepting would commit there and merge an empty one.
+    #[error("{}", self.message())]
+    CopyOnAnotherBranch { branch: String, on: String },
     #[error("{}", self.message())]
     NotAnOutput(String),
     #[error("{}", self.message())]
@@ -413,6 +417,10 @@ impl AppError {
             Self::TaskWithoutChanges(id) => tr!(
                 "la tarea {id} no cambia archivos (es una pregunta)",
                 "task {id} changes no files (it is a question)"
+            ),
+            Self::CopyOnAnotherBranch { branch, on } => tr!(
+                "la copia de la tarea ya no está en su rama {branch}, sino en {on}: pide a la IA que vuelva a {branch} antes de aceptar",
+                "the task's copy is no longer on its branch {branch} but on {on}: ask the AI to go back to {branch} before accepting"
             ),
             Self::InvalidBlockedPattern(pattern) => tr!(
                 "«{pattern}» no sirve: pon nombres de archivo o patrones de nombre (.env, .env.*, *.pem), sin carpetas y sin que abarquen todo",

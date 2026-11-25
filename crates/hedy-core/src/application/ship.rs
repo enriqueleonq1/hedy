@@ -624,7 +624,7 @@ impl Hedy {
             }
             .into());
         }
-        let diff = self.git.diff(&ws.worktree, &ws.base_commit)?;
+        let diff = self.git.diff(&ws.worktree, &self.task_base(&ws))?;
         let recent: Vec<String> = self
             .git
             .recent_commits(&task.project, 5)

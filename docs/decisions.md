@@ -4727,3 +4727,34 @@ sub-phases C1–C8, is kept outside the repository.
   - **`hedy do "<pedido>" [--plan|--direct]`:** follows a task with one AI in the terminal,
     with the same loop as `hedy flow run`. Enter approves the plan, text corrects it, and
     the checks and the review are printed.
+
+## 61. Changes that are not the task's (Nov 24, 2026)
+
+**Report.** Users saw changes in Cambios while working on a branch with no changes.
+
+**Checked** with the real binary, a fake agent that changes nothing, and three repositories:
+Node with ignored `node_modules`/`.env`, Python with an ignored `.venv`, and CRLF files
+committed before a `.gitattributes` with `text=auto`. None showed a change: what Hedy writes
+in a copy is excluded, and a fresh checkout does not renormalize.
+
+**Found by reproducing what an agent may do in its copy:**
+
+- **It brings in the base branch** (`git pull`, `git merge main`, a rebase). Cambios compared
+  with the commit the task started from, so the commits it brought in, by other people,
+  showed as the task's.
+- **It switches the copy to another branch** (`git checkout`). The task's own branch was no
+  longer checked out. Accepting would have committed on that branch and merged the empty
+  one, losing the work.
+
+**So:**
+
+- **The base (`Git::diff_base`, `Hedy::task_base`).** A task is measured against where it
+  started, or against the base branch's tip it brought in since, as a pull request compares.
+  Every place that measured from `base_commit` does so now: Cambios, the accept preview, the
+  checks and the review, the rules, the code views and a flow's no-change check.
+- **A switched branch (`Git::branch_off`).** Accepting is refused, and the accept sheet says
+  so and waits until the copy goes back.
+- **Prevention.** In a task that changes code, Claude is told to stay on its branch and not
+  to pull, merge or rebase (`prompts::copy_rules`).
+- **Still shown, by design:** files the agent or its commands leave that the project does
+  not ignore (a lock file, build output). They are changes in its copy.

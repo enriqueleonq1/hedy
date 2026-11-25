@@ -718,6 +718,8 @@ export interface AcceptPreview {
   checksSkipped: string | null;
   /** What the clean-context review pointed at after that turn; `null`: no review. */
   review: ReviewWarning[] | null;
+  /** The branch the task's copy is on when it is not its own: accepting waits until it goes back. */
+  branchOff: string | null;
 }
 
 /** A visible mistake the clean-context review points at. */

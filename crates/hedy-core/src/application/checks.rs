@@ -152,7 +152,7 @@ impl Hedy {
         if self.stopped_meanwhile_checks(task)? {
             return Ok(true);
         }
-        let diff = self.git.diff(&ws.worktree, &ws.base_commit)?;
+        let diff = self.git.diff(&ws.worktree, &self.task_base(ws))?;
         let change = crate::domain::rule_check::change_for_prompt(&diff);
         if change.added.is_empty() {
             return Ok(false);
@@ -541,5 +541,26 @@ mod tests {
         assert_eq!(sent.len(), 1, "{sent:?}");
         assert!(sent[0].contains("Y agrega un test del total"));
         assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Running);
+    }
+
+    #[test]
+    fn a_copy_moved_to_another_branch_is_never_accepted_from_there() {
+        let f = Fixture::new();
+        let task = start(&f, WorkingStyle::default());
+        finish(&f);
+        f.git.move_copy_to("otra");
+        assert_eq!(
+            f.hedy
+                .accept_preview(&task.id)
+                .unwrap()
+                .branch_off
+                .as_deref(),
+            Some("otra")
+        );
+        assert!(matches!(
+            f.hedy.accept_task(&task.id),
+            Err(crate::application::AppError::CopyOnAnotherBranch { .. })
+        ));
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
     }
 }

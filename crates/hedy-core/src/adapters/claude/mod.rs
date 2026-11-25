@@ -232,7 +232,7 @@ pub fn args(request: &AgentRequest, hook: Option<&str>) -> Vec<String> {
         system.push(prompts::plan_format());
     }
     match mode {
-        TaskMode::Project => {}
+        TaskMode::Project => system.push(prompts::copy_rules()),
         TaskMode::Ask => {
             args.extend(["--disallowedTools".into(), denied(request, hook)]);
             let note = output_note(request, hook);

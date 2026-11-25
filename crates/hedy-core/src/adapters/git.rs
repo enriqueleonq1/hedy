@@ -415,6 +415,37 @@ impl Git for GitCli {
         Ok(parse_unified(&patch))
     }
 
+    fn diff_base(
+        &self,
+        worktree: &Path,
+        base_commit: &str,
+        base_branch: &str,
+    ) -> PortResult<String> {
+        let Ok(common) = git(worktree, &["merge-base", "HEAD", base_branch]) else {
+            return Ok(base_commit.to_owned());
+        };
+        let common = common.trim();
+        // Only a newer point than where it started: the base branch brought in.
+        let newer = common != base_commit
+            && run(
+                worktree,
+                &["merge-base", "--is-ancestor", base_commit, common],
+            )?
+            .status
+            .success();
+        Ok(if newer { common } else { base_commit }.to_owned())
+    }
+
+    fn branch_off(&self, worktree: &Path, branch: &str) -> PortResult<Option<String>> {
+        Ok(
+            match git(worktree, &["symbolic-ref", "--quiet", "--short", "HEAD"]) {
+                Ok(on) if on.trim() == branch => None,
+                Ok(on) => Some(on.trim().to_owned()),
+                Err(_) => Some("HEAD".to_owned()),
+            },
+        )
+    }
+
     fn commit_all(&self, worktree: &Path, message: &str) -> PortResult<bool> {
         stage_all(worktree)?;
         let staged = run(worktree, &["diff", "--cached", "--quiet"])?;
@@ -974,6 +1005,48 @@ mod tests {
         assert!(g.changes(&copy, &base, None).is_err() || !ran.exists());
         let _ = g.diff(&copy, &base);
         assert!(!ran.exists(), "a git folder the copy made ran a command");
+    }
+
+    #[test]
+    fn a_copy_that_brought_in_main_shows_only_its_own_changes_and_a_switch_is_seen() {
+        let (_tmp, repo) = repo();
+        let g = GitCli;
+        let base = g.head_commit(&repo).unwrap();
+        let wt = repo.join(".hedy/worktrees/t1");
+        g.add_worktree(&repo, &wt, "hedy/t1", &base).unwrap();
+        assert_eq!(g.diff_base(&wt, &base, "main").unwrap(), base);
+        assert_eq!(g.branch_off(&wt, "hedy/t1").unwrap(), None);
+        // Someone else's work lands on main; the AI writes its own change.
+        fs::write(repo.join("otro.py"), "x = 1\n").unwrap();
+        git(&repo, &["add", "."]).unwrap();
+        git(&repo, &["commit", "-qm", "De otra persona"]).unwrap();
+        fs::write(wt.join("app.py"), "def crear():\n    return 1\n").unwrap();
+        git(&wt, &["add", "."]).unwrap();
+        git(&wt, &["commit", "-qm", "Tarea"]).unwrap();
+        // Main moved on alone: the task is still measured from where it started.
+        assert_eq!(g.diff_base(&wt, &base, "main").unwrap(), base);
+        // The AI brings main in: its work only, never the other person's.
+        git(&wt, &["merge", "-q", "--no-edit", "main"]).unwrap();
+        let measured = g.diff_base(&wt, &base, "main").unwrap();
+        assert_eq!(measured, g.head_commit(&repo).unwrap());
+        let paths: Vec<_> = g
+            .diff(&wt, &measured)
+            .unwrap()
+            .into_iter()
+            .map(|f| f.path)
+            .collect();
+        assert_eq!(paths, ["app.py"]);
+        // The AI switches the copy to another branch: seen.
+        git(&wt, &["checkout", "-q", "-b", "otra"]).unwrap();
+        assert_eq!(
+            g.branch_off(&wt, "hedy/t1").unwrap().as_deref(),
+            Some("otra")
+        );
+        git(&wt, &["checkout", "-q", "--detach"]).unwrap();
+        assert_eq!(
+            g.branch_off(&wt, "hedy/t1").unwrap().as_deref(),
+            Some("HEAD")
+        );
     }
 
     #[test]

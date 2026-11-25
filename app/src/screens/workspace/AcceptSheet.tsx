@@ -152,7 +152,7 @@ export function AcceptSheet({
             variant="primary"
             form="accept-sheet"
             type="submit"
-            disabled={!preview.data || accept.isPending}
+            disabled={!preview.data || !!preview.data.branchOff || accept.isPending}
             title={t("ship.confirmHint", { keys: `${modKey()}+Enter` })}
           >
             {accept.isPending && withPr ? t("ship.prOpening") : withPr ? t("ship.confirmPr") : branchMode ? t("ship.confirmBranch") : t("review.confirm")}
@@ -263,6 +263,11 @@ function PreviewForm({
           <span className="sr-only">{t("review.lines", { added: preview.additions, removed: preview.deletions })}</span>
         </span>
       </p>
+      {preview.branchOff && (
+        <p className="accept-sheet__warn" role="alert">
+          {t("review.branchOff", { branch: preview.branch, on: preview.branchOff })}
+        </p>
+      )}
       {elsewhere && (
         <p className="accept-sheet__warn" role="alert">
           {t("review.checkout", { current: preview.checkoutBranch ?? "", target: preview.targetBranch })}

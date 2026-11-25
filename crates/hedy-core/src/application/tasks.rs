@@ -344,6 +344,15 @@ impl Hedy {
         TaskId::new(format!("t{now_ms:x}{seq:02x}"))
     }
 
+    /// What a task's changes are measured against: where it started, or the
+    /// base branch's tip it brought in since, so the others' work it merged
+    /// never shows as the task's (as a pull request compares).
+    pub(super) fn task_base(&self, ws: &Workspace) -> String {
+        self.git
+            .diff_base(&ws.worktree, &ws.base_commit, &ws.base_branch)
+            .unwrap_or_else(|_| ws.base_commit.clone())
+    }
+
     pub(super) fn create_workspace(
         &self,
         repo: &Path,
@@ -1705,7 +1714,7 @@ impl Hedy {
         let changed: Vec<String> = match &task.workspace {
             Some(ws) => self
                 .git
-                .diff(&ws.worktree, &ws.base_commit)?
+                .diff(&ws.worktree, &self.task_base(ws))?
                 .into_iter()
                 .map(|f| f.path)
                 .collect(),
@@ -1780,7 +1789,7 @@ impl Hedy {
             return Ok(Vec::new());
         }
         let ws = Self::workspace(&task)?;
-        Ok(self.git.diff(&ws.worktree, &ws.base_commit)?)
+        Ok(self.git.diff(&ws.worktree, &self.task_base(ws))?)
     }
 
     /// "Aceptar cambios" with the proposed commit message (see

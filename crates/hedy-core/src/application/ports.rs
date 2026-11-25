@@ -615,6 +615,18 @@ pub trait Git: Send + Sync {
     fn ignored_env_files(&self, repo: &Path) -> PortResult<Vec<String>>;
     /// Every change in the worktree (committed or not) since `base`.
     fn diff(&self, worktree: &Path, base: &str) -> PortResult<Vec<FileDiff>>;
+    /// What a task's copy is measured against: `base_commit`, or the tip of
+    /// `base_branch` it brought in since (a merge or a rebase of it), so the
+    /// others' work it brought never shows as the task's.
+    fn diff_base(
+        &self,
+        worktree: &Path,
+        base_commit: &str,
+        base_branch: &str,
+    ) -> PortResult<String>;
+    /// The branch the copy is on when it is not `branch` (`HEAD`: none, a
+    /// detached HEAD); `None` while it is.
+    fn branch_off(&self, worktree: &Path, branch: &str) -> PortResult<Option<String>>;
     /// Commits everything; `false` when there was nothing to commit.
     fn commit_all(&self, worktree: &Path, message: &str) -> PortResult<bool>;
     fn merge(&self, repo: &Path, base_branch: &str, branch: &str) -> PortResult<MergeOutcome>;

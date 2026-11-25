@@ -2894,6 +2894,7 @@ export class MockApi implements HedyApi {
           .slice(events.findLastIndex((e) => e.kind === "finished") + 1)
           .flatMap((e) => (e.kind === "reviewRan" ? [e.warnings] : []))
           .pop() ?? null,
+      branchOff: null,
     };
   }
 

@@ -183,7 +183,12 @@ impl Hedy {
             .iter()
             .filter(|e| matches!(e, AgentEvent::UserMessage { .. }))
             .count();
-        if requests != 1 || self.git.diff(&ws.worktree, &ws.base_commit)?.is_empty() {
+        if requests != 1
+            || self
+                .git
+                .diff(&ws.worktree, &self.task_base(&ws))?
+                .is_empty()
+        {
             return Ok(false);
         }
         let Ok(project) = self.project_at(&task.project) else {

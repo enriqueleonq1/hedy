@@ -582,6 +582,8 @@ pub struct FakeGit {
     main: Mutex<Option<PathBuf>>,
     /// New files `work_diff` says it left out.
     work_left: Mutex<usize>,
+    /// The branch a task's copy was moved to (`branch_off`).
+    branch_off: Mutex<Option<String>>,
 }
 
 impl Default for FakeGit {
@@ -603,6 +605,7 @@ impl Default for FakeGit {
             commits: Mutex::default(),
             main: Mutex::default(),
             work_left: Mutex::default(),
+            branch_off: Mutex::default(),
         }
     }
 }
@@ -650,6 +653,10 @@ impl FakeGit {
     /// The folder is a worktree of the repository at `main`.
     pub fn set_main_root(&self, main: &str) {
         *self.main.lock().unwrap() = Some(main.into());
+    }
+    /// A task's copy is now on `branch` (the agent switched it).
+    pub fn move_copy_to(&self, branch: &str) {
+        *self.branch_off.lock().unwrap() = Some(branch.to_owned());
     }
     pub fn set_diff(&self, diff: Vec<FileDiff>) {
         *self.diff.lock().unwrap() = diff;
@@ -731,6 +738,12 @@ impl Git for FakeGit {
     }
     fn diff(&self, _: &Path, _: &str) -> PortResult<Vec<FileDiff>> {
         Ok(self.diff.lock().unwrap().clone())
+    }
+    fn diff_base(&self, _: &Path, base_commit: &str, _: &str) -> PortResult<String> {
+        Ok(base_commit.to_owned())
+    }
+    fn branch_off(&self, _: &Path, _: &str) -> PortResult<Option<String>> {
+        Ok(self.branch_off.lock().unwrap().clone())
     }
     fn commit_all(&self, worktree: &Path, message: &str) -> PortResult<bool> {
         self.log

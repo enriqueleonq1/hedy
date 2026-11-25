@@ -41,6 +41,9 @@ pub struct AcceptPreview {
     pub checks_skipped: Option<String>,
     /// What the clean-context review pointed at after that turn; `None`: no review.
     pub review: Option<Vec<crate::domain::ReviewWarning>>,
+    /// The branch the task's copy is on when it is not its own: accepting
+    /// waits until it goes back.
+    pub branch_off: Option<String>,
 }
 
 /// One check Hedy ran once the AI was done.
@@ -71,7 +74,7 @@ impl Hedy {
     pub fn accept_preview(&self, id: &TaskId) -> AppResult<AcceptPreview> {
         let task = self.acceptable(id)?;
         let ws = Self::workspace(&task)?;
-        let diff = self.git.diff(&ws.worktree, &ws.base_commit)?;
+        let diff = self.git.diff(&ws.worktree, &self.task_base(ws))?;
         let timed = self.store.timed_events(id)?;
         let tests = timed.iter().rev().find_map(|(at, event)| match event {
             AgentEvent::TestsRun { command, passed } => Some(TestRun {
@@ -127,6 +130,7 @@ impl Hedy {
             checks,
             checks_skipped,
             review,
+            branch_off: self.git.branch_off(&ws.worktree, &ws.branch).ok().flatten(),
         })
     }
 
@@ -173,6 +177,13 @@ impl Hedy {
     ) -> AppResult<Task> {
         let mut task = self.acceptable(id)?;
         let ws = Self::workspace(&task)?.clone();
+        // Committed on another branch, its work would never be merged.
+        if let Some(on) = self.git.branch_off(&ws.worktree, &ws.branch)? {
+            return Err(AppError::CopyOnAnotherBranch {
+                branch: ws.branch.clone(),
+                on,
+            });
+        }
         let message = match message.map(str::trim).filter(|m| !m.is_empty()) {
             Some(message) => message.to_owned(),
             None => {
@@ -183,7 +194,7 @@ impl Hedy {
         self.stop_session(id);
         let files = self
             .git
-            .diff(&ws.worktree, &ws.base_commit)?
+            .diff(&ws.worktree, &self.task_base(&ws))?
             .iter()
             .map(ShippedFile::from)
             .collect();

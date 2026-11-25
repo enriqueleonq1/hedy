@@ -66,7 +66,7 @@ impl Hedy {
         let changes = match (&task.workspace, role.can.run) {
             (Some(ws), false) => self
                 .git
-                .diff(&ws.worktree, &ws.base_commit)
+                .diff(&ws.worktree, &self.task_base(ws))
                 .ok()
                 .filter(|files| !files.is_empty())
                 .map(|files| crate::domain::ship::diff_for_prompt(&files, ROLE_DIFF_CHARS)),

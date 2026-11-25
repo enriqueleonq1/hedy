@@ -248,11 +248,14 @@ impl Hedy {
             agent_working: agent_working(task),
         };
         if !task.status.is_closed() && self.fs.exists(&ws.worktree) {
+            // Measured as its changes are, past the base branch it brought in.
+            let base = self.task_base(ws);
+            info.base = Some(base.clone());
             return Ok(Resolved {
                 info,
                 dir: ws.worktree.clone(),
                 at: None,
-                base: ws.base_commit.clone(),
+                base,
                 task: true,
                 blocked: BlockedFiles::default(),
             });
@@ -576,7 +579,7 @@ impl Hedy {
                 open_checked += 1;
                 let touched = self
                     .code
-                    .changes(&ws.worktree, &ws.base_commit, None)
+                    .changes(&ws.worktree, &self.task_base(ws), None)
                     .unwrap_or_default()
                     .iter()
                     .any(|c| c.path == path || c.old_path.as_deref() == Some(&path));

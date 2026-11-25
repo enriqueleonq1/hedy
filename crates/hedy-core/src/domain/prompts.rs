@@ -28,6 +28,15 @@ pub fn review_prompt(request: &str, change: &str) -> String {
     )
 }
 
+/// A task that changes code works in a copy on a branch of its own: Hedy
+/// measures and merges the work from that branch (docs/decisions.md §61).
+pub fn copy_rules() -> String {
+    tr!(
+        "Trabajas en una copia del proyecto, en una rama propia de esta tarea. No cambies de rama ni traigas cambios de otras (git checkout, switch, pull, merge, rebase): Hedy integra tu trabajo cuando el usuario lo acepta.",
+        "You work in a copy of the project, on a branch of this task's own. Do not switch branches or bring in changes from others (git checkout, switch, pull, merge, rebase): Hedy merges your work when the user accepts it."
+    )
+}
+
 /// How a plan is written, for every agent (docs/decisions.md §60): what it
 /// assumes comes first, since that is what the user corrects.
 pub fn plan_format() -> String {
