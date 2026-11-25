@@ -1236,6 +1236,14 @@ impl Hedy {
                 {
                     return Ok(());
                 }
+                // Then the review with a clean context, when it has one.
+                if *ok
+                    && !limited
+                    && current_stage(&task).phase != Phase::Plan
+                    && self.trial_of(id).is_none()
+                {
+                    self.run_task_review(&task)?;
+                }
                 // A flow set to follow a task's end takes it on from here.
                 if *ok
                     && !limited

@@ -47,7 +47,9 @@ pub mod working;
 
 pub use account::{Account, AccountId, ConfigFolder, Credentials};
 pub use activity::{Notice, NoticeKind, TaskState, task_state};
-pub use agent::{AgentEvent, Decision, LimitLevel, PlanStep, StepStatus, UsageSample};
+pub use agent::{
+    AgentEvent, Decision, LimitLevel, PlanStep, ReviewWarning, StepStatus, UsageSample,
+};
 pub use attachment::{Attachment, ImageSupport, ImageType, PromptImage};
 pub use carry::{ContextTurn, TaskOrigin};
 pub use color::Color;

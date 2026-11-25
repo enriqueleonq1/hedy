@@ -12,6 +12,9 @@ use super::{AppResult, Hedy};
 /// Characters of a check's output kept in its event.
 const OUTPUT_KEPT: usize = 4_000;
 
+/// How long the clean-context review may take.
+const REVIEW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(240);
+
 impl Hedy {
     /// Runs the task's checks. `true`: a failure went back to its agent, so
     /// the turn goes on.
@@ -63,7 +66,12 @@ impl Hedy {
         for (check, command) in checks {
             let spec = crate::domain::LaunchSpec {
                 program: "sh".into(),
-                args: vec!["-c".into(), command.clone()],
+                // Hedy's check leaves the copy as the AI left it: no Python
+                // bytecode in the change (other tools' caches are ignored files).
+                args: vec![
+                    "-c".into(),
+                    format!("export PYTHONDONTWRITEBYTECODE=1; {command}"),
+                ],
                 env: Vec::new(),
                 cwd: Some(ws.worktree.clone()),
             };
@@ -117,6 +125,69 @@ impl Hedy {
         );
         self.push_to_session(task, &prompt, Vec::new())?;
         Ok(true)
+    }
+
+    /// The review with a clean context (docs/decisions.md §57 B, §60), when
+    /// the task's way of working has it: another AI reads only the change
+    /// and points at visible mistakes. It never blocks accepting, and runs on
+    /// the task's own account (rule 3), with Sonnet on a Claude account.
+    pub(super) fn run_task_review(&self, task: &Task) -> AppResult<()> {
+        let Some(working) = &task.working else {
+            return Ok(());
+        };
+        let Some(ws) = &task.workspace else {
+            return Ok(());
+        };
+        if !working.review || task.mode != TaskMode::Project || task.flow.is_some() {
+            return Ok(());
+        }
+        let diff = self.git.diff(&ws.worktree, &ws.base_commit)?;
+        let change = crate::domain::rule_check::change_for_prompt(&diff);
+        if change.added.is_empty() {
+            return Ok(());
+        }
+        let account = self.account(task.account.as_str())?;
+        let model =
+            (account.provider == crate::domain::Provider::Claude).then(|| "sonnet".to_owned());
+        let skipped = |reason: String| self.record(&task.id, AgentEvent::ChecksSkipped { reason });
+        if self.account_at_limit(&account)? {
+            return skipped(tr!(
+                "La revisión no se hizo: la cuenta llegó a su límite.",
+                "The review did not run: the account reached its limit."
+            ));
+        }
+        let stage = crate::domain::Stage {
+            phase: crate::domain::Phase::Review,
+            account: account.id.clone(),
+            model: model.clone(),
+        };
+        let answer = self.one_shot(super::one_shot::OneShot {
+            task: Some(&task.id),
+            account: &account,
+            stage: &stage,
+            cwd: self.ask_dir()?,
+            prompt: crate::domain::prompts::review_prompt(&task.prompt, &change.text),
+            refusal: tr!(
+                "No uses herramientas: revisa solo el cambio que te di.",
+                "Do not use tools: review only the change you were given."
+            ),
+            no_shell: true,
+            no_tools: true,
+            timeout: REVIEW_TIMEOUT,
+        })?;
+        match answer {
+            Ok(raw) => self.record(
+                &task.id,
+                AgentEvent::ReviewRan {
+                    warnings: crate::domain::agent::parse_review(&raw),
+                    model,
+                },
+            ),
+            Err(_) => skipped(tr!(
+                "La revisión no dio una respuesta: revisa tú el cambio.",
+                "The review gave no answer: review the change yourself."
+            )),
+        }
     }
 
     /// Whether a check already failed since the user last wrote: then the
@@ -279,6 +350,63 @@ mod tests {
             .filter(|e| matches!(e, AgentEvent::ChecksSkipped { .. }))
             .count();
         assert_eq!(skipped, 2);
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
+    }
+
+    fn a_change() -> Vec<crate::domain::FileDiff> {
+        use crate::domain::diff::{DiffLine, FileStatus, Hunk, LineKind};
+        vec![crate::domain::FileDiff {
+            path: "shop/cart.py".into(),
+            old_path: None,
+            status: FileStatus::Modified,
+            additions: 1,
+            deletions: 0,
+            binary: false,
+            hunks: vec![Hunk {
+                header: "@@ -3 +3,1 @@".into(),
+                lines: vec![DiffLine {
+                    kind: LineKind::Added,
+                    old_line: None,
+                    new_line: Some(3),
+                    text: "total = round(subtotal) + tax".into(),
+                }],
+            }],
+        }]
+    }
+
+    #[test]
+    fn a_review_with_a_clean_context_reads_only_the_change_and_never_blocks() {
+        let f = Fixture::new();
+        let style = Preset::AfterOkReview.apply(&WorkingStyle::default());
+        let task = start(
+            &f,
+            WorkingStyle {
+                tests: false,
+                ..style
+            },
+        );
+        f.git.set_diff(a_change());
+        f.agents.reply_on_start(vec![AgentEvent::Finished {
+            ok: true,
+            summary: "shop/cart.py:3: redondea antes de sumar el impuesto".into(),
+            duration_ms: None,
+        }]);
+        finish(&f);
+        let review = f.agents.last_request();
+        assert!(review.no_tools && review.prompt.contains("total = round(subtotal) + tax"));
+        assert_eq!(review.model.as_deref(), Some("sonnet"));
+        let warnings: Vec<_> = f
+            .hedy
+            .task_events(&task.id)
+            .unwrap()
+            .into_iter()
+            .filter_map(|e| match e {
+                AgentEvent::ReviewRan { warnings, .. } => Some(warnings),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0][0].line, Some(3));
         assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
     }
 }

@@ -143,6 +143,13 @@ pub enum AgentEvent {
     ChecksSkipped {
         reason: String,
     },
+    /// Another AI read the change with a clean context (docs/decisions.md
+    /// §57 B, §60): the visible mistakes it points at; none, nothing seen.
+    ReviewRan {
+        warnings: Vec<ReviewWarning>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+    },
     /// The agent finished its turn ("Termino").
     Finished {
         ok: bool,
@@ -276,8 +283,62 @@ pub fn looks_like_tests(command: &str) -> bool {
     RUNNERS.iter().any(|r| command.contains(r))
 }
 
+/// A visible mistake the clean-context review points at.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewWarning {
+    pub path: String,
+    pub line: Option<u32>,
+    pub message: String,
+}
+
+/// The review's answer, one mistake per line as `path:line: what fails`
+/// (`NADA` or `NOTHING`: none). Lines in any other shape are left out.
+pub fn parse_review(answer: &str) -> Vec<ReviewWarning> {
+    answer
+        .lines()
+        .filter_map(|line| {
+            let line = line
+                .trim()
+                .trim_start_matches(['-', '*', '•'])
+                .trim()
+                .trim_matches('`');
+            let (path, rest) = line.split_once(':')?;
+            let path = path.trim().trim_matches('`');
+            if path.is_empty() || path.contains(' ') {
+                return None;
+            }
+            let (line_no, message) = match rest.split_once(':') {
+                Some((n, m)) if n.trim().parse::<u32>().is_ok() => (n.trim().parse().ok(), m),
+                _ => (None, rest),
+            };
+            let message = message.trim();
+            (!message.is_empty()).then(|| ReviewWarning {
+                path: path.to_owned(),
+                line: line_no,
+                message: message.to_owned(),
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reads_the_reviews_warnings_and_nothing_else() {
+        let answer = "Revisé el cambio.\n- `shop/cart.py:42: redondea antes de sumar el impuesto`\nsrc/api.py: escribe la clave en el log\nNADA más que decir: todo bien";
+        let warnings = super::parse_review(answer);
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert_eq!(warnings[0].path, "shop/cart.py");
+        assert_eq!(warnings[0].line, Some(42));
+        assert_eq!(warnings[0].message, "redondea antes de sumar el impuesto");
+        assert_eq!(
+            (warnings[1].path.as_str(), warnings[1].line),
+            ("src/api.py", None)
+        );
+        assert!(super::parse_review("NADA").is_empty());
+    }
+
     use super::*;
 
     #[test]

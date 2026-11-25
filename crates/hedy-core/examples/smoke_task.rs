@@ -120,10 +120,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if checks_check {
-        let style = hedy_core::domain::Preset::AfterOk.apply(&hedy_core::domain::WorkingStyle {
-            tests_command: Some("python3 -m unittest -q".into()),
-            ..Default::default()
-        });
+        // With the review with a clean context too (a few cents of Sonnet).
+        let style =
+            hedy_core::domain::Preset::AfterOkReview.apply(&hedy_core::domain::WorkingStyle {
+                tests_command: Some("python3 -m unittest -q".into()),
+                ..Default::default()
+            });
         hedy.set_project_working(&repo, style)?;
     }
     let task = if flow_check {
@@ -260,7 +262,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .filter(|e| {
                 matches!(
                     e,
-                    AgentEvent::CheckRan { .. } | AgentEvent::ChecksSkipped { .. }
+                    AgentEvent::CheckRan { .. }
+                        | AgentEvent::ChecksSkipped { .. }
+                        | AgentEvent::ReviewRan { .. }
                 )
             })
             .collect();
@@ -269,6 +273,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ran.iter()
                 .any(|e| matches!(e, AgentEvent::CheckRan { passed: true, check, .. } if check == "tests")),
             "Hedy did not run the tests, or they failed"
+        );
+        assert!(
+            ran.iter()
+                .any(|e| matches!(e, AgentEvent::ReviewRan { .. })),
+            "the review with a clean context did not run"
         );
         println!(
             "OK · Hedy corrió los tests tras la IA · datos en {}",

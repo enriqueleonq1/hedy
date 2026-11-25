@@ -14,6 +14,20 @@ pub fn plan_first() -> String {
     format!("{ask} {}", plan_format())
 }
 
+/// The clean-context review of a finished change (docs/decisions.md §57 B):
+/// the request and the change only, an answer one mistake per line.
+pub fn review_prompt(request: &str, change: &str) -> String {
+    let ask = tr!(
+        "Revisa un cambio que hizo otra IA. Busca solo errores reales: algo que falla o falla en un caso borde, rompe lo que ya funcionaba, no cumple el pedido o expone datos (una clave, datos personales). No reportes estilo, nombres ni mejoras opcionales. Responde un error por línea, así: ruta:línea: qué falla y en qué caso. Si no ves ninguno, responde solo NADA.",
+        "Review a change another AI made. Look only for real mistakes: something that fails or fails in an edge case, breaks what already worked, does not do what was asked, or exposes data (a key, personal data). Do not report style, names or optional improvements. Answer one mistake per line, like this: path:line: what fails and in which case. If you see none, answer only NOTHING."
+    );
+    format!(
+        "{ask}\n\n{}{}",
+        section(&tr!("Pedido original", "Original request"), request),
+        section(&tr!("El cambio", "The change"), change)
+    )
+}
+
 /// How a plan is written, for every agent (docs/decisions.md §60): what it
 /// assumes comes first, since that is what the user corrects.
 pub fn plan_format() -> String {

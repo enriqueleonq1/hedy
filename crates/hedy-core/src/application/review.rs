@@ -39,6 +39,8 @@ pub struct AcceptPreview {
     pub checks: Vec<CheckResult>,
     /// Why those checks could not run, when they could not.
     pub checks_skipped: Option<String>,
+    /// What the clean-context review pointed at after that turn; `None`: no review.
+    pub review: Option<Vec<crate::domain::ReviewWarning>>,
 }
 
 /// One check Hedy ran once the AI was done.
@@ -86,8 +88,10 @@ impl Hedy {
             .map_or(timed.len(), |i| i + 1);
         let mut checks = Vec::new();
         let mut checks_skipped = None;
+        let mut review = None;
         for (_, event) in &timed[last_turn..] {
             match event {
+                AgentEvent::ReviewRan { warnings, .. } => review = Some(warnings.clone()),
                 AgentEvent::CheckRan {
                     check,
                     command,
@@ -114,6 +118,7 @@ impl Hedy {
             tests,
             checks,
             checks_skipped,
+            review,
         })
     }
 
