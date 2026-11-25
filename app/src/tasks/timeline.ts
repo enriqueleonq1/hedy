@@ -6,7 +6,7 @@ import type { MessageKey, Translate } from "../i18n";
 import { stoppedByLimit } from "./state";
 
 /** A tool step of the agent: a tool, an edit, a command, a test run or a block by Hedy. */
-export type StepKind = "tool" | "edit" | "command" | "tests" | "blocked";
+export type StepKind = "tool" | "edit" | "command" | "tests" | "blocked" | "review" | "skipped";
 
 export type Resolution = { decision: Decision; automatic: boolean; reason: string | null };
 
@@ -253,14 +253,14 @@ export function buildTimeline(events: AgentEvent[], t: Translate): TimelineItem[
         });
         break;
       case "checksSkipped":
-        items.push({ type: "activity", key, tone: "failed", step: "tests", detail: "", text: e.reason });
+        items.push({ type: "activity", key, tone: "failed", step: "skipped", detail: "", text: e.reason });
         break;
       case "reviewRan":
         items.push({
           type: "activity",
           key,
           tone: e.warnings.length ? "failed" : "done",
-          step: "tests",
+          step: "review",
           detail: "",
           text: e.warnings.length
             ? t("workspace.activity.reviewWarnings", { n: String(e.warnings.length) })
@@ -271,7 +271,7 @@ export function buildTimeline(events: AgentEvent[], t: Translate): TimelineItem[
             type: "activity",
             key: `${key}-${i}`,
             tone: "failed",
-            step: "tests",
+            step: "review",
             detail: w.line ? `${w.path}:${w.line}` : w.path,
             text: `${w.line ? `${w.path}:${w.line}` : w.path} · ${w.message}`,
           }),

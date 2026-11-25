@@ -62,6 +62,21 @@ describe("stopsOf", () => {
     );
   });
 
+  it("marks the checks Hedy could not run as skipped, and moves on", () => {
+    // No isolation: neither check runs.
+    const unisolated: AgentEvent[] = [
+      ...approved,
+      finished,
+      { kind: "checksSkipped", reason: "bwrap", checks: ["tests", "e2e"] },
+    ];
+    expect(states(task({ status: "review" }), unisolated)).toBe(
+      "plan:done ok:done implement:done tests:skipped e2e:skipped you:current",
+    );
+    // The tests did not start: the e2e is the one running now.
+    const noStart: AgentEvent[] = [...approved, finished, { kind: "checksSkipped", reason: "no se pudo correr" }];
+    expect(states(task({}), noStart)).toBe("plan:done ok:done implement:done tests:skipped e2e:current you:pending");
+  });
+
   it("goes back to implementing when a failure was sent back", () => {
     const events: AgentEvent[] = [
       ...approved,

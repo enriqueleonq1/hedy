@@ -1256,7 +1256,7 @@ impl Hedy {
                                 "La revisión no se pudo hacer: {e}",
                                 "The review could not run: {e}"
                             );
-                            self.record(id, AgentEvent::ChecksSkipped { reason })?;
+                            self.record(id, AgentEvent::review_skipped(reason))?;
                         }
                     }
                     // Messages written while they ran go now, to the same session.

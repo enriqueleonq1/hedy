@@ -13,6 +13,7 @@ const es = {
   "stops.state.current": "ahora",
   "stops.state.pending": "pendiente",
   "stops.state.failed": "falló",
+  "stops.state.skipped": "no se hizo",
 };
 
 const en: Record<keyof typeof es, string> = {
@@ -28,6 +29,7 @@ const en: Record<keyof typeof es, string> = {
   "stops.state.current": "now",
   "stops.state.pending": "to come",
   "stops.state.failed": "failed",
+  "stops.state.skipped": "skipped",
 };
 
 export default { es, en };

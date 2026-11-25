@@ -180,8 +180,9 @@ export function AcceptSheet({
           onPr={setPr}
           onFixTests={fixTests.isPending ? null : () => fixTests.mutate(undefined)}
           onSubmit={(message) => {
-            // Ctrl/⌘ Enter works with the button disabled: never twice, even in one tick.
-            if (accepting.current) return;
+            // Ctrl/⌘ Enter works with the button disabled: never twice, even in
+            // one tick, and never with the copy on another branch.
+            if (accepting.current || preview.data?.branchOff) return;
             accepting.current = true;
             accept.mutate({ message, mode: remote ? mode : "merge", pr: withPr ? pr : null });
           }}

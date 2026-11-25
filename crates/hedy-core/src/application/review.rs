@@ -113,7 +113,7 @@ impl Hedy {
                     command: command.clone(),
                     passed: *passed,
                 }),
-                AgentEvent::ChecksSkipped { reason } => checks_skipped = Some(reason.clone()),
+                AgentEvent::ChecksSkipped { reason, .. } => checks_skipped = Some(reason.clone()),
                 _ => {}
             }
         }

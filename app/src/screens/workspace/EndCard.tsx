@@ -6,9 +6,9 @@ import { useT } from "../../i18n";
 import { ACTIVITY_KEY, listKeyFor, useSetQueue, useTaskDiff } from "../../tasks/hooks";
 import { stoppedByLimit } from "../../tasks/state";
 
-/** The last test run of the task: the agent's, or Hedy's check after its turn. */
+/** The last test run of the task: the agent's, or Hedy's tests check after its turn (not e2e). */
 function lastTests(events: AgentEvent[]): { passed: boolean; byHedy: boolean } | null {
-  const run = events.findLast((e) => e.kind === "testsRun" || e.kind === "checkRan");
+  const run = events.findLast((e) => e.kind === "testsRun" || (e.kind === "checkRan" && e.check === "tests"));
   if (run?.kind === "checkRan") return { passed: run.passed, byHedy: true };
   if (run?.kind === "testsRun") return { passed: run.passed, byHedy: false };
   return null;

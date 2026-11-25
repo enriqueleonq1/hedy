@@ -54,7 +54,11 @@ impl Hedy {
                 "Hedy no corre las comprobaciones sin aislarlas: instala bubblewrap (bwrap), o córrelas tú en la copia.",
                 "Hedy does not run the checks without isolating them: install bubblewrap (bwrap), or run them yourself in the copy."
             );
-            self.record(&task.id, AgentEvent::ChecksSkipped { reason })?;
+            let checks = checks
+                .iter()
+                .map(|(check, _)| (*check).to_owned())
+                .collect();
+            self.record(&task.id, AgentEvent::ChecksSkipped { reason, checks })?;
             return Ok(false);
         }
         let retried = self.checks_failed_since_user(task)?;
@@ -95,7 +99,13 @@ impl Hedy {
                         "`{command}` no se pudo correr: {e}",
                         "`{command}` could not run: {e}"
                     );
-                    self.record(&task.id, AgentEvent::ChecksSkipped { reason })?;
+                    self.record(
+                        &task.id,
+                        AgentEvent::ChecksSkipped {
+                            reason,
+                            checks: vec![check.to_owned()],
+                        },
+                    )?;
                     continue;
                 }
             };
@@ -160,7 +170,7 @@ impl Hedy {
         let account = self.account(task.account.as_str())?;
         let model =
             (account.provider == crate::domain::Provider::Claude).then(|| "sonnet".to_owned());
-        let skipped = |reason: String| self.record(&task.id, AgentEvent::ChecksSkipped { reason });
+        let skipped = |reason: String| self.record(&task.id, AgentEvent::review_skipped(reason));
         if self.account_at_limit(&account)? {
             skipped(tr!(
                 "La revisión no se hizo: la cuenta llegó a su límite.",
@@ -209,7 +219,16 @@ impl Hedy {
     /// Whether the task stopped running while Hedy checked it (the user
     /// stopped, discarded or accepted it), as a flow's checks tell.
     fn stopped_meanwhile_checks(&self, task: &Task) -> AppResult<bool> {
-        Ok(self.task(&task.id)?.status != TaskStatus::Running)
+        if self.task(&task.id)?.status != TaskStatus::Running {
+            return Ok(true);
+        }
+        // Stopped and written to again: a new turn runs, and this one's end is not its own.
+        let events = self.store.events(&task.id)?;
+        Ok(events
+            .iter()
+            .rev()
+            .take_while(|e| !matches!(e, AgentEvent::Finished { .. }))
+            .any(|e| matches!(e, AgentEvent::UserMessage { .. })))
     }
 
     /// Whether a check already failed since the user last wrote: then the
@@ -352,7 +371,7 @@ mod tests {
         assert_eq!(f.runner.checks_run(), 0);
         let events = f.hedy.task_events(&task.id).unwrap();
         assert!(events.iter().any(
-            |e| matches!(e, AgentEvent::ChecksSkipped { reason } if reason.contains("bwrap"))
+            |e| matches!(e, AgentEvent::ChecksSkipped { reason, checks } if reason.contains("bwrap") && checks.iter().any(|c| c == "tests"))
         ));
         assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
 
@@ -525,6 +544,30 @@ mod tests {
         assert_eq!(f.agents.requests().len(), started, "no review is spent");
         assert!(checks(&f, &task).is_empty(), "a killed check is no result");
         assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
+    }
+
+    #[test]
+    fn a_turn_started_after_a_stop_during_the_checks_is_left_alone() {
+        let f = Fixture::new();
+        let style = Preset::AfterOkReview.apply(&after_ok());
+        let task = start(&f, style);
+        f.git.set_diff(a_change());
+        f.runner.reply("ok", 0);
+        let (hedy, id) = (f.hedy.clone(), task.id.clone());
+        // Stopped, then written to: a new turn runs before the check returns.
+        f.runner.during_check(move || {
+            let _ = hedy.stop_task(&id);
+            hedy.send_message(&id, "Mejor hazlo de otra forma").unwrap();
+        });
+        finish(&f);
+        let events = f.hedy.task_events(&task.id).unwrap();
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::ReviewRan { .. })),
+            "no review of the old turn"
+        );
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Running);
     }
 
     #[test]

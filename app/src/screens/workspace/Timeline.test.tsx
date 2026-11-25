@@ -199,6 +199,22 @@ describe("step groups", () => {
     expect(screen.queryByText("Claude buscó · redondeo")).toBeNull();
   });
 
+  it("never counts the review or a skipped check as tests, and opens on the review's warnings", () => {
+    show([
+      { kind: "userMessage", text: "Corrige el IVA" },
+      phase,
+      { kind: "fileEdited", path: "facturas/impuestos.py" },
+      { kind: "finished", ok: true, summary: "", durationMs: 1_000 },
+      { kind: "checkRan", check: "tests", command: "pytest", passed: true },
+      { kind: "checksSkipped", reason: "`npm run e2e` no se pudo correr", checks: ["e2e"] },
+      { kind: "reviewRan", warnings: [{ path: "facturas/impuestos.py", line: 3, message: "Divide por cero" }] },
+    ]);
+    const group = screen.getByRole("button", { name: /tests pasaron/ });
+    expect(group).not.toHaveAccessibleName(/fallaron/);
+    expect(group).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("facturas/impuestos.py:3 · Divide por cero").closest("li")).toHaveClass("step-group__item--failed");
+  });
+
   it("shows a single step as a line of its own", () => {
     show([{ kind: "userMessage", text: "Corre los tests" }, phase, { kind: "testsRun", command: "pytest", passed: false }]);
     expect(screen.queryByRole("button", { name: /pasos?/ })).toBeNull();

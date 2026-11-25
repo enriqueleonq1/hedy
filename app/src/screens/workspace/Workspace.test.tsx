@@ -515,8 +515,13 @@ describe("Workspace", () => {
     await user.click(within(expanded).getByRole("button", { name: "Abrir en el navegador" }));
     expect(browser).toHaveBeenCalledWith("http://localhost:3000");
 
+    // Escape with the composer focused closes the preview, and only that.
+    const stop = vi.spyOn(api, "stopTask");
+    document.querySelector<HTMLTextAreaElement>(".composer textarea")!.focus();
+    expect(document.activeElement?.tagName).toBe("TEXTAREA");
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Vista previa" })).toBeNull();
+    expect(stop).not.toHaveBeenCalled();
     // The same page, back in the panel at its width.
     expect(frame()).toBe(page);
     expect(frame()).toHaveStyle({ width: "100%" });

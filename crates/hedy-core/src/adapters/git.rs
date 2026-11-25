@@ -439,13 +439,20 @@ impl Git for GitCli {
     }
 
     fn branch_off(&self, worktree: &Path, branch: &str) -> PortResult<Option<String>> {
-        Ok(
-            match git(worktree, &["symbolic-ref", "--quiet", "--short", "HEAD"]) {
-                Ok(on) if on.trim() == branch => None,
-                Ok(on) => Some(on.trim().to_owned()),
-                Err(_) => Some("HEAD".to_owned()),
-            },
-        )
+        let out = run(worktree, &["symbolic-ref", "--quiet", "--short", "HEAD"])?;
+        let on = String::from_utf8_lossy(&out.stdout);
+        Ok(match out.status.code() {
+            Some(0) if on.trim() == branch => None,
+            Some(0) => Some(on.trim().to_owned()),
+            // `--quiet` exits 1 only for a detached HEAD; anything else is an error.
+            Some(1) => Some("HEAD".to_owned()),
+            _ => {
+                return Err(PortError::new(format!(
+                    "git symbolic-ref: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                )));
+            }
+        })
     }
 
     fn commit_all(&self, worktree: &Path, message: &str) -> PortResult<bool> {
@@ -1068,6 +1075,17 @@ mod tests {
         git(&wt, &["commit", "-qm", "Visible"]).unwrap();
         // Measured from where it started: both changes in sight.
         assert_eq!(g.diff_base(&wt, &base, "main").unwrap(), base);
+    }
+
+    #[test]
+    fn a_copy_that_is_gone_is_an_error_not_a_detached_head() {
+        let (_tmp, repo) = repo();
+        let g = GitCli;
+        let base = g.head_commit(&repo).unwrap();
+        let wt = repo.join(".hedy/worktrees/t1");
+        g.add_worktree(&repo, &wt, "hedy/t1", &base).unwrap();
+        fs::remove_dir_all(&wt).unwrap();
+        assert!(g.branch_off(&wt, "hedy/t1").is_err());
     }
 
     #[test]

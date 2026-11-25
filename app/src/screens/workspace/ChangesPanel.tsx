@@ -110,14 +110,16 @@ function Preview({ project, dir }: { project: string; dir: string }) {
 
   useEffect(() => {
     if (!expanded) return;
+    // First of all, and only this: Escape in the composer would stop the agent too.
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
+        e.stopPropagation();
         setExpanded(false);
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [expanded]);
 
   return (

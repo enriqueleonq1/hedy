@@ -19,9 +19,10 @@ const STATE: Record<StopState, MessageKey> = {
   current: "stops.state.current",
   pending: "stops.state.pending",
   failed: "stops.state.failed",
+  skipped: "stops.state.skipped",
 };
 
-const MARK: Partial<Record<StopState, string>> = { done: "✓", failed: "✗" };
+const MARK: Partial<Record<StopState, string>> = { done: "✓", failed: "✗", skipped: "–" };
 
 export function StopsBar({ stops }: { stops: Stop[] }) {
   const t = useT();

@@ -306,7 +306,7 @@ fn follow(
                     let mark = if passed { s.ok("✓") } else { s.warn("✗") };
                     println!("{mark} {:<6} {}", clean(&check), s.muted(clean(&command)));
                 }
-                AgentEvent::ChecksSkipped { reason } => {
+                AgentEvent::ChecksSkipped { reason, .. } => {
                     println!("{} {}", s.warn("!"), clean(&reason));
                 }
                 AgentEvent::ReviewRan { warnings, .. } => {
@@ -397,7 +397,15 @@ fn follow(
                         };
                         waiting.push_back((Question::Plan(request_id), question));
                     } else {
-                        let _ = hedy.answer_plan(&id, &request_id, false, None);
+                        // With no one to ask here, the plan waits: never turned down for you.
+                        println!(
+                            "{}",
+                            tr!(
+                                "El plan espera tu OK: respóndelo en la app.",
+                                "The plan waits for your OK: answer it in the app."
+                            )
+                        );
+                        return Ok(());
                     }
                 }
                 AgentEvent::PermissionRequest {

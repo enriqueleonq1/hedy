@@ -2887,4 +2887,5 @@ a.link-button { display: inline-flex; align-items: center; text-decoration: none
 .stops__name { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .stops__stop[data-state="done"] { color: var(--success); font-weight: 500; }
 .stops__stop[data-state="failed"] { color: var(--danger); font-weight: 600; }
+.stops__stop[data-state="skipped"] .stops__name { text-decoration: line-through; text-decoration-color: var(--line-strong); }
 .stops__stop[data-state="current"] .stops__name { padding: 3px 10px; border-radius: var(--radius-pill); background: var(--action); color: var(--action-ink); font-weight: 600; }

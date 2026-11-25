@@ -268,13 +268,14 @@ function StepRow({ step, live = false }: { step: StepItem; live?: boolean }) {
  */
 function StepGroup({ steps, live }: { steps: StepItem[]; live: boolean }) {
   const t = useT();
-  // Open while the AI works on it and when a test failed in it; folded once it
-  // is done well. A click decides from then on.
+  // Open while the AI works on it, when its tests failed or the review warned;
+  // folded once it is done well. A click decides from then on.
   const [picked, setPicked] = useState<boolean | null>(null);
   const listId = useId();
   const latest = steps.at(-1);
   const summary = summarize(steps);
-  const open = picked ?? (live || summary.tests === "failed");
+  const warned = steps.some((step) => step.step === "review" && step.tone === "failed");
+  const open = picked ?? (live || summary.tests === "failed" || warned);
   if (steps.length === 1 && latest) return <StepRow step={latest} live={live} />;
 
   const facts = summaryFacts(summary, t);

@@ -1059,7 +1059,8 @@ export type AgentEvent =
   /** Hedy ran a check of the task's way of working once the AI was done. */
   | { kind: "checkRan"; check: "tests" | "e2e"; command: string; passed: boolean; output?: string }
   /** The task's checks could not run, and why. */
-  | { kind: "checksSkipped"; reason: string }
+  /** `checks`: the stops it leaves without a result; older events have none. */
+  | { kind: "checksSkipped"; reason: string; checks?: string[] }
   /** Another AI read the change with a clean context: what it warns about (none: nothing seen). */
   | { kind: "reviewRan"; warnings: ReviewWarning[]; model?: string | null }
   | { kind: "toolUsed"; tool: string; summary: string }

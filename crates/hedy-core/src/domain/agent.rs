@@ -142,6 +142,10 @@ pub enum AgentEvent {
     /// The task's checks could not run, and why (no isolation, no command).
     ChecksSkipped {
         reason: String,
+        /// The stops it leaves without a result (`tests`, `e2e`, `review`);
+        /// older events have none.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        checks: Vec<String>,
     },
     /// Another AI read the change with a clean context (docs/decisions.md
     /// §57 B, §60): the visible mistakes it points at; none, nothing seen.
@@ -167,6 +171,14 @@ pub enum AgentEvent {
 }
 
 impl AgentEvent {
+    /// The clean-context review could not run, and why.
+    pub fn review_skipped(reason: String) -> Self {
+        Self::ChecksSkipped {
+            reason,
+            checks: vec!["review".to_owned()],
+        }
+    }
+
     /// A user message without images.
     pub fn user(text: impl Into<String>) -> Self {
         Self::UserMessage {

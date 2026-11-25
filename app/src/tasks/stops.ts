@@ -5,7 +5,7 @@
 import type { AgentEvent, Task } from "../api/types";
 
 export type StopKey = "plan" | "ok" | "implement" | "tests" | "e2e" | "review" | "you";
-export type StopState = "done" | "current" | "pending" | "failed";
+export type StopState = "done" | "current" | "pending" | "failed" | "skipped";
 export interface Stop {
   key: StopKey;
   state: StopState;
@@ -31,10 +31,15 @@ export function stopsOf(task: Task, events: AgentEvent[]): Stop[] | null {
   const lastWork = events.findLastIndex((e) => e.kind !== "finished" && !AFTER_TURN.has(e.kind));
   const turnOver = lastFinished > lastWork;
   // The last turn's results, while no new work makes them stale.
-  const results = new Map<StopKey, boolean>();
+  const results = new Map<StopKey, boolean | "skipped">();
   for (const e of turnOver ? events.slice(lastFinished + 1) : []) {
     if (e.kind === "checkRan") results.set(e.check, e.passed);
     if (e.kind === "reviewRan") results.set("review", e.warnings.length === 0);
+    if (e.kind === "checksSkipped") {
+      // An older event does not say which: the first check still waiting.
+      const skipped = e.checks?.length ? e.checks : checks.filter((k) => !results.has(k)).slice(0, 1);
+      for (const key of skipped) if (checks.includes(key as StopKey)) results.set(key as StopKey, "skipped");
+    }
   }
   const ready = task.status === "review" || task.status === "accepted" || task.status === "discarded" || task.status === "failed";
   const pastPlan = !working.plan || approved;
@@ -54,6 +59,7 @@ export function stopsOf(task: Task, events: AgentEvent[]): Stop[] | null {
         return task.status === "accepted" ? "done" : task.status === "review" ? "current" : "pending";
       default: {
         const result = results.get(key);
+        if (result === "skipped") return "skipped";
         if (result !== undefined) return result ? "done" : "failed";
         return key === running ? "current" : "pending";
       }
