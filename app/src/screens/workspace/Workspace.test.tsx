@@ -490,6 +490,38 @@ describe("Workspace", () => {
     expect(screen.getAllByTitle("Vista previa").find((el) => el.tagName === "IFRAME")).toHaveAttribute("src", "http://localhost:5173");
   });
 
+  it("expands the preview over the workspace, with device sizes, and opens it in the browser", async () => {
+    const api = MockApi.withSampleData().withSampleActivity();
+    api.delayMs = 0;
+    const browser = vi.spyOn(api, "openLink");
+    render(<App api={api} queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    const user = userEvent.setup();
+    await openTask(user, /^hedy/, PLAN);
+    await user.click(await screen.findByRole("button", { name: /^Panel lateral/ }));
+    await user.click(await screen.findByRole("tab", { name: "Vista previa" }));
+    // Nothing to expand before a page is open.
+    expect(screen.queryByRole("button", { name: "Ampliar" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Abrir" }));
+    const frame = () => screen.getAllByTitle("Vista previa").find((el) => el.tagName === "IFRAME")!;
+    const page = frame();
+
+    await user.click(screen.getByRole("button", { name: "Ampliar" }));
+    const expanded = screen.getByRole("dialog", { name: "Vista previa" });
+    expect(expanded).toHaveClass("preview--expanded");
+    expect(frame()).toBe(page);
+    await user.click(within(expanded).getByRole("radio", { name: "Móvil" }));
+    expect(frame()).toHaveStyle({ width: "390px" });
+
+    await user.click(within(expanded).getByRole("button", { name: "Abrir en el navegador" }));
+    expect(browser).toHaveBeenCalledWith("http://localhost:3000");
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Vista previa" })).toBeNull();
+    // The same page, back in the panel at its width.
+    expect(frame()).toBe(page);
+    expect(frame()).toHaveStyle({ width: "100%" });
+  });
+
   it("starts the dev server from the preview: a terminal in the task's copy with the command typed", async () => {
     stubResizeObserver();
     const api = MockApi.withSampleData().withSampleActivity();

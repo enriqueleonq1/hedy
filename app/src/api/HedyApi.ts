@@ -177,7 +177,7 @@ export interface HedyApi {
   describeTheme(account: string, description: string, base: ThemeBase | null): Promise<ThemeDraft>;
 
   openInEditor(path: string): Promise<void>;
-  /** Opens an https page in the browser. */
+  /** Opens an https page, or a local dev server (the preview), in the browser. */
   openLink(url: string): Promise<void>;
   /** The official CLIs installed here and their default logins. */
   detectClis(): Promise<DetectedCli[]>;

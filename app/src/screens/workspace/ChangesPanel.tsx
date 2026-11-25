@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import type { Task } from "../../api/types";
@@ -6,7 +6,9 @@ import { SidePanel } from "../../code/SidePanel";
 import { useApi } from "../../api/context";
 import { useTerminals } from "../../components/Terminal/TerminalProvider";
 import { Button } from "../../components/ui/Button";
-import { useT } from "../../i18n";
+import { Segmented } from "../../components/ui/controls";
+import { ExpandIcon, ExternalIcon } from "../../components/ui/icons";
+import { useT, type MessageKey } from "../../i18n";
 import { Changes } from "../../review/Review";
 import { isOpen } from "../../tasks/timeline";
 
@@ -75,8 +77,19 @@ function useDevCommand(project: string): string | null {
 }
 
 /** The project's dev server inside Hedy. Local addresses only. */
+/** How wide the page shows when the preview is expanded: the space it has, or a device's. */
+type PreviewSize = "fit" | "phone" | "tablet" | "desktop";
+const SIZE_WIDTH: Record<PreviewSize, string> = { fit: "100%", phone: "390px", tablet: "820px", desktop: "1280px" };
+const SIZE_LABEL: Record<PreviewSize, MessageKey> = {
+  fit: "workspace.preview.size.fit",
+  phone: "workspace.preview.size.phone",
+  tablet: "workspace.preview.size.tablet",
+  desktop: "workspace.preview.size.desktop",
+};
+
 function Preview({ project, dir }: { project: string; dir: string }) {
   const t = useT();
+  const api = useApi();
   const terminals = useTerminals();
   const dev = useDevCommand(project);
   const storageKey = `hedy.preview.${project}`;
@@ -89,12 +102,28 @@ function Preview({ project, dir }: { project: string; dir: string }) {
   });
   const [shown, setShown] = useState<string | null>(null);
   const [reloads, setReloads] = useState(0);
+  // Expanded over the whole workspace. The same element grows, so the page
+  // in it keeps its state (a form half filled, a session).
+  const [expanded, setExpanded] = useState(false);
+  const [size, setSize] = useState<PreviewSize>("fit");
   const valid = LOCAL_URL.test(url.trim());
 
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setExpanded(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded]);
+
   return (
-    <div className="preview">
+    <div className={`preview${expanded ? " preview--expanded" : ""}`} role={expanded ? "dialog" : undefined} aria-label={expanded ? t("workspace.tab.preview") : undefined}>
       <form
-        className="row"
+        className="row preview__bar"
         onSubmit={(e) => {
           e.preventDefault();
           if (!valid) return;
@@ -111,16 +140,56 @@ function Preview({ project, dir }: { project: string; dir: string }) {
         <Button type="submit" variant="primary" small disabled={!valid}>
           {shown ? t("workspace.preview.reload") : t("workspace.preview.open")}
         </Button>
+        {shown && expanded && (
+          <Segmented<PreviewSize>
+            label={t("workspace.preview.size")}
+            value={size}
+            options={(Object.keys(SIZE_WIDTH) as PreviewSize[]).map((value) => ({ value, label: t(SIZE_LABEL[value]) }))}
+            onChange={setSize}
+          />
+        )}
+        {/* In the narrow panel they are icons, so the address keeps its room. */}
+        {shown && (
+          <Button
+            small
+            variant="ghost"
+            aria-label={t("workspace.preview.browser")}
+            title={t("workspace.preview.browserHint")}
+            onClick={() => void api.openLink(shown)}
+          >
+            {expanded ? t("workspace.preview.browser") : <ExternalIcon />}
+          </Button>
+        )}
+        {shown && (
+          <Button
+            small
+            variant={expanded ? "primary" : "ghost"}
+            aria-label={expanded ? t("workspace.preview.collapse") : t("workspace.preview.expand")}
+            title={expanded ? undefined : t("workspace.preview.expand")}
+            aria-keyshortcuts={expanded ? "Escape" : undefined}
+            onClick={() => setExpanded((on) => !on)}
+          >
+            {expanded ? t("workspace.preview.collapse") : <ExpandIcon />}
+            {expanded && (
+              <kbd className="kbd" aria-hidden>
+                Esc
+              </kbd>
+            )}
+          </Button>
+        )}
       </form>
       {!valid && <p className="error-text">{t("workspace.preview.localOnly")}</p>}
       {shown ? (
-        <iframe
-          key={reloads}
-          className="preview__frame"
-          src={shown}
-          title={t("workspace.tab.preview")}
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-        />
+        <div className="preview__stage">
+          <iframe
+            key={reloads}
+            className="preview__frame"
+            style={{ width: expanded ? SIZE_WIDTH[size] : "100%" }}
+            src={shown}
+            title={t("workspace.tab.preview")}
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          />
+        </div>
       ) : (
         <div className="empty">
           <p>{t("workspace.preview.empty")}</p>

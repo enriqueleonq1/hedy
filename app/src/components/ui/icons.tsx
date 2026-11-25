@@ -226,3 +226,22 @@ export function InfoIcon() {
     </svg>
   );
 }
+
+/** Four corners outward: make it fill the window. */
+export function ExpandIcon() {
+  return (
+    <svg {...common} className="icon">
+      <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
+    </svg>
+  );
+}
+
+/** A box with an arrow out of it: open it elsewhere (the browser). */
+export function ExternalIcon() {
+  return (
+    <svg {...common} className="icon">
+      <path d="M14 4h6v6M20 4l-9 9" />
+      <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+    </svg>
+  );
+}
