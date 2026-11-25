@@ -112,7 +112,7 @@
 .carry-continued .carry-link { display: inline; max-width: none; }
 
 /* Under a finished answer: next steps, without a box. */
-.carry-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin: 0 0 0 46px; }
+.carry-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin: 0; }
 .carry-suggest__label { margin-right: var(--space-1); color: var(--muted); font-size: var(--text-caption); }
 .carry-suggest .btn { gap: 6px; }
 

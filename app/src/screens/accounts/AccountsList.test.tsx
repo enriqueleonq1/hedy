@@ -69,7 +69,7 @@ describe("The accounts list", () => {
     const { user } = await openAccounts(api);
     const personal = screen.getByRole("article", { name: "Claude personal" });
     const paused = await within(personal).findByRole("status");
-    expect(paused).toHaveTextContent(/^1 tarea en pausa hasta \d{2}:\d{2} · Ver la tarea$/);
+    expect(paused).toHaveTextContent(/^1 tarea en pausa hasta (\p{L}+, )?\d{2}:\d{2} · Ver la tarea$/u);
     expect(within(screen.getByRole("article", { name: "Claude trabajo" })).queryByText(/en pausa/)).not.toBeInTheDocument();
 
     await user.click(within(paused).getByRole("link", { name: "Ver la tarea en pausa «Traduce los correos de confirmación»" }));

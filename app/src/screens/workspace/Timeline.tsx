@@ -56,22 +56,29 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
   const working = mascot.state === "working";
   const entries = useMemo(() => groupSteps(items), [items]);
 
-  /** An agent row spanning items `first..last`: the mascot opens each turn. */
-  const agentRow = (key: string, first: number, last: number, body: ReactNode) => (
-    <div key={key} className="agent-row">
-      <span className="agent-row__avatar">
-        {(first === 0 || items[first - 1]?.type === "user") && (
-          <Mascot
-            color={color}
-            state={first <= lastAgent && lastAgent <= last && !working ? mascot.state : "idle"}
-            size={30}
-            label={agent}
-          />
+  /**
+   * An agent row spanning items `first..last`. The first one of a turn opens
+   * it with the mascot and the agent's name, unless a phase already did.
+   */
+  const agentRow = (key: string, first: number, last: number, body: ReactNode) => {
+    const opens = first === 0 || items[first - 1]?.type === "user";
+    return (
+      <div key={key} className="agent-row">
+        {opens && (
+          <p className="turn-head">
+            <Mascot
+              color={color}
+              state={first <= lastAgent && lastAgent <= last && !working ? mascot.state : "idle"}
+              size={30}
+              label={agent}
+            />
+            <strong>{agent}</strong>
+          </p>
         )}
-      </span>
-      <div className="agent-row__body">{body}</div>
-    </div>
-  );
+        <div className="agent-row__body">{body}</div>
+      </div>
+    );
+  };
 
   // "editó facturas/impuestos.py" opens the file in the task's copy.
   const nav = useFileNavigator();
@@ -107,8 +114,12 @@ export function Timeline({ task, items, agent, account, accounts, mascot, footer
           );
         }
         if (item.type === "phase") {
+          // The head of the AI's turn: who works, on what, with its mascot.
           return (
             <p key={item.key} className="phase-divider">
+              <span className="phase-divider__mascot" aria-hidden>
+                <Mascot color={color} state="idle" size={30} label={item.agent} />
+              </span>
               <span>
                 <strong>{item.agent}</strong>{" "}
                 {t(changesCodeAt(task, items, index) ? PHASE_VERB[item.phase] : "workspace.phase.answer")} · {item.account}
@@ -257,12 +268,16 @@ function StepRow({ step, live = false }: { step: StepItem; live?: boolean }) {
  */
 function StepGroup({ steps, live }: { steps: StepItem[]; live: boolean }) {
   const t = useT();
-  const [open, setOpen] = useState(false);
+  // Open while the AI works on it and when a test failed in it; folded once it
+  // is done well. A click decides from then on.
+  const [picked, setPicked] = useState<boolean | null>(null);
   const listId = useId();
   const latest = steps.at(-1);
+  const summary = summarize(steps);
+  const open = picked ?? (live || summary.tests === "failed");
   if (steps.length === 1 && latest) return <StepRow step={latest} live={live} />;
 
-  const facts = summaryFacts(summarize(steps), t);
+  const facts = summaryFacts(summary, t);
   return (
     <div className={`step-group${open ? " step-group--open" : ""}`}>
       <button
@@ -270,10 +285,12 @@ function StepGroup({ steps, live }: { steps: StepItem[]; live: boolean }) {
         className="step-group__summary"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setPicked(!open)}
       >
-        <span className="step-group__chevron">
-          <ChevronIcon />
+        <span className="step-group__dots" aria-hidden>
+          {steps.slice(-8).map((step) => (
+            <span key={step.key} className={`step-group__dot step-group__dot--${dotKind(step)}`} />
+          ))}
         </span>
         <span className="step-group__facts">
           {facts.map((fact, i) => (
@@ -292,11 +309,14 @@ function StepGroup({ steps, live }: { steps: StepItem[]; live: boolean }) {
             </Fragment>
           ))}
         </span>
+        <span className="step-group__chevron">
+          <ChevronIcon />
+        </span>
       </button>
       {open ? (
         <ul id={listId} className="step-group__list">
           {steps.map((step) => (
-            <li key={step.key}>
+            <li key={step.key} className={`step-group__item step-group__item--${dotKind(step)}`}>
               <StepRow step={step} live={live && step === latest} />
             </li>
           ))}
@@ -306,6 +326,14 @@ function StepGroup({ steps, live }: { steps: StepItem[]; live: boolean }) {
       )}
     </div>
   );
+}
+
+/** A step's dot in the folded line: what it did, failures first. */
+function dotKind(step: StepItem): "failed" | "edit" | "passed" | "other" {
+  if (step.tone === "failed") return "failed";
+  if (step.step === "edit") return "edit";
+  if (step.step === "tests") return "passed";
+  return "other";
 }
 
 const RESOLUTION: Record<Decision, MessageKey> = {

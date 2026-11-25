@@ -155,7 +155,7 @@ describe("step groups", () => {
     expect(screen.queryByText("Claude editó facturas/impuestos.py")).toBeNull();
   });
 
-  it("keeps failures in sight while collapsed", () => {
+  it("keeps a run whose tests failed open, failures in sight", async () => {
     show([
       { kind: "userMessage", text: "Corrige el IVA" },
       phase,
@@ -165,16 +165,23 @@ describe("step groups", () => {
       { kind: "finished", ok: true, summary: "", durationMs: 1_200_000 },
     ]);
     const group = screen.getByRole("button", { name: "3 pasos · editó 1 archivo · tests fallaron · Hedy bloqueó 1" });
-    expect(group).toHaveAttribute("aria-expanded", "false");
+    expect(group).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Claude: fallan los tests · pytest").closest("li")).toHaveClass("step-group__item--failed");
     const failed = screen.getByText("tests fallaron");
     expect(failed).toHaveClass("step-group__fact--failed");
     expect(failed.querySelector(".step-group__mark")).toHaveTextContent("✗");
     expect(screen.getByText("Hedy bloqueó 1")).toHaveClass("step-group__fact--failed");
     // The end of the turn is a quiet footer, not a step.
     expect(screen.getByText(/^Terminó · 20 min/)).toHaveClass("turn-end");
+
+    // Folded by hand, it stays folded with the failures in its line.
+    await userEvent.click(group);
+    expect(group).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Claude: fallan los tests · pytest")).toBeNull();
+    expect(screen.getByText("tests fallaron")).toHaveClass("step-group__fact--failed");
   });
 
-  it("shows the live step of the run going on, until text follows", () => {
+  it("keeps the run going on open, and folds it once text follows", () => {
     const events: AgentEvent[] = [
       { kind: "userMessage", text: "Corrige el IVA" },
       phase,
@@ -182,11 +189,11 @@ describe("step groups", () => {
       { kind: "toolUsed", tool: "Grep", summary: "redondeo" },
     ];
     const { update } = show(events, working);
-    expect(screen.getByRole("button", { name: "2 pasos" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "2 pasos" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("Claude buscó · redondeo").closest(".step-row")).toHaveClass("step-row--live");
-    expect(screen.queryByText("Claude leyó · facturas/impuestos.py")).toBeNull();
+    expect(screen.getByText("Claude leyó · facturas/impuestos.py").closest(".step-row")).not.toHaveClass("step-row--live");
 
-    // Text after it: the run is over and stays summed up.
+    // Text after it: the run is over and folds into its line.
     update([...events, { kind: "message", text: "El redondeo va por línea." }]);
     expect(screen.getByRole("button", { name: "2 pasos" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("Claude buscó · redondeo")).toBeNull();

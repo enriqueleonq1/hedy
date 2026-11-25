@@ -1460,28 +1460,40 @@ button .task-option__key { align-self: start; color: var(--muted); }
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   padding-right: 4px;
 }
 
+/* The user's message: a soft pill on the right, the answers read in full width. */
 .bubble {
   align-self: flex-end;
   max-width: 78%;
+  margin-top: 6px;
   padding: 10px var(--space-4);
-  /* The corner nearest the composer stays tight, as in a message thread. */
-  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-xs) var(--radius-xl);
-  background: var(--accent-soft);
+  border-radius: var(--radius-xl);
+  background: var(--panel-2);
+  font-size: var(--text-headline);
+  line-height: 1.55;
   white-space: pre-wrap;
 }
 
-.agent-row { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: start; }
-.agent-row__avatar { padding-top: 4px; }
+.agent-row { display: grid; gap: 8px; min-width: 0; }
 .agent-row__body { min-width: 0; }
+/* The head of the AI's turn: its mascot, small, and its name. */
+.turn-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  font-size: var(--text-callout);
+}
+.turn-head strong { font-weight: 600; color: var(--ink); }
 /* The mascot at work, at the end of the chat: big enough to show its props. */
-.agent-row--live { align-items: center; }
-.agent-row--live .agent-row__avatar { padding-top: 0; margin-left: -4px; }
+.agent-row--live { display: flex; align-items: center; gap: 10px; }
+.agent-row--live .agent-row__avatar { margin-left: -4px; }
 .working-word--chat { font: 600 var(--text-body) var(--font-ui); color: var(--accent); }
-.agent-text { line-height: 1.6; }
+/* Answers are what one reads: a size up and room between the lines. */
+.agent-text { font-size: var(--text-headline); line-height: 1.65; }
 
 /* Markdown in agents' answers and plans */
 .md { display: grid; gap: 10px; min-width: 0; overflow-wrap: anywhere; }
@@ -1566,18 +1578,18 @@ button .task-option__key { align-self: start; color: var(--muted); }
 .step-row--running .step-row__mark { color: var(--activity); }
 .step-row--failed { color: var(--danger); }
 
-/* A run of steps summed up in one line; opened, the steps under it. */
-.step-group { display: grid; gap: 2px; justify-items: start; }
+/* A run of steps summed up in a pill, a dot per step; opened, a line of them. */
+.step-group { display: grid; gap: 6px; justify-items: start; }
 
 .step-group__summary {
   display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  margin-left: -6px;
-  padding: 2px 6px;
-  border: 0;
-  border-radius: var(--radius-xs);
-  background: none;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 3px 10px 3px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--panel);
   color: var(--muted);
   font-size: var(--text-callout);
   line-height: 1.5;
@@ -1585,20 +1597,55 @@ button .task-option__key { align-self: start; color: var(--muted); }
   cursor: pointer;
 }
 
-.step-group__summary:hover { color: var(--ink); }
-.step-group__chevron { display: inline-flex; align-self: center; transform: rotate(-90deg); transition: transform 0.15s var(--ease-out); }
+.step-group__summary:hover { border-color: var(--line-strong); color: var(--ink); }
+.step-group--open .step-group__summary { border-color: var(--action); background: var(--accent-soft); color: var(--ink); }
+.step-group__dots { display: inline-flex; flex: none; gap: 3px; }
+.step-group__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--line-strong); }
+.step-group__dot--edit { background: var(--action); }
+.step-group__dot--failed { background: var(--danger); }
+.step-group__dot--passed { background: var(--success); }
+.step-group__chevron { display: inline-flex; flex: none; transform: rotate(-90deg); transition: transform 0.15s var(--ease-out); }
 .step-group--open .step-group__chevron { transform: none; }
 .step-group__fact--failed { color: var(--danger); font-weight: 600; }
 .step-group__mark { margin-right: 4px; font-size: var(--text-eyebrow); }
 
+/* Opened: each step on a line, its dot on a thread. */
 .step-group__list {
+  position: relative;
   display: grid;
   gap: 2px;
-  padding-left: 12px;
-  margin-left: 0;
-  border-left: 1px solid var(--line);
+  margin: 0 0 0 6px;
+  padding: 0 0 0 20px;
+  list-style: none;
   animation: step-group-in 0.16s var(--ease-out);
 }
+.step-group__list::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--line);
+}
+.step-group__item { position: relative; padding: 2px 0; }
+.step-group__item::before {
+  content: "";
+  position: absolute;
+  left: -21px;
+  top: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  background: var(--panel);
+}
+.step-group__item--edit::before { border-color: var(--action); background: var(--action); }
+.step-group__item--failed::before { border-color: var(--danger); background: var(--danger); }
+.step-group__item--passed::before { border-color: var(--success); background: var(--success); }
+/* On the thread the dot says it: the line's own mark steps aside. */
+.step-group__item .step-row__mark { display: none; }
 
 @keyframes step-group-in {
   from { opacity: 0; transform: translateY(-4px); }
@@ -1631,6 +1678,7 @@ button .task-option__key { align-self: start; color: var(--muted); }
 }
 
 .phase-divider strong { color: var(--ink); font-weight: 600; }
+.phase-divider__mascot { display: inline-flex; flex: none; }
 
 .limit-card {
   display: flex;
@@ -2578,7 +2626,7 @@ a.link-button { display: inline-flex; align-items: center; text-decoration: none
 .end-card {
   display: grid;
   gap: 6px;
-  margin: 4px 0 4px 44px;
+  margin: 4px 0;
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -2587,6 +2635,50 @@ a.link-button { display: inline-flex; align-items: center; text-decoration: none
 .end-card h3 { font: 600 var(--text-headline) var(--font-ui); color: var(--ink); }
 .end-card p { font-size: var(--text-callout); }
 .end-card .actions { margin-top: 6px; }
+
+/* A turn that finished well: what changed and the review on one bar, then a next step or two. */
+.turn-foot { gap: 12px; padding: 0; border: 0; background: none; }
+.turn-foot__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel-2);
+}
+.turn-foot__actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+.turn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: var(--text-caption);
+  line-height: 1.6;
+}
+.turn-chip__mark { font-weight: 600; }
+.turn-chip--passed .turn-chip__mark { color: var(--success); }
+.turn-chip--failed { border-color: var(--danger); }
+.turn-chip--failed .turn-chip__mark { color: var(--danger); }
+.turn-foot__suggestions { display: flex; flex-wrap: wrap; gap: 8px; }
+.suggestion {
+  padding: 5px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-callout);
+  cursor: pointer;
+}
+.suggestion:hover:not(:disabled) { border-color: var(--action); background: var(--accent-soft); }
+.suggestion:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.suggestion:disabled { opacity: 0.5; cursor: not-allowed; }
 .outputs { display: grid; gap: 2px; margin-top: 4px; }
 .blocked-files { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 /* The task's permission mode when it is not manual, next to its status. */

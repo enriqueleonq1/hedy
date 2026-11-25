@@ -2725,6 +2725,10 @@ export class MockApi implements HedyApi {
         opus("Claude personal"),
         { kind: "fileEdited", path: "facturas/impuestos.py" },
         { kind: "testsRun", command: "pytest tests/test_facturas.py", passed: false },
+        {
+          kind: "message",
+          text: "El IVA se calculaba sobre el **total ya redondeado**; ahora se redondea **por línea**, como exige el SII. Queda un test que falla: espera el redondeo antiguo.",
+        },
         { kind: "finished", ok: true, summary: "El IVA se redondea por línea y no al total.", durationMs: 1_200_000 },
       ],
     );

@@ -54,7 +54,8 @@ describe("side panel in the app", () => {
     const { user } = setup("#p=%2Fcode%2Fhedy&t=s5");
     await screen.findByRole("heading", { name: /Arregla el cálculo de impuestos/ }, SLOW);
     const chat = screen.getByRole("region", { name: "Chat" });
-    await user.click(await within(chat).findByRole("button", { name: /pasos/ }, SLOW));
+    // Its tests failed: the run of steps is open already.
+    expect(await within(chat).findByRole("button", { name: /pasos/ }, SLOW)).toHaveAttribute("aria-expanded", "true");
     await user.click(within(chat).getByRole("button", { name: "facturas/impuestos.py" }));
     expect(await screen.findByRole("textbox", { name: "Contenido de impuestos.py" }, SLOW)).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Qué copia se muestra" })).toHaveTextContent(/Tarea: Arregla el cálculo/);

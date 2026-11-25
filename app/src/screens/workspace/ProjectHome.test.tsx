@@ -235,7 +235,10 @@ describe("The end of a turn", () => {
     const { api, user } = await setup(taskHash("s5"));
     const queue = vi.spyOn(api, "queueMessage");
     const card = await screen.findByRole("region", { name: "Terminó. Te toca revisar" }, { timeout: 5000 });
-    expect(await within(card).findByText("3 archivos cambiados · hay tests que fallan")).toBeInTheDocument();
+    expect(await within(card).findByText("3 archivos")).toHaveClass("turn-chip");
+    expect(within(card).getByText("Tests fallan").closest(".turn-chip")).toHaveClass("turn-chip--failed");
+    // Failing tests come first: no next steps until they pass.
+    expect(within(card).queryByRole("button", { name: "Explícame el cambio" })).toBeNull();
     expect(screen.queryByRole("complementary", { name: PANEL })).toBeNull();
 
     const review = within(card).getByRole("button", { name: "Revisar cambios" });
@@ -246,6 +249,28 @@ describe("The end of a turn", () => {
 
     await user.click(within(card).getByRole("button", { name: "Pedir que arregle los tests" }));
     expect(queue).toHaveBeenCalledWith("s5", "Los tests fallan. Arréglalos sin cambiar lo que comprueban.");
+  });
+
+  it("closes a turn that went well with Hedy's check, the copy and a next step or two", async () => {
+    const { api, user } = await setup(taskHash("s5"), async (api) => {
+      const events = await api.taskEvents("s5");
+      vi.spyOn(api, "taskEvents").mockResolvedValue([
+        ...events,
+        { kind: "checkRan", check: "tests", command: "pytest", passed: true, output: "" },
+      ]);
+    });
+    const queue = vi.spyOn(api, "queueMessage");
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const card = await screen.findByRole("region", { name: "Terminó. Te toca revisar" }, { timeout: 5000 });
+    expect(await within(card).findByText("Hedy · tests pasan")).toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Pedir que arregle los tests" })).toBeNull();
+
+    await user.click(within(card).getByRole("button", { name: "Copiar la última respuesta" }));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("por línea"));
+
+    await user.click(within(card).getByRole("button", { name: "Explícame el cambio" }));
+    expect(queue).toHaveBeenCalledWith("s5", expect.stringMatching(/^Explícame el cambio que hiciste/));
   });
 
   it("asks before discarding a task that changed nothing", async () => {
