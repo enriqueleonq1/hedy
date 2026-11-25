@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { errorMessage, useAction, useApi } from "../../api/context";
-import type { AcceptMode, AcceptPreview, Task } from "../../api/types";
+import type { AcceptMode, AcceptPreview, CheckResult, Task } from "../../api/types";
 import { modKey } from "../../components/palette/keys";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -225,6 +225,9 @@ function PreviewForm({
   const [message, setMessage] = useState(preview.message);
   const elsewhere = mode === "merge" && preview.checkoutBranch !== null && preview.checkoutBranch !== preview.targetBranch;
   const tests = preview.tests;
+  // What Hedy checked after the AI's last turn says more than the AI's own tests.
+  const checks = preview.checks;
+  const passed = checks.length > 0 ? checks.every((c) => c.passed) : !preview.checksSkipped && !!tests?.passed;
 
   return (
     <form
@@ -261,14 +264,18 @@ function PreviewForm({
           {t("review.checkout", { current: preview.checkoutBranch ?? "", target: preview.targetBranch })}
         </p>
       )}
-      <p className={`accept-sheet__tests ${tests?.passed ? "accept-sheet__tests--ok" : "accept-sheet__warn"}`}>
-        <span aria-hidden>{tests?.passed ? "✓" : "!"}</span>{" "}
-        {tests
-          ? tests.passed
-            ? t("review.tests.passed", { command: tests.command })
-            : t("review.tests.failed", { command: tests.command })
-          : t("review.tests.none")}
-        {tests && !tests.passed && (
+      <p className={`accept-sheet__tests ${passed ? "accept-sheet__tests--ok" : "accept-sheet__warn"}`}>
+        <span aria-hidden>{passed ? "✓" : "!"}</span>{" "}
+        {checks.length > 0
+          ? t(passed ? "review.checks.passed" : "review.checks.failed", { list: checkList(checks) })
+          : preview.checksSkipped
+            ? t("review.checks.skipped", { reason: preview.checksSkipped })
+            : tests
+              ? tests.passed
+                ? t("review.tests.passed", { command: tests.command })
+                : t("review.tests.failed", { command: tests.command })
+              : t("review.tests.none")}
+        {!passed && (checks.length > 0 || (tests && !preview.checksSkipped)) && (
           <Button small variant="ghost" className="accept-sheet__fix" disabled={!onFixTests} onClick={() => onFixTests?.()}>
             {t("end.fixTests")}
           </Button>
@@ -344,4 +351,9 @@ export function useAcceptedToast(task: Task | null) {
         action: { label: t("review.undo"), onClick: () => undo.mutate(taskId) },
       }),
   };
+}
+
+/** "tests ✓ · e2e ✗ (npm run e2e)": a failing check names its command. */
+function checkList(checks: CheckResult[]): string {
+  return checks.map((c) => (c.passed ? `${c.check} ✓` : `${c.check} ✗ (${c.command})`)).join(" · ");
 }

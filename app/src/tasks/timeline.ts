@@ -233,6 +233,28 @@ export function buildTimeline(events: AgentEvent[], t: Translate): TimelineItem[
           }),
         });
         break;
+      case "checkRan":
+        items.push({
+          type: "activity",
+          key,
+          tone: e.passed ? "done" : "failed",
+          step: "tests",
+          detail: e.command,
+          text: t(
+            e.check === "e2e"
+              ? e.passed
+                ? "workspace.activity.e2ePassed"
+                : "workspace.activity.e2eFailed"
+              : e.passed
+                ? "workspace.activity.checkPassed"
+                : "workspace.activity.checkFailed",
+            { command: e.command },
+          ),
+        });
+        break;
+      case "checksSkipped":
+        items.push({ type: "activity", key, tone: "failed", step: "tests", detail: "", text: e.reason });
+        break;
       case "toolUsed": {
         const verb = TOOL_VERB[e.tool];
         items.push({

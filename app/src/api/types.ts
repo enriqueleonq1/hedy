@@ -712,6 +712,17 @@ export interface AcceptPreview {
   message: string;
   /** The task's latest test run; `null` when it never ran tests. */
   tests: { command: string; passed: boolean; at: number } | null;
+  /** What Hedy checked after the AI's last turn (docs/decisions.md §60). */
+  checks: CheckResult[];
+  /** Why those checks could not run, when they could not. */
+  checksSkipped: string | null;
+}
+
+/** One check Hedy ran once the AI was done: the project's tests or the user's e2e. */
+export interface CheckResult {
+  check: "tests" | "e2e";
+  command: string;
+  passed: boolean;
 }
 
 export interface NewTaskInput {
@@ -1034,6 +1045,10 @@ export type AgentEvent =
   | { kind: "fileEdited"; path: string }
   | { kind: "commandRun"; command: string; tests: boolean }
   | { kind: "testsRun"; command: string; passed: boolean }
+  /** Hedy ran a check of the task's way of working once the AI was done. */
+  | { kind: "checkRan"; check: "tests" | "e2e"; command: string; passed: boolean; output?: string }
+  /** The task's checks could not run, and why. */
+  | { kind: "checksSkipped"; reason: string }
   | { kind: "toolUsed"; tool: string; summary: string }
   /** Live only, never in the stored history: what the mascot shows while a tool runs. */
   | { kind: "toolStarted"; tool: string; detail: string }

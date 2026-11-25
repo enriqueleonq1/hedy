@@ -2415,6 +2415,8 @@ export class MockApi implements HedyApi {
       { kind: "message", text: "Listo: el recordatorio se programa 24 h antes y los tests pasan." },
       { kind: "usage", inputTokens: 1200, outputTokens: 800, cacheReadTokens: 9000, cacheWriteTokens: 0, costUsd: 0.04 },
       { kind: "finished", ok: true, summary: "Listo", durationMs: 42_000 },
+      // Hedy's check after the turn, as a project «Tras tu OK» runs it.
+      { kind: "checkRan", check: "tests", command: "pytest -q", passed: true },
     ];
   }
 
@@ -2864,6 +2866,15 @@ export class MockApi implements HedyApi {
         tests?.kind === "testsRun"
           ? { command: tests.command, passed: tests.passed, at: this.updatedAt.get(id) ?? task.createdAt }
           : null,
+      // Like the backend: what Hedy checked after the AI's last turn.
+      checks: events
+        .slice(events.findLastIndex((e) => e.kind === "finished") + 1)
+        .flatMap((e) => (e.kind === "checkRan" ? [{ check: e.check, command: e.command, passed: e.passed }] : [])),
+      checksSkipped:
+        events
+          .slice(events.findLastIndex((e) => e.kind === "finished") + 1)
+          .flatMap((e) => (e.kind === "checksSkipped" ? [e.reason] : []))
+          .pop() ?? null,
     };
   }
 

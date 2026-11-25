@@ -30,6 +30,10 @@ const es = {
   "workspace.activity.ran": "{agent} corrió {command}",
   "workspace.activity.testsPassed": "{agent}: pasan los tests · {command}",
   "workspace.activity.testsFailed": "{agent}: fallan los tests · {command}",
+  "workspace.activity.checkPassed": "Hedy: pasan los tests · {command}",
+  "workspace.activity.checkFailed": "Hedy: fallan los tests · {command}",
+  "workspace.activity.e2ePassed": "Hedy: pasa el e2e · {command}",
+  "workspace.activity.e2eFailed": "Hedy: falla el e2e · {command}",
 
   "workspace.chat": "Chat",
   "workspace.newTask": "Nueva tarea",
@@ -226,6 +230,10 @@ const en: Record<keyof typeof es, string> = {
   "workspace.activity.ran": "{agent} ran {command}",
   "workspace.activity.testsPassed": "{agent}: tests pass · {command}",
   "workspace.activity.testsFailed": "{agent}: tests fail · {command}",
+  "workspace.activity.checkPassed": "Hedy: tests pass · {command}",
+  "workspace.activity.checkFailed": "Hedy: tests fail · {command}",
+  "workspace.activity.e2ePassed": "Hedy: the e2e passes · {command}",
+  "workspace.activity.e2eFailed": "Hedy: the e2e fails · {command}",
 
   "workspace.chat": "Chat",
   "workspace.newTask": "New task",

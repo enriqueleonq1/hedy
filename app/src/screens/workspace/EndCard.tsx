@@ -5,15 +5,18 @@ import { useT } from "../../i18n";
 import { ACTIVITY_KEY, listKeyFor, useSetQueue, useTaskDiff } from "../../tasks/hooks";
 import { stoppedByLimit } from "../../tasks/state";
 
-/** The last test run of the task, if the agent ran its tests. */
+/** The last test run of the task: the agent's, or Hedy's check after its turn. */
 function lastTests(events: AgentEvent[]): boolean | null {
-  const run = events.findLast((e) => e.kind === "testsRun");
-  return run?.kind === "testsRun" ? run.passed : null;
+  const run = events.findLast((e) => e.kind === "testsRun" || e.kind === "checkRan");
+  return run?.kind === "testsRun" || run?.kind === "checkRan" ? run.passed : null;
 }
+
+/** What comes after a turn's end without being more work: usage, limits and Hedy's checks. */
+const AFTER_TURN = new Set<AgentEvent["kind"]>(["usage", "rateLimit", "limitWarning", "checkRan", "checksSkipped"]);
 
 /** Whether the task's history ends on the end of a turn (nothing came after it). */
 function endsOnFinish(events: AgentEvent[]): boolean {
-  const last = events.findLast((e) => e.kind !== "usage" && e.kind !== "rateLimit" && e.kind !== "limitWarning");
+  const last = events.findLast((e) => !AFTER_TURN.has(e.kind));
   return last?.kind === "finished";
 }
 

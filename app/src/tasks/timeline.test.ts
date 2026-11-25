@@ -153,3 +153,23 @@ describe("latestMilestone", () => {
     expect(latestMilestone(buildTimeline(events, t))).toEqual({ index: 4, milestone: "limit" });
   });
 });
+
+describe("Hedy's checks after a turn", () => {
+  it("say what ran and why nothing did", () => {
+    const items = buildTimeline(
+      [
+        { kind: "finished", ok: true, summary: "", durationMs: 1000 },
+        { kind: "checkRan", check: "tests", command: "pytest -q", passed: true },
+        { kind: "checkRan", check: "e2e", command: "npm run e2e", passed: false, output: "1 failed" },
+        { kind: "checksSkipped", reason: "Hedy no corre las comprobaciones sin aislarlas." },
+      ],
+      t,
+    );
+    const lines = items.flatMap((i) => (i.type === "activity" ? [[i.text, i.tone]] : []));
+    expect(lines).toEqual([
+      ["Hedy: pasan los tests · pytest -q", "done"],
+      ["Hedy: falla el e2e · npm run e2e", "failed"],
+      ["Hedy no corre las comprobaciones sin aislarlas.", "failed"],
+    ]);
+  });
+});

@@ -618,6 +618,9 @@ pub struct AcceptPreviewDto {
     pub message: String,
     /// The task's latest test run; `None` when it never ran tests.
     pub tests: Option<TestRunDto>,
+    /// What Hedy checked after the AI's last turn.
+    pub checks: Vec<hedy_core::application::CheckResult>,
+    pub checks_skipped: Option<String>,
 }
 
 impl From<AcceptPreview> for AcceptPreviewDto {
@@ -631,6 +634,8 @@ impl From<AcceptPreview> for AcceptPreviewDto {
             deletions: p.deletions,
             message: p.message,
             tests: p.tests.map(Into::into),
+            checks: p.checks,
+            checks_skipped: p.checks_skipped,
         }
     }
 }
