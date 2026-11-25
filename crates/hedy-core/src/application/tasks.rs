@@ -1226,23 +1226,34 @@ impl Hedy {
                     );
                     return self.run_stage(&mut task, next, prompt, None);
                 }
-                // Hedy runs the task's checks; a first failure goes back to
-                // the same session (docs/decisions.md §60).
-                if *ok
-                    && !limited
-                    && current_stage(&task).phase != Phase::Plan
-                    && self.trial_of(id).is_none()
-                    && self.run_task_checks(&mut task)?
-                {
-                    return Ok(());
-                }
-                // Then the review with a clean context, when it has one.
+                // Hedy runs the task's checks, then the review with a clean
+                // context (docs/decisions.md §60). A first failure goes back
+                // to the same session; a stop meanwhile ends it all here.
                 if *ok
                     && !limited
                     && current_stage(&task).phase != Phase::Plan
                     && self.trial_of(id).is_none()
                 {
-                    self.run_task_review(&task)?;
+                    if self.run_task_checks(&mut task)? {
+                        return Ok(());
+                    }
+                    // It never fails a finished task: a review that cannot
+                    // run says so.
+                    match self.run_task_review(&task) {
+                        Ok(true) => return Ok(()),
+                        Ok(false) => {}
+                        Err(e) => {
+                            let reason = tr!(
+                                "La revisión no se pudo hacer: {e}",
+                                "The review could not run: {e}"
+                            );
+                            self.record(id, AgentEvent::ChecksSkipped { reason })?;
+                        }
+                    }
+                    // Messages written while they ran go now, to the same session.
+                    if self.deliver_queue_at_turn_end(&mut task)? {
+                        return Ok(());
+                    }
                 }
                 // A flow set to follow a task's end takes it on from here.
                 if *ok

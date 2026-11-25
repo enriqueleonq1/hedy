@@ -22,6 +22,7 @@ import skillLibrary from "./messages/skillLibrary";
 import skills from "./messages/skills";
 import statusbar from "./messages/statusbar";
 import status from "./messages/status";
+import stops from "./messages/stops";
 import sync from "./messages/sync";
 import team from "./messages/team";
 import templates from "./messages/templates";
@@ -60,6 +61,7 @@ const AREAS = {
   skillLibrary,
   statusbar,
   status,
+  stops,
   sync,
   team,
   templates,

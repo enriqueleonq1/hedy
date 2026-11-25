@@ -1096,6 +1096,8 @@ pub struct FakeRunner {
     stopped_checks: Mutex<Vec<String>>,
     /// Processes [`FakeRunner::kill_process`] ended.
     dead: Mutex<HashSet<String>>,
+    /// Played while a check runs (the user stops the task meanwhile).
+    during_check: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 fn command_line(spec: &LaunchSpec) -> String {
@@ -1115,6 +1117,10 @@ impl FakeRunner {
         self.installed.lock().unwrap().insert(program.to_owned());
     }
 
+    /// `act` happens while each check runs.
+    pub fn during_check(&self, act: impl Fn() + Send + Sync + 'static) {
+        *self.during_check.lock().unwrap() = Some(Arc::new(act));
+    }
     /// From now on, checks cannot run isolated here.
     pub fn without_isolation(&self) {
         *self.unisolated.lock().unwrap() = true;
@@ -1201,6 +1207,10 @@ impl ProcessRunner for FakeRunner {
             .lock()
             .unwrap()
             .push((group.to_owned(), spec.clone()));
+        let act = self.during_check.lock().unwrap().clone();
+        if let Some(act) = act {
+            act();
+        }
         self.run_captured(spec)
     }
     fn stop_checks(&self, group: &str) {

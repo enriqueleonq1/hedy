@@ -83,8 +83,8 @@ impl Preset {
 
 impl WorkingStyle {
     /// Where every project starts: «Tras tu OK». New tasks always offered
-    /// the plan first; now Hedy also runs the tests it finds, which spends
-    /// no tokens.
+    /// the plan first; now Hedy also runs the tests it finds. Running them
+    /// spends no tokens; a failure sent back to the AI, once, does.
     pub fn initial() -> Self {
         Preset::AfterOk.apply(&Self::default())
     }

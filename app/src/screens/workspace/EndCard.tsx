@@ -12,7 +12,14 @@ function lastTests(events: AgentEvent[]): boolean | null {
 }
 
 /** What comes after a turn's end without being more work: usage, limits and Hedy's checks. */
-const AFTER_TURN = new Set<AgentEvent["kind"]>(["usage", "rateLimit", "limitWarning", "checkRan", "checksSkipped"]);
+const AFTER_TURN = new Set<AgentEvent["kind"]>([
+  "usage",
+  "rateLimit",
+  "limitWarning",
+  "checkRan",
+  "checksSkipped",
+  "reviewRan",
+]);
 
 /** Whether the task's history ends on the end of a turn (nothing came after it). */
 function endsOnFinish(events: AgentEvent[]): boolean {

@@ -4,7 +4,7 @@
 //! tokens. A first failure goes back to the same session; after that, the
 //! task is ready for review with what failed.
 
-use crate::domain::{AgentEvent, Task, TaskMode};
+use crate::domain::{AgentEvent, Task, TaskMode, TaskStatus};
 use crate::tr;
 
 use super::{AppResult, Hedy};
@@ -16,8 +16,9 @@ const OUTPUT_KEPT: usize = 4_000;
 const REVIEW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(240);
 
 impl Hedy {
-    /// Runs the task's checks. `true`: a failure went back to its agent, so
-    /// the turn goes on.
+    /// Runs the task's checks. `true`: the turn's end is not this one's to
+    /// finish (a failure went back to its agent, or the task was stopped or
+    /// closed meanwhile).
     pub(super) fn run_task_checks(&self, task: &mut Task) -> AppResult<bool> {
         let Some(working) = task.working.clone() else {
             return Ok(false);
@@ -81,17 +82,18 @@ impl Hedy {
                 task.id.as_str(),
                 &reads,
             );
-            // Stopped or discarded meanwhile: nothing more.
-            if self.task(&task.id)?.status.is_closed() {
+            // Stopped, discarded or accepted meanwhile: nothing more.
+            if self.stopped_meanwhile_checks(task)? {
                 return Ok(true);
             }
             let out = match ran {
                 Ok(out) => out,
-                // A command that does not start is the user's to fix, not the AI's.
+                // A command that does not start or end is the user's to fix,
+                // not the AI's.
                 Err(e) => {
                     let reason = tr!(
-                        "`{command}` no arrancó: {e}",
-                        "`{command}` did not start: {e}"
+                        "`{command}` no se pudo correr: {e}",
+                        "`{command}` could not run: {e}"
                     );
                     self.record(&task.id, AgentEvent::ChecksSkipped { reason })?;
                     continue;
@@ -112,7 +114,12 @@ impl Hedy {
                 failed.push(format!("`{command}`\n{output}"));
             }
         }
-        if failed.is_empty() || retried {
+        // A read-only last step (an AI review) cannot fix anything.
+        let writes = task
+            .stages
+            .get(task.stage)
+            .is_some_and(|s| !s.phase.read_only_in(task.mode));
+        if failed.is_empty() || retried || !writes {
             return Ok(false);
         }
         let prompt = format!(
@@ -131,30 +138,35 @@ impl Hedy {
     /// the task's way of working has it: another AI reads only the change
     /// and points at visible mistakes. It never blocks accepting, and runs on
     /// the task's own account (rule 3), with Sonnet on a Claude account.
-    pub(super) fn run_task_review(&self, task: &Task) -> AppResult<()> {
+    /// `true`: the task was stopped or closed meanwhile.
+    pub(super) fn run_task_review(&self, task: &Task) -> AppResult<bool> {
         let Some(working) = &task.working else {
-            return Ok(());
+            return Ok(false);
         };
         let Some(ws) = &task.workspace else {
-            return Ok(());
+            return Ok(false);
         };
         if !working.review || task.mode != TaskMode::Project || task.flow.is_some() {
-            return Ok(());
+            return Ok(false);
+        }
+        if self.stopped_meanwhile_checks(task)? {
+            return Ok(true);
         }
         let diff = self.git.diff(&ws.worktree, &ws.base_commit)?;
         let change = crate::domain::rule_check::change_for_prompt(&diff);
         if change.added.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
         let account = self.account(task.account.as_str())?;
         let model =
             (account.provider == crate::domain::Provider::Claude).then(|| "sonnet".to_owned());
         let skipped = |reason: String| self.record(&task.id, AgentEvent::ChecksSkipped { reason });
         if self.account_at_limit(&account)? {
-            return skipped(tr!(
+            skipped(tr!(
                 "La revisión no se hizo: la cuenta llegó a su límite.",
                 "The review did not run: the account reached its limit."
-            ));
+            ))?;
+            return Ok(false);
         }
         let stage = crate::domain::Stage {
             phase: crate::domain::Phase::Review,
@@ -175,6 +187,9 @@ impl Hedy {
             no_tools: true,
             timeout: REVIEW_TIMEOUT,
         })?;
+        if self.stopped_meanwhile_checks(task)? {
+            return Ok(true);
+        }
         match answer {
             Ok(raw) => self.record(
                 &task.id,
@@ -182,12 +197,19 @@ impl Hedy {
                     warnings: crate::domain::agent::parse_review(&raw),
                     model,
                 },
-            ),
+            )?,
             Err(_) => skipped(tr!(
                 "La revisión no dio una respuesta: revisa tú el cambio.",
                 "The review gave no answer: review the change yourself."
-            )),
+            ))?,
         }
+        Ok(false)
+    }
+
+    /// Whether the task stopped running while Hedy checked it (the user
+    /// stopped, discarded or accepted it), as a flow's checks tell.
+    fn stopped_meanwhile_checks(&self, task: &Task) -> AppResult<bool> {
+        Ok(self.task(&task.id)?.status != TaskStatus::Running)
     }
 
     /// Whether a check already failed since the user last wrote: then the
@@ -295,6 +317,11 @@ mod tests {
             .collect();
         assert_eq!(checked, [("tests", true), ("e2e", true)]);
         assert_eq!(preview.checks_skipped, None);
+        // A turn begun since makes them stale.
+        f.hedy
+            .send_message(&task.id, "Cambia también el redondeo")
+            .unwrap();
+        assert!(f.hedy.accept_preview(&task.id).unwrap().checks.is_empty());
     }
 
     #[test]
@@ -408,5 +435,111 @@ mod tests {
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0][0].line, Some(3));
         assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
+    }
+
+    #[test]
+    fn a_failure_is_not_sent_to_a_read_only_last_step() {
+        let f = Fixture::new();
+        f.add_claude("Personal");
+        let dir = f.dir("/code/agenda");
+        f.hedy.use_account(&dir, "personal", None).unwrap();
+        // An AI review as the last step: it reads, it cannot fix.
+        let mut phases = crate::domain::PhasePlan::new();
+        phases.insert(
+            crate::domain::Phase::Review,
+            crate::domain::Assignment {
+                account: crate::domain::AccountId::new("personal").unwrap(),
+                model: None,
+            },
+        );
+        f.hedy.set_project_phases(&dir, phases).unwrap();
+        f.hedy.set_project_working(&dir, after_ok()).unwrap();
+        let task = f
+            .hedy
+            .start_task(NewTask {
+                images: Vec::new(),
+                project: dir,
+                prompt: "Arregla el total".into(),
+                mode: TaskMode::Project,
+                model: None,
+                plan_first: false,
+                permissions: None,
+            })
+            .unwrap();
+        f.runner.reply("1 failed", 1);
+        finish(&f); // implement: the review step comes next, no checks yet
+        assert_eq!(f.runner.checks_run(), 0);
+        finish(&f); // the review step ends: checks, failing, not sent back
+        assert_eq!(f.runner.checks_run(), 2);
+        assert!(sent(&f).is_empty());
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
+    }
+
+    #[test]
+    fn a_review_that_cannot_start_leaves_the_task_ready() {
+        let f = Fixture::new();
+        let style = Preset::AfterOkReview.apply(&WorkingStyle::default());
+        let task = start(
+            &f,
+            WorkingStyle {
+                tests: false,
+                ..style
+            },
+        );
+        f.git.set_diff(a_change());
+        f.agents.fail_next_start();
+        finish(&f);
+        let events = f.hedy.task_events(&task.id).unwrap();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::ChecksSkipped { .. }))
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::ReviewRan { .. }))
+        );
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
+    }
+
+    #[test]
+    fn stopping_the_task_while_it_is_checked_ends_it_all() {
+        let f = Fixture::new();
+        let style = Preset::AfterOkReview.apply(&after_ok());
+        let task = start(&f, style);
+        f.git.set_diff(a_change());
+        f.runner.reply("1 failed", 1);
+        let (hedy, id) = (f.hedy.clone(), task.id.clone());
+        f.runner.during_check(move || {
+            let _ = hedy.stop_task(&id);
+        });
+        let started = f.agents.requests().len();
+        finish(&f);
+        assert_eq!(
+            f.runner.checks_run(),
+            1,
+            "the e2e does not run after a stop"
+        );
+        assert!(sent(&f).is_empty(), "nothing goes back to the AI");
+        assert_eq!(f.agents.requests().len(), started, "no review is spent");
+        assert!(checks(&f, &task).is_empty(), "a killed check is no result");
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Review);
+    }
+
+    #[test]
+    fn a_message_written_while_it_is_checked_goes_after_the_checks() {
+        let f = Fixture::new();
+        let task = start(&f, after_ok());
+        f.runner.reply("ok", 0);
+        let (hedy, id) = (f.hedy.clone(), task.id.clone());
+        f.runner.during_check(move || {
+            let _ = hedy.queue_message(&id, "Y agrega un test del total");
+        });
+        finish(&f);
+        let sent = sent(&f);
+        assert_eq!(sent.len(), 1, "{sent:?}");
+        assert!(sent[0].contains("Y agrega un test del total"));
+        assert_eq!(f.hedy.task(&task.id).unwrap().status, TaskStatus::Running);
     }
 }

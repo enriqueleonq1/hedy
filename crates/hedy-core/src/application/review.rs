@@ -81,11 +81,19 @@ impl Hedy {
             }),
             _ => None,
         });
-        // The checks run after the AI's last turn.
-        let last_turn = timed
+        // The checks run after the AI's last turn; a turn begun since (and
+        // stopped) makes them stale.
+        let finished = timed
             .iter()
-            .rposition(|(_, e)| matches!(e, AgentEvent::Finished { .. }))
-            .map_or(timed.len(), |i| i + 1);
+            .rposition(|(_, e)| matches!(e, AgentEvent::Finished { .. }));
+        let asked = timed
+            .iter()
+            .rposition(|(_, e)| matches!(e, AgentEvent::UserMessage { .. }));
+        let last_turn = match (finished, asked) {
+            (Some(f), Some(a)) if a > f => timed.len(),
+            (Some(f), _) => f + 1,
+            (None, _) => timed.len(),
+        };
         let mut checks = Vec::new();
         let mut checks_skipped = None;
         let mut review = None;

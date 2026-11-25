@@ -305,7 +305,9 @@ pub fn parse_review(answer: &str) -> Vec<ReviewWarning> {
                 .trim_matches('`');
             let (path, rest) = line.split_once(':')?;
             let path = path.trim().trim_matches('`');
-            if path.is_empty() || path.contains(' ') {
+            // A file's path, not a word before a colon («Resumen:», «https:»).
+            if path.is_empty() || path.contains(' ') || !(path.contains('/') || path.contains('.'))
+            {
                 return None;
             }
             let (line_no, message) = match rest.split_once(':') {
@@ -337,6 +339,8 @@ mod tests {
             ("src/api.py", None)
         );
         assert!(super::parse_review("NADA").is_empty());
+        let prose = "Resumen: no veo errores reales\nNota: revisé todo\nhttps://example.com: nada";
+        assert!(super::parse_review(prose).is_empty());
     }
 
     use super::*;
